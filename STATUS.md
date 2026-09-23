@@ -1,14 +1,13 @@
 # 当前状态
 
 文档整理：2026-09-23。正式 Release 为
-`v1.10.21@310e3e8e62f454d3e94104c2dec9e940844bf3f2`：annotated tag 的 peeled commit
-为该提交；远端 `main` 为包含它的合并提交 `ba2ce6e2112372b6dc6781f46cf63a85a9f2e9a9`；
-GitHub Release 已发布、非草稿、非预发布。2026-09-23 本机只读状态脚本回读
+`v1.10.22@38d97e374365ccf36e599d5ac6147e3b0571b992`：annotated tag peeled commit、
+远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-23 本机只读状态脚本回读
 API、Web、Live、Alert 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.20-r1` 的同一提交，
 API/Web 返回 200，Runtime health 为 `ok`；盘后任务当时未运行，weekly audit 本次尚未运行。
 这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
 v1.10.21 已包含 CJ 严格无交易日 W1 修复代码；CJ 两处 Canonical/Catalog 指针仍为旧版，
-CJ W1 正式能力仍关闭。下一版 P5 候选与生产数据、reader 切换、Runtime promotion 分属不同 Gate。
+CJ W1 正式能力仍关闭。v1.10.22 已发布 P5 代码；生产试点、reader 切换、Runtime promotion 分属不同 Gate。
 正式周线合同为 48 个品种，
 60m 继续关闭。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
@@ -219,12 +218,12 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.21@310e3e8e6`，annotated tag peeled commit 与已发布 GitHub Release 已读回；origin/main 为包含该提交的 `ba2ce6e21` |
+| 正式 Release | `RELEASED` | `v1.10.22@38d97e374`，annotated tag peeled commit、origin/main 与已发布 GitHub Release target 一致 |
 | 现役 Runtime | v1.10.20 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 只读回读 API/Web/Live/Alert 加载 v1.10.20 exact root/commit、API/Web 200、Runtime health ok；盘后任务当时未运行，weekly audit 本次未运行 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
-| Unified Reference Trading P3 仓储候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | 六表、0047 migration、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；合入最新 develop 后 83 项 P3（含 9 项隔离 PG）及 368 项 P0–P3/Newow/SuBing 回归通过，Review 的 5 项 Important 已修复。仍默认 disabled，未执行生产 migration、P6 worker 或 Runtime enable；P4/P5 代码已集成 develop |
-| Unified Reference Trading P4 历史编排候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DEVELOP_INTEGRATED` | 已合入并推送 develop；有界 plan/build/advance/rebuild/resume、SuBing 四周期与 Newow 已有三周期矩阵、真实临时 Canonical/Catalog/MDS 接线、逐 owner 物理预热上界及 unknown commit/publish 恢复已完成。develop 合并结果非 PG 135 passed，计划指定关联回归 197 passed；专用空白可销毁 PostgreSQL 事务/CAS/dependency advance 9 passed，临时容器已删除；独立 Review 无 Confirmed Issue。未执行生产 migration/bootstrap、P6 worker、Runtime 或数据写入 |
-| Unified Reference Trading P5 读取与页面候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DEVELOP_INTEGRATED / EXTERNAL_GATE_PENDING` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已合入 develop；隔离临时 Canonical/MDS/P4 构建后，浏览器实读苏冰 15m/D1、牛哇 D1 已保存结果，含真零交易和日线质量状态。合并最新 develop 后 Web 669 passed、1 skipped，typecheck/build/拓扑通过；API/历史集成定向 13 passed，独立 Review 无 Confirmed Issue。后续使用扩展的隔离 Canonical/MDS/P4 结果（牛哇 D1 真实 2 笔交易），浏览器将请求页长临时设为 1，实点下一页后出现 2 个不同交易 ID，统计仍为已完成 2；苏冰 15m 160 交易日的 2560 个已保存指标点曾触发旧适配器 2000 点预算，现提升至 10000 并接入 30 秒整请求截止回调，隔离 API 读回 200、2560 点，相关 21 项测试通过，独立复审无 Confirmed Issue。生产 0047 migration/bootstrap、reader switch、P6 worker、Runtime 均未执行 |
+| Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker、全局 reader 或 Runtime；P4/P5 代码已随 v1.10.22 发布 |
+| Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_PARTIAL` | 已随 v1.10.22 发布；生产 RB 苏冰 D1 exact-hash build 完成，active revision 11 seq、70 actions、44 trades，enabled=false。RB 牛哇趋势 D1 在 256 Bar checkpoint 后因配对对象身份误判失败，留下未发布 candidate revision 2 seq、12 actions、6 trades；其余 RB 流未构建。P6 worker、全局 reader 与 Runtime 未启用 |
+| Unified Reference Trading P5 读取与页面 | `RELEASED / RUNTIME_PENDING` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已随 v1.10.22 发布；隔离 Canonical/MDS/P4 浏览器实读与两笔交易分页通过，独立 Review 无 Confirmed Issue。生产 0047 已执行；全局 reader 仍为 `legacy`，现役 Runtime 仍为 v1.10.20，生产页面尚未切换到 P5 persisted reader |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
@@ -237,9 +236,9 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
-P5 后续正式批次排在 v1.10.21 完成之后。owner 选择先做 RB 全历史试点并读回，再按正式开放页面范围分批构建，全部就绪后才考虑全局 `REFERENCE_TRADING_READER_MODE` 切换。2026-09-23 生产只读预检：数据库仍在 0046、六张参考表均不存在、reader 默认为 `legacy`。RB 2023-01-01 至 2026-09-22 的牛哇三策略 D1/W1 六流只读计划均成功，D1 各 2554 根、W1 各 543 根；苏冰 D1 的非交易日起始误判修复后也可规划，2554 根。苏冰 15m/30m/60m 计划仍因物理合约分钟分区缺口停止。RB2305 的 2022-05-17 至 2023-04-04 生命周期 15m 预热需 4974 个端点，Catalog 仅有 2023-01 至 04 四个月分区、1387 行。原 `TRADING_SESSION_MISSING` 属于首日夜盘前一自然日误检；修正后只读重放得到真实 `DATASET_OR_PARTITION_MISSING`。12 个 RB 物理合约的只读原生预热计划合计 1m 来源 71 个合约月与 71 次 provider 请求，15m、30m 各 79 个派生合约月，60m 71 个；1d 均为 NOOP。各频率计划单独测算，来源请求不能重复相加；先完成 15m 的来源再重算 30m/60m exact plan hash。不得缩短预热、伪造缺口、直接切换 reader 或将只读预检称为生产构建完成。正式 migration、补数、构建、配置切换、main/tag/Release 和 Runtime 仍各按精确授权与读回 Gate 执行。
+owner 已批准 v1.10.22 发布及 PR #385 所列 RB 全历史生产试点，试点窗口为 2023-01-01 至 2026-09-22；其他品种、全局 `REFERENCE_TRADING_READER_MODE` 与 Runtime promotion 仍无授权。生产 0047 已从 0046 一次升级，读回六张参考表。RB 十条正式开放流中，牛哇三策略 D1/W1 六条与苏冰 D1 可只读规划；苏冰 15m/30m/60m 仍因物理分钟分区缺口停止。12 个物理合约的 15m dry-run 是 71 个 1m 来源月/最多 71 次 provider 请求、79 个派生目标月；30m 为 79 个派生目标月，60m 为 71 个；来源不可跨频重复相加，后续阶段须重算 exact hash。
 
-v1.10.22 隔离候选从已发布 main `ba2ce6e21` 合入 develop `3624d2907`，并单独纳入苏冰 D1 非交易日起始修复；随后合入 develop 的 OI 周线候选不在此冻结范围。CJ 四处冲突保留 v1.10.21 已发布修复和精确 prepare 证据。候选验证：后端参考/物理读取/CJ 297 passed，现有页面 API 230 passed，隔离 PostgreSQL 0047 与分页仓储 11 passed；新增 D1/读取定向 46 passed、真实 Catalog 非交易日起点及首交易日缺映射 3 passed；Web 670 passed、1 skipped，TypeScript、生产 build、Ruff 和 secret scan 通过。独立候选 Review 与 D1 修复复审均无 Confirmed Issue。用候选 API 对生产 0046 做只读 smoke：capabilities 200，已保存 streams 查询明确返回 `REFERENCE_SCHEMA_UNAVAILABLE` 503；未执行生产 migration 或构建。候选尚未 main/tag/Release，也未切 Runtime。
+RB2305 首次 15m warm-up 调用返回非零；临时执行脚本错误地只从 stderr 读取非零结果，未保存原始失败码。随后只读重算 12 合约目标数和 hash 与执行前完全相同，证明没有已提交分区；当前无维护锁。结果原因仍不明，不重试、不缩窗。已成功执行苏冰 D1 exact-hash P4 build 并读回 active revision，stream 仍 disabled。牛哇趋势 D1 首次 build 在 256 Bar checkpoint 后出现 `NEWOW_PRODUCT_PAIRING_CONFLICT`，留下未发布 candidate；只读完整重放 2554 Bar 成功，但按 256 Bar JSON checkpoint 往返在第 266 Bar 复现失败。修复将当前 BUILD 引用从对象身份判断改为完整 action 等值，并要求预热 CLEAR 存在当前 BUILD；193 项相关测试和生产输入只读重放通过，从生产 candidate checkpoint 只读续算剩余 2298 Bar 通过，独立 Review 无 Confirmed Issue。修复已合入 develop，v1.10.23 候选尚未获发布授权。v1.10.22 tag 不改写；其余 Newow 生产构建保持暂停。全局 reader/Runtime 未切换。
 
 ## v1.10.12 Runtime 切换即时读回（2026-09-17）
 
