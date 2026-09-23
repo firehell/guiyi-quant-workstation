@@ -21,4 +21,10 @@
 
 本轮没有生产 apply。若另行批准实施，目标仅为上述 **RS2609 三个 W1 月指针**；预期 provider 预算 0、D1 写入 0、W1 新文件 3 份，Catalog 在一个事务中注册 3 个指针。先确认现役消费者可读取不可变 hash URI 和质量中断、旧 writer 未运行；持全局维护锁重算并核对计划哈希、Calendar/Session、D1 质量摘要、三个旧 W1 指针及文件字节。候选必须通过物理、coverage、保留行不变、同源 D1→W1 和完整前缀回放检查，然后提交；提交后用新只读事务查明全部指针及回放。重复执行若三指针已等于候选，应只报告已完成；混合、漂移或未知结果立即停批，不自动重试。
 
-提交前失败保持旧指针，已发布但未引用的不可变文件可留存。提交结果不明先独立只读 `inspect`，不得猜测回滚或重试。可验证恢复前像是 9 月/12 月 **无指针**、1 月原 `part.parquet` 指针及其字节哈希；恢复必须另行形成精确操作、获授权并在维护锁内原子处理，保留所有历史文件。正式实施后还需分开验证三策略回放、ReferenceTrade 中断与重新预热、Newow 页面及产品 Gate；不得把本候选的 `33/18` 当成正式开放结论。
+提交前失败保持旧指针，已发布但未引用的不可变文件可留存。提交结果不明先独立只读 `inspect`，不得猜测回滚或重试。可验证恢复前像是 9 月/12 月 **无指针**、1 月原 `part.parquet` 指针及其字节哈希；已实现的 `scripts/rs2609_weekly_missing_apply.py restore` 仅供事故恢复，须另行授权，并先用同一冻结包及独立 `inspect` 确认三个候选指针均在位；恢复在维护锁内原子处理，保留所有历史文件。正式实施后还需分开验证三策略回放、ReferenceTrade 中断与重新预热、Newow 页面及产品 Gate；不得把本候选的 `33/18` 当成正式开放结论。
+
+## 2026-09-23 受控执行回读
+
+owner 已批准按本计划实现受控 apply，并一次性处理该生产批次。工具提交为 `ca7d6311309c500e798dda76e29f057c8c898ebb`。首次调用在取得维护锁前以 `MAINTENANCE_BUSY` 退出；独立只读 `inspect` 确认三个指针仍为 `old`，随后锁持有者自然结束。再次只读核对锁空闲、冻结包逐字段未漂移和三个旧指针后，继续同一获批批次。`apply` 返回 `committed`：三个 W1 月指针在一个 Catalog 事务中提交，四根目标 W1 补入，provider 请求 0、D1 写入 0。
+
+提交后独立进程的只读 `inspect` 返回三个 `candidate`；真实 MDS 全前缀回放为 **33 根正常 W1、18 次质量中断**。`local-services-status.sh` 回读现役 Runtime `v1.10.20-r1`、API/Web/Runtime health 通过，盘后 writer 未运行。定向回归 125 项通过、Ruff 和 secret scan 通过，独立 Review 无 Confirmed Issue。该数据修复未授权 Runtime 切换、通知、main/tag/release；三策略、ReferenceTrade、页面和产品 Gate 仍需独立验收。
