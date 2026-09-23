@@ -38,6 +38,32 @@ def test_after_market_structured_progress_reopens_rotated_log_and_bounds_fields(
         handler.close()
 
 
+def test_after_market_exception_types_are_bounded_and_distinct(tmp_path):
+    from app.runtime_logging import runtime_diagnostic_handler
+
+    path = tmp_path / "after-market.log"
+    handler = runtime_diagnostic_handler(path)
+    logger = logging.getLogger("app.market_data.after_market")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        from app.market_data.after_market import _diagnostic_warning
+
+        for name in ("RuntimeError", "OSError", "SecretError_password=hidden"):
+            _diagnostic_warning(
+                "after_market_attempt_failed stage=canonical_update attempt=%s detail_code=%s exception_type=%s",
+                1, "UNEXPECTED_UPDATE_EXCEPTION", name,
+                stage="canonical_update", attempt=1,
+                detail_code="UNEXPECTED_UPDATE_EXCEPTION", exception_type=name,
+            )
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        assert [row["exception_type"] for row in rows] == ["RuntimeError", "OSError", "REDACTED"]
+        assert "hidden" not in path.read_text()
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+
+
 def test_runtime_log_reopens_removed_file_and_redacts_untrusted_exception(tmp_path):
     from app.runtime_logging import runtime_diagnostic_handler
 

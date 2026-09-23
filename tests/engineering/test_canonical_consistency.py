@@ -165,6 +165,8 @@ ACTIVE_MARKET_ROUTE_OWNERS = {
         "/api/v1/market/newow/strategy-detail",
         "app.api.market_newow:newow_strategy_detail",
     ),
+    ("GET", "/api/v1/market/newow/daily-snapshot", "app.api.market_newow:newow_daily_snapshot"),
+    ("GET", "/api/v1/market/newow/weekly-snapshot", "app.api.market_newow:newow_weekly_snapshot"),
     (
         "GET",
         "/api/v1/market/newow/historical-snapshot",
@@ -302,7 +304,7 @@ def test_public_entrypoints_are_exact() -> None:
     main_module = importlib.import_module("app.guiyi_cli.main")
     parser = main_module.build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
-    assert set(domain_action.choices) == {"data", "runtime"}
+    assert set(domain_action.choices) == {"data", "runtime", "reference"}
 
 
 def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:
@@ -446,12 +448,11 @@ def test_release_versions_are_consistent() -> None:
         and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
     }
-    assert {
-        pyproject["project"]["version"],
-        web["version"],
-        *lock_versions,
-        *app_versions,
-    } == {"1.10.11"}
+    expected = pyproject["project"]["version"]
+    assert isinstance(expected, str) and expected
+    assert web["version"] == expected
+    assert lock_versions == {expected}
+    assert app_versions == {expected}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 

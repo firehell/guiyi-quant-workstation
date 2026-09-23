@@ -969,6 +969,36 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
     assert live["coverage_state"] == "ok"
 
 
+def test_unknown_phase_cannot_reuse_old_ok_coverage_and_mixed_phase_keeps_known_product() -> None:
+    from app.services.runtime_health import _collect_live_market_health
+
+    now = datetime(2026, 9, 22, 13, 2, tzinfo=UTC)
+    heartbeat = {
+        "generated_at": now.isoformat(), "operational_count": 2,
+        "subscribed_count": 1, "last_bar_at": now.isoformat(),
+        "phase_counts": {"UNKNOWN": 1, "TRADING": 1},
+        "phase_by_product": {"a": "UNKNOWN", "ag": "TRADING"},
+        "available": True, "coverage_schema_version": 1,
+        "coverage": {symbol: {"state": "ok", "sessions": [{"start": now.isoformat(), "end": now.isoformat()}]}
+                     for symbol in ("a", "ag")},
+    }
+    live = _collect_live_market_health(
+        FakeRedis(values={"live:heartbeat": json.dumps(heartbeat)}), now=now,
+        configured_enabled=True, freshness_seconds=300,
+    )
+    assert live["status"] == "degraded"
+    assert live["coverage_state"] == "unverified"
+    assert live["coverage"]["a"]["state"] == "unverified"
+    assert live["coverage"]["a"]["sessions"] == []
+    assert live["coverage"]["ag"]["state"] == "ok"
+    del heartbeat["phase_by_product"]
+    old = _collect_live_market_health(
+        FakeRedis(values={"live:heartbeat": json.dumps(heartbeat)}), now=now,
+        configured_enabled=True, freshness_seconds=300,
+    )
+    assert old["coverage"]["ag"]["state"] == "unverified"
+
+
 @pytest.mark.parametrize(
     "phases,available,age,coverage_state,expected",
     [

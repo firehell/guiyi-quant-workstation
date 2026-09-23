@@ -779,6 +779,23 @@ class _TradingPhaseReader:
         )
 
 
+def test_mixed_unknown_phase_keeps_known_market_read_eligible() -> None:
+    phases = {
+        "jm": ProductMarketPhase("jm", MarketPhase.TRADING, DAY_2, None, None),
+        "ag": ProductMarketPhase("ag", MarketPhase.UNKNOWN, None, None, None),
+    }
+    service = MarketReadService(
+        market_data=_MarketPageReader((), ()),
+        phase_resolver=type("Phases", (), {"resolve": lambda _self, symbol, _now: phases[symbol]})(),
+        operational_products=("jm", "ag"),
+        live_store=_LiveStore((), "JM2705"),
+    )
+    known = service.state(SeriesPageQuery("actual_dominant", "jm", "15m"), LIVE_END)
+    unknown = service.state(SeriesPageQuery("actual_dominant", "ag", "15m"), LIVE_END)
+    assert known.live_eligible and known.live_available
+    assert not unknown.live_eligible and not unknown.live_available
+
+
 def _service(
     *,
     historical: tuple[CanonicalBar, ...],

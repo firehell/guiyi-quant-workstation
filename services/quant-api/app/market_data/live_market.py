@@ -583,6 +583,7 @@ class LiveMarketService:
         self._coverage_session_cache: dict[tuple[str, date], tuple[SessionWindow, ...]] = {}
         self._coverage_cache: dict[str, dict[str, object]] = {}
         self._coverage_cache_minute: datetime | None = None
+        self._coverage_phase_cache: dict[str, MarketPhase] = {}
         self._coverage_dirty: set[str] = set()
         self._last_bar_at: datetime | None = None
         self._last_flush_failed = False
@@ -1102,9 +1103,11 @@ class LiveMarketService:
                 "subscribed_count": len(self._channels),
                 "last_bar_at": None if self._last_bar_at is None else self._last_bar_at.isoformat(),
                 "phase_counts": dict(sorted(counts.items())),
+                "phase_by_product": {symbol: phase.phase.value for symbol, phase in phases.items()},
                 "coverage_schema_version": 1,
                 "coverage": self._coverage_snapshot(now, phases),
-                "available": self._available and self._provider_available and bar_feed_fresh,
+                "available": (self._available and self._provider_available and bar_feed_fresh
+                              and counts[MarketPhase.UNKNOWN.value] < len(self._products)),
             }
         )
 
@@ -1113,13 +1116,22 @@ class LiveMarketService:
     ) -> dict[str, dict[str, object]]:
         minute = now.replace(second=0, microsecond=0)
         refresh_all = self._coverage_cache_minute != minute
-        symbols = self._products if refresh_all else tuple(self._coverage_dirty)
+        symbols = self._products if refresh_all else tuple(
+            set(self._coverage_dirty) | {
+                symbol for symbol, phase in phases.items()
+                if phase.phase is MarketPhase.UNKNOWN
+                or self._coverage_phase_cache.get(symbol) is not phase.phase
+            }
+        )
         for symbol in symbols:
             previous = self._coverage_cache.get(symbol)
             current = self._coverage_item(
                 symbol, now, phases[symbol]
             )
             if previous is not None:
+                if phases[symbol].phase is MarketPhase.UNKNOWN and previous.get("state") == "lagging":
+                    current["state"] = "lagging"
+                    current["first_missing_bar_end"] = previous.get("first_missing_bar_end")
                 unresolved = previous.get("previous_unresolved")
                 if previous.get("trading_day") != current.get("trading_day") and previous.get("state") == "lagging":
                     unresolved = unresolved or previous.get("first_missing_bar_end")
@@ -1128,6 +1140,7 @@ class LiveMarketService:
                     current["first_missing_bar_end"] = current.get("first_missing_bar_end") or unresolved
                     current["state"] = "lagging"
             self._coverage_cache[symbol] = current
+            self._coverage_phase_cache[symbol] = phases[symbol].phase
         self._coverage_cache_minute = minute
         self._coverage_dirty.clear()
         return dict(self._coverage_cache)
@@ -1147,6 +1160,9 @@ class LiveMarketService:
             "first_missing_bar_end": None,
             "state": "unverified",
         }
+        # A prior day's Session is historical evidence, not current authority.
+        if phase.phase is MarketPhase.UNKNOWN:
+            return item
         if day is None or contract is None:
             return item
         key = (symbol, day)

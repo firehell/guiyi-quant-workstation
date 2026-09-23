@@ -69,6 +69,10 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 - 批量授权替代逐命令、逐品种、逐 phase 的重复确认；input validation、preflight、exact plan hash、维护锁、
   质量校验、幂等提交、原子性和失败恢复约束保持不变。计划变化须核对仍在授权范围内，不能借此绕过机器校验。
 
+- owner 已确认本项目唯一授权远端为 `origin = git@github.com:firehell/guiyi-quant-workstation.git`。任务范围内的普通文档、代码和
+  `develop` branch push 可直接执行，不再要求重复验证 origin 归属或文档外发授权。远程地址、仓库归属、推送目标发生变化，或向任何
+  其他外部目的地发布时，仍须另行确认。
+
 测试、dry-run、health、配置存在、commit hash 或 approval packet 本身不授予生产权限。
 普通 develop commit/push、开发测试配置和任务内普通文件操作可自主完成；
 集成 develop 不授权生产写入、发布或 Runtime promotion。生产凭据、权限、成本或外部行为的配置变化须明确授权。

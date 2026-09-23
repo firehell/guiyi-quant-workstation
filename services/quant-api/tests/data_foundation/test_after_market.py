@@ -578,6 +578,56 @@ def test_production_builder_always_composes_waiting_after_market_guard(tmp_path,
     assert calls == [True]
 
 
+def test_production_builder_defers_provider_client_until_run(tmp_path, monkeypatch):
+    import app.market_data.after_market as module
+    import app.redis_connections as redis_connections
+
+    class Provider:
+        @property
+        def client(self):
+            raise AssertionError("provider client must remain lazy")
+
+    monkeypatch.setattr(module, "_market_home_projection_refresh_enabled", lambda: False)
+    monkeypatch.setattr(redis_connections, "get_redis_connection", lambda: object())
+    manager = SimpleNamespace(provider=Provider(), catalog=SimpleNamespace(canonical_root=tmp_path))
+    module.build_after_market_updater(manager, failure_notification=False)
+
+
+def test_provider_factory_runs_after_durable_current_run_and_init_failure_has_one_terminal(tmp_path):
+    updater, manager, _, _, notices, live_store = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[],
+    )
+    observed = []
+    def fail_client():
+        observed.append(_status(updater.status_path)["current_run"]["stage"])
+        raise OSError("password=hidden")
+    updater.rqdata = None
+    updater.rqdata_factory = fail_client
+    result = updater.run()
+    assert observed == ["rqdata_readiness"]
+    assert result.status == "failed"
+    assert result.error_code == "RQDATA_READY_CHECK_FAILED"
+    assert len(notices) == 1
+    status = _status(updater.status_path)
+    assert status["current_run"] is None
+    assert status["last_run"]["status"] == "failed"
+    assert manager.calls == []
+
+
+def test_initial_status_failure_never_calls_provider_factory(tmp_path, monkeypatch):
+    import app.market_data.after_market as module
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[],
+    )
+    calls = []
+    updater.rqdata = None
+    updater.rqdata_factory = lambda: calls.append("provider")
+    monkeypatch.setattr(module, "_atomic_write_status", lambda *_: (_ for _ in ()).throw(OSError("status failed")))
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    assert calls == []
+
+
 def _status(path):
     return json.loads(path.read_text(encoding="utf-8"))
 

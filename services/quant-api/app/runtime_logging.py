@@ -33,7 +33,7 @@ class _SafeFormatter(logging.Formatter):
                         payload["progress"] = progress
                 except (ValueError, TypeError, OverflowError):
                     pass
-            for key in ("rule_code", "symbol", "contract", "frequency", "bar_end", "trading_day", "missing_count", "attempt", "stage", "detail_code"):
+            for key in ("rule_code", "symbol", "contract", "frequency", "bar_end", "trading_day", "missing_count", "attempt", "stage", "detail_code", "exception_type"):
                 value = fields.get(key)
                 if key == "rule_code":
                     from app.alerts.registry import alert_rule_definitions
@@ -59,6 +59,12 @@ class _SafeFormatter(logging.Formatter):
                                    "UNEXPECTED_UPDATE_EXCEPTION", "UNEXPECTED_LIVE_EXCEPTION"})
                     if isinstance(value, str) and value in allowed:
                         payload[key] = value
+                    continue
+                if key == "exception_type":
+                    if value is None:
+                        continue
+                    allowed_types = {"InfrastructureError", "RuntimeError", "ValueError", "TypeError", "OSError", "StorageError"}
+                    payload[key] = value if isinstance(value, str) and value in allowed_types else "REDACTED"
                     continue
                 if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100000:
                     payload[key] = value
