@@ -453,6 +453,36 @@ def test_trend_prewarm_clear_expires_its_build_witness(product_cases, monkeypatc
         replay_strategy(case.identity, bars)
 
 
+def test_trend_prewarm_clear_rejects_missing_build_witness(product_cases, monkeypatch):
+    case = product_cases.primitive_input("trend", "1d")
+    original = adapters.step_trend_band
+    state = initial_trend_band_state()
+    clear = None
+    for product_bar in case.bars[:40]:
+        result = original(
+            state,
+            replace(product_bar.bar, observation_eligible=True),
+            profile=NEWOW_TREND_D1_PAGE_V2,
+        )
+        state = result.state
+        if result.marker is not None and result.marker.marker_type == ActionKind.CLEAR:
+            clear = result.marker
+            break
+    assert clear is not None
+    first = replace(case.bars[0], bar=replace(case.bars[0].bar, observation_eligible=False))
+
+    def orphan_clear(state, raw_bar, *, profile):
+        result = original(state, raw_bar, profile=profile)
+        return replace(result, marker=replace(
+            clear, marker_id="orphan-clear", bar_end=raw_bar.bar_end,
+            related_marker_ids=("missing-build",),
+        ))
+
+    monkeypatch.setattr(adapters, "step_trend_band", orphan_clear)
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        replay_strategy(case.identity, (first,))
+
+
 def test_bare_clear_without_a_prewarm_witness_fails_closed(product_cases, monkeypatch):
     case = product_cases.primitive_input("oscillation", "1d")
     bar = case.bars[0]

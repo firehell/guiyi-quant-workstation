@@ -65,6 +65,52 @@ def test_full_newow_strategy_checkpoint_round_trips_and_rejects_wrong_stream(pro
         )
 
 
+@pytest.mark.parametrize("eligible", (False, True))
+def test_trend_build_pairing_survives_checkpoint_restore(product_cases, eligible) -> None:
+    case = product_cases.primitive_input("trend", "1d")
+    bars = tuple(
+        replace(bar, bar=replace(bar.bar, observation_eligible=eligible))
+        for bar in case.bars[:40]
+    )
+    uninterrupted = seed_replay_state()
+    expected_tail = []
+    cut = None
+    for index, bar in enumerate(bars):
+        uninterrupted, frame, diagnostics = replay_step(case.identity, uninterrupted, bar)
+        if cut is not None and index > cut:
+            expected_tail.append((frame, diagnostics))
+        if cut is None and (
+            uninterrupted.pairing.eligible_build is not None
+            or uninterrupted.pairing.prewarm_build is not None
+        ):
+            cut = index
+    assert cut is not None
+    assert expected_tail
+
+    prefix = seed_replay_state()
+    for bar in bars[:cut + 1]:
+        prefix, _frame, _diagnostics = replay_step(case.identity, prefix, bar)
+    stream = _stream("newow-trend")
+    at = bars[cut]
+    checkpoint = AdapterCheckpoint(
+        prefix, at.bar.bar_end, "build", at.bar.physical_contract,
+        at.bar.segment_id, at.calculation_segment_id,
+        stream, ReferenceState.flat(stream),
+    )
+    restored = adapter_checkpoint_from_json(
+        adapter_checkpoint_to_json(checkpoint, strategy_schema="newow_product_replay_v1"),
+        expected_stream=stream, expected_strategy_schema="newow_product_replay_v1",
+    )
+    state = restored.strategy_state
+    actual_tail = []
+    for bar in bars[cut + 1:]:
+        state, frame, diagnostics = replay_step(case.identity, state, bar)
+        actual_tail.append((frame, diagnostics))
+
+    assert actual_tail == expected_tail
+    assert state == uninterrupted
+
+
 def test_full_newow_weekly_v2_checkpoint_preserves_quality_policy(product_cases) -> None:
     case = product_cases.primitive_input("trend", "1w")
     identity = replace(
