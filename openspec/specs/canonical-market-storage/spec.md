@@ -46,6 +46,28 @@ schema、identity、主键单调唯一、OHLCV、session/frequency、coverage �
 - **WHEN** 候选月未覆盖 TargetWindow 的预期 bars
 - **THEN** 该月不发布，后续 update 将其仍视为待处理目标
 
+### Requirement: Complete-week exchange-daily aggregation excludes strict no-trade prices
+
+`exchange-daily-no-trade-v2` SHALL first prove physical contract lifecycle, Calendar/Session and every expected
+exchange-daily endpoint of the completed ISO week. A strict no-trade D1 Bar has OHLC, volume and turnover all zero;
+open interest MAY be nonzero. In a mixed week, W1 OHLC SHALL use only the remaining positive-price D1 Bars,
+including valid zero-volume Bars. W1 `bar_end` and `trading_day` SHALL remain the authoritative completed-week
+endpoint, volume and turnover SHALL sum the complete D1 source set exactly, and open interest SHALL come from the
+last authoritative D1 row. An entirely strict no-trade week SHALL retain an all-zero W1 Bar; Newow SHALL skip it
+as an effective observation. Raw D1 Bars and their coverage remain unchanged.
+
+Partial zero prices, missing turnover on a proposed no-trade day, source price gaps, absent/duplicate endpoints,
+or wrong physical identity MUST NOT be converted to no-trade. A changed W1 value requires a new immutable month
+URI and Catalog revision; the repair receipt SHALL pin the aggregation version and D1/W1 preimages. Existing
+active W1 partitions remain on their prior revision until a controlled rebuild; readers MUST NOT silently replace
+stored W1 with an on-demand aggregate.
+
+#### Scenario: A complete week has one strict no-trade day
+- **GIVEN** the physical D1 source proves every expected endpoint and one row has zero OHLC, volume and turnover
+- **WHEN** the remaining D1 rows have valid positive prices
+- **THEN** W1 OHLC uses the positive-price rows while week end, sums and final-day open interest retain their authority
+- **AND** the raw no-trade D1 row remains unchanged
+
 ### Requirement: Narrow D1 source-price exception preserves coverage without inventing prices
 仅物理合约 `1d` 的 RQData exchange-daily 行同时满足 O/H/L 为零、`close>0`、`volume>0`，
 且其他字段、身份、Calendar/Session 与生命周期通过校验时，MAY 记为 `PRICE_UNAVAILABLE`。

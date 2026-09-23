@@ -43,6 +43,7 @@ from app.models import Instrument, MainContractMap, TradingCalendar
 
 
 _SESSION = re.compile(r"(?P<start>\d{1,2}:\d{2})\s*[-~]\s*(?P<end>\d{1,2}:\d{2})")
+WEEKLY_AGGREGATION_VERSION = "exchange-daily-no-trade-v2"
 
 RQDATA_PROVIDER_SETTINGS = frozenset(
     {
@@ -969,11 +970,26 @@ def _aggregate_daily_rows(
     *,
     bar_end: datetime,
 ) -> CanonicalBar:
-    """从排序后的交易所日行情聚合周线，保持日线 OHLCV 事实口径。"""
+    """从完整交易所日集合聚合周线，按 v2 忽略严格无交易日的价格。"""
     if not values:
         raise InfrastructureError("RQDATA_WEEKLY_SOURCE_EMPTY")
     rows = tuple(row for _, row in values)
-    first_day, first_row = values[0]
+    priced_rows: list[dict[str, Any]] = []
+    for row in rows:
+        prices = tuple(_decimal(row, field) for field in ("open", "high", "low", "close"))
+        volume = _decimal(row, "volume")
+        turnover = _optional_decimal(
+            _row_value(row, "turnover", "total_turnover", "amount", required=False)
+        )
+        if prices == (Decimal(0),) * 4 and volume == 0 and turnover == 0:
+            continue
+        if any(price <= 0 for price in prices):
+            raise InfrastructureError("RQDATA_WEEKLY_SOURCE_PRICE_INVALID")
+        priced_rows.append(row)
+    # A complete all-zero week remains a no-trade W1 fact. Newow skips that
+    # observation; it must not be replaced with a prior price or omitted.
+    price_source = tuple(priced_rows) if priced_rows else rows
+    first_row = price_source[0]
     last_day, last_row = values[-1]
     turnovers = tuple(
         _optional_decimal(
@@ -985,9 +1001,9 @@ def _aggregate_daily_rows(
         bar_end=bar_end,
         trading_day=last_day,
         open=_decimal(first_row, "open"),
-        high=max(_decimal(row, "high") for row in rows),
-        low=min(_decimal(row, "low") for row in rows),
-        close=_decimal(last_row, "close"),
+        high=max(_decimal(row, "high") for row in price_source),
+        low=min(_decimal(row, "low") for row in price_source),
+        close=_decimal(price_source[-1], "close"),
         volume=sum_decimal_exact(
             tuple(_decimal(row, "volume") for row in rows)
         ),
