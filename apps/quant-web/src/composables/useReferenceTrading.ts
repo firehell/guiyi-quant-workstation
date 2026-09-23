@@ -7,6 +7,7 @@ import type {
   ReferenceIdentity, ReferencePage, ReferencePoint, ReferenceStreamInfo, ReferenceSummary,
   ReferenceTradeView, ReferenceWindow,
 } from '../types/referenceTrading.ts'
+import { createReferencePageState } from './referencePageState.ts'
 
 export interface ReferenceClient {
   streams: typeof getReferenceStreams
@@ -31,9 +32,11 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
   let generation = 0
   let controller: AbortController | null = null
   let window: ReferenceWindow | null = null
+  const pages = createReferencePageState<ReferenceTradeView>(item => item.reference_trade_id)
 
   function invalidate() {
     generation += 1
+    pages.reset()
     controller?.abort()
     controller = null
     stream.value = null; page.value = null; summary.value = null
@@ -64,6 +67,7 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
       ])
       if (current !== generation) return
       if (stats.snapshot !== first.snapshot) throw new Error('SNAPSHOT_CONFLICT')
+      pages.first(`${chosen.stream_id}:${first.snapshot}:${first.revision_id}:${first.seq}`, first.items, first.next_cursor)
       stream.value = chosen
       page.value = first
       summary.value = stats
@@ -109,12 +113,11 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
       if (next.snapshot !== previous.snapshot || next.revision_id !== previous.revision_id || next.seq !== previous.seq) {
         throw new Error('SNAPSHOT_CONFLICT')
       }
-      const seen = new Set(previous.items.map(item => item.reference_trade_id))
-      if (next.items.some(item => seen.has(item.reference_trade_id))) throw new Error('SNAPSHOT_CONFLICT')
-      page.value = { ...next, items: [...previous.items, ...next.items] }
+      const items = pages.append(`${chosen.stream_id}:${next.snapshot}:${next.revision_id}:${next.seq}`, previous.next_cursor, next.items, next.next_cursor)
+      page.value = { ...next, items, next_cursor: pages.cursor }
     } catch (reason) {
       if (current === generation) {
-        page.value = null; summary.value = null; signals.value = []; indicators.value = []
+        pages.reset(); page.value = null; summary.value = null; signals.value = []; indicators.value = []
         error.value = referenceError(reason)
       }
     } finally {

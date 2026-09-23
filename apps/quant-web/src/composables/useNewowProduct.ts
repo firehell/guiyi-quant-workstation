@@ -22,6 +22,7 @@ import type {
   NewowResourceLifecycle,
 } from '../types/newowProduct.ts'
 import { sharedChartBarsAgree } from '../utils/newowProductTypes.ts'
+import { createReferencePageState } from './referencePageState.ts'
 
 type FetchSection = (request: NewowProductRequest, signal: AbortSignal) => Promise<NewowProductSectionResponse>
 
@@ -95,6 +96,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   let chartPageLimit: number | null = null
   let referenceWindow: { since: string; through: string } | null = null
   let referenceFingerprint: string | null = null
+  const referencePages = createReferencePageState<NewowReferenceValue['items'][number]>(item => item.reference_trade_id, MAX_ACCUMULATED_REFERENCE_TRADES, true)
   let referencePageLimit: number | null = null
 
   const identityKey = computed(() => {
@@ -521,8 +523,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     const priorValue = existing?.section === 'reference' ? existing.value : null
     if (priorValue !== null && referenceFingerprint === fingerprint) {
-      const duplicateConflict = duplicateReferenceConflict(priorValue.items, value.items)
-      if (duplicateConflict || JSON.stringify(priorValue.summary) !== JSON.stringify(value.summary)) {
+      if (duplicateReferenceConflict(priorValue.items, value.items) || JSON.stringify(priorValue.summary) !== JSON.stringify(value.summary)) {
         failConflict('reference', 'NEWOW_REFERENCE_INPUT_CONFLICT')
         return null
       }
@@ -530,19 +531,21 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     referenceWindow = { since: value.performance_since, through: value.performance_through }
     referenceFingerprint = fingerprint
     if (!isPage || priorValue === null) {
+      try { referencePages.first(fingerprint, value.items, value.next_before) }
+      catch { failConflict('reference', 'NEWOW_REFERENCE_INPUT_CONFLICT'); return null }
       referencePageLimit = request.section === 'reference' ? request.historyLimit ?? 50 : 50
       return response
     }
-    const ids = new Set(priorValue.items.map((item) => item.reference_trade_id))
-    const appended = value.items.filter((item) => !ids.has(item.reference_trade_id))
-    const mergedItems = [...priorValue.items, ...appended]
+    let mergedItems: NewowReferenceValue['items']
+    try { mergedItems = referencePages.append(fingerprint, request.historyBefore!, value.items, value.next_before) }
+    catch { failConflict('reference', 'NEWOW_REFERENCE_FINGERPRINT_CONFLICT'); return null }
     return {
       ...response,
       value: {
         ...value,
         summary: priorValue.summary,
-        items: mergedItems.slice(0, MAX_ACCUMULATED_REFERENCE_TRADES),
-        next_before: mergedItems.length >= MAX_ACCUMULATED_REFERENCE_TRADES ? null : value.next_before,
+        items: mergedItems,
+        next_before: referencePages.cursor,
       },
     }
   }
@@ -633,6 +636,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     referenceWindow = null
     referenceFingerprint = null
+    referencePages.reset()
     referencePageLimit = null
   }
 
@@ -803,6 +807,7 @@ function referenceIdentity(meta: NewowProductSectionResponse['meta'], value: New
     meta.identity.profile_id, meta.identity.formula_versions, meta.as_of, meta.data_revision_identity, meta.reference_model_version,
     meta.futures_adaptation_version, value.performance_since, value.performance_through,
     value.actual_available_through, value.reference_cutoff, value.reference_input_sha256,
+    value.storage_mode ?? 'legacy',
   ])
 }
 
