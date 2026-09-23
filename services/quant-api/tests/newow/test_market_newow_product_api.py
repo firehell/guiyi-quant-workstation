@@ -76,13 +76,13 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v10",
+        "schema_version": "newow_product_capabilities_v11",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
-            "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
+            "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
             "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
