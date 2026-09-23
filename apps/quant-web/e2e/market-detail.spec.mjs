@@ -120,7 +120,10 @@ test('Newow daily route mounts its chart while its bounded independent daily quo
   await expect.poll(() => typedRequests.length).toBe(1)
   expect(typedRequests.map((url) => url.searchParams.get('section'))).toEqual(['chart'])
   expect(genericRequests).toHaveLength(1)
-  expect(Object.fromEntries(genericRequests[0].searchParams)).toEqual({ series_kind: 'actual_dominant', symbol: 'jm', frequency: '1d', limit: '2' })
+  expect(Object.fromEntries(genericRequests[0].searchParams)).toEqual({
+    series_kind: 'actual_dominant', symbol: 'jm', frequency: '1d',
+    before: '2026-09-03T07:00:00.000001Z', limit: '2',
+  })
   expect(requests.filter((url) => url.pathname.endsWith('/research/product'))).toEqual([])
 })
 

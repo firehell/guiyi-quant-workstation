@@ -7,8 +7,8 @@ import type { NewowProductCapabilities } from '../src/types/newowProduct.ts'
 
 const weeklyProducts = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
 const candidateWeeklyProducts = [
-  ...weeklyProducts,
-  ...'b bz cj eb eg j oi pf pg pk pl pr px rs sf sh si sm sr'.split(' '),
+  ...'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' '),
+  ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' '),
 ]
 
 const daily = (): NewowProductCapabilities => ({
