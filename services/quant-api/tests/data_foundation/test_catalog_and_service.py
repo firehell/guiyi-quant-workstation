@@ -1620,6 +1620,9 @@ def test_contract_trading_day_query_normalizes_identity_and_rejects_invalid_wind
 def test_contract_trading_day_query_uses_weekend_night_and_last_session_bounds(
     session, tmp_path
 ) -> None:
+    # The prior trading day anchors Monday's night session; its own Session
+    # template is not an input to the requested Monday contract bars.
+    session.scalar(select(TradingSession)).effective_from = date(2025, 1, 6)
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     contract = DatasetKey("contract", "jm", "JM2509", "60m")

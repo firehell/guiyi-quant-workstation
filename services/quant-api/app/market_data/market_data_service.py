@@ -785,8 +785,10 @@ class MarketDataService:
             query.physical_key, query, require_window_coverage=False,
         )
         try:
-            days = self.catalog.trading_days_overlapping_window(
-                request.symbol, start, end,
+            days = tuple(
+                day for day, _ in self.catalog.session_windows_overlapping_window(
+                    request.symbol, start, end, earliest=since, latest=through,
+                )
             )
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
