@@ -284,6 +284,7 @@ export interface NewowReferenceValue {
   readonly summary: NewowReferenceSummary
   readonly items: readonly NewowReferenceTrade[]
   readonly next_before: string | null
+  readonly storage_mode?: 'persisted'
   readonly executable: false
   readonly auto_order: false
   readonly allowed_uses: readonly ['page_parity_reference', 'research_display']

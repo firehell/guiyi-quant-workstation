@@ -142,6 +142,38 @@ class SubingReferenceService:
         max_events = endpoint_count * 2 + len(owners)
         return max_events, max_events * 4096
 
+    def read_daily_quality_presentation(
+        self, *, symbol: str, since: date, through: date, cutoff: datetime,
+    ) -> dict[str, Any]:
+        """Read bounded D1 chart and quality facts without projecting a trade.
+
+        The same MDS quality segmentation used by the legacy reference reader
+        supplies chart bars; no strategy kernel or provider is invoked.
+        """
+        if (
+            symbol not in self.active_products
+            or type(since) is not date or type(through) is not date
+            or since > through or (through - since).days > 366
+            or cutoff.tzinfo is None or cutoff.utcoffset() is None
+        ):
+            raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
+        _segments, _inputs, quality = self._daily_quality_inputs(
+            symbol, since, through, cutoff,
+        )
+        if len(quality["quality_chart_bars"]) > 500:
+            raise SubingReferenceError("SUBING_REFERENCE_BUDGET_EXCEEDED")
+        return _wire(quality)
+
+    def resolve_read_window(
+        self, query: SubingReferenceQuery,
+    ) -> tuple[date, date, datetime, datetime]:
+        """Resolve calendar/session cutoff without running the strategy kernel."""
+        now = self.now()
+        as_of = query.as_of or now
+        self._validate_query(query, as_of, now)
+        since, through, cutoff = self._window(query, as_of)
+        return since, through, cutoff, as_of
+
     def query(self, query: SubingReferenceQuery) -> dict[str, Any]:
         self.check_cancelled()
         now = self.now()
@@ -269,7 +301,7 @@ class SubingReferenceService:
             )
             or (
                 query.before is not None
-                and (not isinstance(query.before, str) or len(query.before) > 129)
+                and (not isinstance(query.before, str) or len(query.before) > 2048)
             )
         ):
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
@@ -477,7 +509,9 @@ class SubingReferenceService:
             owners = self.market_data.actual_dominant_segments(symbol, since, through)
         except MarketDataError as exc:
             self._raise_data_unavailable(exc, "actual_dominant_replay", symbol, BarFrequency.D1)
-        if not owners or owners[0].start_trading_day > since or owners[-1].end_trading_day < through:
+        # The requested calendar range may begin on a non-trading day. MDS
+        # verifies rank-1 ownership for every trading day in that range.
+        if not owners or owners[-1].end_trading_day < through:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
         result: list[ReferenceSegment] = []
         inputs: list[dict[str, Any]] = []

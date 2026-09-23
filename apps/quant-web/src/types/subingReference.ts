@@ -24,6 +24,7 @@ export interface SubingReferenceResponse {
   symbol: string; frequency: '15m' | '30m' | '60m' | '1d'; series_kind: 'actual_dominant'; formula_version: 'subing_ths_15m_v3' | 'subing_ths_30m_v1' | 'subing_ths_60m_v1' | 'subing_ths_1d_v1'
   reference_model_version: 'subing_reference_reverse_close_v1' | 'subing_reference_reverse_close_quality_segment_v2'; as_of: string; performance_since: string; performance_through: string
   reference_cutoff: string; input_snapshot_hash: string; executable: false; auto_order: false; source: 'historical_replay'; research_status: 'ready' | 'warming' | 'WARMING' | 'INDICATOR_READY_CROSS_UNEVALUABLE' | 'CROSS_EVALUATED'
+  storage_mode?: 'persisted'
   summary: { closed_count: number; win_count: number; loss_count: number; flat_count: number; open_count: number; interrupted_count: number; rollover_interrupted_count?: number; data_interrupted_count?: number; initial_count: number; win_rate_pct: string | null; mean_return_pct: string | null; sum_return_percentage_points: string }
   signals: SubingReferenceSignal[]; indicators: SubingReferenceIndicator[]; items: SubingReferenceTrade[]; next_before: string | null
   quality_policy_version?: 'subing-d1-quality-segment-v1'; coverage_intervals?: SubingCoverageInterval[]; quality_interruptions?: SubingQualityInterruption[]; quality_chart_bars?: SubingQualityChartBar[]

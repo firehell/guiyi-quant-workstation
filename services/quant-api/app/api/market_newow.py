@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
+import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -17,9 +18,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainMarker
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import InputQualityPolicy
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from app.reference_trading.presentation import PresentationUnavailable
+from app.reference_trading.query import QueryConflict
 
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import _load_status, public_after_market_status
 from app.market_data.composition import (
@@ -74,6 +78,7 @@ from app.market_data.newow.inflight import (
 from app.market_data.newow.product_service import (
     NewowProductResult,
     NewowProductService,
+    PersistedReferenceSectionValue,
     ProductServiceQuery,
     ProductSection,
     AuxiliaryComponent,
@@ -307,6 +312,14 @@ def _build_product_service(
             input_quality_policy=quality_policy,
         )
 
+    mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
+    if mode not in {"legacy", "persisted"}:
+        raise ValueError("REFERENCE_READER_MODE_INVALID")
+    if mode == "persisted":
+        from app.reference_trading.persisted_newow import PersistedNewowReference
+        persisted_reference = PersistedNewowReference(SessionLocal).section
+    else:
+        persisted_reference = None
     return NewowProductService(
         reader_factory,
         cache=_PRODUCT_CACHE,
@@ -314,6 +327,7 @@ def _build_product_service(
         inflight=_PRODUCT_INFLIGHT,
         cancelled=cancelled,
         quality_policy=quality_policy,
+        persisted_reference=persisted_reference,
     )
 
 
@@ -630,6 +644,16 @@ def newow_strategy_detail(
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
         ) from exc
+    except QueryConflict as exc:
+        status = 503 if exc.code in {
+            "NOT_BUILT", "STALE_INVALID", "SOURCE_IDENTITY_UNVERIFIED",
+            "PRESENTATION_NOT_MATERIALIZED", "PRESENTATION_BUDGET_EXCEEDED",
+        } else 409
+        raise HTTPException(status_code=status, detail={"code": exc.code}) from None
+    except PresentationUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": str(exc)}) from None
+    except SQLAlchemyError:
+        raise HTTPException(status_code=503, detail={"code": "REFERENCE_SCHEMA_UNAVAILABLE"}) from None
     except Exception as exc:
         status, detail = public_product_error(
             exc, context={"symbol": product, "frequency": frequency}
@@ -849,7 +873,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
     )
     reference = _delivery(
         result.reference,
-        lambda value: {
+        lambda value: value.payload if isinstance(value, PersistedReferenceSectionValue) else {
             "performance_since": value.requested_window.since,
             "performance_through": value.requested_window.through,
             "actual_available_through": value.actual_available_through,
