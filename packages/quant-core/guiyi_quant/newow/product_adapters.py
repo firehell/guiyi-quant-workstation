@@ -269,7 +269,9 @@ def _pair_action(
         related_build_id=entry.signal_id,
         trade_eligibility=eligibility,
     )
-    if entry is pairing.eligible_build:
+    # Checkpoint JSON restores the source lookup and current BUILD as equal
+    # values, but they are no longer the same Python object.
+    if pairing.eligible_build is not None and entry == pairing.eligible_build:
         pairing.eligible_build = None
     else:
         pairing.prewarm_build = None
@@ -401,8 +403,9 @@ def _trend_frame(
                 related = witness.marker.related_marker_ids
                 if (
                     len(related) != 1
+                    or pairing.prewarm_build is None
                     or pairing.source_builds.get(related[0])
-                    is not pairing.prewarm_build
+                    != pairing.prewarm_build
                 ):
                     raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
                 _drop_source_build(pairing, pairing.prewarm_build)
