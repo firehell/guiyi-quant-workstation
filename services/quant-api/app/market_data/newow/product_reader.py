@@ -25,6 +25,7 @@ from guiyi_quant.newow.product_contracts import (
 from guiyi_quant.newow.product_identity import (
     FUTURES_INPUT_POLICY_VERSION,
     InputQualityPolicy,
+    build_calculation_segment_id,
     build_segment_id,
     input_policy_version,
     input_quality_policy,
@@ -57,6 +58,7 @@ from .product_query import NewowProductQuery, ProductReadWindow
 _PAGE_SIZE = 2000
 _MICROSECOND = timedelta(microseconds=1)
 _HISTORICAL_CANDIDATE_BATCH = timedelta(days=59)
+_FORWARD_INCREMENTAL_MAX_DAYS = timedelta(days=45)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _CANONICAL_SOURCE = LIFECYCLE_REPLAY_EVIDENCE_SOURCE
 _OWNER_SOURCE = "main_contract_map:rank1:calendar_session_v1"
@@ -73,6 +75,15 @@ class NewowProductReadError(ValueError):
 
 class NewowProductReadCancelled(RuntimeError):
     """The caller cancelled; no partial read set may escape."""
+
+
+class NewowForwardInputGap(NewowProductReadError):
+    """Completed endpoints that cannot be captured as one forward append."""
+
+    def __init__(self, trading_day: date, endpoints: tuple[datetime, ...]) -> None:
+        super().__init__("NEWOW_OBSERVATION_GAP")
+        self.trading_day = trading_day
+        self.endpoints = endpoints
 
 
 def _quality_source_identity(
@@ -905,6 +916,84 @@ class NewowProductReader:
         self._check_cancelled()
         return tuple(replace(owner, end_trading_day=min(owner.end_trading_day, through))
                      for owner in owners)
+
+    def forward_incremental_bar(
+        self, *, product: str, frequency: ProductFrequency, after: datetime,
+        as_of: datetime, prior_owner_segment_id: str | None,
+        prior_calculation_segment_id: str | None,
+    ) -> tuple[ProductBar, InputQualityPolicy] | None:
+        """Read only the unconsumed D1/W1 window after a persisted watermark.
+
+        Initial capture still uses ``load`` to establish historical quality and
+        calculation identity. Later captures retain that identity from the
+        committed checkpoint and resolve the full owner start from MDS.
+        """
+        if (
+            product not in self._active_products
+            or frequency not in (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+            or after.tzinfo is None or as_of.tzinfo is None
+            or after >= as_of or utc_timestamp(as_of) > utc_timestamp(self._now())
+            or not prior_owner_segment_id or not prior_calculation_segment_id
+        ):
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        self._check_cancelled()
+        if as_of - after > _FORWARD_INCREMENTAL_MAX_DAYS:
+            raise NewowProductReadError("NEWOW_INCREMENTAL_WINDOW_EXCEEDED")
+        policy = input_quality_policy(frequency.value, self._input_quality_policy)
+        start_day = after.astimezone(_SHANGHAI).date()
+        through = min(
+            as_of.astimezone(_SHANGHAI).date(),
+            self._coverage.latest_complete_day((product,)),
+        )
+        if through <= start_day:
+            return None
+        args = {}
+        if policy is not InputQualityPolicy.V1:
+            args["weekly_classification_version"] = source_classification_version(
+                frequency.value, policy,
+            )
+        result, gaps = self._market_data.query_actual_dominant_trading_days_quality(
+            ActualDominantTradingDayQuery(
+                product, BarFrequency(frequency), start_day, through,
+            ), **args,
+        )
+        self._check_cancelled()
+        if any(gap.bar_end > after and gap.bar_end <= as_of for _, gap in gaps):
+            raise NewowProductReadError("NEWOW_DATA_INTERRUPTED")
+        unseen = tuple(
+            bar for bar in result.bars
+            if after < bar.bar_end <= as_of and not _is_strict_no_trade_fact(bar)
+        )
+        if not unseen:
+            return None
+        if len(unseen) != 1:
+            raise NewowForwardInputGap(
+                unseen[-1].trading_day,
+                tuple(item.bar_end for item in unseen),
+            )
+        bar = unseen[0]
+        owner = self._market_data.dominant_segment_for_day(product, bar.trading_day)
+        windows = self._market_data.session_windows(
+            symbol=product, trading_day=owner.start_trading_day,
+        )
+        if (
+            not windows or owner.symbol != product
+            or not any(
+                segment.contract == owner.contract
+                and segment.start_trading_day <= bar.trading_day <= segment.end_trading_day
+                for segment in result.resolved_contract_segments
+            )
+        ):
+            raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
+        owner_id = build_segment_id(product, owner.contract, min(window.start for window in windows))
+        if owner_id == prior_owner_segment_id:
+            calculation_id = prior_calculation_segment_id
+        else:
+            calculation_id = build_calculation_segment_id(owner_id, policy=policy)
+        return replace(
+            _product_bar(product, frequency, owner.contract, owner_id, bar, True),
+            calculation_segment_id=calculation_id,
+        ), policy
 
     def historical_metadata_evidence(
         self, *, product: str, since: date, through: date,

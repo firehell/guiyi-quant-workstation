@@ -63,7 +63,8 @@ def build_forward_reference_worker(
         context = repository.forward_source_context(stream_id)
         if context is None:
             return None
-        identity, revision_id, generation, recording_start, computed_through, recovery_policy = context
+        (identity, revision_id, generation, recording_start, computed_through,
+         recovery_policy, prior_owner_id, prior_calculation_id) = context
         observed = now()
         after = (
             computed_through if computed_through is not None
@@ -107,6 +108,8 @@ def build_forward_reference_worker(
                             generation=generation, after=computed_through,
                             recording_start=recording_start, now=observed,
                             capability_ready=newow_capability_ready,
+                            prior_owner_segment_id=prior_owner_id,
+                            prior_calculation_segment_id=prior_calculation_id,
                         )
         except ForwardInputUnavailable as error:
             if recovery_policy != "interrupt_and_restart" or str(error) not in {

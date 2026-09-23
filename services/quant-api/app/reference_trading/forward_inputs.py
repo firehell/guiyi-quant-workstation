@@ -260,6 +260,8 @@ def capture_newow_canonical(
     revision_id: str, generation: int, after: datetime | None,
     recording_start: datetime, now: datetime,
     capability_ready: Callable[[StreamIdentity], bool],
+    prior_owner_segment_id: str | None = None,
+    prior_calculation_segment_id: str | None = None,
 ) -> ForwardCapture | None:
     """Capture only a newly available authoritative completed D1/W1 input."""
     from app.market_data.newow.product_query import NewowProductQuery
@@ -272,37 +274,68 @@ def capture_newow_canonical(
     if recording_start.tzinfo is None or now.tzinfo is None or recording_start > now:
         raise ValueError("FORWARD_INPUT_TIME_INVALID")
     frequency = ProductFrequency(identity.frequency)
-    start_day = recording_start.date()
-    query = NewowProductQuery(
-        identity.product, strategy, frequency, start_day, now.date(),
-        performance_since=start_day, performance_through=now.date(), as_of=now,
-    )
-    read = reader.load(query, now)
-    if read.frequency is not frequency or read.as_of != now:
-        raise ForwardInputUnavailable("NEWOW_SOURCE_IDENTITY_INVALID")
-    boundary = after if after is not None else recording_start
-    if any(
-        gap.effective_at >= boundary
-        for gap in read.data_interruptions_by_frequency.get(frequency, ())
-    ):
-        raise ForwardInputUnavailable("DATA_INTERRUPTED")
-    unseen = tuple(item for item in read.replay_bars if (
-        item.bar.bar_end > after if after is not None
-        else item.bar.bar_end >= recording_start
-    ) and item.bar.observation_eligible)
-    if not unseen:
-        return None
-    if len(unseen) != 1:
-        raise ForwardInputUnavailable(
-            "OBSERVATION_GAP", trading_day=unseen[-1].bar.trading_day,
-            endpoints=tuple(item.bar.bar_end for item in unseen),
+    incremental = getattr(reader, "forward_incremental_bar", None)
+    if after is not None and incremental is not None:
+        from app.market_data.newow.product_reader import (
+            NewowForwardInputGap, NewowProductReadError,
         )
-    item = unseen[0]
-    source = read.sources.get(frequency)
+
+        try:
+            result = incremental(
+                product=identity.product, frequency=frequency, after=after,
+                as_of=now, prior_owner_segment_id=prior_owner_segment_id,
+                prior_calculation_segment_id=prior_calculation_segment_id,
+            )
+        except NewowForwardInputGap as error:
+            raise ForwardInputUnavailable(
+                "OBSERVATION_GAP", trading_day=error.trading_day,
+                endpoints=error.endpoints,
+            ) from error
+        except NewowProductReadError as error:
+            code = {
+                "NEWOW_DATA_INTERRUPTED": "DATA_INTERRUPTED",
+            }.get(error.code)
+            if code is None:
+                raise
+            raise ForwardInputUnavailable(code) from error
+        if result is None:
+            return None
+        item, quality_policy = result
+    else:
+        start_day = recording_start.date()
+        query = NewowProductQuery(
+            identity.product, strategy, frequency, start_day, now.date(),
+            performance_since=start_day, performance_through=now.date(), as_of=now,
+        )
+        read = reader.load(query, now)
+        if read.frequency is not frequency or read.as_of != now:
+            raise ForwardInputUnavailable("NEWOW_SOURCE_IDENTITY_INVALID")
+        boundary = after if after is not None else recording_start
+        if any(
+            gap.effective_at >= boundary
+            for gap in read.data_interruptions_by_frequency.get(frequency, ())
+        ):
+            raise ForwardInputUnavailable("DATA_INTERRUPTED")
+        unseen = tuple(item for item in read.replay_bars if (
+            item.bar.bar_end > after if after is not None
+            else item.bar.bar_end >= recording_start
+        ) and item.bar.observation_eligible)
+        if not unseen:
+            return None
+        if len(unseen) != 1:
+            raise ForwardInputUnavailable(
+                "OBSERVATION_GAP", trading_day=unseen[-1].bar.trading_day,
+                endpoints=tuple(item.bar.bar_end for item in unseen),
+            )
+        item = unseen[0]
+        quality_policy = read.input_quality_policy
+        source = read.sources.get(frequency)
+        if source is None or not item.bar.source_identity.startswith(source.source_identity + ":"):
+            raise ForwardInputUnavailable("NEWOW_SOURCE_IDENTITY_INVALID")
     if (
-        source is None or not item.bar.source_identity.startswith(source.source_identity + ":")
-        or item.frequency is not frequency or not item.source_bar_sha256
+        item.frequency is not frequency or not item.source_bar_sha256
         or item.bar.bar_end > now or not item.bar.completed
+        or not item.calculation_segment_id
     ):
         raise ForwardInputUnavailable("NEWOW_SOURCE_IDENTITY_INVALID")
     wire = {
@@ -320,5 +353,5 @@ def capture_newow_canonical(
         calculation_id=item.calculation_segment_id,
         source_kind="canonical_completed", source_identity=item.bar.source_identity,
         source_bar_sha256=item.source_bar_sha256,
-        input_quality_policy=read.input_quality_policy,
+        input_quality_policy=quality_policy,
     )

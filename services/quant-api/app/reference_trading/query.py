@@ -146,13 +146,26 @@ class HistoricalReferenceQuery:
         ):
             raise QueryConflict("QUERY_INVALID")
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
-            rows = session.execute(select(ReferenceStream).where(
-                ReferenceStream.strategy_code == strategy,
-                ReferenceStream.product == product,
-                ReferenceStream.frequency == frequency,
-                ReferenceStream.recording_mode == mode,
-            ).order_by(ReferenceStream.stream_id).limit(20)).scalars().all()
-            return [self._stream_info(row) for row in rows if self._registered(row)]
+            def matching(code: str) -> list[ReferenceStream]:
+                rows = session.execute(select(ReferenceStream).where(
+                    ReferenceStream.strategy_code == code,
+                    ReferenceStream.product == product,
+                    ReferenceStream.frequency == frequency,
+                    ReferenceStream.recording_mode == mode,
+                ).order_by(ReferenceStream.stream_id).limit(20)).scalars().all()
+                return [row for row in rows if self._registered(row)]
+
+            exact = matching(strategy)
+            fallback_code = strategy.replace("-", "_")
+            fallback = matching(fallback_code) if fallback_code != strategy else []
+            def readable(rows: list[ReferenceStream]) -> list[ReferenceStream]:
+                return [
+                    row for row in rows
+                    if row.active_revision_id is not None
+                    and (mode == "historical_replay" or row.enabled)
+                ]
+            selected = readable(exact) or readable(fallback) or exact or fallback
+            return [self._stream_info(row) for row in selected]
 
     @staticmethod
     def _stream_info(row: ReferenceStream) -> dict[str, object]:

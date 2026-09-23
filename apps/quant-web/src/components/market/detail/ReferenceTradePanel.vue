@@ -59,7 +59,7 @@ onBeforeUnmount(reference.dispose)
         <ul>
           <li v-for="(signal, index) in reference.signals.value" :key="index">
             {{ formatBeijingInstant(String(signal.value.observed_at ?? '')) }} ·
-            {{ Array.isArray(signal.value.observation_types) ? signal.value.observation_types.join(' / ') : String(signal.value.direction ?? '信号') }} ·
+            {{ Array.isArray(signal.value.observation_types) && signal.value.observation_types.length ? signal.value.observation_types.join(' / ') : String(signal.value.direction ?? '首次观察') }} ·
             {{ formatBeijingInstant(String(signal.value.bar_end ?? '')) }}
           </li>
         </ul>

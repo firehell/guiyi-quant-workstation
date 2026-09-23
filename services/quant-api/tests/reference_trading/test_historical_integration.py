@@ -7,7 +7,9 @@ from decimal import Decimal
 import json
 import os
 from time import perf_counter
+from unittest.mock import patch
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -32,7 +34,10 @@ from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import CanonicalBar, DatasetKey
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.newow.product_reader import NewowProductReader
+from app.market_data.newow.product_reader import (
+    NewowForwardInputGap, NewowProductReadError, NewowProductReader,
+)
+from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_service import (
     NewowProductService, ProductSection, ProductServiceQuery,
 )
@@ -42,6 +47,7 @@ from app.market_data.subing_reference import SubingReferenceService
 from app.market_data.subing_reference import SubingReferenceQuery
 from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 from app.reference_trading.inputs import MarketDataHistoricalInputReader
+from app.reference_trading.forward_inputs import ForwardInputUnavailable, capture_newow_canonical
 from app.reference_trading.planning import (
     HistoricalReferencePlanner,
     HistoricalReferenceRequest,
@@ -236,12 +242,100 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
         subing_service = SubingReferenceService(
             market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
         )
+        newow_reader = NewowProductReader(
+            market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
+        )
         reader = MarketDataHistoricalInputReader(
-            newow_reader=NewowProductReader(
-                market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
-            ),
+            newow_reader=newow_reader,
             subing_service=subing_service,
         )
+        for frequency in (ProductFrequency.DAILY, ProductFrequency.WEEKLY):
+            full = newow_reader.load(NewowProductQuery(
+                "rb", ProductStrategy.TREND, frequency, first, last,
+                performance_since=first, performance_through=last, as_of=as_of,
+            ), as_of)
+            prior, expected = full.replay_bars[-2:]
+            with patch.object(
+                market_data, "read_physical_daily_quality",
+                wraps=market_data.read_physical_daily_quality,
+            ) as physical_read, patch.object(
+                store, "read_catalog_partition",
+                wraps=store.read_catalog_partition,
+            ) as partition_read, patch.object(
+                store, "read_catalog_partition_quality",
+                wraps=store.read_catalog_partition_quality,
+            ) as quality_partition_read:
+                incremental = newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency, after=prior.bar.bar_end,
+                    as_of=as_of,
+                    prior_owner_segment_id=prior.bar.segment_id,
+                    prior_calculation_segment_id=prior.calculation_segment_id,
+                )
+            assert incremental == (expected, full.input_quality_policy)
+            assert physical_read.call_args_list
+            assert 1 <= partition_read.call_count + quality_partition_read.call_count <= 4
+            oldest = min(
+                call.args[0].start.astimezone(ZoneInfo("Asia/Shanghai")).date()
+                for call in physical_read.call_args_list
+            )
+            assert oldest >= prior.bar.trading_day - timedelta(days=7)
+            with patch.object(newow_reader, "load", side_effect=AssertionError("full read forbidden")):
+                capture = capture_newow_canonical(
+                    newow_reader, _newow_stream(ProductStrategy.TREND, frequency),
+                    revision_id="fixture-revision", generation=1,
+                    after=prior.bar.bar_end,
+                    recording_start=prior.bar.bar_end - timedelta(microseconds=1),
+                    now=as_of, capability_ready=lambda _identity: True,
+                    prior_owner_segment_id=prior.bar.segment_id,
+                    prior_calculation_segment_id=prior.calculation_segment_id,
+                )
+            assert capture is not None
+            assert capture.bar_end == expected.bar.bar_end
+            assert capture.source_proof["calculation_segment_id"] == expected.calculation_segment_id
+            assert capture.input_payload["source_bar_sha256"] == expected.source_bar_sha256
+            earlier = full.replay_bars[-3]
+            with pytest.raises(NewowForwardInputGap) as gap:
+                newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency, after=earlier.bar.bar_end,
+                    as_of=as_of,
+                    prior_owner_segment_id=earlier.bar.segment_id,
+                    prior_calculation_segment_id=earlier.calculation_segment_id,
+                )
+            assert gap.value.endpoints == (prior.bar.bar_end, expected.bar.bar_end)
+            with pytest.raises(ForwardInputUnavailable, match="OBSERVATION_GAP") as forwarded:
+                capture_newow_canonical(
+                    newow_reader, _newow_stream(ProductStrategy.TREND, frequency),
+                    revision_id="fixture-revision", generation=1,
+                    after=earlier.bar.bar_end,
+                    recording_start=earlier.bar.bar_end - timedelta(microseconds=1),
+                    now=as_of, capability_ready=lambda _identity: True,
+                    prior_owner_segment_id=earlier.bar.segment_id,
+                    prior_calculation_segment_id=earlier.calculation_segment_id,
+                )
+            assert forwarded.value.endpoints == gap.value.endpoints
+            with patch.object(
+                coverage, "latest_complete_day", return_value=prior.bar.trading_day,
+            ), patch.object(
+                market_data, "query_actual_dominant_trading_days_quality",
+                side_effect=AssertionError("unfinished day read forbidden"),
+            ):
+                assert newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency, after=prior.bar.bar_end,
+                    as_of=as_of,
+                    prior_owner_segment_id=prior.bar.segment_id,
+                    prior_calculation_segment_id=prior.calculation_segment_id,
+                ) is None
+            oldest_bar = full.replay_bars[0]
+            with patch.object(
+                market_data, "query_actual_dominant_trading_days_quality",
+                side_effect=AssertionError("unbounded read forbidden"),
+            ), pytest.raises(NewowProductReadError, match="NEWOW_INCREMENTAL_WINDOW_EXCEEDED"):
+                newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency,
+                    after=oldest_bar.bar.bar_end, as_of=as_of,
+                    prior_owner_segment_id=oldest_bar.bar.segment_id,
+                    prior_calculation_segment_id=oldest_bar.calculation_segment_id,
+                )
         streams = tuple(
             HistoricalStreamRequest(stream, first, last, as_of)
             for stream in (
@@ -290,6 +384,19 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
         report = HistoricalReferenceService(
             repository, reader, step_counter=count,
         ).advance(advance_plan, advance_plan.plan_hash)
+        hyphen_identity = replace(streams[0].identity, strategy_code="newow-trend")
+        repository.ensure_stream(hyphen_identity)
+        query_aliases = HistoricalReferenceQuery(factory)
+        for alias, expected in (
+            ("newow-trend", streams[0].identity),
+            ("newow_trend", streams[0].identity),
+            ("subing-reference", streams[-2].identity),
+        ):
+            matches = query_aliases.streams(
+                strategy=alias, product=expected.product,
+                frequency=expected.frequency, mode="historical_replay",
+            )
+            assert [item["stream_id"] for item in matches] == [expected.stream_id]
 
         daily_query = SubingReferenceQuery(
             "rb", first, last, as_of, frequency="1d",

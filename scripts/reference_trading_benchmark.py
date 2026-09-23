@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Repeat real isolated ReferenceTrading integration tests with bounded resources.
 
-This first-stage benchmark measures whole pipeline cost. It does not measure
-query p95 or 60/300-stream capacity; those need separately seeded workloads.
+Each case uses a disposable PostgreSQL schema. Synthetic query rows and
+fixture-only forward streams are reported separately from product evidence.
 """
 
 from __future__ import annotations
@@ -39,6 +39,13 @@ CASES = {
             f"test_postgresql_query_capacity_at_fixed_row_count[{count}]",
         )
         for count in (100, 1000, 10000)
+    },
+    **{
+        f"stream_{count}": (
+            "services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py",
+            f"test_postgresql_real_kernel_forward_worker_capacity[{count}]",
+        )
+        for count in (60, 300)
     },
 }
 
@@ -92,6 +99,8 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
     start = time.monotonic()
     if case == "historical_13_streams" or case.startswith("query_"):
         environment = {**environment, "GUIYI_P8_BENCH_QUERY": "1"}
+    if case.startswith("stream_"):
+        environment = {**environment, "GUIYI_P8_BENCH_STREAM": "1"}
     process = subprocess.Popen(
         command, cwd=ROOT, env=environment,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -109,13 +118,18 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         time.sleep(0.05)
     output = process.communicate()[0]
     query_metrics = None
+    stream_metrics = None
     for line in output.splitlines():
         if line.startswith("P8_QUERY_METRIC="):
             query_metrics = json.loads(line.removeprefix("P8_QUERY_METRIC="))
+        if line.startswith("P8_STREAM_METRIC="):
+            stream_metrics = json.loads(line.removeprefix("P8_STREAM_METRIC="))
     if process.returncode == 0 and (
         case == "historical_13_streams" or case.startswith("query_")
     ) and query_metrics is None:
         raise RuntimeError("query benchmark did not emit query metrics")
+    if process.returncode == 0 and case.startswith("stream_") and stream_metrics is None:
+        raise RuntimeError("stream benchmark did not emit worker metrics")
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     return {
         "case_id": case,
@@ -126,6 +140,7 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         ),
         "observed_peak_rss_kib": peak_rss_kib,
         "query_metrics": query_metrics,
+        "stream_metrics": stream_metrics,
         "test_tail": output.strip().splitlines()[-1:] if output else [],
     }
 
