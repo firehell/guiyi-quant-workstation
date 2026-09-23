@@ -8,6 +8,7 @@
 - Stores: disposable PostgreSQL 16 on loopback port 55433 with a tmpfs data directory and database `guiyi_reference_isolated_test`; disposable Redis 7 on loopback port 56380 with persistence disabled. Both are separate from the existing 5432/6379 services. No production `.env` was read.
 - Environment: macOS, Python 3.13.9, `uv` project environment; no RQData/provider call.
 - Performance goals frozen before benchmark work: warm keyset page p95 ≤500 ms; fixed-window summary p95 ≤1 s; 60 minute streams one round ≤60 s; 300 streams ≤15 minutes; no full historical replay per normal append; bounded queue/payload and no sustained RSS growth after repeated equal loads. First build/rebuild report size and time without an arbitrary pass threshold. Each measured scenario needs five independent repetitions and at least 100 warm queries per query repetition.
+- Measured code commit: `90755ccf26be4887f69921ed6065bbef266777b9`, clean worktree for every final benchmark. This later documentation-only result commit does not change the measured code or fixture tree.
 
 ## Canonical requirement coverage map
 
@@ -26,7 +27,7 @@
 | Build/resume/advance/rebuild | `test_bootstrap`, `test_historical_incremental`, `test_revision_rebuild`; P8 PostgreSQL build/advance | Combined rebuild/old-snapshot PostgreSQL readback |
 | Historical CLI | `test_reference_cli` | No additional synonymous unit test planned |
 | Persisted presentation | `test_presentation`, `test_historical_integration`; P8 PostgreSQL build/advance | Browser source identity readback |
-| Bounded P5 query | `test_query`, `test_query_postgresql`, `test_api`; P8 100/1000/10000 synthetic row query pagination | Five repetitions, exact query index plans, past cutoff at scale |
+| Bounded P5 query | `test_query`, `test_query_postgresql`, `test_api`; P8 100/1000/10000 synthetic row query pagination and five code-commit-bound repetitions | Exact query index plans, realistic closed/versioned trade mix, past cutoff at scale |
 | Fail-closed page adapters | `test_persisted_subing_window`, `test_newow_persisted_query`, `test_api`; P8 PostgreSQL pipeline checks both adapters | Isolated real API/Web/browser acceptance |
 
 ## Runs to date
@@ -50,17 +51,19 @@
 
 The PostgreSQL tests use a new random schema per run and drop only that schema. The historical fixture creates its own temporary Canonical files. The tested Newow forward stream is a fixture candidate; its Runtime remains disabled. The benchmark rejects URL query overrides and libpq `PG*` environment routing before connecting; both bypasses were found in independent Review and shown to fail before the fix.
 
-## Exploratory measurements before final commit
+## Final code-commit measurements
 
-Raw uncommitted-worktree results: `/var/folders/5f/3h8_rqbd2nnf_yz0rg3zhhym0000gn/T/guiyi-p8-historical-25f9.json` and `guiyi-p8-forward-25f9.json` in the same directory. Both report `develop@636d70059` as HEAD, so they are **not** final-SHA evidence.
+The raw JSON files are in the local system temporary directory `/var/folders/5f/3h8_rqbd2nnf_yz0rg3zhhym0000gn/T/`, named `guiyi-p8-<case>.json`. All five files report the measured commit above, `dirty_worktree=false`, PostgreSQL 16.14, Python 3.13.9, and five successful independent processes. Each query process makes 100 warm requests per query kind. A larger wall time in some repetitions is preserved in the ranges; its cause was not isolated.
 
-| Workload | Independent repeats | Observed result | Limit |
-|---|---:|---|---|
-| 13-stream temporary Canonical/Catalog/MDS→PG build/advance/API | 5 | wall median 18.337 s, range 18.258–18.364 s | First build has no frozen seconds target; this fixture has no trade records |
-| Newow forward capture/restart/API over PG | 5 | wall median 2.659 s, range 2.631–2.908 s | One stream/one Bar; excludes 60/300 stream budget |
-| 10,001 synthetic trade versions, 201 keyset pages, 100 reads per query kind | 1 exploratory run | warm p95: first page 88.514 ms, summary 180.438 ms; earlier deep-page 24.714 ms measured only the final one-row page and is invalid for a full 50-row deep page | Must repeat five times under final SHA; rows bypass strategy calculation |
+| Case | Rows / scope | Five-process wall median (range) | Worst repetition warm p95 | Peak observed child RSS |
+|---|---|---|---|---|
+| `query_100` | 101 synthetic versions; 3 keyset pages | 5.780 s (5.709–5.888) | first 19.361 ms; full deep 19.336 ms; summary 14.998 ms | 111,584 KiB |
+| `query_1000` | 1,001 synthetic versions; 21 pages | 59.639 s (10.551–60.346) | first 201.459 ms; full deep 201.598 ms; summary 542.801 ms | 115,376 KiB |
+| `query_10000` | 10,001 synthetic versions; 201 pages | 118.278 s (63.990–119.982) | first 109.064 ms; full deep 58.215 ms; summary 199.981 ms | 144,480 KiB |
+| `historical_13_streams` | Temporary Canonical/Catalog/MDS→PG build/advance/API; 576 actions, 288 trade versions, 285 marks across all streams | 22.409 s (21.819–22.933) | one stream: trades 22.198 ms; summary 23.115 ms | 277,008 KiB |
+| `forward_recovery` | One Newow canonical Bar, durable capture/restart/API | 2.671 s (2.642–2.715) | no query timing sampled | 237,488 KiB |
 
-The 13-stream historical fixture uses fixed close 3500 and produced zero trades. Its query timings, if emitted, are empty-trade-table measurements and cannot establish 100/1000/10000 trade capacity. The synthetic rows all share one entry action and presentation identity and contain no CLOSED trades, marks, or version history; they exercise SQL pagination/summary only, not full trade semantics or past-cutoff behavior.
+The three synthetic SQL workloads met the frozen warm page and summary p95 limits in all five repetitions. This is a **limited capacity pass**, not P8 performance acceptance: the generated versions all share one entry action and presentation identity and contain no CLOSED trades, marks, or version history. The 13-stream total includes real projected rows, but its query timing targets one stream and does not prove the 100/1,000/10,000-row shape. The earlier exploratory deep-page result was invalid because it measured a one-row tail page; it is superseded by the full 50-row measurements above. The 60/300 stream, long-prefix incremental, rebuild, index-plan, and sustained-memory goals remain unmeasured.
 
 ## Independent review
 
@@ -68,4 +71,4 @@ GPT-6 Astra independently inspected the integration, forward summary and identit
 
 ## Current acceptance boundary
 
-P8 is in progress. The matrix still lacks real isolated API/Web browser evidence, all-family forward end-to-end evidence, crash-process recovery, 60/300 stream throughput and fairness, five repeated final-SHA capacity results, and normal D1/W1 incremental input cost evidence. The D1/W1 reader currently starts at recording start on every capture and needs a measured bounded-input repair before the normal-incremental target can pass. No release candidate or P9 production action follows from the passing cases above. The exact final commit/tree and independent Review will be recorded after remaining work.
+P8 remains **PARTIAL**. The matrix still lacks real isolated API/Web browser evidence, all-family forward end-to-end evidence, crash-process recovery, 60/300 stream throughput and fairness, index plans, cutoff/revision at scale, and normal D1/W1 incremental input cost evidence. The D1/W1 reader currently starts at recording start on every capture and needs a measured bounded-input repair before the normal-incremental target can pass. The project code is pushed to `origin/codex/unified-reference-trading-p8`; develop integration is held because the P8 acceptance Gate is incomplete. No release candidate or P9 production action follows from the passing cases above.
