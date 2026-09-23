@@ -7,7 +7,7 @@ SuBing 60m, and HTDY 15m. This is not a product-capability opening.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -19,11 +19,15 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
-from app.market_data.domain import CanonicalBar
+from app.market_data.catalog import MarketCatalog
+from app.market_data.domain import CanonicalBar, DatasetKey, SeriesPageQuery
+from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_read_service import MarketObservationSnapshot, MarketReadWindow
+from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 from app.reference_trading.activation import ForwardActivation
 from app.reference_trading.composition import build_forward_reference_worker
 from app.reference_trading.contracts import SeedChunk
@@ -104,6 +108,53 @@ class _IdleMarketRead:
         )
 
 
+class _MdsMarketRead:
+    """Test-only completed observation sourced from real Catalog/Parquet/MDS reads."""
+
+    def __init__(self, service: MarketDataService, product: str, frequency: str,
+                 contract: str, target_bar: CanonicalBar):
+        self.service = service
+        self.product = product.upper()
+        self.frequency = frequency
+        self.contract = contract
+        self.target_bar = target_bar
+        self.read_count = 0
+        self.read_seconds = 0.0
+
+    def _page(self, limit: int, end: datetime) -> tuple[CanonicalBar, ...]:
+        started = perf_counter()
+        page = self.service.query_page(SeriesPageQuery(
+            "actual_dominant", self.product, self.frequency,
+            before=end + timedelta(microseconds=1), limit=limit,
+        ))
+        self.read_seconds += perf_counter() - started
+        self.read_count += 1
+        assert page.bars and page.bars[-1] == self.target_bar
+        assert all(segment.contract == self.contract for segment in page.resolved_contract_segments)
+        return page.bars
+
+    def observation_snapshot(self, _query, _after, _now):
+        bars = self._page(1, self.target_bar.bar_end)
+        return MarketObservationSnapshot(
+            state=None, source="realtime", trading_day=self.target_bar.trading_day,
+            contract=self.contract, bars=bars,
+        )
+
+    def bars_until(self, _query, *, trading_day, end, limit):
+        assert self.frequency == "15m" and trading_day == self.target_bar.trading_day
+        assert end == self.target_bar.bar_end and limit == 32
+        bars = self._page(limit, end)
+        assert len(bars) == 32
+        return MarketReadWindow(
+            symbol=self.product, series_kind="actual_dominant", frequency="15m",
+            trading_day=trading_day, contract=self.contract, cutoff=end,
+            bars=bars, bar_contracts=(self.contract,) * len(bars),
+        )
+
+    def validate_alert_window(self, window, *, context_bars):
+        assert context_bars == 32 and len(window.bars) == 32
+
+
 def _newow_state(product: str, strategy: str, contract: str, owner: str):
     state = seed_replay_state()
     from newow.product_fixtures import ProductCases
@@ -125,7 +176,8 @@ def _newow_state(product: str, strategy: str, contract: str, owner: str):
     return identity, state, bar
 
 
-def _seed_and_capture(repo, factory, product: str, family: str) -> str:
+def _seed_and_capture(repo, factory, product: str, family: str,
+                      market_read: _MdsMarketRead | None = None) -> str:
     upper = product.upper()
     contract = upper + "2701"
     owner = build_segment_id(product, contract, datetime(2026, 1, 1, tzinfo=UTC))
@@ -160,6 +212,9 @@ def _seed_and_capture(repo, factory, product: str, family: str) -> str:
             "latest_only_32_v1",
         )
         schema = "htdy_first_seen_v1"
+    if market_read is not None:
+        assert market_read.contract == contract
+        bar = market_read.target_bar
     start = bar.bar_end - timedelta(seconds=4)
     observed = bar.bar_end + timedelta(seconds=5)
     stored = repo.ensure_stream(identity)
@@ -184,7 +239,7 @@ def _seed_and_capture(repo, factory, product: str, family: str) -> str:
         budget={"max_pending": 32}, model_acceptance_id=fixture_acceptance,
     )
     activation.apply(plan, expected_plan_hash=plan.plan_hash, now=start - timedelta(seconds=1))
-    read = _MarketRead(bar, contract, htdy=family == "htdy")
+    read = market_read or _MarketRead(bar, contract, htdy=family == "htdy")
     common = dict(revision_id=revision, generation=1, after=None, now=observed)
     if family.startswith("newow_"):
         capture = capture_newow_live(
@@ -265,4 +320,125 @@ def test_postgresql_real_kernel_forward_worker_capacity(capacity_postgresql, str
             "typed_capture_and_seed_seconds": round(ingest_seconds, 3),
             "capture_to_project_seconds": round(total_seconds, 3),
             "calculations": calculations,
+        }, sort_keys=True))
+
+
+def _publish_mds_fixture(engine: Engine, root: Path, products: tuple[str, ...]) -> None:
+    """Publish only disposable one-day physical partitions and rank-1 facts."""
+    day = date(2026, 9, 23)
+    store = CanonicalMonthlyStore(root)
+    with Session(engine) as session:
+        session.add(Exchange(code="SHFE", name="P8 fixture exchange"))
+        session.add(TradingCalendar(
+            exchange_code="SHFE", trade_date=day, is_trading_day=True,
+            provider="rqdata",
+        ))
+        session.add_all(Instrument(
+            symbol=product.lower(), name=product.upper(), exchange_code="SHFE",
+            is_active=True,
+        ) for product in products)
+        session.add_all(Contract(
+            contract_code=product.upper() + "2701", instrument_symbol=product.lower(),
+            exchange_code="SHFE", listed_date=day,
+            expired_date=day + timedelta(days=30), provider="rqdata",
+        ) for product in products)
+        session.add_all(TradingSession(
+            exchange_code="SHFE", instrument_symbol=product.lower(),
+            session_name="fixture_day", start_time=time(9), end_time=time(17),
+            effective_from=day, effective_to=day, is_active=True, provider="rqdata",
+        ) for product in products)
+        session.flush()
+        catalog = MarketCatalog(session, root)
+        catalog.upsert_main_contracts(tuple(
+            (product.lower(), day, product.upper() + "2701")
+            for product in products
+        ))
+        for product in products:
+            for frequency, step_minutes, count in (("60m", 60, 8), ("15m", 15, 32)):
+                bars = tuple(CanonicalBar(
+                    datetime(2026, 9, 23, 1, tzinfo=UTC)
+                    + timedelta(minutes=step_minutes * index), day,
+                    Decimal(3500), Decimal(3510), Decimal(3490), Decimal(3500),
+                    Decimal(100), None, Decimal(200),
+                ) for index in range(1, count + 1))
+                key = DatasetKey("contract", product.lower(), product.upper() + "2701", frequency)
+                catalog.register_partition(store.publish(PublishRequest(
+                    key, day.year, day.month, bars,
+                    tuple(bar.bar_end for bar in bars),
+                )))
+        session.commit()
+
+
+def test_postgresql_300_streams_acquire_from_real_mds(capacity_postgresql, tmp_path):
+    products = tuple((_ROOT / "data/universe/operational_products.txt").read_text().splitlines())
+    assert len(products) == 60 and len(set(products)) == 60
+    _publish_mds_fixture(capacity_postgresql, tmp_path, products)
+    families = (
+        "newow_trend", "newow_oscillation", "newow_main_rise",
+        "subing_reference", "htdy",
+    )
+    factory = sessionmaker(capacity_postgresql, expire_on_commit=False)
+    repo = ReferenceRepository(factory)
+    reads = 0
+    read_seconds = 0.0
+    started = perf_counter()
+    with Session(capacity_postgresql) as session:
+        market_data = MarketDataService(
+            MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path),
+        )
+        stream_ids = []
+        for product in products:
+            for family in families:
+                frequency = "15m" if family == "htdy" else "60m"
+                contract = product.upper() + "2701"
+                target = CanonicalBar(
+                    datetime(2026, 9, 23, 9, tzinfo=UTC), date(2026, 9, 23),
+                    Decimal(3500), Decimal(3510), Decimal(3490), Decimal(3500),
+                    Decimal(100), None, Decimal(200),
+                )
+                read = _MdsMarketRead(market_data, product, frequency, contract, target)
+                stream_ids.append(_seed_and_capture(
+                    repo, factory, product, family, market_read=read,
+                ))
+                reads += read.read_count
+                read_seconds += read.read_seconds
+    capture_seconds = perf_counter() - started
+    assert len(stream_ids) == len(set(stream_ids)) == 300
+    assert reads == 360  # One snapshot per stream; HTDY also reads 32-Bar context.
+    worker = build_forward_reference_worker(
+        repository=repo, market_read=_IdleMarketRead(), newow_reader=None,
+        owner_segments=lambda *_: ("owner", "owner"),
+        expected_endpoints=lambda *_: (), newow_capability_ready=lambda _: True,
+        enabled=True,
+    )
+    worker_started = perf_counter()
+    worker.scan()
+    completed = 0
+    rounds = 0
+    while worker.health().pending_keys:
+        completed += worker.run_round()
+        rounds += 1
+        assert rounds <= 21
+    worker_seconds = perf_counter() - worker_started
+    total_seconds = perf_counter() - started
+    assert completed == 300, worker.health().blocked
+    assert not worker.health().blocked
+    assert not worker.health().pending_keys
+    assert total_seconds <= 900
+    with factory() as session:
+        calculations = session.scalar(select(func.count()).select_from(ReferenceBatch).where(
+            ReferenceBatch.kind == "calculation",
+        ))
+        pending = session.scalar(select(func.count()).select_from(ReferenceBatch).where(
+            ReferenceBatch.kind == "capture", ReferenceBatch.consumed_by_batch_id.is_(None),
+        ))
+    assert calculations == 300 and pending == 0
+    if os.getenv("GUIYI_P8_BENCH_MDS_STREAM") == "1":
+        print("P8_MDS_STREAM_METRIC=" + json.dumps({
+            "streams": len(stream_ids), "mds_reads": reads,
+            "mds_seconds": round(read_seconds, 3),
+            "capture_seconds": round(capture_seconds, 3),
+            "worker_seconds": round(worker_seconds, 3),
+            "total_seconds": round(total_seconds, 3),
+            "rounds": rounds, "calculations": calculations, "pending": pending,
         }, sort_keys=True))

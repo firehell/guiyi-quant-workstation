@@ -28,6 +28,7 @@ from app.reference_trading.forward_inputs import (
     capture_newow_live, capture_subing_live,
 )
 from app.reference_trading.models import ReferenceBatch, ReferenceStream
+from app.reference_trading.newow_forward import _whole_number
 from app.reference_trading.recovery import capture_observation_gap, evaluate_observation_gap
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict, _digest
 from app.market_data.domain import CanonicalBar
@@ -50,6 +51,17 @@ from app.reference_trading.query import HistoricalReferenceQuery
 from app.api import reference_trading as reference_api
 from app.main import app
 from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
+
+
+@pytest.mark.parametrize("raw, expected", [("100", 100), ("100.000000000000000000", 100)])
+def test_forward_quantity_accepts_integral_decimal_encoding(raw, expected):
+    assert _whole_number(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["100.5", "NaN", "Infinity", "not-a-number"])
+def test_forward_quantity_rejects_nonintegral_or_invalid_encoding(raw):
+    with pytest.raises(ValueError, match="NEWOW_CAPTURE_BAR_INVALID"):
+        _whole_number(raw)
 
 
 @pytest.fixture

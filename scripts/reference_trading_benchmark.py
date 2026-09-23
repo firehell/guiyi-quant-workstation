@@ -47,6 +47,10 @@ CASES = {
         )
         for count in (60, 300)
     },
+    "stream_300_mds": (
+        "services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py",
+        "test_postgresql_300_streams_acquire_from_real_mds",
+    ),
 }
 
 
@@ -101,6 +105,8 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         environment = {**environment, "GUIYI_P8_BENCH_QUERY": "1"}
     if case.startswith("stream_"):
         environment = {**environment, "GUIYI_P8_BENCH_STREAM": "1"}
+    if case == "stream_300_mds":
+        environment = {**environment, "GUIYI_P8_BENCH_MDS_STREAM": "1"}
     process = subprocess.Popen(
         command, cwd=ROOT, env=environment,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -119,17 +125,22 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
     output = process.communicate()[0]
     query_metrics = None
     stream_metrics = None
+    mds_stream_metrics = None
     for line in output.splitlines():
         if line.startswith("P8_QUERY_METRIC="):
             query_metrics = json.loads(line.removeprefix("P8_QUERY_METRIC="))
         if line.startswith("P8_STREAM_METRIC="):
             stream_metrics = json.loads(line.removeprefix("P8_STREAM_METRIC="))
+        if line.startswith("P8_MDS_STREAM_METRIC="):
+            mds_stream_metrics = json.loads(line.removeprefix("P8_MDS_STREAM_METRIC="))
     if process.returncode == 0 and (
         case == "historical_13_streams" or case.startswith("query_")
     ) and query_metrics is None:
         raise RuntimeError("query benchmark did not emit query metrics")
-    if process.returncode == 0 and case.startswith("stream_") and stream_metrics is None:
+    if process.returncode == 0 and case in {"stream_60", "stream_300"} and stream_metrics is None:
         raise RuntimeError("stream benchmark did not emit worker metrics")
+    if process.returncode == 0 and case == "stream_300_mds" and mds_stream_metrics is None:
+        raise RuntimeError("MDS stream benchmark did not emit metrics")
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     return {
         "case_id": case,
@@ -141,6 +152,7 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         "observed_peak_rss_kib": peak_rss_kib,
         "query_metrics": query_metrics,
         "stream_metrics": stream_metrics,
+        "mds_stream_metrics": mds_stream_metrics,
         "test_tail": output.strip().splitlines()[-1:] if output else [],
     }
 

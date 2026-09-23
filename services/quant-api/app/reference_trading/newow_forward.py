@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
 
@@ -30,6 +30,17 @@ def _timestamp(value: object) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("NEWOW_CAPTURE_TIME_INVALID")
     return parsed
+
+
+def _whole_number(value: object) -> int:
+    """Parquet Decimal scale must not change a valid integral market quantity."""
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("NEWOW_CAPTURE_BAR_INVALID") from exc
+    if not parsed.is_finite() or parsed != parsed.to_integral_value():
+        raise ValueError("NEWOW_CAPTURE_BAR_INVALID")
+    return int(parsed)
 
 
 def evaluate_newow_capture(token, checkpoint, evidence, *, dependency_manifest):
@@ -103,8 +114,8 @@ def evaluate_newow_capture(token, checkpoint, evidence, *, dependency_manifest):
         NewowDailyBar(
             stream.product, contract, owner, day, end,
             Decimal(raw["open"]), Decimal(raw["high"]),
-            Decimal(raw["low"]), Decimal(raw["close"]), int(raw["volume"]),
-            None if raw["open_interest"] is None else int(raw["open_interest"]),
+            Decimal(raw["low"]), Decimal(raw["close"]), _whole_number(raw["volume"]),
+            None if raw["open_interest"] is None else _whole_number(raw["open_interest"]),
             payload["source_identity"], True, True,
         ), frequency, calculation_segment_id=calculation,
         source_bar_sha256=source_sha,
