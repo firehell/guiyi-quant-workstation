@@ -26,6 +26,9 @@ weekly_products=50，包含 CJ 与 OI。剩余 10 个未开放 W1 品种为
 PF、PK、PL、PR、PX、RS、SF、SH、SM、SR；全部 60m 继续关闭。v1.10.22 已发布 P5 代码，
 v1.10.23 修复 Newow 分批 checkpoint 配对，v1.10.24 修复合约首夜盘 Session 归属，v1.10.25 扩大
 CLI 计划文件上限；生产 RB 十条开放参考流试点已完成并读回，均 disabled；其他品种覆盖与全局 reader 切换仍为后续 Gate。
+2026-09-23 BZ2604–BZ2609 已按受控批次发布 60 个 1m 来源月及各 60 个 15m/30m/60m
+派生月，18 项 apply 均 passed、provider 请求累计 60；逐项只读重扫为零缺口。
+该数据结果不等于参考流已构建或页面已启用。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
@@ -272,7 +275,7 @@ owner 已批准 v1.10.22 发布及 RB 全历史试点，窗口为 2023-01-01 至
 
 RB 十条开放参考流中，牛哇三策略 D1/W1 六条及苏冰 D1 共七条 exact-hash 构建并读回 `READY / enabled=false`。苏冰 15m/30m/60m 已能只读规划，分别为 58020/30287/17692 根输入，计划文件 8.4/4.7/3.0 MB。v1.10.24 上第一次苏冰 15m build 在读取文件时返回 `CLI_INTERNAL_ERROR / ValueError`；只读复现为 `REFERENCE_PATH_INVALID`：CLI 共享 JSON 上限 1 MiB，执行前未创建 revision。已停止其余两条生产构建。修复只把 plan 文件上限提升至 16 MiB，request 与 resume token 仍为 1 MiB；三份真实计划只读 dry-run 均通过，定向红绿、157 项 P4 关联测试与独立 Review 无 Confirmed Issue。修复已合入 develop 且随 v1.10.25 发布。owner 批准的发布后单次构建已执行：苏冰 15m 的 600 秒预算返回 `partial / INTERRUPTED`，已提交 63 批、15872/58020 根输入，candidate `39147f96b5cd485cb3799cbed13512e0` 保持 `NOT_BUILT / enabled=false`，active revision 为空；严格恢复令牌与原计划 hash `5c31346a00237f65eca0197454e455a1d1f623631bc876daacf18523694d1130` 只读核对及 CLI dry-run 均通过。后续 owner 指示受控续跑后，15m 精确令牌恢复三次完成，30m 首次构建加一次恢复完成，60m 首次构建完成；三条分别读回 228/120/71 批、1264/632/396 个 action、718/366/227 笔参考交易，均 `READY / active revision / enabled=false`。RB 十条流全部就绪，生产全局 reader 仍未切换。develop 中另有 1 项 P4 集成测试既有失败，未改动的 develop 基线同样复现；v1.10.24 发布 tag 上该测试通过。
 
-P5 页面读取与分页已在隔离 Canonical/MDS/P4 浏览器验收；生产全局 reader 仍为 `legacy`，十条流仍 disabled，现役 Runtime 已读回 v1.10.25 六服务一致且 overall=passed。其余已开放页面据 active 60 品种、牛哇 D1 三策略、开放 W1 48 品种三策略和苏冰四周期，共 564 条参考流；扣除 RB 10 条，554 条仍未构建。全局 persisted reader 切换未执行；本机六服务已依 Market → API/Web/日志轮转 → Alert → weekly audit 顺序晋升到 v1.10.25，旧 v1.10.20 Runtime root 在无服务/进程引用后移除。临时旧版 release/pilot/fix worktree 已清理，仅保留最新 v1.10.25 release worktree、现役 Runtime、develop 与仍在用的任务 worktree。
+P5 页面读取与分页已在隔离 Canonical/MDS/P4 浏览器验收；v1.10.26 时生产全局 reader 为 `legacy`，RB 十条流 disabled。v1.10.25 当时六服务回读与工作树清理属历史记录；现役 Runtime 为 v1.10.27。此前开放范围据 active 60 品种、牛哇 D1 三策略、开放 W1 49 品种三策略和苏冰四周期，共 567 条参考流；扣除 RB 10 条，557 条仍未构建。BZ 数据批次只补齐物理行情，不算构建参考流。现役 reader 与 Scope 须独立复核；release/worktree 保留情况以当前 `git worktree list` 和服务引用为准，不沿用旧快照。
 
 ## v1.10.12 Runtime 切换即时读回（2026-09-17）
 
