@@ -426,7 +426,7 @@ GUIYI_ISOLATED_REDIS_URL='redis://127.0.0.1:PORT/0' \
   services/quant-api/tests/reference_trading/test_live_wake.py
 ```
 
-真实存储 pipeline/recovery、60/300 条 fixture 流和 synthetic 100/1000/10000 行查询工具只接受独立测试库、
+真实存储 pipeline/recovery、60/300 条 fixture 流、300 条临时 Canonical→Catalog→MDS 流和 synthetic 100/1000/10000 行查询工具只接受独立测试库、
 loopback 非 5432 端口、无 libpq 环境路由覆盖和临时目录输出。每次启动五个独立进程；
 `historical_13_streams` 与 `forward_recovery` 耗时不代表 60/300 流容量，
 `query_*` 行是直接构建的查询负载，不代表策略计算结果。原始 JSON、缺口和固定目标见
@@ -442,12 +442,17 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
   services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
   --case query_10000 --repeats 5 --timeout-seconds 180
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case stream_300_mds --repeats 5 --timeout-seconds 120
 ```
 
 同一入口还接受 `--case query_100` 和 `--case query_1000`，分别保存对应 JSON。
 `--case stream_60` 和 `--case stream_300` 分别测量 typed capture 持久化及真实 kernel worker
 投影；它们不测 60/300 条真实 MDS 行情采集。D1/W1 有界增量的逐值与最多四个物理
 分区断言在 `test_historical_integration.py`，含 45 天过期窗口拒绝和未完成日不读取。
+`--case stream_300_mds` 对每条流读取临时 Canonical 经 Catalog/rank-1/MDS 的页面，
+HTDY 再读取 32 Bar 上下文；其测试适配器把历史夹具包装成完成观察，不能替代真实 Live/Runtime 验收。
 
 真实浏览器验收只连接上述一次性 PostgreSQL 测试库。先在单独终端运行
 `PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core`

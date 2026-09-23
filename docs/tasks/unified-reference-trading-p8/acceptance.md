@@ -53,6 +53,7 @@
 | P8-I1 | D1/W1 unconsumed Canonical window with original owner/calculation IDs; comparison to full reader; gap, unfinished day and 45-day refusal | `test_historical_integration.py -m isolated_postgresql`: 1 passed × 5 independent clean-code runs | PASS bounded append within fixture window; missing published Canonical still fails closed |
 | P8-S1 | 60 products × Newow trend 60m; typed capture, PG persistence, kernel worker and queue drain | `reference_trading_benchmark.py --case stream_60 --repeats 5`: all pass | PASS isolated fixture capacity |
 | P8-S2 | 60 products × Newow three strategies 60m, SuBing 60m, HTDY 15m | `reference_trading_benchmark.py --case stream_300 --repeats 5`: all pass | PASS isolated fixture capacity; no real 300-stream MDS load |
+| P8-S3 | Same 300 streams; temporary physical Canonical, Catalog/rank-1, real `MarketDataService.query_page`, durable capture and kernel worker | `reference_trading_benchmark.py --case stream_300_mds --repeats 5 --timeout-seconds 120`: five passes at clean code commit `159d3ecf3`; 300 calculations and zero pending each | PASS isolated real-MDS implementation throughput; generated bars and test-only observation adapter |
 | P8-B1 | Actual Vue panel/Vite proxy/FastAPI/PG, Newow oscillation 1d historical and three forward families; no route interception | Playwright CLI open/snapshot/click; 50 CLOSED + 1 OPEN, page 2 appends row 51, HTDY first-seen, disabled-mode readback; API requests 200, sole console error was missing fixture favicon | PASS isolated component/API/DB E2E; not full Market route |
 | P8-R4 | Final affected Python/Web verification | non-PG selected suite: 438 passed, 1 skipped, 35 deselected; isolated PG selected suite: 36 passed, 213 deselected; targeted query/input/guard: 132 passed; `pnpm -C apps/quant-web build`: exit 0 | PASS; skip is not Redis evidence |
 
@@ -97,6 +98,42 @@ do not measure 300 real MDS reads or production data freshness. Repeated indepen
 process peak RSS was stable in this workload, but this is not a sustained single-process
 memory soak or PostgreSQL index-plan proof.
 
+## Real MDS acquisition follow-up
+
+The `stream_300_mds` benchmark publishes 60 products × two physical period partitions
+into a temporary Canonical root and registers them with an isolated PostgreSQL Catalog.
+Each of the 300 stream captures calls the real `MarketDataService.query_page` on the
+rank-1 actual-dominant series; 60 HTDY captures also read a 32-Bar MDS context page.
+The test checks returned Bar and physical owner on every read, then persists all
+captures and runs the real strategy worker. Fixture publication/setup occurs before
+the timed window. The five independent processes used clean code commit
+`159d3ecf34d3599ac38a9a81c7eab3e2131347bc`, PostgreSQL 16.14 and Python 3.13.9.
+Raw results: `guiyi-p8-stream_300_mds.json` in the same system temporary directory.
+
+| Five-run metric | Median | Range |
+|---|---:|---:|
+| 360 MDS reads within capture loop | 2.429 s | 2.402–2.466 s |
+| MDS + typed capture + PostgreSQL seed/write | 9.696 s | 9.625–9.797 s |
+| Worker projection and queue drain | 8.071 s | 7.916–8.124 s |
+| Capture-to-projection total | 17.828 s | 17.548–17.913 s |
+| Observed child peak RSS | — | 169,568–170,528 KiB |
+
+All five runs produced 300/300 calculations, 19 queue rounds, and zero pending
+captures, within the frozen 15-minute target. The first real MDS run exposed a
+previously hidden Newow forward defect: Parquet readback encodes integral volume and
+open interest as scale-18 Decimal text; direct `int(text)` blocked 180 Newow streams.
+The evaluator now accepts only finite, integral Decimal encodings before converting
+to integer. The affected isolated PostgreSQL capacity/recovery/safety regression
+passed `46 passed`, and the focused non-PostgreSQL recovery suite passed `14 passed`.
+
+The data are generated, one-day and one-contract fixture facts; all products use a
+test exchange/session and common prices. `_MdsMarketRead` is a test adapter that
+presents completed historical MDS results to the capture path as observations.
+These results establish real Catalog/Parquet/MDS implementation throughput, not
+production data freshness, real Live acquisition, or natural Runtime behavior.
+Direct test publication of 15m/60m partitions does not exercise the upstream
+Canonical 1m aggregation Gate.
+
 ## Independent review
 
 GPT-6 Astra independently inspected the integration, forward summary and identity fixes, benchmark guard, and synthetic capacity test. Three confirmed defects were repaired with failing-then-passing tests: connection override protection, forward summary initial-count alignment, and invalid test identity. A follow-up review found that the initial deep-page benchmark sampled a one-row tail page; the fixture now asserts a full 50-row deep page, and the old deep-page number above is invalid. No new code blocker was found for committing this partial engineering increment. Remaining risks are the incomplete workload coverage and unmeasured P8 cases listed below; this review does not grant P8 overall acceptance.
@@ -110,14 +147,24 @@ rechecked both fixes and found no remaining blocker in those two areas. The revi
 classified the 60/300 in-memory MarketRead and fixture browser input as scope limits,
 not production or natural-run evidence.
 
+An independent review of `stream_300_mds` and the Decimal boundary found no
+confirmed code defect. It verified 300 distinct actual MDS page calls plus 60 HTDY
+context calls, and classified the synthetic data/observation adapter as an evidence
+limit. The five-run measurements above were completed after that review.
+
 ## Current acceptance boundary
 
 The five requested follow-up evidence groups now have isolated passing results: actual
 browser panel/API/PG, all supported strategy-family forward fixtures, real child-process
 crash recovery, 60/300 typed-capture/worker throughput, and D1/W1 bounded normal append.
-P8 as a whole remains **PARTIAL**: the plan's real 300-stream MDS acquisition,
-full Market route, deeper historical rebuild/revision/cutoff at scale, index-plan and
+P8 as a whole remains **PARTIAL**: the full Market route, deeper historical
+rebuild/revision/cutoff at scale, index-plan and
 sustained-memory evidence, and HTDY successive-window repaint acceptance still need
 separate proof. No fixture opens HTDY acceptance or any production capability. This
 branch is an engineering candidate only; develop integration, release, Runtime
 promotion, Canonical writes and P9 remain separate Gates.
+The current `develop@476263116` has five commits beyond the P8 base, including changes
+to `market_data_service.py` and Newow capability contracts. Since the listed P8
+acceptance gaps remain, develop integration is **not approved by this evidence**;
+before integration, reconcile those dependencies and rerun affected checks on the
+combined tree.
