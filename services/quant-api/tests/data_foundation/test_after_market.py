@@ -5,6 +5,7 @@ import logging
 import io
 import os
 import multiprocessing
+from dataclasses import replace
 from types import SimpleNamespace
 from contextlib import contextmanager, nullcontext
 from datetime import date, datetime
@@ -1251,6 +1252,35 @@ def test_failed_update_result_logs_sanitized_stop_code(tmp_path, caplog) -> None
         "after_market_attempt_failed stage=canonical_update_result attempt=1 "
         "detail_code=PROVIDER_QUOTA_EXHAUSTED result_status=failed"
     ]
+
+
+def test_failed_update_logs_first_bounded_target_without_provider_text(tmp_path, caplog) -> None:
+    failure = {
+        "dataset": ("contract", "rs", "RS2609", "1w"),
+        "year": 2025, "month": 11,
+        "reason_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+    }
+    updater, _manager, _rqdata, _sleeps, _notices, _live_store = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True, True],
+        results=[replace(_result("failed"), failures=(failure,))],
+    )
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+
+    result = updater.run()
+
+    assert result.error_code == "UPDATE_FAILED"
+    assert [record.message for record in caplog.records] == [
+        "after_market_attempt_failed stage=canonical_update_result attempt=1 "
+        "detail_code=UPDATE_FAILED result_status=failed",
+        "after_market_target_failure",
+    ]
+    fields = caplog.records[-1].diagnostic_fields
+    assert fields == {
+        "stage": "canonical_update_result", "attempt": 1, "failure_count": 1,
+        "symbol": "rs", "contract": "RS2609", "frequency": "1w",
+        "year": 2025, "month": 11,
+        "reason_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+    }
 
 
 def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) -> None:
