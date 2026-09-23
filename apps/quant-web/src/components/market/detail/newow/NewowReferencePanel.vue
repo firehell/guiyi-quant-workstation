@@ -131,7 +131,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
     <header class="newow-reference__header">
       <div>
         <h3 id="newow-reference-title">参考交易</h3>
-        <p>页面参考 · 零手续费 / 零滑点 · 非账户成交</p>
+        <p>{{ response?.value?.storage_mode === 'persisted' ? '历史参考·已保存' : '页面参考' }} · 零手续费 / 零滑点 · 非账户成交</p>
         <details><summary>参考口径说明</summary><p>只表达 long/flat；使用趋势 B、震荡 Low/High、主升浪 MA45 的 API reference_price；不计资金占用与真实成交限制，不推断手数、不推断空单、不推断账户净值、不推断真实收益。Reference 非因果回测、非模拟账户、非真实成交，不使用同 Bar Close；同 Bar Close 仅属于独立 comparator。</p></details>
       </div>
       <form class="newow-reference__window" @submit.prevent="reload">

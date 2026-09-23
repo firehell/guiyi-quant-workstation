@@ -227,6 +227,13 @@ class ReferenceSectionValue:
 
 
 @dataclass(frozen=True, slots=True)
+class PersistedReferenceSectionValue:
+    """Already serialized read-only projection; no strategy replay object."""
+
+    payload: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class ReferenceCoverageInterval:
     since: date
     through: date
@@ -662,6 +669,7 @@ class NewowProductService:
         cancelled: Callable[[], bool] | None = None,
         reuse_read_inputs: bool = False,
         quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+        persisted_reference: Callable | None = None,
     ) -> None:
         self._reader_factory = reader_factory
         self._cache = cache or SnapshotCache()
@@ -671,6 +679,7 @@ class NewowProductService:
         self._cancelled = cancelled
         self._reuse_read_inputs = reuse_read_inputs
         self._quality_policy = InputQualityPolicy(quality_policy)
+        self._persisted_reference = persisted_reference
         self._read_input_lock = Lock()
         self._chart_windows: dict[
             tuple[str, ProductFrequency, int, datetime], ProductReadWindow
@@ -877,6 +886,7 @@ class NewowProductService:
             resolved,
             cancelled,
             as_of,
+            reader,
         )
         chart = result.chart.value
         if prior_navigation is not None and isinstance(chart, ChartSectionValue):
@@ -1036,6 +1046,7 @@ class NewowProductService:
         resolved: ResolvedPerformanceWindow | None,
         cancelled: Callable[[], bool],
         request_as_of: datetime,
+        reader: NewowProductReader,
     ) -> NewowProductResult:
         self._check_cancelled(cancelled)
         deliveries = {section: _not_requested() for section in ProductSection}
@@ -1061,8 +1072,12 @@ class NewowProductService:
             )
         elif request.section is ProductSection.REFERENCE:
             assert resolved is not None
-            deliveries[request.section] = self._reference(
-                request, read, identity, fact_key, page_identity, resolved
+            deliveries[request.section] = (
+                self._reference(request, read, identity, fact_key, page_identity, resolved)
+                if self._persisted_reference is None else
+                self._persisted_reference(
+                    request, read, identity, reader, fact_key, page_identity, resolved,
+                )
             )
         elif request.section is ProductSection.EXPLANATION:
             deliveries[request.section] = self._explanation(read, identity)

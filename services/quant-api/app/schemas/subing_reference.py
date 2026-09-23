@@ -177,6 +177,7 @@ class SubingReferenceResponse(ReferenceOut):
     executable: Literal[False]
     auto_order: Literal[False]
     source: Literal["historical_replay"]
+    storage_mode: Literal["persisted"] | None = None
     research_status: Literal[
         "ready", "warming", "WARMING",
         "INDICATOR_READY_CROSS_UNEVALUABLE", "CROSS_EVALUATED",
