@@ -1,13 +1,12 @@
 # 当前状态
 
-文档整理：2026-09-23。当前 exact tag `v1.10.26` peeled commit 为
-`cd9984707df2bef548d8dafd2de46cc308b91cfa`。本机 Runtime root
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.26-r1` 绑定该提交；17:15 本机只读回读
-API/Web 为 200、Runtime health 为 `ok`、服务总体 `passed`。自然盘后尚未到当日 18:05，
-weekly audit activation marker 缺失且 health 明示 `disabled`。全局 reader 保持 `legacy`；
-这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
-v1.10.27 候选仅纳入 Newow 历史计算段输入身份修复，旧 RB v1 参考流须在新版下受控重建读回；
-候选代码、tag、Release 和 Runtime 状态分别验收，当前尚未发布或切换。
+文档整理：2026-09-23。当前 exact tag `v1.10.27` peeled commit 为
+`53216518c1c91919ecaaa7159be7d76824a29716`，与 `origin/main` 和非草稿、非预发布
+GitHub Release target 一致。本机 Runtime root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.27-r1`
+绑定该提交；19:37 只读检查 API/Web 为 200，但 Runtime health 与整体状态为 `failed`。
+盘后 label 当时未运行；这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
+`v1.10.28` 候选从 `v1.10.27` 正式树仅提取盘后质量中断规划、同月 D1 质量事实保留、
+首失败目标诊断和对应测试/文档；main/tag/Release 与 Runtime 切换均尚未执行。
 2026-09-23 BZ2604–BZ2609 已按受控批次发布 60 个 1m 来源月及各 60 个 15m/30m/60m
 派生月，18 项 apply 均 passed、provider 请求累计 60；逐项只读重扫为零缺口。
 该数据结果不等于参考流已构建或页面已启用。
@@ -223,8 +222,8 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | 当前 exact tag `v1.10.26@cd9984707`；v1.10.27 仅为未发布候选 |
-| 现役 Runtime | v1.10.26 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 本机服务指向 exact `v1.10.26@cd9984707`，API/Web 200、Runtime health ok、整体 passed；自然盘后未到时点，weekly audit disabled，reader=legacy |
+| 正式 Release | `RELEASED` | 当前 exact tag `v1.10.27@53216518`；v1.10.28 仅为未发布候选 |
+| 现役 Runtime | v1.10.27 `RUNTIME_PROMOTED / HEALTH_FAILED`；未声明 `RUNTIME_READY` | 本机服务指向 exact `v1.10.27@53216518`；19:37 只读检查 API/Web 200、Runtime health failed、整体 failed；须按当前状态独立验收 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker 或全局 persisted reader；P4/P5 代码已随 v1.10.22 发布 |
 | Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_COMPLETE` | RB 十条开放参考流 exact-hash 构建并读回 READY/active revision，全部 enabled=false；12 个物理合约的 1m/15m/30m/60m 预热已完成。苏冰 15m/30m/60m 依严格 checkpoint 完成，分别 228/120/71 批；P6 worker 未启用，全局 reader 仍为 legacy |
@@ -232,7 +231,7 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
-| Weekly audit | `DISABLED / ACTIVATION_PENDING` | v1.10.26 label 已加载但 activation marker 缺失，health 明示 disabled；首次自然及全历史周检待验，旧版本结果只作历史证据 |
+| Weekly audit | `ACTIVATION_UNVERIFIED` | 19:37 只读服务检查显示 `not_run`；是否启用及首次自然结果须另按 activation marker 和本周状态核对 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 自 v1.10.8 起已发布并进入 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
