@@ -354,9 +354,18 @@ class DatabaseCoverageSource:
         if not ends or len(set(ends)) != len(ends):
             raise InfrastructureError("PROVIDER_WINDOW_INVALID")
         try:
-            days = MarketCatalog(self.session, PROJECT_ROOT).trading_days_overlapping_window(
-                key.symbol, min(ends) - timedelta(microseconds=1), max(ends)
-            )
+            catalog = MarketCatalog(self.session, PROJECT_ROOT)
+            if key.kind is DatasetKind.CONTRACT:
+                fact = catalog.contract_fact(key.symbol, key.series_or_contract)
+                days = tuple(day for day, _ in catalog.session_windows_overlapping_window(
+                    key.symbol, min(ends) - timedelta(microseconds=1), max(ends),
+                    earliest=fact.listed_date,
+                    latest=fact.expired_date - timedelta(days=1),
+                ))
+            else:
+                days = catalog.trading_days_overlapping_window(
+                    key.symbol, min(ends) - timedelta(microseconds=1), max(ends)
+                )
         except CatalogError as exc:
             raise InfrastructureError(exc.code) from exc
         pairs = self.expected_bar_end_pairs_for_trading_days(key, days)
