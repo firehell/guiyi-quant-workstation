@@ -720,6 +720,13 @@ class _FakeMarketDataService:
             trading_day=trading_day, limit=limit,
         ), ()
 
+    def query_physical_daily_quality_union_as_of(
+        self, *, symbol, contract, trading_day, limit,
+    ):
+        return self.query_physical_daily_quality_as_of(
+            symbol=symbol, contract=contract, trading_day=trading_day, limit=limit,
+        )
+
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         self.dominant_reads += 1
         return self.dominants
@@ -800,6 +807,55 @@ def test_snapshot_preserves_quote_and_rewarms_after_source_price_gap(tail_size):
         assert "daily_price_interrupted" in item.reason_codes
         assert ("daily_rewarming" in item.reason_codes) == (tail_size < 22)
         assert item.weekly_trend == "unavailable"
+
+
+def test_snapshot_accepts_nonpositive_close_as_a_daily_history_gap():
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+    from app.market_data.source_quality import NonpositiveCloseFact
+    from app.market_data.research_metrics import calculate_research_metrics
+
+    daily = _bars(40, end=TARGET)
+    gap = daily[10]
+    fact = NonpositiveCloseFact(
+        bar_end=gap.bar_end,
+        trading_day=gap.trading_day,
+        open=Decimal("-1"),
+        high=Decimal("-1"),
+        low=Decimal("-1"),
+        close=Decimal("-1"),
+        volume=Decimal("1"),
+        turnover=Decimal("0"),
+        open_interest=Decimal("1"),
+        request_sha256="a" * 64,
+        response_sha256="b" * 64,
+        observed_at=gap.bar_end,
+    )
+    market = _FakeMarketDataService(
+        daily={"jm": daily, "rb": daily}, weekly={"jm": (), "rb": ()},
+    )
+    def legacy_quality(**kwargs):
+        if kwargs["symbol"] == "jm":
+            raise MarketDataError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+        return daily, ()
+
+    market.query_physical_daily_quality_as_of = legacy_quality
+    market.query_physical_daily_quality_union_as_of = lambda **kwargs: (
+        daily[:10] + daily[11:], (fact,) if kwargs["symbol"] == "jm" else (),
+    )
+
+    snapshot = MarketHomeOverviewService(
+        market_data=market, products=("jm", "rb"), taxonomy=_taxonomy(),
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    item = next(item for item in snapshot.items if item.symbol == "jm")
+    expected = calculate_research_metrics(daily[11:], ())
+    assert snapshot.participant_count == 2
+    assert item.close == daily[-1].close
+    assert item.price_change_1d == expected.price_change_1d
+    assert item.daily_trend == expected.daily_trend
+    assert "daily_price_interrupted" in item.reason_codes
+    assert "daily_rewarming" not in item.reason_codes
 
 
 @pytest.mark.parametrize('frequency', ['1d', '1w'])

@@ -2745,6 +2745,25 @@ def test_home_daily_quality_page_preserves_exact_endpoints(session, tmp_path, ga
             )
 
 
+def test_home_daily_quality_union_preserves_nonpositive_close_facts(session, tmp_path):
+    market = _home_quality_market(
+        session, tmp_path, nonpositive_days=(3,),
+    )
+
+    bars, gaps = market.query_physical_daily_quality_union_as_of(
+        symbol="jm", contract="JM2509", trading_day=date(2025, 1, 4), limit=3,
+    )
+
+    assert [bar.trading_day.day for bar in bars] == [2, 4]
+    assert [(gap.trading_day.day, gap.classification) for gap in gaps] == [
+        (3, "NONPOSITIVE_CLOSE"),
+    ]
+    with pytest.raises(MarketDataError, match="SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"):
+        market.query_physical_daily_quality_as_of(
+            symbol="jm", contract="JM2509", trading_day=date(2025, 1, 4), limit=3,
+        )
+
+
 @pytest.mark.parametrize("missing_day", [2, 3, 4])
 def test_home_daily_quality_page_rejects_missing_prefix_interior_and_tail(
     session, tmp_path, missing_day,
@@ -2788,7 +2807,9 @@ def test_home_daily_quality_page_rejects_conflicting_identities(
         )
 
 
-def _home_quality_market(session, tmp_path, *, gap_days=(), missing_day=None):
+def _home_quality_market(
+    session, tmp_path, *, gap_days=(), nonpositive_days=(), missing_day=None,
+):
     session.scalar(select(TradingSession)).is_active = False
     session.add_all(TradingSession(
         exchange_code="DCE", instrument_symbol="jm", session_name="day",
@@ -2804,19 +2825,25 @@ def _home_quality_market(session, tmp_path, *, gap_days=(), missing_day=None):
         exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
     ) for day in (2, 3, 4))
     bars = tuple(_bar(day, 100 + day) for day in (2, 3, 4)
-                 if day not in gap_days and day != missing_day)
+                 if day not in gap_days and day not in nonpositive_days and day != missing_day)
     gaps = tuple(PriceUnavailableFact(
         _bar(day, 100).bar_end, date(2025, 1, day), Decimal(0), Decimal(0), Decimal(0),
         Decimal(100), Decimal(2), Decimal(200), Decimal(10),
         "a" * 64, "b" * 64, datetime(2026, 9, 15, tzinfo=UTC),
     ) for day in gap_days)
+    nonpositive = tuple(NonpositiveCloseFact(
+        _bar(day, 100).bar_end, date(2025, 1, day), Decimal("-1"), Decimal("-1"),
+        Decimal("-1"), Decimal("-1"), Decimal(2), Decimal(0), Decimal(10),
+        "c" * 64, "d" * 64, datetime(2026, 9, 15, tzinfo=UTC),
+    ) for day in nonpositive_days)
+    quality_facts = (*gaps, *nonpositive)
     key = DatasetKey("contract", "jm", "JM2509", "1d")
     store = CanonicalMonthlyStore(tmp_path)
     catalog = MarketCatalog(session, tmp_path)
     catalog.register_partition(store.publish(PublishRequest(
         key, 2025, 1, bars,
-        tuple(sorted([bar.bar_end for bar in bars] + [gap.bar_end for gap in gaps])),
-        price_unavailable=gaps,
+        tuple(sorted([bar.bar_end for bar in bars] + [gap.bar_end for gap in quality_facts])),
+        price_unavailable=quality_facts,
     )))
     session.commit()
     return MarketDataService(catalog, store)

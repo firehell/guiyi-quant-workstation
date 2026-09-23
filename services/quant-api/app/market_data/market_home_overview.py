@@ -26,12 +26,12 @@ from app.market_data.market_data_service import (
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.research_metrics import Trend, calculate_research_metrics
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import SourceQualityFact
 
 
 MarketHomeStatus = Literal["ready", "degraded"]
 MarketHomeFreshness = Literal["fresh", "stale", "unavailable"]
-METRIC_POLICY_VERSION = "physical_owner_quality_v3"
+METRIC_POLICY_VERSION = "physical_owner_quality_v4"
 
 
 class MarketHomeOverviewError(RuntimeError):
@@ -292,9 +292,9 @@ def _through_target(
 
 def _daily_inputs(
     market_data: MarketDataService, *, symbol: str, contract: str, target_as_of: date,
-) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...], bool]:
+) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...], bool]:
     try:
-        bars, gaps = market_data.query_physical_daily_quality_as_of(
+        bars, gaps = market_data.query_physical_daily_quality_union_as_of(
             symbol=symbol, contract=contract, trading_day=target_as_of, limit=300,
         )
         return bars, gaps, False
@@ -306,7 +306,7 @@ def _daily_inputs(
     # A separate one-endpoint quote contract does not satisfy the history
     # contract. Its Bar must never seed any daily metric after history failed.
     try:
-        bars, gaps = market_data.query_physical_daily_quality_as_of(
+        bars, gaps = market_data.query_physical_daily_quality_union_as_of(
             symbol=symbol, contract=contract, trading_day=target_as_of, limit=1,
         )
         return bars, gaps, True

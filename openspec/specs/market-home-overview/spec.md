@@ -67,9 +67,10 @@ D1 predecessor 使 target-day 变动率不可计算的情况。
 Market Home SHALL use the explicit MDS D1 quality window for the target-day physical owner.
 The requested window MUST be covered exactly by valid Bars and authoritative source exceptions;
 missing endpoints MUST fail the affected history read; corrupt partitions or missing identity/Calendar/Session MUST still fail the snapshot closed.
-The last `PRICE_UNAVAILABLE` endpoint is a calculation boundary. D1 metrics SHALL use only the
-continuous suffix after that endpoint and retain their existing warm-up/null rules. No price is
-synthesized and no older valid Bars are fetched to replace exceptional endpoints. W1 remains an
+The last authoritative D1 source-exception endpoint, including `PRICE_UNAVAILABLE` and
+`NONPOSITIVE_CLOSE`, is a calculation boundary. D1 metrics SHALL use only the continuous suffix
+after that endpoint and retain their existing warm-up/null rules. No price is synthesized and no
+older valid Bars are fetched to replace exceptional endpoints. W1 remains an
 independent strict read with no D1 substitution. Missing W1 history disables only weekly metrics and emits `weekly_history_unavailable`; source-price failures emit `weekly_price_unavailable`. Newow formulas and reference trades are unchanged.
 
 An item with a valid target-day D1 Bar SHALL remain a participant even when its historical window
@@ -82,7 +83,7 @@ never normal rewarming. This does not repair the historical data or prove strate
 Only an error with both code and reason `DATASET_OR_PARTITION_MISSING` is eligible; extra, duplicate,
 wrong-day endpoints and missing Calendar/Session remain integrity failures. The headline SHALL identify participants as target-day D1 quote
 availability, not Newow strategy readiness or complete historical indicator coverage.
-The metric policy identity SHALL be `physical_owner_quality_v3`, invalidating older projections
+The metric policy identity SHALL be `physical_owner_quality_v4`, invalidating older projections
 without rewriting production data or projection files from HTTP reads.
 
 #### Scenario: A historical gap is followed by a valid target-day quote
@@ -93,7 +94,7 @@ without rewriting production data or projection files from HTTP reads.
 
 #### Scenario: The target day itself has no usable source price
 
-- **WHEN** the target-day endpoint is `PRICE_UNAVAILABLE`
+- **WHEN** the target-day endpoint is `PRICE_UNAVAILABLE` or `NONPOSITIVE_CLOSE`
 - **THEN** the product is counted unavailable; an older close MUST NOT be labeled as the target-day quote
 
 ### Requirement: Market Home derived projection is removable and never authoritative
