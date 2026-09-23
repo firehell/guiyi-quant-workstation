@@ -114,6 +114,8 @@ adapter 在唯一 metadata 边界将其减一分钟后写入 DB，因此 active 
 daily 要求已有 continuous `1m/1d` Catalog baseline，并以完整 Calendar、连续 rank1 映射及 Catalog
 分区索引选择当月、缺月、精确首尾落后月；新主力补已证明的 mapped 日期及缺失 W1 所需的同合约完整
 ISO 周 D1 context（限制在有效生命周期内），不自动执行 lifecycle warm-up。
+若同一物理合约的 D1 Catalog 已有 `PriceUnavailableFact` 或 `NonpositiveCloseFact`，daily 对该 ISO 周
+不规划 W1 价格目标及其 D1 伴随刷新；其他周的普通缺口仍按同源批次修复，质量事实原样保留。
 缺 baseline、映射断裂或无法确定边界时要求显式历史维护，不执行广域 metadata bootstrap；受限当天/下一
 交易日 metadata seam 保留。旧月内部损坏由 full update/audit 检出，daily 不以 row count 或首尾完好声明
 全月物理完整。完整 ISO 周仍通过既有 D1/W1 同源批次补齐，必要时读取跨月的 D1 context。
