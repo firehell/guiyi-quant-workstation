@@ -173,6 +173,11 @@ def test_weekly_v2_reader_pins_mds_classification_and_source_identity(
     assert read.data_interruptions[0].source_identity.startswith(
         "market_data_service:weekly_quality:v2:"
     )
+    dependency = reader.check_dependency(
+        "rb", ProductFrequency.WEEKLY, fake.segments[0], fake.as_of,
+    )
+    assert dependency["status"] == "DATA_READY"
+    assert observed[-1] == ("prefix", "weekly-d1-quality-v2")
 
 
 def test_reader_consumes_all_prefix_pages(product_cases):

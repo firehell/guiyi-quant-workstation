@@ -42,6 +42,31 @@ def test_snapshot_uses_completed_1m_and_same_contract_previous_day_close() -> No
     assert market.requests == [("j", "J2609", "1d", 5, NOW)]
 
 
+def test_mixed_unknown_phase_does_not_stop_known_home_live_quote() -> None:
+    live = _bar(DAY, NOW - timedelta(seconds=2), "108")
+    market = FakeMarketData(
+        dominants={"j": "J2609", "ag": "AG2609"},
+        bars={"J2609": (_bar(date(2026, 8, 14), NOW - timedelta(days=1), "100"),),
+              "AG2609": (_bar(date(2026, 8, 14), NOW - timedelta(days=1), "100"),)},
+    )
+    service = MarketHomeLiveService(
+        market_data=market,
+        phase_resolver=SimpleNamespace(resolve=lambda symbol, _now: {
+            "j": _phase("j", MarketPhase.TRADING, DAY),
+            "ag": _phase("ag", MarketPhase.UNKNOWN, None),
+        }[symbol]),
+        live_store=FakeLiveStore(
+            heartbeat={"available": True, "generated_at": NOW.isoformat()},
+            subscriptions={DAY: {"j": "J2609"}},
+            latest={"j": LiveBarObservation(live, "J2609")},
+        ),
+        operational_products=("j", "ag"),
+    )
+    items = {item.symbol: item for item in service.snapshot(NOW).items}
+    assert items["j"].availability == "live"
+    assert items["ag"].availability != "live"
+
+
 def test_closed_snapshot_uses_previous_bar_as_baseline_instead_of_quote_itself() -> None:
     """Catches the closed-market fallback silently reporting a zero change."""
     prior = _bar(date(2026, 8, 13), NOW - timedelta(days=2), "100")

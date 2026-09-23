@@ -222,7 +222,7 @@ API 与 Web 必须成套构建和发布；旧 Web 对 v2、新 Web 对 v1 均明
 ## 交付与 Gate
 
 实现允许连续完成代码、测试、独立 Review、task commit 以及条件满足的本地 develop 集成。此前针对本任务
-含生产证据的远端 push 被自动审批拒绝；尚无新的上传授权，执行会话不得自动重试该上传。
+含生产证据的远端 push 曾被自动审批拒绝；owner 已于 2026-09-23 确认本仓库 origin 及常规文档/`develop` push 授权，后续按 `AGENTS.md` 执行。
 main/tag/Release、Runtime、生产写入和通知按独立 Gate 处理。真实 PT 只读验收若权限不可用，先完成全部离线
 实现/Review，明确保留现场验收未完成，不能凭旧回执宣称成功。
 

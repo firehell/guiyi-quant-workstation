@@ -637,6 +637,35 @@ def _collect_live_market_health(
             **empty,
             "error_type": "live_heartbeat_invalid" if configured_enabled else None,
         }
+    phase_unverified = (
+        sum(phase_counts.values()) != operational_count
+        or phase_counts.get("UNKNOWN", 0) > 0
+    )
+    if phase_unverified:
+        # Older heartbeat writers may carry an ok coverage from a prior Session.
+        # Without a per-symbol phase identity, none of those ok rows proves now.
+        raw_product_phases = heartbeat.get("phase_by_product")
+        product_phases = raw_product_phases if (
+            isinstance(raw_product_phases, Mapping)
+            and set(raw_product_phases) == set(coverage)
+            and all(value in {"TRADING", "BREAK", "CLOSED", "UNKNOWN"}
+                    for value in raw_product_phases.values())
+            and all(
+                sum(value == phase for value in raw_product_phases.values())
+                == phase_counts.get(phase, 0)
+                for phase in ("TRADING", "BREAK", "CLOSED", "UNKNOWN")
+            )
+            and set(phase_counts) <= {"TRADING", "BREAK", "CLOSED", "UNKNOWN"}
+            and sum(phase_counts.values()) == operational_count
+        ) else None
+        coverage = {
+            symbol: {**item, "state": "unverified", "sessions": [],
+                     "expected_bar_end": None, "expected_by_frequency": {}}
+            if item["state"] != "lagging" and (
+                product_phases is None or product_phases[symbol] == "UNKNOWN"
+            ) else item
+            for symbol, item in coverage.items()
+        }
     payload = {
         **empty,
         "operational_count": operational_count,

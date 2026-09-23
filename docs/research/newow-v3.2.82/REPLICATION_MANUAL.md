@@ -711,6 +711,8 @@ OOS：18 passed，9 weekly blocked；不支持盈利或策略晋升结论。
 
 GitHub 包不包含牛哇完整 HTML/JS/原始响应、股票逐 Bar 输入、RQData/Canonical 原始快照或原 PDF。
 
+2026-09-19 的隔离 Web 实现增加了状态、概览、解释、杯柄事实、五窗口展示排序和参考统计快捷窗口；视觉实现边界见 [implementation-ui/20260919](implementation-ui/20260919/README.md)。这不改变本手册的公式证据、期货适配或任何发布/Runtime 状态。
+
 29 张冻结截图已经取得 Owner 的保留/分发决定：
 
 ```text

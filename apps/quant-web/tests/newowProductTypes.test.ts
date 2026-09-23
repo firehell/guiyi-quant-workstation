@@ -283,6 +283,15 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => formalWeeklyV10,
   }), formalWeeklyV10)
+  for (const capability of [candidate, candidateV9, formalWeeklyV10]) {
+    const wrong = [...capability.weekly_products]
+    wrong[0] = 'zz'
+    await assert.rejects(
+      getNewowProductCapabilities({ request: async () => ({ ...capability, weekly_products: wrong }) }),
+      (error: unknown) => error instanceof NewowProductRequestError
+        && error.code === 'NEWOW_RESPONSE_INVALID',
+    )
+  }
   await assert.rejects(
     getNewowProductCapabilities({
       request: async () => ({

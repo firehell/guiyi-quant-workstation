@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
+from hashlib import sha256
+import json
 from typing import Generic, Literal, TypeVar
 
 from guiyi_quant.reference_trading import (
@@ -34,6 +36,134 @@ def _sha256(value: object, name: str) -> str:
     if len(text) != 64 or any(char not in "0123456789abcdef" for char in text):
         raise ValueError(f"{name} must be a lowercase sha256")
     return text
+
+
+def _canonical_manifest(value: object) -> str:
+    try:
+        return json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("manifest must be finite canonical JSON") from error
+
+
+def manifest_sha256(value: object) -> str:
+    return sha256(_canonical_manifest(value).encode()).hexdigest()
+
+
+def _append_only(prior: object, new: object) -> bool:
+    if isinstance(prior, dict) and isinstance(new, dict):
+        return all(key in new and _append_only(value, new[key]) for key, value in prior.items())
+    if isinstance(prior, list) and isinstance(new, list):
+        if (
+            len(prior) == len(new) == 3
+            and all(isinstance(item, str) for item in (*prior, *new))
+            and prior[:2] == new[:2]
+        ):
+            try:
+                return date.fromisoformat(new[2]) >= date.fromisoformat(prior[2])
+            except ValueError:
+                pass
+        return len(new) >= len(prior) and all(
+            _append_only(value, new[index]) for index, value in enumerate(prior)
+        )
+    return type(prior) is type(new) and prior == new
+
+
+def _prior_projection(prior: object, new: object) -> object:
+    """Project the new manifest onto the exact prior prefix after validation."""
+    if isinstance(prior, dict) and isinstance(new, dict):
+        return {key: _prior_projection(value, new[key]) for key, value in prior.items()}
+    if isinstance(prior, list) and isinstance(new, list):
+        if (
+            len(prior) == len(new) == 3
+            and all(isinstance(item, str) for item in (*prior, *new))
+            and prior[:2] == new[:2]
+        ):
+            try:
+                if date.fromisoformat(new[2]) >= date.fromisoformat(prior[2]):
+                    return list(prior)
+            except ValueError:
+                pass
+        return [
+            _prior_projection(value, new[index])
+            for index, value in enumerate(prior)
+        ]
+    return new
+
+
+@dataclass(frozen=True, slots=True)
+class DependencyAdvance:
+    expected_prior_digest: str
+    new_manifest: dict[str, object]
+    new_digest: str
+    prior_prefix_digest: str
+    new_prefix_digest: str
+    appended_ranges: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in (
+            "expected_prior_digest", "new_digest", "prior_prefix_digest",
+            "new_prefix_digest",
+        ):
+            _sha256(getattr(self, name), name)
+        if not isinstance(self.new_manifest, dict) or not self.new_manifest:
+            raise ValueError("new_manifest must be non-empty")
+        object.__setattr__(self, "appended_ranges", tuple(self.appended_ranges))
+        if not self.appended_ranges or any(
+            not isinstance(item, str) or not item for item in self.appended_ranges
+        ):
+            raise ValueError("appended_ranges must be non-empty text")
+        if manifest_sha256(self.new_manifest) != self.new_digest:
+            raise ValueError("new dependency digest does not match manifest")
+
+
+def prove_dependency_append(
+    prior_manifest: dict[str, object],
+    new_manifest: dict[str, object],
+    *,
+    appended_ranges: tuple[str, ...],
+) -> DependencyAdvance:
+    """Create a proof only after validating structural prefix preservation."""
+    if (
+        not isinstance(prior_manifest, dict)
+        or not prior_manifest
+        or not isinstance(new_manifest, dict)
+        or not new_manifest
+        or not _append_only(prior_manifest, new_manifest)
+        or prior_manifest == new_manifest
+    ):
+        raise ValueError("dependency manifest is not append-only")
+    prior_digest = manifest_sha256(prior_manifest)
+    new_digest = manifest_sha256(new_manifest)
+    new_prefix_digest = manifest_sha256(
+        _prior_projection(prior_manifest, new_manifest)
+    )
+    return DependencyAdvance(
+        expected_prior_digest=prior_digest,
+        new_manifest=new_manifest,
+        new_digest=new_digest,
+        prior_prefix_digest=prior_digest,
+        new_prefix_digest=new_prefix_digest,
+        appended_ranges=appended_ranges,
+    )
+
+
+def validate_dependency_advance(
+    prior_manifest: dict[str, object], advance: DependencyAdvance,
+) -> None:
+    if (
+        manifest_sha256(prior_manifest) != advance.expected_prior_digest
+        or advance.prior_prefix_digest != advance.expected_prior_digest
+        or advance.new_prefix_digest != advance.expected_prior_digest
+        or not _append_only(prior_manifest, advance.new_manifest)
+        or prior_manifest == advance.new_manifest
+        or manifest_sha256(
+            _prior_projection(prior_manifest, advance.new_manifest)
+        ) != advance.new_prefix_digest
+    ):
+        raise ValueError("dependency manifest is not append-only")
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +249,7 @@ class PreparedBatch:
     strategy_schema: str
     source_evidence: dict[str, object]
     input_observed_at: datetime | None = None
+    dependency_advance: DependencyAdvance | None = None
 
     def __post_init__(self) -> None:
         for name in ("stream_id", "revision_id", "batch_key", "strategy_schema"):
@@ -151,6 +282,11 @@ class PreparedBatch:
                 raise ValueError("forward batch requires timezone-aware input_observed_at")
         elif self.input_observed_at is not None:
             raise ValueError("historical batch must not set input_observed_at")
+        if self.dependency_advance is not None:
+            if not isinstance(self.dependency_advance, DependencyAdvance):
+                raise TypeError("dependency_advance must be DependencyAdvance")
+            if self.dependency_advance.new_manifest != self.dependency_manifest:
+                raise ValueError("dependency advance manifest does not match batch")
         if self.transitions[-1].state != self.checkpoint.reference_state:
             raise ValueError("checkpoint reference state does not match final transition")
 
@@ -168,6 +304,18 @@ class CommitResult:
         _text(self.revision_id, "revision_id")
         _non_negative(self.seq, "seq")
         _sha256(self.checkpoint_hash, "checkpoint_hash")
+
+
+@dataclass(frozen=True, slots=True)
+class StoredRevisionState:
+    stream: StoredStream
+    revision_id: str
+    revision_status: str
+    dependency_manifest: dict[str, object]
+    dependency_digest: str
+    checkpoint: CheckpointToken
+    checkpoint_batch_key: str
+    source_evidence: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)

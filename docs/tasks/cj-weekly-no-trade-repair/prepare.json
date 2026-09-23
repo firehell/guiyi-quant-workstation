@@ -1,0 +1,120 @@
+{
+  "aggregation_source_sha256": "7841fd5fa7245b7c97cab196ea057b981c3b4092dee5243e4fc93957007222ce",
+  "aggregation_version": "exchange-daily-no-trade-v2",
+  "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+  "catalog_revision": "4c5deb8668b87c07789ce14f03a321b9570e3ac409d4d9a2d5e1de7a6c17d3e8",
+  "catalog_writes": 0,
+  "provider_requests": 0,
+  "repair_source_sha256": "737bd9837850442e780c2730c8d880e92d14abaa8b4b1bae6bec85868cbccf8e",
+  "schema_version": "cj_weekly_no_trade_prepare_v1",
+  "targets": [
+    {
+      "candidate_w1_partition_sha256": "21dad46354adcb207b80ec4642f8c2aafa27c73dfb5474bfc512a6befbcf0329",
+      "candidate_w1_partition_uri": "kind=contract/symbol=cj/series=CJ2305/frequency=1w/year=2022/month=05/part.21dad46354adcb207b80ec4642f8c2aafa27c73dfb5474bfc512a6befbcf0329.parquet",
+      "changed_rows": 1,
+      "contract": "CJ2305",
+      "d1_preimages": [
+        {
+          "file_uri": "kind=contract/symbol=cj/series=CJ2305/frequency=1d/year=2022/month=05/part.08a75aa2bea96ad24a5c3aff09d415244237e71fee8b81c7ff134c90880dd841.parquet",
+          "month": 5,
+          "sha256": "08a75aa2bea96ad24a5c3aff09d415244237e71fee8b81c7ff134c90880dd841",
+          "source_quality_sha256": null,
+          "year": 2022
+        }
+      ],
+      "expected_d1_endpoints": [
+        [
+          "2022-05-19T07:00:00+00:00",
+          "2022-05-19"
+        ],
+        [
+          "2022-05-20T07:00:00+00:00",
+          "2022-05-20"
+        ]
+      ],
+      "month_row_count": 2,
+      "new_ohlc": {
+        "close": "13510.000000000000000000",
+        "high": "13780.000000000000000000",
+        "low": "13320.000000000000000000",
+        "open": "13720.000000000000000000"
+      },
+      "old_ohlc": {
+        "close": "13510.000000000000000000",
+        "high": "13780.000000000000000000",
+        "low": "0E-18",
+        "open": "0E-18"
+      },
+      "old_w1_partition_sha256": "c9cb0ace6dea464cf528336961f06ca46a3c9a4b231caa360f37d89e111ccad9",
+      "old_w1_partition_uri": "kind=contract/symbol=cj/series=CJ2305/frequency=1w/year=2022/month=05/part.c9cb0ace6dea464cf528336961f06ca46a3c9a4b231caa360f37d89e111ccad9.parquet",
+      "unchanged_weekly_fields": [
+        "bar_end",
+        "trading_day",
+        "volume",
+        "turnover",
+        "open_interest"
+      ],
+      "week_end": "2022-05-20"
+    },
+    {
+      "candidate_w1_partition_sha256": "dc4c6fdc90a0de96836bb0bf2215f9a7c94f305da87de1536421d821a17f079c",
+      "candidate_w1_partition_uri": "kind=contract/symbol=cj/series=CJ2309/frequency=1w/year=2022/month=09/part.dc4c6fdc90a0de96836bb0bf2215f9a7c94f305da87de1536421d821a17f079c.parquet",
+      "changed_rows": 1,
+      "contract": "CJ2309",
+      "d1_preimages": [
+        {
+          "file_uri": "kind=contract/symbol=cj/series=CJ2309/frequency=1d/year=2022/month=09/part.35fb4765643b8e80e64ee3bd109700bed1fc1233049e9952ca9d57e8dfc2034e.parquet",
+          "month": 9,
+          "sha256": "35fb4765643b8e80e64ee3bd109700bed1fc1233049e9952ca9d57e8dfc2034e",
+          "source_quality_sha256": null,
+          "year": 2022
+        }
+      ],
+      "expected_d1_endpoints": [
+        [
+          "2022-09-26T07:00:00+00:00",
+          "2022-09-26"
+        ],
+        [
+          "2022-09-27T07:00:00+00:00",
+          "2022-09-27"
+        ],
+        [
+          "2022-09-28T07:00:00+00:00",
+          "2022-09-28"
+        ],
+        [
+          "2022-09-29T07:00:00+00:00",
+          "2022-09-29"
+        ],
+        [
+          "2022-09-30T07:00:00+00:00",
+          "2022-09-30"
+        ]
+      ],
+      "month_row_count": 3,
+      "new_ohlc": {
+        "close": "12400.000000000000000000",
+        "high": "12680.000000000000000000",
+        "low": "12340.000000000000000000",
+        "open": "12515.000000000000000000"
+      },
+      "old_ohlc": {
+        "close": "12400.000000000000000000",
+        "high": "12680.000000000000000000",
+        "low": "0E-18",
+        "open": "12515.000000000000000000"
+      },
+      "old_w1_partition_sha256": "d8be534577ae878252e191fa7ba7db7f9bdb88106f549f561fdcbfdf63589640",
+      "old_w1_partition_uri": "kind=contract/symbol=cj/series=CJ2309/frequency=1w/year=2022/month=09/part.d8be534577ae878252e191fa7ba7db7f9bdb88106f549f561fdcbfdf63589640.parquet",
+      "unchanged_weekly_fields": [
+        "bar_end",
+        "trading_day",
+        "volume",
+        "turnover",
+        "open_interest"
+      ],
+      "week_end": "2022-09-30"
+    }
+  ]
+}

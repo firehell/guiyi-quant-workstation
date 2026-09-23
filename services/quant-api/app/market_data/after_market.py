@@ -75,7 +75,11 @@ _PUBLIC_NOTIFICATION_ERROR_TYPES = frozenset(
 )
 
 
-def _diagnostic_warning(template: str, *args: object) -> None:
+def _diagnostic_warning(
+    template: str, *args: object, stage: str | None = None,
+    detail_code: str | None = None, attempt: int | None = None,
+    exception_type: str | None = None,
+) -> None:
     """Only fixed call-site templates and bounded values can reach any handler."""
     allowed = _PUBLIC_ERROR_CODES | {
         "RQDATA_READY_RESPONSE_INVALID", "UNEXPECTED_PROVIDER_EXCEPTION",
@@ -87,9 +91,10 @@ def _diagnostic_warning(template: str, *args: object) -> None:
                  or (isinstance(arg, str) and arg in allowed) else "REDACTED" for arg in args)
     try:
         message = template % safe
-        fields = dict(re.findall(r"(stage|detail_code|attempt)=([A-Za-z0-9_]+)", message))
-        if "attempt" in fields:
-            fields["attempt"] = int(fields["attempt"])
+        fields = {key: value for key, value in {
+            "stage": stage, "detail_code": detail_code,
+            "attempt": attempt, "exception_type": exception_type,
+        }.items() if value is not None}
         _LOGGER.warning(message, extra={"diagnostic_code": "AFTER_MARKET_DIAGNOSTIC", "diagnostic_fields": fields})
     except Exception:
         pass
@@ -129,12 +134,13 @@ class AfterMarketUpdater:
         self,
         *,
         manager: HistoricalDataManager,
-        rqdata: RQDataClient,
+        rqdata: RQDataClient | None,
         live_store: RedisLiveStore,
         status_path: Path,
         sleep: Callable[[float], None],
         notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
+        rqdata_factory: Callable[[], RQDataClient] | None = None,
         market_home_projection_invalidate: Callable[[], None] | None = None,
         market_home_projection_refresh: Callable[[], object] | None = None,
         recovery_guard_factory: Callable[[], AbstractContextManager] | None = None,
@@ -145,6 +151,7 @@ class AfterMarketUpdater:
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
+        self.rqdata_factory = rqdata_factory
         self.live_store = live_store
         self.status_path = status_path
         self.sleep = sleep
@@ -218,11 +225,13 @@ class AfterMarketUpdater:
                 _diagnostic_warning(
                     "after_market_consumer_audit_failed exception_type=%s",
                     type(exc).__name__,
+                    exception_type=type(exc).__name__,
                 )
             except Exception as exc:  # noqa: BLE001 - primary result remains authoritative
                 _diagnostic_warning(
                     "after_market_consumer_audit_failed exception_type=%s",
                     type(exc).__name__,
+                    exception_type=type(exc).__name__,
                 )
         checked_at = _local_timestamp(self.now()).isoformat()
         for check in checks.values():
@@ -238,6 +247,7 @@ class AfterMarketUpdater:
             _diagnostic_warning(
                 "after_market_consumer_status_write_failed exception_type=%s",
                 type(exc).__name__,
+                exception_type=type(exc).__name__,
             )
 
     def _write_consumer_checks(
@@ -259,6 +269,7 @@ class AfterMarketUpdater:
             _diagnostic_warning(
                 "after_market_consumer_status_write_failed exception_type=%s",
                 type(exc).__name__,
+                exception_type=type(exc).__name__,
             )
 
     def _run_guarded(self) -> AfterMarketResult:
@@ -282,6 +293,8 @@ class AfterMarketUpdater:
                 "detail_code=%s exception_type=%s",
                 calendar_error_code,
                 type(exc).__name__,
+                stage="calendar", attempt=0, detail_code=calendar_error_code,
+                exception_type=type(exc).__name__,
             )
             return self._finish_failure(
                 AfterMarketResult(
@@ -345,6 +358,7 @@ class AfterMarketUpdater:
                 _diagnostic_warning(
                     "after_market_notification_status_write_failed exception_type=%s",
                     type(exc).__name__,
+                    exception_type=type(exc).__name__,
                 )
         return result
 
@@ -393,6 +407,10 @@ class AfterMarketUpdater:
         attempt: int,
     ) -> str | None:
         try:
+            if self.rqdata is None:
+                if self.rqdata_factory is None:
+                    raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
+                self.rqdata = self.rqdata_factory()
             ready = self.rqdata.is_future_data_ready(trading_day)
         except Exception as exc:  # noqa: BLE001 - provider detail must not become public state
             detail_code = (
@@ -406,6 +424,8 @@ class AfterMarketUpdater:
                 attempt,
                 detail_code,
                 type(exc).__name__,
+                stage="rqdata_readiness", attempt=attempt, detail_code=detail_code,
+                exception_type=type(exc).__name__,
             )
             return "RQDATA_READY_CHECK_FAILED"
         if not ready:
@@ -433,6 +453,8 @@ class AfterMarketUpdater:
                     attempt,
                     exc.code,
                     type(exc).__name__,
+                    stage="metadata_readiness", attempt=attempt, detail_code=exc.code,
+                    exception_type=type(exc).__name__,
                 )
                 return exc.code
             _diagnostic_warning(
@@ -440,6 +462,8 @@ class AfterMarketUpdater:
                 "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=%s",
                 attempt,
                 type(exc).__name__,
+                stage="canonical_update", attempt=attempt,
+                detail_code="UNEXPECTED_UPDATE_EXCEPTION", exception_type=type(exc).__name__,
             )
             return "UPDATE_FAILED"
         except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
@@ -459,6 +483,8 @@ class AfterMarketUpdater:
                         attempt,
                         exc.args[0],
                         type(exc).__name__,
+                        stage="canonical_update", attempt=attempt,
+                        detail_code=exc.args[0], exception_type=type(exc).__name__,
                     )
                 return exc.args[0]
             _diagnostic_warning(
@@ -466,6 +492,8 @@ class AfterMarketUpdater:
                 "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=%s",
                 attempt,
                 type(exc).__name__,
+                stage="canonical_update", attempt=attempt,
+                detail_code="UNEXPECTED_UPDATE_EXCEPTION", exception_type=type(exc).__name__,
             )
             return "UPDATE_FAILED"
         if result.status not in {"passed", "noop"}:
@@ -476,6 +504,7 @@ class AfterMarketUpdater:
                 attempt,
                 error_code,
                 result.status,
+                stage="canonical_update_result", attempt=attempt, detail_code=error_code,
             )
             return error_code
 
@@ -497,6 +526,8 @@ class AfterMarketUpdater:
                     "after_market_attempt_failed stage=live_reconciliation attempt=%s "
                     "detail_code=LIVE_DOMINANT_MISMATCH",
                     attempt,
+                    stage="live_reconciliation", attempt=attempt,
+                    detail_code="LIVE_DOMINANT_MISMATCH",
                 )
                 return "LIVE_DOMINANT_MISMATCH"
             self._stage("live_cleanup")
@@ -509,6 +540,8 @@ class AfterMarketUpdater:
                 "detail_code=UNEXPECTED_LIVE_EXCEPTION exception_type=%s",
                 attempt,
                 type(exc).__name__,
+                stage="live_reconciliation", attempt=attempt,
+                detail_code="UNEXPECTED_LIVE_EXCEPTION", exception_type=type(exc).__name__,
             )
             return "UPDATE_FAILED"
         return None
@@ -527,6 +560,7 @@ class AfterMarketUpdater:
             _diagnostic_warning(
                 "market_home_projection_refresh_failed exception_type=%s",
                 type(exc).__name__,
+                exception_type=type(exc).__name__,
             )
 
     def _write_status(
@@ -699,9 +733,11 @@ def build_after_market_updater(
 ) -> AfterMarketUpdater:
     """组装 CLI 盘后入口；只在该命令实际执行时才懒初始化 RQData client。"""
     provider = manager.provider
-    client = getattr(provider, "client", None)
-    if client is None:
-        raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
+    def ready_client() -> RQDataClient:
+        client = getattr(provider, "client", None)
+        if client is None:
+            raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
+        return client
     from app.market_data.live_market import RedisClient
     from app.market_data.market_home_projection import (
         MarketHomeProjectionStore,
@@ -758,7 +794,8 @@ def build_after_market_updater(
             )
     return AfterMarketUpdater(
         manager=manager,
-        rqdata=client,
+        rqdata=None,
+        rqdata_factory=ready_client,
         live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
         status_path=PROJECT_ROOT / ".run" / "after-market-status.json",
         sleep=time.sleep,

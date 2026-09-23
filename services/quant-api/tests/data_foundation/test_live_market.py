@@ -982,8 +982,9 @@ def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready(mon
             "operational_count": 1,
             "subscribed_count": 1,
             "last_bar_at": bar.bar_end.isoformat(),
-            "phase_counts": {"TRADING": 1},
-            "coverage_schema_version": 1,
+                "phase_counts": {"TRADING": 1},
+                "phase_by_product": {"j": "TRADING"},
+                "coverage_schema_version": 1,
             "coverage": {"j": {
                 "trading_day": day.isoformat(), "contract": "J2505",
                 "sessions": [{"start": window.start.isoformat(), "end": window.end.isoformat()}],
@@ -1448,6 +1449,39 @@ def test_mixed_phase_keeps_closed_channel_through_grace_then_removes_only_it() -
     )
     assert client.unsubscribed == ["bar_J2505"]
     assert json.loads(fake.values["live:heartbeat"])["subscribed_count"] == 1
+
+
+def test_unknown_phase_invalidates_cached_ok_without_disabling_other_product() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    phases = FakePhases({
+        "j": _phase("j", day, window),
+        "ag": _phase("ag", day, window),
+    })
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505", ("ag", day): "AG2505"}),
+        phases=phases, store=module.RedisLiveStore(fake), products=("j", "ag"),
+    )
+    now = window.start + timedelta(minutes=1, seconds=2)
+    assert service.poll(now) is None
+    service._last_bar_at = now
+    service._coverage_cache["ag"] = {"state": "ok", "sessions": [{"start": window.start.isoformat()}],
+                                     "trading_day": day.isoformat(), "first_missing_bar_end": None}
+    phases.phases["ag"] = _phase("ag", day, None, MarketPhase.UNKNOWN)
+    service._publish_heartbeat(now + timedelta(seconds=1), phases.phases)
+    heartbeat = json.loads(fake.values["live:heartbeat"])
+    assert heartbeat["available"] is True
+    assert heartbeat["phase_by_product"] == {"j": "TRADING", "ag": "UNKNOWN"}
+    assert heartbeat["coverage"]["ag"]["state"] == "unverified"
+    assert heartbeat["coverage"]["ag"]["sessions"] == []
+    phases.phases["ag"] = _phase("ag", day, window)
+    service._publish_heartbeat(now + timedelta(seconds=2), phases.phases)
+    assert json.loads(fake.values["live:heartbeat"])["coverage"]["ag"]["state"] != "unverified"
 
 
 def test_idle_poll_does_not_create_provider() -> None:

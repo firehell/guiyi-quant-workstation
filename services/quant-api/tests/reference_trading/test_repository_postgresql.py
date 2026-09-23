@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from hashlib import sha256
 import threading
 from uuid import uuid4
@@ -15,7 +16,7 @@ from guiyi_quant.reference_trading import ReferenceState
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 
 from app.db.base import Base
-from app.reference_trading.contracts import SeedChunk
+from app.reference_trading.contracts import SeedChunk, prove_dependency_append
 from app.reference_trading.models import REFERENCE_TABLES
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
 from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
@@ -126,6 +127,29 @@ def test_postgresql_numeric_round_trip_keeps_decimal_precision(reference_postgre
     trade = repository.read_trades(snapshot, cutoff=None, limit=20).items[0]
     assert str(action.reference_price) == "3500.123456789"
     assert str(trade.mark_reference_price) == "3501.123456789"
+
+
+def test_postgresql_dependency_advance_updates_manifest_and_checkpoint_atomically(
+    reference_postgresql,
+) -> None:
+    repository, stream, revision, manifest, token = _seed(reference_postgresql)
+    next_manifest = {
+        "dataset_revision": "postgres-fixture-v1",
+        "partitions": [{"key": "tail", "sha256": "a" * 64}],
+    }
+    prepared = replace(
+        _open_batch(stream, revision, next_manifest, token),
+        dependency_advance=prove_dependency_append(
+            manifest, next_manifest, appended_ranges=("tail",),
+        ),
+    )
+
+    repository.commit_batch(token, prepared)
+    state = repository.read_state(stream.stream_id, revision)
+
+    assert state.dependency_manifest == next_manifest
+    assert state.dependency_digest == prepared.dependency_advance.new_digest
+    assert state.checkpoint.seq == 2
 
 
 def test_postgresql_seed_seal_and_publish_share_stream_then_revision_lock_order(

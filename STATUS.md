@@ -1,28 +1,79 @@
 # 当前状态
 
-文档整理：2026-09-22。正式 Release 候选为 v1.10.20：在已发布的 v1.10.19 之上增加
-schema-v3 `failed` 盘后终态的专用恢复绑定，并为状态、身份、服务和 heartbeat 拒绝提供有界错误码；
-既有 interrupted 关闭语义与 promotion 四项条件不变。annotated tag / GitHub Release 读回前，
-仓库正式身份仍为 `v1.10.19@879f76e4c115cc87bd9de78331002f084465fe33`。本机 Runtime 仍为
-`v1.10.18@ec1dd21f7bed7b04018350058edd3f2bc94cbabf`，root 为
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1`；v1.10.19 尚未 promotion。
-牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
-60 品种 × 3 策略自然首次加载 180/180；v1.10.17 已发布首批 41 品种 W1 正式能力，
-且本机 Runtime 已完成 promotion 与即时服务读回。v1.10.18 正式周线合同扩到 48 个品种
-（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2）。现场 Runtime 在本版本 promotion 前仍是 41。60m 继续关闭。v1.10.12 发布候选的
-Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
-不可用仍保留计算边界。v1.10.17 即时 Live 与总 health 已为 ok；新版本自然 Live、
-自然盘后与 weekly audit 证据仍待取得，因此不能声明 `RUNTIME_READY`。
+文档整理：2026-09-23。正式 Release 为
+`v1.10.20@19d39bcfefc7fe84ae178328b6553c10a2e6cdb5`：annotated tag 的 peeled commit
+为该提交；远端 `main` 为包含它的合并提交 `f97446c72d7d00108035044ff0893d51a0c27c39`；
+GitHub Release 已发布且非预发布。2026-09-23 本机只读状态脚本回读
+API、Web、Live、Alert 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.20-r1` 的同一提交，
+API/Web 返回 200，Runtime health 为 `ok`；盘后任务当时未运行，weekly audit 本次尚未运行。
+这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
+v1.10.21 release candidate 以 `ef2627824` 为基点合入当前 `main`，并纳入 CJ 严格无交易日
+W1 修复代码及只读预检。隔离本地 Python、Web、浏览器 fixture、构建与静态验证已通过相应
+定向门禁；扩展后端测试中的周线 campaign 用例在原始 `ef2627824` 工作树也失败，
+不作为本次 CJ 回归结论。CJ 两处 Canonical/Catalog 指针仍为旧版，CJ W1 正式能力仍关闭。候选代码、
+数据 apply、发布和 Runtime promotion 分属不同 Gate。正式周线合同为 48 个品种，
+60m 继续关闭。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-## v1.10.17 Release 与 Runtime 当前读回
+## v1.10.19 Release 读回
+
+PR #382 已合入 main。annotated tag `v1.10.19` 的 tag object 为
+`e75ad62a72f784fe16b496d6329b03655d972395`，peeled commit、origin/main 与 GitHub 上该 tag
+指向的提交均为 `879f76e4c115cc87bd9de78331002f084465fe33`。非草稿、非预发布的
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.19)
+发布树为 `a76d232311b71ab9867e0e5e0fa65fe79cd917d3`。
+
+本版只把周一 current-day Calendar 夜盘证据修复叠在 v1.10.18 上：Calendar 仍写到
+ISO 周日，TradingSession 仍只写当天与下一交易日，rank1 仍只写当天；盘后把
+`CALENDAR_NIGHT_AUTHORITY_MISSING` 作为公开且不重试的错误码。产品合同与 v1.10.18
+相同。本次发布没有 provider、Canonical/Catalog、生产 DB、通知写入。
+
+独立、干净的 detached root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.19-r1` 已完成离线
+locked 依赖安装、Web production build、104 项 health/canonical/after-market/metadata
+测试与 launchd render-only；API 版本身份为 1.10.19。2026-09-22 08:32 fresh Market preflight
+曾阻断；此后 owner 授权并完成的是 exact v1.10.18 Runtime promotion，不是 v1.10.19。
+v1.10.19 root 仍保留为未切换候选。
+
+## v1.10.18 Runtime promotion 读回
+
+2026-09-22 上午先补齐 Catalog 当日元数据：在 maintenance lease 下从锚定
+`2026-09-21` 的 RQData current-day 快照写入 `2026-09-22` 的 5 行 TradingCalendar 与
+225 条 TradingSession；跳过同 ISO 周内尚无夜盘权威的未来交易日 Calendar（与周一
+`CALENDAR_NIGHT_AUTHORITY_MISSING` / `UPDATE_FAILED` 同类）。补齐后 phase 为
+CLOSED 60/60。10:15 BREAK 窗口对 candidate root
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1` 的 preflight 为
+`passed / snapshot_ready / trading_day=2026-09-22 / operational_count=60 / snapshot_count=60`。
+
+随后按 Market → API/Web/日志轮转 → Alert → weekly audit 各安装一次，无重试、无回退。
+只读回读六项服务 installed/loaded root 与 commit 均为
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1` @ `ec1dd21f7bed7b04018350058edd3f2bc94cbabf`；
+API/Web 200，API version=1.10.18，正式能力 `newow_product_capabilities_v10` weekly_products=48
+（含 b/si，不含 cj）。detached checkout 干净。旧 v1.10.17 root 保留。未执行生产 Alembic、
+通知补发、Scope 变更或下单。总 health 为 degraded：新 root after-market pending，
+Alert 保留切换前诊断；自然 completed Live Bar、自然盘后与 weekly audit 仍待证据，
+不声明 `RUNTIME_READY`。
+
+## v1.10.18 Release 读回
+
+PR #381 已合入 main。annotated tag `v1.10.18` 的 tag object 为
+`b5ce0a805460d25425fb282869b211ef7adccc2e`，peeled commit、origin/main 与 GitHub 上该 tag
+指向的提交均为 `ec1dd21f7bed7b04018350058edd3f2bc94cbabf`。非草稿、非预发布的
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.18)
+发布树为 `7a0a9ff480663001bb641b174ad69631ce1dbb32`。
+
+本版正式开放 48 个品种 W1 的 chart/auxiliary/reference/comparator。新增 b、bz、eb、eg、j、pg、si，
+这 7 个品种使用 weekly v2；原 41 仍用 v1。其余 12 个品种 W1、全部 60m 与 explanation 继续关闭。
+能力合同为 `newow_product_capabilities_v10`。候选包含 Alembic `20260919_0047`，本次发布未执行生产
+migration，也未切换 Runtime。现场服务仍是 v1.10.17。
+
+## v1.10.17 Release 与 Runtime 读回
 
 PR #380 已合入 main；annotated tag `v1.10.17` 的 tag object 为
 `6f2689fad86e02d68788419d7dcfc280438dc542`，peeled commit、origin/main 与 GitHub Release target
-均为 `305cf36b94121dff37d6ce280f98869d979a2b8b`。非草稿、非预发布且为 latest 的
+均为 `305cf36b94121dff37d6ce280f98869d979a2b8b`。非草稿、非预发布的
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.17)
 发布树 `d72916771cb13c1a279925182eea3e8ba089d76e` 与已验证候选一致。
 
@@ -170,16 +221,17 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.17@305cf36b9`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 另见下行 |
-| 现役 Runtime | v1.10.17 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_OK`，未声明 `RUNTIME_READY` | 六项服务绑定 v1.10.17 exact root/commit；API/Web 与总 health 通过，公网及自然业务证据仍待验 |
+| 正式 Release | `RELEASED` | `v1.10.20@19d39bcfe`，annotated tag peeled commit 与已发布 GitHub Release 已读回；origin/main 为包含该提交的 `f97446c72` |
+| 现役 Runtime | v1.10.20 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 只读回读 API/Web/Live/Alert 加载 v1.10.20 exact root/commit、API/Web 200、Runtime health ok；盘后任务当时未运行，weekly audit 本次未运行 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | 六表、0047 migration、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；合入最新 develop 后 83 项 P3（含 9 项隔离 PG）及 368 项 P0–P3/Newow/SuBing 回归通过，Review 的 5 项 Important 已修复。仍默认 disabled，未执行生产 migration、P4 构建、P5 HTTP/Web、P6 worker 或 Runtime enable |
+| Unified Reference Trading P4 历史编排候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DEVELOP_INTEGRATED` | 已合入并推送 develop；有界 plan/build/advance/rebuild/resume、SuBing 四周期与 Newow 已有三周期矩阵、真实临时 Canonical/Catalog/MDS 接线、逐 owner 物理预热上界及 unknown commit/publish 恢复已完成。develop 合并结果非 PG 135 passed，计划指定关联回归 197 passed；专用空白可销毁 PostgreSQL 事务/CAS/dependency advance 9 passed，临时容器已删除；独立 Review 无 Confirmed Issue。未执行生产 migration/bootstrap、P5 HTTP/Web、P6 worker、Runtime 或数据写入 |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
-| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | exact v1.10.17 root 已安装，保留周六 09:00，当前 missed；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
+| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | 已安装 plist 指向 v1.10.20 exact root/commit；本轮只读状态为 `not_run`，launchd 当时未运行；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
-| 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 已进入现役 v1.10.8 Runtime；仅自然盘后及后续交易日增量验收未完成 |
+| 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 自 v1.10.8 起已发布并进入 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
 | 牛哇 D1 60 品种 | `RELEASED / FIRST_LOAD_180_OF_180`（固定截止） | `v1.10.12@5603b99d5`、截止 `2026-09-16T07:00:00.000001+00:00`：三策略首次加载 180/180；W1/60m 仍关闭。发布合并提交页面原始结果见 `output/playwright/release-v1.10.12-merged/manifest.json`；新 Runtime 自然业务仍待验 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |

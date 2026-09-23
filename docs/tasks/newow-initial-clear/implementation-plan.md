@@ -26,7 +26,7 @@ API 和 Web 成套迁移到 v2；沿用唯一 MDS reader、现有分页、统计
   若作者已修订，协调替代 exact commit；不要自行覆盖或退回旧趋势点行为，独立 Core 工作可继续。
 - 只有本地实现、离线验证、独立 Review、commit 与条件满足的本地 develop 集成属于执行范围。
 - 上轮两次 PT apply 已成功且授权耗尽；禁止重做、扩大补数、provider 请求、metadata/DB/Canonical/Redis 写入。
-- 原任务的远端 push 曾被自动审批拒绝（生产证据上传尚未获明确授权）；不得重试该上传。其余独立工作继续。
+- 原任务的远端 push 曾被自动审批拒绝；owner 已于 2026-09-23 确认本仓库 origin 及常规文档/`develop` push 授权，后续按 `AGENTS.md` 执行。
 - 旧 `/trend-detail`、HTDY/SuBing/Free、公式金样、MAIN_RISE_PAGE_V1、futures adaptation、profile、Action/Hint ID 不变。
 - 本功能不增加可持久化策略状态、兼容 reader、后台任务、独立账户/交易事实，也不开放 D1/60m/explanation。
 - 测试命令统一写入并执行 `TESTING.md` 下“Newow 初始无入场 CLEAR v2”小节；本计划只定义测试组与验收。
@@ -206,7 +206,7 @@ else:
 - [ ] 修复 blocking findings，定向重测并由同 reviewer 复审；测试不通过不得提交“已完成”状态。
 - [ ] 生成 task commit；确认 develop 没有并发重叠未提交修改，以非破坏方式整合新 develop 并复测冲突路径，
   然后完成已授权的本地 develop 集成。不得覆盖其他 worktree，也不删主工作树。
-- [ ] 交付 CODE/TEST/REVIEW、本地集成、PT现场证据分别的状态和 exact commit；注明远端 push 未执行及原因。
+- [ ] 交付 CODE/TEST/REVIEW、本地集成、PT现场证据分别的状态和 exact commit；如执行远端 push，记录目标 branch 和结果。
   最终结论只覆盖实际完成层级：允许集成 develop；不自动发布或晋升 Runtime。
 
 ## 计划复核记录
@@ -226,4 +226,4 @@ else:
   2,233 个 UNKNOWN 未决项为 incomplete。该结果更新至 readiness summary，不表示 180/180 READY。
 - 真实候选页面回读因固定 5174 端口被其他工作树进程占用而独立 pending；未停止/复用该进程，也未用 fixture
   冒充真实数据页面。
-- 未执行远端 push、main/tag/Release、Runtime、通知、provider、Canonical、数据库或 Redis mutation。
+- 未执行 main/tag/Release、Runtime、通知、provider、Canonical、数据库或 Redis mutation。常规文档、代码和 `develop` push 按 `AGENTS.md` 执行。

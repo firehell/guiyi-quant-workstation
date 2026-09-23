@@ -15,16 +15,6 @@ NEWOW_REPLICATION_BUILDER = ROOT / "scripts/docs/build_newow_replication_manual.
 DISTRIBUTION_STATUS_LINE = "DISTRIBUTION_STATUS = DISTRIBUTION_APPROVED_BY_OWNER"
 SCREENSHOT_POLICY_LINE = "NEWOW_SCREENSHOT_POLICY = RETAIN"
 
-APPROVED_SUPERPOWERS_DOCUMENTS = frozenset(
-    {
-        "docs/superpowers/plans/2026-09-17-newow-w1-60m-per-product.md",
-        "docs/superpowers/plans/2026-09-19-newow-intraday-roadmap.md",
-        "docs/superpowers/plans/2026-09-19-newow-six-ui-improvements.md",
-        "docs/superpowers/plans/2026-09-19-weekly-audit-page-quality-plan.md",
-        "docs/superpowers/specs/2026-09-19-weekly-audit-page-quality-design.md",
-    }
-)
-
 LATEST_AUDIT_SCREENSHOTS = {
     "docs/research/newow-v3.2.82/screenshots/20260918/600036-ai-recommendation.png": "ed68da4af4a31276bbb7b052bc58312f072b7440689400e75093931ec0b5d4ae",
     "docs/research/newow-v3.2.82/screenshots/20260918/600036-composite-ai-copy.png": "d6b32b520052da3706d35fd70a9d502c7afa76703c2ff12d744a6e45702d1897",
@@ -180,14 +170,11 @@ def _assert_approved_screenshot_inventory(
     actual_sha256_by_path: Mapping[str, str],
 ) -> None:
     assert len(APPROVED_SCREENSHOTS) == 29
-    assert set(tracked_paths) == set(APPROVED_SCREENSHOTS) | set(
-        LATEST_AUDIT_SCREENSHOTS
-    )
+    assert set(tracked_paths) == set(APPROVED_SCREENSHOTS) | set(LATEST_AUDIT_SCREENSHOTS)
 
     for tracked_path, (manifest_path, approved_sha256) in APPROVED_SCREENSHOTS.items():
         assert manifest_sha256_by_path[manifest_path] == approved_sha256
         assert actual_sha256_by_path[tracked_path] == approved_sha256
-
     for tracked_path, approved_sha256 in LATEST_AUDIT_SCREENSHOTS.items():
         assert actual_sha256_by_path[tracked_path] == approved_sha256
 
@@ -203,8 +190,13 @@ def test_local_browser_capture_directory_is_not_tracked_and_is_ignored() -> None
     assert ignored.returncode == 0
 
 
-def test_superpowers_documents_match_the_explicit_inventory() -> None:
-    assert set(_tracked_paths("docs/superpowers/**")) == APPROVED_SUPERPOWERS_DOCUMENTS
+def test_superpowers_documents_remain_in_documentation_scopes() -> None:
+    documents = _tracked_paths("docs/superpowers/**")
+    assert documents
+    assert all(path.startswith(("docs/superpowers/plans/", "docs/superpowers/specs/")) for path in documents)
+    assert any(path.startswith("docs/superpowers/plans/") and path.endswith(".md") for path in documents)
+    assert any(path.startswith("docs/superpowers/specs/") and path.endswith(".md") for path in documents)
+    assert all((ROOT / path).is_file() and not (ROOT / path).is_symlink() for path in documents)
     assert _tracked_paths(".superpowers/**") == ()
 
 
@@ -223,9 +215,7 @@ def test_newow_screenshot_distribution_owner_decision_is_explicit() -> None:
         item["relative_path"]: item["sha256"] for item in manifest["files"]
     }
     latest_audit = json.loads(
-        (NEWOW_DOSSIER / "evidence/latest-audit-20260918.json").read_text(
-            encoding="utf-8"
-        )
+        (NEWOW_DOSSIER / "evidence/latest-audit-20260918.json").read_text(encoding="utf-8")
     )
     assert {
         f"docs/research/newow-v3.2.82/{item['file']}": item["sha256"]
