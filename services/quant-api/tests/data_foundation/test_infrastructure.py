@@ -786,6 +786,42 @@ def test_coverage_resolves_friday_night_endpoint_to_monday_trading_day(tmp_path)
     session.close()
 
 
+def test_contract_first_night_does_not_require_session_before_listing(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.listed_date = date(2025, 1, 6)
+    day_session = session.scalar(select(TradingSession).where(
+        TradingSession.instrument_symbol == "jm",
+        TradingSession.session_name == "day",
+    ))
+    assert day_session is not None
+    day_session.effective_from = date(2025, 1, 6)
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True,
+    ))
+    session.add(TradingSession(
+        exchange_code="DCE", instrument_symbol="jm", session_name="night",
+        start_time=time(21), end_time=time(23),
+        effective_from=date(2025, 1, 6), effective_to=date(2025, 1, 6),
+        is_active=True,
+    ))
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+    key = DatasetKey("contract", "jm", "JM2509", "1m")
+
+    assert coverage.trading_days_for_bar_ends(
+        key, (datetime(2025, 1, 3, 13, 1, tzinfo=UTC),)
+    ) == (date(2025, 1, 6),)
+    contract.listed_date = date(2025, 1, 3)
+    session.commit()
+    with pytest.raises(InfrastructureError, match="TRADING_SESSION_MISSING"):
+        coverage.trading_days_for_bar_ends(
+            key, (datetime(2025, 1, 3, 13, 1, tzinfo=UTC),)
+        )
+    session.close()
+
+
 @pytest.mark.parametrize("identities", [("JM2505",), ("JM2509", "JM2509")])
 def test_minute_response_rejects_wrong_contract_or_duplicate_endpoint(
     tmp_path, identities
