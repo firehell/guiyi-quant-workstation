@@ -54,6 +54,7 @@ export interface ReferenceSummary {
   closed_count: number
   open_count: number
   interrupted_count: number
+  initial_count: number
   win_count: number
   loss_count: number
   flat_count: number

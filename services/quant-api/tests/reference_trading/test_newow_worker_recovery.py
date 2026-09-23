@@ -389,6 +389,113 @@ def test_postgresql_htdy_first_seen_capture_to_persisted_readback(
 
 
 @pytest.mark.isolated_postgresql
+def test_postgresql_htdy_successive_windows_preserve_first_seen_and_reject_repaint(
+    forward_postgresql: Engine,
+) -> None:
+    from app.reference_trading.htdy import evaluate_htdy_capture
+    from guiyi_quant.reference_trading.htdy import HtdyForwardState, MODEL_VERSION
+
+    base = datetime(2026, 9, 23, 0, tzinfo=UTC)
+    bars = tuple(CanonicalBar(
+        base + timedelta(minutes=15 * index), base.date(),
+        3500, 3510, 3490, 3500, 100, None, None,
+    ) for index in range(34))
+    identity = StreamIdentity(
+        "htdy", ("huotian_dayou_original_v0",), "htdy-v1", MODEL_VERSION,
+        "actual_dominant_v1", "RB", "15m", "actual_dominant",
+        RecordingMode.FORWARD_OBSERVATION, "latest_only_32_v1",
+    )
+    factory, repo, revision = _setup_other_forward_family(
+        forward_postgresql, identity,
+        HtdyForwardState(MODEL_VERSION, "latest_only_32_v1"),
+        "htdy_first_seen_v1", bars[31].bar_end - timedelta(seconds=4),
+    )
+
+    class MarketRead:
+        def __init__(self, window):
+            self.window = window
+
+        def observation_snapshot(self, _query, _after, _now):
+            return MarketObservationSnapshot(
+                state=None, source="realtime", trading_day=base.date(),
+                contract="RB2610", bars=(self.window[-1],),
+            )
+
+        def bars_until(self, _query, *, trading_day, end, limit):
+            assert trading_day == base.date() and end == self.window[-1].bar_end
+            assert limit == 32
+            return MarketReadWindow(
+                symbol="RB", series_kind="actual_dominant", frequency="15m",
+                trading_day=trading_day, contract="RB2610", cutoff=end,
+                bars=self.window, bar_contracts=("RB2610",) * 32,
+            )
+
+        def validate_alert_window(self, _window, *, context_bars):
+            assert context_bars == 32
+
+    query = HistoricalReferenceQuery(factory)
+    params = {"since": base.date(), "through": base.date(), "point_kind": "signal"}
+    old_snapshot = None
+    for index in (31, 32):
+        end = bars[index].bar_end
+        observed = end + timedelta(seconds=5)
+        capture = capture_htdy_live(
+            MarketRead(bars[index - 31:index + 1]), identity,
+            revision_id=revision, generation=1,
+            after=None if index == 31 else bars[index - 1].bar_end,
+            now=observed, wake_kind="live_event", event_bar_end=end,
+            owner_segments=lambda *_: ("owner", "calc"),
+        )
+        assert capture is not None
+        repo.capture_forward(capture)
+        worker = _worker(repo, object(), observed)
+        worker.wake(identity.stream_id)
+        assert worker.run_round() == 1, worker.health().blocked
+        page = query.signals(identity.stream_id, **params)
+        assert len(page["items"]) == index - 30
+        if index == 31:
+            old_snapshot = page["snapshot"]
+            first_signal = page["items"][0]
+            assert first_signal["value"]["first_seen"] is True
+            assert first_signal["value"]["bar_end"] == end.isoformat()
+            assert first_signal["value"]["observed_at"] == observed.isoformat()
+        else:
+            assert page["items"][0] == first_signal
+    assert old_snapshot is not None
+    assert query.signals(identity.stream_id, snapshot_token=old_snapshot, **params)["items"] == [first_signal]
+
+    # A later window that rewrites an overlapping completed Bar is captured as
+    # evidence but cannot be projected over the durable checkpoint.
+    repainted = list(bars[2:34])
+    repainted[5] = replace(repainted[5], close=Decimal(3501))
+    end = bars[33].bar_end
+    capture = capture_htdy_live(
+        MarketRead(tuple(repainted)), identity, revision_id=revision, generation=1,
+        after=bars[32].bar_end, now=end + timedelta(seconds=5),
+        wake_kind="live_event", event_bar_end=end,
+        owner_segments=lambda *_: ("owner", "calc"),
+    )
+    assert capture is not None
+    repo.capture_forward(capture)
+    pending = ReferenceRepository(factory).read_pending_capture(identity.stream_id)
+    assert pending is not None
+    token, checkpoint = ReferenceRepository(factory).load_checkpoint(identity.stream_id, revision)
+    with pytest.raises(ValueError, match="OBSERVATION_GAP"):
+        evaluate_htdy_capture(
+            token, checkpoint, {**pending[1], "capture_id": pending[0]},
+            dependency_manifest={"source": "isolated-live"},
+        )
+    worker = _worker(repo, object(), end + timedelta(seconds=5))
+    worker.wake(identity.stream_id)
+    assert worker.run_round() == 0
+    assert worker.health().blocked
+    assert ReferenceRepository(factory).load_checkpoint(identity.stream_id, revision)[0].seq == 3
+    assert ReferenceRepository(factory).read_pending_capture(identity.stream_id) is not None
+    assert len(query.signals(identity.stream_id, **params)["items"]) == 2
+    assert query.signals(identity.stream_id, snapshot_token=old_snapshot, **params)["items"] == [first_signal]
+
+
+@pytest.mark.isolated_postgresql
 def test_postgresql_disable_wins_before_inflight_worker_commit(
     forward_postgresql: Engine,
 ) -> None:

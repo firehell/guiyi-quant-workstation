@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from datetime import date, time
 from uuid import uuid4
 
 from sqlalchemy import create_engine
@@ -23,14 +24,17 @@ def main() -> None:
     database, version = validate_target(dict(os.environ))
     url = os.environ["GUIYI_ISOLATED_MIGRATION_DATABASE_URL"]
     os.environ["DATABASE_URL"] = url
+    os.environ["REDIS_URL"] = "redis://127.0.0.1:56380/0"
     from app.core import env as project_env
 
     project_env.load_project_env = lambda: None
     from app.api import reference_trading as reference_api
     from app.db.base import Base
+    from app.db.session import get_db
     from app.main import app
     from app.reference_trading.health import ForwardReferenceHealth
     from app.reference_trading.query import HistoricalReferenceQuery
+    from app.models import TradingSession
     from tests.reference_trading.test_historical_integration import _verify_historical_pipeline
     from tests.reference_trading.test_newow_worker_recovery import (
         _assert_restart_projects_pending_capture_once, _setup,
@@ -38,7 +42,8 @@ def main() -> None:
         test_postgresql_subing_forward_capture_to_persisted_readback,
     )
     import pytest
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session, sessionmaker
 
     engine = create_engine(url)
     schema = "reference_p8_browser_" + uuid4().hex
@@ -48,9 +53,25 @@ def main() -> None:
     try:
         Base.metadata.create_all(scoped)
         with TemporaryDirectory(prefix="guiyi-p8-browser-", dir="/private/tmp") as directory:
+            os.environ["GUIYI_CANONICAL_DATA_ROOT"] = directory
+            def isolated_db():
+                with Session(scoped) as session:
+                    yield session
+            app.dependency_overrides[get_db] = isolated_db
             patcher = pytest.MonkeyPatch()
             try:
                 _verify_historical_pipeline(scoped, Path(directory), patcher)
+                # The integration test deliberately shifts this first Session to
+                # 08:59 for revision rejection. Restore its original fixture fact
+                # before serving ordinary Market pages over the same Canonical.
+                with Session(scoped) as session:
+                    first_session = session.scalar(select(TradingSession).where(
+                        TradingSession.instrument_symbol == "rb",
+                        TradingSession.effective_from == date(2026, 1, 5),
+                    ))
+                    assert first_session is not None and first_session.start_time == time(8, 59)
+                    first_session.start_time = time(9)
+                    session.commit()
                 factory, repo, identity, revision, start, observed, reader = _setup(engine=scoped)
                 _assert_restart_projects_pending_capture_once(
                     factory, repo, identity, revision, start, observed, reader,
@@ -77,6 +98,7 @@ def main() -> None:
                 }, sort_keys=True), flush=True)
                 uvicorn.run(app, host="127.0.0.1", port=18081, log_level="warning")
             finally:
+                app.dependency_overrides.pop(get_db, None)
                 patcher.undo()
     finally:
         with engine.begin() as connection:
