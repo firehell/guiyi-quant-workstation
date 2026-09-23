@@ -614,6 +614,13 @@ def test_project_codex_permission_mode_is_preserved() -> None:
     assert config["sandbox_mode"] == "danger-full-access"
     assert config["approval_policy"] == "on-request"
     assert config["approvals_reviewer"] == "auto_review"
+
+
+def test_project_codex_new_thread_model_default_is_preserved() -> None:
+    config = tomllib.loads((ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    new_thread = config["models"]["new_thread"]
+    assert new_thread["model"] == "gpt-6-sol"
+    assert new_thread["model_reasoning_effort"] == "medium"
     assert "model" not in config
     assert "model_reasoning_effort" not in config
     assert config["sandbox_workspace_write"] == {
