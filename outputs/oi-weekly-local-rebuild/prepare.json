@@ -7,72 +7,122 @@
   "cutoff": "2026-09-18T07:00:00.000001+00:00",
   "d1_preimages": [
     {
+      "coverage_end": "2025-11-28T07:00:00+00:00",
+      "coverage_start": "2025-11-18T07:00:00+00:00",
       "month": 11,
       "quality_sha256": "cfc2e5f9f14cd77aac283ad181a13d710306ca96467e0a04c13f6da2cd700621",
+      "row_count": 7,
       "sha256": "30306f357d333f13c26e76c175404dd7d6189d909719825e1c5bfc01ebfccbe2",
+      "source_coverage_end": "2025-11-28T07:00:00+00:00",
+      "source_coverage_start": "2025-11-16T07:00:00+00:00",
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2025/month=11/part.30306f357d333f13c26e76c175404dd7d6189d909719825e1c5bfc01ebfccbe2.parquet",
       "year": 2025
     },
     {
+      "coverage_end": "2025-12-31T07:00:00+00:00",
+      "coverage_start": "2025-11-30T07:00:00+00:00",
       "month": 12,
       "quality_sha256": null,
+      "row_count": 23,
       "sha256": "9393b1c9a736d8711a6a943d333a8d156f366212df9368b8c694b1758258ac0c",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2025/month=12/part.9393b1c9a736d8711a6a943d333a8d156f366212df9368b8c694b1758258ac0c.parquet",
       "year": 2025
     },
     {
+      "coverage_end": "2026-01-30T07:00:00+00:00",
+      "coverage_start": "2026-01-04T07:00:00+00:00",
       "month": 1,
       "quality_sha256": null,
+      "row_count": 20,
       "sha256": "47fd4125c19d7d3c7d49290565efbf2afe8213319eac48607cb0c298bac03274",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=01/part.47fd4125c19d7d3c7d49290565efbf2afe8213319eac48607cb0c298bac03274.parquet",
       "year": 2026
     },
     {
+      "coverage_end": "2026-02-27T07:00:00+00:00",
+      "coverage_start": "2026-02-01T07:00:00+00:00",
       "month": 2,
       "quality_sha256": null,
+      "row_count": 14,
       "sha256": "5e098b7fafc50e8ea18bd35a7daa29e076e4f7ef104bfc7a4e13e8a7635d5d57",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=02/part.5e098b7fafc50e8ea18bd35a7daa29e076e4f7ef104bfc7a4e13e8a7635d5d57.parquet",
       "year": 2026
     },
     {
+      "coverage_end": "2026-03-31T07:00:00+00:00",
+      "coverage_start": "2026-03-01T07:00:00+00:00",
       "month": 3,
       "quality_sha256": null,
+      "row_count": 22,
       "sha256": "ad00e4aa05a0fc6c737af4a5df01e0ef728360b266120fb8a8d662bdd9caf678",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=03/part.ad00e4aa05a0fc6c737af4a5df01e0ef728360b266120fb8a8d662bdd9caf678.parquet",
       "year": 2026
     },
     {
+      "coverage_end": "2026-04-30T07:00:00+00:00",
+      "coverage_start": "2026-03-31T07:00:00+00:00",
       "month": 4,
       "quality_sha256": null,
+      "row_count": 21,
       "sha256": "0cb95c9c106df55d1e010adda48f8bf5068e622572f3faf33ffb68916dad7c15",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=04/part.0cb95c9c106df55d1e010adda48f8bf5068e622572f3faf33ffb68916dad7c15.parquet",
       "year": 2026
     },
     {
+      "coverage_end": "2026-05-29T07:00:00+00:00",
+      "coverage_start": "2026-05-05T07:00:00+00:00",
       "month": 5,
       "quality_sha256": null,
+      "row_count": 18,
       "sha256": "1b36330a02fd5863d0ffd7122fee4ab2e7420596624b2dc6e6315db1a864269e",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=05/part.1b36330a02fd5863d0ffd7122fee4ab2e7420596624b2dc6e6315db1a864269e.parquet",
       "year": 2026
     },
     {
+      "coverage_end": "2026-06-30T07:00:00+00:00",
+      "coverage_start": "2026-05-31T07:00:00+00:00",
       "month": 6,
       "quality_sha256": null,
+      "row_count": 21,
       "sha256": "110e74af4a456072a567ceb3fa4c5c6d90ada0c3d9acad86d7f4b800c4c995dc",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=06/part.110e74af4a456072a567ceb3fa4c5c6d90ada0c3d9acad86d7f4b800c4c995dc.parquet",
       "year": 2026
     },
     {
+      "coverage_end": "2026-07-31T07:00:00+00:00",
+      "coverage_start": "2026-06-30T07:00:00+00:00",
       "month": 7,
       "quality_sha256": null,
+      "row_count": 23,
       "sha256": "256ae463c3fda25f96c3326471d03a4bc1e8568c8af61cc60bbf6c9c2fb7ffe9",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=07/part.256ae463c3fda25f96c3326471d03a4bc1e8568c8af61cc60bbf6c9c2fb7ffe9.parquet",
       "year": 2026
     },
     {
+      "coverage_end": "2026-08-31T07:00:00+00:00",
+      "coverage_start": "2026-08-02T07:00:00+00:00",
       "month": 8,
       "quality_sha256": null,
+      "row_count": 21,
       "sha256": "070934d56f661afc341ae8da0c45ef28a78ed2b77a9a092fe005c1eced9ee863",
+      "source_coverage_end": null,
+      "source_coverage_start": null,
       "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1d/year=2026/month=08/part.070934d56f661afc341ae8da0c45ef28a78ed2b77a9a092fe005c1eced9ee863.parquet",
       "year": 2026
     }
@@ -85,6 +135,14 @@
       ],
       "candidate_sha256": "751a5a327494b2c4b61b5cec2f5f6e6240acaecf7875e72ea15aca28983fc1e1",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2025/month=11/part.751a5a327494b2c4b61b5cec2f5f6e6240acaecf7875e72ea15aca28983fc1e1.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2025-11-28T07:00:00+00:00",
+        "coverage_start": "2025-11-21T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 1,
+        "source_coverage_end": "2025-11-28T07:00:00+00:00",
+        "source_coverage_start": "2025-11-21T07:00:00+00:00"
+      },
       "month": 11,
       "new_count": 1,
       "old": null,
@@ -101,6 +159,14 @@
       ],
       "candidate_sha256": "1aa80caeeb9f87ed9b618287196c7209b9a9b4f6312942e5fe3a667e5a2788fa",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2025/month=12/part.1aa80caeeb9f87ed9b618287196c7209b9a9b4f6312942e5fe3a667e5a2788fa.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2025-12-31T07:00:00+00:00",
+        "coverage_start": "2025-11-28T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 5,
+        "source_coverage_end": "2025-12-31T07:00:00+00:00",
+        "source_coverage_start": "2025-11-28T07:00:00+00:00"
+      },
       "month": 12,
       "new_count": 5,
       "old": null,
@@ -116,6 +182,14 @@
       ],
       "candidate_sha256": "14028386457d0e7d2bec95950200ba114b9ff114fa4a61cdb88ca5532cf52590",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=01/part.14028386457d0e7d2bec95950200ba114b9ff114fa4a61cdb88ca5532cf52590.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-01-30T07:00:00+00:00",
+        "coverage_start": "2026-01-02T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 4,
+        "source_coverage_end": "2026-01-30T07:00:00+00:00",
+        "source_coverage_start": "2026-01-02T07:00:00+00:00"
+      },
       "month": 1,
       "new_count": 4,
       "old": null,
@@ -130,6 +204,14 @@
       ],
       "candidate_sha256": "f6722b13dcaed4dc43d7a6d909dd7d1b9c1330ce9729fff52e65b4054b5e3716",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=02/part.f6722b13dcaed4dc43d7a6d909dd7d1b9c1330ce9729fff52e65b4054b5e3716.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-02-27T07:00:00+00:00",
+        "coverage_start": "2026-01-30T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 3,
+        "source_coverage_end": "2026-02-27T07:00:00+00:00",
+        "source_coverage_start": "2026-01-30T07:00:00+00:00"
+      },
       "month": 2,
       "new_count": 3,
       "old": null,
@@ -145,6 +227,14 @@
       ],
       "candidate_sha256": "9ae95ae2bb164b3aa0343bfd23db32ee2fede9621af9754e4179968b3c847edd",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=03/part.9ae95ae2bb164b3aa0343bfd23db32ee2fede9621af9754e4179968b3c847edd.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-03-27T07:00:00+00:00",
+        "coverage_start": "2026-02-27T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 4,
+        "source_coverage_end": "2026-03-27T07:00:00+00:00",
+        "source_coverage_start": "2026-02-27T07:00:00+00:00"
+      },
       "month": 3,
       "new_count": 4,
       "old": null,
@@ -161,6 +251,14 @@
       ],
       "candidate_sha256": "3845ef21eb17bf7031545c24898bd5fbf9d1aec3043083dc4ca27dd91ceb6f59",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=04/part.3845ef21eb17bf7031545c24898bd5fbf9d1aec3043083dc4ca27dd91ceb6f59.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-04-30T07:00:00+00:00",
+        "coverage_start": "2026-03-27T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 5,
+        "source_coverage_end": "2026-04-30T07:00:00+00:00",
+        "source_coverage_start": "2026-03-27T07:00:00+00:00"
+      },
       "month": 4,
       "new_count": 5,
       "old": null,
@@ -176,6 +274,14 @@
       ],
       "candidate_sha256": "537ebe5d035b6dd38242bc8711ad11a230f0ce53204ecff66056289573426081",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=05/part.537ebe5d035b6dd38242bc8711ad11a230f0ce53204ecff66056289573426081.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-05-29T07:00:00+00:00",
+        "coverage_start": "2026-05-01T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 4,
+        "source_coverage_end": "2026-05-29T07:00:00+00:00",
+        "source_coverage_start": "2026-05-01T07:00:00+00:00"
+      },
       "month": 5,
       "new_count": 4,
       "old": null,
@@ -191,6 +297,14 @@
       ],
       "candidate_sha256": "e293ee4eea3600b37dc2f63ecc8cbeadff36090c181642cbc29be3e1412e1656",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=06/part.e293ee4eea3600b37dc2f63ecc8cbeadff36090c181642cbc29be3e1412e1656.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-06-26T07:00:00+00:00",
+        "coverage_start": "2026-05-29T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 4,
+        "source_coverage_end": "2026-06-26T07:00:00+00:00",
+        "source_coverage_start": "2026-05-29T07:00:00+00:00"
+      },
       "month": 6,
       "new_count": 4,
       "old": null,
@@ -207,6 +321,14 @@
       ],
       "candidate_sha256": "0fcd98085c4fd26b61af3b691a32865a04ca5d9e4880a3837da4003aa2d69158",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=07/part.0fcd98085c4fd26b61af3b691a32865a04ca5d9e4880a3837da4003aa2d69158.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-07-31T07:00:00+00:00",
+        "coverage_start": "2026-06-26T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 5,
+        "source_coverage_end": "2026-07-31T07:00:00+00:00",
+        "source_coverage_start": "2026-06-26T07:00:00+00:00"
+      },
       "month": 7,
       "new_count": 5,
       "old": null,
@@ -220,11 +342,24 @@
       ],
       "candidate_sha256": "a563c988d4edcef95460aad637698c039ef18c9ed363ca61a493b392385730a2",
       "candidate_uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=08/part.a563c988d4edcef95460aad637698c039ef18c9ed363ca61a493b392385730a2.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-08-28T07:00:00+00:00",
+        "coverage_start": "2026-07-31T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 4,
+        "source_coverage_end": "2026-08-28T07:00:00+00:00",
+        "source_coverage_start": "2026-07-31T07:00:00+00:00"
+      },
       "month": 8,
       "new_count": 4,
       "old": {
+        "coverage_end": "2026-08-28T07:00:00+00:00",
+        "coverage_start": "2026-08-14T07:00:00+00:00",
         "quality_sha256": null,
+        "row_count": 2,
         "sha256": "c006082f3330c30ef73bf7efbc51eac11ec8bf7f5467b94525d697c48d08d704",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
         "uri": "kind=contract/symbol=oi/series=OI2611/frequency=1w/year=2026/month=08/part.parquet"
       },
       "old_count": 2,
@@ -247,7 +382,7 @@
     }
   ],
   "quality_interruption": "2025-11-21",
-  "repair_source_sha256": "46002a1a17f8a2a37468e4da39f4d48e5884d960f537be36562d2ef861426d60",
+  "repair_source_sha256": "f589938afce881255026266d13f03049ef72199d890a8dd0eec9348df1d26d01",
   "schema_version": "oi_weekly_local_rebuild_v1",
   "week_count": 37,
   "weeks": [

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -67,7 +67,12 @@ def _partition_identity(partition: Any, root: Path) -> dict[str, Any]:
     if not path.resolve().is_relative_to(root.resolve()) or path.is_symlink():
         raise OIRebuildError("PARTITION_PATH_INVALID")
     return {"uri": path.relative_to(root).as_posix(), "sha256": _sha(path.read_bytes()),
-            "quality_sha256": partition.source_quality_sha256}
+            "quality_sha256": partition.source_quality_sha256,
+            "row_count": partition.row_count,
+            "coverage_start": partition.coverage_start.isoformat() if partition.coverage_start else None,
+            "coverage_end": partition.coverage_end.isoformat() if partition.coverage_end else None,
+            "source_coverage_start": partition.source_coverage_start.isoformat() if partition.source_coverage_start else None,
+            "source_coverage_end": partition.source_coverage_end.isoformat() if partition.source_coverage_end else None}
 
 
 def _merge_month(previous: tuple[CanonicalBar, ...], additions: tuple[CanonicalBar, ...]) -> tuple[CanonicalBar, ...]:
@@ -79,6 +84,27 @@ def _merge_month(previous: tuple[CanonicalBar, ...], additions: tuple[CanonicalB
     if any(left.bar_end >= right.bar_end for left, right in zip(candidate, candidate[1:])):
         raise OIRebuildError("W1_DUPLICATE_ENDPOINT")
     return candidate
+
+
+def _complete_daily_week(
+    points: tuple[tuple[datetime, date], ...],
+    daily: dict[date, CanonicalBar],
+    quality: dict[date, Any],
+    week_day: date,
+    *, allow_quality: bool = False,
+) -> tuple[CanonicalBar, ...]:
+    if not points:
+        raise OIRebuildError("D1_CALENDAR_WEEK_MISSING")
+    week = week_day.isocalendar()[:2]
+    actual = {(bar.bar_end, bar.trading_day) for bar in daily.values()
+              if bar.trading_day.isocalendar()[:2] == week}
+    actual |= {(item.bar_end, item.trading_day) for item in quality.values()
+               if item.trading_day.isocalendar()[:2] == week}
+    if actual != set(points):
+        raise OIRebuildError("D1_COMPLETE_WEEK_INVALID")
+    if not allow_quality and any(trading_day in quality for _, trading_day in points):
+        raise OIRebuildError("D1_QUALITY_INTERRUPTION")
+    return tuple(daily[trading_day] for _, trading_day in points if trading_day in daily)
 
 
 def prepare(session: Session, root: Path, root_sha256: str) -> tuple[dict[str, Any], tuple[tuple[CanonicalBar, ...], ...]]:
@@ -126,13 +152,8 @@ def prepare(session: Session, root: Path, root_sha256: str) -> tuple[dict[str, A
     for day in (*MISSING_DAYS, date(2025, 11, 21)):
         points = tuple((end, trading_day) for end, trading_day in expected_d1
                        if trading_day.isocalendar()[:2] == day.isocalendar()[:2])
-        if not points:
-            raise OIRebuildError("D1_CALENDAR_WEEK_MISSING")
-        actual = {(bar.bar_end, bar.trading_day) for bar in daily.values() if bar.trading_day.isocalendar()[:2] == day.isocalendar()[:2]}
-        actual |= {(item.bar_end, item.trading_day) for item in quality.values() if item.trading_day.isocalendar()[:2] == day.isocalendar()[:2]}
-        if actual != set(points):
-            raise OIRebuildError("D1_COMPLETE_WEEK_INVALID")
         if day == date(2025, 11, 21):
+            _complete_daily_week(points, daily, quality, day, allow_quality=True)
             if {item.trading_day for item in quality.values() if item.trading_day.isocalendar()[:2] == day.isocalendar()[:2]} != {date(2025, 11, 17), date(2025, 11, 18), day}:
                 raise OIRebuildError("QUALITY_INTERRUPTION_MOVED")
             interruption_facts = [
@@ -143,9 +164,7 @@ def prepare(session: Session, root: Path, root_sha256: str) -> tuple[dict[str, A
             if {item["classification"] for item in interruption_facts} != {"NONPOSITIVE_CLOSE"}:
                 raise OIRebuildError("QUALITY_INTERRUPTION_MOVED")
             continue
-        if any(trading_day in quality for _, trading_day in points):
-            raise OIRebuildError("D1_QUALITY_INTERRUPTION")
-        week_bars = tuple(daily[trading_day] for _, trading_day in points)
+        week_bars = _complete_daily_week(points, daily, quality, day)
         if any(not fact.listed_date <= bar.trading_day < fact.expired_date for bar in week_bars):
             raise OIRebuildError("D1_LIFECYCLE_INVALID")
         aggregate = _aggregate_daily_rows(tuple((bar.trading_day, {field: getattr(bar, field) for field in FIELDS}) for bar in week_bars), bar_end=weekly[day])
@@ -175,6 +194,14 @@ def prepare(session: Session, root: Path, root_sha256: str) -> tuple[dict[str, A
                         "old": _partition_identity(selected[0], root) if selected else None,
                         "candidate_uri": (directory.relative_to(root) / f"part.{candidate_sha}.parquet").as_posix(),
                         "candidate_sha256": candidate_sha,
+                        "catalog_candidate": {
+                            "row_count": len(candidate),
+                            "coverage_start": (candidate[0].bar_end - timedelta(days=7)).isoformat(),
+                            "coverage_end": candidate[-1].bar_end.isoformat(),
+                            "source_coverage_start": (candidate[0].bar_end - timedelta(days=7)).isoformat(),
+                            "source_coverage_end": candidate[-1].bar_end.isoformat(),
+                            "quality_sha256": None,
+                        },
                         "old_count": len(previous), "new_count": len(candidate),
                         "added_days": [bar.trading_day.isoformat() for bar in additions]})
         candidates.append(candidate)
@@ -200,13 +227,31 @@ def inspect(session: Session, root: Path, packet: dict[str, Any]) -> dict[str, A
         raise OIRebuildError("PREPARED_SCOPE_INVALID")
     catalog = MarketCatalog(session, root)
     store = CanonicalMonthlyStore(root)
+    d1_key = DatasetKey("contract", "oi", CONTRACT, "1d")
+    d1_parts = catalog.all_partitions(d1_key)
+    active_d1 = {(part.year, part.month): part for part in d1_parts}
+    if len(active_d1) != len(d1_parts):
+        raise OIRebuildError("D1_PREIMAGE_MOVED")
+    interruption_facts: list[dict[str, str]] = []
     for source in packet["d1_preimages"]:
         relative = Path(source["uri"])
         if relative.is_absolute() or ".." in relative.parts:
             raise OIRebuildError("D1_PREIMAGE_URI_INVALID")
-        path = root / relative
-        if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()) or _sha(path.read_bytes()) != source["sha256"]:
+        selected = active_d1.get((source["year"], source["month"]))
+        if selected is None or _partition_identity(selected, root) != {
+            key: value for key, value in source.items() if key not in ("year", "month")
+        }:
             raise OIRebuildError("D1_PREIMAGE_MOVED")
+        try:
+            _, facts = store.read_catalog_partition_quality(selected)
+        except Exception as exc:
+            raise OIRebuildError("D1_PREIMAGE_UNREADABLE") from exc
+        interruption_facts.extend(
+            {"trading_day": fact.trading_day.isoformat(), "classification": fact.classification}
+            for fact in facts if fact.trading_day.isocalendar()[:2] == date(2025, 11, 21).isocalendar()[:2]
+        )
+    if sorted(interruption_facts, key=lambda item: item["trading_day"]) != packet["quality_facts"]:
+        raise OIRebuildError("QUALITY_INTERRUPTION_MOVED")
     key = DatasetKey("contract", "oi", CONTRACT, "1w")
     states: list[str] = []
     for record in packet["months"]:
@@ -215,12 +260,16 @@ def inspect(session: Session, root: Path, packet: dict[str, Any]) -> dict[str, A
             states.append("other")
             continue
         current = _partition_identity(selected[0], root) if selected else None
-        candidate = {"uri": record["candidate_uri"], "sha256": record["candidate_sha256"], "quality_sha256": None}
+        candidate = {"uri": record["candidate_uri"], "sha256": record["candidate_sha256"],
+                     **record["catalog_candidate"]}
         if current == record["old"]:
             states.append("old")
         elif current == candidate:
             bars = store.read_catalog_partition(selected[0])
-            if len(bars) != record["new_count"] or not set(record["added_days"]).issubset({bar.trading_day.isoformat() for bar in bars}):
+            if (len(bars) != record["new_count"]
+                    or not set(record["added_days"]).issubset({bar.trading_day.isoformat() for bar in bars})
+                    or (record["year"], record["month"]) == (2025, 11)
+                    and any(bar.trading_day == date(2025, 11, 21) for bar in bars)):
                 states.append("other")
             else:
                 states.append("candidate")
@@ -247,6 +296,14 @@ def apply(session: Session, root: Path, root_sha256: str, packet: dict[str, Any]
                                                      tuple(bar.bar_end for bar in bars)))
             if published.parquet_path.relative_to(root).as_posix() != record["candidate_uri"]:
                 raise OIRebuildError("CANDIDATE_HASH_MISMATCH")
+            observed = {"row_count": published.row_count,
+                        "coverage_start": published.coverage_start.isoformat() if published.coverage_start else None,
+                        "coverage_end": published.coverage_end.isoformat() if published.coverage_end else None,
+                        "source_coverage_start": published.source_coverage_start.isoformat() if published.source_coverage_start else None,
+                        "source_coverage_end": published.source_coverage_end.isoformat() if published.source_coverage_end else None,
+                        "quality_sha256": published.source_quality_sha256}
+            if observed != record["catalog_candidate"]:
+                raise OIRebuildError("CANDIDATE_CATALOG_MISMATCH")
             catalog.register_partition(published)
         try:
             session.commit()
