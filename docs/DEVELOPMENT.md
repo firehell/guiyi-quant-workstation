@@ -13,6 +13,29 @@ canonical；可执行命令见 `TESTING.md`。
 - 数据、策略、Alert、Runtime、发布等设计与真实 mutation 是两层边界：设计获批后可连续编码，但代码完成或
   develop 集成不授予生产写入、main/tag/release 或 Runtime promotion。
 
+## Codex 模型调度
+
+项目级新线程默认是 **GPT-6 Sol Medium**。模型路由只优化质量、吞吐与 Codex 用量，不改变任务授权、
+测试标准、独立 Review 或任何生产 Gate；明确的单次任务选择优先于项目默认。
+
+| 任务类型 | 默认模型 / 推理强度 | 使用边界 |
+|---|---|---|
+| 边界明确的小修、测试补齐、文档同步、格式/类型、简单前端与重复机械工作 | GPT-6 Luna / Medium | 适合 focused、高吞吐任务；出现跨模块语义、根因不明或合同变化立即升级 |
+| 普通常规工程、API/Web、任务/预警、数据处理、可回滚重构 | GPT-6 Sol / Medium | 日常主力；默认新线程即使用这一档 |
+| 根因复杂、跨多模块、并发/幂等/恢复、复杂策略工程 | GPT-6 Sol / High | 先取证再实施；必要时独立高风险 Review |
+| 架构设计、跨域合同、重要业务语义、高风险独立 Review | GPT-6 Astra / Medium 或 High | 架构与 Review 为主，不拿来替代已经明确的常规实现 |
+| 前述模型两轮仍无法可靠收敛、存在重大架构争议或极端复杂综合问题 | Ultra | 例外使用，不作为日常实现模型 |
+
+量化研究单独收紧：机械数据整理/测试可用 Luna；正常策略、指标与回测实现至少使用 Sol Medium；
+OOS、Walk-forward、未来函数、数据泄漏、重绘、参数稳定性、候选晋升/淘汰使用 Sol High；
+研究方法论或跨系统架构存在争议时再升 Astra High。Lane 3 类型的真实写入、可信口径、策略公式、
+撮合/成本/成交时序、migration、release 与 Runtime promotion，代码实施至少使用 Sol High，
+设计或独立 Review 使用 Astra High，并继续保留 owner Gate。
+
+可将一次交付拆成“Sol 实现主体 → Luna 做机械测试/文档/收尾 → Sol High/Astra 做必要语义 Review”，
+但不要为了省用量把共享合同、高风险逻辑或根因未知问题降到 Luna。GPT-5.6 Sol/Terra 仅用于历史会话续接、
+兼容性对照或 GPT-6 回归备用，新任务不再默认选择。
+
 ## 日常 develop 流程
 
 ```text

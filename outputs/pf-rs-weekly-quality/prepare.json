@@ -1,0 +1,991 @@
+{
+  "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+  "catalog_revision": "efab2decec3eaa201562dea9493721aaff8a52fc5ca4285adfc0e7a5602f6a80",
+  "classification_version": "weekly-d1-quality-v2",
+  "contracts": [
+    {
+      "contract": "PF2611",
+      "d1_preimages": [
+        {
+          "coverage_end": null,
+          "coverage_start": null,
+          "month": 11,
+          "quality_sha256": "3b7f37a8eb9af6e518401b3d689d95ee3fa11caa25cf24bcf0da1213f0cbd40d",
+          "row_count": 0,
+          "sha256": "42f162594472aea3fcff00f6e959f3c1667d7590d882016459f11aaf2c7fdbcc",
+          "source_coverage_end": "2025-11-28T07:00:00+00:00",
+          "source_coverage_start": "2025-11-16T07:00:00+00:00",
+          "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1d/year=2025/month=11/part.42f162594472aea3fcff00f6e959f3c1667d7590d882016459f11aaf2c7fdbcc.parquet",
+          "year": 2025
+        },
+        {
+          "coverage_end": "2025-12-31T07:00:00+00:00",
+          "coverage_start": "2025-12-11T07:00:00+00:00",
+          "month": 12,
+          "quality_sha256": "4a8b5e9f06736de105d587a68fb2f6e0196950a3dc59489dcee03f40bd7ca279",
+          "row_count": 11,
+          "sha256": "5755911491739357f960cbc26b127e8a8f7498497ae942883be1eaa500d04518",
+          "source_coverage_end": "2025-12-31T07:00:00+00:00",
+          "source_coverage_start": "2025-11-30T07:00:00+00:00",
+          "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1d/year=2025/month=12/part.5755911491739357f960cbc26b127e8a8f7498497ae942883be1eaa500d04518.parquet",
+          "year": 2025
+        },
+        {
+          "coverage_end": "2026-01-29T07:00:00+00:00",
+          "coverage_start": "2026-01-04T07:00:00+00:00",
+          "month": 1,
+          "quality_sha256": "8afb212fcd6c5f82f12ac8bed3ac57b0eaa34ab1d11780a5e851c7a0bd2ae620",
+          "row_count": 16,
+          "sha256": "b8674fe64363c8d89c9fe545e09d519540d1d08fd947b3ccea30c176790e103f",
+          "source_coverage_end": "2026-01-30T07:00:00+00:00",
+          "source_coverage_start": "2026-01-04T07:00:00+00:00",
+          "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1d/year=2026/month=01/part.b8674fe64363c8d89c9fe545e09d519540d1d08fd947b3ccea30c176790e103f.parquet",
+          "year": 2026
+        },
+        {
+          "coverage_end": "2026-02-26T07:00:00+00:00",
+          "coverage_start": "2026-02-01T07:00:00+00:00",
+          "month": 2,
+          "quality_sha256": "bbabce111e647c1691ea371964ed5e18e21c542a4994edca4dc5726a2e23efc7",
+          "row_count": 8,
+          "sha256": "7cfffc8c620abfd7c78870bc0e571a6ddb94199d63065c0eb0654c565803e9bb",
+          "source_coverage_end": "2026-02-27T07:00:00+00:00",
+          "source_coverage_start": "2026-02-01T07:00:00+00:00",
+          "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1d/year=2026/month=02/part.7cfffc8c620abfd7c78870bc0e571a6ddb94199d63065c0eb0654c565803e9bb.parquet",
+          "year": 2026
+        }
+      ],
+      "weeks": [
+        {
+          "bar_end": "2025-11-21T07:00:00+00:00",
+          "daily_revision_sha256": "d1910250a4d0f06457b7b998d547d52c19a530e6b086296f63aac96a16969d20",
+          "expected_d1_endpoints": [
+            [
+              "2025-11-17T07:00:00+00:00",
+              "2025-11-17"
+            ],
+            [
+              "2025-11-18T07:00:00+00:00",
+              "2025-11-18"
+            ],
+            [
+              "2025-11-19T07:00:00+00:00",
+              "2025-11-19"
+            ],
+            [
+              "2025-11-20T07:00:00+00:00",
+              "2025-11-20"
+            ],
+            [
+              "2025-11-21T07:00:00+00:00",
+              "2025-11-21"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-17",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-18",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-19",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-20",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-21",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            }
+          ],
+          "source_identity": "821569ba2b7a437bc1e83e122c35a264a414f60ecff571f9758952e9f2fd8a96",
+          "week_end": "2025-11-21"
+        },
+        {
+          "bar_end": "2025-11-28T07:00:00+00:00",
+          "daily_revision_sha256": "d1910250a4d0f06457b7b998d547d52c19a530e6b086296f63aac96a16969d20",
+          "expected_d1_endpoints": [
+            [
+              "2025-11-24T07:00:00+00:00",
+              "2025-11-24"
+            ],
+            [
+              "2025-11-25T07:00:00+00:00",
+              "2025-11-25"
+            ],
+            [
+              "2025-11-26T07:00:00+00:00",
+              "2025-11-26"
+            ],
+            [
+              "2025-11-27T07:00:00+00:00",
+              "2025-11-27"
+            ],
+            [
+              "2025-11-28T07:00:00+00:00",
+              "2025-11-28"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-24",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-25",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-26",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-27",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-28",
+              "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b",
+              "response_sha256": "85a4fb17790b6dac8a9a40aa505edbef78739e375c809673dae90f5f84bd15a8"
+            }
+          ],
+          "source_identity": "34c89ab45452a2a4967ea4edefb9bcd0fda6b229379417a0b496eaae6c1f1d98",
+          "week_end": "2025-11-28"
+        },
+        {
+          "bar_end": "2025-12-05T07:00:00+00:00",
+          "daily_revision_sha256": "38b0a4b4368f83e0bdb803d5ab19da6c5303fc6ffbd11bc7d35c3a6b8dd4dd34",
+          "expected_d1_endpoints": [
+            [
+              "2025-12-01T07:00:00+00:00",
+              "2025-12-01"
+            ],
+            [
+              "2025-12-02T07:00:00+00:00",
+              "2025-12-02"
+            ],
+            [
+              "2025-12-03T07:00:00+00:00",
+              "2025-12-03"
+            ],
+            [
+              "2025-12-04T07:00:00+00:00",
+              "2025-12-04"
+            ],
+            [
+              "2025-12-05T07:00:00+00:00",
+              "2025-12-05"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-01",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-02",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-03",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-04",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-05",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            }
+          ],
+          "source_identity": "c6c7bb8e33248f4ecb6c7f2798d006d6b0f28fc4971e23684b9a4dd62e5a5bd6",
+          "week_end": "2025-12-05"
+        },
+        {
+          "bar_end": "2025-12-12T07:00:00+00:00",
+          "daily_revision_sha256": "74c50b12ca95be4ac6baa4a5faa1774d5a77a28c6bd07240ca7af27a02ea2efc",
+          "expected_d1_endpoints": [
+            [
+              "2025-12-08T07:00:00+00:00",
+              "2025-12-08"
+            ],
+            [
+              "2025-12-09T07:00:00+00:00",
+              "2025-12-09"
+            ],
+            [
+              "2025-12-10T07:00:00+00:00",
+              "2025-12-10"
+            ],
+            [
+              "2025-12-11T07:00:00+00:00",
+              "2025-12-11"
+            ],
+            [
+              "2025-12-12T07:00:00+00:00",
+              "2025-12-12"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-08",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-09",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-10",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-11",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            }
+          ],
+          "source_identity": "da9dba52eab290f8e040a0265f6ae9a5ed5718da53c513dc073652d1543311c2",
+          "week_end": "2025-12-12"
+        },
+        {
+          "bar_end": "2025-12-19T07:00:00+00:00",
+          "daily_revision_sha256": "58e4f709f7b44e4a9f65ac45f2010d180dc20f2c35092c23eb04e1a307727ab4",
+          "expected_d1_endpoints": [
+            [
+              "2025-12-15T07:00:00+00:00",
+              "2025-12-15"
+            ],
+            [
+              "2025-12-16T07:00:00+00:00",
+              "2025-12-16"
+            ],
+            [
+              "2025-12-17T07:00:00+00:00",
+              "2025-12-17"
+            ],
+            [
+              "2025-12-18T07:00:00+00:00",
+              "2025-12-18"
+            ],
+            [
+              "2025-12-19T07:00:00+00:00",
+              "2025-12-19"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-15",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-16",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            }
+          ],
+          "source_identity": "8e5f5fe1f0c81ec88325c89fef3c0bd4862ae2c1fd4108bebf24e5d97333fbc6",
+          "week_end": "2025-12-19"
+        },
+        {
+          "bar_end": "2025-12-31T07:00:00+00:00",
+          "daily_revision_sha256": "894f7708e91bb02d037508c8b38cb7558de7a4e74ea9b19b4ef24fc16ba5b2d3",
+          "expected_d1_endpoints": [
+            [
+              "2025-12-29T07:00:00+00:00",
+              "2025-12-29"
+            ],
+            [
+              "2025-12-30T07:00:00+00:00",
+              "2025-12-30"
+            ],
+            [
+              "2025-12-31T07:00:00+00:00",
+              "2025-12-31"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-12-30",
+              "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995",
+              "response_sha256": "985383ff4ba102a96ddeb3aed9c1804f41fa070b0c5921ce835f470d68ec91b8"
+            }
+          ],
+          "source_identity": "64f3e510541cf48ffbb71f179e4780ac6cbe2be5d653968475db81d74099e394",
+          "week_end": "2025-12-31"
+        },
+        {
+          "bar_end": "2026-01-23T07:00:00+00:00",
+          "daily_revision_sha256": "ad0375face7172ee94eae02fef8ac2dbd02b57e1774b8b1a3166916c35a676a7",
+          "expected_d1_endpoints": [
+            [
+              "2026-01-19T07:00:00+00:00",
+              "2026-01-19"
+            ],
+            [
+              "2026-01-20T07:00:00+00:00",
+              "2026-01-20"
+            ],
+            [
+              "2026-01-21T07:00:00+00:00",
+              "2026-01-21"
+            ],
+            [
+              "2026-01-22T07:00:00+00:00",
+              "2026-01-22"
+            ],
+            [
+              "2026-01-23T07:00:00+00:00",
+              "2026-01-23"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-01-19",
+              "request_sha256": "5a27be15be8063ef7936a1c863a78606f93fa768b3993ca77329744b99907797",
+              "response_sha256": "eff8c86cb7d2fa191fe67914e3d6ed5d5a18f2f26b9d292806bf3fb3f6eb5652"
+            }
+          ],
+          "source_identity": "ce693501ba2b4ddee6be183cb2e4091d9b428d816df49669cf35f8a35187b93e",
+          "week_end": "2026-01-23"
+        },
+        {
+          "bar_end": "2026-01-30T07:00:00+00:00",
+          "daily_revision_sha256": "f880884250fae6edc4647fee48d061493af2f93ac85f5d5269431d9fb116c7f8",
+          "expected_d1_endpoints": [
+            [
+              "2026-01-26T07:00:00+00:00",
+              "2026-01-26"
+            ],
+            [
+              "2026-01-27T07:00:00+00:00",
+              "2026-01-27"
+            ],
+            [
+              "2026-01-28T07:00:00+00:00",
+              "2026-01-28"
+            ],
+            [
+              "2026-01-29T07:00:00+00:00",
+              "2026-01-29"
+            ],
+            [
+              "2026-01-30T07:00:00+00:00",
+              "2026-01-30"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-01-27",
+              "request_sha256": "5a27be15be8063ef7936a1c863a78606f93fa768b3993ca77329744b99907797",
+              "response_sha256": "eff8c86cb7d2fa191fe67914e3d6ed5d5a18f2f26b9d292806bf3fb3f6eb5652"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-01-28",
+              "request_sha256": "5a27be15be8063ef7936a1c863a78606f93fa768b3993ca77329744b99907797",
+              "response_sha256": "eff8c86cb7d2fa191fe67914e3d6ed5d5a18f2f26b9d292806bf3fb3f6eb5652"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-01-30",
+              "request_sha256": "5a27be15be8063ef7936a1c863a78606f93fa768b3993ca77329744b99907797",
+              "response_sha256": "eff8c86cb7d2fa191fe67914e3d6ed5d5a18f2f26b9d292806bf3fb3f6eb5652"
+            }
+          ],
+          "source_identity": "453271b0171704c5c1511d2e7783bb55989e086855d3217121f2ae668e9b5b53",
+          "week_end": "2026-01-30"
+        },
+        {
+          "bar_end": "2026-02-06T07:00:00+00:00",
+          "daily_revision_sha256": "3c923b8f844c49453692a7383ab0ce1904bbfb739092c3dae0af3d026ecedfee",
+          "expected_d1_endpoints": [
+            [
+              "2026-02-02T07:00:00+00:00",
+              "2026-02-02"
+            ],
+            [
+              "2026-02-03T07:00:00+00:00",
+              "2026-02-03"
+            ],
+            [
+              "2026-02-04T07:00:00+00:00",
+              "2026-02-04"
+            ],
+            [
+              "2026-02-05T07:00:00+00:00",
+              "2026-02-05"
+            ],
+            [
+              "2026-02-06T07:00:00+00:00",
+              "2026-02-06"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-02-03",
+              "request_sha256": "4a59e752084deadc6b983d0912fa871b9c09d759f03bfb63243338639b85e1c4",
+              "response_sha256": "1aef8f960eca17c5bc4b30f5723d6dab12f5016d34be7347e1e61d1b6e0c68c2"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-02-04",
+              "request_sha256": "4a59e752084deadc6b983d0912fa871b9c09d759f03bfb63243338639b85e1c4",
+              "response_sha256": "1aef8f960eca17c5bc4b30f5723d6dab12f5016d34be7347e1e61d1b6e0c68c2"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-02-06",
+              "request_sha256": "4a59e752084deadc6b983d0912fa871b9c09d759f03bfb63243338639b85e1c4",
+              "response_sha256": "1aef8f960eca17c5bc4b30f5723d6dab12f5016d34be7347e1e61d1b6e0c68c2"
+            }
+          ],
+          "source_identity": "26813d39df8cafe831f758d702abc67d416933324940ad15d791050b3b6c684e",
+          "week_end": "2026-02-06"
+        },
+        {
+          "bar_end": "2026-02-13T07:00:00+00:00",
+          "daily_revision_sha256": "067fbcce38f0213b55e7f7f0acf03a6c055fa1ff20a7ec573eab2de91d746297",
+          "expected_d1_endpoints": [
+            [
+              "2026-02-09T07:00:00+00:00",
+              "2026-02-09"
+            ],
+            [
+              "2026-02-10T07:00:00+00:00",
+              "2026-02-10"
+            ],
+            [
+              "2026-02-11T07:00:00+00:00",
+              "2026-02-11"
+            ],
+            [
+              "2026-02-12T07:00:00+00:00",
+              "2026-02-12"
+            ],
+            [
+              "2026-02-13T07:00:00+00:00",
+              "2026-02-13"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-02-12",
+              "request_sha256": "4a59e752084deadc6b983d0912fa871b9c09d759f03bfb63243338639b85e1c4",
+              "response_sha256": "1aef8f960eca17c5bc4b30f5723d6dab12f5016d34be7347e1e61d1b6e0c68c2"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-02-13",
+              "request_sha256": "4a59e752084deadc6b983d0912fa871b9c09d759f03bfb63243338639b85e1c4",
+              "response_sha256": "1aef8f960eca17c5bc4b30f5723d6dab12f5016d34be7347e1e61d1b6e0c68c2"
+            }
+          ],
+          "source_identity": "0cef8898e56f239466dac34fc0aecac73ea3b8fd48a2bbd845daf34f278653ab",
+          "week_end": "2026-02-13"
+        },
+        {
+          "bar_end": "2026-02-27T07:00:00+00:00",
+          "daily_revision_sha256": "5f14733dfceb9218f9b5b201c29a73fce2192df356770b7249ddc0152cdf0cbd",
+          "expected_d1_endpoints": [
+            [
+              "2026-02-24T07:00:00+00:00",
+              "2026-02-24"
+            ],
+            [
+              "2026-02-25T07:00:00+00:00",
+              "2026-02-25"
+            ],
+            [
+              "2026-02-26T07:00:00+00:00",
+              "2026-02-26"
+            ],
+            [
+              "2026-02-27T07:00:00+00:00",
+              "2026-02-27"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-02-27",
+              "request_sha256": "4a59e752084deadc6b983d0912fa871b9c09d759f03bfb63243338639b85e1c4",
+              "response_sha256": "1aef8f960eca17c5bc4b30f5723d6dab12f5016d34be7347e1e61d1b6e0c68c2"
+            }
+          ],
+          "source_identity": "dcbab706922373d3644366416c6fc467eb4a976df931f49a5ac24c7942b187b3",
+          "week_end": "2026-02-27"
+        }
+      ]
+    },
+    {
+      "contract": "RS2609",
+      "d1_preimages": [
+        {
+          "coverage_end": "2025-11-27T07:00:00+00:00",
+          "coverage_start": "2025-11-20T07:00:00+00:00",
+          "month": 11,
+          "quality_sha256": "1f4fdc58110df6893037e5f23823f978236ade9a9f2217e27cd3c37221be3e40",
+          "row_count": 3,
+          "sha256": "f3706b5036a9e78e951ca6204454d55fc298517fe81904198037519cea293a4d",
+          "source_coverage_end": "2025-11-28T07:00:00+00:00",
+          "source_coverage_start": "2025-11-02T07:00:00+00:00",
+          "uri": "kind=contract/symbol=rs/series=RS2609/frequency=1d/year=2025/month=11/part.f3706b5036a9e78e951ca6204454d55fc298517fe81904198037519cea293a4d.parquet",
+          "year": 2025
+        },
+        {
+          "coverage_end": "2026-08-31T07:00:00+00:00",
+          "coverage_start": "2026-08-02T07:00:00+00:00",
+          "month": 8,
+          "quality_sha256": "2c22de0aa1a0058e802b5554ab7177bc3cbe043b30b3be812a58c2efd11e2dbd",
+          "row_count": 20,
+          "sha256": "b7789612423e4b194e39f16a6263317f57be009d88a99ba86da6256f2c1b4c86",
+          "source_coverage_end": "2026-08-31T07:00:00+00:00",
+          "source_coverage_start": "2026-08-02T07:00:00+00:00",
+          "uri": "kind=contract/symbol=rs/series=RS2609/frequency=1d/year=2026/month=08/part.b7789612423e4b194e39f16a6263317f57be009d88a99ba86da6256f2c1b4c86.parquet",
+          "year": 2026
+        },
+        {
+          "coverage_end": "2026-09-11T07:00:00+00:00",
+          "coverage_start": "2026-08-31T07:00:00+00:00",
+          "month": 9,
+          "quality_sha256": "a967dcf3626401877fef7a98097b53e079b20e0686741eb82b452cf08abc75bc",
+          "row_count": 5,
+          "sha256": "07a3f19b1a6c85acc996a61fedf265af19f4403fb3e4147fbad725de82bf2c49",
+          "source_coverage_end": "2026-09-11T07:00:00+00:00",
+          "source_coverage_start": "2026-08-31T07:00:00+00:00",
+          "uri": "kind=contract/symbol=rs/series=RS2609/frequency=1d/year=2026/month=09/part.07a3f19b1a6c85acc996a61fedf265af19f4403fb3e4147fbad725de82bf2c49.parquet",
+          "year": 2026
+        }
+      ],
+      "weeks": [
+        {
+          "bar_end": "2025-11-28T07:00:00+00:00",
+          "daily_revision_sha256": "a2dfe88413529e71740bffe0d809e37f7697a45fb6845209f05a7279737afef3",
+          "expected_d1_endpoints": [
+            [
+              "2025-11-24T07:00:00+00:00",
+              "2025-11-24"
+            ],
+            [
+              "2025-11-25T07:00:00+00:00",
+              "2025-11-25"
+            ],
+            [
+              "2025-11-26T07:00:00+00:00",
+              "2025-11-26"
+            ],
+            [
+              "2025-11-27T07:00:00+00:00",
+              "2025-11-27"
+            ],
+            [
+              "2025-11-28T07:00:00+00:00",
+              "2025-11-28"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-24",
+              "request_sha256": "b0b7b00b0ab978157ca34a1e171efc56e24c792a77a3f61ca34f0547090fe5bb",
+              "response_sha256": "b1781b3bebb121bf2fc85f17820df63b61bf910e6e3e7c90b797ce2a2c042bdf"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-26",
+              "request_sha256": "b0b7b00b0ab978157ca34a1e171efc56e24c792a77a3f61ca34f0547090fe5bb",
+              "response_sha256": "b1781b3bebb121bf2fc85f17820df63b61bf910e6e3e7c90b797ce2a2c042bdf"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2025-11-28",
+              "request_sha256": "b0b7b00b0ab978157ca34a1e171efc56e24c792a77a3f61ca34f0547090fe5bb",
+              "response_sha256": "b1781b3bebb121bf2fc85f17820df63b61bf910e6e3e7c90b797ce2a2c042bdf"
+            }
+          ],
+          "source_identity": "925a2a0fb1a471be231330744e429e0bc991bd7752887ebb5ee90705c220e709",
+          "week_end": "2025-11-28"
+        },
+        {
+          "bar_end": "2026-08-14T07:00:00+00:00",
+          "daily_revision_sha256": "4931455596f98ac54e9a6fb893c0878e6516bb70db5b19ab451ee54cbd0f6600",
+          "expected_d1_endpoints": [
+            [
+              "2026-08-10T07:00:00+00:00",
+              "2026-08-10"
+            ],
+            [
+              "2026-08-11T07:00:00+00:00",
+              "2026-08-11"
+            ],
+            [
+              "2026-08-12T07:00:00+00:00",
+              "2026-08-12"
+            ],
+            [
+              "2026-08-13T07:00:00+00:00",
+              "2026-08-13"
+            ],
+            [
+              "2026-08-14T07:00:00+00:00",
+              "2026-08-14"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-08-12",
+              "request_sha256": "77cc3703b8ca1f5ad39b8f3d6890b563ed4494ee396454c3c257dd3e426bc2a9",
+              "response_sha256": "657cb4b97a7616d0aefb09187e37e288dd4f0680a3985a29172455c1e6d7149f"
+            }
+          ],
+          "source_identity": "790dcb28d808d483540fabd38335e2662e2d4e4e59fddad254e79f7661376aef",
+          "week_end": "2026-08-14"
+        },
+        {
+          "bar_end": "2026-09-04T07:00:00+00:00",
+          "daily_revision_sha256": "329dd07669e246f5ede60690637f0aa364c25ac30504a5708c35a0bae6eb468b",
+          "expected_d1_endpoints": [
+            [
+              "2026-08-31T07:00:00+00:00",
+              "2026-08-31"
+            ],
+            [
+              "2026-09-01T07:00:00+00:00",
+              "2026-09-01"
+            ],
+            [
+              "2026-09-02T07:00:00+00:00",
+              "2026-09-02"
+            ],
+            [
+              "2026-09-03T07:00:00+00:00",
+              "2026-09-03"
+            ],
+            [
+              "2026-09-04T07:00:00+00:00",
+              "2026-09-04"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-09-02",
+              "request_sha256": "513bcf7b7a91d890b592b3c5ca1b196f6d6960f02f29790b4e421aaf657b9351",
+              "response_sha256": "73b1f34b2cf2e271332e429f45706493c1a43ddaa71e0f13c3d66e268849b65a"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-09-04",
+              "request_sha256": "513bcf7b7a91d890b592b3c5ca1b196f6d6960f02f29790b4e421aaf657b9351",
+              "response_sha256": "73b1f34b2cf2e271332e429f45706493c1a43ddaa71e0f13c3d66e268849b65a"
+            }
+          ],
+          "source_identity": "fe1a44facc449c90aad2acfb78ee821b69f733fede1ec3bedaae49379d00c2ae",
+          "week_end": "2026-09-04"
+        },
+        {
+          "bar_end": "2026-09-11T07:00:00+00:00",
+          "daily_revision_sha256": "1fab6c25b9c73282ce926379962b5ca05343dd080939b9df2149fb65c3f78abf",
+          "expected_d1_endpoints": [
+            [
+              "2026-09-07T07:00:00+00:00",
+              "2026-09-07"
+            ],
+            [
+              "2026-09-08T07:00:00+00:00",
+              "2026-09-08"
+            ],
+            [
+              "2026-09-09T07:00:00+00:00",
+              "2026-09-09"
+            ],
+            [
+              "2026-09-10T07:00:00+00:00",
+              "2026-09-10"
+            ],
+            [
+              "2026-09-11T07:00:00+00:00",
+              "2026-09-11"
+            ]
+          ],
+          "quality_days": [
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-09-08",
+              "request_sha256": "513bcf7b7a91d890b592b3c5ca1b196f6d6960f02f29790b4e421aaf657b9351",
+              "response_sha256": "73b1f34b2cf2e271332e429f45706493c1a43ddaa71e0f13c3d66e268849b65a"
+            },
+            {
+              "classification": "NONPOSITIVE_CLOSE",
+              "day": "2026-09-09",
+              "request_sha256": "513bcf7b7a91d890b592b3c5ca1b196f6d6960f02f29790b4e421aaf657b9351",
+              "response_sha256": "73b1f34b2cf2e271332e429f45706493c1a43ddaa71e0f13c3d66e268849b65a"
+            }
+          ],
+          "source_identity": "b1e3853e18c1f7df3a073f653bff053ea1d3bb7ded8927100e9214f2f5f04da6",
+          "week_end": "2026-09-11"
+        }
+      ]
+    }
+  ],
+  "cutoff": "2026-09-18T07:00:00.000001+00:00",
+  "d1_writes": 0,
+  "months": [
+    {
+      "action": "remove_pointer",
+      "contract": "PF2611",
+      "month": 11,
+      "new_count": 0,
+      "old": {
+        "coverage_end": "2025-11-28T07:00:00+00:00",
+        "coverage_start": "2025-11-14T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 2,
+        "sha256": "6f3febb68c514937cf143893303a43bc30dcb83a07fb87167e569a7bf4e4cd49",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
+        "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1w/year=2025/month=11/part.parquet"
+      },
+      "old_count": 2,
+      "removed_days": [
+        "2025-11-21",
+        "2025-11-28"
+      ],
+      "retained_days": [],
+      "year": 2025
+    },
+    {
+      "action": "replace",
+      "candidate_sha256": "599221f9e96a76a750582beda8b7bc5a73e8591c30a665901a09d1d7630a1589",
+      "candidate_uri": "kind=contract/symbol=pf/series=PF2611/frequency=1w/year=2025/month=12/part.599221f9e96a76a750582beda8b7bc5a73e8591c30a665901a09d1d7630a1589.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2025-12-26T07:00:00+00:00",
+        "coverage_start": "2025-12-19T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 1,
+        "source_coverage_end": "2025-12-26T07:00:00+00:00",
+        "source_coverage_start": "2025-12-19T07:00:00+00:00"
+      },
+      "contract": "PF2611",
+      "month": 12,
+      "new_count": 1,
+      "old": {
+        "coverage_end": "2025-12-31T07:00:00+00:00",
+        "coverage_start": "2025-11-28T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 5,
+        "sha256": "3b66596ef0c1d714c4237e10fe1e647c01dc043d4f8ccdd682ed579d94cbfbc2",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
+        "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1w/year=2025/month=12/part.parquet"
+      },
+      "old_count": 5,
+      "removed_days": [
+        "2025-12-05",
+        "2025-12-12",
+        "2025-12-19",
+        "2025-12-31"
+      ],
+      "retained_days": [
+        "2025-12-26"
+      ],
+      "year": 2025
+    },
+    {
+      "action": "replace",
+      "candidate_sha256": "8dcba8130cb814a8fe80acb042deeb88da3bc442fbe0549bf4d3935dfdfd98bd",
+      "candidate_uri": "kind=contract/symbol=pf/series=PF2611/frequency=1w/year=2026/month=01/part.8dcba8130cb814a8fe80acb042deeb88da3bc442fbe0549bf4d3935dfdfd98bd.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-01-16T07:00:00+00:00",
+        "coverage_start": "2026-01-02T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 2,
+        "source_coverage_end": "2026-01-16T07:00:00+00:00",
+        "source_coverage_start": "2026-01-02T07:00:00+00:00"
+      },
+      "contract": "PF2611",
+      "month": 1,
+      "new_count": 2,
+      "old": {
+        "coverage_end": "2026-01-30T07:00:00+00:00",
+        "coverage_start": "2026-01-02T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 4,
+        "sha256": "bb388ce7263cf5e76df78b28e5bcb70639c368b8c3a754283411a709cb2c4b6d",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
+        "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1w/year=2026/month=01/part.parquet"
+      },
+      "old_count": 4,
+      "removed_days": [
+        "2026-01-23",
+        "2026-01-30"
+      ],
+      "retained_days": [
+        "2026-01-09",
+        "2026-01-16"
+      ],
+      "year": 2026
+    },
+    {
+      "action": "remove_pointer",
+      "contract": "PF2611",
+      "month": 2,
+      "new_count": 0,
+      "old": {
+        "coverage_end": "2026-02-27T07:00:00+00:00",
+        "coverage_start": "2026-01-30T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 3,
+        "sha256": "5a456411985b36b14514b44086961c5dce69f2b4d4eafce996490b1e94e68cac",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
+        "uri": "kind=contract/symbol=pf/series=PF2611/frequency=1w/year=2026/month=02/part.parquet"
+      },
+      "old_count": 3,
+      "removed_days": [
+        "2026-02-06",
+        "2026-02-13",
+        "2026-02-27"
+      ],
+      "retained_days": [],
+      "year": 2026
+    },
+    {
+      "action": "remove_pointer",
+      "contract": "RS2609",
+      "month": 11,
+      "new_count": 0,
+      "old": {
+        "coverage_end": "2025-11-28T07:00:00+00:00",
+        "coverage_start": "2025-11-21T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 1,
+        "sha256": "7a0f00b7f2d91ed3b75dde0e0cbf7b705dbc1403d3f94a73f5bff377775b5e7e",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
+        "uri": "kind=contract/symbol=rs/series=RS2609/frequency=1w/year=2025/month=11/part.parquet"
+      },
+      "old_count": 1,
+      "removed_days": [
+        "2025-11-28"
+      ],
+      "retained_days": [],
+      "year": 2025
+    },
+    {
+      "action": "replace",
+      "candidate_sha256": "19639ec6aa404409978bf59f876dd11e1525859077e4dc7524dd48cb45afabef",
+      "candidate_uri": "kind=contract/symbol=rs/series=RS2609/frequency=1w/year=2026/month=08/part.19639ec6aa404409978bf59f876dd11e1525859077e4dc7524dd48cb45afabef.parquet",
+      "catalog_candidate": {
+        "coverage_end": "2026-08-28T07:00:00+00:00",
+        "coverage_start": "2026-07-31T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 3,
+        "source_coverage_end": "2026-08-28T07:00:00+00:00",
+        "source_coverage_start": "2026-07-31T07:00:00+00:00"
+      },
+      "contract": "RS2609",
+      "month": 8,
+      "new_count": 3,
+      "old": {
+        "coverage_end": "2026-08-28T07:00:00+00:00",
+        "coverage_start": "2026-07-31T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 4,
+        "sha256": "f18eda5e54479f020403dcad143010fa63def82dddab1b4e0122279e1c6c9782",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
+        "uri": "kind=contract/symbol=rs/series=RS2609/frequency=1w/year=2026/month=08/part.parquet"
+      },
+      "old_count": 4,
+      "removed_days": [
+        "2026-08-14"
+      ],
+      "retained_days": [
+        "2026-08-07",
+        "2026-08-21",
+        "2026-08-28"
+      ],
+      "year": 2026
+    },
+    {
+      "action": "remove_pointer",
+      "contract": "RS2609",
+      "month": 9,
+      "new_count": 0,
+      "old": {
+        "coverage_end": "2026-09-11T07:00:00+00:00",
+        "coverage_start": "2026-08-28T07:00:00+00:00",
+        "quality_sha256": null,
+        "row_count": 2,
+        "sha256": "d203e638a72cd1c7674f117fa9a529c3b21ba3a4b86f24180b31825dfd79d7e3",
+        "source_coverage_end": null,
+        "source_coverage_start": null,
+        "uri": "kind=contract/symbol=rs/series=RS2609/frequency=1w/year=2026/month=09/part.d203e638a72cd1c7674f117fa9a529c3b21ba3a4b86f24180b31825dfd79d7e3.parquet"
+      },
+      "old_count": 2,
+      "removed_days": [
+        "2026-09-04",
+        "2026-09-11"
+      ],
+      "retained_days": [],
+      "year": 2026
+    }
+  ],
+  "provider_requests": 0,
+  "repair_source_sha256": "639030a538073e34c2db013675d96e60f3ed9e2bf9ad833ff96bedcfc295e27d",
+  "schema_version": "pf_rs_weekly_quality_repair_v1"
+}

@@ -1,0 +1,196 @@
+[
+  {
+    "contract": "RS2309",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 3,
+    "v2_diff": {
+      "low": {
+        "current_v2": "5989.000000000000000000",
+        "stored": "0E-18"
+      },
+      "open": {
+        "current_v2": "5989.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2022-09-23"
+  },
+  {
+    "contract": "RS2311",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 3,
+    "v2_diff": {
+      "close": {
+        "current_v2": "6026.000000000000000000",
+        "stored": "0E-18"
+      },
+      "low": {
+        "current_v2": "6026.000000000000000000",
+        "stored": "0E-18"
+      },
+      "open": {
+        "current_v2": "6028.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2022-12-09"
+  },
+  {
+    "contract": "RS2407",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 4,
+    "v2_diff": {
+      "close": {
+        "current_v2": "5888.000000000000000000",
+        "stored": "0E-18"
+      },
+      "low": {
+        "current_v2": "5532.000000000000000000",
+        "stored": "0E-18"
+      },
+      "open": {
+        "current_v2": "6474.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2023-07-21"
+  },
+  {
+    "contract": "RS2409",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 2,
+    "v2_diff": {
+      "low": {
+        "current_v2": "6004.000000000000000000",
+        "stored": "0E-18"
+      },
+      "open": {
+        "current_v2": "6006.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2023-10-13"
+  },
+  {
+    "contract": "RS2411",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 4,
+    "v2_diff": {
+      "low": {
+        "current_v2": "6033.000000000000000000",
+        "stored": "0E-18"
+      },
+      "open": {
+        "current_v2": "6042.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2023-12-29"
+  },
+  {
+    "contract": "RS2507",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 2,
+    "v2_diff": {
+      "low": {
+        "current_v2": "5270.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2024-07-26"
+  },
+  {
+    "contract": "RS2509",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 3,
+    "v2_diff": {
+      "close": {
+        "current_v2": "5352.000000000000000000",
+        "stored": "0E-18"
+      },
+      "low": {
+        "current_v2": "5006.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2024-10-25"
+  },
+  {
+    "contract": "RS2511",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 1,
+    "v2_diff": {
+      "close": {
+        "current_v2": "5816.000000000000000000",
+        "stored": "0E-18"
+      },
+      "low": {
+        "current_v2": "5710.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2024-11-22"
+  },
+  {
+    "contract": "RS2607",
+    "d1_rows": 4,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 3,
+    "v2_diff": {
+      "close": {
+        "current_v2": "5152.000000000000000000",
+        "stored": "0E-18"
+      },
+      "low": {
+        "current_v2": "5100.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2025-07-18"
+  },
+  {
+    "contract": "RS2608",
+    "d1_rows": 5,
+    "matches_v2": false,
+    "quality_facts": 0,
+    "stored_w1_rows": 1,
+    "strict_no_trade_days": 4,
+    "v2_diff": {
+      "low": {
+        "current_v2": "5450.000000000000000000",
+        "stored": "0E-18"
+      },
+      "open": {
+        "current_v2": "5551.000000000000000000",
+        "stored": "0E-18"
+      }
+    },
+    "week_day": "2025-09-12"
+  }
+]

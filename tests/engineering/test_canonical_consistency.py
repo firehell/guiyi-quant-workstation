@@ -633,6 +633,13 @@ def test_project_codex_permission_mode_is_preserved() -> None:
     }
 
 
+def test_project_codex_new_thread_model_default_is_preserved() -> None:
+    config = tomllib.loads((ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    new_thread = config["models"]["new_thread"]
+    assert new_thread["model"] == "gpt-6-sol"
+    assert new_thread["model_reasoning_effort"] == "medium"
+
+
 def test_alert_domain_canonical_documents_rule_identity_and_formula_gates() -> None:
     subing_spec = (
         ROOT / "openspec/specs/subing-ths-alert/spec.md"
