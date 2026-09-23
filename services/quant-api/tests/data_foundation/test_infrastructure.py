@@ -1298,6 +1298,75 @@ def test_rqdata_weekly_adapter_aggregates_exchange_daily_facts(tmp_path) -> None
     session.close()
 
 
+@pytest.mark.parametrize("no_trade_day", (6, 8, 10))
+def test_weekly_aggregation_keeps_complete_week_but_excludes_strict_no_trade_prices(
+    no_trade_day,
+) -> None:
+    rows = tuple(
+        (date(2025, 1, day), {
+            "open": Decimal(0) if day == no_trade_day else Decimal(100 + day),
+            "high": Decimal(0) if day == no_trade_day else Decimal(110 + day),
+            "low": Decimal(0) if day == no_trade_day else Decimal(90 + day),
+            "close": Decimal(0) if day == no_trade_day else Decimal(105 + day),
+            "volume": Decimal(0) if day == no_trade_day else Decimal(1),
+            "turnover": Decimal(0) if day == no_trade_day else Decimal(10),
+            "open_interest": Decimal(124 if day == no_trade_day else day),
+        }) for day in range(6, 11)
+    )
+    end = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+    actual = rqdata_adapter._aggregate_daily_rows(rows, bar_end=end)
+    valid = tuple(row for day, row in rows if day.day != no_trade_day)
+    assert actual.bar_end == end
+    assert actual.trading_day == date(2025, 1, 10)
+    assert (actual.open, actual.high, actual.low, actual.close) == (
+        valid[0]["open"], max(row["high"] for row in valid),
+        min(row["low"] for row in valid), valid[-1]["close"],
+    )
+    assert actual.volume == Decimal(4)
+    assert actual.turnover == Decimal(40)
+    assert actual.open_interest == rows[-1][1]["open_interest"]
+
+
+def test_weekly_aggregation_all_no_trade_preserves_endpoint_and_zero_fact() -> None:
+    rows = tuple(
+        (date(2025, 1, day), dict(open=0, high=0, low=0, close=0,
+                                  volume=0, turnover=0, open_interest=day))
+        for day in range(6, 11)
+    )
+    end = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+    actual = rqdata_adapter._aggregate_daily_rows(rows, bar_end=end)
+    assert actual.trading_day == rows[-1][0]
+    assert actual.bar_end == end
+    assert (actual.open, actual.high, actual.low, actual.close,
+            actual.volume, actual.turnover, actual.open_interest) == (0, 0, 0, 0, 0, 0, 10)
+
+
+def test_weekly_aggregation_keeps_positive_zero_volume_day() -> None:
+    rows = (
+        (date(2025, 1, 9), dict(open=99, high=101, low=98, close=100,
+                                  volume=0, turnover=0, open_interest=3)),
+        (date(2025, 1, 10), dict(open=100, high=102, low=99, close=101,
+                                   volume=1, turnover=10, open_interest=4)),
+    )
+    actual = rqdata_adapter._aggregate_daily_rows(
+        rows, bar_end=datetime(2025, 1, 10, 1, 5, tzinfo=UTC),
+    )
+    assert (actual.open, actual.high, actual.low, actual.close) == (99, 102, 98, 101)
+
+
+@pytest.mark.parametrize("broken", (
+    dict(open=0, high=0, low=0, close=0, volume=1, turnover=0),
+    dict(open=0, high=0, low=0, close=0, volume=0, turnover=None),
+    dict(open=0, high=101, low=98, close=100, volume=0, turnover=0),
+))
+def test_weekly_aggregation_rejects_non_strict_zero_price(broken) -> None:
+    rows = ((date(2025, 1, 9), broken),)
+    with pytest.raises(InfrastructureError, match="RQDATA_WEEKLY_SOURCE_PRICE_INVALID"):
+        rqdata_adapter._aggregate_daily_rows(
+            rows, bar_end=datetime(2025, 1, 9, 1, 5, tzinfo=UTC),
+        )
+
+
 def test_rqdata_weekly_adapter_sums_decimal_facts_without_context_rounding(
     tmp_path,
 ) -> None:

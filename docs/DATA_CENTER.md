@@ -24,6 +24,12 @@ Dataset。
 `MainContractMap` 拼接对应真实合约。`1w` 仅由同一交易所日行情在完整 ISO 周内聚合，缺任一应有
 交易日事实即失败。RQData 对零成交日返回 `volume=0`、有效正 `close` 且 O/H/L 同时为空或同时为零时，adapter
 只允许用同一行 `close` 规范成平价 OHLC；交易所原始的全零 O/H/L/close 零成交行保留其事实。
+周线聚合版本 `exchange-daily-no-trade-v2` 在 Calendar/Session、合约生命周期和完整源端点证明后，
+只从严格 `OHLC=0, volume=0, turnover=0` 以外的合法正价日计算混合周 OHLC；零量正价日仍参与。
+周端点和交易日取权威完整周末，量额汇总全部源日，OI 取周末原行。全周严格无交易保留全零 W1，
+由 Newow 跳过该有效观察。D1 原始事实不改；部分零价、缺价、缺日和重复继续失败或按既有质量合同中断。
+旧 W1 月分区不能仅随 reader 升级解释为 v2，差异周须冻结 D1 revision 并受控重建相应 W1 月；
+新 URI/content hash 是数据 revision，修复回执记录聚合版本、D1 preimage 和旧新 W1 hash。
 对物理合约 D1 严格匹配 O/H/L=0、`close>0`、`volume>0` 且其余来源、身份和端点校验通过的行，
 仅按已批准的 `PRICE_UNAVAILABLE` 质量事实记录并中断 Newow 计算，不生成 CanonicalBar；
 其他非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。W1 不得借此缺价日聚合成功。
