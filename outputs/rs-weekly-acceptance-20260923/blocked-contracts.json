@@ -1,0 +1,106 @@
+{
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "classification_version": "weekly-d1-quality-v2",
+  "results": [
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2309",
+        "trading_day": "2022-09-23"
+      },
+      "contract": "RS2309",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2311",
+        "trading_day": "2022-12-09"
+      },
+      "contract": "RS2311",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2407",
+        "trading_day": "2023-07-21"
+      },
+      "contract": "RS2407",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2409",
+        "trading_day": "2023-10-13"
+      },
+      "contract": "RS2409",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2411",
+        "trading_day": "2023-12-29"
+      },
+      "contract": "RS2411",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2507",
+        "trading_day": "2024-07-26"
+      },
+      "contract": "RS2507",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2509",
+        "trading_day": "2024-10-25"
+      },
+      "contract": "RS2509",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2511",
+        "trading_day": "2024-11-22"
+      },
+      "contract": "RS2511",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2607",
+        "trading_day": "2025-07-18"
+      },
+      "contract": "RS2607",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    },
+    {
+      "code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "context": {
+        "contract": "RS2608",
+        "trading_day": "2025-09-12"
+      },
+      "contract": "RS2608",
+      "reason": "DATA_INTEGRITY_INVALID",
+      "status": "error"
+    }
+  ]
+}
