@@ -1004,7 +1004,7 @@ def test_actual_dominant_segments_returns_full_boundaries_for_intersecting_windo
         catalog, CanonicalMonthlyStore(tmp_path)
     ).actual_dominant_segments(
         "jm",
-        date(2025, 1, 3),
+        date(2025, 1, 1),
         date(2025, 1, 8),
     )
 
@@ -1016,6 +1016,28 @@ def test_actual_dominant_segments_returns_full_boundaries_for_intersecting_windo
             "JM2509", date(2025, 1, 8), date(2025, 1, 10)
         ),
     )
+
+
+def test_actual_dominant_segments_nontrading_start_still_requires_first_mapping(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    for day, is_trading_day in ((1, False), (2, True), (3, True)):
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day),
+            is_trading_day=is_trading_day,
+        ))
+    catalog.upsert_main_contracts((
+        ("jm", date(2025, 1, 3), "JM2505"),
+    ))
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^MAIN_CONTRACT_MAP_MISSING$"):
+        MarketDataService(
+            catalog, CanonicalMonthlyStore(tmp_path)
+        ).actual_dominant_segments(
+            "jm", date(2025, 1, 1), date(2025, 1, 3),
+        )
 
 
 def test_actual_dominant_segments_fails_closed_for_missing_natural_calendar_day(
