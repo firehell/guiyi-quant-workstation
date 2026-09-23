@@ -34,6 +34,10 @@ def _capture(identity, revision, *, close="3500"):
 def test_capture_is_durable_idempotent_and_does_not_advance_sequence():
     factory, identity, revision, _ = _active()
     repository = ReferenceRepository(factory)
+    assert repository.enabled_forward_routes(identity.product.lower(), identity.frequency) == (
+        identity.stream_id,
+    )
+    assert repository.enabled_forward_routes("cu", identity.frequency) == ()
     capture = _capture(identity, revision)
     batch_id = repository.capture_forward(capture)
     assert repository.capture_forward(capture) == batch_id
@@ -50,6 +54,7 @@ def test_disable_blocks_new_capture_and_preserves_pending():
     repository = ReferenceRepository(factory)
     batch_id = repository.capture_forward(_capture(identity, revision))
     activation.disable(identity.stream_id, expected_generation=1, now=NOW + timedelta(seconds=3))
+    assert repository.enabled_forward_routes(identity.product.lower(), identity.frequency) == ()
     with pytest.raises(RepositoryConflict, match="ACTIVATION_GENERATION_CONFLICT"):
         repository.capture_forward(_capture(identity, revision))
     assert repository.read_pending_capture(identity.stream_id) is None

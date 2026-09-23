@@ -9,6 +9,7 @@ from typing import Any
 
 from app.market_data.domain import BarFrequency, normalize_contract_for_symbol
 from app.market_data.live_market import LIVE_BAR_CHANNEL_PREFIX
+from app.market_data.market_data_service import MarketDataError
 
 
 class ForwardLiveWake:
@@ -61,15 +62,10 @@ class ForwardLiveWake:
             owner = self._market_data.dominant_segment_for_day(product, day)
             if owner.contract != contract:
                 return
-        except (AttributeError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        except (AttributeError, KeyError, TypeError, ValueError, MarketDataError):
             return
-        for stream_id in self._repository.enabled_forward_stream_ids(limit=512):
-            context = self._repository.forward_source_context(stream_id)
-            if context is None:
-                continue
-            identity = context[0]
-            if identity.product.lower() == product and identity.frequency == frequency:
-                self._worker.wake(stream_id, kind="live_event", bar_end=end)
+        for stream_id in self._repository.enabled_forward_routes(product, frequency):
+            self._worker.wake(stream_id, kind="live_event", bar_end=end)
 
     def close(self) -> None:
         self._pubsub.close()

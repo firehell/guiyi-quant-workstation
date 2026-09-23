@@ -1,8 +1,12 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
+import os
 from types import SimpleNamespace
 import json
 
 from app.reference_trading.live_wake import ForwardLiveWake
+from app.market_data.domain import CanonicalBar
+from app.market_data.live_market import RedisLiveStore
 
 
 class PubSub:
@@ -30,13 +34,9 @@ class Redis:
 
 
 class Repository:
-    def enabled_forward_stream_ids(self, *, limit):
-        assert limit == 512
-        return ("rb-60m", "rb-1d", "cu-60m")
-
-    def forward_source_context(self, stream_id):
-        product, frequency = stream_id.split("-")
-        return (SimpleNamespace(product=product, frequency=frequency),)
+    def enabled_forward_routes(self, product, frequency):
+        return tuple(item for item in ("rb-60m", "rb-1d", "cu-60m")
+                     if item == f"{product}-{frequency}")
 
 
 class Worker:
@@ -69,3 +69,28 @@ def test_completed_live_pubsub_wakes_only_exact_product_and_frequency():
     assert len(worker.wakes) == 1
     wake.close()
     assert redis.source.closed
+
+
+def test_isolated_redis_publish_bar_reaches_exact_forward_wake():
+    url = os.getenv("GUIYI_ISOLATED_REDIS_URL")
+    if not url:
+        import pytest
+        pytest.skip("GUIYI_ISOLATED_REDIS_URL is required")
+    from redis import Redis
+
+    redis = Redis.from_url(url)
+    worker = Worker()
+    wake = ForwardLiveWake(redis, Repository(), worker, Market())
+    end = datetime(2026, 9, 23, 1, tzinfo=timezone.utc)
+    bar = CanonicalBar(
+        end, date(2026, 9, 23), Decimal("3500"), Decimal("3510"),
+        Decimal("3490"), Decimal("3505"), Decimal("100"), None, None,
+    )
+    try:
+        wake.subscribe()
+        RedisLiveStore(redis).publish_bar("rb", "60m", bar, contract="RB2610")
+        wake.wait(2)
+        assert worker.wakes == [("rb-60m", "live_event", end)]
+    finally:
+        wake.close()
+        redis.close()

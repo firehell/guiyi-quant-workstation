@@ -265,6 +265,19 @@ class ReferenceRepository:
                 query.order_by(ReferenceStream.stream_id).limit(limit),
             ).all())
 
+    def enabled_forward_routes(self, product: str, frequency: str) -> tuple[str, ...]:
+        """Bounded routing read; capture still validates activation generation."""
+        with self._session_factory() as session:
+            stream_ids = tuple(session.scalars(select(ReferenceStream.stream_id).where(
+                ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+                ReferenceStream.enabled.is_(True),
+                func.lower(ReferenceStream.product) == product,
+                ReferenceStream.frequency == frequency,
+            ).order_by(ReferenceStream.stream_id).limit(513)).all())
+        if len(stream_ids) > 512:
+            raise RepositoryConflict("FORWARD_EVENT_SCOPE_EXCEEDED")
+        return stream_ids
+
     def forward_source_context(
         self, stream_id: str,
     ) -> tuple[StreamIdentity, str, int, datetime, datetime | None, str] | None:

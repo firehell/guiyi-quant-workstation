@@ -7,8 +7,11 @@ from uuid import uuid4
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+
+from app.reference_trading.repository import ReferenceRepository
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -62,6 +65,35 @@ def test_forward_migration_adds_default_off_capture_schema(isolated_postgres_eng
             for item in inspector.get_check_constraints("reference_batches", schema=schema)
         }
         assert "capture" in checks["ck_reference_batches_kind_seq"]
+        with isolated_postgres_engine.begin() as connection:
+            connection.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
+            for stream_id, product, mode, enabled in (
+                ("forward-lower", "rb", "forward_observation", True),
+                ("forward-upper", "RB", "forward_observation", True),
+                ("forward-disabled", "rb", "forward_observation", False),
+                ("historical", "rb", "historical_replay", True),
+            ):
+                connection.execute(text("""
+                    INSERT INTO reference_streams (
+                        stream_id, identity_hash, strategy_code, formula_versions,
+                        profile_id, reference_model_version, futures_adaptation_version,
+                        product, frequency, series_kind, recording_mode,
+                        observation_policy_version, enabled
+                    ) VALUES (
+                        :stream_id, :stream_id, 'test', CAST('["f1"]' AS jsonb),
+                        'p1', 'r1', 'a1', :product, '60m', 'actual_dominant',
+                        :mode, :policy, :enabled
+                    )
+                """), {
+                    "stream_id": stream_id, "product": product, "mode": mode,
+                    "policy": "o1" if mode == "forward_observation" else None,
+                    "enabled": enabled,
+                })
+            repository = ReferenceRepository(lambda: Session(connection))
+            assert repository.enabled_forward_routes("rb", "60m") == (
+                "forward-lower", "forward-upper",
+            )
+            assert repository.enabled_forward_routes("cu", "60m") == ()
     finally:
         with isolated_postgres_engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
