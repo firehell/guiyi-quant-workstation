@@ -4130,7 +4130,7 @@ def test_strict_read_failure_leaves_partition_for_next_update(
 
         raise StorageError("PARTITION_UNREADABLE")
 
-    monkeypatch.setattr(manager.store, "read_catalog_partition", unreadable)
+    monkeypatch.setattr(manager.store, "read_catalog_partition_quality", unreadable)
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
 
     assert result.status == "failed"

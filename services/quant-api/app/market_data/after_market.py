@@ -65,6 +65,15 @@ _PUBLIC_ERROR_CODES = frozenset(
 _CALENDAR_CLASSIFICATION_ERROR_CODES = frozenset(
     {"TRADING_CALENDAR_CONFLICT", "TRADING_CALENDAR_MISSING"}
 )
+_MAINTENANCE_DIAGNOSTIC_REASON_CODES = frozenset({
+    "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+    "SOURCE_QUALITY_EVIDENCE_INVALID",
+    "WEEKLY_SOURCE_PRICE_UNAVAILABLE",
+    "WEEKLY_SOURCE_BAR_CONFLICT",
+    "WEEKLY_SOURCE_ENDPOINTS_MISSING",
+    "StorageError", "InfrastructureError", "ValueError", "TypeError",
+    "OTHER_TARGET_FAILURE",
+})
 _PUBLIC_PRODUCT_CODE = re.compile(r"[a-z]{1,4}\Z")
 _PUBLIC_NOTIFICATION_ERROR_TYPES = frozenset(
     {
@@ -506,6 +515,8 @@ class AfterMarketUpdater:
                 result.status,
                 stage="canonical_update_result", attempt=attempt, detail_code=error_code,
             )
+            if result.failures:
+                _log_first_maintenance_failure(result.failures[0], attempt, len(result.failures))
             return error_code
 
         try:
@@ -991,6 +1002,41 @@ def _atomic_write_status(path: Path, payload: Mapping[str, object]) -> None:
     except BaseException:
         temporary_path.unlink(missing_ok=True)
         raise
+
+
+def _log_first_maintenance_failure(
+    failure: Mapping[str, object], attempt: int, failure_count: int,
+) -> None:
+    """Log bounded target identity and reason without exposing provider text."""
+    fields: dict[str, object] = {
+        "stage": "canonical_update_result", "attempt": attempt,
+        "failure_count": min(failure_count, 100000),
+    }
+    dataset = failure.get("dataset")
+    if isinstance(dataset, (tuple, list)) and len(dataset) == 4:
+        kind, symbol, contract, frequency = dataset
+        if kind in {"contract", "continuous"} and isinstance(symbol, str) and _PUBLIC_PRODUCT_CODE.fullmatch(symbol):
+            fields["symbol"] = symbol
+            if kind == "contract" and isinstance(contract, str) and re.fullmatch(r"[A-Z]{1,2}[0-9]{3,4}\Z", contract):
+                fields["contract"] = contract
+        if isinstance(frequency, str) and frequency in {"1m", "1d", "1w", "5m", "15m", "30m", "60m"}:
+            fields["frequency"] = frequency
+    for name, upper in (("year", 9999), ("month", 12)):
+        value = failure.get(name)
+        if type(value) is int and 1 <= value <= upper:
+            fields[name] = value
+    reason = failure.get("reason_code")
+    fields["reason_code"] = (
+        reason if isinstance(reason, str) and reason in _MAINTENANCE_DIAGNOSTIC_REASON_CODES
+        else "OTHER_TARGET_FAILURE"
+    )
+    _LOGGER.warning(
+        "after_market_target_failure",
+        extra={
+            "diagnostic_code": "AFTER_MARKET_TARGET_FAILURE",
+            "diagnostic_fields": fields,
+        },
+    )
 
 
 def _public_maintenance_failure_code(stop_reason: str | None) -> str:

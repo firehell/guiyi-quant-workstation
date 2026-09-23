@@ -1578,6 +1578,18 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 by_identity = {
                     (row.dataset, row.year, row.month): row for row in partitions
                 }
+                # A persisted D1 quality fact makes a price W1 for that physical
+                # contract and ISO week impossible. Daily must not turn that
+                # known interruption into a provider repair (or D1 companion).
+                interrupted_weeks = {
+                    (row.dataset.series_or_contract, fact.trading_day.isocalendar().year,
+                     fact.trading_day.isocalendar().week)
+                    for row in partitions
+                    if row.dataset.kind is DatasetKind.CONTRACT
+                    and row.dataset.frequency is BarFrequency.D1
+                    for fact in row.source_quality
+                    if isinstance(fact, (PriceUnavailableFact, NonpositiveCloseFact))
+                }
                 last_week_days = {
                     (day.isocalendar().year, day.isocalendar().week): day for day in days
                 }
@@ -1615,6 +1627,12 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 boundary_days: dict[BarFrequency, set[date]] = {}
                 eligible = []
                 for key, year, month, required_days in candidates:
+                    if key.kind is DatasetKind.CONTRACT and key.frequency is BarFrequency.W1:
+                        required_days = tuple(
+                            day for day in required_days
+                            if (key.series_or_contract, day.isocalendar().year,
+                                day.isocalendar().week) not in interrupted_weeks
+                        )
                     endpoint_days = required_days
                     if key.frequency is BarFrequency.W1:
                         endpoint_days = tuple(day for day in required_days if last_week_days.get(
@@ -2684,7 +2702,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 )
                 with self._progress("publishing", item.key, item.year, item.month):
                     candidates.append((item, self.store.publish(PublishRequest(
-                        item.key, item.year, item.month, bars, publish_expected, exceptions,
+                        item.key, item.year, item.month, bars, publish_expected,
+                        tuple(fact for fact in exceptions if isinstance(fact, PriceUnavailableFact)),
+                        tuple(fact for fact in exceptions if isinstance(fact, NonpositiveCloseFact)),
                     ))))
             for item, partition in candidates:
                 failure_target = item
@@ -2807,7 +2827,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 target.month,
                 bars,
                 publish_expected,
-                exceptions,
+                tuple(fact for fact in exceptions if isinstance(fact, PriceUnavailableFact)),
+                tuple(fact for fact in exceptions if isinstance(fact, NonpositiveCloseFact)),
             )
         )
         self._commit_partition(partition, target)
@@ -2855,11 +2876,45 @@ class HistoricalDataManager(ContractWarmupPlanner):
         # Keep month-local facts even when weekly companion expected omits them.
         return tuple(previous[end] for end in sorted(previous))
 
+    def _merged_source_quality(
+        self, target: _Target, batches: tuple[BarBatch, ...]
+    ) -> tuple[SourceQualityFact, ...]:
+        """Preserve unrelated validated month facts during a bounded D1 refresh."""
+        existing = tuple(
+            fact for row in self.catalog.all_partitions(target.key)
+            if (row.year, row.month) == (target.year, target.month)
+            for fact in row.source_quality
+        )
+        if not any(isinstance(fact, NonpositiveCloseFact) for fact in existing):
+            return self._merged_price_unavailable(target, batches)
+        if target.key.kind is not DatasetKind.CONTRACT or target.key.frequency is not BarFrequency.D1:
+            raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+        if any(not isinstance(fact, (PriceUnavailableFact, NonpositiveCloseFact)) for fact in existing):
+            raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+        previous = {fact.bar_end: fact for fact in existing}
+        if len(previous) != len(existing):
+            raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+        if any(end in previous for end in target.missing):
+            # A legacy provider batch cannot replace a nonpositive-close fact.
+            raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+        for batch in batches:
+            fresh_bars = {bar.bar_end for bar in batch.bars}
+            fresh_facts = {fact.bar_end for fact in batch.price_unavailable}
+            if len(fresh_facts) != len(batch.price_unavailable) or fresh_bars & fresh_facts:
+                raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+            if fresh_bars & previous.keys() or fresh_facts & previous.keys():
+                raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+            for fact in batch.price_unavailable:
+                if not isinstance(fact, PriceUnavailableFact):
+                    raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+                previous[fact.bar_end] = fact
+        return tuple(previous[end] for end in sorted(previous))
+
     def _merged_publish_payload(
         self,
         target: _Target,
         batches: tuple[BarBatch, ...],
-    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...], tuple[datetime, ...]]:
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...], tuple[datetime, ...]]:
         """Merge bars for target.expected and preserve unrelated month quality facts."""
         merged = {bar.bar_end: bar for bar in target.existing}
         seen_fetched: set[datetime] = set()
@@ -2879,7 +2934,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         bars = tuple(merged[item] for item in target.expected if item in merged)
         bar_ends = {bar.bar_end for bar in bars}
         exceptions = tuple(
-            item for item in self._merged_price_unavailable(target, batches)
+            item for item in self._merged_source_quality(target, batches)
             if item.bar_end not in bar_ends
         )
         publish_expected = tuple(sorted((*bar_ends, *(item.bar_end for item in exceptions))))
@@ -2990,7 +3045,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         microseconds=1
                     )
                     window_end = max((target.expected[-1], *quality_ends))
-                    values, exceptions = MarketDataService(self.catalog, self.store).read_physical_daily_quality(
+                    values, exceptions = MarketDataService(self.catalog, self.store).read_physical_daily_quality_union(
                         SeriesQuery(
                             series_kind=series_kind, symbol=target.key.symbol,
                             contract=contract, frequency=target.key.frequency,

@@ -401,6 +401,10 @@ Catalog/Parquet 物理一致性问题 MUST 分别使用 `main_contract_map`、`p
 Catalog-identifiable missing months and exact endpoint gaps, including mapped new dominant contracts.
 Missing contract W1 MUST refresh same-contract D1 for its exact complete ISO week within valid lifecycle,
 including pre-rank1 dates, in the same provider batch; other valid persisted D1 rows MUST be preserved.
+When Catalog contains a validated physical-contract D1 `PriceUnavailableFact` or `NonpositiveCloseFact`,
+daily MUST exclude that contract's complete ISO week from W1 price targets and companion D1 refreshes.
+The exclusion MUST use the same contract and ISO week and MUST NOT excuse ordinary missing D1/W1 prices,
+other contracts or other weeks. Existing source-quality merge and weekly parity guards remain fail-closed.
 It MUST NOT open other historical Parquet or automatically bootstrap historical metadata or contract lifecycle.
 Missing baseline or indeterminate mapping/boundaries MUST fail closed with historical maintenance required.
 Daily groups MUST be bounded by product, family and month and reuse the shared validation, provider and atomic
@@ -418,6 +422,10 @@ successful commit, and observer failure MUST stop the attempt.
 #### Scenario: Derived partition missing after restart
 - **WHEN** a mapped derived month is missing while its 1m source is complete
 - **THEN** daily rebuilds that month from validated 1m without a provider request or success-checkpoint dependency
+
+#### Scenario: Physical weekly price is interrupted by a persisted daily quality fact
+- **WHEN** a physical D1 Catalog partition contains a validated price-unavailable or nonpositive-close fact and the same contract's W1 price is absent for that ISO week
+- **THEN** daily creates neither a W1 price target nor its companion D1 refresh for that week; ordinary gaps in other weeks remain repairable
 
 ### Requirement: After-market progress is observable but never resumable authority
 
