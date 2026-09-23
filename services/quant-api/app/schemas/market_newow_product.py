@@ -273,7 +273,10 @@ class ReferenceValueOut(_Out):
     summary: ReferenceSummaryOut
     items: list[ReferenceTradeOut]
     next_before: str | None
-    storage_mode: Literal["persisted"] | None = None
+    storage_mode: Literal["persisted"] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     executable: Literal[False]
     auto_order: Literal[False]
     allowed_uses: list[str]

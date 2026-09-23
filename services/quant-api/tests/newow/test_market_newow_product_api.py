@@ -816,6 +816,7 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
     app.dependency_overrides.clear()
     assert response.status_code == 200
     value = response.json()["reference"]["value"]
+    assert "storage_mode" not in value
     assert value["summary"]["closed_count"] == 0
     assert value["summary"]["win_rate_pct"] is None
     assert isinstance(value["items"][0]["entry_reference_price"], str)
