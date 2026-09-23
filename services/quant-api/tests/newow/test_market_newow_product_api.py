@@ -76,13 +76,13 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v10",
+        "schema_version": "newow_product_capabilities_v11",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
-            "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
+            "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
             "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
@@ -816,6 +816,7 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
     app.dependency_overrides.clear()
     assert response.status_code == 200
     value = response.json()["reference"]["value"]
+    assert "storage_mode" not in value
     assert value["summary"]["closed_count"] == 0
     assert value["summary"]["win_rate_pct"] is None
     assert isinstance(value["items"][0]["entry_reference_price"], str)

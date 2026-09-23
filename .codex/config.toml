@@ -21,3 +21,9 @@ network_access = true
 # workspace-write 模式下排除系统临时目录的 writable root。
 exclude_slash_tmp = true
 exclude_tmpdir_env_var = true
+
+# 新建 Codex 线程默认使用 GPT-6 Sol Medium；单次任务显式选择 Luna/Sol High/Astra/Ultra 时可覆盖。
+# 这里只固定项目默认入口，不改变审批、sandbox、生产授权或人工 Gate。
+[models.new_thread]
+model = "gpt-6-sol"
+model_reasoning_effort = "medium"

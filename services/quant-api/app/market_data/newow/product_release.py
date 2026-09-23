@@ -12,8 +12,8 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v10"] = (
-    "newow_product_capabilities_v10"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v11"] = (
+    "newow_product_capabilities_v11"
 )
 RELEASE_STAGE: Literal["daily_weekly"] = "daily_weekly"
 OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
@@ -38,21 +38,31 @@ CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
 OPEN_WEEKLY_PRODUCTS = (
     "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
     "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
-    "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
+    "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
     "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
 )
 REMAINING_WEEKLY_V2_PRODUCTS = (
+    "cj", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm", "sr",
+)
+FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "eb", "eg", "j", "oi", "pg", "si")
+# v9 is an immutable candidate wire contract. Keep its original ordering even as
+# products graduate into later formal capability versions.
+CANDIDATE_WEEKLY_PRODUCTS = (
+    "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
+    "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
+    "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
+    "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
     "cj", "oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm", "sr",
 )
-FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "eb", "eg", "j", "pg", "si")
-CANDIDATE_WEEKLY_PRODUCTS = OPEN_WEEKLY_PRODUCTS + REMAINING_WEEKLY_V2_PRODUCTS
 if (
-    len(OPEN_WEEKLY_PRODUCTS) != 48
-    or len(REMAINING_WEEKLY_V2_PRODUCTS) != 12
-    or len(FORMAL_WEEKLY_V2_PRODUCTS) != 7
+    len(OPEN_WEEKLY_PRODUCTS) != 49
+    or len(REMAINING_WEEKLY_V2_PRODUCTS) != 11
+    or len(FORMAL_WEEKLY_V2_PRODUCTS) != 8
     or set(FORMAL_WEEKLY_V2_PRODUCTS) - set(OPEN_WEEKLY_PRODUCTS)
     or set(OPEN_WEEKLY_PRODUCTS) & set(REMAINING_WEEKLY_V2_PRODUCTS)
     or len(CANDIDATE_WEEKLY_PRODUCTS) != 60
+    or set(CANDIDATE_WEEKLY_PRODUCTS)
+    != set(OPEN_WEEKLY_PRODUCTS) | set(REMAINING_WEEKLY_V2_PRODUCTS)
 ):
     raise RuntimeError("NEWOW_WEEKLY_PRODUCT_SCOPE_INVALID")
 CANDIDATE_DEFERRED_FREQUENCIES = (
