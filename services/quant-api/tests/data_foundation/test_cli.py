@@ -1263,7 +1263,7 @@ def test_root_parser_exposes_only_active_domains() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
 
-    assert set(domain_action.choices) == {"data", "runtime"}
+    assert set(domain_action.choices) == {"data", "reference", "runtime"}
 
 
 def test_data_cli_omits_retired_member_rank_parser_dispatch_and_factory() -> None:

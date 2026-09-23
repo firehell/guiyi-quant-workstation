@@ -34,6 +34,17 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
+## v1.10.30 Release candidate
+
+本候选以 exact `origin/develop@55454558629734aff0856d02692c1d4242500980` 为开发输入，并合入
+`origin/main@52e360037720f7a4d642599dcece33bf3dc5eb63` 以保留 v1.10.29 已发布能力和版本历史。
+候选包含 Newow D1 readiness consumer audit 按 W1 quality policy 校验的根因修复，以及 develop 中已完成的
+ReferenceTrade P6/P7 工程内容；版本身份统一为 1.10.30。当前只形成 release candidate：尚未合并 main、
+创建 tag 或 GitHub Release，也未执行 Runtime promotion、生产 migration、数据/Scope 写入或真实通知。
+候选完整非生产后端回归为 4861 passed / 49 skipped / 43 deselected；Web 为 673 passed / 1 skipped，
+production build 通过；OpenSpec 10/10、repository hygiene/canonical 23 项、增量 Ruff/mypy、secret scan
+和 diff check 均通过。
+
 ## v1.10.29 Release 与 Runtime promotion 读回
 
 PR #392 精确候选 `a6fcd3fe6cfa0ec033a04ae0dc60f2d76e2e567a` 已合入 main；merge commit 为

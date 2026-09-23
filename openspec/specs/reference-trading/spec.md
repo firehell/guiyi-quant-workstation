@@ -9,6 +9,8 @@ P0/P1 的公共身份和纯状态语义、P3 的持久化/原子批次/内部快
 不声明 Runtime active；代码与测试不授权生产
 migration、历史 bootstrap、Canonical 写入或 Runtime enable。
 
+## Requirements
+
 ### Requirement: Forward activation and capture are separate from historical publication
 
 Forward enablement SHALL require an exact, unexpired activation plan bound to stream/revision,
@@ -42,8 +44,6 @@ previously observed action. Code availability SHALL NOT count as owner model acc
 - **WHEN** a worker scan discovers a completed Bar whose first observation was not durably captured
 - **THEN** it reports an observation gap rather than claiming the old Bar was first seen now
 - **AND** it creates no AlertEvent or notification
-
-## Requirements
 
 ### Requirement: Recording modes are isolated
 
