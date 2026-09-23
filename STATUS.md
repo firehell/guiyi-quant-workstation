@@ -7,9 +7,11 @@ GitHub Release 已发布且非预发布。2026-09-23 本机只读状态脚本回
 API、Web、Live、Alert 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.20-r1` 的同一提交，
 API/Web 返回 200，Runtime health 为 `ok`；盘后任务当时未运行，weekly audit 本次尚未运行。
 这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
-v1.10.21 release candidate 以 `ef2627824` 为基点合入当前 `main`，已通过隔离本地
-Python、Web、浏览器 fixture、构建与静态验证，尚未发布。候选代码、发布和 Runtime promotion
-分属不同 Gate。正式周线合同为 48 个品种，
+v1.10.21 release candidate 以 `ef2627824` 为基点合入当前 `main`，并纳入 CJ 严格无交易日
+W1 修复代码及只读预检。隔离本地 Python、Web、浏览器 fixture、构建与静态验证已通过相应
+定向门禁；扩展后端测试中的周线 campaign 用例在原始 `ef2627824` 工作树也失败，
+不作为本次 CJ 回归结论。CJ 两处 Canonical/Catalog 指针仍为旧版，CJ W1 正式能力仍关闭。候选代码、
+数据 apply、发布和 Runtime promotion 分属不同 Gate。正式周线合同为 48 个品种，
 60m 继续关闭。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
