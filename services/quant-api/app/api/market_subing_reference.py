@@ -81,7 +81,7 @@ def subing_reference(
         result = (
             service.query(query)
             if mode == "legacy"
-            else PersistedSubingReference(SessionLocal, service).query(query)
+            else PersistedSubingReference(SessionLocal, service, check_cancelled).query(query)
         )
         return SubingReferenceResponse.model_validate(result)
     except QueryConflict as exc:

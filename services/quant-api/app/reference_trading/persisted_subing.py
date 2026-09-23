@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from hashlib import sha256
+from typing import Callable
 
 from sqlalchemy import select
 
@@ -18,10 +19,14 @@ from app.reference_trading.source_identity import verify_saved_input_prefix
 
 
 class PersistedSubingReference:
-    def __init__(self, session_factory, market_service: SubingReferenceService) -> None:
+    def __init__(
+        self, session_factory, market_service: SubingReferenceService,
+        check_cancelled: Callable[[], None] | None = None,
+    ) -> None:
         self._factory = session_factory
         self._market = market_service
         self._query = HistoricalReferenceQuery(session_factory)
+        self._check_cancelled = check_cancelled or (lambda: None)
 
     def _stored_manifest(
         self, *, stream_id: str, revision_id: str, seq: int,
@@ -42,23 +47,27 @@ class PersistedSubingReference:
     def _all_points(
         query: HistoricalReferenceQuery, stream_id: str, *, kind: str,
         since: date, through: date, cutoff: datetime, snapshot: str,
+        check_cancelled: Callable[[], None] | None = None,
     ) -> list[dict[str, object]]:
         points: list[dict[str, object]] = []
         cursor = None
         while True:
+            if check_cancelled is not None:
+                check_cancelled()
             page = query.signals(
                 stream_id, since=since, through=through, cutoff=cutoff,
                 snapshot_token=snapshot, cursor=cursor, limit=200,
                 point_kind=kind,
             )
             points.extend(page["items"])
-            if len(points) > 2_000:
+            if len(points) > 10_000:
                 raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
             cursor = page["next_cursor"]
             if cursor is None:
                 return points
 
     def query(self, request: SubingReferenceQuery) -> dict[str, object]:
+        self._check_cancelled()
         since, through, cutoff, as_of = self._market.resolve_read_window(request)
         matches = self._query.streams(
             strategy="subing_reference", product=request.symbol.upper(),
@@ -98,22 +107,24 @@ class PersistedSubingReference:
         except (TypeError, ValueError) as exc:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
         verify_saved_input_prefix(manifest, source.dependency_manifest, through)
+        self._check_cancelled()
         stats = self._query.summary(
             stream_id, since=since, through=through, cutoff=cutoff,
             snapshot_token=snapshot,
         )
         signals = self._all_points(
             self._query, stream_id, kind="signal", since=since, through=through,
-            cutoff=cutoff, snapshot=snapshot,
+            cutoff=cutoff, snapshot=snapshot, check_cancelled=self._check_cancelled,
         )
         indicators = self._all_points(
             self._query, stream_id, kind="indicator", since=since, through=through,
-            cutoff=cutoff, snapshot=snapshot,
+            cutoff=cutoff, snapshot=snapshot, check_cancelled=self._check_cancelled,
         )
         boundaries = self._all_points(
             self._query, stream_id, kind="boundary", since=since, through=through,
-            cutoff=cutoff, snapshot=snapshot,
+            cutoff=cutoff, snapshot=snapshot, check_cancelled=self._check_cancelled,
         )
+        self._check_cancelled()
         quality = (
             self._market.read_daily_quality_presentation(
                 symbol=request.symbol, since=since, through=through, cutoff=cutoff,
@@ -130,6 +141,7 @@ class PersistedSubingReference:
         }
         items = []
         for trade in trades["items"]:
+            self._check_cancelled()
             status = trade["status"]
             boundary = boundary_by_segment.get((
                 trade["physical_contract"], trade["owner_segment_id"],
