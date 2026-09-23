@@ -17,6 +17,7 @@ from typing import Any, Callable, Mapping
 from sqlalchemy import or_, select
 
 from app.market_data.metadata import MetadataSnapshot, MetadataSynchronizer
+from app.market_data.closeout_binding import RuntimeRecoveryBindingError
 from app.models import MainContractMap, TradingCalendar, TradingSession
 
 
@@ -318,6 +319,8 @@ def apply_current_day_metadata(
     try:
         try:
             verify_identity()
+        except RuntimeRecoveryBindingError:
+            raise
         except Exception:
             raise CurrentDayMetadataRecoveryError("RUNTIME_IDENTITY_DRIFT") from None
         session = synchronizer.catalog.session
@@ -333,6 +336,8 @@ def apply_current_day_metadata(
             raise CurrentDayMetadataRecoveryError("PLAN_DRIFT")
         try:
             verify_identity()
+        except RuntimeRecoveryBindingError:
+            raise
         except Exception:
             raise CurrentDayMetadataRecoveryError("RUNTIME_IDENTITY_DRIFT") from None
         try:
