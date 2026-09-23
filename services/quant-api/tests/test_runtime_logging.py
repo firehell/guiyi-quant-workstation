@@ -83,6 +83,11 @@ def test_after_market_target_failure_log_keeps_only_bounded_identity(tmp_path):
             "dataset": ("contract", "password=hidden", "RS2609", "1d"),
             "reason_code": "password=hidden",
         }, 1, 1)
+        _log_first_maintenance_failure({
+            "dataset": ("continuous", "rs", "MAIN", "1d"),
+            "year": 2026, "month": 9,
+            "reason_code": "StorageError",
+        }, 1, 1)
         rows = [json.loads(line) for line in path.read_text().splitlines()]
         assert rows[0]["code"] == "AFTER_MARKET_TARGET_FAILURE"
         assert rows[0]["reason_code"] == "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"
@@ -90,6 +95,8 @@ def test_after_market_target_failure_log_keeps_only_bounded_identity(tmp_path):
             "rs", "RS2609", 2025, 11,
         )
         assert rows[1]["reason_code"] == "OTHER_TARGET_FAILURE"
+        assert rows[2]["symbol"] == "rs"
+        assert "contract" not in rows[2]
         assert "hidden" not in path.read_text()
     finally:
         logger.removeHandler(handler)

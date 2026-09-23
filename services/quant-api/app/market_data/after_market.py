@@ -1015,9 +1015,9 @@ def _log_first_maintenance_failure(
     dataset = failure.get("dataset")
     if isinstance(dataset, (tuple, list)) and len(dataset) == 4:
         kind, symbol, contract, frequency = dataset
-        if kind == "contract" and isinstance(symbol, str) and _PUBLIC_PRODUCT_CODE.fullmatch(symbol):
+        if kind in {"contract", "continuous"} and isinstance(symbol, str) and _PUBLIC_PRODUCT_CODE.fullmatch(symbol):
             fields["symbol"] = symbol
-            if isinstance(contract, str) and re.fullmatch(r"[A-Z]{1,2}[0-9]{3,4}\Z", contract):
+            if kind == "contract" and isinstance(contract, str) and re.fullmatch(r"[A-Z]{1,2}[0-9]{3,4}\Z", contract):
                 fields["contract"] = contract
         if isinstance(frequency, str) and frequency in {"1m", "1d", "1w", "5m", "15m", "30m", "60m"}:
             fields["frequency"] = frequency

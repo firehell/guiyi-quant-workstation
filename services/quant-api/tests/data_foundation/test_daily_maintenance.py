@@ -342,9 +342,12 @@ def daily_manager(session, tmp_path):  # noqa: F811
     return manager
 
 
-@pytest.mark.parametrize("fact_type", (PriceUnavailableFact, NonpositiveCloseFact))
+@pytest.mark.parametrize("fact_types", (
+    (PriceUnavailableFact,), (NonpositiveCloseFact,),
+    (PriceUnavailableFact, NonpositiveCloseFact),
+))
 def test_daily_skips_only_weekly_price_interrupted_by_physical_d1_quality(
-    daily_manager, fact_type,
+    daily_manager, fact_types,
 ) -> None:
     from sqlalchemy import delete, select
 
@@ -354,19 +357,24 @@ def test_daily_skips_only_weekly_price_interrupted_by_physical_d1_quality(
     weekly = DatasetKey(DatasetKind.CONTRACT, "jm", "JM2509", BarFrequency.W1)
     row = manager.catalog.all_partitions(daily)[0]
     bars = manager.store.read_catalog_partition(row)
-    interrupted = date(2025, 1, 8)
-    interrupted_bar = next(bar for bar in bars if bar.trading_day == interrupted)
+    interrupted_days = tuple(date(2025, 1, 8 + index)
+                             for index in range(len(fact_types)))
+    interrupted_bars = tuple(next(bar for bar in bars if bar.trading_day == day)
+                             for day in interrupted_days)
     value = Decimal(0)
-    fact = fact_type(
-        interrupted_bar.bar_end, interrupted, value, value, value,
+    facts = tuple(fact_type(
+        bar.bar_end, day, value, value, value,
         Decimal(10) if fact_type is PriceUnavailableFact else value,
         Decimal(1), Decimal(10), Decimal(20),
         "a" * 64, "b" * 64, datetime(2025, 2, 1, tzinfo=UTC),
-    )
+    ) for fact_type, bar, day in zip(fact_types, interrupted_bars,
+                                     interrupted_days, strict=True))
     manager.catalog.register_partition(manager.store.publish(PublishRequest(
         daily, 2025, 1,
-        tuple(bar for bar in bars if bar.trading_day != interrupted),
-        tuple(bar.bar_end for bar in bars), (fact,),
+        tuple(bar for bar in bars if bar.trading_day not in interrupted_days),
+        tuple(bar.bar_end for bar in bars),
+        tuple(fact for fact in facts if isinstance(fact, PriceUnavailableFact)),
+        tuple(fact for fact in facts if isinstance(fact, NonpositiveCloseFact)),
     )))
     weekly_dataset = db.scalar(select(MarketDataset).where(
         MarketDataset.kind == "contract", MarketDataset.symbol == "jm",
@@ -394,7 +402,7 @@ def test_daily_skips_only_weekly_price_interrupted_by_physical_d1_quality(
         for key, stamps in manager.provider.calls
     )
     assert not any(
-        key == daily and interrupted_bar.bar_end in stamps
+        key == daily and any(bar.bar_end in stamps for bar in interrupted_bars)
         for key, stamps in manager.provider.calls
     )
     manager.provider.calls.clear()
@@ -402,6 +410,58 @@ def test_daily_skips_only_weekly_price_interrupted_by_physical_d1_quality(
     assert repeat.target_windows == ()
     assert manager.update(replace(request, apply=True)).status == "noop"
     assert manager.provider.calls == []
+
+
+def test_daily_quality_week_uses_iso_week_across_month_and_contract_identity(
+    daily_manager, monkeypatch,
+) -> None:
+    manager = daily_manager
+    db = manager.catalog.session
+    for offset in range((date(2025, 4, 6) - date(2025, 3, 10)).days + 1):
+        day = date(2025, 3, 10) + timedelta(days=offset)
+        trading = day.weekday() < 5
+        db.add(TradingCalendar(
+            exchange_code="DCE", trade_date=day, is_trading_day=trading,
+            has_night_session=False, provider="rqdata",
+        ))
+        if trading:
+            db.add(TradingSession(
+                exchange_code="DCE", instrument_symbol="jm", session_name="day",
+                start_time=time(9), end_time=time(9, 5), crosses_midnight=False,
+                effective_from=day, effective_to=day, is_active=True, provider="rqdata",
+            ))
+            db.add(MainContractMap(
+                symbol="jm", trade_date=day, contract_code="JM2509", rank=1,
+            ))
+    db.commit()
+    original = manager.catalog.product_partitions
+    daily = DatasetKey(DatasetKind.CONTRACT, "jm", "JM2509", BarFrequency.D1)
+    weekly = DatasetKey(DatasetKind.CONTRACT, "jm", "JM2509", BarFrequency.W1)
+    row = next(row for row in original("jm") if row.dataset == daily)
+    interruption = NonpositiveCloseFact(
+        datetime(2025, 3, 31, 7, tzinfo=UTC), date(2025, 3, 31),
+        Decimal(0), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(1), Decimal(10), Decimal(20),
+        "a" * 64, "b" * 64, datetime(2025, 4, 5, tzinfo=UTC),
+    )
+
+    def april_week_in_plan(quality_contract: str) -> bool:
+        fake_quality = replace(
+            row,
+            dataset=DatasetKey(DatasetKind.CONTRACT, "jm", quality_contract, BarFrequency.D1),
+            year=2025, month=3, source_quality=(interruption,),
+        )
+        monkeypatch.setattr(manager.catalog, "product_partitions",
+                            lambda _symbol: (*original("jm"), fake_quality))
+        return any(
+            key == weekly and (year, month) == (2025, 4)
+            and date(2025, 4, 4) in required_days
+            for group in manager._daily_groups(("jm",), date(2025, 4, 4))
+            for key, year, month, required_days in group
+        )
+
+    assert not april_week_in_plan("JM2509")
+    assert april_week_in_plan("JM2510")
 
 
 def test_daily_recovery_dry_run_is_fixed_and_has_no_provider_or_write_side_effects(
