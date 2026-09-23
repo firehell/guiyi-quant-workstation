@@ -3,6 +3,7 @@
   "aggregation_version": "exchange-daily-no-trade-v2",
   "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
   "catalog_revision": "6857967fe6d45bd8daea6aa17ccb8ba1dd46cc2abadd4e4a79ee1720640d1f86",
+  "catalog_source_sha256": "0224a401fdab3ea22fb508f128c2a4b379dc93bc26be48ad530c6015619cfcd8",
   "contract": "OI2611",
   "cutoff": "2026-09-18T07:00:00.000001+00:00",
   "d1_preimages": [
@@ -128,6 +129,7 @@
     }
   ],
   "d1_writes": 0,
+  "mds_source_sha256": "d379b11acd416178f8b1bc28876c1cc5a8bb8a79578cef5261787740909aa20a",
   "months": [
     {
       "added_days": [
@@ -382,8 +384,9 @@
     }
   ],
   "quality_interruption": "2025-11-21",
-  "repair_source_sha256": "f589938afce881255026266d13f03049ef72199d890a8dd0eec9348df1d26d01",
+  "repair_source_sha256": "50abe56d433cc243f2884220f5d5b61a5cc09970b95b17c75adb7a460990eeeb",
   "schema_version": "oi_weekly_local_rebuild_v1",
+  "storage_source_sha256": "cc29481d612253a350ef5671df67639f3ad8bd1df2b1e4b5a013d13a8cdcf066",
   "week_count": 37,
   "weeks": [
     {

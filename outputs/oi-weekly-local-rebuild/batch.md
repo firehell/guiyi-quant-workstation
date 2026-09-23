@@ -1,7 +1,7 @@
 # OI2611 W1 本地重建候选批次
 
 - 冻结截点：`2026-09-18T07:00:00.000001+00:00`；Catalog OI D1/W1 revision：`6857967fe6d45bd8daea6aa17ccb8ba1dd46cc2abadd4e4a79ee1720640d1f86`。
-- 精确计划：[prepare.json](prepare.json)，SHA-256 `9889ae0c7a4f1eefbfafa3cd24e5db4a8dc95309d26dd8ddb3ee3f9be62f166d`。计划记录聚合版本及源码 hash、10 个 D1 active 分区完整 Catalog 身份及文件 hash、37 个交易周端点及聚合值、10 个 W1 原/候选分区身份、目标 URI 和完整目标 Catalog 字段。首次执行前必须重新比对整个计划；身份漂移则废弃旧包。
+- 精确计划：[prepare.json](prepare.json)，SHA-256 `6411f51f11601783aae36c798561f35b1dd08acd3587b27291ddd1bcd79e2437`。计划记录聚合版本及修复、聚合、MDS、Catalog、存储源码 hash、10 个 D1 active 分区完整 Catalog 身份及文件 hash、37 个交易周端点及聚合值、10 个 W1 原/候选分区身份、目标 URI 和完整目标 Catalog 字段。首次执行前必须重新比对整个计划；身份漂移则废弃旧包。
 - 仅 `OI2611`，只新增 2025-11-28 至 2026-08-14 的 37 根 W1。2025-11 至 2026-07 的 9 个月当前无 W1 分区；2026-08 原有 2 行，候选 4 行，原有两行逐值保留。provider 预算 0，D1 写入 0，其他合约写入 0。
 - 2025-11-21 所属周的 2025-11-17、18、21 三个 `NONPOSITIVE_CLOSE` 事实保留，不生成该周价格。候选验收中 OI2611 为 41 个预期周、40 根价格 W1、1 次来源中断。
 - [candidate-acceptance.json](candidate-acceptance.json) 是只读内存 Catalog/Store overlay，三策略主状态与 chart、reference 均为 `READY`。震荡 comparator 为 `NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS`，属独立研究证据，不改变主策略结论。该证据不是生产 Catalog READY 或页面发布验收。

@@ -21,12 +21,15 @@ from sqlalchemy.orm import Session
 
 from app.db.url import normalize_database_url
 from app.market_data.catalog import MarketCatalog
+from app.market_data import catalog as catalog_module
 from app.market_data.domain import CanonicalBar, DatasetKey
+from app.market_data import market_data_service as mds_module
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.newow.after_market_consumer_audit import catalog_revision
 from app.market_data import rqdata_adapter
 from app.market_data.rqdata_adapter import WEEKLY_AGGREGATION_VERSION, _aggregate_daily_rows
 from app.market_data.storage import CANONICAL_SCHEMA, CanonicalMonthlyStore, PublishRequest
+from app.market_data import storage as storage_module
 from scripts.newow_weekly_recovery import load_private_readonly_settings
 
 CONTRACT = "OI2611"
@@ -214,6 +217,9 @@ def prepare(session: Session, root: Path, root_sha256: str) -> tuple[dict[str, A
              "cutoff": CUTOFF.isoformat(), "aggregation_version": WEEKLY_AGGREGATION_VERSION,
              "aggregation_source_sha256": _sha(Path(rqdata_adapter.__file__).read_bytes()),
              "repair_source_sha256": _sha(Path(__file__).read_bytes()),
+             "mds_source_sha256": _sha(Path(mds_module.__file__).read_bytes()),
+             "catalog_source_sha256": _sha(Path(catalog_module.__file__).read_bytes()),
+             "storage_source_sha256": _sha(Path(storage_module.__file__).read_bytes()),
              "canonical_root_sha256": root_sha256, "catalog_revision": revision,
              "provider_requests": 0, "d1_writes": 0, "week_count": len(MISSING_DAYS),
              "quality_interruption": interruption.isoformat(),
