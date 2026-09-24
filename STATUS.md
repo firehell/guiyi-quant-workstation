@@ -45,6 +45,20 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
+## v1.10.33 冻结元数据恢复发布候选
+
+本候选从已发布 `v1.10.32` 的 main 精确基线提取冻结源恢复入口，版本身份升级为
+`1.10.33`，不纳入 develop 与 main 之间的其他差异。入口仅对
+`CALENDAR_NIGHT_AUTHORITY_MISSING` 失败终态扩展受控 metadata 恢复：离线导入已捕获源，
+plan/apply 在维护锁内重放原始源响应并核对 snapshot 与 plan SHA；其他恢复命令不放宽。
+开发侧数据恢复定向 394 passed；本候选精确树的相同范围 395 passed、Ruff/mypy/diff、
+Python/Web 离线锁文件安装与 Web production build 通过。独立 Review 的一项来源脱钩
+P1 已修复并复审通过。2026-09-24 对现役 v1.10.30 的生产只读计划为 Calendar 35 行、
+operational Session 405 行、9/28 rank1 60 行插入，既有值冲突为零；计划 SHA 为
+`095ee199a4b86c665582378dae73f748c3661ab3fe8f688d9567a012d1331bf4`。
+此处只记录候选和只读证据：main/tag/GitHub Release、生产 metadata apply、写后读回、
+Runtime promotion 与自然盘后验收尚未执行。
+
 ## v1.10.32 main/tag/GitHub Release 读回（Runtime 未切换）
 
 PR #395 的 head 为 `71b348f0bdbb86bc668b21a01002964c2718a12e`，base 为
