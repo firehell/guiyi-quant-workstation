@@ -504,6 +504,23 @@ PostgreSQL `READ ONLY` 事务，校验连接库名后读现存 stream 状态；�
 输出只允许新的系统临时目录文件。它不检查 Canonical/MDS readiness、日期窗口、预算或授权，
 因此 `FORMAL_CANDIDATE` 不能直接执行 build、reader 切换或 activation。
 
+`scripts/reference_trading_p9_source_plan.py` 只对显式产品批次和统一 `since/through/as_of`
+逐流调用现有 HistoricalReferencePlanner/MDS。调用方必须提供 exact code SHA、能力版本、
+两个 universe 文件哈希、目标数据库名和 schema 版本、单流与总 bars/bytes/seconds 预算。
+运行前只读核对 DB 身份/版本，运行中漂移或连接失败使整个命令失败。结果只写新的系统
+临时文件，逐流记录 `SOURCE_READY` 计划哈希/输入摘要或类型化 `BLOCKED`；
+`requested_operation` 尚未经现存 stream/revision/watermark 核对，`execution_gate=UNVERIFIED`，
+输出只是 source-readiness audit，仅有 plan hash、计数和 digest，未保存完整可执行
+`HistoricalReferencePlan`。正式 apply 前须另生成完整 frozen plan 并重新核对 exact code、
+源与 DB 状态。该入口没有 apply，DB 事务只读且每流维护 advisory lock 在上下文结束时释放。
+生产全 600 流规划仍须绑定后续联合候选，不可沿用 develop 或旧 Release 的身份。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider \
+  tests/engineering/test_reference_trading_p9_source_plan.py
+```
+
 ## Market WebSocket 与统一详情页
 
 ```bash
