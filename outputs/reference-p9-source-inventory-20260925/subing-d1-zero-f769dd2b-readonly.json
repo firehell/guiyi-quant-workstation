@@ -1,0 +1,3308 @@
+{
+  "as_of": "2026-09-23T08:00:00+00:00",
+  "code_sha": "f769dd2bdf6c1fced9888cff183954e746abd2c9",
+  "database_schema": "20260919_0047",
+  "readonly": true,
+  "results": [
+    {
+      "owned_zero_close_rows": 0,
+      "product": "CJ",
+      "quality_interruptions": 0,
+      "since": "2023-01-01",
+      "zero_close_rows": 2
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "PF",
+      "quality_interruptions": 180,
+      "since": "2023-01-01",
+      "zero_close_rows": 1215
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "PK",
+      "quality_interruptions": 1,
+      "since": "2023-01-01",
+      "zero_close_rows": 5
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "PL",
+      "quality_interruptions": 328,
+      "since": "2025-07-22",
+      "zero_close_rows": 47
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "PR",
+      "quality_interruptions": 292,
+      "since": "2024-08-30",
+      "zero_close_rows": 389
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "PX",
+      "quality_interruptions": 101,
+      "since": "2023-09-15",
+      "zero_close_rows": 148
+    },
+    {
+      "owned_zero_close_rows": 79,
+      "product": "RS",
+      "quality_interruptions": 318,
+      "since": "2023-01-01",
+      "zero_close_rows": 768
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "SF",
+      "quality_interruptions": 15,
+      "since": "2023-01-01",
+      "zero_close_rows": 262
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "SH",
+      "quality_interruptions": 6,
+      "since": "2023-09-15",
+      "zero_close_rows": 26
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "SM",
+      "quality_interruptions": 43,
+      "since": "2023-01-01",
+      "zero_close_rows": 249
+    },
+    {
+      "owned_zero_close_rows": 0,
+      "product": "SR",
+      "quality_interruptions": 0,
+      "since": "2023-01-01",
+      "zero_close_rows": 2
+    }
+  ],
+  "targets": [
+    {
+      "contract": "CJ2305",
+      "month": "2022-05",
+      "owned_rows": 0,
+      "product": "CJ",
+      "rows": 1
+    },
+    {
+      "contract": "CJ2309",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "CJ",
+      "rows": 1
+    },
+    {
+      "contract": "PF2302",
+      "month": "2022-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2302",
+      "month": "2022-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 17
+    },
+    {
+      "contract": "PF2302",
+      "month": "2022-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2302",
+      "month": "2022-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2302",
+      "month": "2022-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2302",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2303",
+      "month": "2022-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 12
+    },
+    {
+      "contract": "PF2303",
+      "month": "2022-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 14
+    },
+    {
+      "contract": "PF2303",
+      "month": "2022-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2303",
+      "month": "2022-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2303",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2303",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2304",
+      "month": "2022-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 8
+    },
+    {
+      "contract": "PF2304",
+      "month": "2022-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2304",
+      "month": "2022-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 20
+    },
+    {
+      "contract": "PF2304",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2304",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2304",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2305",
+      "month": "2022-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2306",
+      "month": "2022-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 8
+    },
+    {
+      "contract": "PF2306",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2306",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2306",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2306",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2306",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2307",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2307",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2307",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2307",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2307",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2308",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2308",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2308",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2310",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2310",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2310",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2310",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2310",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2311",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2311",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2311",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2311",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2311",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2311",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2312",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2312",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2312",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2312",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2312",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2402",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2402",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 12
+    },
+    {
+      "contract": "PF2402",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2402",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2402",
+      "month": "2023-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2402",
+      "month": "2023-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2402",
+      "month": "2023-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2403",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2403",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2403",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2403",
+      "month": "2023-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2403",
+      "month": "2023-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2403",
+      "month": "2023-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2403",
+      "month": "2023-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2405",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2405",
+      "month": "2023-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2405",
+      "month": "2023-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2405",
+      "month": "2023-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2406",
+      "month": "2023-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2406",
+      "month": "2023-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2406",
+      "month": "2023-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 19
+    },
+    {
+      "contract": "PF2406",
+      "month": "2023-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2406",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2406",
+      "month": "2023-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2406",
+      "month": "2023-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2407",
+      "month": "2023-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2407",
+      "month": "2023-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 20
+    },
+    {
+      "contract": "PF2407",
+      "month": "2023-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2407",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2407",
+      "month": "2023-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2407",
+      "month": "2023-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2408",
+      "month": "2023-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2408",
+      "month": "2023-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2408",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2408",
+      "month": "2023-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2408",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2409",
+      "month": "2023-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2409",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2410",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2410",
+      "month": "2023-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 12
+    },
+    {
+      "contract": "PF2410",
+      "month": "2023-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2410",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2410",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2410",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2410",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2410",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2411",
+      "month": "2023-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2411",
+      "month": "2023-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2411",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2411",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2411",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 15
+    },
+    {
+      "contract": "PF2411",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2411",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2411",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2412",
+      "month": "2023-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2412",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 14
+    },
+    {
+      "contract": "PF2412",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2412",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 15
+    },
+    {
+      "contract": "PF2412",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 8
+    },
+    {
+      "contract": "PF2412",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2412",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2412",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2502",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2502",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 18
+    },
+    {
+      "contract": "PF2502",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2502",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2502",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 8
+    },
+    {
+      "contract": "PF2502",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2502",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2503",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2503",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 19
+    },
+    {
+      "contract": "PF2503",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2503",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2503",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2503",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 14
+    },
+    {
+      "contract": "PF2504",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 8
+    },
+    {
+      "contract": "PF2504",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 12
+    },
+    {
+      "contract": "PF2504",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2504",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2504",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2504",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2505",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2505",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2505",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2505",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2506",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2506",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2506",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2506",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2506",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2506",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2506",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2507",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2507",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2507",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2507",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2507",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2507",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2507",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2507",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2508",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2508",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2508",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2508",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 9
+    },
+    {
+      "contract": "PF2508",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2508",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2508",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2509",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2509",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2509",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2510",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 8
+    },
+    {
+      "contract": "PF2510",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 16
+    },
+    {
+      "contract": "PF2510",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2510",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 17
+    },
+    {
+      "contract": "PF2510",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2510",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2510",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2511",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2511",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 21
+    },
+    {
+      "contract": "PF2511",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 16
+    },
+    {
+      "contract": "PF2511",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2511",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2511",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2511",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2512",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2512",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 14
+    },
+    {
+      "contract": "PF2512",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 13
+    },
+    {
+      "contract": "PF2512",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2512",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2602",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2602",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 11
+    },
+    {
+      "contract": "PF2602",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2602",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PF2602",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 4
+    },
+    {
+      "contract": "PF2603",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 10
+    },
+    {
+      "contract": "PF2603",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2603",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2603",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2603",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2603",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 3
+    },
+    {
+      "contract": "PF2604",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 6
+    },
+    {
+      "contract": "PF2604",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2604",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 5
+    },
+    {
+      "contract": "PF2604",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 7
+    },
+    {
+      "contract": "PF2604",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 1
+    },
+    {
+      "contract": "PF2604",
+      "month": "2025-09",
+      "owned_rows": 0,
+      "product": "PF",
+      "rows": 2
+    },
+    {
+      "contract": "PK2411",
+      "month": "2023-11",
+      "owned_rows": 0,
+      "product": "PK",
+      "rows": 2
+    },
+    {
+      "contract": "PK2511",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PK",
+      "rows": 1
+    },
+    {
+      "contract": "PK2603",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PK",
+      "rows": 1
+    },
+    {
+      "contract": "PK2603",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PK",
+      "rows": 1
+    },
+    {
+      "contract": "PL2603",
+      "month": "2025-09",
+      "owned_rows": 0,
+      "product": "PL",
+      "rows": 7
+    },
+    {
+      "contract": "PL2604",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "PL",
+      "rows": 10
+    },
+    {
+      "contract": "PL2604",
+      "month": "2025-09",
+      "owned_rows": 0,
+      "product": "PL",
+      "rows": 16
+    },
+    {
+      "contract": "PL2604",
+      "month": "2025-10",
+      "owned_rows": 0,
+      "product": "PL",
+      "rows": 14
+    },
+    {
+      "contract": "PR2506",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 2
+    },
+    {
+      "contract": "PR2506",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 11
+    },
+    {
+      "contract": "PR2506",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 10
+    },
+    {
+      "contract": "PR2506",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 8
+    },
+    {
+      "contract": "PR2506",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 3
+    },
+    {
+      "contract": "PR2507",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 4
+    },
+    {
+      "contract": "PR2507",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 13
+    },
+    {
+      "contract": "PR2507",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 12
+    },
+    {
+      "contract": "PR2507",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 4
+    },
+    {
+      "contract": "PR2507",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 7
+    },
+    {
+      "contract": "PR2507",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 1
+    },
+    {
+      "contract": "PR2509",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 3
+    },
+    {
+      "contract": "PR2509",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 4
+    },
+    {
+      "contract": "PR2509",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 8
+    },
+    {
+      "contract": "PR2509",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 7
+    },
+    {
+      "contract": "PR2509",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 3
+    },
+    {
+      "contract": "PR2509",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 1
+    },
+    {
+      "contract": "PR2510",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 7
+    },
+    {
+      "contract": "PR2510",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 14
+    },
+    {
+      "contract": "PR2510",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 14
+    },
+    {
+      "contract": "PR2510",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 10
+    },
+    {
+      "contract": "PR2510",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 11
+    },
+    {
+      "contract": "PR2510",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 7
+    },
+    {
+      "contract": "PR2510",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 3
+    },
+    {
+      "contract": "PR2511",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 8
+    },
+    {
+      "contract": "PR2511",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 19
+    },
+    {
+      "contract": "PR2511",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 15
+    },
+    {
+      "contract": "PR2511",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 16
+    },
+    {
+      "contract": "PR2511",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 7
+    },
+    {
+      "contract": "PR2511",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 3
+    },
+    {
+      "contract": "PR2511",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 2
+    },
+    {
+      "contract": "PR2512",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 12
+    },
+    {
+      "contract": "PR2512",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 18
+    },
+    {
+      "contract": "PR2512",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 16
+    },
+    {
+      "contract": "PR2512",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 12
+    },
+    {
+      "contract": "PR2512",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 5
+    },
+    {
+      "contract": "PR2512",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 2
+    },
+    {
+      "contract": "PR2512",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 1
+    },
+    {
+      "contract": "PR2601",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 8
+    },
+    {
+      "contract": "PR2601",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 15
+    },
+    {
+      "contract": "PR2601",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 9
+    },
+    {
+      "contract": "PR2601",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 2
+    },
+    {
+      "contract": "PR2603",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 10
+    },
+    {
+      "contract": "PR2603",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 11
+    },
+    {
+      "contract": "PR2603",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 3
+    },
+    {
+      "contract": "PR2603",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 7
+    },
+    {
+      "contract": "PR2603",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 7
+    },
+    {
+      "contract": "PR2603",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 10
+    },
+    {
+      "contract": "PR2603",
+      "month": "2025-09",
+      "owned_rows": 0,
+      "product": "PR",
+      "rows": 4
+    },
+    {
+      "contract": "PX2501",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 8
+    },
+    {
+      "contract": "PX2501",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 10
+    },
+    {
+      "contract": "PX2501",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 3
+    },
+    {
+      "contract": "PX2501",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 1
+    },
+    {
+      "contract": "PX2505",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 7
+    },
+    {
+      "contract": "PX2505",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 5
+    },
+    {
+      "contract": "PX2505",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 2
+    },
+    {
+      "contract": "PX2509",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 1
+    },
+    {
+      "contract": "PX2509",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 6
+    },
+    {
+      "contract": "PX2509",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 1
+    },
+    {
+      "contract": "PX2511",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 8
+    },
+    {
+      "contract": "PX2511",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 2
+    },
+    {
+      "contract": "PX2511",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 10
+    },
+    {
+      "contract": "PX2511",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 11
+    },
+    {
+      "contract": "PX2511",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 10
+    },
+    {
+      "contract": "PX2511",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 8
+    },
+    {
+      "contract": "PX2603",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 11
+    },
+    {
+      "contract": "PX2603",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 8
+    },
+    {
+      "contract": "PX2603",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 2
+    },
+    {
+      "contract": "PX2603",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 4
+    },
+    {
+      "contract": "PX2603",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 14
+    },
+    {
+      "contract": "PX2603",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 11
+    },
+    {
+      "contract": "PX2603",
+      "month": "2025-09",
+      "owned_rows": 0,
+      "product": "PX",
+      "rows": 5
+    },
+    {
+      "contract": "RS2309",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 8
+    },
+    {
+      "contract": "RS2309",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 16
+    },
+    {
+      "contract": "RS2309",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 16
+    },
+    {
+      "contract": "RS2309",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 21
+    },
+    {
+      "contract": "RS2309",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 14
+    },
+    {
+      "contract": "RS2309",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 20
+    },
+    {
+      "contract": "RS2309",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 15
+    },
+    {
+      "contract": "RS2309",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 5
+    },
+    {
+      "contract": "RS2309",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 5
+    },
+    {
+      "contract": "RS2309",
+      "month": "2023-06",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 4
+    },
+    {
+      "contract": "RS2311",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 12
+    },
+    {
+      "contract": "RS2311",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 6
+    },
+    {
+      "contract": "RS2311",
+      "month": "2023-01",
+      "owned_rows": 4,
+      "product": "RS",
+      "rows": 4
+    },
+    {
+      "contract": "RS2311",
+      "month": "2023-02",
+      "owned_rows": 9,
+      "product": "RS",
+      "rows": 9
+    },
+    {
+      "contract": "RS2311",
+      "month": "2023-03",
+      "owned_rows": 5,
+      "product": "RS",
+      "rows": 5
+    },
+    {
+      "contract": "RS2311",
+      "month": "2023-04",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 1
+    },
+    {
+      "contract": "RS2311",
+      "month": "2023-05",
+      "owned_rows": 3,
+      "product": "RS",
+      "rows": 3
+    },
+    {
+      "contract": "RS2311",
+      "month": "2023-06",
+      "owned_rows": 6,
+      "product": "RS",
+      "rows": 6
+    },
+    {
+      "contract": "RS2311",
+      "month": "2023-11",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 1
+    },
+    {
+      "contract": "RS2407",
+      "month": "2023-07",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 9
+    },
+    {
+      "contract": "RS2407",
+      "month": "2023-08",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 22
+    },
+    {
+      "contract": "RS2407",
+      "month": "2023-09",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 17
+    },
+    {
+      "contract": "RS2407",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 13
+    },
+    {
+      "contract": "RS2407",
+      "month": "2023-11",
+      "owned_rows": 6,
+      "product": "RS",
+      "rows": 9
+    },
+    {
+      "contract": "RS2407",
+      "month": "2023-12",
+      "owned_rows": 5,
+      "product": "RS",
+      "rows": 9
+    },
+    {
+      "contract": "RS2407",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 15
+    },
+    {
+      "contract": "RS2407",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 5
+    },
+    {
+      "contract": "RS2409",
+      "month": "2023-09",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 10
+    },
+    {
+      "contract": "RS2409",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 14
+    },
+    {
+      "contract": "RS2409",
+      "month": "2023-11",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 20
+    },
+    {
+      "contract": "RS2409",
+      "month": "2023-12",
+      "owned_rows": 4,
+      "product": "RS",
+      "rows": 15
+    },
+    {
+      "contract": "RS2409",
+      "month": "2024-01",
+      "owned_rows": 4,
+      "product": "RS",
+      "rows": 5
+    },
+    {
+      "contract": "RS2409",
+      "month": "2024-02",
+      "owned_rows": 3,
+      "product": "RS",
+      "rows": 4
+    },
+    {
+      "contract": "RS2411",
+      "month": "2023-11",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 12
+    },
+    {
+      "contract": "RS2411",
+      "month": "2023-12",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 20
+    },
+    {
+      "contract": "RS2411",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 11
+    },
+    {
+      "contract": "RS2411",
+      "month": "2024-02",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 10
+    },
+    {
+      "contract": "RS2411",
+      "month": "2024-11",
+      "owned_rows": 2,
+      "product": "RS",
+      "rows": 2
+    },
+    {
+      "contract": "RS2507",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 8
+    },
+    {
+      "contract": "RS2507",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 13
+    },
+    {
+      "contract": "RS2507",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 6
+    },
+    {
+      "contract": "RS2507",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 13
+    },
+    {
+      "contract": "RS2507",
+      "month": "2025-07",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 1
+    },
+    {
+      "contract": "RS2509",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 9
+    },
+    {
+      "contract": "RS2509",
+      "month": "2024-10",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 16
+    },
+    {
+      "contract": "RS2509",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 14
+    },
+    {
+      "contract": "RS2509",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 19
+    },
+    {
+      "contract": "RS2509",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 17
+    },
+    {
+      "contract": "RS2509",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 11
+    },
+    {
+      "contract": "RS2509",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 11
+    },
+    {
+      "contract": "RS2509",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 5
+    },
+    {
+      "contract": "RS2509",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 1
+    },
+    {
+      "contract": "RS2509",
+      "month": "2025-09",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 1
+    },
+    {
+      "contract": "RS2511",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 6
+    },
+    {
+      "contract": "RS2511",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 21
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 18
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 17
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 17
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 17
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 12
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 8
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 4
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 2
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-10",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 1
+    },
+    {
+      "contract": "RS2511",
+      "month": "2025-11",
+      "owned_rows": 8,
+      "product": "RS",
+      "rows": 8
+    },
+    {
+      "contract": "RS2607",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 8
+    },
+    {
+      "contract": "RS2607",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 7
+    },
+    {
+      "contract": "RS2607",
+      "month": "2025-09",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 1
+    },
+    {
+      "contract": "RS2607",
+      "month": "2025-10",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 13
+    },
+    {
+      "contract": "RS2607",
+      "month": "2025-11",
+      "owned_rows": 3,
+      "product": "RS",
+      "rows": 16
+    },
+    {
+      "contract": "RS2607",
+      "month": "2025-12",
+      "owned_rows": 8,
+      "product": "RS",
+      "rows": 11
+    },
+    {
+      "contract": "RS2607",
+      "month": "2026-01",
+      "owned_rows": 1,
+      "product": "RS",
+      "rows": 2
+    },
+    {
+      "contract": "RS2608",
+      "month": "2025-08",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 11
+    },
+    {
+      "contract": "RS2608",
+      "month": "2025-09",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 9
+    },
+    {
+      "contract": "RS2608",
+      "month": "2025-10",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 17
+    },
+    {
+      "contract": "RS2608",
+      "month": "2025-11",
+      "owned_rows": 0,
+      "product": "RS",
+      "rows": 4
+    },
+    {
+      "contract": "SF2303",
+      "month": "2022-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 12
+    },
+    {
+      "contract": "SF2303",
+      "month": "2022-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2303",
+      "month": "2022-05",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2303",
+      "month": "2022-06",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 4
+    },
+    {
+      "contract": "SF2303",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2303",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2306",
+      "month": "2022-06",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 8
+    },
+    {
+      "contract": "SF2306",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 4
+    },
+    {
+      "contract": "SF2306",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 10
+    },
+    {
+      "contract": "SF2306",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 7
+    },
+    {
+      "contract": "SF2306",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 4
+    },
+    {
+      "contract": "SF2307",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2307",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 8
+    },
+    {
+      "contract": "SF2307",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 16
+    },
+    {
+      "contract": "SF2307",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 9
+    },
+    {
+      "contract": "SF2307",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 9
+    },
+    {
+      "contract": "SF2307",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 16
+    },
+    {
+      "contract": "SF2307",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2309",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2310",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2310",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2310",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2310",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2311",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 9
+    },
+    {
+      "contract": "SF2311",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2311",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 7
+    },
+    {
+      "contract": "SF2311",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2311",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2311",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2312",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2312",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2312",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 4
+    },
+    {
+      "contract": "SF2312",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2312",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2312",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2402",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2402",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 4
+    },
+    {
+      "contract": "SF2402",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2402",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2403",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 8
+    },
+    {
+      "contract": "SF2403",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 4
+    },
+    {
+      "contract": "SF2405",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2405",
+      "month": "2023-06",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2410",
+      "month": "2023-10",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2501",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2501",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2502",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2502",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2503",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2503",
+      "month": "2024-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2506",
+      "month": "2024-06",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2507",
+      "month": "2024-07",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2507",
+      "month": "2024-08",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 4
+    },
+    {
+      "contract": "SF2509",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2511",
+      "month": "2024-11",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 8
+    },
+    {
+      "contract": "SF2511",
+      "month": "2024-12",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2511",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2511",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 5
+    },
+    {
+      "contract": "SF2511",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2511",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2601",
+      "month": "2025-01",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2601",
+      "month": "2025-02",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2603",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 2
+    },
+    {
+      "contract": "SF2603",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 3
+    },
+    {
+      "contract": "SF2603",
+      "month": "2025-05",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2603",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SF2603",
+      "month": "2025-07",
+      "owned_rows": 0,
+      "product": "SF",
+      "rows": 1
+    },
+    {
+      "contract": "SH2501",
+      "month": "2024-01",
+      "owned_rows": 0,
+      "product": "SH",
+      "rows": 10
+    },
+    {
+      "contract": "SH2501",
+      "month": "2024-02",
+      "owned_rows": 0,
+      "product": "SH",
+      "rows": 8
+    },
+    {
+      "contract": "SH2501",
+      "month": "2024-03",
+      "owned_rows": 0,
+      "product": "SH",
+      "rows": 6
+    },
+    {
+      "contract": "SH2505",
+      "month": "2024-05",
+      "owned_rows": 0,
+      "product": "SH",
+      "rows": 1
+    },
+    {
+      "contract": "SH2509",
+      "month": "2024-09",
+      "owned_rows": 0,
+      "product": "SH",
+      "rows": 1
+    },
+    {
+      "contract": "SM2305",
+      "month": "2022-05",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 5
+    },
+    {
+      "contract": "SM2306",
+      "month": "2022-06",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 9
+    },
+    {
+      "contract": "SM2306",
+      "month": "2022-07",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 2
+    },
+    {
+      "contract": "SM2306",
+      "month": "2022-08",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 9
+    },
+    {
+      "contract": "SM2306",
+      "month": "2022-09",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 4
+    },
+    {
+      "contract": "SM2306",
+      "month": "2022-10",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 13
+    },
+    {
+      "contract": "SM2306",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 9
+    },
+    {
+      "contract": "SM2306",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 4
+    },
+    {
+      "contract": "SM2310",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 6
+    },
+    {
+      "contract": "SM2310",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 7
+    },
+    {
+      "contract": "SM2310",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 2
+    },
+    {
+      "contract": "SM2310",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 4
+    },
+    {
+      "contract": "SM2310",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 3
+    },
+    {
+      "contract": "SM2311",
+      "month": "2022-11",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 6
+    },
+    {
+      "contract": "SM2311",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 10
+    },
+    {
+      "contract": "SM2311",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 13
+    },
+    {
+      "contract": "SM2311",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 9
+    },
+    {
+      "contract": "SM2311",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 12
+    },
+    {
+      "contract": "SM2311",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 6
+    },
+    {
+      "contract": "SM2312",
+      "month": "2022-12",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 10
+    },
+    {
+      "contract": "SM2312",
+      "month": "2023-01",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 13
+    },
+    {
+      "contract": "SM2312",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 8
+    },
+    {
+      "contract": "SM2312",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 17
+    },
+    {
+      "contract": "SM2312",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 11
+    },
+    {
+      "contract": "SM2312",
+      "month": "2023-05",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 3
+    },
+    {
+      "contract": "SM2402",
+      "month": "2023-02",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 10
+    },
+    {
+      "contract": "SM2402",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 19
+    },
+    {
+      "contract": "SM2402",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 6
+    },
+    {
+      "contract": "SM2402",
+      "month": "2023-07",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 1
+    },
+    {
+      "contract": "SM2403",
+      "month": "2023-03",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 10
+    },
+    {
+      "contract": "SM2403",
+      "month": "2023-04",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 3
+    },
+    {
+      "contract": "SM2603",
+      "month": "2025-03",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 2
+    },
+    {
+      "contract": "SM2603",
+      "month": "2025-04",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 1
+    },
+    {
+      "contract": "SM2603",
+      "month": "2025-06",
+      "owned_rows": 0,
+      "product": "SM",
+      "rows": 2
+    },
+    {
+      "contract": "SR2303",
+      "month": "2022-03",
+      "owned_rows": 0,
+      "product": "SR",
+      "rows": 2
+    }
+  ],
+  "through": "2026-09-23"
+}

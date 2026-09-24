@@ -37,6 +37,16 @@ SC/SI 六条 `SOURCE_READY`，PL/PX/RS 九条仍因
 上述修复尚未发布，首波 175 份生产预检仍绑定
 原冻结代码及计划；真实下载、Canonical/Catalog 写入与后续受控 Gate 未执行。
 
+苏冰 D1 零价后续只读核查（`develop@f769dd2bd`、生产 schema `0047`）：
+原诊断的 3,720 次零价出现按物理合约与 Bar 终点去重为 3,113 个端点；
+其中 79 个位于实际 owner 区间，涉及 RS，其他零价主要位于回放所需的物理合约
+预热前缀。共涉及 11 品种、460 个“合约×月份”调查键；这些不是已验证的发布目标。
+证据见 `outputs/reference-p9-source-inventory-20260925/subing-d1-zero-f769dd2b-readonly.json`
+（SHA-256 `eafe5cb01f64a3865f73f0a48c95568f77be768c26df5dda462ea770fbfbe0ea`）。
+2026-09-19 冻结的苏冰 D1 质量批次只读预检为 `already_applied`（147 applied、
+9 noop 的原回执见 `outputs/subing-four-period-readiness-20260918/`）；不可重用该批次
+覆盖本次长历史前缀缺口。新批次仍须来源事实分类、精确旧指针/哈希与独立数据 Gate。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
