@@ -15,6 +15,9 @@ from guiyi_quant.reference_trading import (
 )
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from guiyi_quant.newow.product_adapters import replay_step, seed_replay_state
+from guiyi_quant.newow.product_identity import (
+    REFERENCE_MODEL_VERSION, futures_adaptation_version,
+)
 
 
 def _case():
@@ -26,7 +29,9 @@ def _case():
 def _stream(case):
     return StreamIdentity(
         "newow_trend", case.identity.formula_versions, case.identity.profile_id,
-        "newow_reference_v3", "newow_futures_v1", case.identity.product,
+        REFERENCE_MODEL_VERSION,
+        futures_adaptation_version("1d", case.identity.input_quality_policy),
+        case.identity.product,
         "1d", "actual_dominant", RecordingMode.FORWARD_OBSERVATION,
         "completed_canonical_v1",
     )
@@ -75,7 +80,8 @@ def test_newow_forward_reuses_real_incremental_kernel(strategy, frequency):
     case = ProductCases().primitive_input(strategy, frequency)
     stream = StreamIdentity(
         f"newow_{strategy}", case.identity.formula_versions,
-        case.identity.profile_id, "newow_reference_v3", "newow_futures_v1",
+        case.identity.profile_id, REFERENCE_MODEL_VERSION,
+        futures_adaptation_version(frequency, case.identity.input_quality_policy),
         case.identity.product, frequency, "actual_dominant",
         RecordingMode.FORWARD_OBSERVATION, "completed_observation_v1",
     )

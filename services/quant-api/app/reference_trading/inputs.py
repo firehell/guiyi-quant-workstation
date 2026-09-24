@@ -314,6 +314,9 @@ class MarketDataHistoricalInputReader:
         self._subing = subing_service
         self._read_guard = read_guard
 
+    def _newow_for(self, identity: StreamIdentity) -> object:
+        return self._newow(identity) if callable(self._newow) else self._newow
+
     def plan_stream(self, request: object) -> HistoricalInputSnapshot:
         with self._read_guard():
             return self._read(request)
@@ -332,7 +335,9 @@ class MarketDataHistoricalInputReader:
                 "frequency": request.identity.frequency,
             }
         elif normalized.startswith("newow_"):
-            bound_reader = getattr(self._newow, "historical_input_bound", None)
+            bound_reader = getattr(
+                self._newow_for(request.identity), "historical_input_bound", None,
+            )
             arguments = {
                 "product": request.identity.product.lower(),
                 "frequency": request.identity.frequency,
@@ -540,6 +545,7 @@ class MarketDataHistoricalInputReader:
     def _read_newow(self, request):
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+        from guiyi_quant.newow.product_identity import futures_adaptation_version
         from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
         from app.market_data.newow.product_query import NewowProductQuery
         from app.reference_trading.service import NewowHistoricalPayload
@@ -551,7 +557,8 @@ class MarketDataHistoricalInputReader:
             request.since, request.through,
             request.since, request.through, request.as_of,
         )
-        read = self._newow.load(query, request.as_of)
+        newow_reader = self._newow_for(request.identity)
+        read = newow_reader.load(query, request.as_of)
         identity = build_product_identity(
             query.product, strategy, frequency,
             input_quality_policy=read.input_quality_policy,
@@ -559,6 +566,9 @@ class MarketDataHistoricalInputReader:
         if (
             request.identity.product != identity.product
             or request.identity.formula_versions != identity.formula_versions
+            or request.identity.profile_id != identity.profile_id
+            or request.identity.futures_adaptation_version
+            != futures_adaptation_version(frequency.value, identity.input_quality_policy)
         ):
             raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
         boundaries: list[ReferenceBoundary] = []
@@ -603,8 +613,30 @@ class MarketDataHistoricalInputReader:
                 (item.bar.physical_contract, item.bar.segment_id) in evidence_owners,
             ),
         ) for index, item in enumerate(read.replay_bars)]
+        if frequency is ProductFrequency.WEEKLY:
+            eligible_owners = {
+                (item.bar.physical_contract, item.bar.segment_id)
+                for item in read.replay_bars if item.bar.observation_eligible
+            }
+            # A rank-1 owner can begin and end before it has an eligible W1 Bar.
+            # It cannot hold a reference trade, so its rollover has no replay event.
+            # Keep the raw boundary in the dependency manifest below.
+            boundaries = [
+                boundary for boundary in boundaries
+                if boundary.reason is not BoundaryReason.ROLLOVER
+                or (boundary.physical_contract, boundary.owner_segment_id) in eligible_owners
+            ]
+            for boundary in boundaries:
+                if boundary.reason is BoundaryReason.ROLLOVER and not any(
+                    item.bar.observation_eligible
+                    and item.bar.physical_contract == boundary.physical_contract
+                    and item.bar.segment_id == boundary.owner_segment_id
+                    and item.bar.bar_end <= boundary.bar_end
+                    for item in read.replay_bars
+                ):
+                    raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
         bars = _insert_boundaries(bars, tuple(boundaries))
-        metadata_reader = getattr(self._newow, "historical_metadata_evidence", None)
+        metadata_reader = getattr(newow_reader, "historical_metadata_evidence", None)
         if not callable(metadata_reader):
             raise ValueError("REFERENCE_METADATA_EVIDENCE_MISSING")
         metadata_evidence = metadata_reader(

@@ -358,6 +358,10 @@ def _newow_step(
     ):
         raise ValueError("REFERENCE_INPUT_PAYLOAD_INVALID")
     identity = payload.identity
+    from guiyi_quant.newow.product_identity import (
+        REFERENCE_MODEL_VERSION as NEWOW_REFERENCE_MODEL_VERSION,
+        futures_adaptation_version,
+    )
     if (
         stream.strategy_code.replace("-", "_")
         != f"newow_{identity.strategy.value}"
@@ -365,6 +369,11 @@ def _newow_step(
         or stream.frequency != identity.frequency.value
         or stream.series_kind != identity.series_kind
         or stream.formula_versions != identity.formula_versions
+        or stream.profile_id != identity.profile_id
+        or stream.reference_model_version != NEWOW_REFERENCE_MODEL_VERSION
+        or stream.futures_adaptation_version != futures_adaptation_version(
+            identity.frequency.value, identity.input_quality_policy,
+        )
     ):
         raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
     next_state, frame, diagnostics = replay_step(

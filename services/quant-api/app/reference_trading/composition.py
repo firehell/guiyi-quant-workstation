@@ -145,6 +145,7 @@ def open_historical_reference_components(*, session_factory=None):
         canonical_root,
     )
     from app.market_data.newow.product_reader import NewowProductReader
+    from app.market_data.newow.product_release import candidate_input_quality_policy
     from app.market_data.operational_universe import load_active_products
     from app.market_data.subing_reference import SubingReferenceService
     from app.reference_trading.inputs import MarketDataHistoricalInputReader
@@ -168,12 +169,19 @@ def open_historical_reference_components(*, session_factory=None):
             finally:
                 lease.release()
 
-        reader = MarketDataHistoricalInputReader(
-            newow_reader=NewowProductReader(
+        def newow_for(identity):
+            return NewowProductReader(
                 market_data,
                 coverage=coverage,
                 active_products=products,
-            ),
+                input_quality_policy=candidate_input_quality_policy(
+                    identity.product.lower(), identity.frequency,
+                    candidate_weekly=False,
+                ),
+            )
+
+        reader = MarketDataHistoricalInputReader(
+            newow_reader=newow_for,
             subing_service=SubingReferenceService(
                 market_data,
                 coverage=coverage,

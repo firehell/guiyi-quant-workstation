@@ -10,9 +10,10 @@ from guiyi_quant.reference_trading import StreamIdentity
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
-    REFERENCE_MODEL_VERSION,
+    InputQualityPolicy, REFERENCE_MODEL_VERSION,
     futures_adaptation_version,
 )
+from app.reference_trading.planning import _canonical_identity
 
 from app.reference_trading.inputs import HistoricalInputBar, HistoricalInputSnapshot
 from app.reference_trading.planning import (
@@ -76,6 +77,25 @@ def _budget() -> WorkBudget:
         max_elapsed_seconds=30,
         max_input_bytes=100_000,
     )
+
+
+def test_formal_weekly_v2_identity_requires_v2_adaptation() -> None:
+    product = build_product_identity(
+        "pl", ProductStrategy.TREND, ProductFrequency.WEEKLY,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+    )
+    identity = replace(
+        _identity(strategy="newow-trend", frequency="1w"),
+        product="pl", formula_versions=product.formula_versions,
+        profile_id=product.profile_id,
+        futures_adaptation_version=futures_adaptation_version(
+            "1w", InputQualityPolicy.WEEKLY_V2,
+        ),
+    )
+    assert _canonical_identity(identity)
+    assert not _canonical_identity(replace(
+        identity, futures_adaptation_version=futures_adaptation_version("1w"),
+    ))
 
 
 class Reader:

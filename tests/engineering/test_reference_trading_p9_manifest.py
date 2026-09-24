@@ -8,6 +8,7 @@ import runpy
 import os
 
 from app.market_data.newow.product_release import OPEN_WEEKLY_PRODUCTS
+from guiyi_quant.newow.product_identity import WEEKLY_FUTURES_ADAPTATION_VERSION_V2
 from app.market_data.operational_universe import load_active_products, load_operational_products
 
 _manifest = runpy.run_path(str(
@@ -36,6 +37,21 @@ def test_formal_p9_inventory_has_exact_stream_denominators_and_no_data_claim():
     assert all(row["gate"] == "CAPABILITY_CLOSED" for row in rows if row["strategy_code"].startswith("newow_") and row["frequency"] == "60m")
     assert all(row["gate"] == "MODEL_NOT_APPROVED" for row in rows if row["strategy_code"] == "htdy")
     assert len({row["stream_id"] for row in rows if row["stream_id"] is not None}) == 1500
+
+
+def test_formal_weekly_v2_inventory_uses_v2_stream_identity():
+    active, operational = load_active_products(), load_operational_products()
+    result = enumerate_scope(active, operational, tuple(OPEN_WEEKLY_PRODUCTS), {})
+    pl_weekly = [
+        row for row in result["streams"]
+        if row["product"] == "pl" and row["frequency"] == "1w"
+        and row["strategy_code"].startswith("newow_")
+    ]
+    assert len(pl_weekly) == 6
+    assert all(
+        row["futures_adaptation_version"] == WEEKLY_FUTURES_ADAPTATION_VERSION_V2
+        for row in pl_weekly
+    )
 
 
 def test_p9_inventory_matches_existing_rb_identity_and_records_disabled_state():
