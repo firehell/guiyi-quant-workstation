@@ -64,6 +64,43 @@ def test_after_market_exception_types_are_bounded_and_distinct(tmp_path):
         handler.close()
 
 
+def test_after_market_calendar_failure_context_is_bounded(tmp_path):
+    from app.runtime_logging import runtime_diagnostic_handler
+
+    path = tmp_path / "after-market.log"
+    handler = runtime_diagnostic_handler(path)
+    logger = logging.getLogger("app.market_data.after_market")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        from app.market_data.after_market import _diagnostic_warning
+
+        for context in (
+            {"exchange_code": "DCE", "calendar_day": "2026-09-28",
+             "reason_code": "SESSION_COVERAGE_INCOMPLETE"},
+            {"exchange_code": "password=hidden", "calendar_day": "password=hidden",
+             "reason_code": "password=hidden"},
+        ):
+            _diagnostic_warning(
+                "after_market_attempt_failed stage=canonical_update attempt=%s "
+                "detail_code=%s exception_type=%s",
+                1, "CALENDAR_NIGHT_AUTHORITY_MISSING", "ValueError",
+                stage="canonical_update", attempt=1,
+                detail_code="CALENDAR_NIGHT_AUTHORITY_MISSING",
+                exception_type="ValueError", failure_context=context,
+            )
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        assert {key: rows[0][key] for key in context} == {
+            "exchange_code": "DCE", "calendar_day": "2026-09-28",
+            "reason_code": "SESSION_COVERAGE_INCOMPLETE",
+        }
+        assert all(key not in rows[1] for key in context)
+        assert "hidden" not in path.read_text()
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+
+
 def test_after_market_target_failure_log_keeps_only_bounded_identity(tmp_path):
     from app.market_data.after_market import _log_first_maintenance_failure
     from app.runtime_logging import runtime_diagnostic_handler

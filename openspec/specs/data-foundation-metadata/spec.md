@@ -102,6 +102,9 @@ Session 正证据支持；交易日 false MUST 由筛选请求品种之前的完
 确定交易所当日品种全集，并验证每个品种的当日 Session 完整覆盖且均无夜盘。生命周期或覆盖缺失
 MUST 保持 UNKNOWN，非交易日可确定 false。UNKNOWN SHALL 只保留交易日身份一致的已有行，
 缺键 MUST fail closed；已证实事实与既有 Calendar 冲突 MUST 整事务回滚，纠正须走显式有界来源更正。
+current-day source SHALL 在同一批 trading periods 中取得该全集每个品种的有效物理合约 Session；
+超出 operational 集合的 Session 只作为 Calendar 证据，正式写入仍限当天/下一交易日 operational Session
+与当天 rank1。缺失诊断 SHALL 仅包含精确交易所、日期和有界缺口类别。
 
 #### Scenario: 子集仅日盘
 - **WHEN** 同交易所只请求无夜盘品种，无法证明该交易所当日完整 Session 覆盖

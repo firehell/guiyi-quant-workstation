@@ -50,6 +50,7 @@ class RuntimeAfterMarketRun(BaseModel):
     finished_at: str
     products: list[str] = Field(default_factory=list)
     error_code: str | None = None
+    failure_context: dict[str, str] | None = None
     failure_notification: RuntimeAfterMarketFailureNotification | None = None
 
 
