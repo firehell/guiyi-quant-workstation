@@ -1,0 +1,1499 @@
+{
+  "case_id": "query_real_rebuild_10000_index",
+  "code_sha": "a62e5014b05dcf3791e78ca6335aa7b3a413a89a",
+  "database": "guiyi_reference_isolated_test",
+  "dirty_worktree": false,
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "postgresql_server_version": "160014",
+  "python": "3.13.9",
+  "repeats": 5,
+  "results": [
+    {
+      "case_id": "query_real_rebuild_10000_index",
+      "child_cpu_seconds": 73.941,
+      "elapsed_seconds": 175.609,
+      "exit_code": 0,
+      "index_metrics": {
+        "first_use_ms": {
+          "first_page": 486.507,
+          "summary": 196.775
+        },
+        "plans": {
+          "deep_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40215,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 43.862,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 419,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 419,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '926490b0d31e4ac0bb037b6b85e0c3fe'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '926490b0d31e4ac0bb037b6b85e0c3fe'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 1,
+                "rows": 0
+              }
+            ]
+          },
+          "first_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40215,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 43.062,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 419,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 419,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '926490b0d31e4ac0bb037b6b85e0c3fe'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '926490b0d31e4ac0bb037b6b85e0c3fe'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          },
+          "summary": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 41128,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 43.659,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 41128,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Bitmap Heap Scan",
+                "relation": "reference_trades",
+                "removed": 78,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 323,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "ix_reference_trades_entry",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '926490b0d31e4ac0bb037b6b85e0c3fe'::text))",
+                "loops": 1,
+                "node": "Bitmap Index Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 40108,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = (reference_trades.stream_id)::text) AND ((revision_id)::text = (reference_trades.revision_id)::text) AND ((trade_id)::text = (reference_trades.trade_id)::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 10027,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          }
+        },
+        "relation_bytes": {
+          "built": {
+            "reference_actions": {
+              "index_bytes": 18268160,
+              "table_bytes": 10231808
+            },
+            "reference_batches": {
+              "index_bytes": 147456,
+              "table_bytes": 4046848
+            },
+            "reference_marks": {
+              "index_bytes": 7274496,
+              "table_bytes": 3751936
+            },
+            "reference_trades": {
+              "index_bytes": 9510912,
+              "table_bytes": 5136384
+            }
+          },
+          "rebuilt": {
+            "reference_actions": {
+              "index_bytes": 40984576,
+              "table_bytes": 20422656
+            },
+            "reference_batches": {
+              "index_bytes": 221184,
+              "table_bytes": 8011776
+            },
+            "reference_marks": {
+              "index_bytes": 14434304,
+              "table_bytes": 7454720
+            },
+            "reference_trades": {
+              "index_bytes": 18989056,
+              "table_bytes": 10231808
+            }
+          }
+        }
+      },
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 163776,
+      "query_metrics": {
+        "deep_page": {
+          "n": 100,
+          "p50_ms": 180.904,
+          "p95_ms": 210.436
+        },
+        "first_page": {
+          "n": 100,
+          "p50_ms": 180.382,
+          "p95_ms": 205.556
+        },
+        "row_counts": {
+          "bars": 10000,
+          "closed_trades": 9948
+        },
+        "summary": {
+          "n": 100,
+          "p50_ms": 169.627,
+          "p95_ms": 200.809
+        }
+      },
+      "repeat": 1,
+      "retained_worker_metrics": null,
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 175.33s (0:02:55)"
+      ]
+    },
+    {
+      "case_id": "query_real_rebuild_10000_index",
+      "child_cpu_seconds": 76.293,
+      "elapsed_seconds": 181.327,
+      "exit_code": 0,
+      "index_metrics": {
+        "first_use_ms": {
+          "first_page": 493.39,
+          "summary": 190.173
+        },
+        "plans": {
+          "deep_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40201,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 43.498,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = 'e53e1113007a483680adecf0ac5873f4'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = 'e53e1113007a483680adecf0ac5873f4'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 1,
+                "rows": 0
+              }
+            ]
+          },
+          "first_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40201,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 45.555,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = 'e53e1113007a483680adecf0ac5873f4'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = 'e53e1113007a483680adecf0ac5873f4'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          },
+          "summary": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 41128,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 41.331,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 41128,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Bitmap Heap Scan",
+                "relation": "reference_trades",
+                "removed": 78,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 323,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "ix_reference_trades_entry",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = 'e53e1113007a483680adecf0ac5873f4'::text))",
+                "loops": 1,
+                "node": "Bitmap Index Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 40108,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = (reference_trades.stream_id)::text) AND ((revision_id)::text = (reference_trades.revision_id)::text) AND ((trade_id)::text = (reference_trades.trade_id)::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 10027,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          }
+        },
+        "relation_bytes": {
+          "built": {
+            "reference_actions": {
+              "index_bytes": 18374656,
+              "table_bytes": 10223616
+            },
+            "reference_batches": {
+              "index_bytes": 139264,
+              "table_bytes": 4038656
+            },
+            "reference_marks": {
+              "index_bytes": 7274496,
+              "table_bytes": 3743744
+            },
+            "reference_trades": {
+              "index_bytes": 9535488,
+              "table_bytes": 5128192
+            }
+          },
+          "rebuilt": {
+            "reference_actions": {
+              "index_bytes": 41017344,
+              "table_bytes": 20422656
+            },
+            "reference_batches": {
+              "index_bytes": 221184,
+              "table_bytes": 8011776
+            },
+            "reference_marks": {
+              "index_bytes": 14434304,
+              "table_bytes": 7454720
+            },
+            "reference_trades": {
+              "index_bytes": 19013632,
+              "table_bytes": 10231808
+            }
+          }
+        }
+      },
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 165280,
+      "query_metrics": {
+        "deep_page": {
+          "n": 100,
+          "p50_ms": 185.633,
+          "p95_ms": 217.526
+        },
+        "first_page": {
+          "n": 100,
+          "p50_ms": 184.271,
+          "p95_ms": 216.347
+        },
+        "row_counts": {
+          "bars": 10000,
+          "closed_trades": 9948
+        },
+        "summary": {
+          "n": 100,
+          "p50_ms": 174.223,
+          "p95_ms": 202.541
+        }
+      },
+      "repeat": 2,
+      "retained_worker_metrics": null,
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 181.06s (0:03:01)"
+      ]
+    },
+    {
+      "case_id": "query_real_rebuild_10000_index",
+      "child_cpu_seconds": 72.896,
+      "elapsed_seconds": 199.912,
+      "exit_code": 0,
+      "index_metrics": {
+        "first_use_ms": {
+          "first_page": 491.397,
+          "summary": 179.179
+        },
+        "plans": {
+          "deep_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40201,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 42.949,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '7333acc061d14618b6fe4b7d53581bb3'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '7333acc061d14618b6fe4b7d53581bb3'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 1,
+                "rows": 0
+              }
+            ]
+          },
+          "first_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40201,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 42.956,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 405,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '7333acc061d14618b6fe4b7d53581bb3'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '7333acc061d14618b6fe4b7d53581bb3'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          },
+          "summary": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 41128,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 40.046,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 41128,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Bitmap Heap Scan",
+                "relation": "reference_trades",
+                "removed": 78,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 323,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "ix_reference_trades_entry",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '7333acc061d14618b6fe4b7d53581bb3'::text))",
+                "loops": 1,
+                "node": "Bitmap Index Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 40108,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = (reference_trades.stream_id)::text) AND ((revision_id)::text = (reference_trades.revision_id)::text) AND ((trade_id)::text = (reference_trades.trade_id)::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 10027,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          }
+        },
+        "relation_bytes": {
+          "built": {
+            "reference_actions": {
+              "index_bytes": 18210816,
+              "table_bytes": 10223616
+            },
+            "reference_batches": {
+              "index_bytes": 139264,
+              "table_bytes": 4038656
+            },
+            "reference_marks": {
+              "index_bytes": 7274496,
+              "table_bytes": 3743744
+            },
+            "reference_trades": {
+              "index_bytes": 9535488,
+              "table_bytes": 5128192
+            }
+          },
+          "rebuilt": {
+            "reference_actions": {
+              "index_bytes": 40861696,
+              "table_bytes": 20422656
+            },
+            "reference_batches": {
+              "index_bytes": 212992,
+              "table_bytes": 8011776
+            },
+            "reference_marks": {
+              "index_bytes": 14434304,
+              "table_bytes": 7454720
+            },
+            "reference_trades": {
+              "index_bytes": 19013632,
+              "table_bytes": 10231808
+            }
+          }
+        }
+      },
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 158288,
+      "query_metrics": {
+        "deep_page": {
+          "n": 100,
+          "p50_ms": 192.883,
+          "p95_ms": 221.656
+        },
+        "first_page": {
+          "n": 100,
+          "p50_ms": 193.586,
+          "p95_ms": 219.027
+        },
+        "row_counts": {
+          "bars": 10000,
+          "closed_trades": 9948
+        },
+        "summary": {
+          "n": 100,
+          "p50_ms": 181.176,
+          "p95_ms": 206.882
+        }
+      },
+      "repeat": 3,
+      "retained_worker_metrics": null,
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 199.65s (0:03:19)"
+      ]
+    },
+    {
+      "case_id": "query_real_rebuild_10000_index",
+      "child_cpu_seconds": 69.196,
+      "elapsed_seconds": 171.499,
+      "exit_code": 0,
+      "index_metrics": {
+        "first_use_ms": {
+          "first_page": 486.427,
+          "summary": 181.04
+        },
+        "plans": {
+          "deep_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40224,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 42.214,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 428,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 428,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '8b5f0666e2b641a39259b0f41732ab09'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '8b5f0666e2b641a39259b0f41732ab09'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 1,
+                "rows": 0
+              }
+            ]
+          },
+          "first_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40224,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 44.588,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 428,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 428,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '8b5f0666e2b641a39259b0f41732ab09'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '8b5f0666e2b641a39259b0f41732ab09'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          },
+          "summary": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 41128,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 39.249,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 41128,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Bitmap Heap Scan",
+                "relation": "reference_trades",
+                "removed": 78,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 323,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "ix_reference_trades_entry",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '8b5f0666e2b641a39259b0f41732ab09'::text))",
+                "loops": 1,
+                "node": "Bitmap Index Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 40108,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = (reference_trades.stream_id)::text) AND ((revision_id)::text = (reference_trades.revision_id)::text) AND ((trade_id)::text = (reference_trades.trade_id)::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 10027,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          }
+        },
+        "relation_bytes": {
+          "built": {
+            "reference_actions": {
+              "index_bytes": 18407424,
+              "table_bytes": 10231808
+            },
+            "reference_batches": {
+              "index_bytes": 147456,
+              "table_bytes": 4046848
+            },
+            "reference_marks": {
+              "index_bytes": 7274496,
+              "table_bytes": 3751936
+            },
+            "reference_trades": {
+              "index_bytes": 9519104,
+              "table_bytes": 5136384
+            }
+          },
+          "rebuilt": {
+            "reference_actions": {
+              "index_bytes": 41009152,
+              "table_bytes": 20422656
+            },
+            "reference_batches": {
+              "index_bytes": 229376,
+              "table_bytes": 8011776
+            },
+            "reference_marks": {
+              "index_bytes": 14434304,
+              "table_bytes": 7454720
+            },
+            "reference_trades": {
+              "index_bytes": 18997248,
+              "table_bytes": 10231808
+            }
+          }
+        }
+      },
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 157744,
+      "query_metrics": {
+        "deep_page": {
+          "n": 100,
+          "p50_ms": 187.824,
+          "p95_ms": 222.4
+        },
+        "first_page": {
+          "n": 100,
+          "p50_ms": 188.676,
+          "p95_ms": 220.886
+        },
+        "row_counts": {
+          "bars": 10000,
+          "closed_trades": 9948
+        },
+        "summary": {
+          "n": 100,
+          "p50_ms": 176.27,
+          "p95_ms": 214.937
+        }
+      },
+      "repeat": 4,
+      "retained_worker_metrics": null,
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 171.22s (0:02:51)"
+      ]
+    },
+    {
+      "case_id": "query_real_rebuild_10000_index",
+      "child_cpu_seconds": 72.302,
+      "elapsed_seconds": 172.306,
+      "exit_code": 0,
+      "index_metrics": {
+        "first_use_ms": {
+          "first_page": 496.517,
+          "summary": 173.402
+        },
+        "plans": {
+          "deep_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40230,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 42.551,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 434,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 434,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '59909bf715274ee0b2f542713f63ce64'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '59909bf715274ee0b2f542713f63ce64'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 1,
+                "rows": 0
+              }
+            ]
+          },
+          "first_page": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 40230,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 43.441,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 434,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Subquery Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 434,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "((stream_id = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND (revision_id = '59909bf715274ee0b2f542713f63ce64'::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 1,
+                "node": "Index Only Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 39796,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '59909bf715274ee0b2f542713f63ce64'::text) AND ((trade_id)::text = (anon_1.trade_id)::text) AND (valid_from_seq = anon_1.valid_from_seq))",
+                "loops": 9949,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          },
+          "summary": {
+            "buffers": {
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Hit Blocks": 41128,
+              "Shared Read Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "execution_ms": 39.847,
+            "scans": [
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 41128,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": null,
+                "index_cond": null,
+                "loops": 1,
+                "node": "Bitmap Heap Scan",
+                "relation": "reference_trades",
+                "removed": 78,
+                "rows": 9949
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 323,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "ix_reference_trades_entry",
+                "index_cond": "(((stream_id)::text = 'reference-stream:4c2be95421ce1d746121f9a4eeeb60ab3e3b7deec98c678743406514146f94b7'::text) AND ((revision_id)::text = '59909bf715274ee0b2f542713f63ce64'::text))",
+                "loops": 1,
+                "node": "Bitmap Index Scan",
+                "relation": null,
+                "removed": 0,
+                "rows": 10027
+              },
+              {
+                "buffers": {
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Hit Blocks": 40108,
+                  "Shared Read Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                },
+                "index": "pk_reference_trades",
+                "index_cond": "(((stream_id)::text = (reference_trades.stream_id)::text) AND ((revision_id)::text = (reference_trades.revision_id)::text) AND ((trade_id)::text = (reference_trades.trade_id)::text) AND (valid_from_seq <= '80'::bigint))",
+                "loops": 10027,
+                "node": "Index Scan",
+                "relation": "reference_trades",
+                "removed": 0,
+                "rows": 1
+              }
+            ]
+          }
+        },
+        "relation_bytes": {
+          "built": {
+            "reference_actions": {
+              "index_bytes": 18276352,
+              "table_bytes": 10231808
+            },
+            "reference_batches": {
+              "index_bytes": 147456,
+              "table_bytes": 4046848
+            },
+            "reference_marks": {
+              "index_bytes": 7274496,
+              "table_bytes": 3751936
+            },
+            "reference_trades": {
+              "index_bytes": 9502720,
+              "table_bytes": 5136384
+            }
+          },
+          "rebuilt": {
+            "reference_actions": {
+              "index_bytes": 41025536,
+              "table_bytes": 20422656
+            },
+            "reference_batches": {
+              "index_bytes": 221184,
+              "table_bytes": 8011776
+            },
+            "reference_marks": {
+              "index_bytes": 14434304,
+              "table_bytes": 7454720
+            },
+            "reference_trades": {
+              "index_bytes": 18980864,
+              "table_bytes": 10231808
+            }
+          }
+        }
+      },
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 162816,
+      "query_metrics": {
+        "deep_page": {
+          "n": 100,
+          "p50_ms": 188.942,
+          "p95_ms": 217.888
+        },
+        "first_page": {
+          "n": 100,
+          "p50_ms": 188.97,
+          "p95_ms": 216.817
+        },
+        "row_counts": {
+          "bars": 10000,
+          "closed_trades": 9948
+        },
+        "summary": {
+          "n": 100,
+          "p50_ms": 176.958,
+          "p95_ms": 206.096
+        }
+      },
+      "repeat": 5,
+      "retained_worker_metrics": null,
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 172.04s (0:02:52)"
+      ]
+    }
+  ],
+  "started_at": "2026-09-24T07:53:06.223593+00:00",
+  "timeout_seconds_per_repeat": 300
+}

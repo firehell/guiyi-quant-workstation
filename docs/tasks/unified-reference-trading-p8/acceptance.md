@@ -250,14 +250,73 @@ generated Calendar horizon; real provider, natural Live, upstream 1m aggregation
 and production acceptance were not exercised. No fixture opens HTDY acceptance
 or any production capability.
 
-P8 engineering increment is **eligible for develop integration**. The combined-tree
+P8 engineering increment was **integrated into develop** at `867b75c625bf084db46d7d90bd64ea7fc86687d3`. The combined-tree
 PostgreSQL ReferenceTrading suite passed 43 tests (219 deselected) in 354.04 s,
 and an independent GPT-6 Astra Review found no remaining code blocker. The
-remaining long-lived-worker, index-plan/size, cold/steady split, natural Live
-and production data gaps prevent a claim of full P8 acceptance.
+later evidence for a retained worker and index-plan/size is recorded below.
+True cold-cache, natural Live and production data gaps still prevent a claim of full P8 acceptance.
 `develop@10e6805665` was merged into the P8 worktree
 without a textual conflict; the shared `market_data_service.py` method additions
 were retained. Combined-tree non-PostgreSQL ReferenceTrading/data/Newow tests
 passed 448 cases when the three root-import tests were rerun with the documented
 `PYTHONPATH`; Web tests passed 684 with one skip, and `pnpm build` passed.
 Release, Runtime promotion, Canonical writes and P9 remain separate Gates.
+
+## 2026-09-24 remaining engineering evidence
+
+Exact evidence code commit: `a62e5014b05dcf3791e78ca6335aa7b3a413a89a` on
+`codex/unified-reference-trading-p8`, from integrated `develop@867b75c625`.
+Both five-process benchmark files report `dirty_worktree=false`, PostgreSQL
+16.14 and Python 3.13.9. Raw JSON is preserved in
+[`evidence/guiyi-p8-stream_300_mds_retained.json`](evidence/guiyi-p8-stream_300_mds_retained.json)
+and [`evidence/guiyi-p8-query_real_rebuild_10000_index.json`](evidence/guiyi-p8-query_real_rebuild_10000_index.json).
+Their SHA-256 values are respectively `49b6510e0d67adf78fc654263144bb06bebfd68684a0bcedb857190eea9bafe3`
+and `0d8c991363c5da24e2bd812510855badd4a23f75f5ca87e6ab8257669f5e9679`.
+Both cases used only the dedicated disposable loopback PostgreSQL test database.
+The retained-worker case published generated Canonical/Catalog/MDS data and used
+a test-only observation adapter; the historical rebuild case used a generated
+`Reader` feeding the real strategy kernel and PostgreSQL persistence, without MDS.
+
+| Gate | Actual command and result | Boundary |
+|---|---|---|
+| Retained 300-stream worker | `reference_trading_benchmark.py --case stream_300_mds_retained --repeats 5 --timeout-seconds 180`: 5/5 passed; process wall median 59.178 s (58.820–59.535); each process retained one worker, MDS, schema and 300 stream identities across five completed Bar boundaries, 1,800 MDS reads, 1,500 calculations and zero pending | Worker processing per wave 8.006–10.276 s; settled RSS wave 5 minus wave 2 = 64, 128, 96, 352, 112 KiB; peak child RSS 169,712–171,184 KiB. This is a bounded five-Bar test, not long-duration or natural Live proof |
+| Forward action-bearing path | Strengthened `test_postgresql_300_mds_retained_worker_five_completed_bars`: 1 passed in 60.75 s; 44 isolated PostgreSQL ReferenceTrading tests passed in 388.50 s; 218 non-PostgreSQL tests passed, 1 Redis skip, 44 deselected | First four waves have zero actions; fifth persists exactly 60 `newow_main_rise` **HINT** actions, one per stream, with `bar_end=2026-09-23T09:00Z` and `observed_at=09:01Z`. This does not prove OPEN/CLOSE/reversal on the retained load |
+| Real-trade query/rebuild plan | `reference_trading_benchmark.py --case query_real_rebuild_10000_index --repeats 5 --timeout-seconds 300`: 5/5 passed; 10,000 completed Bars, 9,948 CLOSED trades; each run samples 100 warm requests per page/summary kind | Worst repetition warm p95: first page 220.886 ms, deep page 222.400 ms, summary 214.937 ms; all below frozen 500/500/1,000 ms limits. Across runs p50 ranges: 180.382–193.586, 180.904–192.883, 169.627–181.176 ms. Process wall median 175.609 s (171.499–199.912), peak child RSS 157,744–165,280 KiB |
+| First-use and storage | After rebuild, first business page call 486.427–496.517 ms, first summary 173.402–196.775 ms; `pg_table_size`/`pg_indexes_size` captured before/after rebuild | Four reference relations together: table 22.06–22.09 → 43.98 MiB; indexes 33.53–33.71 → 71.07–71.23 MiB. These are PostgreSQL allocated bytes for this generated dataset, not a production storage forecast. First business call follows build/query activity, so it is **not** a cold-cache measurement |
+| Actual PostgreSQL plan | Five `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` plans each for first page, deep page and summary | First/deep page plans each scan 10,027 trade versions, pass 9,949 through a subquery and perform 9,949 primary-key lookups; summary scans 10,027 index entries and 10,027 primary-key lookups. Root shared buffer hits are 40,201–40,230 for pages and 41,128 for summary; shared reads were 0 in these warmed plans. The query meets this fixture latency target but scan work is **not bounded by page size** |
+
+The real-MDS load exposed a forward Newow defect in the fifth action-bearing Bar:
+`SourceAction` was constructed before `observed_at` was attached, so it rejected
+a forward action. `_newow_step` now receives `observed_at` before constructing
+the source action; historical calls continue to pass no observation time.
+The strengthened PostgreSQL test above fails on the previous implementation
+and passes with the fix. Benchmark-safety tests passed 11/11, Ruff and
+`git diff --check` passed. The repository secret scan exited 1 on the
+pre-existing test-only `reader.token = "source-revised-tail-price"` assignment
+(present at line 181 in the parent commit); no credential was added.
+Independent GPT-6 Astra review initially found missing buffer output and a
+weak cumulative action assertion. Both were repaired and re-reviewed; its
+final conclusion found no confirmed code blocker for this engineering increment.
+
+## Gate decision and external boundary
+
+The retained-worker, real-MDS 300-stream throughput, 10,000-Bar real-trade
+warm query, actual index-plan/size, process-crash, bounded D1/W1 append and
+bounded-window full Market-route browser engineering evidence is sufficient
+for **develop integration / release-candidate consideration**. The actual
+index work scales with the tested stream history, and true cold-cache and
+long-duration worker behavior remain unmeasured. The prior Browser fixture
+still returns typed 409 when an unbounded current-day legacy request extends
+past its generated Calendar horizon; no production default-window result is claimed.
+
+The current production readback in `STATUS.md` is `v1.10.30@120c5c94` with
+six existing services and **no installed Reference worker**. Its runtime
+checkout does not contain this evidence commit. The Reference worker install
+path is render-only, requires an exact local enable marker, and forward streams
+remain disabled by default. Thus P8 natural Live observation, actual production
+data freshness, production capability/model acceptance and final release or
+Runtime promotion are **external Gates pending**. Closing them requires an
+approved exact release/runtime/stream scope and a subsequent natural completed
+Bar readback; isolated fixtures cannot supply that receipt. No provider,
+production Canonical, production DB, notification, release or Runtime mutation was made
+for this evidence run.
