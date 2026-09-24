@@ -29,6 +29,7 @@ from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 
 from .product_macd import MACD_CACHE_IDENTITY, calculate_macd_display
 from guiyi_quant.newow.product_contracts import (
+    DataInterruption,
     EvidenceStatus,
     FeatureRuntimeStatus,
     FeatureStatus,
@@ -309,6 +310,38 @@ def _has_unresolved_tail_gap(read: ProductReadSet) -> bool:
     )
 
 
+def _owned_display_interruptions(read: ProductReadSet) -> tuple[DataInterruption, ...]:
+    """Use the owning segment once for display; replay keeps every prefix gap."""
+    if not read.owners:
+        return read.data_interruptions
+    owner_segments: tuple[str, ...] | None = None
+    if len(read.boundaries) == len(read.owners) - 1 and read.boundaries:
+        owner_segments = (
+            read.boundaries[0].old_segment_id,
+            *(boundary.new_segment_id for boundary in read.boundaries),
+        )
+    selected: list[DataInterruption] = []
+    seen: set[tuple[str, date]] = set()
+    for gap in read.data_interruptions:
+        matching = tuple(
+            index for index, owner in enumerate(read.owners)
+            if owner.contract == gap.physical_contract
+            and owner.start_trading_day <= gap.trading_day <= owner.end_trading_day
+        )
+        if not matching:
+            continue
+        if len(matching) != 1:
+            raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
+        if owner_segments is not None and gap.segment_id != owner_segments[matching[0]]:
+            continue
+        key = (gap.physical_contract, gap.trading_day)
+        if key in seen:
+            raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
+        seen.add(key)
+        selected.append(gap)
+    return tuple(selected)
+
+
 def _reference_coverage_intervals(
     read: ProductReadSet,
     replay: StrategyReplay,
@@ -317,13 +350,8 @@ def _reference_coverage_intervals(
 ) -> tuple[ReferenceCoverageInterval, ...]:
     """Describe observed valid and excluded D1 stretches without inferring prices."""
     mapped_gaps = tuple(
-        gap for gap in read.data_interruptions
+        gap for gap in _owned_display_interruptions(read)
         if since <= gap.trading_day <= through
-        and (not read.owners or any(
-            owner.contract == gap.physical_contract
-            and owner.start_trading_day <= gap.trading_day <= owner.end_trading_day
-            for owner in read.owners
-        ))
     )
     events = [
         (
@@ -537,6 +565,7 @@ def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
 
 def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
     proof: dict[str, str] = {}
+    physical_gaps: dict[str, str] = {}
     for frequency in sorted(read.bars_by_frequency, key=str):
         for item in read.bars_by_frequency[frequency]:
             bar = item.bar
@@ -573,29 +602,55 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     "price-state", frequency.value, bar.physical_contract,
                     bar.trading_day.isoformat(),
                 ))
+                physical_value = "|".join((
+                    bar.trading_day.isoformat(), str(bar.open), str(bar.high),
+                    str(bar.low), str(bar.close), str(bar.volume),
+                    str(bar.open_interest), bar.source_identity,
+                    item.source_bar_sha256 or "",
+                ))
                 proof[day_key] = sha256(
-                    "|".join(("bar", bar.segment_id, value)).encode()
+                    f"bar|{physical_value}".encode()
                 ).hexdigest()
+                if bar.observation_eligible:
+                    owner_key = "|".join((
+                        "owner-price-state", frequency.value,
+                        bar.physical_contract, bar.trading_day.isoformat(),
+                    ))
+                    proof[owner_key] = sha256(bar.segment_id.encode()).hexdigest()
     for frequency, interruptions in read.data_interruptions_by_frequency.items():
         for gap in interruptions:
             key = "|".join((
                 "price-unavailable", frequency.value, gap.physical_contract,
                 gap.trading_day.isoformat(),
             ))
-            value = "|".join((
-                gap.segment_id, gap.effective_at.isoformat(), gap.source_identity,
+            value = "|".join((gap.effective_at.isoformat(), gap.source_identity))
+            physical_digest = sha256(value.encode()).hexdigest()
+            if key in physical_gaps and physical_gaps[key] != physical_digest:
+                raise NewowProductServiceError("NEWOW_DATA_IDENTITY_INVALID")
+            physical_gaps[key] = physical_digest
+            proof[key] = physical_digest
+            segment_key = "|".join((
+                "segment-price-unavailable", frequency.value,
+                gap.physical_contract, gap.segment_id, gap.trading_day.isoformat(),
             ))
-            proof[key] = sha256(value.encode()).hexdigest()
+            if segment_key in proof:
+                raise NewowProductServiceError("NEWOW_DATA_IDENTITY_INVALID")
+            proof[segment_key] = physical_digest
             day_key = "|".join((
                 "price-state", frequency.value, gap.physical_contract,
                 gap.trading_day.isoformat(),
             ))
-            if day_key in proof:
+            gap_state = sha256(f"gap|{value}".encode()).hexdigest()
+            if day_key in proof and proof[day_key] != gap_state:
                 raise NewowProductServiceError("NEWOW_DATA_IDENTITY_INVALID")
-            proof[day_key] = sha256(
-                "|".join(("gap", gap.segment_id, gap.effective_at.isoformat(),
-                          gap.source_identity)).encode()
-            ).hexdigest()
+            proof[day_key] = gap_state
+    if read.owners:
+        for gap in _owned_display_interruptions(read):
+            owner_key = "|".join((
+                "owner-price-state", gap.frequency.value,
+                gap.physical_contract, gap.trading_day.isoformat(),
+            ))
+            proof[owner_key] = sha256(gap.segment_id.encode()).hexdigest()
     for boundary in read.boundaries:
         key = "|".join(
             (
@@ -650,7 +705,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",
-                "newow_product_dependency_proof_v6",
+                "newow_product_dependency_proof_v7",
             )
         ).encode()
     ).hexdigest()
@@ -1191,13 +1246,8 @@ class NewowProductService:
                 price_reference,
                 price_unavailable_days=tuple(
                     (gap.trading_day, gap.physical_contract, gap.segment_id)
-                    for gap in read.data_interruptions
+                    for gap in _owned_display_interruptions(read)
                     if read.display_window.since <= gap.trading_day <= read.display_window.through
-                    and any(
-                        owner.contract == gap.physical_contract
-                        and owner.start_trading_day <= gap.trading_day <= owner.end_trading_day
-                        for owner in read.owners
-                    )
                 ),
             ),
         )

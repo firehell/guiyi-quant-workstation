@@ -18,7 +18,7 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12'
+  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13' | 'newow_product_capabilities_v14' | 'newow_product_capabilities_v15' | 'newow_product_capabilities_v16' | 'newow_product_capabilities_v17' | 'newow_product_capabilities_v18' | 'newow_product_capabilities_v19' | 'newow_product_capabilities_v20' | 'newow_product_capabilities_v21' | 'newow_product_capabilities_v22'
   readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate' | 'daily_weekly'
   readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m']
   readonly weekly_products?: readonly string[]
@@ -79,7 +79,7 @@ export interface NewowProductIdentity {
   readonly seriesKind: 'actual_dominant'
 }
 
-export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_weekly_input_quality_v2'
+export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_weekly_input_quality_v2' | 'newow_daily_input_quality_v2'
 
 export interface NewowProductWireIdentity {
   readonly product: string
@@ -113,6 +113,7 @@ export interface NewowProductMeta {
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_weekly_quality_segment_v1'
     | 'newow_futures_weekly_quality_segment_v2'
+    | 'newow_futures_daily_quality_segment_v2'
 }
 
 export interface NewowProductBar {
@@ -243,6 +244,7 @@ export interface NewowReferenceTrade {
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_weekly_quality_segment_v1'
     | 'newow_futures_weekly_quality_segment_v2'
+    | 'newow_futures_daily_quality_segment_v2'
   readonly input_quality_policy?: NewowInputQualityPolicy
   readonly entry_signal_id: string
   readonly entry_sequence: number

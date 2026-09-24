@@ -1,5 +1,22 @@
 # 当前状态
 
+## 2026-09-24 v1.10.31 精确候选检查点
+
+正式 `main` 与 annotated tag `v1.10.30` 指向
+`120c5c9490b9909bb64b2e55a5fb5893e57a04c0`；GitHub Release 已发布。
+本机现役 Runtime checkout `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1`
+detached 于同一提交。正式 Newow W1 Scope 为 50/60。
+
+`codex/release-v1.10.31-newow-weekly` 是以 v1.10.30 为发布基线的精确候选，
+目标版本统一为 `v1.10.31`，拟纳入 PF、PK、PL、PR、PX、RS、SF、SH、SM、SR，
+使 W1 Scope 达到 60/60。候选还包含对 OI、PF、PK、PL、PR、PX、RS、SF、SH、SM
+的版本化 D1 质量策略，以及 RS W1 震荡预热页面验收断言修正。
+此检查点尚待冻结提交上的 D1/W1 策略和真实页面矩阵、相关测试、独立 Review 与发布判定；
+PR #394 仍为草稿。候选尚未合入 main、创建 `v1.10.31` tag/Release 或切换 Runtime。
+这些验证及受控发布操作的实际结果以对应提交、报告、Release 和服务读回为准。
+
+以下 v1.10.29/v1.10.30 段落保留为各自当时的历史检查点，不代表本页首检查点的现役状态。
+
 文档整理：2026-09-24。正式 Release 为
 `v1.10.29@52e360037720f7a4d642599dcece33bf3dc5eb63`：PR #392 精确候选
 `a6fcd3fe6cfa0ec033a04ae0dc60f2d76e2e567a` 已以 merge commit 合入 main，annotated tag peeled commit、

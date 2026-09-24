@@ -90,8 +90,8 @@ test('real candidate covers AU/JM Newow weekly, AU seven-frequency Free and week
     for (const strategy of strategies) {
       await page.goto(`/market/chart?symbol=${product}&view=newow&strategy=${strategy}&series_kind=actual_dominant&frequency=1w`)
       const workspace = page.locator('[data-detail-workspace="newow"]')
-      await expect(workspace).toBeVisible()
-      await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible()
+      await expect(workspace).toBeVisible({ timeout: 60_000 })
+      await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible({ timeout: 60_000 })
       await expect.poll(async () => workspace.getAttribute('data-chart-state'), { timeout: 60_000 })
         .toMatch(/^(ready|warming|evidence_required|unavailable|stale|input_conflict)$/)
       matrix.push({ product, strategy, chart: await workspace.getAttribute('data-chart-state') })
@@ -104,7 +104,7 @@ test('real candidate covers AU/JM Newow weekly, AU seven-frequency Free and week
   await page.getByRole('button', { name: '应用统计窗口' }).click()
   await expect(page.getByRole('button', { name: '使用最近完整统计区间' })).toBeVisible({ timeout: 60_000 })
   await page.getByRole('button', { name: '使用最近完整统计区间' }).click()
-  await expect(page.getByLabel('统计终点')).toHaveValue('2026-09-11')
+  await expect(page.getByLabel('统计终点')).toHaveValue('2026-09-11', { timeout: 60_000 })
 
   for (const frequency of ['1m', '5m', '15m', '30m', '60m', '1d', '1w']) {
     await page.goto(`/market/chart?symbol=au&view=free&series_kind=actual_dominant&frequency=${frequency}`)

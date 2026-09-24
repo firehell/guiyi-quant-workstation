@@ -591,9 +591,12 @@ class MarketDataService:
         request: ActualDominantTradingDayQuery,
         *,
         weekly_classification_version: str = WEEKLY_SOURCE_CLASSIFICATION_VERSION,
-    ) -> tuple[MarketSeriesResult, tuple[tuple[str, PriceUnavailableFact | WeeklySourceInterruption], ...]]:
+        daily_quality_union: bool = False,
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, SourceQualityFact | WeeklySourceInterruption], ...]]:
         """D1/W1 rank-1 read with exact source interruptions."""
         if request.frequency is BarFrequency.W1:
+            if daily_quality_union:
+                raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
             return self._actual_dominant_weekly_quality(
                 request, classification_version=weekly_classification_version,
             )
@@ -622,13 +625,17 @@ class MarketDataService:
             start, end,
         )
         bars: list[CanonicalBar] = []
-        exceptions: list[tuple[str, PriceUnavailableFact]] = []
+        exceptions: list[tuple[str, SourceQualityFact]] = []
+        quality_reader = (
+            self.read_physical_daily_quality_union
+            if daily_quality_union else self.read_physical_daily_quality
+        )
         for contract in dict.fromkeys(by_day.values()):
             physical = SeriesQuery(
                 SeriesKind.CONTRACT, request.symbol, request.frequency,
                 start, end, contract=contract,
             )
-            contract_bars, unavailable = self.read_physical_daily_quality(
+            contract_bars, unavailable = quality_reader(
                 physical, require_window_coverage=False,
             )
             bars.extend(

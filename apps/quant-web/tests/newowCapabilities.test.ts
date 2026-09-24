@@ -160,6 +160,185 @@ test('formal daily weekly v12 opens W1 for CJ and keeps the other ten candidates
   assert.deepEqual(state.openFrequenciesFor('cj'), ['1d', '1w'])
 })
 
+test('formal daily weekly v13 opens SR W1 while the other nine remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v13',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'sr'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'rs'), false)
+  assert.equal(state.isFrequencyOpen('1w', 'pf'), false)
+  assert.deepEqual(state.openFrequenciesFor('sr'), ['1d', '1w'])
+})
+
+test('formal daily weekly v14 opens RS W1 while the other eight remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v14',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'rs'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'pf'), false)
+  assert.deepEqual(state.openFrequenciesFor('rs'), ['1d', '1w'])
+})
+
+test('formal daily weekly v15 opens PK W1 while the other seven remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v15',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'pk'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'pf'), false)
+  assert.deepEqual(state.openFrequenciesFor('pk'), ['1d', '1w'])
+})
+
+test('formal daily weekly v16 opens PF W1 while the other six remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v16',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'pf'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'pl'), false)
+  assert.deepEqual(state.openFrequenciesFor('pf'), ['1d', '1w'])
+})
+
+test('formal daily weekly v17 opens PL W1 while the other five remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v17',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'pl'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'pr'), false)
+  assert.deepEqual(state.openFrequenciesFor('pl'), ['1d', '1w'])
+})
+
+test('formal daily weekly v18 opens PR W1 while the other four remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v18',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'pr'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'px'), false)
+  assert.deepEqual(state.openFrequenciesFor('pr'), ['1d', '1w'])
+})
+
+test('formal daily weekly v19 opens PX W1 while the other three remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v19',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'px'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'sf'), false)
+  assert.deepEqual(state.openFrequenciesFor('px'), ['1d', '1w'])
+})
+
+test('formal daily weekly v20 opens SF W1 while the other two remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v20',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'sf'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'sh'), false)
+  assert.deepEqual(state.openFrequenciesFor('sf'), ['1d', '1w'])
+})
+
+test('formal daily weekly v21 opens SH W1 while SM remain closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v21',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'sh'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'sm'), false)
+  assert.deepEqual(state.openFrequenciesFor('sh'), ['1d', '1w'])
+})
+
+test('formal daily weekly v22 opens SM W1 for all 60 products', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v22',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [{ frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' }],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'sm'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'zz'), false)
+  assert.deepEqual(state.openFrequenciesFor('sm'), ['1d', '1w'])
+})
+
 test('AU period preview accepts its exact all-period capability', async () => {
   const payload = {
     ...daily(),

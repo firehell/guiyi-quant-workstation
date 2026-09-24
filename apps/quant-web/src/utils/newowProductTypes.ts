@@ -160,7 +160,9 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
   requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v3', 'meta.reference_model_version')
-  const adaptationVersion = normalizedIdentity.frequency === '1w'
+  const adaptationVersion = normalizedIdentity.input_quality_policy === 'newow_daily_input_quality_v2'
+    ? 'newow_futures_daily_quality_segment_v2'
+    : normalizedIdentity.frequency === '1w'
     ? (
       normalizedIdentity.input_quality_policy === 'newow_weekly_input_quality_v2'
         ? 'newow_futures_weekly_quality_segment_v2'
@@ -199,9 +201,12 @@ function normalizeWireIdentity(
   const formulaVersions = stringArray(value.formula_versions, `${field}.formula_versions`)
   if (!sameStrings(formulaVersions, EXPECTED_FORMULAS[strategy])) throw new Error(`${field}.formula_versions is invalid or out of order`)
   const policy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
-    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2', 'newow_daily_input_quality_v2'] as const, `${field}.input_quality_policy`)
     : undefined
-  if (policy !== undefined && frequency !== '1w') throw new Error(`${field}.input_quality_policy requires weekly frequency`)
+  if ((policy === 'newow_weekly_input_quality_v2' && frequency !== '1w')
+    || (policy === 'newow_daily_input_quality_v2' && frequency !== '1d')) {
+    throw new Error(`${field}.input_quality_policy has invalid frequency`)
+  }
   return {
     product, strategy, frequency, series_kind: 'actual_dominant', profile_id: profileId, formula_versions: formulaVersions,
     ...(policy === undefined ? {} : { input_quality_policy: policy }),
@@ -568,7 +573,7 @@ function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta,
   requireExact(value.reference_model_version, meta.reference_model_version, `${field}.reference_model_version`)
   requireExact(value.futures_adaptation_version, meta.futures_adaptation_version, `${field}.futures_adaptation_version`)
   const tradePolicy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
-    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2', 'newow_daily_input_quality_v2'] as const, `${field}.input_quality_policy`)
     : undefined
   if (tradePolicy !== meta.identity.input_quality_policy) throw new Error(`${field}.input_quality_policy conflict`)
   const status = literal(value.status, ['OPEN', 'CLOSED', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'], `${field}.status`)

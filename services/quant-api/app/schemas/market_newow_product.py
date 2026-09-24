@@ -25,9 +25,11 @@ FuturesAdaptationVersionValue = Literal[
     "newow_futures_quality_segment_v3",
     "newow_futures_weekly_quality_segment_v1",
     "newow_futures_weekly_quality_segment_v2",
+    "newow_futures_daily_quality_segment_v2",
 ]
 InputQualityPolicyValue = Literal[
-    "newow_input_quality_v1", "newow_weekly_input_quality_v2"
+    "newow_input_quality_v1", "newow_weekly_input_quality_v2",
+    "newow_daily_input_quality_v2",
 ]
 
 
@@ -835,6 +837,16 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v10",
         "newow_product_capabilities_v11",
         "newow_product_capabilities_v12",
+        "newow_product_capabilities_v13",
+        "newow_product_capabilities_v14",
+        "newow_product_capabilities_v15",
+        "newow_product_capabilities_v16",
+        "newow_product_capabilities_v17",
+        "newow_product_capabilities_v18",
+        "newow_product_capabilities_v19",
+        "newow_product_capabilities_v20",
+        "newow_product_capabilities_v21",
+        "newow_product_capabilities_v22",
     ]
     release_stage: Literal[
         "daily",

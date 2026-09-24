@@ -6,7 +6,11 @@ from decimal import Decimal
 
 import pytest
 
-from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
+from guiyi_quant.newow.product_adapters import (
+    build_product_identity,
+    label_calculation_segments,
+    replay_strategy,
+)
 from guiyi_quant.newow.product_contracts import ProductFrequency
 from guiyi_quant.newow.product_identity import InputQualityPolicy
 
@@ -21,7 +25,7 @@ from app.market_data.domain import (
     SeriesPageCursorMode,
 )
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
 from app.market_data.weekly_quality import classify_weekly_source
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import (
@@ -30,6 +34,7 @@ from app.market_data.newow.product_reader import (
     NewowProductReadError,
     _product_bar,
 )
+from app.market_data.newow.product_service import _owned_display_interruptions
 
 
 def test_reader_source_digest_changes_when_only_turnover_changes(product_cases):
@@ -42,6 +47,65 @@ def test_reader_source_digest_changes_when_only_turnover_changes(product_cases):
     )
     assert first.bar == second.bar
     assert first.source_bar_sha256 != second.source_bar_sha256
+
+
+def test_daily_v2_preserves_nonpositive_close_as_a_replay_break(product_cases):
+    _reader, query, fake = product_cases.paged_reader(
+        prefix_bars=12, page_size=20, frequency="1d",
+    )
+    removed = fake.physical[("RB2605", BarFrequency.D1)][5]
+    kept = tuple(
+        bar for bar in fake.physical[("RB2605", BarFrequency.D1)]
+        if bar != removed
+    )
+    fake.physical[("RB2605", BarFrequency.D1)] = kept
+    fake.actual[BarFrequency.D1] = tuple(
+        bar for bar in fake.actual[BarFrequency.D1] if bar != removed
+    )
+    fact = NonpositiveCloseFact(
+        removed.bar_end, removed.trading_day,
+        removed.open, removed.high, removed.low, Decimal("0"),
+        removed.volume, removed.turnover or Decimal(0), removed.open_interest,
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+    seen = []
+
+    def ranked_quality(request, *, daily_quality_union=False):
+        seen.append(("ranked", daily_quality_union))
+        return fake.query_actual_dominant_trading_days(request), (("RB2605", fact),)
+
+    def prefix_quality(**kwargs):
+        seen.append(("prefix", True))
+        return (
+            tuple(bar for bar in kept if bar.bar_end <= kwargs["cutoff"]),
+            (fact,) if fact.bar_end <= kwargs["cutoff"] else (),
+        )
+
+    fake.query_actual_dominant_trading_days_quality = ranked_quality
+    fake.query_contract_replay_quality = lambda **kwargs: (_ for _ in ()).throw(
+        MarketDataError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+    )
+    fake.query_contract_replay_quality_union = prefix_quality
+    reader = NewowProductReader(
+        fake, coverage=fake.coverage, active_products=("rb",),
+        now=lambda: fake.as_of,
+        input_quality_policy=InputQualityPolicy.DAILY_V2,
+    )
+
+    read = reader.load(query, fake.as_of)
+    assert seen == [("ranked", True), ("prefix", True)]
+    assert removed.bar_end not in {item.bar.bar_end for item in read.replay_bars}
+    assert len(read.data_interruptions) == 1
+    assert read.data_interruptions[0].effective_at == removed.bar_end
+    assert "nonpositive_close" in read.data_interruptions[0].source_identity
+    assert read.sources[ProductFrequency.DAILY].input_policy_version == (
+        "newow_futures_daily_quality_observation_v2"
+    )
+    dependency = reader.check_dependency(
+        "rb", ProductFrequency.DAILY, fake.segments[0], fake.as_of,
+    )
+    assert dependency["source_quality"] == "DAILY_INTERRUPTED"
+    assert dependency["price_unavailable_count"] == 1
 
 
 @pytest.mark.parametrize("gap_index", [5, 11])
@@ -1050,6 +1114,67 @@ def test_reentered_contract_gets_new_segment_with_one_physical_read(product_case
         False,
         True,
     ]
+
+
+def test_reentered_contract_keeps_pre_owner_quality_gap_for_warmup(product_cases):
+    reader, query, fake = _weekly_reader(product_cases)
+    first, last = fake.actual[BarFrequency.W1]
+    before_gap = replace(
+        first,
+        trading_day=date(2022, 12, 30),
+        bar_end=datetime(2022, 12, 30, 7, tzinfo=UTC),
+    )
+    fake.segments = (*fake.segments[:2], replace(fake.segments[2], contract="RB2605"))
+    fake.actual[BarFrequency.W1] = (last,)
+    fake.physical = {("RB2605", BarFrequency.W1): (before_gap, last)}
+    fake.expected_physical = dict(fake.physical)
+    fact = PriceUnavailableFact(
+        first.bar_end, first.trading_day,
+        Decimal(0), Decimal(0), Decimal(0), first.close,
+        Decimal(1), Decimal(0), first.open_interest,
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+    gap = classify_weekly_source(
+        product="rb", physical_contract="RB2605",
+        expected_daily_endpoints=((first.bar_end, first.trading_day),),
+        daily_bars=(), price_unavailable=(fact,),
+        daily_revision_sha256="c" * 64,
+    ).interruption
+    assert gap is not None
+    fake.query_actual_dominant_trading_days_quality = lambda request: (
+        fake.query_actual_dominant_trading_days(request), (("RB2605", gap),)
+    )
+    fake.query_contract_weekly_replay_quality = lambda **kwargs: (
+        tuple(bar for bar in (before_gap, last) if bar.bar_end <= kwargs["cutoff"]),
+        (gap,) if gap.week_end <= kwargs["cutoff"] else (),
+    )
+
+    read = reader.load(query, fake.as_of)
+
+    assert len(read.data_interruptions) == 2
+    assert {item.trading_day for item in read.data_interruptions} == {
+        first.trading_day
+    }
+    assert {item.segment_id for item in read.data_interruptions} == {
+        "rb:RB2605:2023-01-02T01:00:00+00:00",
+        "rb:RB2605:2023-01-11T01:00:00+00:00",
+    }
+    identity = build_product_identity("rb", "trend", ProductFrequency.WEEKLY)
+    labeled = label_calculation_segments(
+        identity, read.replay_bars, read.data_interruptions
+    )
+    reentered = [
+        item for item in labeled
+        if item.bar.segment_id == "rb:RB2605:2023-01-11T01:00:00+00:00"
+    ]
+    assert [item.bar.bar_end for item in reentered] == [
+        before_gap.bar_end, last.bar_end
+    ]
+    assert reentered[0].calculation_segment_id != reentered[1].calculation_segment_id
+    assert len(_owned_display_interruptions(read)) == 1
+    assert _owned_display_interruptions(read)[0].segment_id == (
+        "rb:RB2605:2023-01-02T01:00:00+00:00"
+    )
 
 
 def test_cancellation_stops_after_current_page_and_is_request_scoped(product_cases):

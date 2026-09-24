@@ -884,6 +884,39 @@ def test_dependency_proof_shared_bar_ignores_clipped_owner_start(product_cases):
     )
 
 
+def test_dependency_proof_shared_physical_bar_ignores_owner_segment(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    item = read.bars_by_frequency[ProductFrequency.DAILY][0]
+    early = replace(read, bars_by_frequency={ProductFrequency.DAILY: (item,)})
+    later_item = replace(item, bar=replace(
+        item.bar, segment_id="later-owner", observation_eligible=False,
+    ))
+    later = replace(read, bars_by_frequency={ProductFrequency.DAILY: (later_item,)})
+    key = "|".join((
+        "price-state", "1d", item.bar.physical_contract,
+        item.bar.trading_day.isoformat(),
+    ))
+    assert _dependency_proof(early)[key] == _dependency_proof(later)[key]
+    owner_key = key.replace("price-state", "owner-price-state", 1)
+    assert owner_key in _dependency_proof(early)
+    assert owner_key not in _dependency_proof(later)
+    conflicting_owner = replace(later_item, bar=replace(
+        later_item.bar, observation_eligible=True,
+    ))
+    conflicting = replace(read, bars_by_frequency={
+        ProductFrequency.DAILY: (conflicting_owner,)
+    })
+    assert _dependency_proof(early)[owner_key] != (
+        _dependency_proof(conflicting)[owner_key]
+    )
+
+
 def test_dependency_proof_binds_price_interruption_identity(product_cases):
     _service_instance, reader, _build, clear = _service(product_cases)
     query = NewowProductQuery(
@@ -908,6 +941,42 @@ def test_dependency_proof_binds_price_interruption_identity(product_cases):
         ProductFrequency.DAILY: (replace(gap, source_identity="source-b"),)
     })
     assert _dependency_proof(first) != _dependency_proof(second)
+
+
+def test_dependency_proof_allows_same_physical_gap_in_reentered_owners(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    bar = read.bars_by_frequency[ProductFrequency.DAILY][0].bar
+    gap = DataInterruption(
+        "rb", ProductFrequency.DAILY, bar.physical_contract,
+        bar.segment_id, bar.trading_day, bar.bar_end, "source-a",
+    )
+    without_bar = replace(read, bars_by_frequency={ProductFrequency.DAILY: tuple(
+        item for item in read.bars_by_frequency[ProductFrequency.DAILY]
+        if item.bar.bar_end != gap.effective_at
+    )})
+    reentered = replace(gap, segment_id="later-owner")
+    single = replace(without_bar, data_interruptions_by_frequency={
+        ProductFrequency.DAILY: (gap,)
+    })
+    repeated = replace(without_bar, data_interruptions_by_frequency={
+        ProductFrequency.DAILY: (gap, reentered)
+    })
+    key = "|".join((
+        "price-state", "1d", gap.physical_contract, gap.trading_day.isoformat(),
+    ))
+    assert _dependency_proof(single)[key] == _dependency_proof(repeated)[key]
+    assert _dependency_proof(single) != _dependency_proof(repeated)
+    conflicting = replace(without_bar, data_interruptions_by_frequency={
+        ProductFrequency.DAILY: (gap, replace(reentered, source_identity="source-b"))
+    })
+    with pytest.raises(NewowProductServiceError, match="NEWOW_DATA_IDENTITY_INVALID"):
+        _dependency_proof(conflicting)
 
 
 def test_dependency_proof_shared_day_bar_to_gap_conflicts(product_cases):
