@@ -45,7 +45,10 @@ preflight 为 `passed / snapshot_ready / trading_day=2026-09-24 / operational_co
 外接卷 guard 首次在任何 mutation 前停止；显式启用既有外接卷安全开关后完成 Market 切换。base 首次加载后
 发现 API 未继承既有通知配置路径，随后在 Alert 切换前使用同一安装器恢复原安全路径并重载 API/Web；Alert
 与 weekly audit 再各安装一次。最终六项 plist/launchctl 身份均指向该 root 与 exact commit，API/Web 200，
-Runtime health 与本地隧道均 passed，Reference worker 仍未安装，旧 v1.10.29 root 保留为恢复候选。
+Runtime health 与本地隧道均 passed，Reference worker 仍未安装。2026-09-24 owner 明确要求只保留最新发布树；
+已移除 v1.10.26–v1.10.29 旧 Runtime、v1.10.28–v1.10.30 已合并发布候选树及已合并 P6/P7 任务树。
+v1.10.26 内唯一未跟踪 `outputs/cj-weekly-no-trade/prepare.json` 已在单独明确批准后随旧树删除，删除前
+SHA-256 为 `870b73d5ee92472ec58c83a297d3138918d2df33c71032362d46e81f72d0c11c`，不能从 Git 恢复。
 未手工运行盘后、weekly audit，未 replay 或补发通知，也未执行生产 migration、数据或 Scope 写入；新版本
 自然 completed Live、自然盘后与 weekly audit 仍是独立 Gate，因此不声明 `RUNTIME_READY`。
 
