@@ -17,6 +17,10 @@ from app.api import market_newow
 from app.db.session import get_db
 from app.main import app
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.newow.product_release import (
+    candidate_input_quality_policy,
+    require_open_weekly_product,
+)
 from app.market_data.newow.product_service import (
     NewowProductService,
     NewowProductServiceError,
@@ -76,14 +80,14 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v12",
+        "schema_version": "newow_product_capabilities_v13",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
             "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
-            "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
+            "rm", "ru", "sa", "sc", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
@@ -96,6 +100,16 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
             }
         ],
     }
+
+
+def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_nine_closed():
+    require_open_weekly_product("sr")
+    assert candidate_input_quality_policy(
+        "sr", ProductFrequency.WEEKLY, candidate_weekly=False
+    ) is InputQualityPolicy.WEEKLY_V2
+    for product in ("pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm"):
+        with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
+            require_open_weekly_product(product)
 
 
 def test_daily_snapshot_endpoint_returns_exact_verified_cutoff_and_pending_day(monkeypatch):

@@ -18,7 +18,7 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12'
+  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13'
   readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate' | 'daily_weekly'
   readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m']
   readonly weekly_products?: readonly string[]
