@@ -387,9 +387,14 @@ def _build_historical_resolver(
 
 
 def _build_daily_resolver(
-    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+    session: Session,
+    cancelled: Callable[[], bool],
+    now: Callable[[], datetime],
+    quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
 ) -> NewowDailySnapshotResolver:
-    reader, service_factory = _build_snapshot_inputs(session, cancelled, now)
+    reader, service_factory = _build_snapshot_inputs(
+        session, cancelled, now, quality_policy,
+    )
     return NewowDailySnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 
 
@@ -491,7 +496,13 @@ def newow_daily_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         require_open_frequency(ProductFrequency(frequency))
-        result = _build_daily_resolver(session, cancelled, lambda: now).resolve(
+        policy = _input_quality_policy(request, product, frequency)
+        resolver = (
+            _build_daily_resolver(session, cancelled, lambda: now)
+            if policy is InputQualityPolicy.V1
+            else _build_daily_resolver(session, cancelled, lambda: now, policy)
+        )
+        result = resolver.resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)
         )
         return NewowDailySnapshotResponse(

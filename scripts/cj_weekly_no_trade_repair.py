@@ -174,11 +174,14 @@ def apply(session: Session, root: Path, root_sha256: str, packet: dict[str, Any]
             catalog.register_partition(published)
             # The candidate must satisfy the same physical D1 quality replay
             # that Newow uses. The old pointer is still recoverable until commit.
-            MarketDataService(catalog, store).query_contract_weekly_replay_quality(
+            bars, interruptions = MarketDataService(catalog, store).query_contract_weekly_replay_quality(
                 symbol="cj", contract=contract, through=day,
                 cutoff=next(bar.bar_end for bar in candidate if bar.trading_day == day),
                 classification_version="weekly-d1-quality-v2",
             )
+            if (not any(bar.trading_day == day for bar in bars)
+                    or any(item.trading_day == day for item in interruptions)):
+                raise CJRepairError("CANDIDATE_READBACK_INVALID")
         try:
             session.commit()
         except Exception as exc:

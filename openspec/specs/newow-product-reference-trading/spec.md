@@ -531,7 +531,8 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 该规则对 owner 前同物理合约 warm-up 和 owner 内有效观察一致适用。
 
 部分零价、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST 继续 fail-closed；
-唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
+D1 v1 输入的唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
+仅本规范下文明确列出的十个 D1 v2 品种可另行消费已验证的 `NonpositiveCloseFact`。
 它是来源质量中断，不是 `NO_TRADE` 或行情 Bar。reader/readiness SHALL 公开 raw、effective、
 `NO_TRADE` 与价格不可用数量，并把 `newow_futures_quality_observation_v2` 纳入输入证明；
 日版产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`；隔离候选 W1 使用
@@ -547,7 +548,7 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 
 - **GIVEN** 非正价格 Bar 的 `volume`、`turnover` 或其他严格条件不满足
 - **WHEN** reader 构造策略输入
-- **THEN** 除上述已证明的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
+- **THEN** 除上述已证明且由当前输入版本支持的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
 
 ### Requirement: D1 price-unavailable days split calculation and reference history
 
@@ -858,8 +859,18 @@ chart/auxiliary/reference/comparator；语法合法但不在品种范围内的 `
 `daily_weekly_candidate` 声明 `1d/1w` 的
 chart/auxiliary/reference/comparator；候选响应同时携带唯一的 `weekly_products`。v9 候选覆盖全部 60 品种，
 候选 v9 的固定品种次序保持不变。
-正式 v22 合同只有在独立 Release 与 Runtime promotion 完成后才成为现场事实。历史 v21、v20、v19、v18、v17、v16、v15、v14、v13、v12、v11、v10 与 v8
-分别表示先前的 59、58、57、56、55、54、53、52、51、50、49、48 与 41 品种正式周线。
+v1.10.31 对 oi、pf、pk、pl、pr、px、rs、sf、sh、sm 的 D1 输入显式采用
+`newow_daily_input_quality_v2`，其输入证明与参考交易分别使用
+`newow_futures_daily_quality_observation_v2` 和 `newow_futures_daily_quality_segment_v2`。
+其余 50 个 D1 品种保留 v1 身份。v2 仅把已验证的 `PriceUnavailableFact` 和
+`NonpositiveCloseFact` 当作计算中断；中断不能成为价格 Bar 或交易参考价，之后必须重新 warm-up。
+物理合约前缀与 rank-1 拼接必须逐端点匹配同一质量事实，不能缩短历史窗口或从别的合约补价。
+旧 D1 v1 查询仍拒绝新分类，不能因 v2 开放而隐式改变旧版本结果。
+发布页面矩阵先核对 180 项主图首载状态。`READY` 项要求参考摘要自动出现；
+`WARMING` 项允许先显示“读取参考交易”，用户显式点击后必须展示与策略状态一致的摘要。
+首次自动摘要断言的历史失败记录须保留，修正验收断言不改变策略结果。
+正式 v22 合同只有在独立 Release 与 Runtime promotion 完成后才成为现场事实。v13–v21 是本次候选链中的中间 capability 版本，
+分别声明 51–59 个周线品种，未分别发布；v12、v11、v10 与 v8 则分别声明此前正式开放的 50、49、48 与 41 个品种。
 候选的 `60m` 和 explanation 仍关闭；Web 必须逐版本严格校验成对的 schema/stage/open/deferred 集合。
 AU 单品种周期预览及 PD/PT/AP 的 60m 预览保持原 envelope 和品种限制，不复用正式周线品种字段。
 

@@ -69,6 +69,26 @@ test('unwraps only the delivered requested section and preserves every Decimal a
   assert.throws(() => chartCoordinate('1e999'), /finite chart coordinate/)
 })
 
+test('accepts the versioned D1 quality identity on chart and reference trades', () => {
+  const chart = chartWire()
+  ;(chart.meta.identity as Record<string, unknown>).input_quality_policy = 'newow_daily_input_quality_v2'
+  chart.meta.futures_adaptation_version = 'newow_futures_daily_quality_segment_v2'
+  const parsedChart = normalizeNewowProductResponse(chart, expected)
+  assert.equal(parsedChart.meta.identity.input_quality_policy, 'newow_daily_input_quality_v2')
+
+  const reference = referenceWire()
+  ;(reference.meta.identity as Record<string, unknown>).input_quality_policy = 'newow_daily_input_quality_v2'
+  reference.meta.futures_adaptation_version = 'newow_futures_daily_quality_segment_v2'
+  const trade = reference.reference.value!.items[0]! as Record<string, unknown>
+  trade.input_quality_policy = 'newow_daily_input_quality_v2'
+  trade.futures_adaptation_version = 'newow_futures_daily_quality_segment_v2'
+  const parsedReference = normalizeNewowProductResponse(reference, { ...expected, section: 'reference' })
+  assert.equal(parsedReference.value!.items[0]!.input_quality_policy, 'newow_daily_input_quality_v2')
+
+  ;(chart.meta.identity as Record<string, unknown>).input_quality_policy = 'newow_weekly_input_quality_v2'
+  assert.throws(() => normalizeNewowProductResponse(chart, expected), /invalid frequency/)
+})
+
 test('accepts explicit partial history intervals without treating warming as a price bar', () => {
   const raw = referenceWire()
   raw.reference.value!.history_coverage = 'PARTIAL'
@@ -272,6 +292,17 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => formalWeekly,
   }), formalWeekly)
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({
+        ...formalWeekly,
+        weekly_products: [...formalWeekly.weekly_products.slice(0, -1), 'b'],
+      }),
+    }),
+    (error: unknown) =>
+      error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
 
   const formalWeeklyV10 = {
     ...formalWeekly,

@@ -122,6 +122,10 @@ export async function installNewowProductFixtures(page, options = {}) {
     state.requests.push({ url, method: request.method(), startedAt })
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
 
+    if (url.pathname === '/api/v1/reference-trading/streams') {
+      return route.fulfill({ json: { items: [] } })
+    }
+
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
       return route.fulfill({ json: options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
     }

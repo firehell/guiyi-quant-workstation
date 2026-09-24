@@ -25,9 +25,11 @@ FuturesAdaptationVersionValue = Literal[
     "newow_futures_quality_segment_v3",
     "newow_futures_weekly_quality_segment_v1",
     "newow_futures_weekly_quality_segment_v2",
+    "newow_futures_daily_quality_segment_v2",
 ]
 InputQualityPolicyValue = Literal[
-    "newow_input_quality_v1", "newow_weekly_input_quality_v2"
+    "newow_input_quality_v1", "newow_weekly_input_quality_v2",
+    "newow_daily_input_quality_v2",
 ]
 
 

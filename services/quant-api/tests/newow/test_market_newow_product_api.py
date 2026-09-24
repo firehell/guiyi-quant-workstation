@@ -102,6 +102,16 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
     }
 
 
+@pytest.mark.parametrize("product", ("oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm"))
+def test_formal_daily_quality_scope_is_exact(product):
+    assert candidate_input_quality_policy(
+        product, ProductFrequency.DAILY, candidate_weekly=False,
+    ) is InputQualityPolicy.DAILY_V2
+    assert candidate_input_quality_policy(
+        "au", ProductFrequency.DAILY, candidate_weekly=False,
+    ) is InputQualityPolicy.V1
+
+
 def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_one_closed():
     require_open_weekly_product("sr")
     assert candidate_input_quality_policy(
@@ -223,6 +233,35 @@ def test_daily_snapshot_endpoint_returns_exact_verified_cutoff_and_pending_day(m
         "as_of": "2026-09-17T07:00:00.000001Z",
         "freshness": "pending_update",
     }
+
+
+def test_daily_snapshot_uses_versioned_quality_policy_for_affected_product(monkeypatch):
+    cutoff = datetime(2026, 9, 18, 7, tzinfo=UTC)
+    observed = []
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            return DailySnapshot(
+                product, strategy, frequency, cutoff,
+                date(2026, 9, 18), date(2026, 9, 18), cutoff, "current",
+            )
+
+    def resolver(_session, _cancelled, _now, policy):
+        observed.append(policy)
+        return Resolver()
+
+    monkeypatch.setattr(market_newow, "_build_daily_resolver", resolver)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/daily-snapshot", params={
+                "product": "oi", "strategy": "trend", "frequency": "1d",
+            })
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert observed == [InputQualityPolicy.DAILY_V2]
 
 
 def test_weekly_snapshot_endpoint_returns_shared_cutoff_and_separate_current_owner(monkeypatch):
@@ -619,6 +658,16 @@ def test_quality_policy_is_omitted_for_v1_and_explicit_for_weekly_v2(product_cas
     assert ReferenceTradeOut.model_validate(candidate_payload).model_dump(mode="json")[
         "input_quality_policy"
     ] == "newow_weekly_input_quality_v2"
+
+    daily = replace(
+        trade,
+        input_quality_policy=InputQualityPolicy.DAILY_V2,
+        futures_adaptation_version="newow_futures_daily_quality_segment_v2",
+    )
+    daily_payload = market_newow._trade(daily, 0)
+    assert ReferenceTradeOut.model_validate(daily_payload).model_dump(mode="json")[
+        "input_quality_policy"
+    ] == "newow_daily_input_quality_v2"
 
 
 @pytest.mark.parametrize(
