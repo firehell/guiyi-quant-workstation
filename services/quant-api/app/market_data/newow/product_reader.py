@@ -983,7 +983,7 @@ class NewowProductReader:
                 "through": owned[-1][1], "cutoff": owned[-1][0],
             }
             policy = input_quality_policy(frequency.value, self._input_quality_policy)
-            prefix, weekly_gaps = (
+            prefix, quality_gaps = (
                 self._market_data.query_contract_weekly_replay_quality(**quality_args)
                 if policy is InputQualityPolicy.V1
                 else self._market_data.query_contract_weekly_replay_quality(
@@ -994,20 +994,19 @@ class NewowProductReader:
                 )
             )
         elif frequency is ProductFrequency.DAILY and self._input_quality_policy is InputQualityPolicy.DAILY_V2:
-            prefix, daily_gaps = self._market_data.query_contract_replay_quality_union(
+            prefix, quality_gaps = self._market_data.query_contract_replay_quality_union(
                 symbol=product, contract=owner.contract,
                 through=owned[-1][1], cutoff=owned[-1][0],
             )
-            weekly_gaps = daily_gaps
         else:
             prefix = self._read_prefix(product, owner.contract, frequency, owned[-1][0])
             self._validate_prefix(product, owner.contract, frequency, owned[-1][0], prefix,
                                   trading_day=owned[-1][1])
-            weekly_gaps = ()
+            quality_gaps = ()
         actual_ends = {bar.bar_end for bar in prefix}
         actual_ends.update(
             gap.week_end if isinstance(gap, WeeklySourceInterruption) else gap.bar_end
-            for gap in weekly_gaps
+            for gap in quality_gaps
         )
         if actual_ends != {end for end, _ in expected}:
             from app.market_data.market_data_service import MarketDataError
@@ -1035,11 +1034,11 @@ class NewowProductReader:
                 ),
                 "cutoff": owned[-1][0].isoformat()}
         if frequency is ProductFrequency.WEEKLY:
-            result["price_unavailable_count"] = len(weekly_gaps)
-            result["source_quality"] = "WEEKLY_INTERRUPTED" if weekly_gaps else "NORMAL"
+            result["price_unavailable_count"] = len(quality_gaps)
+            result["source_quality"] = "WEEKLY_INTERRUPTED" if quality_gaps else "NORMAL"
         elif frequency is ProductFrequency.DAILY and self._input_quality_policy is InputQualityPolicy.DAILY_V2:
-            result["price_unavailable_count"] = len(weekly_gaps)
-            result["source_quality"] = "DAILY_INTERRUPTED" if weekly_gaps else "NORMAL"
+            result["price_unavailable_count"] = len(quality_gaps)
+            result["source_quality"] = "DAILY_INTERRUPTED" if quality_gaps else "NORMAL"
         return result
 
     def _validate_prefix(

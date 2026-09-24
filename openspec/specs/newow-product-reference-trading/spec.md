@@ -531,7 +531,8 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 该规则对 owner 前同物理合约 warm-up 和 owner 内有效观察一致适用。
 
 部分零价、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST 继续 fail-closed；
-唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
+D1 v1 输入的唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
+仅本规范下文明确列出的十个 D1 v2 品种可另行消费已验证的 `NonpositiveCloseFact`。
 它是来源质量中断，不是 `NO_TRADE` 或行情 Bar。reader/readiness SHALL 公开 raw、effective、
 `NO_TRADE` 与价格不可用数量，并把 `newow_futures_quality_observation_v2` 纳入输入证明；
 日版产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`；隔离候选 W1 使用
@@ -547,7 +548,7 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 
 - **GIVEN** 非正价格 Bar 的 `volume`、`turnover` 或其他严格条件不满足
 - **WHEN** reader 构造策略输入
-- **THEN** 除上述已证明的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
+- **THEN** 除上述已证明且由当前输入版本支持的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
 
 ### Requirement: D1 price-unavailable days split calculation and reference history
 

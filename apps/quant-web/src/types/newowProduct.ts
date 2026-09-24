@@ -79,7 +79,7 @@ export interface NewowProductIdentity {
   readonly seriesKind: 'actual_dominant'
 }
 
-export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_weekly_input_quality_v2'
+export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_weekly_input_quality_v2' | 'newow_daily_input_quality_v2'
 
 export interface NewowProductWireIdentity {
   readonly product: string
@@ -113,6 +113,7 @@ export interface NewowProductMeta {
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_weekly_quality_segment_v1'
     | 'newow_futures_weekly_quality_segment_v2'
+    | 'newow_futures_daily_quality_segment_v2'
 }
 
 export interface NewowProductBar {
@@ -243,6 +244,7 @@ export interface NewowReferenceTrade {
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_weekly_quality_segment_v1'
     | 'newow_futures_weekly_quality_segment_v2'
+    | 'newow_futures_daily_quality_segment_v2'
   readonly input_quality_policy?: NewowInputQualityPolicy
   readonly entry_signal_id: string
   readonly entry_sequence: number
