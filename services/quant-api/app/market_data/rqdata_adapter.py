@@ -799,6 +799,7 @@ class RQDataClient:
         # current-day Calendar 写到 ISO 周日；当天 rank1 只证明夜盘，不构成后续交易日主力映射。
         period_end = calendar_end if current_day_only else through
         period_source_days = list(main_contracts)
+        authority_source_days: list[tuple[str, date, str]] = []
         if current_day_only:
             current_rank1 = {
                 symbol: contract
@@ -812,9 +813,26 @@ class RQDataClient:
                 for symbol, contract in current_rank1.items():
                     if (symbol, day) not in covered:
                         period_source_days.append((symbol, day, contract))
+            # A negative exchange-wide night fact needs Session evidence for the
+            # full active product universe, not just the requested operational
+            # products. These extra rows are Calendar context only; they are
+            # never eligible for Session or rank-1 publication.
+            for exchange in exchanges:
+                for day in trading_dates:
+                    if not calendar_start <= day <= calendar_end:
+                        continue
+                    representatives = _exchange_day_representatives(
+                        exchange_contracts, exchange, day
+                    )
+                    for symbol, contract in representatives.items():
+                        if symbol not in products:
+                            authority_source_days.append((symbol, day, contract))
+                            symbol_exchanges[symbol] = exchange
         periods = _records(
             self.api.get_trading_periods(
-                tuple(sorted({contract for _, _, contract in period_source_days})),
+                tuple(sorted({
+                    contract for _, _, contract in (*period_source_days, *authority_source_days)
+                })),
                 start_date=calendar_start,
                 end_date=period_end,
                 frequency="1m",
@@ -826,6 +844,15 @@ class RQDataClient:
             symbol_exchanges,
             allow_missing_after=(min(starts.values()) if current_day_only else None),
         )
+        if authority_source_days:
+            sessions += _historical_session_rows(
+                periods,
+                authority_source_days,
+                symbol_exchanges,
+                # Missing authority context remains UNKNOWN; only operational
+                # current-day Session absence is an immediate provider error.
+                allow_missing_after=calendar_start - timedelta(days=1),
+            )
         # Calendar is shared by exchange: a subset's absent night is not negative evidence.
         trading_day_set = set(trading_dates)
         calendar_rows = []
@@ -840,7 +867,7 @@ class RQDataClient:
                 }
                 evidence = session_days.get((exchange, day), ())
                 fact = calendar_night_fact(values, evidence)
-                if fact is None:
+                if current_day_only or fact is None:
                     values["night_session_products"] = _exchange_day_products(
                         exchange_contracts, exchange, day
                     )
@@ -916,6 +943,36 @@ def _exchange_day_products(rows, exchange: str, day: date) -> tuple[str, ...]:
         if owner == exchange and listed <= day < expired:
             products.add(symbol.lower())
     return tuple(sorted(products))
+
+
+def _exchange_day_representatives(
+    rows, exchange: str, day: date,
+) -> dict[str, str]:
+    """Choose one listed physical contract per proven active exchange product."""
+    universe = _exchange_day_products(rows, exchange, day)
+    if not universe:
+        return {}
+    candidates: dict[str, list[tuple[date, str]]] = {symbol: [] for symbol in universe}
+    for row in rows:
+        if row.get("exchange", row.get("exchange_code")) != exchange:
+            continue
+        symbol = row.get("underlying_symbol")
+        contract = row.get("order_book_id")
+        if not isinstance(symbol, str) or symbol.lower() not in candidates:
+            continue
+        if not isinstance(contract, str) or not re.fullmatch(
+            (re.escape(symbol[:-2]) + r"\d{3,4}F"
+             if symbol.endswith("_F") else re.escape(symbol) + r"\d{3,4}"),
+            contract,
+        ):
+            continue
+        listed = _optional_date(row.get("listed_date"))
+        expired = _optional_date(row.get("de_listed_date"))
+        if listed is not None and expired is not None and listed <= day < expired:
+            candidates[symbol.lower()].append((expired, contract))
+    if any(not contracts for contracts in candidates.values()):
+        return {}
+    return {symbol: min(contracts)[1] for symbol, contracts in candidates.items()}
 
 
 def _records(value: Any) -> tuple[dict[str, Any], ...]:
