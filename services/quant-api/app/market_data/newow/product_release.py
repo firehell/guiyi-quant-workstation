@@ -12,8 +12,8 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v17"] = (
-    "newow_product_capabilities_v17"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v18"] = (
+    "newow_product_capabilities_v18"
 )
 RELEASE_STAGE: Literal["daily_weekly"] = "daily_weekly"
 OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
@@ -38,13 +38,13 @@ CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
 OPEN_WEEKLY_PRODUCTS = (
     "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
     "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
-    "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "ps", "pt", "rb",
+    "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps", "pt", "rb",
     "rm", "rs", "ru", "sa", "sc", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
 )
 REMAINING_WEEKLY_V2_PRODUCTS = (
-    "pr", "px", "sf", "sh", "sm",
+    "px", "sf", "sh", "sm",
 )
-FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "cj", "eb", "eg", "j", "oi", "pf", "pg", "pk", "pl", "rs", "si", "sr")
+FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "cj", "eb", "eg", "j", "oi", "pf", "pg", "pk", "pl", "pr", "rs", "si", "sr")
 # v9 is an immutable candidate wire contract. Keep its original ordering even as
 # products graduate into later formal capability versions.
 CANDIDATE_WEEKLY_PRODUCTS = (
@@ -55,9 +55,9 @@ CANDIDATE_WEEKLY_PRODUCTS = (
     "cj", "oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm", "sr",
 )
 if (
-    len(OPEN_WEEKLY_PRODUCTS) != 55
-    or len(REMAINING_WEEKLY_V2_PRODUCTS) != 5
-    or len(FORMAL_WEEKLY_V2_PRODUCTS) != 14
+    len(OPEN_WEEKLY_PRODUCTS) != 56
+    or len(REMAINING_WEEKLY_V2_PRODUCTS) != 4
+    or len(FORMAL_WEEKLY_V2_PRODUCTS) != 15
     or set(FORMAL_WEEKLY_V2_PRODUCTS) - set(OPEN_WEEKLY_PRODUCTS)
     or set(OPEN_WEEKLY_PRODUCTS) & set(REMAINING_WEEKLY_V2_PRODUCTS)
     or len(CANDIDATE_WEEKLY_PRODUCTS) != 60

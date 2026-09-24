@@ -840,6 +840,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v15",
         "newow_product_capabilities_v16",
         "newow_product_capabilities_v17",
+        "newow_product_capabilities_v18",
     ]
     release_stage: Literal[
         "daily",
