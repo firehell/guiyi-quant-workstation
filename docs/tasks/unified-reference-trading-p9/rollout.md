@@ -24,6 +24,14 @@ Newow 60m is not formally open. Any P9 matrix must bind to one immutable
 published code identity and its actual capability and source-data readback;
 the RB pilot count is not the remaining-work count.
 
+At the current `develop` capability ceiling, the historical candidate matrix
+is 600 stream identities: 60 products × (three Newow strategies × D1/W1 plus
+SuBing × four periods). The 10 RB rows are a subset, so at most 590 identities
+would be new. This is an enumeration ceiling, not 600 data-ready streams or a
+single unbounded apply batch. The forward candidate ceiling is 540 identities
+(three Newow strategies × D1/W1 and SuBing × 15m/30m/60m); no stream is
+enabled by this arithmetic.
+
 ## Execution design
 
 1. **Freeze exact identities and evidence.** Record the immutable code/tag and
