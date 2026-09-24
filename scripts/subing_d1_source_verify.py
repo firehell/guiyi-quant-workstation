@@ -53,6 +53,11 @@ from scripts.newow_weekly_recovery import (
 _SCHEMA_V1 = "subing-d1-source-verification-candidate-v1"
 _SCHEMA_V2 = "subing-d1-source-verification-candidate-v2"
 _SCHEMA_RECOVERY = "subing-d1-source-response-recovery-candidate-v1"
+_SCHEMA_P9 = "subing-d1-reference-p9-source-candidate-v1"
+_P9_SOURCE_INVENTORY = (
+    PROJECT_ROOT
+    / "outputs/reference-p9-source-inventory-20260925/subing-d1-zero-dates-f3cf5957-readonly.json"
+)
 _VALIDATOR_VERSION = "subing-d1-response-validator-v2"
 _CONTINUATION_ORDER = (13, 14, 11, 12, 9, 10, 15)
 _EVIDENCE_ROOT = PROJECT_ROOT / "outputs/subing-four-period-readiness-20260918"
@@ -750,6 +755,85 @@ def _validate_v2_cli_scope(args: argparse.Namespace, batch: FrozenBatch) -> Path
     return supplied_root
 
 
+def _validate_p9_cli_scope(args: argparse.Namespace, batch: FrozenBatch) -> Path:
+    """Bind a source-only P9 batch to the frozen zero-price date inventory."""
+    contract = batch.candidate["execution_contract"]
+    assert isinstance(contract, Mapping)
+    expected_root = (PROJECT_ROOT / str(contract["output_root"])).resolve()
+    supplied_root = Path(args.output_root)
+    try:
+        supplied_resolved = supplied_root.resolve(strict=True)
+        inventory = _read_json_regular(_P9_SOURCE_INVENTORY, maximum=1024 * 1024)
+        inventory_sha = _sha256_file(_P9_SOURCE_INVENTORY)
+    except (OSError, RecoveryError) as exc:
+        raise RecoveryError("SOURCE_P9_INVENTORY_INVALID") from exc
+    if (
+        not supplied_root.is_absolute()
+        or supplied_resolved != supplied_root
+        or supplied_resolved != expected_root
+        or not supplied_resolved.is_relative_to(PROJECT_ROOT.resolve())
+        or args.attempt_id != contract["attempt_id"]
+    ):
+        raise RecoveryError("SOURCE_EXECUTION_SCOPE_MISMATCH")
+    rows = inventory.get("rows")
+    if (
+        inventory_sha != contract.get("source_inventory_file_sha256")
+        or inventory.get("readonly") is not True
+        or not isinstance(rows, list)
+        or inventory.get("row_count") != len(rows)
+        or inventory.get("owned_count") != sum(
+            row.get("owned") is True for row in rows if isinstance(row, Mapping)
+        )
+    ):
+        raise RecoveryError("SOURCE_P9_INVENTORY_INVALID")
+    expected: set[tuple[str, str, date]] = set()
+    for row in rows:
+        if not isinstance(row, Mapping) or set(row) != {
+            "product", "contract", "trading_day", "bar_end", "owned",
+        } or type(row["owned"]) is not bool:
+            raise RecoveryError("SOURCE_P9_INVENTORY_INVALID")
+        try:
+            day = date.fromisoformat(str(row["trading_day"]))
+            end = datetime.fromisoformat(str(row["bar_end"]))
+        except ValueError as exc:
+            raise RecoveryError("SOURCE_P9_INVENTORY_INVALID") from exc
+        if (
+            not isinstance(row["product"], str)
+            or _SYMBOL.fullmatch(row["product"]) is None
+            or not isinstance(row["contract"], str)
+            or _CONTRACT.fullmatch(row["contract"]) is None
+            or not row["contract"].startswith(row["product"].upper())
+            or end.tzinfo is None or end.date() != day
+        ):
+            raise RecoveryError("SOURCE_P9_INVENTORY_INVALID")
+        expected.add((row["product"], row["contract"], day))
+    actual = {
+        (item.symbol, item.transport.contract, day)
+        for item in batch.selections for day in item.target_dates
+    }
+    if any(
+        item.transport.start != item.target_dates[0]
+        or item.transport.end != item.target_dates[-1]
+        or any(
+            day.strftime("%Y-%m") != item.target_dates[0].strftime("%Y-%m")
+            for day in item.allowed_response_dates
+        )
+        for item in batch.selections
+    ):
+        raise RecoveryError("SOURCE_P9_SCOPE_MISMATCH")
+    groups = {
+        (item.symbol, item.transport.contract, item.target_dates[0].strftime("%Y-%m"))
+        for item in batch.selections
+    }
+    if (
+        len(expected) != len(rows)
+        or actual != expected
+        or len(groups) != len(batch.selections)
+    ):
+        raise RecoveryError("SOURCE_P9_SCOPE_MISMATCH")
+    return supplied_root
+
+
 def _validate_response_recovery_evidence(
     batch: FrozenBatch, output_root: Path
 ) -> None:
@@ -959,7 +1043,7 @@ def validate_candidate(
         raise RecoveryError("SOURCE_PLAN_HASH_MISMATCH")
     schema = value.get("schema")
     if (
-        schema not in {_SCHEMA_V1, _SCHEMA_V2, _SCHEMA_RECOVERY}
+        schema not in {_SCHEMA_V1, _SCHEMA_V2, _SCHEMA_RECOVERY, _SCHEMA_P9}
         or value.get("execute") is not False
         or value.get("provider") != "rqdata"
         or value.get("method") != "futures.get_exchange_daily"
@@ -1012,7 +1096,7 @@ def validate_candidate(
     for raw in raw_requests:
         expected_fields = (
             _EXPECTED_REQUEST_FIELDS_V2
-            if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY}
+            if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY, _SCHEMA_P9}
             else _EXPECTED_REQUEST_FIELDS
         )
         if not isinstance(raw, Mapping) or set(raw) != expected_fields:
@@ -1036,7 +1120,7 @@ def validate_candidate(
             or reasons != sorted(set(reasons))
         ):
             raise RecoveryError("SOURCE_CANDIDATE_INVALID")
-        if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY}:
+        if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY, _SCHEMA_P9}:
             target_dates = _parse_dates(raw.get("target_dates"))
             allowed_dates = _parse_dates(raw.get("allowed_response_dates"))
             try:
@@ -1098,7 +1182,7 @@ def validate_candidate(
     expected_count = budget.get("expected_date_identities")
     if type(expected_count) is not int or expected_count != len(identities):
         raise RecoveryError("SOURCE_CANDIDATE_INVALID")
-    if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY}:
+    if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY, _SCHEMA_P9}:
         context_count = sum(
             len(item.allowed_response_dates) - len(item.target_dates)
             for item in selections
@@ -1110,6 +1194,9 @@ def validate_candidate(
             or not isinstance(contract.get("output_root"), str)
             or not isinstance(contract.get("attempt_id"), str)
             or _ATTEMPT_ID.fullmatch(contract["attempt_id"]) is None
+            or (schema == _SCHEMA_P9 and _HASH.fullmatch(
+                str(contract.get("source_inventory_file_sha256"))
+            ) is None)
         ):
             raise RecoveryError("SOURCE_CANDIDATE_INVALID")
     return FrozenBatch(
@@ -1399,16 +1486,17 @@ def _load_preflight(
 ) -> tuple[FrozenBatch, dict[str, str], dict[str, str]]:
     candidate = _read_json_regular(Path(args.candidate))
     batch = validate_candidate(candidate, args.expected_plan_sha256)
-    output_root = (
-        _validate_v2_cli_scope(args, batch)
-        if candidate.get("schema") in {_SCHEMA_V2, _SCHEMA_RECOVERY}
-        else Path(args.output_root)
-    )
+    if candidate.get("schema") == _SCHEMA_P9:
+        output_root = _validate_p9_cli_scope(args, batch)
+    elif candidate.get("schema") in {_SCHEMA_V2, _SCHEMA_RECOVERY}:
+        output_root = _validate_v2_cli_scope(args, batch)
+    else:
+        output_root = Path(args.output_root)
     _validated_unused_attempt(output_root, args.attempt_id)
     _require_unclaimed_plan(output_root, args.expected_plan_sha256)
     _require_clean_execution_checkout(_current_code_commit())
     settings, identity = load_private_execution_settings(Path(args.project_env))
-    if candidate.get("schema") in {_SCHEMA_V2, _SCHEMA_RECOVERY}:
+    if candidate.get("schema") in {_SCHEMA_V2, _SCHEMA_RECOVERY, _SCHEMA_P9}:
         _authority_selections(settings, batch.selections)
     return batch, settings, identity
 
