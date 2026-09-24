@@ -31,6 +31,18 @@ source hashes are retained in the [stream-level matrix](../../../outputs/referen
 Representative expanded errors were `CONTRACT_REPLAY_COVERAGE_UNAVAILABLE`
 for EB Newow D1 and a non-positive reference price for CJ SuBing D1.
 
+The 175 `SUBING_REFERENCE_DATA_UNAVAILABLE` streams were rechecked with the
+published planner: 171 first failed at a physical minute partition, four at
+a D1 replay prefix. These first blockers span 58 products and 64 physical
+contracts. All 175 bounded `contract-warmup` dry-runs returned `planned` with
+zero actual provider requests. The [candidate wave-1 scope](../../../outputs/reference-p9-warmup-wave1-20260925/candidate-plan.json)
+(SHA-256 `de734c196c2e02426a41618a5840bdfcbfaab39e74be5fac13a01b7f403c5505`)
+deduplicates their targets to 526 direct and 1,485 derived monthly partitions,
+with 3,233,580 missing direct bars. It is read-only and does not prove that
+repairing these first blockers will make every stream ready. Overlapping
+plans must be recalculated after each write and held within the frozen target
+set; no data apply or provider request has been made for this wave.
+
 One exact blocker is physical A2305 15m: the read-only warm-up plan
 `09b3b98deb8d815007cfde908ea0fd2d9ed70d0478fdf564541d7d4b3d08c2c7`
 requires one direct 1m target and nine derived targets. This source audit
