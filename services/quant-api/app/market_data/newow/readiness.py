@@ -56,7 +56,7 @@ def _quality_policy_field(
         frequency,
         candidate_weekly=request.candidate_weekly,
     )
-    if policy is InputQualityPolicy.WEEKLY_V2:
+    if policy is not InputQualityPolicy.V1:
         return {"input_quality_policy": policy.value}
     return {}
 

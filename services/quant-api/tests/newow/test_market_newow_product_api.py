@@ -102,6 +102,16 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
     }
 
 
+@pytest.mark.parametrize("product", ("oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm"))
+def test_formal_daily_quality_scope_is_exact(product):
+    assert candidate_input_quality_policy(
+        product, ProductFrequency.DAILY, candidate_weekly=False,
+    ) is InputQualityPolicy.DAILY_V2
+    assert candidate_input_quality_policy(
+        "au", ProductFrequency.DAILY, candidate_weekly=False,
+    ) is InputQualityPolicy.V1
+
+
 def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_one_closed():
     require_open_weekly_product("sr")
     assert candidate_input_quality_policy(

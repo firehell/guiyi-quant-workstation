@@ -49,7 +49,7 @@ from app.market_data.domain import (
     normalize_contract_for_symbol,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact, SourceQualityFact
 from app.market_data.weekly_quality import WeeklySourceInterruption
 
 from .product_query import NewowProductQuery, ProductReadWindow
@@ -77,12 +77,17 @@ class NewowProductReadCancelled(RuntimeError):
 
 def _quality_source_identity(
     frequency: ProductFrequency,
-    gap: PriceUnavailableFact | WeeklySourceInterruption,
+    gap: SourceQualityFact | WeeklySourceInterruption,
 ) -> str:
     if frequency is ProductFrequency.DAILY and isinstance(gap, PriceUnavailableFact):
         return (
             "market_data_service:price_unavailable:v1:"
             f"{gap.request_sha256}:{gap.response_sha256}"
+        )
+    if frequency is ProductFrequency.DAILY and isinstance(gap, NonpositiveCloseFact):
+        return (
+            "market_data_service:nonpositive_close:"
+            f"{gap.classification_version}:{gap.request_sha256}:{gap.response_sha256}"
         )
     if frequency is ProductFrequency.WEEKLY and isinstance(gap, WeeklySourceInterruption):
         return (
@@ -174,7 +179,7 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         self._quality_policy = InputQualityPolicy(quality_policy)
         self.price_unavailable_by_frequency: dict[
             BarFrequency,
-            tuple[tuple[str, PriceUnavailableFact | WeeklySourceInterruption], ...],
+            tuple[tuple[str, SourceQualityFact | WeeklySourceInterruption], ...],
         ] = {}
 
     def _query_actual_dominant_trading_days(
@@ -184,21 +189,19 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         bounded = replace(request, through=min(request.through, self._through))
         quality_query = getattr(self._market_data, "query_actual_dominant_trading_days_quality", None)
         if bounded.frequency in (BarFrequency.D1, BarFrequency.W1) and quality_query is not None:
-            policy = (
-                self._quality_policy
-                if bounded.frequency is BarFrequency.W1
-                else InputQualityPolicy.V1
-            )
-            result, gaps = (
-                quality_query(bounded)
-                if policy is InputQualityPolicy.V1
-                else quality_query(
+            if (bounded.frequency is BarFrequency.D1
+                    and self._quality_policy is InputQualityPolicy.DAILY_V2):
+                result, gaps = quality_query(bounded, daily_quality_union=True)
+            elif (bounded.frequency is BarFrequency.W1
+                    and self._quality_policy is InputQualityPolicy.WEEKLY_V2):
+                result, gaps = quality_query(
                     bounded,
                     weekly_classification_version=source_classification_version(
-                        bounded.frequency.value, policy
+                        bounded.frequency.value, self._quality_policy,
                     ),
                 )
-            )
+            else:
+                result, gaps = quality_query(bounded)
             self.price_unavailable_by_frequency[bounded.frequency] = tuple(
                 (contract, gap) for contract, gap in gaps if gap.bar_end <= self._as_of
             )
@@ -687,6 +690,7 @@ class NewowProductReader:
             ProductFrequency, tuple[DataInterruption, ...]
         ] = {}
         for frequency in frequencies:
+            period_policy = policy if frequency is query.frequency else InputQualityPolicy.V1
             frequency_gaps = segment_loader.price_unavailable_by_frequency.get(
                 BarFrequency(frequency), ()
             )
@@ -741,13 +745,18 @@ class NewowProductReader:
                 and getattr(self._market_data, "query_contract_weekly_replay_quality", None) is not None
             )
             prefix_gaps: dict[
-                str, tuple[PriceUnavailableFact | WeeklySourceInterruption, ...]
+                str, tuple[SourceQualityFact | WeeklySourceInterruption, ...]
             ] = {}
             if quality_prefix:
                 prefixes = {}
                 for contract, end in contract_ends.items():
                     if frequency is ProductFrequency.DAILY:
-                        physical, daily_gaps = self._market_data.query_contract_replay_quality(
+                        replay_quality = (
+                            self._market_data.query_contract_replay_quality_union
+                            if period_policy is InputQualityPolicy.DAILY_V2
+                            else self._market_data.query_contract_replay_quality
+                        )
+                        physical, daily_gaps = replay_quality(
                             symbol=query.product, contract=contract,
                             through=end.astimezone(_SHANGHAI).date(), cutoff=end,
                         )
@@ -762,11 +771,11 @@ class NewowProductReader:
                             self._market_data.query_contract_weekly_replay_quality(
                                 **quality_args
                             )
-                            if policy is InputQualityPolicy.V1
+                            if period_policy is InputQualityPolicy.V1
                             else self._market_data.query_contract_weekly_replay_quality(
                                 **quality_args,
                                 classification_version=source_classification_version(
-                                    frequency.value, policy
+                                    frequency.value, period_policy
                                 ),
                             )
                         )
@@ -866,8 +875,7 @@ class NewowProductReader:
                 cutoff,
                 input_policy_version(
                     frequency.value,
-                    policy if frequency is ProductFrequency.WEEKLY
-                    else InputQualityPolicy.V1,
+                    period_policy,
                 ),
                 raw_bar_count,
                 len(output),
@@ -985,13 +993,22 @@ class NewowProductReader:
                     ),
                 )
             )
+        elif frequency is ProductFrequency.DAILY and self._input_quality_policy is InputQualityPolicy.DAILY_V2:
+            prefix, daily_gaps = self._market_data.query_contract_replay_quality_union(
+                symbol=product, contract=owner.contract,
+                through=owned[-1][1], cutoff=owned[-1][0],
+            )
+            weekly_gaps = daily_gaps
         else:
             prefix = self._read_prefix(product, owner.contract, frequency, owned[-1][0])
             self._validate_prefix(product, owner.contract, frequency, owned[-1][0], prefix,
                                   trading_day=owned[-1][1])
             weekly_gaps = ()
         actual_ends = {bar.bar_end for bar in prefix}
-        actual_ends.update(gap.week_end for gap in weekly_gaps)
+        actual_ends.update(
+            gap.week_end if isinstance(gap, WeeklySourceInterruption) else gap.bar_end
+            for gap in weekly_gaps
+        )
         if actual_ends != {end for end, _ in expected}:
             from app.market_data.market_data_service import MarketDataError
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
@@ -1013,11 +1030,16 @@ class NewowProductReader:
                 "actual_bar_count": len(prefix),
                 "effective_bar_count": effective_bar_count,
                 "no_trade_bar_count": no_trade_bar_count,
-                "input_policy_version": FUTURES_INPUT_POLICY_VERSION,
+                "input_policy_version": input_policy_version(
+                    frequency.value, input_quality_policy(frequency.value, self._input_quality_policy)
+                ),
                 "cutoff": owned[-1][0].isoformat()}
         if frequency is ProductFrequency.WEEKLY:
             result["price_unavailable_count"] = len(weekly_gaps)
             result["source_quality"] = "WEEKLY_INTERRUPTED" if weekly_gaps else "NORMAL"
+        elif frequency is ProductFrequency.DAILY and self._input_quality_policy is InputQualityPolicy.DAILY_V2:
+            result["price_unavailable_count"] = len(weekly_gaps)
+            result["source_quality"] = "DAILY_INTERRUPTED" if weekly_gaps else "NORMAL"
         return result
 
     def _validate_prefix(

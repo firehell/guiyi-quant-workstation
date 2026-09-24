@@ -43,6 +43,7 @@ OPEN_WEEKLY_PRODUCTS = (
 )
 REMAINING_WEEKLY_V2_PRODUCTS: tuple[str, ...] = ()
 FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "cj", "eb", "eg", "j", "oi", "pf", "pg", "pk", "pl", "pr", "px", "rs", "sf", "sh", "si", "sm", "sr")
+FORMAL_DAILY_V2_PRODUCTS = ("oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm")
 # v9 is an immutable candidate wire contract. Keep its original ordering even as
 # products graduate into later formal capability versions.
 CANDIDATE_WEEKLY_PRODUCTS = (
@@ -56,6 +57,8 @@ if (
     len(OPEN_WEEKLY_PRODUCTS) != 60
     or len(REMAINING_WEEKLY_V2_PRODUCTS) != 0
     or len(FORMAL_WEEKLY_V2_PRODUCTS) != 19
+    or len(FORMAL_DAILY_V2_PRODUCTS) != 10
+    or set(FORMAL_DAILY_V2_PRODUCTS) - set(OPEN_WEEKLY_PRODUCTS)
     or set(FORMAL_WEEKLY_V2_PRODUCTS) - set(OPEN_WEEKLY_PRODUCTS)
     or set(OPEN_WEEKLY_PRODUCTS) & set(REMAINING_WEEKLY_V2_PRODUCTS)
     or len(CANDIDATE_WEEKLY_PRODUCTS) != 60
@@ -93,6 +96,12 @@ def candidate_input_quality_policy(
 ) -> InputQualityPolicy:
     """Resolve the one immutable input policy for a product-frequency scope."""
     selected = ProductFrequency(frequency)
+    if selected is ProductFrequency.DAILY:
+        return (
+            InputQualityPolicy.DAILY_V2
+            if product in FORMAL_DAILY_V2_PRODUCTS
+            else InputQualityPolicy.V1
+        )
     if selected is not ProductFrequency.WEEKLY:
         return InputQualityPolicy.V1
     if product in FORMAL_WEEKLY_V2_PRODUCTS:
