@@ -39,6 +39,12 @@ zero-price investigation keys and either the wave-1 43 direct D1 targets or
 the 156 targets of the already applied quality batch. The investigation keys
 are not validated publication targets; source classification and a separate
 exact data plan remain necessary.
+The [date-level read-only D1 inventory](../../../outputs/reference-p9-source-inventory-20260925/subing-d1-zero-dates-f3cf5957-readonly.json)
+records the exact 3,113 distinct physical zero-close Bar endpoints across 11
+products, including 79 within owner intervals and 460 product/contract/month
+investigation keys. Its SHA-256 is
+`323ada53dff3521389571fadf8bce2c3ff44bbdda10e946d7e05abac7cacc4f8`.
+This inventory is not provider source classification or a publication plan.
 
 The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
 Production application schema is still `20260919_0047`; the persisted reader and

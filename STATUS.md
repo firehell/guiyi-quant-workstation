@@ -92,6 +92,13 @@ warm-up 的 43 个 D1 直接月目标重合 0 个，与 9/19 已应用质量批�
 `outputs/reference-p9-source-inventory-20260925/subing-d1-scope-overlap-readonly.json`
 （SHA-256 `5398b4d58919b8e903105063dcf711d4ca0bec553ca16f631136669878123686`）。
 
+苏冰 D1 只读日期级来源范围已从现有 MDS/Catalog 输入提取，并与前述总数
+精确核对：11 品种、3,113 个去重的零价物理 Bar 端点，其中 79 个落在 owner
+区间，分布于 460 个“品种×合约×月份”调查键。日期级证据见
+`outputs/reference-p9-source-inventory-20260925/subing-d1-zero-dates-f3cf5957-readonly.json`
+（SHA-256 `323ada53dff3521389571fadf8bce2c3ff44bbdda10e946d7e05abac7cacc4f8`）。
+它只冻结本地异常日期，不证明 RQData 原始价格分类，不授权来源请求或质量发布。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
