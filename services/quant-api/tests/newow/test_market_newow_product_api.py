@@ -659,6 +659,16 @@ def test_quality_policy_is_omitted_for_v1_and_explicit_for_weekly_v2(product_cas
         "input_quality_policy"
     ] == "newow_weekly_input_quality_v2"
 
+    daily = replace(
+        trade,
+        input_quality_policy=InputQualityPolicy.DAILY_V2,
+        futures_adaptation_version="newow_futures_daily_quality_segment_v2",
+    )
+    daily_payload = market_newow._trade(daily, 0)
+    assert ReferenceTradeOut.model_validate(daily_payload).model_dump(mode="json")[
+        "input_quality_policy"
+    ] == "newow_daily_input_quality_v2"
+
 
 @pytest.mark.parametrize(
     ("field", "value"),
