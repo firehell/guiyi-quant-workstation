@@ -41,7 +41,16 @@ deduplicates their targets to 526 direct and 1,485 derived monthly partitions,
 with 3,233,580 missing direct bars. It is read-only and does not prove that
 repairing these first blockers will make every stream ready. Overlapping
 plans must be recalculated after each write and held within the frozen target
-set; no data apply or provider request has been made for this wave.
+set. The bounded campaign code is integrated at
+`develop@3555b060438e99ca8c2ab4b69e2e84da54613bfb`. Independent review
+found and verified fixes for CLI progress plus pretty JSON parsing and explicit
+RQData configuration binding. Its nine targeted tests and Ruff passed. An
+actual production-bound read-only CLI check matched its frozen plan hash; the
+complete 175/175 read-only preflight then passed with [receipt](../../../outputs/reference-p9-warmup-wave1-20260925/preflight-3555b060.json)
+(file SHA-256 `9e996c42e6776dc630488be8857c7a188feda12a0b143b6090df665c1ef9b2a5`).
+The receipt binds code, candidate, DB endpoint, Canonical root and project.env
+identities, with a ceiling of 526 provider requests and 3,600 seconds. No data
+apply or provider request has been made for this wave.
 
 One exact blocker is physical A2305 15m: the read-only warm-up plan
 `09b3b98deb8d815007cfde908ea0fd2d9ed70d0478fdf564541d7d4b3d08c2c7`
