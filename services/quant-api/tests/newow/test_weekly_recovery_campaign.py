@@ -26,7 +26,8 @@ from app.market_data.historical_data_manager import (
     ContractWarmupRequest,
     HistoricalDataManager,
 )
-from app.market_data.newow.product_release import deferred_section_reason
+from app.market_data.newow.product_release import candidate_input_quality_policy, deferred_section_reason
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import ExchangeDailySourceRequest
 from app.market_data.storage import CanonicalMonthlyStore
@@ -844,6 +845,41 @@ def test_partition_accepts_daily_stage_weekly_report() -> None:
     units = partition_ordinary_units(report)
 
     assert len(units) == 1
+
+
+@pytest.mark.parametrize("policy", list(InputQualityPolicy))
+def test_partition_accepts_complete_formal_weekly_policy_group(
+    policy: InputQualityPolicy,
+) -> None:
+    report = _report([_ordinary_unit()])
+    symbols = {
+        symbol
+        for symbol in load_operational_products()
+        if candidate_input_quality_policy(symbol, "1w", candidate_weekly=False)
+        == policy
+    }
+    report["release_stage"] = "daily_weekly"
+    report["enumerations"] = [
+        row for row in report["enumerations"] if row["symbol"] in symbols
+    ]
+    report["dependencies"] = [
+        row for row in report["dependencies"] if row["symbol"] in symbols
+    ]
+    report["repair_targets"] = [
+        row for row in report["repair_targets"] if row["symbol"] in symbols
+    ]
+    report["product_count"] = len(symbols)
+    report["work_used"] = (
+        len(symbols) * 3 + len(report["dependencies"]) + len(report["repair_targets"])
+    )
+
+    assert len(partition_ordinary_units(report)) == len(report["repair_targets"])
+
+    report["enumerations"] = [
+        row for row in report["enumerations"] if row["symbol"] != next(iter(symbols))
+    ]
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
 
 
 def test_daily_partition_rejects_legacy_weekly_release_stage() -> None:
