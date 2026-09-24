@@ -3,7 +3,7 @@ import pytest
 from scripts.newow_remaining19_audit import parse_products, proposed_unit_batches
 
 
-def test_parse_products_is_ordered_unique_and_bounded_to_remaining_scope():
+def test_parse_products_is_ordered_unique_and_bounded_to_weekly_v2_scope():
     assert parse_products(["pf", "rs", "sr"]) == ("pf", "rs", "sr")
     with pytest.raises(ValueError, match="REMAINING19_SCOPE_INVALID"):
         parse_products(["pf", "pf"])

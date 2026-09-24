@@ -1,4 +1,4 @@
-"""Bounded read-only candidate W1 audit for the fixed remaining-19 scope."""
+"""Bounded read-only W1 audit for the fixed weekly-v2 product group."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import sys
 from app.db.readonly import readonly_transaction
 from app.db.session import SessionLocal
 from app.market_data.newow.after_market_consumer_audit import catalog_revision
-from app.market_data.newow.product_release import REMAINING_WEEKLY_V2_PRODUCTS
+from app.market_data.newow.product_release import FORMAL_WEEKLY_V2_PRODUCTS
 from app.market_data.newow.readiness import ReadinessRequest
 from app.market_data.newow.readiness_composition import build_newow_readiness
 from guiyi_quant.newow.product_contracts import ProductFrequency
@@ -53,9 +53,9 @@ def parse_products(values: list[str]) -> tuple[str, ...]:
     products = tuple(value.strip().lower() for value in values)
     if (
         not products
-        or len(products) > len(REMAINING_WEEKLY_V2_PRODUCTS)
+        or len(products) > len(FORMAL_WEEKLY_V2_PRODUCTS)
         or len(set(products)) != len(products)
-        or not set(products) <= set(REMAINING_WEEKLY_V2_PRODUCTS)
+        or not set(products) <= set(FORMAL_WEEKLY_V2_PRODUCTS)
     ):
         raise ValueError("REMAINING19_SCOPE_INVALID")
     return products
