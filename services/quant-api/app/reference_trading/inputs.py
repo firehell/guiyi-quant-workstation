@@ -543,7 +543,10 @@ class MarketDataHistoricalInputReader:
         )
 
     def _read_newow(self, request):
-        from guiyi_quant.newow.product_adapters import build_product_identity
+        from guiyi_quant.newow.product_adapters import (
+            build_product_identity,
+            label_calculation_segments,
+        )
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
         from guiyi_quant.newow.product_identity import futures_adaptation_version
         from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
@@ -596,8 +599,11 @@ class MarketDataHistoricalInputReader:
             (item.physical_contract, item.segment_id)
             for item in read.lifecycle_evidence
         }
+        labeled_bars = label_calculation_segments(
+            identity, read.replay_bars, read.data_interruptions,
+        )
         fingerprints = _newow_replay_fingerprints(
-            read.replay_bars, read.input_quality_policy.value,
+            labeled_bars, read.input_quality_policy.value,
         )
         bars = [HistoricalInputBar(
             item.bar.bar_end,
@@ -612,27 +618,41 @@ class MarketDataHistoricalInputReader:
                 item,
                 (item.bar.physical_contract, item.bar.segment_id) in evidence_owners,
             ),
-        ) for index, item in enumerate(read.replay_bars)]
+        ) for index, item in enumerate(labeled_bars)]
         if frequency is ProductFrequency.WEEKLY:
-            eligible_owners = {
-                (item.bar.physical_contract, item.bar.segment_id)
-                for item in read.replay_bars if item.bar.observation_eligible
-            }
+            first_eligible: dict[tuple[str, str], datetime] = {}
+            for item in labeled_bars:
+                if item.bar.observation_eligible:
+                    owner = (item.bar.physical_contract, item.bar.segment_id)
+                    first_eligible[owner] = min(
+                        first_eligible.get(owner, item.bar.bar_end), item.bar.bar_end,
+                    )
             # A rank-1 owner can begin and end before it has an eligible W1 Bar.
             # It cannot hold a reference trade, so its rollover has no replay event.
-            # Keep the raw boundary in the dependency manifest below.
+            # Likewise, an early quality gap cannot interrupt a trade before
+            # the owner's first eligible Bar. Raw gaps remain in the manifest;
+            # the product reader still exposes them for partial coverage.
+            def eligible_before(boundary: ReferenceBoundary) -> bool:
+                first = first_eligible.get((
+                    boundary.physical_contract, boundary.owner_segment_id,
+                ))
+                return first is not None and first <= boundary.bar_end
+
             boundaries = [
                 boundary for boundary in boundaries
-                if boundary.reason is not BoundaryReason.ROLLOVER
-                or (boundary.physical_contract, boundary.owner_segment_id) in eligible_owners
+                if not (
+                    boundary.reason is BoundaryReason.ROLLOVER
+                    and (boundary.physical_contract, boundary.owner_segment_id)
+                    not in first_eligible
+                ) and not (
+                    boundary.reason is BoundaryReason.DATA_INTERRUPTED
+                    and not eligible_before(boundary)
+                )
             ]
             for boundary in boundaries:
-                if boundary.reason is BoundaryReason.ROLLOVER and not any(
-                    item.bar.observation_eligible
-                    and item.bar.physical_contract == boundary.physical_contract
-                    and item.bar.segment_id == boundary.owner_segment_id
-                    and item.bar.bar_end <= boundary.bar_end
-                    for item in read.replay_bars
+                if (
+                    boundary.reason is BoundaryReason.ROLLOVER
+                    and not eligible_before(boundary)
                 ):
                     raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
         bars = _insert_boundaries(bars, tuple(boundaries))
