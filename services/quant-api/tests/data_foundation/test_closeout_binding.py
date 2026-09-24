@@ -174,6 +174,28 @@ def test_recovery_binding_accepts_exact_schema_v3_failed_terminal(target):
     assert binding.last_interruption is None
 
 
+def test_calendar_metadata_failure_requires_explicit_binding_scope(target):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed = _failed_terminal_status()
+    failed["last_run"]["error_code"] = "CALENDAR_NIGHT_AUTHORITY_MISSING"
+    failed["last_failure"]["error_code"] = "CALENDAR_NIGHT_AUTHORITY_MISSING"
+    failed_sha256 = _write_status(target.status, failed)
+
+    with pytest.raises(RuntimeRecoveryBindingError, match="RUNTIME_RECOVERY_STATUS_UNSUPPORTED"):
+        target.module.RuntimeDataBinding(
+            target.root, "a" * 40, failed_sha256, home=target.home,
+            allow_failed_terminal=True,
+        )
+
+    binding = target.module.RuntimeDataBinding(
+        target.root, "a" * 40, failed_sha256, home=target.home,
+        allow_failed_terminal=True, allow_calendar_metadata_failure=True,
+    )
+    assert binding.recovery_terminal == "failed"
+    assert binding.products == ("au",)
+
+
 @pytest.mark.parametrize(
     "invalid",
     [

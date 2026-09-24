@@ -89,6 +89,7 @@ class JsonArgumentParser(argparse.ArgumentParser):
             )
             snapshot_hash = result.expected_snapshot_sha256
             plan_hash = result.expected_plan_sha256
+            capture_hash = result.expected_capture_sha256
             valid_snapshot_hash = (
                 isinstance(snapshot_hash, str)
                 and re.fullmatch(r"[0-9a-f]{64}", snapshot_hash) is not None
@@ -97,19 +98,36 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 isinstance(plan_hash, str)
                 and re.fullmatch(r"[0-9a-f]{64}", plan_hash) is not None
             )
+            valid_optional_capture = (
+                (result.capture is None and capture_hash is None)
+                or (
+                    isinstance(result.capture, str)
+                    and isinstance(capture_hash, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", capture_hash) is not None
+                )
+            )
             if not exact_identity:
                 self.error("exact runtime identity required")
             if result.phase == "capture":
-                if not result.apply or result.snapshot or snapshot_hash or plan_hash:
+                if not result.apply or result.snapshot or snapshot_hash or plan_hash or result.capture or capture_hash:
                     self.error("capture requires only explicit --apply")
+            elif result.phase == "import":
+                if (
+                    result.apply or not result.capture
+                    or not isinstance(capture_hash, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", capture_hash) is None
+                    or result.snapshot or snapshot_hash or plan_hash
+                ):
+                    self.error("import requires exact frozen capture only")
             elif result.phase == "plan":
-                if result.apply or not result.snapshot or not valid_snapshot_hash or plan_hash:
+                if result.apply or not result.snapshot or not valid_snapshot_hash or plan_hash or not valid_optional_capture:
                     self.error("plan requires exact snapshot only")
             elif (
                 not result.apply
                 or not result.snapshot
                 or not valid_snapshot_hash
                 or not valid_plan_hash
+                or not valid_optional_capture
             ):
                 self.error("apply requires exact snapshot and plan hashes")
         if getattr(result, "data_command", None) == "compatible-recovery-proof":
@@ -152,13 +170,15 @@ def add_data_commands(
         "current-day-metadata-recovery", allow_abbrev=False
     )
     current_metadata.add_argument(
-        "--phase", required=True, choices=("capture", "plan", "apply")
+        "--phase", required=True, choices=("capture", "import", "plan", "apply")
     )
     current_metadata.add_argument("--runtime-root", required=True)
     current_metadata.add_argument("--runtime-commit", required=True)
     current_metadata.add_argument("--expected-status-sha256", required=True)
     current_metadata.add_argument("--trading-day", type=date.fromisoformat, required=True)
     current_metadata.add_argument("--snapshot")
+    current_metadata.add_argument("--capture")
+    current_metadata.add_argument("--expected-capture-sha256")
     current_metadata.add_argument("--expected-snapshot-sha256")
     current_metadata.add_argument("--expected-plan-sha256")
     current_metadata.add_argument("--apply", action="store_true")

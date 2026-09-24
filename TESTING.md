@@ -1226,6 +1226,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 `recovery_ready=false` 是有意保留的发布与执行 Gate；render-only/fixture 通过不能生成可用恢复 root。
 
 Runtime-bound current-day metadata recovery 的严格 snapshot codec/hash、P60 64 次应用层 fake API 调用、
+冻结源 import 的原始 SHA/默认 adapter 离线重放与伪造 snapshot 拒绝、
 capture/plan/apply provider 隔离、Calendar/Session/rank1 exact diff、下一交易日 insert、warm-up/窗口外保留、
 maintenance lease、Runtime/plan drift、rollback、commit outcome unknown 与自然同步回归：
 

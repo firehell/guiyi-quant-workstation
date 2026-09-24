@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import date, time, timedelta
+import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,6 +26,175 @@ from app.models import (
 
 DAY = date(2026, 9, 11)
 NEXT = date(2026, 9, 14)
+
+
+def test_frozen_source_import_binds_exact_bytes_and_reuses_snapshot_validation() -> None:
+    from app.market_data.current_day_metadata_recovery import (
+        CurrentDayMetadataRecoveryError,
+        decode_current_day_snapshot,
+        import_frozen_current_day_capture,
+    )
+
+    products = ("j", "jm")
+    source = {
+        "schema_version": 1,
+        "status": "source_captured",
+        "trading_day": DAY.isoformat(),
+        "operational_products": list(products),
+        "candidate_commit": "a" * 40,
+        "capture_started_at": "2026-09-11T10:00:00+00:00",
+        "capture_finished_at": "2026-09-11T10:00:01+00:00",
+        "calendar_end": "2026-09-14",
+        "probe_end": "2026-09-25",
+        "allowed_session_dates": [DAY.isoformat(), NEXT.isoformat()],
+        "bar_requests": 0,
+        "production_writes": 0,
+        "provider_call_budget": 6,
+        "provider_call_count": 6,
+        "provider_calls": ["get_trading_dates", "all_instruments", "get_trading_dates", "get_dominant", "get_dominant", "get_trading_periods"],
+        "physical_contract_budget": 150,
+        "requested_contracts": ["J2605", "JM2605"],
+        "source_trading_dates": [[DAY.isoformat(), NEXT.isoformat()], [DAY.isoformat(), NEXT.isoformat()]],
+        "source_instruments": [],
+        "source_dominants": {"J": [], "JM": []},
+        "source_periods": [],
+        "snapshot_summary": {"calendar_rows": 4, "rank1_rows": 2, "session_rows": 4, "unknown_calendar_keys": []},
+    }
+    content = json.dumps(source).encode()
+    digest = hashlib.sha256(content).hexdigest()
+    calls = []
+
+    def build(payload, actual_products, trading_day):
+        calls.append((payload, actual_products, trading_day))
+        return _snapshot()
+
+    imported = import_frozen_current_day_capture(
+        content, expected_capture_sha256=digest, products=products,
+        trading_day=DAY, snapshot_builder=build,
+    )
+    assert calls == [(source, products, DAY)]
+    assert imported["source"]["method"] == "frozen_rqdata_capture"
+    assert imported["source"]["capture_sha256"] == digest
+    assert imported["readonly"] is True
+    assert decode_current_day_snapshot(
+        imported, expected_snapshot_sha256=imported["snapshot_sha256"],
+        products=products, trading_day=DAY,
+    ) == _snapshot()
+
+    with pytest.raises(CurrentDayMetadataRecoveryError, match="CAPTURE_HASH_INVALID"):
+        import_frozen_current_day_capture(
+            content + b" ", expected_capture_sha256=digest, products=products,
+            trading_day=DAY, snapshot_builder=build,
+        )
+    assert len(calls) == 1
+
+
+def test_frozen_source_default_builder_replays_adapter_without_provider_init(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.market_data.current_day_metadata_recovery import (
+        import_frozen_current_day_capture,
+    )
+    from app.market_data.rqdata_adapter import RQDataClient
+
+    day = date(2026, 9, 28)
+    next_day = date(2026, 9, 29)
+    source = {
+        "schema_version": 1, "status": "source_captured",
+        "trading_day": day.isoformat(), "operational_products": ["a"],
+        "candidate_commit": "a" * 40,
+        "capture_started_at": "2026-09-24T10:00:00+00:00",
+        "capture_finished_at": "2026-09-24T10:00:01+00:00",
+        "calendar_end": "2026-10-04", "probe_end": "2026-10-12",
+        "allowed_session_dates": [day.isoformat(), next_day.isoformat()],
+        "bar_requests": 0, "production_writes": 0,
+        "provider_call_budget": 5, "provider_call_count": 5,
+        "provider_calls": ["get_trading_dates", "all_instruments", "get_trading_dates", "get_dominant", "get_trading_periods"],
+        "physical_contract_budget": 1, "requested_contracts": ["A2611"],
+        "source_trading_dates": [[day.isoformat(), next_day.isoformat()], [day.isoformat(), next_day.isoformat()]],
+        "source_instruments": [{
+            "order_book_id": "A2611", "underlying_symbol": "A", "exchange": "DCE",
+            "listed_date": "2026-01-01", "de_listed_date": "2026-12-01",
+        }],
+        "source_dominants": {"A": [{"date": "2026-09-28 00:00:00", "dominant": "A2611"}]},
+        "source_periods": [
+            {"date": item.isoformat(), "order_book_id": "A2611", "trading_hours": "09:01-10:15"}
+            for item in (day, next_day)
+        ],
+        "snapshot_summary": {"calendar_rows": 7, "rank1_rows": 1, "session_rows": 2, "unknown_calendar_keys": []},
+    }
+    content = json.dumps(source).encode()
+    digest = hashlib.sha256(content).hexdigest()
+    monkeypatch.setattr(
+        RQDataClient, "__init__",
+        lambda *_args, **_kwargs: pytest.fail("provider must not initialize"),
+    )
+
+    imported = import_frozen_current_day_capture(
+        content, expected_capture_sha256=digest,
+        products=("a",), trading_day=day,
+    )
+
+    assert len(imported["snapshot"]["calendars"]) == 7
+    assert len(imported["snapshot"]["sessions"]) == 2
+    assert imported["snapshot"]["main_contracts"] == [["a", {"$date": day.isoformat()}, "A2611"]]
+
+
+def test_calendar_failure_plan_requires_pinned_frozen_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.guiyi_cli import current_day_metadata_recovery as cli_recovery
+    from app.guiyi_cli.current_day_metadata_recovery import run_current_day_metadata_recovery
+    from app.market_data.current_day_metadata_recovery import (
+        CurrentDayMetadataRecoveryError, encode_current_day_snapshot,
+    )
+
+    encoded = encode_current_day_snapshot(_snapshot(), products=("j", "jm"), trading_day=DAY)
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(json.dumps(encoded))
+
+    @contextmanager
+    def context(*_args, **_kwargs):
+        yield SimpleNamespace(
+            products=("j", "jm"), failure_code="CALENDAR_NIGHT_AUTHORITY_MISSING",
+            verify_identity=lambda: None, catalog=MarketCatalog(_session(), Path(".")),
+        )
+
+    args = SimpleNamespace(
+        phase="plan", runtime_root="/runtime", runtime_commit="a" * 40,
+        expected_status_sha256="b" * 64, trading_day=DAY,
+        snapshot=str(snapshot_path), expected_snapshot_sha256=encoded["snapshot_sha256"],
+        capture=None, expected_capture_sha256=None,
+    )
+    with pytest.raises(CurrentDayMetadataRecoveryError, match="CAPTURE_REQUIRED"):
+        run_current_day_metadata_recovery(args, runtime_context_factory=context)
+
+    capture_path = tmp_path / "capture.json"
+    capture_path.write_bytes(b"original")
+    digest = hashlib.sha256(b"original").hexdigest()
+    frozen = encode_current_day_snapshot(
+        _snapshot(), products=("j", "jm"), trading_day=DAY,
+        source_capture_sha256=digest,
+    )
+    snapshot_path.write_text(json.dumps(frozen))
+    args.expected_snapshot_sha256 = frozen["snapshot_sha256"]
+    args.capture = str(capture_path.resolve())
+    args.expected_capture_sha256 = digest
+    capture_path.write_bytes(b"changed")
+    with pytest.raises(CurrentDayMetadataRecoveryError, match="CAPTURE_HASH_INVALID"):
+        run_current_day_metadata_recovery(args, runtime_context_factory=context)
+
+    capture_path.write_bytes(b"original")
+    with pytest.raises(CurrentDayMetadataRecoveryError, match="CAPTURE_INVALID"):
+        run_current_day_metadata_recovery(args, runtime_context_factory=context)
+
+    monkeypatch.setattr(
+        cli_recovery,
+        "import_frozen_current_day_capture",
+        lambda *_args, **_kwargs: {"snapshot_sha256": "0" * 64},
+    )
+    with pytest.raises(CurrentDayMetadataRecoveryError, match="CAPTURE_SNAPSHOT_MISMATCH"):
+        run_current_day_metadata_recovery(args, runtime_context_factory=context)
 
 
 def _snapshot() -> MetadataSnapshot:

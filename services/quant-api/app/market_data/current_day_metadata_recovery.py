@@ -8,7 +8,7 @@ validated current-day writer.
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 import hashlib
 import json
 import re
@@ -122,6 +122,7 @@ def encode_current_day_snapshot(
     *,
     products: tuple[str, ...],
     trading_day: date,
+    source_capture_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Encode one snapshot with an exact semantic SHA-256."""
     normalized = _products(products)
@@ -130,15 +131,24 @@ def encode_current_day_snapshot(
         "schema_version": 1,
         "command": "data.current-day-metadata-recovery",
         "status": "captured",
-        "readonly": False,
+        "readonly": source_capture_sha256 is not None,
         "products": list(normalized),
         "trading_day": trading_day.isoformat(),
         "source": {
-            "method": "RQDataMarketAdapter.fetch_current_day_metadata",
+            "method": (
+                "frozen_rqdata_capture"
+                if source_capture_sha256 is not None
+                else "RQDataMarketAdapter.fetch_current_day_metadata"
+            ),
             "arguments": {
                 "products": list(normalized),
                 "trading_day": trading_day.isoformat(),
             },
+            **(
+                {"capture_sha256": source_capture_sha256}
+                if source_capture_sha256 is not None
+                else {}
+            ),
         },
         "application_calls": application_call_summary(len(normalized)),
         "snapshot": {
@@ -154,6 +164,140 @@ def encode_current_day_snapshot(
         "canonical_writes": 0,
     }
     return {**payload, "snapshot_sha256": _hash(payload)}
+
+
+def import_frozen_current_day_capture(
+    content: bytes,
+    *,
+    expected_capture_sha256: str,
+    products: tuple[str, ...],
+    trading_day: date,
+    snapshot_builder: Callable[[dict[str, Any], tuple[str, ...], date], MetadataSnapshot]
+    | None = None,
+) -> dict[str, Any]:
+    """Reconstruct the normal snapshot from one pinned, provider-free source response."""
+    if (
+        not isinstance(content, bytes)
+        or not 0 < len(content) <= 16 * 1024 * 1024
+        or not isinstance(expected_capture_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected_capture_sha256) is None
+        or hashlib.sha256(content).hexdigest() != expected_capture_sha256
+    ):
+        raise CurrentDayMetadataRecoveryError("CAPTURE_HASH_INVALID")
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise CurrentDayMetadataRecoveryError("CAPTURE_INVALID")
+            result[key] = value
+        return result
+
+    try:
+        source = json.loads(content, object_pairs_hook=unique_object)
+    except (UnicodeError, ValueError, TypeError):
+        raise CurrentDayMetadataRecoveryError("CAPTURE_INVALID") from None
+    normalized = _products(products)
+    _trading_day(trading_day)
+    expected_keys = {
+        "allowed_session_dates", "bar_requests", "calendar_end",
+        "candidate_commit", "capture_finished_at", "capture_started_at",
+        "operational_products", "physical_contract_budget", "probe_end",
+        "production_writes", "provider_call_budget", "provider_call_count",
+        "provider_calls", "requested_contracts", "schema_version",
+        "snapshot_summary", "source_dominants", "source_instruments",
+        "source_periods", "source_trading_dates", "status", "trading_day",
+    }
+    calls = [
+        "get_trading_dates", "all_instruments", "get_trading_dates",
+        *(["get_dominant"] * len(normalized)), "get_trading_periods",
+    ]
+    try:
+        probe_dates, bounded_dates = source["source_trading_dates"]
+        next_day = next(
+            date.fromisoformat(value)
+            for value in probe_dates
+            if date.fromisoformat(value) > trading_day
+        )
+        calendar_end = max(
+            trading_day + timedelta(days=7 - trading_day.isoweekday()), next_day
+        )
+        starts = datetime.fromisoformat(source["capture_started_at"])
+        finished = datetime.fromisoformat(source["capture_finished_at"])
+        requested = source["requested_contracts"]
+        summary = source["snapshot_summary"]
+        valid = (
+            isinstance(source, dict)
+            and set(source) == expected_keys
+            and source["schema_version"] == 1
+            and source["status"] == "source_captured"
+            and source["trading_day"] == trading_day.isoformat()
+            and source["operational_products"] == list(normalized)
+            and isinstance(source["candidate_commit"], str)
+            and re.fullmatch(r"[0-9a-f]{40}", source["candidate_commit"]) is not None
+            and starts.utcoffset() is not None
+            and finished.utcoffset() is not None
+            and starts <= finished <= datetime.now(finished.tzinfo)
+            and source["probe_end"] == (trading_day + timedelta(days=14)).isoformat()
+            and source["calendar_end"] == calendar_end.isoformat()
+            and type(source["provider_call_budget"]) is int
+            and source["provider_call_budget"] == len(calls)
+            and type(source["provider_call_count"]) is int
+            and source["provider_call_count"] == len(calls)
+            and source["provider_calls"] == calls
+            and type(source["bar_requests"]) is int
+            and source["bar_requests"] == 0
+            and type(source["production_writes"]) is int
+            and source["production_writes"] == 0
+            and type(source["physical_contract_budget"]) is int
+            and 1 <= source["physical_contract_budget"] <= 150
+            and isinstance(requested, list)
+            and 0 < len(requested) <= source["physical_contract_budget"]
+            and len(set(requested)) == len(requested)
+            and all(isinstance(value, str) and value == value.upper() for value in requested)
+            and isinstance(probe_dates, list)
+            and isinstance(bounded_dates, list)
+            and trading_day.isoformat() in probe_dates
+            and trading_day.isoformat() in bounded_dates
+            and next_day.isoformat() in bounded_dates
+            and probe_dates == sorted(set(probe_dates))
+            and bounded_dates == sorted(set(bounded_dates))
+            and all(trading_day <= date.fromisoformat(value) <= calendar_end for value in bounded_dates)
+            and isinstance(source["allowed_session_dates"], list)
+            and source["allowed_session_dates"] == sorted(set(source["allowed_session_dates"]))
+            and set(source["allowed_session_dates"]) <= set(bounded_dates)
+            and {trading_day.isoformat(), next_day.isoformat()} <= set(source["allowed_session_dates"])
+            and isinstance(source["source_instruments"], list)
+            and isinstance(source["source_periods"], list)
+            and isinstance(source["source_dominants"], dict)
+            and set(source["source_dominants"]) == {item.upper() for item in normalized}
+            and all(isinstance(value, list) for value in source["source_dominants"].values())
+            and isinstance(summary, dict)
+            and set(summary) == {"calendar_rows", "rank1_rows", "session_rows", "unknown_calendar_keys"}
+            and summary["unknown_calendar_keys"] == []
+            and all(type(summary[key]) is int and summary[key] >= 0 for key in ("calendar_rows", "rank1_rows", "session_rows"))
+        )
+    except (KeyError, TypeError, ValueError, StopIteration):
+        valid = False
+    if not valid:
+        raise CurrentDayMetadataRecoveryError("CAPTURE_INVALID")
+    if snapshot_builder is None:
+        from app.market_data.frozen_metadata_capture import frozen_snapshot
+
+        snapshot_builder = frozen_snapshot
+    try:
+        snapshot = snapshot_builder(source, normalized, trading_day)
+    except Exception:
+        raise CurrentDayMetadataRecoveryError("CAPTURE_SOURCE_INVALID") from None
+    if not isinstance(snapshot, MetadataSnapshot):
+        raise CurrentDayMetadataRecoveryError("CAPTURE_SOURCE_INVALID")
+    encoded = encode_current_day_snapshot(
+        snapshot,
+        products=normalized,
+        trading_day=trading_day,
+        source_capture_sha256=expected_capture_sha256,
+    )
+    return encoded
 
 
 def decode_current_day_snapshot(
@@ -193,21 +337,29 @@ def decode_current_day_snapshot(
         raise CurrentDayMetadataRecoveryError("SNAPSHOT_HASH_INVALID")
     normalized = _products(products)
     _trading_day(trading_day)
-    source = {
+    source = payload.get("source")
+    normal_source = {
         "method": "RQDataMarketAdapter.fetch_current_day_metadata",
-        "arguments": {
-            "products": list(normalized),
-            "trading_day": trading_day.isoformat(),
-        },
+        "arguments": {"products": list(normalized), "trading_day": trading_day.isoformat()},
     }
+    frozen_source = {
+        "method": "frozen_rqdata_capture",
+        "arguments": {"products": list(normalized), "trading_day": trading_day.isoformat()},
+        "capture_sha256": source.get("capture_sha256") if isinstance(source, dict) else None,
+    }
+    valid_source = source == normal_source or (
+        source == frozen_source
+        and isinstance(frozen_source["capture_sha256"], str)
+        and re.fullmatch(r"[0-9a-f]{64}", frozen_source["capture_sha256"]) is not None
+    )
     if (
         payload["schema_version"] != 1
         or payload["command"] != "data.current-day-metadata-recovery"
         or payload["status"] != "captured"
-        or payload["readonly"] is not False
+        or payload["readonly"] is not (source == frozen_source)
         or payload["products"] != list(normalized)
         or payload["trading_day"] != trading_day.isoformat()
-        or payload["source"] != source
+        or not valid_source
         or payload["application_calls"] != application_call_summary(len(normalized))
         or payload["database_writes"] != 0
         or payload["canonical_writes"] != 0
@@ -319,7 +471,7 @@ def apply_current_day_metadata(
     try:
         try:
             verify_identity()
-        except RuntimeRecoveryBindingError:
+        except (RuntimeRecoveryBindingError, CurrentDayMetadataRecoveryError):
             raise
         except Exception:
             raise CurrentDayMetadataRecoveryError("RUNTIME_IDENTITY_DRIFT") from None
@@ -336,7 +488,7 @@ def apply_current_day_metadata(
             raise CurrentDayMetadataRecoveryError("PLAN_DRIFT")
         try:
             verify_identity()
-        except RuntimeRecoveryBindingError:
+        except (RuntimeRecoveryBindingError, CurrentDayMetadataRecoveryError):
             raise
         except Exception:
             raise CurrentDayMetadataRecoveryError("RUNTIME_IDENTITY_DRIFT") from None

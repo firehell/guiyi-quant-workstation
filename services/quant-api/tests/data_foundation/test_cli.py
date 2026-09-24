@@ -350,6 +350,28 @@ def test_current_day_metadata_recovery_parser_keeps_three_phases_separate() -> N
     assert applied.apply is True
 
 
+def test_current_day_metadata_recovery_import_requires_exact_capture() -> None:
+    parser = build_parser()
+    common = [
+        "data", "current-day-metadata-recovery",
+        "--runtime-root", "/runtime", "--runtime-commit", "a" * 40,
+        "--expected-status-sha256", "b" * 64,
+        "--trading-day", "2026-09-28", "--phase", "import",
+    ]
+    with pytest.raises(CliUsageError):
+        parser.parse_args(common)
+    imported = parser.parse_args([
+        *common, "--capture", "/tmp/capture.json",
+        "--expected-capture-sha256", "c" * 64,
+    ])
+    assert imported.capture == "/tmp/capture.json"
+    with pytest.raises(CliUsageError):
+        parser.parse_args([
+            *common, "--capture", "/tmp/capture.json",
+            "--expected-capture-sha256", "c" * 64, "--apply",
+        ])
+
+
 def test_current_day_metadata_recovery_dispatches_without_default_manager() -> None:
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -1263,7 +1285,7 @@ def test_root_parser_exposes_only_active_domains() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
 
-    assert set(domain_action.choices) == {"data", "runtime"}
+    assert set(domain_action.choices) == {"data", "reference", "runtime"}
 
 
 def test_data_cli_omits_retired_member_rank_parser_dispatch_and_factory() -> None:
