@@ -157,10 +157,12 @@ metadata、不回退 full、不重试、不续跑、不通知。进度仅以共�
 上述完整时间戳 identity 只属于 `daily-recovery` 的 CAS/result；普通 `data update` 与 `data refresh` 继续返回
 原有 dataset/year/month/window-start/window-end/missing-count target schema，不附加 recovery identity 字段。
 
-当天/下一交易日 metadata 的受审恢复使用独立三阶段入口：
+当天/下一交易日 metadata 的受审恢复使用独立三阶段入口；已有冻结源响应可用离线 `import`
+代替新一次 `capture`：
 
 ```text
 guiyi data current-day-metadata-recovery --phase capture --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --apply
+guiyi data current-day-metadata-recovery --phase import --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --capture PATH --expected-capture-sha256 CAPTURE_SHA256
 guiyi data current-day-metadata-recovery --phase plan --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --snapshot PATH --expected-snapshot-sha256 SNAPSHOT_SHA256
 guiyi data current-day-metadata-recovery --phase apply --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --snapshot PATH --expected-snapshot-sha256 SNAPSHOT_SHA256 --expected-plan-sha256 PLAN_SHA256 --apply
 ```
@@ -168,7 +170,13 @@ guiyi data current-day-metadata-recovery --phase apply --runtime-root ROOT --run
 三阶段只取已校验 Runtime operational universe。capture 的 `--apply` 是一次 provider source 意图，只调用
 共享 current-day adapter 一次并输出严格 snapshot/hash；不写数据库或 Canonical。P60 的正常调用摘要为
 64 个应用层调用（next-day probe 1、完整合约 inventory 1、bounded Calendar 1、dominant 60、batched
-trading periods 1），不代表 provider 计费请求。plan 从冻结 snapshot 逐项列出 Calendar、当天/下一交易日
+trading periods 1），不代表 provider 计费请求。`import` 只接受严格 schema、原始字节 SHA、日期/品种/预算
+与调用序列一致的本地响应，使用同一 adapter 离线规范化，零 provider 请求。遇到
+`CALENDAR_NIGHT_AUTHORITY_MISSING` 的 schema-v3 失败终态时，只有本入口的 import/plan/apply
+可绑定该错误码；plan/apply 必须同时提供 `--capture PATH --expected-capture-sha256 CAPTURE_SHA256`，
+并与 snapshot 内来源 SHA 相同；plan 前及 apply 维护锁内均重新解析源响应，要求生成的 snapshot
+哈希与提交者提供的 snapshot 完全一致。其他恢复入口不扩大可接受状态。
+plan 从冻结 snapshot 逐项列出 Calendar、当天/下一交易日
 Session 与当天 rank1 Map 的 equal/insert diff，既有值变化即阻断；不构造 provider。apply 在 maintenance
 lease 内重检 Runtime/status/heartbeat 与同一 diff，随后通过共享 validated writer 一次事务插入缺失事实；
 不构造 provider，`provider_requests=0`。snapshot、plan 或 Runtime 漂移、future-not-ready、commit outcome

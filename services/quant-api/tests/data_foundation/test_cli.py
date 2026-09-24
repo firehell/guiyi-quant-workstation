@@ -350,6 +350,28 @@ def test_current_day_metadata_recovery_parser_keeps_three_phases_separate() -> N
     assert applied.apply is True
 
 
+def test_current_day_metadata_recovery_import_requires_exact_capture() -> None:
+    parser = build_parser()
+    common = [
+        "data", "current-day-metadata-recovery",
+        "--runtime-root", "/runtime", "--runtime-commit", "a" * 40,
+        "--expected-status-sha256", "b" * 64,
+        "--trading-day", "2026-09-28", "--phase", "import",
+    ]
+    with pytest.raises(CliUsageError):
+        parser.parse_args(common)
+    imported = parser.parse_args([
+        *common, "--capture", "/tmp/capture.json",
+        "--expected-capture-sha256", "c" * 64,
+    ])
+    assert imported.capture == "/tmp/capture.json"
+    with pytest.raises(CliUsageError):
+        parser.parse_args([
+            *common, "--capture", "/tmp/capture.json",
+            "--expected-capture-sha256", "c" * 64, "--apply",
+        ])
+
+
 def test_current_day_metadata_recovery_dispatches_without_default_manager() -> None:
     stdout = io.StringIO()
     stderr = io.StringIO()

@@ -310,6 +310,7 @@ class RuntimeDataBinding:
         *,
         home: Path | None = None,
         allow_failed_terminal: bool = False,
+        allow_calendar_metadata_failure: bool = False,
     ):
         self._recovery_errors = allow_failed_terminal
         if any(key.startswith("PG") for key in os.environ):
@@ -325,13 +326,21 @@ class RuntimeDataBinding:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         try:
             parsed, started, interruption = self._validate_status(
-                status, allow_failed_terminal=allow_failed_terminal
+                status,
+                allow_failed_terminal=allow_failed_terminal,
+                allow_calendar_metadata_failure=allow_calendar_metadata_failure,
             )
         except ValueError:
             self._fail("RUNTIME_RECOVERY_STATUS_UNSUPPORTED")
         self._status = status
         self._status_sha256 = status_sha256
         self._status_payload = parsed
+        last_run = parsed.get("last_run")
+        self.failure_code = (
+            last_run.get("error_code")
+            if isinstance(last_run, dict) and last_run.get("status") == "failed"
+            else None
+        )
         self.last_interruption = interruption
         self.after_market_state = "stopped" if interruption is not None else "loaded"
         self.recovery_terminal = (
@@ -396,7 +405,12 @@ class RuntimeDataBinding:
         raise ValueError
 
     @staticmethod
-    def _validate_status(status: bytes, *, allow_failed_terminal: bool = False):
+    def _validate_status(
+        status: bytes,
+        *,
+        allow_failed_terminal: bool = False,
+        allow_calendar_metadata_failure: bool = False,
+    ):
         try:
             parsed = json.loads(status)
             if not isinstance(parsed, dict):
@@ -413,16 +427,19 @@ class RuntimeDataBinding:
                 public = public_after_market_status(parsed)
                 last_run = public.get("last_run")
                 last_failure = public.get("last_failure")
+                accepted_errors = {"UPDATE_FAILED"}
+                if allow_calendar_metadata_failure:
+                    accepted_errors.add("CALENDAR_NIGHT_AUTHORITY_MISSING")
                 if (
                     public.get("schema_version") != 3
                     or public.get("current_run") is not None
                     or not isinstance(last_run, dict)
                     or last_run.get("status") != "failed"
                     or last_run.get("attempts") not in {1, 2}
-                    or last_run.get("error_code") != "UPDATE_FAILED"
+                    or last_run.get("error_code") not in accepted_errors
                     or not isinstance(last_failure, dict)
                     or last_failure.get("trading_day") != last_run.get("trading_day")
-                    or last_failure.get("error_code") != "UPDATE_FAILED"
+                    or last_failure.get("error_code") != last_run.get("error_code")
                 ):
                     raise ValueError
                 started = datetime.fromisoformat(last_run["started_at"])
