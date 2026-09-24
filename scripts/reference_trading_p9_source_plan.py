@@ -113,7 +113,7 @@ def plan_batch(
                 raise
             safe_prefixes = (
                 "REFERENCE_", "SOURCE_", "DATASET_", "QUALITY_",
-                "SESSION_", "CALENDAR_", "MAIN_", "P9_",
+                "SESSION_", "CALENDAR_", "MAIN_", "P9_", "SUBING_", "NEWOW_",
             )
             reason = (
                 code if code.startswith(safe_prefixes)

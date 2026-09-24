@@ -10,11 +10,14 @@ from guiyi_quant.reference_trading import StreamIdentity
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
+    InputQualityPolicy,
     REFERENCE_MODEL_VERSION,
     futures_adaptation_version,
 )
 
-from app.reference_trading.inputs import HistoricalInputBar, HistoricalInputSnapshot
+from app.reference_trading.inputs import (
+    HistoricalInputBar, HistoricalInputSnapshot, MarketDataHistoricalInputReader,
+)
 from app.reference_trading.planning import (
     HistoricalReferencePlanner,
     HistoricalReferenceRequest,
@@ -131,6 +134,62 @@ def test_plan_is_deterministic_and_does_not_mutate_repository() -> None:
     assert first.streams[0].dependency_digest == first.streams[0].input_manifest_sha256
     assert first.streams[0].target_completed_through == datetime(2026, 9, 18, 7, tzinfo=UTC)
     assert len(reader.calls) == 2
+
+
+def test_plan_accepts_formal_weekly_v2_identity_and_rejects_v1_alias() -> None:
+    product = build_product_identity(
+        "b", ProductStrategy.TREND, ProductFrequency.WEEKLY,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+    )
+    base = _identity(strategy="newow_trend", frequency="1w")
+    formal = replace(
+        base, product="b", formula_versions=product.formula_versions,
+        profile_id=product.profile_id,
+        futures_adaptation_version=futures_adaptation_version(
+            "1w", InputQualityPolicy.WEEKLY_V2,
+        ),
+    )
+    planner = HistoricalReferencePlanner(Reader(), now=lambda: NOW)
+    request = HistoricalStreamRequest(formal, date(2026, 9, 1), date(2026, 9, 18), NOW)
+    assert planner.plan(HistoricalReferenceRequest("build", (request,), _budget())).streams[0].request == request
+    with pytest.raises(ValueError, match="REFERENCE_IDENTITY_VERSION_UNSUPPORTED"):
+        planner.plan(HistoricalReferenceRequest(
+            "build", (replace(request, identity=replace(
+                formal, futures_adaptation_version=futures_adaptation_version("1w"),
+            )),), _budget(),
+        ))
+
+
+def test_historical_input_estimate_selects_reader_by_formal_identity() -> None:
+    product = build_product_identity(
+        "b", ProductStrategy.TREND, ProductFrequency.WEEKLY,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+    )
+    identity = replace(
+        _identity(strategy="newow_trend", frequency="1w"),
+        product="b", formula_versions=product.formula_versions,
+        profile_id=product.profile_id,
+        futures_adaptation_version=futures_adaptation_version(
+            "1w", InputQualityPolicy.WEEKLY_V2,
+        ),
+    )
+    seen = []
+
+    class Bound:
+        def historical_input_bound(self, **kwargs):
+            seen.append(kwargs)
+            return 42, 4096
+
+    reader = MarketDataHistoricalInputReader(
+        newow_reader=object(), subing_service=object(),
+        newow_reader_for_identity=lambda selected: Bound() if selected == identity else None,
+    )
+    request = HistoricalStreamRequest(identity, date(2026, 9, 1), date(2026, 9, 18), NOW)
+    assert reader.estimate_stream(request) == (42, 4096)
+    assert seen == [{
+        "product": "b", "frequency": "1w", "since": request.since,
+        "through": request.through, "as_of": request.as_of,
+    }]
 
 
 @pytest.mark.parametrize(

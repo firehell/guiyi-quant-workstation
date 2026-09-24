@@ -145,11 +145,13 @@ def open_historical_reference_components(*, session_factory=None):
         canonical_root,
     )
     from app.market_data.newow.product_reader import NewowProductReader
+    from app.market_data.newow.product_release import candidate_input_quality_policy
     from app.market_data.operational_universe import load_active_products
     from app.market_data.subing_reference import SubingReferenceService
     from app.reference_trading.inputs import MarketDataHistoricalInputReader
     from app.reference_trading.repository import ReferenceRepository
     from app.reference_trading.service import HistoricalReferenceService
+    from guiyi_quant.newow.product_identity import futures_adaptation_version
 
     factory = session_factory or SessionLocal
     with factory() as session:
@@ -168,6 +170,19 @@ def open_historical_reference_components(*, session_factory=None):
             finally:
                 lease.release()
 
+        def newow_reader_for_identity(identity):
+            policy = candidate_input_quality_policy(
+                identity.product, identity.frequency, candidate_weekly=False,
+            )
+            if identity.futures_adaptation_version != futures_adaptation_version(
+                identity.frequency, policy,
+            ):
+                raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
+            return NewowProductReader(
+                market_data, coverage=coverage, active_products=products,
+                input_quality_policy=policy,
+            )
+
         reader = MarketDataHistoricalInputReader(
             newow_reader=NewowProductReader(
                 market_data,
@@ -180,6 +195,7 @@ def open_historical_reference_components(*, session_factory=None):
                 active_products=products,
             ),
             read_guard=guard,
+            newow_reader_for_identity=newow_reader_for_identity,
         )
         repository = ReferenceRepository(factory)
         planner = HistoricalReferencePlanner(reader, repository=repository)

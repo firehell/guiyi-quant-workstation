@@ -956,7 +956,9 @@ class NewowProductReader:
         if through <= start_day:
             return None
         args = {}
-        if policy is not InputQualityPolicy.V1:
+        if policy is InputQualityPolicy.DAILY_V2:
+            args["daily_quality_union"] = True
+        elif policy is InputQualityPolicy.WEEKLY_V2:
             args["weekly_classification_version"] = source_classification_version(
                 frequency.value, policy,
             )

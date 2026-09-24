@@ -309,8 +309,10 @@ class MarketDataHistoricalInputReader:
         newow_reader: object,
         subing_service: object,
         read_guard: Callable[[], AbstractContextManager[object]] = nullcontext,
+        newow_reader_for_identity: Callable[[StreamIdentity], object] | None = None,
     ) -> None:
         self._newow = newow_reader
+        self._newow_reader_for_identity = newow_reader_for_identity or (lambda _identity: newow_reader)
         self._subing = subing_service
         self._read_guard = read_guard
 
@@ -332,7 +334,9 @@ class MarketDataHistoricalInputReader:
                 "frequency": request.identity.frequency,
             }
         elif normalized.startswith("newow_"):
-            bound_reader = getattr(self._newow, "historical_input_bound", None)
+            bound_reader = getattr(
+                self._newow_reader_for_identity(request.identity), "historical_input_bound", None,
+            )
             arguments = {
                 "product": request.identity.product.lower(),
                 "frequency": request.identity.frequency,
@@ -540,6 +544,7 @@ class MarketDataHistoricalInputReader:
     def _read_newow(self, request):
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+        from guiyi_quant.newow.product_identity import futures_adaptation_version
         from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
         from app.market_data.newow.product_query import NewowProductQuery
         from app.reference_trading.service import NewowHistoricalPayload
@@ -551,7 +556,7 @@ class MarketDataHistoricalInputReader:
             request.since, request.through,
             request.since, request.through, request.as_of,
         )
-        read = self._newow.load(query, request.as_of)
+        read = self._newow_reader_for_identity(request.identity).load(query, request.as_of)
         identity = build_product_identity(
             query.product, strategy, frequency,
             input_quality_policy=read.input_quality_policy,
@@ -559,6 +564,9 @@ class MarketDataHistoricalInputReader:
         if (
             request.identity.product != identity.product
             or request.identity.formula_versions != identity.formula_versions
+            or request.identity.futures_adaptation_version != futures_adaptation_version(
+                frequency.value, read.input_quality_policy,
+            )
         ):
             raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
         boundaries: list[ReferenceBoundary] = []

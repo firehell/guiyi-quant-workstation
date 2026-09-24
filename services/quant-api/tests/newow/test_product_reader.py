@@ -3,6 +3,7 @@
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -106,6 +107,41 @@ def test_daily_v2_preserves_nonpositive_close_as_a_replay_break(product_cases):
     )
     assert dependency["source_quality"] == "DAILY_INTERRUPTED"
     assert dependency["price_unavailable_count"] == 1
+
+
+def test_daily_v2_incremental_read_uses_daily_quality_union(product_cases):
+    _reader, query, fake = product_cases.paged_reader(
+        prefix_bars=12, page_size=20, frequency="1d",
+    )
+    observed = []
+
+    def ranked_quality(request, *, daily_quality_union=False):
+        observed.append(daily_quality_union)
+        return fake.query_actual_dominant_trading_days(request), ()
+
+    fake.query_actual_dominant_trading_days_quality = ranked_quality
+    fake.dominant_segment_for_day = lambda product, _day: SimpleNamespace(
+        symbol=product, contract=fake.segments[0].contract,
+        start_trading_day=fake.segments[0].start_trading_day,
+    )
+    reader = NewowProductReader(
+        fake, coverage=fake.coverage, active_products=("rb",),
+        now=lambda: fake.as_of,
+        input_quality_policy=InputQualityPolicy.DAILY_V2,
+    )
+    full = reader.load(query, fake.as_of)
+    prior, expected = full.replay_bars[-2:]
+    observed.clear()
+
+    incremental = reader.forward_incremental_bar(
+        product="rb", frequency=ProductFrequency.DAILY,
+        after=prior.bar.bar_end, as_of=fake.as_of,
+        prior_owner_segment_id=prior.bar.segment_id,
+        prior_calculation_segment_id=prior.calculation_segment_id,
+    )
+
+    assert observed == [True]
+    assert incremental == (expected, InputQualityPolicy.DAILY_V2)
 
 
 @pytest.mark.parametrize("gap_index", [5, 11])

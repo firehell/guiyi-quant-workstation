@@ -13,7 +13,9 @@ of `codex/reference-p9-combined-rc`; the generated P9 manifest records it.
 - The merge has no textual conflict. Application and Web version are `1.10.32`.
 - Formal Newow capability is `newow_product_capabilities_v22`: all 60 active
   products have D1/W1; 60m remains closed. The formal D1-v2 quality subset has
-  10 products and W1-v2 has 19. SuBing reference history is 15m/30m/60m/D1;
+  10 products and W1-v2 has 19. Their 87 historical and 87 forward Newow
+  stream identities bind the formal v2 input policy and futures adaptation;
+  V1 streams retain their existing identities. SuBing reference history is 15m/30m/60m/D1;
   forward candidates are 15m/30m/60m. HTDY forward remains
   `MODEL_NOT_APPROVED`. Alert recipients and the 15m notification scope are
   outside this candidate.

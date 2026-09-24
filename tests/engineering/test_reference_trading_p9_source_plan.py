@@ -185,3 +185,26 @@ def test_batch_preserves_typed_market_data_gap_reason():
         planner_context=planner_context, clock=lambda: 0,
     )
     assert report["results"][0]["reason"] == "MAIN_CONTRACT_MAP_MISSING"
+
+
+@pytest.mark.parametrize("reason", [
+    "SUBING_REFERENCE_DATA_UNAVAILABLE", "NEWOW_DATA_INTERRUPTED",
+])
+def test_batch_preserves_safe_strategy_source_reason(reason):
+    requests = _rb_requests()[:1]
+
+    class Planner:
+        def plan(self, request):
+            raise ValueError(reason)
+
+    @contextmanager
+    def planner_context():
+        yield Planner()
+
+    report = plan_batch(
+        requests, operation="build", max_streams=1,
+        max_total_bars=10, max_total_bytes=10, max_total_seconds=300,
+        max_stream_bars=10, max_stream_bytes=10, max_stream_seconds=100,
+        planner_context=planner_context, clock=lambda: 0,
+    )
+    assert report["results"][0]["reason"] == reason
