@@ -1,0 +1,16 @@
+{
+  "artifact_kind": "reference_p9_subing_d1_scope_overlap",
+  "key": "product_contract_month",
+  "limitation": "zero investigation keys are not validated publication targets; no provider source classification or write occurred",
+  "new_zero_investigation_keys": 460,
+  "old_applied_overlap": 0,
+  "old_applied_quality_targets": 156,
+  "readonly": true,
+  "sources": {
+    "outputs/reference-p9-source-inventory-20260925/subing-d1-zero-f769dd2b-readonly.json": "eafe5cb01f64a3865f73f0a48c95568f77be768c26df5dda462ea770fbfbe0ea",
+    "outputs/reference-p9-warmup-wave1-20260925/candidate-plan.json": "de734c196c2e02426a41618a5840bdfcbfaab39e74be5fac13a01b7f403c5505",
+    "outputs/subing-four-period-readiness-20260918/d1-quality-segmentation-production-plan.json": "ad70a8c616fb5138d10959a3bf8f9dee9e5d4d7ebb959e316284842a2566424d"
+  },
+  "wave1_d1_direct_targets": 43,
+  "wave1_d1_overlap": 0
+}

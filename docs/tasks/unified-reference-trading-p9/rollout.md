@@ -33,6 +33,12 @@ strategies, using each product's authoritative start and the fixed
 2026-09-23 cutoff. Its file SHA-256 is
 `a52b99335b0399196578f973b4b1419459e42c5d69eeda5b17841d052545ee8b`.
 All rows still carry `execution_gate=UNVERIFIED`; no historical stream was built.
+The [read-only D1 scope comparison](../../../outputs/reference-p9-source-inventory-20260925/subing-d1-scope-overlap-readonly.json)
+found zero product/physical-contract/month overlap between the 460 current
+zero-price investigation keys and either the wave-1 43 direct D1 targets or
+the 156 targets of the already applied quality batch. The investigation keys
+are not validated publication targets; source classification and a separate
+exact data plan remain necessary.
 
 The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
 Production application schema is still `20260919_0047`; the persisted reader and

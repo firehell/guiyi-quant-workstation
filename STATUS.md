@@ -85,6 +85,13 @@ Runtime health `ok`、overall `passed`，weekly audit `not_run`。
 每条结果的 `execution_gate` 仍为 `UNVERIFIED`；这不是历史构建、页面切换或
 生产验收。原 600 流矩阵是旧代码身份，数据修复与最终代码冻结后仍须全量重算。
 
+苏冰 D1 零价范围交叉核对：460 个“品种×物理合约×月份”调查键与首波
+warm-up 的 43 个 D1 直接月目标重合 0 个，与 9/19 已应用质量批次的 156 个
+目标也重合 0 个。首波缺分区修复不能替代本次零价来源核验；调查键还不是可
+执行发布目标。只读对比见
+`outputs/reference-p9-source-inventory-20260925/subing-d1-scope-overlap-readonly.json`
+（SHA-256 `5398b4d58919b8e903105063dcf711d4ca0bec553ca16f631136669878123686`）。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
