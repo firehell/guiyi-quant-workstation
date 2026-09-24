@@ -50,6 +50,28 @@ class MetadataSnapshot:
     main_contract_starts: Mapping[str, date]
 
 
+class CalendarNightAuthorityError(ValueError):
+    """Bounded, source-free identity for an unproven Calendar night fact."""
+
+    code = "CALENDAR_NIGHT_AUTHORITY_MISSING"
+    reasons = frozenset({
+        "SOURCE_CLAIM_MISMATCH", "UNIVERSE_UNPROVEN", "SESSION_COVERAGE_INCOMPLETE",
+    })
+
+    def __init__(self, exchange_code: str, calendar_day: date, reason_code: str) -> None:
+        if type(exchange_code) is not str or exchange_code not in {
+            "CFFEX", "CZCE", "DCE", "GFEX", "INE", "SHFE"
+        }:
+            raise ValueError("CALENDAR_EXCHANGE_INVALID")
+        if (type(calendar_day) is not date or type(reason_code) is not str
+                or reason_code not in self.reasons):
+            raise ValueError("CALENDAR_AUTHORITY_REASON_INVALID")
+        super().__init__(self.code)
+        self.exchange_code = exchange_code
+        self.calendar_day = calendar_day
+        self.reason_code = reason_code
+
+
 @dataclass(frozen=True, slots=True)
 class PreparedCurrentDayMetadata:
     """Validated current/next-day facts shared by natural sync and recovery.
@@ -532,7 +554,9 @@ def _upsert_calendar(session, values: Mapping[str, Any], sessions) -> None:
     fact = calendar_night_fact(values, sessions)
     claimed = values.get("has_night_session")
     if claimed is not None and (type(claimed) is not bool or claimed is not fact):
-        raise ValueError("CALENDAR_NIGHT_AUTHORITY_MISSING")
+        raise CalendarNightAuthorityError(
+            values["exchange_code"], values["trade_date"], "SOURCE_CLAIM_MISMATCH"
+        )
     if row is not None:
         if row.is_trading_day != values["is_trading_day"] or (
             fact is not None and row.has_night_session != fact
@@ -540,7 +564,14 @@ def _upsert_calendar(session, values: Mapping[str, Any], sessions) -> None:
             raise ValueError("CALENDAR_SOURCE_CONFLICT")
         return
     if fact is None:
-        raise ValueError("CALENDAR_NIGHT_AUTHORITY_MISSING")
+        universe = values.get("night_session_products")
+        reason = (
+            "SESSION_COVERAGE_INCOMPLETE"
+            if isinstance(universe, tuple) and universe else "UNIVERSE_UNPROVEN"
+        )
+        raise CalendarNightAuthorityError(
+            values["exchange_code"], values["trade_date"], reason
+        )
     payload = {
         key: value for key, value in values.items() if key != "night_session_products"
     }
@@ -671,6 +702,12 @@ def _current_and_next_sessions(
         for symbol in products
         for day in (trading_day, next_trading_days[exchanges[symbol]])
     }
+    authority_products = {
+        (row["exchange_code"], row["trade_date"]): set(row["night_session_products"])
+        for row in snapshot.calendars
+        if isinstance(row.get("night_session_products"), tuple)
+        and type(row.get("trade_date")) is date
+    }
     for raw in snapshot.sessions:
         symbol = raw.get("instrument_symbol")
         effective_from = raw.get("effective_from")
@@ -680,7 +717,24 @@ def _current_and_next_sessions(
         )
         if not isinstance(symbol, str) or symbol not in expected:
             if touches_day:
-                raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
+                # Calendar authority context is source-backed but never enters
+                # the operational Session write set.
+                if (
+                    not isinstance(symbol, str)
+                    or type(effective_from) is not date
+                    or effective_to != effective_from
+                    or symbol not in authority_products.get(
+                        (raw.get("exchange_code"), effective_from), set()
+                    )
+                    or raw.get("provider") != "rqdata"
+                    or raw.get("is_active") is not True
+                    or not isinstance(raw.get("session_name"), str)
+                    or not raw["session_name"].strip()
+                    or not isinstance(raw.get("start_time"), time)
+                    or not isinstance(raw.get("end_time"), time)
+                    or type(raw.get("crosses_midnight")) is not bool
+                ):
+                    raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
             continue
         if type(effective_from) is not date or type(effective_to) is not date:
             raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")

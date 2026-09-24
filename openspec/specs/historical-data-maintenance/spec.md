@@ -178,6 +178,9 @@ observational and MUST NOT create a second persisted authority or alter maintena
 解耦；它不属于 historical Bar update，不得调用 full/daily maintenance、写 Canonical、失效 projection、
 通知、retry 或改变 after-market status。精确 snapshot/diff、既有事实冲突、lease 内 Runtime/Catalog CAS、
 provider-free apply 与 commit-unknown 合同由 `data-foundation-metadata` canonical 定义。
+当前盘后负向夜盘证明的 Session source scope SHALL 覆盖交易所当日完整有效品种集合；
+超出 operational 集合的 Session 仅用于 Calendar 证明，不得写入正式 TradingSession 或 rank1。
+缺失仍 SHALL fail closed，并以脱敏诊断记录交易所、日期和缺口类别。
 
 #### Scenario: Runtime or target identity drifts before apply
 - **WHEN** any pinned Runtime fact or recomputed target-window hash differs while the maintenance lease is held

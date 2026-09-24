@@ -194,8 +194,12 @@ MainContractMap 仍只发布当天 rank1。
 请求区间，也不得从请求品种子集仅有日盘推导交易所无夜盘。交易日 false 必须由原始
 `all_instruments(type="Future")` 完整合约集合及逐日生命周期确定当日品种全集，并由该全集每个
 品种的当日 Session 完整覆盖且均无夜盘；缺失生命周期或任一品种 Session 时为 UNKNOWN。
-该全集在筛选请求品种之前取得，不增加 provider 请求。非交易日可直接确定 false。
+该全集在筛选请求品种之前取得。current-day source 的同一次 `get_trading_periods` 请求须包括
+完整交易所有效品种集合各品种的在市物理合约 Session 证明；非 operational 品种只作为
+Calendar 判定上下文，不进入正式 TradingSession/MainContractMap 写入集合。非交易日可直接确定 false。
 UNKNOWN 仅可保留 trading-day 身份一致的已有 Calendar；缺键报 `CALENDAR_NIGHT_AUTHORITY_MISSING`。
+盘后诊断的有界 `failure_context` 记录精确 `exchange_code`、`calendar_day` 与缺口类别
+`UNIVERSE_UNPROVEN`、`SESSION_COVERAGE_INCOMPLETE` 或 `SOURCE_CLAIM_MISMATCH`，不记录源响应。
 有证据的源事实与已有 Calendar 任一布尔字段冲突则整事务 `CALENDAR_SOURCE_CONFLICT`，不得自动
 覆盖已更正的共享历史；实际纠正仍需绑定源证据、精确前像和独立执行意图。首次 bootstrap 或未来
 交易日缺键不能靠猜测填充，必须补齐上述逐日权威证据后再同步。
