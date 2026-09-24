@@ -44,7 +44,17 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
       || current?.schema_version === 'newow_product_capabilities_v8'
       || current?.schema_version === 'newow_product_capabilities_v10'
       || current?.schema_version === 'newow_product_capabilities_v11'
-      || current?.schema_version === 'newow_product_capabilities_v12') {
+      || current?.schema_version === 'newow_product_capabilities_v12'
+      || current?.schema_version === 'newow_product_capabilities_v13'
+      || current?.schema_version === 'newow_product_capabilities_v14'
+      || current?.schema_version === 'newow_product_capabilities_v15'
+      || current?.schema_version === 'newow_product_capabilities_v16'
+      || current?.schema_version === 'newow_product_capabilities_v17'
+      || current?.schema_version === 'newow_product_capabilities_v18'
+      || current?.schema_version === 'newow_product_capabilities_v19'
+      || current?.schema_version === 'newow_product_capabilities_v20'
+      || current?.schema_version === 'newow_product_capabilities_v21'
+      || current?.schema_version === 'newow_product_capabilities_v22') {
       return current.open_frequencies.filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
     }
     if (current?.schema_version === 'newow_product_capabilities_v5' && normalized !== 'au') return []

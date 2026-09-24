@@ -31,6 +31,16 @@ const WEEKLY_PRODUCTS_V8 = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc
 const WEEKLY_PRODUCTS_V10 = 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V11 = 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V12 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V13 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V14 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V15 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V16 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V17 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V18 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V19 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V20 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V21 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V22 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V9 = [...WEEKLY_PRODUCTS_V10, ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' ')]
 
 export class NewowProductRequestError extends Error {
@@ -91,7 +101,37 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const formalWeeklyV12 = value.schema_version === 'newow_product_capabilities_v12'
     && value.release_stage === 'daily_weekly'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
-  const formalWeekly = formalWeeklyV8 || formalWeeklyV10 || formalWeeklyV11 || formalWeeklyV12
+  const formalWeeklyV13 = value.schema_version === 'newow_product_capabilities_v13'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV14 = value.schema_version === 'newow_product_capabilities_v14'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV15 = value.schema_version === 'newow_product_capabilities_v15'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV16 = value.schema_version === 'newow_product_capabilities_v16'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV17 = value.schema_version === 'newow_product_capabilities_v17'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV18 = value.schema_version === 'newow_product_capabilities_v18'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV19 = value.schema_version === 'newow_product_capabilities_v19'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV20 = value.schema_version === 'newow_product_capabilities_v20'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV21 = value.schema_version === 'newow_product_capabilities_v21'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV22 = value.schema_version === 'newow_product_capabilities_v22'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeekly = formalWeeklyV22 || formalWeeklyV8 || formalWeeklyV10 || formalWeeklyV11 || formalWeeklyV12 || formalWeeklyV13 || formalWeeklyV14 || formalWeeklyV15 || formalWeeklyV16 || formalWeeklyV17 || formalWeeklyV18 || formalWeeklyV19 || formalWeeklyV20 || formalWeeklyV21
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(candidate || formalWeekly ? ['weekly_products'] : []),
@@ -110,6 +150,16 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   ) return false
   const expectedWeeklyProducts = remaining19Candidate
     ? WEEKLY_PRODUCTS_V9
+    : formalWeeklyV22 ? WEEKLY_PRODUCTS_V22
+    : formalWeeklyV21 ? WEEKLY_PRODUCTS_V21
+    : formalWeeklyV20 ? WEEKLY_PRODUCTS_V20
+    : formalWeeklyV19 ? WEEKLY_PRODUCTS_V19
+    : formalWeeklyV18 ? WEEKLY_PRODUCTS_V18
+    : formalWeeklyV17 ? WEEKLY_PRODUCTS_V17
+    : formalWeeklyV16 ? WEEKLY_PRODUCTS_V16
+    : formalWeeklyV15 ? WEEKLY_PRODUCTS_V15
+    : formalWeeklyV14 ? WEEKLY_PRODUCTS_V14
+    : formalWeeklyV13 ? WEEKLY_PRODUCTS_V13
     : formalWeeklyV12 ? WEEKLY_PRODUCTS_V12
     : formalWeeklyV11 ? WEEKLY_PRODUCTS_V11
     : formalWeeklyV10 ? WEEKLY_PRODUCTS_V10 : WEEKLY_PRODUCTS_V8
