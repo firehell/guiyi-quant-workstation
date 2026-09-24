@@ -1,36 +1,34 @@
 # 当前状态
 
-## 2026-09-24 v1.10.32 P8/P9 合并候选
+文档整理：2026-09-24。最新 main/annotated tag 为
+`v1.10.32@23892f965b64f788d272a909fa3df3041dacc66a`：PR #395 将 P8/P9、
+盘后 Calendar 修复和 P9 owned-gap 边界修复合为单一候选；远端 main、tag peeled commit
+一致，发布 tree 与已审候选 `71b348f0bdbb86bc668b21a01002964c2718a12e` 一致。
+`v1.10.32` GitHub Release 已于 2026-09-24 创建并读回，非草稿、非预发布，target 为同一精确 commit。
+Runtime promotion 虽获本批授权，但正式只读预检以 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`
+阻断：22:34 CST 生产 Calendar 缺五个交易所的下一交易日 9/28 行，operational 60/60
+阶段均为 `UNKNOWN`；追加只读回读确认 9/28–9/29 的 operational 有效 Session 覆盖亦为
+0/60。未切换 Runtime、未补写 Calendar/Session 或手工重跑盘后。P9
+migration/build/worker activation 与 9/28 自然盘后验收均是独立 Gate。2026-09-24 发布后
+本机只读回读：受管服务仍指向 `v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，
+Reference worker 未启用，API/Web 200，但 Runtime health 与 overall 为 `failed`；盘后服务
+`not_running` 只是调度状态，不据此判定盘后任务失败。
 
-正式 `main` 与 annotated tag `v1.10.31` 指向
-`bf5dbbfbae905111498a0a2b10ede30e73d03c50`；它不包含 P8/P9。
-本机受监督服务只读读回仍指向 detached
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，
-Reference worker 未启用；该次即时 Runtime health 为 `failed`，需单独诊断。
-
-隔离 `codex/reference-p9-combined-rc` 将 `develop@3f5144a2b7acb5fa061a5db9c395153a5a90829b`
-的 P8/P9 工程与已发布 `v1.10.31` 基线合并，候选应用版本为 `1.10.32`。
-本候选仅用于冻结身份、测试和只读核对；未合入 `main`、未创建 `v1.10.32` tag/Release，
-也未执行生产 0048 migration、历史构建、reader 切换、forward 激活或 Runtime promotion。
-精确候选 SHA、能力与数据身份以本任务冻结记录和实际只读输出为准。
-
-以下旧版本段落保留为各自当时的历史检查点，不代表本页首检查点的现役状态。
-
-文档整理：2026-09-24。正式 Release 为
-`v1.10.29@52e360037720f7a4d642599dcece33bf3dc5eb63`：PR #392 精确候选
-`a6fcd3fe6cfa0ec033a04ae0dc60f2d76e2e567a` 已以 merge commit 合入 main，annotated tag peeled commit、
-远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-23 本机只读回读
-API、Web、Live、盘后、Alert 与 weekly audit 六项均绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.29-r1`
-的同一 exact commit，detached checkout 干净，API/Web 返回 200，API version=1.10.29。
+以下为 v1.10.30 历史发布与当时 Runtime 读回：PR #393 精确候选
+`863ee9238513c2431737db86d46fbe4e0cbadab0` 已以 merge commit 合入 main，annotated tag peeled commit、
+远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-24 08:42 本机只读回读
+API、Web、Live、盘后、Alert 与 weekly audit 六项均绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1`
+的同一 exact commit，detached checkout 干净，API/Web 返回 200，API version=1.10.30，Runtime health 与
+本地隧道均为 passed。Reference worker 保持未安装。
 2026-09-23 对 BU2611、EB2611、NI2611、PB2611、PG2611 的 1m→15m 历史输入执行一次受控补齐：
 55 次 provider 请求、110 个目标写入全部成功，零 blocked、零 failed、无重试；独立 dry-run 回读均为
 零剩余请求和零剩余写入目标。随后按 owner 批准仅手工运行一次盘后任务，未通知、未重试；
 `2026-09-23` 以 `passed / attempts=1 / error_code=null` 结束，`after_market_run_missed` 已消除。
 
 该次盘后 Newow consumer audit 因 D1 readiness 误用 W1 quality-policy 混合检查而记录
-`not_verified`；根因修复已以 `476263116` 提交并推送 `origin/develop`，相关 125 项测试通过、
-Ruff/mypy 通过、独立 Review 无 finding，但尚未发布或切换 Runtime。
-2026-09-24 00:01 现役 v1.10.29 即时 health 仍为 `degraded`：跨日窗口 Live 为 11 个夜盘品种
+`not_verified`；根因修复已以 `476263116` 提交并随 v1.10.30 发布、切换 Runtime，相关 125 项测试通过、
+Ruff/mypy 通过、独立 Review 无 finding。
+切换前 2026-09-24 00:01 的 v1.10.29 即时 health 曾为 `degraded`：跨日窗口 Live 为 11 个夜盘品种
 `ok`、49 个尚未进入日盘的品种 `UNKNOWN/unverified`；Alert 为 22 `ok` / 3 `evaluation_failed` /
 96 `unverified`；盘后为 `ok`，weekly audit 仍为 `not_run`且预定 2026-09-26 09:00 自然运行。
 未重跑周审计、未 replay Alert、未补发通知。这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
@@ -42,24 +40,54 @@ weekly_products=50，包含 CJ 与 OI。剩余 10 个未开放 W1 品种为
 PF、PK、PL、PR、PX、RS、SF、SH、SM、SR；全部 60m 继续关闭。v1.10.22 已发布 P5 代码，
 v1.10.23 修复 Newow 分批 checkpoint 配对，v1.10.24 修复合约首夜盘 Session 归属，v1.10.25 扩大
 CLI 计划文件上限；生产 RB 十条开放参考流试点已完成并读回，均 disabled；其他品种覆盖与全局 reader 切换仍为后续 Gate。
-2026-09-23 BZ2604–BZ2609 已按受控批次发布 60 个 1m 来源月及各 60 个 15m/30m/60m
-派生月，18 项 apply 均 passed、provider 请求累计 60；逐项只读重扫为零缺口。
-该数据结果不等于参考流已构建或页面已启用。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-## v1.10.30 Release candidate
+## v1.10.32 main/tag/GitHub Release 读回（Runtime 未切换）
 
-本候选以 exact `origin/develop@55454558629734aff0856d02692c1d4242500980` 为开发输入，并合入
-`origin/main@52e360037720f7a4d642599dcece33bf3dc5eb63` 以保留 v1.10.29 已发布能力和版本历史。
-候选包含 Newow D1 readiness consumer audit 按 W1 quality policy 校验的根因修复，以及 develop 中已完成的
-ReferenceTrade P6/P7 工程内容；版本身份统一为 1.10.30。当前只形成 release candidate：尚未合并 main、
-创建 tag 或 GitHub Release，也未执行 Runtime promotion、生产 migration、数据/Scope 写入或真实通知。
-候选完整非生产后端回归为 4861 passed / 49 skipped / 43 deselected；Web 为 673 passed / 1 skipped，
-production build 通过；OpenSpec 10/10、repository hygiene/canonical 23 项、增量 Ruff/mypy、secret scan
-和 diff check 均通过。
+PR #395 的 head 为 `71b348f0bdbb86bc668b21a01002964c2718a12e`，base 为
+`v1.10.31@bf5dbbfbae905111498a0a2b10ede30e73d03c50`，合并提交为
+`23892f965b64f788d272a909fa3df3041dacc66a`。annotated tag object 为
+`fc093c01a7e09194289b8cb5210d6099479651ec`；远端 main 与 tag peeled commit
+相同，merge tree 与候选 tree 相同。候选定向后端 185 passed，Reference 非 PostgreSQL
+223 passed / 1 skipped，Web 685 passed / 1 skipped，production build、Ruff、聚焦 mypy、
+OpenSpec 10/10、离线锁文件核验通过；独立 Review 无 confirmed issue。secret scan 唯一告警
+是既有测试夹具的固定模拟 token，已核对并在 P8 验收中记录。
+9/28–9/30 冻结源对该精确候选的零 provider、DB READ ONLY 重放：Calendar context 82 品种，
+正式 Session 仅 operational 60 品种、9/28–9/29 共 405 行，rank1 仅 9/28 的 60 行；
+未知 Calendar、缺失 Session key 与既有值冲突均为零。捕获发生于 9/24，不代表 9/28
+自然源或任务必然通过。[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.32)
+已于 2026-09-24T14:28:48Z 发布，非草稿、非预发布，target commit 为
+`23892f965b64f788d272a909fa3df3041dacc66a`。精确 tag 的独立候选 Runtime root
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.32-r1` 已 detached 且干净，离线 Python locked
+依赖已安装；22:34 CST 预检返回 `blocked / MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE /
+operational_count=60 / snapshot_count=0 / trading_day=null`。只读生产阶段回读为
+`UNKNOWN` 60/60（DCE 18、SHFE 15、CZCE 20、INE 2、GFEX 5）：五交易所 Calendar
+均有 9/24 当日与 9/25–9/27 非交易日行，均缺下一交易日 9/28 行；9/28–9/29
+operational 有效 Session 覆盖均为 0/60，正式 rank1 行也均为 0/60。Runtime promotion、
+自然盘后、P9 production migration/build/reader cutover/worker activation 均未执行。
+
+## v1.10.30 Release 与 Runtime promotion 读回
+
+PR #393 精确候选 `863ee9238513c2431737db86d46fbe4e0cbadab0` 已合入 main；merge commit 为
+`120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，发布 tree 与候选一致。annotated tag `v1.10.30` 的 tag object
+为 `5a3af1e93d3a7ed2b0dd571a74082de300fd6276`，peeled commit 与远端 main 一致；非草稿、非预发布的
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.30) 已发布。
+
+独立 detached root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1` 完成 locked 依赖安装、Web
+production build、486 项 promotion/health/canonical 定向测试和 launchd render-only。Market promotion
+preflight 为 `passed / snapshot_ready / trading_day=2026-09-24 / operational_count=60 / snapshot_count=60`。
+外接卷 guard 首次在任何 mutation 前停止；显式启用既有外接卷安全开关后完成 Market 切换。base 首次加载后
+发现 API 未继承既有通知配置路径，随后在 Alert 切换前使用同一安装器恢复原安全路径并重载 API/Web；Alert
+与 weekly audit 再各安装一次。最终六项 plist/launchctl 身份均指向该 root 与 exact commit，API/Web 200，
+Runtime health 与本地隧道均 passed，Reference worker 仍未安装。2026-09-24 owner 明确要求只保留最新发布树；
+已移除 v1.10.26–v1.10.29 旧 Runtime、v1.10.28–v1.10.30 已合并发布候选树及已合并 P6/P7 任务树。
+v1.10.26 内唯一未跟踪 `outputs/cj-weekly-no-trade/prepare.json` 已在单独明确批准后随旧树删除，删除前
+SHA-256 为 `870b73d5ee92472ec58c83a297d3138918d2df33c71032362d46e81f72d0c11c`，不能从 Git 恢复。
+未手工运行盘后、weekly audit，未 replay 或补发通知，也未执行生产 migration、数据或 Scope 写入；新版本
+自然 completed Live、自然盘后与 weekly audit 仍是独立 Gate，因此不声明 `RUNTIME_READY`。
 
 ## v1.10.29 Release 与 Runtime promotion 读回
 
@@ -280,17 +308,17 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.29@52e36003`，annotated tag peeled commit、origin/main 与已发布 GitHub Release target 一致 |
-| 现役 Runtime | v1.10.29 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 六服务均指向 exact `v1.10.29@52e36003`，API/Web 200；Market preflight `snapshot_ready` 60/60；Runtime health degraded，Live 59/60 ok，Alert coverage 仍有 lagging/failed，盘后 missed，weekly audit not_run。未重跑或补发通知 |
+| 最新 main/tag | `RELEASED` | `v1.10.32@23892f96`，annotated tag peeled commit、origin/main、候选 tree 与 GitHub Release target 一致；Release 非草稿、非预发布 |
+| 现役 Runtime | v1.10.30 `RUNTIME_PROMOTED / RUNTIME_READY_UNVERIFIED` | 9/24 发布后只读回读仍指向 `v1.10.30@120c5c94`，Reference worker disabled，API/Web 200，Runtime health 与 overall `failed`；v1.10.32 预检因生产 9/28 Calendar/Session 缺口阻断，未切换；盘后 `not_running` 不单独构成失败证据 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker 或全局 persisted reader；P4/P5 代码已随 v1.10.22 发布 |
 | Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_COMPLETE` | RB 十条开放参考流 exact-hash 构建并读回 READY/active revision，全部 enabled=false；12 个物理合约的 1m/15m/30m/60m 预热已完成。苏冰 15m/30m/60m 依严格 checkpoint 完成，分别 228/120/71 批；P6 worker 未启用，全局 reader 仍为 legacy |
 | Unified Reference Trading P5 读取与页面 | `RELEASED / RUNTIME_PROMOTED / READER_LEGACY` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已随 v1.10.22 发布；隔离 Canonical/MDS/P4 浏览器实读与两笔交易分页通过，独立 Review 无 Confirmed Issue。生产 0047 已执行；v1.10.25 时全局 reader=legacy，RB 苏冰 15m 旧接口两页生产只读 HTTP 200；persisted reader 尚未切换 |
-| Unified Reference Trading P8 工程证据 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | `a62e5014b` 五次独立隔离测试：同一 worker 连续五个完成 Bar 的 300 条真实 MDS 流、10,000 Bar 真实参考交易重建及查询计划/表索引大小均已记录；完整 Market 路由浏览器、进程崩溃恢复和 D1/W1 有界增量见 P8 验收文档。当前 Runtime v1.10.30 未安装 Reference worker；真实冷缓存、自然 Live、正式数据与 release/promotion 仍未验收，不开放生产能力 |
+| Unified Reference Trading P8/P9 工程代码 | `MAIN_TAG_PUBLISHED / EXTERNAL_GATE_PENDING` | v1.10.32 含 P8/P9 与 owned-gap 修复；隔离容量证据见 P8 验收，P9 全 600 历史流仍须 exact source/DB inventory。Runtime v1.10.30 未安装 Reference worker；migrate、build、reader cutover、worker activation、自然 Live 均未执行，不开放生产能力 |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
-| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | 已安装且 loaded 的 plist 指向 v1.10.29 exact root/commit；本轮只读状态为 `not_run`，launchd 当时未运行；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
+| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | 已安装且 loaded 的 plist 指向 v1.10.30 exact root/commit；本轮只读状态为 `not_run`，launchd 当时未运行；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 自 v1.10.8 起已发布并进入 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
@@ -303,7 +331,7 @@ owner 已批准 v1.10.22 发布及 RB 全历史试点，窗口为 2023-01-01 至
 
 RB 十条开放参考流中，牛哇三策略 D1/W1 六条及苏冰 D1 共七条 exact-hash 构建并读回 `READY / enabled=false`。苏冰 15m/30m/60m 已能只读规划，分别为 58020/30287/17692 根输入，计划文件 8.4/4.7/3.0 MB。v1.10.24 上第一次苏冰 15m build 在读取文件时返回 `CLI_INTERNAL_ERROR / ValueError`；只读复现为 `REFERENCE_PATH_INVALID`：CLI 共享 JSON 上限 1 MiB，执行前未创建 revision。已停止其余两条生产构建。修复只把 plan 文件上限提升至 16 MiB，request 与 resume token 仍为 1 MiB；三份真实计划只读 dry-run 均通过，定向红绿、157 项 P4 关联测试与独立 Review 无 Confirmed Issue。修复已合入 develop 且随 v1.10.25 发布。owner 批准的发布后单次构建已执行：苏冰 15m 的 600 秒预算返回 `partial / INTERRUPTED`，已提交 63 批、15872/58020 根输入，candidate `39147f96b5cd485cb3799cbed13512e0` 保持 `NOT_BUILT / enabled=false`，active revision 为空；严格恢复令牌与原计划 hash `5c31346a00237f65eca0197454e455a1d1f623631bc876daacf18523694d1130` 只读核对及 CLI dry-run 均通过。后续 owner 指示受控续跑后，15m 精确令牌恢复三次完成，30m 首次构建加一次恢复完成，60m 首次构建完成；三条分别读回 228/120/71 批、1264/632/396 个 action、718/366/227 笔参考交易，均 `READY / active revision / enabled=false`。RB 十条流全部就绪，生产全局 reader 仍未切换。develop 中另有 1 项 P4 集成测试既有失败，未改动的 develop 基线同样复现；v1.10.24 发布 tag 上该测试通过。
 
-P5 页面读取与分页已在隔离 Canonical/MDS/P4 浏览器验收；v1.10.26 时生产全局 reader 为 `legacy`，RB 十条流 disabled。v1.10.25 当时六服务回读与工作树清理属历史记录；现役 Runtime 为 v1.10.27。此前开放范围据 active 60 品种、牛哇 D1 三策略、开放 W1 49 品种三策略和苏冰四周期，共 567 条参考流；扣除 RB 10 条，557 条仍未构建。BZ 数据批次只补齐物理行情，不算构建参考流。现役 reader 与 Scope 须独立复核；release/worktree 保留情况以当前 `git worktree list` 和服务引用为准，不沿用旧快照。
+P5 页面读取与分页已在隔离 Canonical/MDS/P4 浏览器验收；生产全局 reader 仍为 `legacy`，十条流仍 disabled，现役 Runtime 已读回 v1.10.25 六服务一致且 overall=passed。其余已开放页面据 active 60 品种、牛哇 D1 三策略、开放 W1 48 品种三策略和苏冰四周期，共 564 条参考流；扣除 RB 10 条，554 条仍未构建。全局 persisted reader 切换未执行；本机六服务已依 Market → API/Web/日志轮转 → Alert → weekly audit 顺序晋升到 v1.10.25，旧 v1.10.20 Runtime root 在无服务/进程引用后移除。临时旧版 release/pilot/fix worktree 已清理，仅保留最新 v1.10.25 release worktree、现役 Runtime、develop 与仍在用的任务 worktree。
 
 ## v1.10.12 Runtime 切换即时读回（2026-09-17）
 
