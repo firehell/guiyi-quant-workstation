@@ -3,8 +3,9 @@
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
-现役服务仍为 `v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，Runtime health
-因 9/24 盘后旧失败状态仍为 `failed`；未执行 v1.10.33 Runtime promotion，也未取得 9/28 自然盘后证据。
+本机原已安装的六项服务已切换到 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`，
+API/Web 为 200；Runtime API health 为 `degraded / readonly=true`，主因是新根尚无 9/24 自然盘后状态，
+报 `after_market_run_missed`。尚无本版本自然 completed Bar 或 9/28 自然盘后验收证据，不声明 `RUNTIME_READY`。
 
 以下为此前 v1.10.32 的历史发布和预检状态。`v1.10.32@23892f965b64f788d272a909fa3df3041dacc66a`：PR #395 将 P8/P9、
 盘后 Calendar 修复和 P9 owned-gap 边界修复合为单一候选；远端 main、tag peeled commit
@@ -72,9 +73,27 @@ snapshot SHA-256 为 `5ea406054128d7c3acdd344445319a2997a5c4d32aeaeb41d5b7dd2e8c
 未下载 Bar、未写 Canonical、未改旧盘后状态、未手工重跑任务。
 
 随后只读 Market promotion preflight 返回 `passed / snapshot_ready / trading_day=2026-09-24 /
-operational_count=60 / snapshot_count=60`。五项受管服务仍指向 v1.10.30，API/Web 200，
-after-market 为 `not_running`，Runtime health 与 overall 仍为 `failed`。预检通过不等于
-Runtime promotion 或自然盘后验收；v1.10.33 正式切换仍是独立 Gate。
+operational_count=60 / snapshot_count=60`。切换前五项受管服务仍指向 v1.10.30，API/Web 200，
+after-market 为 `not_running`，Runtime health 与 overall 为 `failed`。预检通过本身不等于
+Runtime promotion 或自然盘后验收；随后取得独立授权并完成切换，见下文。
+
+### v1.10.33 本机 Runtime promotion 即时读回
+
+2026-09-24 23:22 CST 后，依据 owner 对 exact tag/commit 和失败恢复范围的独立授权，
+干净 detached 目标根 `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/recovery-v1.10.33`
+完成锁定离线 Python 安装、Web production build、launchd render-only 和最新只读
+`snapshot_ready` 预检。旧 `v1.10.30` 根保持干净且保留供受控恢复，两个根的 operational 清单逐字节一致。
+安装顺序为 Market（盘后保持 idle，再启动 Live）→ API/Web/日志轮转 → Alert → 原已启用的
+weekly audit；Reference worker 未启用。六项已安装 plist 的 root/40 位 commit 精确指向 v1.10.33，
+五项常规服务读回进程身份一致，周审计标签 loaded、任务未手工启动。API `/api/health`
+返回 `ok / version=1.10.33 / readonly=true`，Web 200，本地 FRPC 链路检查 passed。
+
+最新只读 `/api/runtime/health` 为 `degraded / readonly=true`：DB、Redis、Live 为 `ok`，
+Live/Alert 心跳刷新，但 Live `subscribed_count=0 / coverage_state=unverified`，尚无本版本 completed Bar。
+新根不继承旧根 9/24 的失败状态，也无该日自然盘后记录，盘后项为 `after_market_run_missed`；
+Alert 为 `degraded`，weekly audit 为 `not_run`。旧根失败状态字节 SHA-256 未变，仍为
+`1c9f75f6eb2398d6e791060925a2e6188f41ad4a4b6095fc42ff4f61ffab68d4`。
+未手工补跑盘后、复制状态、重放通知或回退；后续自然业务验收仍待真实事件。
 
 ## v1.10.32 main/tag/GitHub Release 读回（Runtime 未切换）
 
