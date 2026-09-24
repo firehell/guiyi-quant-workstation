@@ -26,6 +26,13 @@ zero enabled forward streams, and no `0048` columns. It counted ten revisions,
 485 batches, 2,861 actions, 1,514 trades and 38,700 marks. The existing
 `0047` batch-kind check is intact. Migration, backup and post-migration readback
 remain pending. A fresh preflight is required immediately before migration.
+The [full W1 read-only audit](../../../outputs/reference-p9-source-inventory-20260925/w1-full-f3cf5957-readonly.json)
+at fix commit `f3cf595738d2a2fdd20a69e4ec21e23e3a905dbf` returned
+`SOURCE_READY=180 / BLOCKED=0` for 60 products and all three formal Newow
+strategies, using each product's authoritative start and the fixed
+2026-09-23 cutoff. Its file SHA-256 is
+`a52b99335b0399196578f973b4b1419459e42c5d69eeda5b17841d052545ee8b`.
+All rows still carry `execution_gate=UNVERIFIED`; no historical stream was built.
 
 The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
 Production application schema is still `20260919_0047`; the persisted reader and

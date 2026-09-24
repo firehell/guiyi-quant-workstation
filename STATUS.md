@@ -77,6 +77,14 @@ Runtime health `ok`、overall `passed`，weekly audit `not_run`。
 （SHA-256 `80797a87ee5a6e727c525b8c787456485586aaf658c8d6683da326c09c118e51`）。
 迁移前仍须重做身份/前像核对并备份；本次没有执行 migration。
 
+完整牛哇 W1 只读重审（修复代码 `f3cf5957`、生产 `0047`、截至 2026-09-23）：
+沿用原矩阵 60 品种各自的权威起点，180 条正式历史候选流身份全部唯一且
+`SOURCE_READY=180 / BLOCKED=0`，每品种三策略齐全。证据见
+`outputs/reference-p9-source-inventory-20260925/w1-full-f3cf5957-readonly.json`
+（SHA-256 `a52b99335b0399196578f973b4b1419459e42c5d69eeda5b17841d052545ee8b`）。
+每条结果的 `execution_gate` 仍为 `UNVERIFIED`；这不是历史构建、页面切换或
+生产验收。原 600 流矩阵是旧代码身份，数据修复与最终代码冻结后仍须全量重算。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
