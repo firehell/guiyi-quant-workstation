@@ -1,7 +1,17 @@
 # 当前状态
 
-文档整理：2026-09-24。正式 Release 为
-`v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`：PR #393 精确候选
+文档整理：2026-09-24。最新 main/annotated tag 为
+`v1.10.32@23892f965b64f788d272a909fa3df3041dacc66a`：PR #395 将 P8/P9、
+盘后 Calendar 修复和 P9 owned-gap 边界修复合为单一候选；远端 main、tag peeled commit
+一致，发布 tree 与已审候选 `71b348f0bdbb86bc668b21a01002964c2718a12e` 一致。
+本批只获 main/tag 授权，`v1.10.32` GitHub Release 对象未创建；最近的完整 GitHub Release
+仍为 `v1.10.31@bf5dbbfbae905111498a0a2b10ede30e73d03c50`。Runtime promotion、P9
+migration/build/worker activation 与 9/28 自然盘后验收均是独立 Gate。2026-09-24 发布后
+本机只读回读：受管服务仍指向 `v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，
+Reference worker 未启用，API/Web 200，但 Runtime health 与 overall 为 `failed`；盘后服务
+`not_running` 只是调度状态，不据此判定盘后任务失败。
+
+以下为 v1.10.30 历史发布与当时 Runtime 读回：PR #393 精确候选
 `863ee9238513c2431737db86d46fbe4e0cbadab0` 已以 merge commit 合入 main，annotated tag peeled commit、
 远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-24 08:42 本机只读回读
 API、Web、Live、盘后、Alert 与 weekly audit 六项均绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1`
@@ -31,6 +41,22 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
+
+## v1.10.32 main/tag 发布读回（Runtime 未切换）
+
+PR #395 的 head 为 `71b348f0bdbb86bc668b21a01002964c2718a12e`，base 为
+`v1.10.31@bf5dbbfbae905111498a0a2b10ede30e73d03c50`，合并提交为
+`23892f965b64f788d272a909fa3df3041dacc66a`。annotated tag object 为
+`fc093c01a7e09194289b8cb5210d6099479651ec`；远端 main 与 tag peeled commit
+相同，merge tree 与候选 tree 相同。候选定向后端 185 passed，Reference 非 PostgreSQL
+223 passed / 1 skipped，Web 685 passed / 1 skipped，production build、Ruff、聚焦 mypy、
+OpenSpec 10/10、离线锁文件核验通过；独立 Review 无 confirmed issue。secret scan 唯一告警
+是既有测试夹具的固定模拟 token，已核对并在 P8 验收中记录。
+9/28–9/30 冻结源对该精确候选的零 provider、DB READ ONLY 重放：Calendar context 82 品种，
+正式 Session 仅 operational 60 品种、9/28–9/29 共 405 行，rank1 仅 9/28 的 60 行；
+未知 Calendar、缺失 Session key 与既有值冲突均为零。捕获发生于 9/24，不代表 9/28
+自然源或任务必然通过。GitHub Release、Runtime promotion、自然盘后、P9 production
+migration/build/reader cutover/worker activation 均未执行。
 
 ## v1.10.30 Release 与 Runtime promotion 读回
 
@@ -271,13 +297,13 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.30@120c5c94`，annotated tag peeled commit、origin/main 与已发布 GitHub Release target 一致 |
-| 现役 Runtime | v1.10.30 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 六服务均指向 exact `v1.10.30@120c5c94`，API/Web 200；Market preflight `snapshot_ready` 60/60；即时 Runtime health 与本地隧道 passed。未手工运行盘后或 weekly audit，未 replay 或补发通知 |
+| 最新 main/tag | `MAIN_TAG_PUBLISHED / GITHUB_RELEASE_PENDING` | `v1.10.32@23892f96`，annotated tag peeled commit、origin/main、候选 tree 一致；GitHub Release 对象未创建 |
+| 现役 Runtime | v1.10.30 `RUNTIME_PROMOTED / RUNTIME_READY_UNVERIFIED` | 9/24 发布后只读回读仍指向 `v1.10.30@120c5c94`，Reference worker disabled，API/Web 200，Runtime health 与 overall `failed`；v1.10.32 未切换，盘后 `not_running` 不单独构成失败证据 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker 或全局 persisted reader；P4/P5 代码已随 v1.10.22 发布 |
 | Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_COMPLETE` | RB 十条开放参考流 exact-hash 构建并读回 READY/active revision，全部 enabled=false；12 个物理合约的 1m/15m/30m/60m 预热已完成。苏冰 15m/30m/60m 依严格 checkpoint 完成，分别 228/120/71 批；P6 worker 未启用，全局 reader 仍为 legacy |
 | Unified Reference Trading P5 读取与页面 | `RELEASED / RUNTIME_PROMOTED / READER_LEGACY` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已随 v1.10.22 发布；隔离 Canonical/MDS/P4 浏览器实读与两笔交易分页通过，独立 Review 无 Confirmed Issue。生产 0047 已执行；v1.10.25 时全局 reader=legacy，RB 苏冰 15m 旧接口两页生产只读 HTTP 200；persisted reader 尚未切换 |
-| Unified Reference Trading P8 工程证据 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | `a62e5014b` 五次独立隔离测试：同一 worker 连续五个完成 Bar 的 300 条真实 MDS 流、10,000 Bar 真实参考交易重建及查询计划/表索引大小均已记录；完整 Market 路由浏览器、进程崩溃恢复和 D1/W1 有界增量见 P8 验收文档。当前 Runtime v1.10.30 未安装 Reference worker；真实冷缓存、自然 Live、正式数据与 release/promotion 仍未验收，不开放生产能力 |
+| Unified Reference Trading P8/P9 工程代码 | `MAIN_TAG_PUBLISHED / EXTERNAL_GATE_PENDING` | v1.10.32 含 P8/P9 与 owned-gap 修复；隔离容量证据见 P8 验收，P9 全 600 历史流仍须 exact source/DB inventory。Runtime v1.10.30 未安装 Reference worker；migrate、build、reader cutover、worker activation、自然 Live 均未执行，不开放生产能力 |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
