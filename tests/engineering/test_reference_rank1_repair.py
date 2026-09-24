@@ -98,7 +98,8 @@ def test_plan_is_insert_only_then_equal_and_conflict_blocks() -> None:
         session.flush()
         plan = MODULE["_plan"](
             session, contracts, source_sha="a" * 64, code_sha="b" * 40,
-            universe_sha="c" * 64, database="guiyi_quant",
+            universe_sha="c" * 64, database="guiyi_quant", endpoint_sha="d" * 64,
+            subscriptions=contracts,
         )
         assert plan["counts"] == {"total": 60, "insert": 60, "equal": 0}
         MarketCatalog(session, Path("/tmp")).upsert_main_contracts(
@@ -106,7 +107,8 @@ def test_plan_is_insert_only_then_equal_and_conflict_blocks() -> None:
         )
         equal = MODULE["_plan"](
             session, contracts, source_sha="a" * 64, code_sha="b" * 40,
-            universe_sha="c" * 64, database="guiyi_quant",
+            universe_sha="c" * 64, database="guiyi_quant", endpoint_sha="d" * 64,
+            subscriptions=contracts,
         )
         assert equal["counts"] == {"total": 60, "insert": 0, "equal": 60}
         assert equal["plan_sha256"] != plan["plan_sha256"]
@@ -116,5 +118,22 @@ def test_plan_is_insert_only_then_equal_and_conflict_blocks() -> None:
         with pytest.raises(MODULE["RepairBlocked"], match="RANK1_CONFLICT"):
             MODULE["_plan"](
                 session, contracts, source_sha="a" * 64, code_sha="b" * 40,
-                universe_sha="c" * 64, database="guiyi_quant",
+                universe_sha="c" * 64, database="guiyi_quant", endpoint_sha="d" * 64,
+                subscriptions=contracts,
+            )
+        with pytest.raises(MODULE["RepairBlocked"], match="SUBSCRIPTION_SNAPSHOT_DRIFT"):
+            MODULE["_plan"](
+                session, contracts, source_sha="a" * 64, code_sha="b" * 40,
+                universe_sha="c" * 64, database="guiyi_quant", endpoint_sha="d" * 64,
+                subscriptions=None,
+            )
+        row.contract_code = contracts["p00"]
+        bad_contract = session.query(Contract).filter_by(contract_code=contracts["p00"]).one()
+        bad_contract.provider = "untrusted"
+        session.flush()
+        with pytest.raises(MODULE["RepairBlocked"], match="CONTRACT_IDENTITY_DRIFT"):
+            MODULE["_plan"](
+                session, contracts, source_sha="a" * 64, code_sha="b" * 40,
+                universe_sha="c" * 64, database="guiyi_quant", endpoint_sha="d" * 64,
+                subscriptions=contracts,
             )

@@ -121,8 +121,11 @@ def _exact_checkout(expected_sha: str) -> None:
 
 def _plan(
     session: Session, contracts: dict[str, str], *, source_sha: str,
-    code_sha: str, universe_sha: str, database: str,
+    code_sha: str, universe_sha: str, database: str, endpoint_sha: str,
+    subscriptions: dict[str, str] | None,
 ) -> dict[str, object]:
+    if subscriptions != contracts:
+        raise RepairBlocked("SUBSCRIPTION_SNAPSHOT_DRIFT")
     if session.execute(text("SELECT current_database()")).scalar_one() != database:
         raise RepairBlocked("DATABASE_IDENTITY_DRIFT")
     if session.execute(text("SELECT version_num FROM alembic_version")).scalar_one() != "20260919_0047":
@@ -154,6 +157,7 @@ def _plan(
         if (
             contract is None or contract.instrument_symbol != symbol
             or contract.exchange_code != instrument.exchange_code
+            or (contract.provider or "").strip().lower() != "rqdata"
             or contract.listed_date is None or contract.listed_date > DAY
             or contract.expired_date is None or contract.expired_date <= DAY
         ):
@@ -175,6 +179,7 @@ def _plan(
         "schema_version": 1, "operation": "reference_rank1_gap_repair_20260924",
         "readonly": True, "code_sha": code_sha, "source_sha256": source_sha,
         "universe_sha256": universe_sha, "database": database,
+        "endpoint_sha256": endpoint_sha,
         "alembic_version": "20260919_0047", "trading_day": DAY.isoformat(),
         "counts": {
             "total": len(rows),
@@ -229,11 +234,25 @@ def main() -> int:
         universe_sha = sha256((ROOT / "data/universe/operational_products.txt").read_bytes()).hexdigest()
 
         from sqlalchemy import create_engine
+        from sqlalchemy.engine import make_url
+        from redis import Redis
         from app.db.url import normalize_database_url
+        from app.market_data.closeout_binding import _redis_url
+        from app.market_data.live_market import RedisLiveStore
         settings = runtime_dependency_settings(
             (Path.home() / "Library/Application Support/GuiyiQuant/project.env").read_bytes()
         )
+        if any(key.startswith("PG") for key in os.environ):
+            raise RepairBlocked("AMBIENT_PG_CONFIG")
+        db_url = make_url(normalize_database_url(settings["DATABASE_URL"]))
+        if db_url.get_backend_name() != "postgresql":
+            raise RepairBlocked("DATABASE_ENDPOINT_INVALID")
+        endpoint_sha = _digest({
+            "driver": db_url.drivername, "host": db_url.host, "port": db_url.port,
+            "database": db_url.database, "username": db_url.username,
+        })
         engine = create_engine(normalize_database_url(settings["DATABASE_URL"]))
+        redis = Redis.from_url(_redis_url(settings))
         try:
             with Session(engine, autoflush=False) as session:
                 if args.phase == "plan":
@@ -241,7 +260,8 @@ def main() -> int:
                     plan = _plan(
                         session, contracts, source_sha=args.expected_source_sha256,
                         code_sha=args.expected_code_sha, universe_sha=universe_sha,
-                        database=args.expected_database_name,
+                        database=args.expected_database_name, endpoint_sha=endpoint_sha,
+                        subscriptions=RedisLiveStore(redis).subscriptions(DAY),
                     )
                     _write_plan(args.output, plan)
                     session.rollback()
@@ -257,12 +277,14 @@ def main() -> int:
                     lease = catalog.acquire_maintenance_lock()
                     if lease is None:
                         raise RepairBlocked("MAINTENANCE_LOCKED")
+                    committed = False
                     try:
                         _exact_checkout(args.expected_code_sha)
                         fresh = _plan(
                             session, contracts, source_sha=args.expected_source_sha256,
                             code_sha=args.expected_code_sha, universe_sha=universe_sha,
-                            database=args.expected_database_name,
+                            database=args.expected_database_name, endpoint_sha=endpoint_sha,
+                            subscriptions=RedisLiveStore(redis).subscriptions(DAY),
                         )
                         if fresh["plan_sha256"] != args.expected_plan_sha256:
                             raise RepairBlocked("PLAN_DRIFT")
@@ -270,22 +292,33 @@ def main() -> int:
                             row["symbol"] for row in fresh["rows"] if row["state"] == "insert"
                         }
                         if inserts:
-                            catalog.upsert_main_contracts(
-                                (symbol, DAY, contracts[symbol]) for symbol in sorted(inserts)
-                            )
+                            session.add_all(MainContractMap(
+                                symbol=symbol, trade_date=DAY,
+                                contract_code=contracts[symbol], rank=1,
+                                rule="volume_open_interest",
+                            ) for symbol in sorted(inserts))
+                            session.flush()
                         try:
                             session.commit()
+                            committed = True
                         except Exception as exc:
                             session.rollback()
                             raise RepairBlocked("COMMIT_OUTCOME_UNKNOWN") from exc
-                        print(json.dumps({
-                            "status": "applied", "readonly": False,
-                            "plan_sha256": fresh["plan_sha256"],
-                            "writes": fresh["counts"]["insert"],
-                        }, sort_keys=True))
                     finally:
-                        lease.release()
+                        try:
+                            lease.release()
+                        except Exception as exc:
+                            raise RepairBlocked(
+                                "COMMIT_OUTCOME_UNKNOWN" if committed
+                                else "MAINTENANCE_RELEASE_FAILED"
+                            ) from exc
+                    print(json.dumps({
+                        "status": "applied", "readonly": False,
+                        "plan_sha256": fresh["plan_sha256"],
+                        "writes": fresh["counts"]["insert"],
+                    }, sort_keys=True))
         finally:
+            redis.close()
             engine.dispose()
     except RepairBlocked as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, sort_keys=True))
