@@ -71,8 +71,9 @@ enabled by this arithmetic.
    SuBing uses completed 15m/30m/60m observations. No missed interval is
    backfilled as first-seen. HTDY stays `MODEL_NOT_APPROVED` until its specific
    first-seen/reversal model is accepted. Installing the worker needs a
-   reviewed, exact-root, default-off launcher and activation marker; the
-   current installer only renders the plist. Alert rule, audience, and 15m
+   reviewed, exact-root, default-off launcher and activation marker. The
+   active v1.10.30 installer only renders the plist; this P9 candidate adds
+   a controlled install mode. Alert rule, audience, and 15m
    notification scope stay independent.
 6. **Prove natural behavior and recovery.** After enablement, collect actual
    completed-Bar processing, no-signal watermark progress, first new signal,
