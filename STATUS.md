@@ -1,5 +1,16 @@
 # 当前状态
 
+2026-09-25 参考交易收尾现场：生产应用库仍为 `20260919_0047`，现役版本仍为
+`v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`。9/24 缺失的 operational
+60 品种 rank1 映射已用冻结源、精确计划和维护锁一次性补齐，只读回查 `equal=60 / insert=0`；
+无 provider 请求或 Canonical 写入。RB 十条历史试点流按真实 DB/Canonical 根重新审计为
+`SOURCE_READY=10/10`。扩展审计发现苏冰分钟流的物理合约历史输入缺口：A、AG、AL、AP、AU
+共 50 条候选中 37 ready、13 blocked；AO 按上市起点审计 7/10 ready。首个精确缺口
+A2305 15m 的只读 warm-up 计划需 1 个直接 1m 目标与 9 个派生目标。尚未执行
+`0048` migration、其余历史构建、全局 persisted reader 切换或 Reference worker 启用；
+本轮修复代码尚未发布。分层证据与计划身份见
+`docs/tasks/unified-reference-trading-p9/rollout.md`。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。

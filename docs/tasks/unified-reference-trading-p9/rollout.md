@@ -1,5 +1,32 @@
 # Unified Reference Trading P9 rollout
 
+## 2026-09-25 production checkpoint
+
+The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
+Production application schema is still `20260919_0047`; the persisted reader and
+Reference worker remain disabled. The previously missing 2026-09-24 rank-1
+metadata for all 60 operational products was repaired once from the frozen
+9/24 source capture (`b15453c3c4bc07c4ba031876b1e5ebd7354937168708d471bcc3bab8b97f2ae8`).
+The reviewed one-time code was `b21341d252111f6c37e7ea84fb896828d9ee9ceb`;
+the production plan was `e5e6b12210617e9a573270a874aa436b55e4462613232076ae3d48ea9d92dc16`.
+It inserted exactly 60 rows without provider or Canonical writes, and the
+independent read-only replan returned `equal=60, insert=0`.
+
+With both the production DB and Canonical root bound, a read-only audit of the
+published code's RB pilot window (2023-01-01 through 2026-09-23) returned
+`SOURCE_READY=10/10`. A broader six-product audit returned 37/60 ready. AO
+was initially queried before its authoritative 2023-06-19 listing start;
+re-auditing from that start returned 7/10 ready. Raising the source budget
+above measured estimates for A, AG, AL, AP and AU returned 37/50 ready and
+13 SuBing minute streams blocked by `SUBING_REFERENCE_DATA_UNAVAILABLE`.
+One exact blocker is physical A2305 15m: the read-only warm-up plan
+`09b3b98deb8d815007cfde908ea0fd2d9ed70d0478fdf564541d7d4b3d08c2c7`
+requires one direct 1m target and nine derived targets. This partial audit
+does not establish the other products' source readiness or authorize a data
+batch. The 0048 migration, additional historical builds, reader cutover,
+forward activation, release of this closeout code, and natural acceptance
+remain separate pending Gates.
+
 ## Current checkpoint (2026-09-24)
 
 P8 is integrated into `develop@efc896a1ad0f518383d27542207e95a80a0dd804` with
