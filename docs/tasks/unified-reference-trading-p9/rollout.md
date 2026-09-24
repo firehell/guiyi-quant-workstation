@@ -4,6 +4,8 @@
 
 P8 is integrated into `develop@efc896a1ad0f518383d27542207e95a80a0dd804` with
 code, targeted tests, independent review and isolated browser/worker/capacity evidence.
+P9's default-off worker installation, identity inventory and bounded read-only
+source audit are integrated into `develop@7a80b8564a540ef318fd3c7f1ca647615019f742`.
 Production is a separate boundary. The active workstation still runs
 `v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`; its Reference worker
 is absent. A read-only, loopback-enabled `local-services-status.sh` on 2026-09-24
@@ -34,6 +36,18 @@ would be new. This is an enumeration ceiling, not 600 data-ready streams or a
 single unbounded apply batch. The forward candidate ceiling is 540 identities
 (three Newow strategies × D1/W1 and SuBing × 15m/30m/60m); no stream is
 enabled by this arithmetic.
+
+A real RB-only source audit at code `e01d60f33faf9fdf2152ff07a92ea0ae4e8fe0ed`
+used `since=2023-01-01`, `through=2026-09-23`, and
+`as_of=2026-09-23T08:00:00Z`: 10/10 streams were `SOURCE_READY`, with 117,890
+input bars and 41,407,559 input bytes, zero DB data writes and released
+per-stream maintenance locks. D1 and SuBing minute inputs ended at Sep 23
+07:00Z; W1 ended at Sep 18 07:00Z. The report is retained at
+`/private/var/folders/5f/3h8_rqbd2nnf_yz0rg3zhhym0000gn/T/guiyi-p9-rb-source-audit-84654792-9317-4701-8027-6485886ef655.json`.
+An earlier `as_of=2026-09-24T08:00:00Z` read retained 4 ready and six
+`MAIN_CONTRACT_MAP_MISSING` Newow streams because its reader included the
+unfinished Sep 24 day. Neither audit saves an executable historical plan,
+proves the other 590 formal historical candidates, or enables a stream.
 
 ## Execution design
 
