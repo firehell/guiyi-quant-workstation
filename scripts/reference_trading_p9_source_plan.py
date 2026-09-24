@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.market_data.newow.product_release import CAPABILITY_SCHEMA_VERSION, OPEN_WEEKLY_PRODUCTS
 from app.market_data.operational_universe import load_active_products, load_operational_products
+from app.market_data.market_data_service import MarketDataError
 from app.reference_trading.composition import open_historical_reference_components
 from app.reference_trading.planning import (
     HistoricalReferenceRequest, HistoricalStreamRequest, WorkBudget,
@@ -106,7 +107,7 @@ def plan_batch(
                     operation, (stream_request,), budget,
                 ))
             stream = plan.streams[0]
-        except ValueError as error:
+        except (ValueError, MarketDataError) as error:
             code = str(error)
             if code in {"P9_DATABASE_IDENTITY_MISMATCH", "P9_SCHEMA_VERSION_MISMATCH"}:
                 raise

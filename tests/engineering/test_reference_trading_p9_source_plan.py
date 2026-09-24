@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.market_data.newow.product_release import OPEN_WEEKLY_PRODUCTS
+from app.market_data.market_data_service import MarketDataError
 from app.market_data.operational_universe import load_active_products, load_operational_products
 
 
@@ -164,3 +165,23 @@ def test_batch_database_identity_drift_aborts_instead_of_blocking_stream():
             max_stream_bars=10, max_stream_bytes=10, max_stream_seconds=100,
             planner_context=planner_context, clock=lambda: 0,
         )
+
+
+def test_batch_preserves_typed_market_data_gap_reason():
+    requests = _rb_requests()[:1]
+
+    class Planner:
+        def plan(self, request):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+
+    @contextmanager
+    def planner_context():
+        yield Planner()
+
+    report = plan_batch(
+        requests, operation="advance", max_streams=1,
+        max_total_bars=10, max_total_bytes=10, max_total_seconds=300,
+        max_stream_bars=10, max_stream_bytes=10, max_stream_seconds=100,
+        planner_context=planner_context, clock=lambda: 0,
+    )
+    assert report["results"][0]["reason"] == "MAIN_CONTRACT_MAP_MISSING"
