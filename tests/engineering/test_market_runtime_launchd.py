@@ -250,6 +250,14 @@ def test_local_status_reads_reference_worker_identity_and_rejects_orphan_plist(t
     assert "overall=failed" in orphan.stdout
     assert not calls.exists()
 
+    worker_plist = agents / "com.guiyi.quant-reference-worker.plist"
+    worker_plist.unlink()
+    worker_plist.symlink_to(agents / "missing-reference-worker.plist")
+    dangling = _run_status(repo, home, fake_bin)
+    assert dangling.returncode != 0
+    assert "reference_worker_orphan_plist=true" in dangling.stdout
+    assert "overall=failed" in dangling.stdout
+
 
 def test_weekly_render_is_saturday_and_install_only_loads_weekly_without_shared_launcher_write(tmp_path):
     repo = _copy_launchd_fixture(tmp_path / "repo")

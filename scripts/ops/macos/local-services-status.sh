@@ -141,7 +141,7 @@ if [[ -e "$reference_marker" || -L "$reference_marker" ]]; then
   fi
 fi
 printf '[local-services-status] reference_worker_enabled=%s\n' "$reference_worker_enabled"
-if [[ "$reference_worker_enabled" == "true" || -e "$AGENT_DIR/com.guiyi.quant-reference-worker.plist" ]]; then
+if [[ "$reference_worker_enabled" == "true" || -e "$AGENT_DIR/com.guiyi.quant-reference-worker.plist" || -L "$AGENT_DIR/com.guiyi.quant-reference-worker.plist" ]]; then
   labels+=(com.guiyi.quant-reference-worker)
   if [[ "$reference_worker_enabled" != "true" ]]; then
     printf '[local-services-status] reference_worker_orphan_plist=true\n'
