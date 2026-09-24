@@ -10,6 +10,7 @@ import runpy
 
 import pytest
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
@@ -23,6 +24,14 @@ MODULE = runpy.run_path(
     str(Path(__file__).resolve().parents[2] / "scripts/reference_rank1_repair.py"),
 )
 DAY = date(2026, 9, 24)
+
+
+def test_endpoint_binding_rejects_query_override() -> None:
+    digest = MODULE["_endpoint_digest"]
+    base = make_url("postgresql+psycopg://owner:secret@localhost:5432/guiyi_quant")
+    assert digest(base) == digest(base.set(password="changed"))
+    with pytest.raises(MODULE["RepairBlocked"], match="DATABASE_ENDPOINT_INVALID"):
+        digest(make_url(str(base) + "?host=other-server"))
 
 
 def test_source_is_pinned_and_rejects_changed_bytes(tmp_path: Path) -> None:
@@ -137,3 +146,69 @@ def test_plan_is_insert_only_then_equal_and_conflict_blocks() -> None:
                 universe_sha="c" * 64, database="guiyi_quant", endpoint_sha="d" * 64,
                 subscriptions=contracts,
             )
+
+
+@pytest.mark.parametrize(
+    ("commit_fails", "rollback_fails", "release_fails", "expected"),
+    [
+        (False, False, False, None),
+        (True, False, False, "COMMIT_OUTCOME_UNKNOWN"),
+        (True, True, False, "COMMIT_OUTCOME_UNKNOWN"),
+        (True, False, True, "COMMIT_OUTCOME_UNKNOWN"),
+        (False, False, True, "COMMIT_OUTCOME_UNKNOWN"),
+    ],
+)
+def test_apply_transaction_preserves_unknown_commit(
+    commit_fails: bool, rollback_fails: bool, release_fails: bool,
+    expected: str | None,
+) -> None:
+    calls: list[str] = []
+
+    class FakeSession:
+        def commit(self) -> None:
+            calls.append("commit")
+            if commit_fails:
+                raise RuntimeError("commit failed")
+
+        def rollback(self) -> None:
+            calls.append("rollback")
+            if rollback_fails:
+                raise RuntimeError("rollback failed")
+
+    class FakeLease:
+        def release(self) -> None:
+            calls.append("release")
+            if release_fails:
+                raise RuntimeError("release failed")
+
+    def run() -> None:
+        MODULE["_run_under_lease"](
+            FakeSession(), FakeLease(), lambda: calls.append("write")
+        )
+    if expected is None:
+        run()
+    else:
+        with pytest.raises(MODULE["RepairBlocked"], match=expected):
+            run()
+    assert calls[0:2] == ["write", "commit"]
+    assert calls[-1] == "release"
+    assert calls.count("commit") == 1
+
+
+def test_apply_plan_drift_releases_lease_without_commit() -> None:
+    calls: list[str] = []
+
+    class FakeSession:
+        def commit(self) -> None:
+            calls.append("commit")
+
+    class FakeLease:
+        def release(self) -> None:
+            calls.append("release")
+
+    def drift() -> None:
+        raise MODULE["RepairBlocked"]("PLAN_DRIFT")
+
+    with pytest.raises(MODULE["RepairBlocked"], match="PLAN_DRIFT"):
+        MODULE["_run_under_lease"](FakeSession(), FakeLease(), drift)
+    assert calls == ["release"]

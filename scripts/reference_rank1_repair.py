@@ -9,6 +9,7 @@ exact-hash, lease-bound apply. It never calls a market data provider.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from datetime import date
 from hashlib import sha256
 import json
@@ -20,9 +21,10 @@ import subprocess
 import tempfile
 
 from sqlalchemy import select, text
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
-from app.market_data.catalog import MarketCatalog
+from app.market_data.catalog import MaintenanceLease, MarketCatalog
 from app.market_data.closeout_binding import runtime_dependency_settings
 from app.market_data.operational_universe import load_operational_products
 from app.models import Contract, Instrument, MainContractMap, TradingCalendar, TradingSession
@@ -43,6 +45,15 @@ def _digest(value: object) -> str:
     return sha256(json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     ).encode()).hexdigest()
+
+
+def _endpoint_digest(db_url: URL) -> str:
+    if db_url.get_backend_name() != "postgresql" or db_url.query:
+        raise RepairBlocked("DATABASE_ENDPOINT_INVALID")
+    return _digest({
+        "driver": db_url.drivername, "host": db_url.host, "port": db_url.port,
+        "database": db_url.database, "username": db_url.username,
+    })
 
 
 def _read_source(path: Path, expected_sha: str) -> dict[str, object]:
@@ -207,6 +218,32 @@ def _write_plan(path: Path, plan: dict[str, object]) -> None:
         raise RepairBlocked("OUTPUT_PATH_INVALID") from exc
 
 
+def _run_under_lease(
+    session: Session, lease: MaintenanceLease, write: Callable[[], None],
+) -> None:
+    """Keep a failed commit outcome unknown even when cleanup also fails."""
+    commit_attempted = False
+    try:
+        write()
+        commit_attempted = True
+        try:
+            session.commit()
+        except Exception as exc:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            raise RepairBlocked("COMMIT_OUTCOME_UNKNOWN") from exc
+    finally:
+        try:
+            lease.release()
+        except Exception as exc:
+            raise RepairBlocked(
+                "COMMIT_OUTCOME_UNKNOWN" if commit_attempted
+                else "MAINTENANCE_RELEASE_FAILED"
+            ) from exc
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", choices=("plan", "apply"), required=True)
@@ -245,12 +282,7 @@ def main() -> int:
         if any(key.startswith("PG") for key in os.environ):
             raise RepairBlocked("AMBIENT_PG_CONFIG")
         db_url = make_url(normalize_database_url(settings["DATABASE_URL"]))
-        if db_url.get_backend_name() != "postgresql":
-            raise RepairBlocked("DATABASE_ENDPOINT_INVALID")
-        endpoint_sha = _digest({
-            "driver": db_url.drivername, "host": db_url.host, "port": db_url.port,
-            "database": db_url.database, "username": db_url.username,
-        })
+        endpoint_sha = _endpoint_digest(db_url)
         engine = create_engine(normalize_database_url(settings["DATABASE_URL"]))
         redis = Redis.from_url(_redis_url(settings))
         try:
@@ -277,8 +309,10 @@ def main() -> int:
                     lease = catalog.acquire_maintenance_lock()
                     if lease is None:
                         raise RepairBlocked("MAINTENANCE_LOCKED")
-                    committed = False
-                    try:
+                    fresh: dict[str, object] = {}
+
+                    def write() -> None:
+                        nonlocal fresh
                         _exact_checkout(args.expected_code_sha)
                         fresh = _plan(
                             session, contracts, source_sha=args.expected_source_sha256,
@@ -298,20 +332,8 @@ def main() -> int:
                                 rule="volume_open_interest",
                             ) for symbol in sorted(inserts))
                             session.flush()
-                        try:
-                            session.commit()
-                            committed = True
-                        except Exception as exc:
-                            session.rollback()
-                            raise RepairBlocked("COMMIT_OUTCOME_UNKNOWN") from exc
-                    finally:
-                        try:
-                            lease.release()
-                        except Exception as exc:
-                            raise RepairBlocked(
-                                "COMMIT_OUTCOME_UNKNOWN" if committed
-                                else "MAINTENANCE_RELEASE_FAILED"
-                            ) from exc
+
+                    _run_under_lease(session, lease, write)
                     print(json.dumps({
                         "status": "applied", "readonly": False,
                         "plan_sha256": fresh["plan_sha256"],
