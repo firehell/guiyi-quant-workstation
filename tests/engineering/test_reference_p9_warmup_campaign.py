@@ -66,6 +66,7 @@ def test_preflight_fails_on_baseline_plan_drift(monkeypatch: pytest.MonkeyPatch)
         MODULE["_preflight"](
             [unit], allowed, {}, code_sha="a" * 40, candidate_sha="b" * 64,
             endpoint_sha="c" * 64, canonical_sha="d" * 64,
+            config_sha="e" * 64,
             max_provider_requests=526, max_total_seconds=30,
         )
 
@@ -152,3 +153,39 @@ def test_cli_nonzero_apply_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     with pytest.raises(MODULE["CampaignBlocked"], match="UNIT_OUTCOME_UNKNOWN"):
         MODULE["_cli"](unit, {}, plan_hash="a" * 64, timeout_seconds=30)
+
+
+def test_cli_accepts_only_known_apply_progress_before_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unit, _, _ = _one()
+    payload = {"status": "passed", "readonly": False}
+    stdout = (
+        "maintenance contract_warmup fetched planned=1 applied=1 failed=0 "
+        "provider_requests=1\n"
+        "maintenance contract_warmup derived planned=100 applied=100 failed=0 blocked=0\n"
+        + json.dumps(payload, indent=2) + "\n"
+    )
+    subprocess_module = MODULE["_cli"].__globals__["subprocess"]
+    monkeypatch.setattr(
+        subprocess_module, "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=stdout),
+    )
+    assert MODULE["_cli"](unit, {}, plan_hash="a" * 64, timeout_seconds=30) == payload
+    monkeypatch.setattr(
+        subprocess_module, "run",
+        lambda *_a, **_k: SimpleNamespace(
+            returncode=0, stdout="unexpected\n" + json.dumps(payload, indent=2)
+        ),
+    )
+    with pytest.raises(MODULE["CampaignBlocked"], match="UNIT_OUTCOME_UNKNOWN"):
+        MODULE["_cli"](unit, {}, plan_hash="a" * 64, timeout_seconds=30)
+
+
+def test_cli_accepts_pretty_plan_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    unit, _, plan = _one()
+    monkeypatch.setattr(
+        MODULE["_cli"].__globals__["subprocess"], "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=json.dumps(plan, indent=2)),
+    )
+    assert MODULE["_cli"](unit, {}, plan_hash=None, timeout_seconds=30) == plan

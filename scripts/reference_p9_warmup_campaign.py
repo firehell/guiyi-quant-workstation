@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.db.url import normalize_database_url
 from app.market_data.closeout_binding import runtime_dependency_settings
+from app.market_data.rqdata_adapter import RQDATA_PROVIDER_SETTINGS, runtime_provider_settings
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,11 @@ MAX_CANDIDATE_BYTES = 4 * 1024 * 1024
 MAX_PREFLIGHT_BYTES = 128 * 1024
 ALLOWED_FREQUENCIES = {"1m", "15m", "30m", "60m", "1d"}
 PLANNING_CODE_SHA = "943c23b61a18156e0d068726ace843aacb6d4e43"
+PROGRESS_LINE = re.compile(
+    r"maintenance contract_warmup (?:"
+    r"fetched planned=[0-9]+ applied=[0-9]+ failed=[0-9]+ provider_requests=[0-9]+"
+    r"|derived planned=[0-9]+ applied=[0-9]+ failed=[0-9]+ blocked=[0-9]+)"
+)
 
 
 class CampaignBlocked(ValueError):
@@ -181,12 +187,14 @@ def _candidate(value: dict[str, object]) -> tuple[list[dict[str, object]], dict[
     )), targets
 
 
-def _binding(expected_database: str) -> tuple[dict[str, str], str, str]:
+def _binding(expected_database: str) -> tuple[dict[str, str], str, str, str]:
     if any(key.startswith("PG") for key in os.environ):
         raise CampaignBlocked("AMBIENT_PG_CONFIG")
-    settings = runtime_dependency_settings(
-        (Path.home() / "Library/Application Support/GuiyiQuant/project.env").read_bytes()
-    )
+    config_bytes = (
+        Path.home() / "Library/Application Support/GuiyiQuant/project.env"
+    ).read_bytes()
+    settings = runtime_dependency_settings(config_bytes)
+    runtime_provider_settings(settings, required=True)
     url = make_url(normalize_database_url(settings["DATABASE_URL"]))
     if url.get_backend_name() != "postgresql" or url.query:
         raise CampaignBlocked("DATABASE_ENDPOINT_INVALID")
@@ -211,9 +219,11 @@ def _binding(expected_database: str) -> tuple[dict[str, str], str, str]:
     env = dict(os.environ)
     env["DATABASE_URL"] = normalize_database_url(settings["DATABASE_URL"])
     env["GUIYI_CANONICAL_DATA_ROOT"] = str(canonical)
+    # Empty values prevent the repo .env fallback from supplying a different provider.
+    env.update({key: settings.get(key, "") for key in RQDATA_PROVIDER_SETTINGS})
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = f"{ROOT}:{ROOT / 'services/quant-api'}:{ROOT / 'packages/quant-core'}"
-    return env, endpoint_sha, _sha(str(canonical).encode())
+    return env, endpoint_sha, _sha(str(canonical).encode()), _sha(config_bytes)
 
 
 def _cli(
@@ -234,7 +244,15 @@ def _cli(
             raise CampaignBlocked(
                 "UNIT_OUTCOME_UNKNOWN" if plan_hash is not None else "UNIT_PLAN_FAILED"
             )
-        payload = json.loads(result.stdout)
+        lines = result.stdout.splitlines()
+        progress_count = 0
+        if plan_hash is not None:
+            while (
+                progress_count < len(lines)
+                and PROGRESS_LINE.fullmatch(lines[progress_count]) is not None
+            ):
+                progress_count += 1
+        payload = json.loads("\n".join(lines[progress_count:]))
     except (subprocess.TimeoutExpired, OSError, ValueError, json.JSONDecodeError) as exc:
         raise CampaignBlocked(
             "UNIT_OUTCOME_UNKNOWN" if plan_hash is not None else "UNIT_PLAN_FAILED"
@@ -302,7 +320,7 @@ def _validate_plan(
 def _preflight(
     units: list[dict[str, object]], allowed: dict[tuple, dict], env: dict[str, str],
     *, code_sha: str, candidate_sha: str, endpoint_sha: str, canonical_sha: str,
-    max_provider_requests: int, max_total_seconds: int,
+    config_sha: str, max_provider_requests: int, max_total_seconds: int,
 ) -> dict[str, object]:
     baseline = []
     deadline = monotonic() + max_total_seconds
@@ -318,6 +336,7 @@ def _preflight(
         "schema_version": 1, "operation": "reference_p9_warmup_wave1",
         "readonly": True, "candidate_sha256": candidate_sha, "code_sha": code_sha,
         "endpoint_sha256": endpoint_sha, "canonical_root_sha256": canonical_sha,
+        "project_env_sha256": config_sha,
         "database": "guiyi_quant", "schema": SCHEMA,
         "max_provider_requests": max_provider_requests,
         "max_total_seconds": max_total_seconds,
@@ -434,12 +453,13 @@ def main() -> int:
             args.candidate, args.expected_candidate_sha256, MAX_CANDIDATE_BYTES
         )
         units, allowed = _candidate(candidate)
-        env, endpoint_sha, canonical_sha = _binding(args.expected_database_name)
+        env, endpoint_sha, canonical_sha, config_sha = _binding(args.expected_database_name)
         if args.phase == "preflight":
             receipt = _preflight(
                 units, allowed, env, code_sha=args.expected_code_sha,
                 candidate_sha=args.expected_candidate_sha256,
                 endpoint_sha=endpoint_sha, canonical_sha=canonical_sha,
+                config_sha=config_sha,
                 max_provider_requests=args.max_provider_requests,
                 max_total_seconds=args.max_total_seconds,
             )
@@ -460,6 +480,7 @@ def main() -> int:
                 or receipt.get("code_sha") != args.expected_code_sha
                 or receipt.get("endpoint_sha256") != endpoint_sha
                 or receipt.get("canonical_root_sha256") != canonical_sha
+                or receipt.get("project_env_sha256") != config_sha
                 or receipt.get("max_provider_requests") != args.max_provider_requests
                 or receipt.get("max_total_seconds") != args.max_total_seconds
                 or receipt.get("unit_count") != len(units)
