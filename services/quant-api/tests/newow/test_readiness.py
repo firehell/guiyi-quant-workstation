@@ -125,8 +125,8 @@ def test_budget_preserves_open_daily_weekly_cases_and_marks_deferred_scope_unope
     assert len(report["cases"]) == 540
     assert report["complete"] is False
     assert report["budget_exhausted"] is True
-    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 324
-    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 216
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 360
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 180
 
 
 def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_dependencies():
@@ -299,25 +299,22 @@ def test_single_frequency_matrix_respects_formal_daily_weekly_product_gate(frequ
     )
 
 
-def test_formal_weekly_matrix_keeps_unreleased_product_unopened():
+def test_formal_weekly_matrix_opens_sm():
     module = _audit_module()
     from guiyi_quant.newow.product_contracts import ProductFrequency
 
     report = module.NewowReadinessAudit(reader=AuditReader()).run(
         module.ReadinessRequest(
-            ("cj",),
+            ("sm",),
             datetime(2026, 9, 4, 8, tzinfo=UTC),
             matrix=True,
             frequencies=(ProductFrequency.WEEKLY,),
             max_work=1000,
         )
     )
-
     weekly = [case for case in report["cases"] if case["frequency"] == "1w"]
     assert len(weekly) == 3
-    assert all(case["main"] == {
-        "status": "UNOPENED", "reason": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
-    } for case in weekly)
+    assert all(case["main"]["status"] != "UNOPENED" for case in weekly)
 
 
 @pytest.mark.parametrize(

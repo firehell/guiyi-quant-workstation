@@ -160,7 +160,7 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
     assert len(sessions) == 2
 
 
-def test_preview_selects_v2_only_for_remaining19_weekly():
+def test_preview_and_formal_scope_select_weekly_v2_by_release_state():
     from types import SimpleNamespace
     from app.api.market_newow import _input_quality_policy
     from guiyi_quant.newow.product_identity import InputQualityPolicy
@@ -176,7 +176,7 @@ def test_preview_selects_v2_only_for_remaining19_weekly():
     assert _input_quality_policy(preview, "b", "1d") is InputQualityPolicy.V1
     assert _input_quality_policy(production, "b", "1w") is InputQualityPolicy.WEEKLY_V2
     assert _input_quality_policy(production, "au", "1w") is InputQualityPolicy.V1
-    assert _input_quality_policy(production, "cj", "1w") is InputQualityPolicy.V1
+    assert _input_quality_policy(production, "cj", "1w") is InputQualityPolicy.WEEKLY_V2
 
 
 def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):

@@ -289,7 +289,95 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => formalWeeklyV11,
   }), formalWeeklyV11)
-  for (const capability of [candidate, candidateV9, formalWeeklyV10, formalWeeklyV11]) {
+  const formalWeeklyV12 = {
+    ...formalWeeklyV11,
+    schema_version: 'newow_product_capabilities_v12',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV12,
+  }), formalWeeklyV12)
+  const formalWeeklyV13 = {
+    ...formalWeeklyV12,
+    schema_version: 'newow_product_capabilities_v13',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV13,
+  }), formalWeeklyV13)
+  const formalWeeklyV14 = {
+    ...formalWeeklyV13,
+    schema_version: 'newow_product_capabilities_v14',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV14,
+  }), formalWeeklyV14)
+  const formalWeeklyV15 = {
+    ...formalWeeklyV14,
+    schema_version: 'newow_product_capabilities_v15',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV15,
+  }), formalWeeklyV15)
+  const formalWeeklyV16 = {
+    ...formalWeeklyV15,
+    schema_version: 'newow_product_capabilities_v16',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV16,
+  }), formalWeeklyV16)
+  const formalWeeklyV17 = {
+    ...formalWeeklyV16,
+    schema_version: 'newow_product_capabilities_v17',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV17,
+  }), formalWeeklyV17)
+  const formalWeeklyV18 = {
+    ...formalWeeklyV17,
+    schema_version: 'newow_product_capabilities_v18',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV18,
+  }), formalWeeklyV18)
+  const formalWeeklyV19 = {
+    ...formalWeeklyV18,
+    schema_version: 'newow_product_capabilities_v19',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV19,
+  }), formalWeeklyV19)
+  const formalWeeklyV20 = {
+    ...formalWeeklyV19,
+    schema_version: 'newow_product_capabilities_v20',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV20,
+  }), formalWeeklyV20)
+  const formalWeeklyV21 = {
+    ...formalWeeklyV20,
+    schema_version: 'newow_product_capabilities_v21',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV21,
+  }), formalWeeklyV21)
+  const formalWeeklyV22 = {
+    ...formalWeeklyV21,
+    schema_version: 'newow_product_capabilities_v22',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV22,
+  }), formalWeeklyV22)
+  for (const capability of [candidate, candidateV9, formalWeeklyV10, formalWeeklyV11, formalWeeklyV12, formalWeeklyV13, formalWeeklyV14, formalWeeklyV15, formalWeeklyV16, formalWeeklyV17, formalWeeklyV18, formalWeeklyV19, formalWeeklyV20, formalWeeklyV21, formalWeeklyV22]) {
     const wrong = [...capability.weekly_products]
     wrong[0] = 'zz'
     await assert.rejects(

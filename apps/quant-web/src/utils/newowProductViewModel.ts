@@ -138,6 +138,7 @@ function referenceStatusExplanation(reason: string | null): string {
     NEWOW_REFERENCE_WINDOW_PARTIAL: '所选统计终点晚于当前权威可用截止；已验证历史记录继续展示。',
     NEWOW_COMPLETE_PERIOD_MISSING: '所选范围没有可验证的已完成周期。',
     NEWOW_CHART_WARMING: '策略输入仍在预热，当前状态不可据此推定。',
+    NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING: '来源价格不可用后，当前策略参考正在重新预热；历史已验证记录继续展示。',
   }
   if (reason === null) return '所选统计区间已按权威截止完成计算。'
   return labels[reason] ?? '当前参考原因未识别；原始原因码保留在技术详情。'

@@ -36,7 +36,7 @@ def main() -> None:
     from app.reference_trading.query import HistoricalReferenceQuery
     from app.models import TradingCalendar, TradingSession
     from app.alerts.models import AlertEvent, AlertRule
-    from app.alerts.registry import SUBING_THS_ALERT_RULE_CODE
+    from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
     from tests.reference_trading.test_historical_integration import _verify_historical_pipeline
     from tests.reference_trading.test_newow_worker_recovery import (
         _assert_restart_projects_pending_capture_once, _setup,
@@ -104,6 +104,11 @@ def main() -> None:
                         scope_product_frequencies={},
                     )
                     session.add(rule)
+                    session.add(AlertRule(
+                        rule_code=HTDY_ALERT_RULE_CODE,
+                        enabled=False,
+                        scope_product_frequencies={},
+                    ))
                     session.flush()
                     bar_end = datetime(2026, 3, 27, 5, tzinfo=UTC)
                     session.add(AlertEvent(

@@ -58,7 +58,7 @@
 | P8-B2 | Actual `/market/chart` router/MainLayout/Newow/Subing/HTDY workspaces, temporary Canonical/Catalog/MDS, disposable PG/Redis | Playwright CLI navigation and Tab switching; Newow historical 50 CLOSED + 1 OPEN, second page 51 rows; SuBing 60m persisted forward coverage; HTDY 15m first-seen signal; no route interception | PASS unified-reference full-route E2E for fixture data; legacy reference panels fail closed on fixture Calendar boundary |
 | P8-B3 | Full Market route with a one-year synthetic Calendar/Session horizon and isolated persisted SuBing AlertEvent | Playwright CLI: bounded Newow legacy 1d 200, bounded SuBing legacy 15m 200, separate AlertEvent S↑ and unified forward panels, HTDY 15m first-seen; direct SuBing API 200 | PASS for explicit fixture windows; default current-date legacy requests still exceed the fixture horizon and return typed 409 |
 | P8-S4 | Repeat 300 real-MDS fixture streams on current dirty task tree | `reference_trading_benchmark.py --case stream_300_mds --repeats 5 --timeout-seconds 180`: five passes, 300 calculations, 360 MDS reads and zero pending each | PASS isolated implementation throughput; generated Canonical and observation adapter |
-| P8-S5 | Same-process equal-load 300 real-MDS waves | `test_postgresql_300_mds_same_process_rss_soak`: five waves, each 300 calculations and zero pending; settled RSS 170240, 157088, 157520, 157936, 157968 KiB | PASS observed no sustained RSS growth in five fixture waves |
+| P8-S5 | Same-process equal-load 300 real-MDS waves, with a fresh worker/schema per wave | `test_postgresql_300_mds_same_process_rss_soak`: five waves, each 300 calculations and zero pending; settled RSS 170240, 157088, 157520, 157936, 157968 KiB | PASS process RSS after five teardown/rebuild waves; long-lived worker memory remains unmeasured |
 | P8-Q3 | 10,000 actual projected Bars, 9,948 CLOSED trades, changed-price rebuild and prior-revision cutoff | `query_real_rebuild_10000 --repeats 5`: five passes, 100 warm first/deep/summary queries per run; worst p95 317.739/335.243/299.623 ms against 500/500/1000 ms limits | PASS isolated real-trade query/rebuild capacity on dirty task tree |
 | P8-H3 | PostgreSQL rebuild with changed source manifest, old token and new active revision | `test_revision_rebuild.py -m isolated_postgresql`: 1 passed | PASS isolated revision switch/old-snapshot rejection on one fixture stream; scale remains open |
 | P8-H4 | HTDY two consecutive completed windows, old first-seen point snapshot, then later overlapping-bar repaint | `test_newow_worker_recovery.py -k htdy_successive_windows -m isolated_postgresql`: 1 passed | PASS isolated PG checkpoint/first-seen-point retention and `OBSERVATION_GAP` fail-closed; buy/sell model/Live acceptance remains separate |
@@ -150,12 +150,14 @@ totals were 24.009, 24.198, 24.009, 22.113 and 26.004 seconds; each run read
 child peak RSS was 168912–169984 KiB. A separate single-process soak then ran
 five equal 300-stream waves against five disposable schemas; settled RSS was
 170240, 157088, 157520, 157936 and 157968 KiB after garbage collection and
-schema disposal. The first-to-last difference was -12272 KiB. These are
-fixture-capacity and process-memory observations, not production Live evidence.
+schema disposal. Each wave constructs a new worker; the first-to-last
+difference was -12272 KiB. This measures process RSS after repeated teardown,
+not a continuously running worker or production Live behavior.
 
 The real-trade query follow-up builds and rebuilds 10,000 completed Bars with a
 changed source price, yielding 9,948 CLOSED trades. It checks that the rebuilt
-trade amounts differ and that the old cutoff still returns the old revision.
+trade amounts differ while an earlier cutoff of the new revision preserves the
+same historical prefix; old-revision snapshots are rejected after activation.
 An initial SQL summary implementation intermittently exceeded PostgreSQL's
 30-second statement timeout: the planner nested a full trade scan under a
 windowed latest-version subquery. The corrected query uses a scalar latest
@@ -164,6 +166,8 @@ change, five independent `query_real_rebuild_10000` runs passed 100 warm
 first-page, full deep-page and summary queries each. The worst p95 was
 317.739/335.243/299.623 ms, within the frozen 500/500/1000 ms limits.
 This exercises generated prices and a test-only dataset, not natural data.
+The exact production-shaped index scan range, PostgreSQL index size and
+cold-start/steady-state split are still unmeasured.
 
 ## Full Market route browser readback
 
@@ -203,6 +207,17 @@ generated fixture and returns a typed Calendar 409 until a bounded window is
 chosen. No production Calendar or default-current-window pass is claimed. Real provider acquisition,
 natural Runtime and upstream 1m aggregation remain outside this isolated E2E.
 
+On the P8 + `develop@10e6805665` combined tree, the browser reopened the actual
+`/market/chart` route through Vite/FastAPI and a fresh disposable PostgreSQL
+schema. Newow's bounded 2026-01-05–03-27 1d legacy statistics returned a
+completed calculation; SuBing's bounded 15m historical reference returned
+statistics separately from the persisted S↑ AlertEvent; HTDY showed its 15m
+first-seen observation. A first pass exposed a fixture-only 404
+`ALERT_RULE_NOT_FOUND` for the HTDY Event pane because only the SuBing test
+Rule had been seeded. The fixture now seeds a disabled HTDY test Rule, and the
+read-only HTDY Event API returns 200 with an empty Event set. Default-current
+legacy requests remain typed 409 outside this generated Calendar horizon.
+
 ## Independent review
 
 GPT-6 Astra independently inspected the integration, forward summary and identity fixes, benchmark guard, and synthetic capacity test. Three confirmed defects were repaired with failing-then-passing tests: connection override protection, forward summary initial-count alignment, and invalid test identity. A follow-up review found that the initial deep-page benchmark sampled a one-row tail page; the fixture now asserts a full 50-row deep page, and the old deep-page number above is invalid. No new code blocker was found for committing this partial engineering increment. Remaining risks are the incomplete workload coverage and unmeasured P8 cases listed below; this review does not grant P8 overall acceptance.
@@ -235,9 +250,14 @@ generated Calendar horizon; real provider, natural Live, upstream 1m aggregation
 and production acceptance were not exercised. No fixture opens HTDY acceptance
 or any production capability.
 
-P8 develop integration is still **pending** combined-tree verification. The checked
-`develop@10e6805665` changed `market_data_service.py` and Newow capability
-contracts beyond this branch; `git merge-tree` reports one shared-file change
-there. Reconcile the current develop dependency, rerun affected checks on the
-combined tree, and obtain final independent Review before deciding the integration
-Gate. Release, Runtime promotion, Canonical writes and P9 remain separate Gates.
+P8 engineering increment is **eligible for develop integration**. The combined-tree
+PostgreSQL ReferenceTrading suite passed 43 tests (219 deselected) in 354.04 s,
+and an independent GPT-6 Astra Review found no remaining code blocker. The
+remaining long-lived-worker, index-plan/size, cold/steady split, natural Live
+and production data gaps prevent a claim of full P8 acceptance.
+`develop@10e6805665` was merged into the P8 worktree
+without a textual conflict; the shared `market_data_service.py` method additions
+were retained. Combined-tree non-PostgreSQL ReferenceTrading/data/Newow tests
+passed 448 cases when the three root-import tests were rerun with the documented
+`PYTHONPATH`; Web tests passed 684 with one skip, and `pnpm build` passed.
+Release, Runtime promotion, Canonical writes and P9 remain separate Gates.
