@@ -39,6 +39,7 @@ def proposed_unit_batches(
         if (
             any(not isinstance(item, str) for item in values.values())
             or values["frequency"] != "1w"
+            or not isinstance(values["expected_plan_sha256"], str)
             or len(values["expected_plan_sha256"]) != 64
         ):
             raise ValueError("REMAINING19_REPAIR_TARGETS_INVALID")
