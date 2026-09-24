@@ -1,7 +1,12 @@
 # 当前状态
 
-文档整理：2026-09-24。最新 main/annotated tag 为
-`v1.10.32@23892f965b64f788d272a909fa3df3041dacc66a`：PR #395 将 P8/P9、
+文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
+`v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
+9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
+现役服务仍为 `v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，Runtime health
+因 9/24 盘后旧失败状态仍为 `failed`；未执行 v1.10.33 Runtime promotion，也未取得 9/28 自然盘后证据。
+
+以下为此前 v1.10.32 的历史发布和预检状态。`v1.10.32@23892f965b64f788d272a909fa3df3041dacc66a`：PR #395 将 P8/P9、
 盘后 Calendar 修复和 P9 owned-gap 边界修复合为单一候选；远端 main、tag peeled commit
 一致，发布 tree 与已审候选 `71b348f0bdbb86bc668b21a01002964c2718a12e` 一致。
 `v1.10.32` GitHub Release 已于 2026-09-24 创建并读回，非草稿、非预发布，target 为同一精确 commit。
@@ -44,6 +49,32 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
+
+## v1.10.33 冻结元数据恢复发布及生产读回
+
+PR #396 合并提交、远端 main、annotated tag peeled commit 与非草稿、非预发布
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.33) target
+均为 `943c23b61a18156e0d068726ace843aacb6d4e43`；tag object 为
+`d11298e96b8a3dc45f0816980eef54a3c8da4abf`，merge tree 与已审候选
+`44cc368c730d0a9b395088c207787ba6d7c79085` 相同。发布前候选 395 项定向测试、
+Ruff、聚焦 mypy、锁定离线 Python 安装及 Web 构建通过；独立 Review 的一处状态文档误述已修正。
+
+2026-09-24 23:11 CST 后，使用干净 detached `v1.10.33` checkout 离线导入冻结
+9/28 RQData 源捕获（原始 SHA-256 `f6aded42b7e2c5ac986ba702cec854d20f54cc183a7d05b6263f48229faf0832`），
+snapshot SHA-256 为 `5ea406054128d7c3acdd344445319a2997a5c4d32aeaeb41d5b7dd2e8ca0cee2`。
+绑定现役 Runtime `v1.10.30`、9/24 失败终态字节 SHA-256
+`1c9f75f6eb2398d6e791060925a2e6188f41ad4a4b6095fc42ff4f61ffab68d4`；
+正式只读计划 SHA-256 `095ee199a4b86c665582378dae73f748c3661ab3fe8f688d9567a012d1331bf4`，
+精确范围为五交易所 9/28–10/4 Calendar 35 行、operational 60 品种 9/28–9/29 Session
+405 行、9/28 rank1 60 行，现有值冲突为零。按此前 owner 授权只执行一次生产 apply：
+返回 `applied`，分别写入 35/405/60，provider 请求 0；新连接只读逐项回查为
+`calendar_equal=35 / session_equal=405 / main_contract_equal=60`，三类 insert 均为 0。
+未下载 Bar、未写 Canonical、未改旧盘后状态、未手工重跑任务。
+
+随后只读 Market promotion preflight 返回 `passed / snapshot_ready / trading_day=2026-09-24 /
+operational_count=60 / snapshot_count=60`。五项受管服务仍指向 v1.10.30，API/Web 200，
+after-market 为 `not_running`，Runtime health 与 overall 仍为 `failed`。预检通过不等于
+Runtime promotion 或自然盘后验收；v1.10.33 正式切换仍是独立 Gate。
 
 ## v1.10.32 main/tag/GitHub Release 读回（Runtime 未切换）
 
