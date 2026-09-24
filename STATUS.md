@@ -4,9 +4,12 @@
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`。9/24 缺失的 operational
 60 品种 rank1 映射已用冻结源、精确计划和维护锁一次性补齐，只读回查 `equal=60 / insert=0`；
 无 provider 请求或 Canonical 写入。RB 十条历史试点流按真实 DB/Canonical 根重新审计为
-`SOURCE_READY=10/10`。扩展审计发现苏冰分钟流的物理合约历史输入缺口：A、AG、AL、AP、AU
-共 50 条候选中 37 ready、13 blocked；AO 按上市起点审计 7/10 ready。首个精确缺口
-A2305 15m 的只读 warm-up 计划需 1 个直接 1m 目标与 9 个派生目标。尚未执行
+`SOURCE_READY=10/10`。随后按各品种权威上市起点完成 60 品种、600 条正式历史候选流的
+只读审计：`SOURCE_READY=387 / BLOCKED=213`，只有 BZ 和 RB 各为 10/10；阻断为
+苏冰输入不可用 175、审计器折叠的源错误 23、W1 边界上下文缺失 15；代表样本分别
+复现物理合约回放覆盖不足与非正参考价，不能归为同一修复批次。
+首个精确缺口 A2305 15m 的只读 warm-up 计划需 1 个直接 1m 目标与 9 个派生目标。
+完整流级矩阵见 `outputs/reference-p9-source-inventory-20260925/matrix.json`。尚未执行
 `0048` migration、其余历史构建、全局 persisted reader 切换或 Reference worker 启用；
 本轮修复代码尚未发布。分层证据与计划身份见
 `docs/tasks/unified-reference-trading-p9/rollout.md`。

@@ -19,11 +19,23 @@ was initially queried before its authoritative 2023-06-19 listing start;
 re-auditing from that start returned 7/10 ready. Raising the source budget
 above measured estimates for A, AG, AL, AP and AU returned 37/50 ready and
 13 SuBing minute streams blocked by `SUBING_REFERENCE_DATA_UNAVAILABLE`.
+The subsequent product-by-product audit used each authoritative listing start
+and covered all 600 formal historical candidate streams: 387 were
+`SOURCE_READY` and 213 blocked. The final reasons were 175
+`SUBING_REFERENCE_DATA_UNAVAILABLE`, 23 `P9_SOURCE_BLOCKED` and 15
+`REFERENCE_BOUNDARY_CONTEXT_MISSING`. Only BZ and RB were 10/10 ready.
+The one initial SC budget miss was re-audited above its measured bound and
+classified as `SUBING_REFERENCE_DATA_UNAVAILABLE`; the original and follow-up
+source hashes are retained in the [stream-level matrix](../../../outputs/reference-p9-source-inventory-20260925/matrix.json)
+(SHA-256 `1759cd9dcfd6865ba3be193eced1f884bb64fa0ad74a931c956322daeabdccea`).
+Representative expanded errors were `CONTRACT_REPLAY_COVERAGE_UNAVAILABLE`
+for EB Newow D1 and a non-positive reference price for CJ SuBing D1.
+
 One exact blocker is physical A2305 15m: the read-only warm-up plan
 `09b3b98deb8d815007cfde908ea0fd2d9ed70d0478fdf564541d7d4b3d08c2c7`
-requires one direct 1m target and nine derived targets. This partial audit
-does not establish the other products' source readiness or authorize a data
-batch. The 0048 migration, additional historical builds, reader cutover,
+requires one direct 1m target and nine derived targets. This source audit
+does not authorize a data batch. The 0048 migration, additional historical
+builds, reader cutover,
 forward activation, release of this closeout code, and natural acceptance
 remain separate pending Gates.
 
