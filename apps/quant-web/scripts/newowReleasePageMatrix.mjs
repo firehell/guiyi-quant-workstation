@@ -64,6 +64,7 @@ async function worker(base) {
       product: item.symbol, strategy: item.strategy, frequency, code_sha: sha,
       audit_status: item.main.status, expected, chart_state: null,
       reference_summary_visible: false, reference_load: null, error: null,
+      reference_status: null,
       elapsed_ms: null,
     }
     try {
@@ -97,9 +98,10 @@ async function worker(base) {
       }
       await summary.waitFor({ timeout: 120_000 })
       const summaryText = (await summary.innerText()).trim()
+      row.reference_status = (await summary.locator('.newow-reference__availability').innerText()).trim()
       row.reference_summary_visible = Boolean(summaryText)
       if (!row.reference_summary_visible) throw new Error('REFERENCE_SUMMARY_EMPTY')
-      if (expected === 'warming' && !summaryText.includes('预热')) {
+      if (expected === 'warming' && !row.reference_status.includes('预热')) {
         throw new Error('REFERENCE_WARMING_STATUS_MISMATCH')
       }
     } catch (error) {
