@@ -24,6 +24,19 @@
 `v1.10.33`、Reference worker disabled，API/Web 200、Runtime health `ok`、
 overall `passed`，weekly audit `not_run`；这不构成 Reference 自然运行验收。
 
+2026-09-25 后续代码收敛：`develop@c5183dd5edabae1b3b8e0584940afc71bc2a5707` 已修正
+牛哇正式 W1 V2 流身份、历史读取策略和无合格周线 Bar 的短 owner 换月边界；
+ReferenceTrading 回归 `231 passed / 45 skipped`，独立复审无 Confirmed Issue。
+按原矩阵逐品种权威起点、生产库/Canonical 严格只读重算 15 条相关 W1 流：
+SC/SI 六条 `SOURCE_READY`，PL/PX/RS 九条仍因
+`REFERENCE_BOUNDARY_CONTEXT_MISSING` 阻断，未放宽边界合同。新代码清单仍为
+600 条正式历史候选流；与已发布版本相比有 60 条 D1 流身份变化，正式构建前
+须按新精确版本重做全量流级计划。该 15 流只读结果见
+`outputs/reference-p9-source-inventory-20260925/w1-c5183dd5-readonly.json`，SHA-256
+`cab2ddb060d47256f49815ede818263defafc6081e35fff9cfe0da6e1773c931`。
+上述修复尚未发布，首波 175 份生产预检仍绑定
+原冻结代码及计划；真实下载、Canonical/Catalog 写入与后续受控 Gate 未执行。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。

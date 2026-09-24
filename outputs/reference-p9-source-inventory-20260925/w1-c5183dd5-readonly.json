@@ -1,0 +1,126 @@
+{
+  "code_sha": "c5183dd5edabae1b3b8e0584940afc71bc2a5707",
+  "readonly": true,
+  "results": [
+    {
+      "frequency": "1w",
+      "product": "pl",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_main_rise",
+      "stream_id": "reference-stream:2deed0c3b981e0c34b33cf3a81eb2bf0e239ebdf3bac9579d1336c672659de30"
+    },
+    {
+      "frequency": "1w",
+      "product": "pl",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_oscillation",
+      "stream_id": "reference-stream:d1b346e8fda8f5d93a52e4f5cbb87211ba495486109f401c711ea7269a484188"
+    },
+    {
+      "frequency": "1w",
+      "product": "pl",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_trend",
+      "stream_id": "reference-stream:a9734c21d4739aa9c362764244d918f02444df9cd26e6b594787b2f049e5f7ee"
+    },
+    {
+      "frequency": "1w",
+      "product": "px",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_main_rise",
+      "stream_id": "reference-stream:742a82cce25c98acd46383152c5cf9fc8f7c141210dfe7de6ae22d41f105a60e"
+    },
+    {
+      "frequency": "1w",
+      "product": "px",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_oscillation",
+      "stream_id": "reference-stream:3b4e9840b9687ae4f8653fb110650cb0364383694c19146c09ffa6428d153a4f"
+    },
+    {
+      "frequency": "1w",
+      "product": "px",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_trend",
+      "stream_id": "reference-stream:a1c7c2c8ff5fd8f0ca5bea955a1a379fe0fe86041aaea77cb633a564be73766d"
+    },
+    {
+      "frequency": "1w",
+      "product": "rs",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_main_rise",
+      "stream_id": "reference-stream:41f707bff036a6936b14dce598f91194f51647e7b6a8eba19c7e16b35d9b4e6b"
+    },
+    {
+      "frequency": "1w",
+      "product": "rs",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_oscillation",
+      "stream_id": "reference-stream:fc5271122cee0d448291a59326731eb9ef89371ada24e5e2223480c1cb54b63d"
+    },
+    {
+      "frequency": "1w",
+      "product": "rs",
+      "reason": "REFERENCE_BOUNDARY_CONTEXT_MISSING",
+      "status": "BLOCKED",
+      "strategy_code": "newow_trend",
+      "stream_id": "reference-stream:9b85a0ec30a5e6aed7049bdb6a9588358b589c4b0fd43080e1949d9465b1eb25"
+    },
+    {
+      "frequency": "1w",
+      "input_count": 3773,
+      "product": "sc",
+      "status": "SOURCE_READY",
+      "strategy_code": "newow_main_rise",
+      "stream_id": "reference-stream:5c31d5a622a5b71d57432920069e188ca6b43891f8365d753f2a6cd43f0dbddd"
+    },
+    {
+      "frequency": "1w",
+      "input_count": 3773,
+      "product": "sc",
+      "status": "SOURCE_READY",
+      "strategy_code": "newow_oscillation",
+      "stream_id": "reference-stream:aeddfbb477ba2953b5c76f6afd74ab82899321e0d38481ae4cbe12c0e4153d6c"
+    },
+    {
+      "frequency": "1w",
+      "input_count": 3773,
+      "product": "sc",
+      "status": "SOURCE_READY",
+      "strategy_code": "newow_trend",
+      "stream_id": "reference-stream:f1967b078aedc765ddd41634af081b51a92da38193f28b3c3753007f3f13bab6"
+    },
+    {
+      "frequency": "1w",
+      "input_count": 1147,
+      "product": "si",
+      "status": "SOURCE_READY",
+      "strategy_code": "newow_main_rise",
+      "stream_id": "reference-stream:275a6a1eb729bccb2dc3fb8e3d2d9f9474765fe575d5b9b0ff95151c8484d201"
+    },
+    {
+      "frequency": "1w",
+      "input_count": 1147,
+      "product": "si",
+      "status": "SOURCE_READY",
+      "strategy_code": "newow_oscillation",
+      "stream_id": "reference-stream:3521b8f0b73db24786bff703231d863f57c59b401ed0ff9c1a893ca2552cb9c8"
+    },
+    {
+      "frequency": "1w",
+      "input_count": 1147,
+      "product": "si",
+      "status": "SOURCE_READY",
+      "strategy_code": "newow_trend",
+      "stream_id": "reference-stream:eb446c1a92c2aee8d9d9102b0dfbc4b8d0cd8e0a36412c4cc0c0e6e92db93547"
+    }
+  ]
+}
