@@ -67,6 +67,16 @@ EB2611、PB2611、PD2612、PG2611，缺少 201/206/188/200 个预期回放端点
 `outputs/reference-p9-source-inventory-20260925/newow-d1-prefix-a7621201-readonly.json`
 和 `newow-d1-warmup-a7621201-readonly.json`。
 
+生产 `0048` 前置只读回查（`develop@16e288363`）：应用库仍为 `0047`；
+Reference 表当前有 10 条历史流、10 个 revision、485 个 batch、2,861 个 action、
+1,514 个 trade、38,700 个 mark。十条历史流均 `READY / enabled=false`，
+forward enabled 数为 0；`0048` 新列尚不存在，旧 batch kind check 仍生效。
+现役服务只读检查为 `v1.10.33`、Reference worker disabled、API/Web 200、
+Runtime health `ok`、overall `passed`，weekly audit `not_run`。
+前像见 `outputs/reference-p9-source-inventory-20260925/schema-0048-preflight-16e28836-readonly.json`
+（SHA-256 `80797a87ee5a6e727c525b8c787456485586aaf658c8d6683da326c09c118e51`）。
+迁移前仍须重做身份/前像核对并备份；本次没有执行 migration。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。

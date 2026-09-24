@@ -19,6 +19,13 @@ direct targets are all already within the frozen wave-1 candidate target set;
 the four dry-run plans made zero provider requests. See the
 [source diagnosis](../../../outputs/reference-p9-source-inventory-20260925/newow-d1-prefix-a7621201-readonly.json)
 and [four exact dry-run plans](../../../outputs/reference-p9-source-inventory-20260925/newow-d1-warmup-a7621201-readonly.json).
+The [read-only 0048 preflight](../../../outputs/reference-p9-source-inventory-20260925/schema-0048-preflight-16e28836-readonly.json)
+(SHA-256 `80797a87ee5a6e727c525b8c787456485586aaf658c8d6683da326c09c118e51`)
+confirmed production schema `0047`, ten READY historical streams all disabled,
+zero enabled forward streams, and no `0048` columns. It counted ten revisions,
+485 batches, 2,861 actions, 1,514 trades and 38,700 marks. The existing
+`0047` batch-kind check is intact. Migration, backup and post-migration readback
+remain pending. A fresh preflight is required immediately before migration.
 
 The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
 Production application schema is still `20260919_0047`; the persisted reader and
