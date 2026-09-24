@@ -125,8 +125,8 @@ def test_budget_preserves_open_daily_weekly_cases_and_marks_deferred_scope_unope
     assert len(report["cases"]) == 540
     assert report["complete"] is False
     assert report["budget_exhausted"] is True
-    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 330
-    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 210
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 345
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 195
 
 
 def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_dependencies():
@@ -305,7 +305,7 @@ def test_formal_weekly_matrix_keeps_remaining_product_unopened():
 
     report = module.NewowReadinessAudit(reader=AuditReader()).run(
         module.ReadinessRequest(
-            ("pf",),
+            ("pr",),
             datetime(2026, 9, 4, 8, tzinfo=UTC),
             matrix=True,
             frequencies=(ProductFrequency.WEEKLY,),

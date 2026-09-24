@@ -80,13 +80,13 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v16",
+        "schema_version": "newow_product_capabilities_v17",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
-            "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pp", "ps", "pt", "rb",
+            "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "ps", "pt", "rb",
             "rm", "rs", "ru", "sa", "sc", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
@@ -102,42 +102,52 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
     }
 
 
-def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_six_closed():
+def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_five_closed():
     require_open_weekly_product("sr")
     assert candidate_input_quality_policy(
         "sr", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("pl", "pr", "px", "sf", "sh", "sm"):
+    for product in ("pr", "px", "sf", "sh", "sm"):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
 
-def test_formal_rs_weekly_scope_uses_v2_and_keeps_other_six_closed():
+def test_formal_rs_weekly_scope_uses_v2_and_keeps_other_five_closed():
     require_open_weekly_product("rs")
     assert candidate_input_quality_policy(
         "rs", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("pl", "pr", "px", "sf", "sh", "sm"):
+    for product in ("pr", "px", "sf", "sh", "sm"):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
 
-def test_formal_pk_weekly_scope_uses_v2_and_keeps_other_six_closed():
+def test_formal_pk_weekly_scope_uses_v2_and_keeps_other_five_closed():
     require_open_weekly_product("pk")
     assert candidate_input_quality_policy(
         "pk", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("pl", "pr", "px", "sf", "sh", "sm"):
+    for product in ("pr", "px", "sf", "sh", "sm"):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
 
-def test_formal_pf_weekly_scope_uses_v2_and_keeps_other_six_closed():
+def test_formal_pf_weekly_scope_uses_v2_and_keeps_other_five_closed():
     require_open_weekly_product("pf")
     assert candidate_input_quality_policy(
         "pf", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("pl", "pr", "px", "sf", "sh", "sm"):
+    for product in ("pr", "px", "sf", "sh", "sm"):
+        with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
+            require_open_weekly_product(product)
+
+
+def test_formal_pl_weekly_scope_uses_v2_and_keeps_other_five_closed():
+    require_open_weekly_product("pl")
+    assert candidate_input_quality_policy(
+        "pl", ProductFrequency.WEEKLY, candidate_weekly=False
+    ) is InputQualityPolicy.WEEKLY_V2
+    for product in ("pr", "px", "sf", "sh", "sm"):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -284,7 +294,7 @@ def test_formal_weekly_release_rejects_product_outside_open_set_before_resolver(
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/market/newow/weekly-snapshot",
-                params={"product": "pl", "strategy": "trend", "frequency": "1w"},
+                params={"product": "pr", "strategy": "trend", "frequency": "1w"},
             )
     finally:
         app.dependency_overrides.clear()
