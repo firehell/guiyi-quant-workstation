@@ -7,7 +7,8 @@
 `v1.10.32` GitHub Release 已于 2026-09-24 创建并读回，非草稿、非预发布，target 为同一精确 commit。
 Runtime promotion 虽获本批授权，但正式只读预检以 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`
 阻断：22:34 CST 生产 Calendar 缺五个交易所的下一交易日 9/28 行，operational 60/60
-阶段均为 `UNKNOWN`。未切换 Runtime、未补写 Calendar/Session 或手工重跑盘后。P9
+阶段均为 `UNKNOWN`；追加只读回读确认 9/28–9/29 的 operational 有效 Session 覆盖亦为
+0/60。未切换 Runtime、未补写 Calendar/Session 或手工重跑盘后。P9
 migration/build/worker activation 与 9/28 自然盘后验收均是独立 Gate。2026-09-24 发布后
 本机只读回读：受管服务仍指向 `v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，
 Reference worker 未启用，API/Web 200，但 Runtime health 与 overall 为 `failed`；盘后服务
@@ -64,7 +65,8 @@ OpenSpec 10/10、离线锁文件核验通过；独立 Review 无 confirmed issue
 依赖已安装；22:34 CST 预检返回 `blocked / MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE /
 operational_count=60 / snapshot_count=0 / trading_day=null`。只读生产阶段回读为
 `UNKNOWN` 60/60（DCE 18、SHFE 15、CZCE 20、INE 2、GFEX 5）：五交易所 Calendar
-均有 9/24 当日与 9/25–9/27 非交易日行，均缺下一交易日 9/28 行。Runtime promotion、
+均有 9/24 当日与 9/25–9/27 非交易日行，均缺下一交易日 9/28 行；9/28–9/29
+operational 有效 Session 覆盖均为 0/60，正式 rank1 行也均为 0/60。Runtime promotion、
 自然盘后、P9 production migration/build/reader cutover/worker activation 均未执行。
 
 ## v1.10.30 Release 与 Runtime promotion 读回
@@ -307,7 +309,7 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | 项目 | 阶段 | 说明 |
 |---|---|---|
 | 最新 main/tag | `RELEASED` | `v1.10.32@23892f96`，annotated tag peeled commit、origin/main、候选 tree 与 GitHub Release target 一致；Release 非草稿、非预发布 |
-| 现役 Runtime | v1.10.30 `RUNTIME_PROMOTED / RUNTIME_READY_UNVERIFIED` | 9/24 发布后只读回读仍指向 `v1.10.30@120c5c94`，Reference worker disabled，API/Web 200，Runtime health 与 overall `failed`；v1.10.32 预检因生产 9/28 Calendar 缺口阻断，未切换；盘后 `not_running` 不单独构成失败证据 |
+| 现役 Runtime | v1.10.30 `RUNTIME_PROMOTED / RUNTIME_READY_UNVERIFIED` | 9/24 发布后只读回读仍指向 `v1.10.30@120c5c94`，Reference worker disabled，API/Web 200，Runtime health 与 overall `failed`；v1.10.32 预检因生产 9/28 Calendar/Session 缺口阻断，未切换；盘后 `not_running` 不单独构成失败证据 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker 或全局 persisted reader；P4/P5 代码已随 v1.10.22 发布 |
 | Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_COMPLETE` | RB 十条开放参考流 exact-hash 构建并读回 READY/active revision，全部 enabled=false；12 个物理合约的 1m/15m/30m/60m 预热已完成。苏冰 15m/30m/60m 依严格 checkpoint 完成，分别 228/120/71 批；P6 worker 未启用，全局 reader 仍为 legacy |
