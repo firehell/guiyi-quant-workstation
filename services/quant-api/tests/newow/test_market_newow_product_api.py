@@ -235,6 +235,35 @@ def test_daily_snapshot_endpoint_returns_exact_verified_cutoff_and_pending_day(m
     }
 
 
+def test_daily_snapshot_uses_versioned_quality_policy_for_affected_product(monkeypatch):
+    cutoff = datetime(2026, 9, 18, 7, tzinfo=UTC)
+    observed = []
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            return DailySnapshot(
+                product, strategy, frequency, cutoff,
+                date(2026, 9, 18), date(2026, 9, 18), cutoff, "current",
+            )
+
+    def resolver(_session, _cancelled, _now, policy):
+        observed.append(policy)
+        return Resolver()
+
+    monkeypatch.setattr(market_newow, "_build_daily_resolver", resolver)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/daily-snapshot", params={
+                "product": "oi", "strategy": "trend", "frequency": "1d",
+            })
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert observed == [InputQualityPolicy.DAILY_V2]
+
+
 def test_weekly_snapshot_endpoint_returns_shared_cutoff_and_separate_current_owner(monkeypatch):
     requested = datetime(2026, 9, 18, 8, tzinfo=UTC)
     newer = datetime(2026, 9, 18, 7, 0, 0, 1, tzinfo=UTC)
