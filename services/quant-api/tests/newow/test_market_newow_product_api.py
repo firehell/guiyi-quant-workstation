@@ -80,14 +80,14 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v21",
+        "schema_version": "newow_product_capabilities_v22",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
             "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps", "pt", "px", "rb",
-            "rm", "rs", "ru", "sa", "sc", "sf", "sh", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
+            "rm", "rs", "ru", "sa", "sc", "sf", "sh", "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
@@ -107,7 +107,7 @@ def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "sr", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -117,7 +117,7 @@ def test_formal_rs_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "rs", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -127,7 +127,7 @@ def test_formal_pk_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "pk", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -137,7 +137,7 @@ def test_formal_pf_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "pf", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -147,7 +147,7 @@ def test_formal_pl_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "pl", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -157,7 +157,7 @@ def test_formal_pr_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "pr", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -167,7 +167,7 @@ def test_formal_px_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "px", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
@@ -177,19 +177,18 @@ def test_formal_sf_weekly_scope_uses_v2_and_keeps_other_one_closed():
     assert candidate_input_quality_policy(
         "sf", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("sm",):
+    for product in ("zz",):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
 
-def test_formal_sh_weekly_scope_uses_v2_and_keeps_sm_closed():
-    require_open_weekly_product("sh")
+def test_formal_sm_weekly_scope_uses_v2():
+    require_open_weekly_product("sm")
     assert candidate_input_quality_policy(
-        "sh", ProductFrequency.WEEKLY, candidate_weekly=False
+        "sm", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
     with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
-        require_open_weekly_product("sm")
-
+        require_open_weekly_product("zz")
 
 def test_daily_snapshot_endpoint_returns_exact_verified_cutoff_and_pending_day(monkeypatch):
     requested = datetime(2026, 9, 18, 8, tzinfo=UTC)
@@ -319,7 +318,7 @@ def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-def test_formal_weekly_release_rejects_product_outside_open_set_before_resolver(monkeypatch):
+def test_formal_weekly_release_rejects_unknown_product_before_resolver(monkeypatch):
     monkeypatch.setattr(
         market_newow,
         "_build_weekly_resolver",
@@ -333,7 +332,7 @@ def test_formal_weekly_release_rejects_product_outside_open_set_before_resolver(
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/market/newow/weekly-snapshot",
-                params={"product": "sm", "strategy": "trend", "frequency": "1w"},
+                params={"product": "zz", "strategy": "trend", "frequency": "1w"},
             )
     finally:
         app.dependency_overrides.clear()

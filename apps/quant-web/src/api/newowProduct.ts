@@ -40,6 +40,7 @@ const WEEKLY_PRODUCTS_V18 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu 
 const WEEKLY_PRODUCTS_V19 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V20 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf si sn sr ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V21 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sn sr ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V22 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V9 = [...WEEKLY_PRODUCTS_V10, ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' ')]
 
 export class NewowProductRequestError extends Error {
@@ -127,7 +128,10 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const formalWeeklyV21 = value.schema_version === 'newow_product_capabilities_v21'
     && value.release_stage === 'daily_weekly'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
-  const formalWeekly = formalWeeklyV8 || formalWeeklyV10 || formalWeeklyV11 || formalWeeklyV12 || formalWeeklyV13 || formalWeeklyV14 || formalWeeklyV15 || formalWeeklyV16 || formalWeeklyV17 || formalWeeklyV18 || formalWeeklyV19 || formalWeeklyV20 || formalWeeklyV21
+  const formalWeeklyV22 = value.schema_version === 'newow_product_capabilities_v22'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeekly = formalWeeklyV22 || formalWeeklyV8 || formalWeeklyV10 || formalWeeklyV11 || formalWeeklyV12 || formalWeeklyV13 || formalWeeklyV14 || formalWeeklyV15 || formalWeeklyV16 || formalWeeklyV17 || formalWeeklyV18 || formalWeeklyV19 || formalWeeklyV20 || formalWeeklyV21
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(candidate || formalWeekly ? ['weekly_products'] : []),
@@ -146,6 +150,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   ) return false
   const expectedWeeklyProducts = remaining19Candidate
     ? WEEKLY_PRODUCTS_V9
+    : formalWeeklyV22 ? WEEKLY_PRODUCTS_V22
     : formalWeeklyV21 ? WEEKLY_PRODUCTS_V21
     : formalWeeklyV20 ? WEEKLY_PRODUCTS_V20
     : formalWeeklyV19 ? WEEKLY_PRODUCTS_V19
