@@ -44,6 +44,10 @@ CASES = {
         "services/quant-api/tests/reference_trading/test_revision_rebuild.py",
         "test_postgresql_long_history_price_rebuild_keeps_past_cutoff[10000]",
     ),
+    "query_real_rebuild_10000_index": (
+        "services/quant-api/tests/reference_trading/test_revision_rebuild.py",
+        "test_postgresql_long_history_price_rebuild_keeps_past_cutoff[10000]",
+    ),
     **{
         f"stream_{count}": (
             "services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py",
@@ -54,6 +58,10 @@ CASES = {
     "stream_300_mds": (
         "services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py",
         "test_postgresql_300_streams_acquire_from_real_mds",
+    ),
+    "stream_300_mds_retained": (
+        "services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py",
+        "test_postgresql_300_mds_retained_worker_five_completed_bars",
     ),
 }
 
@@ -109,6 +117,8 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         environment = {**environment, "GUIYI_P8_BENCH_QUERY": "1"}
     if case.startswith("stream_"):
         environment = {**environment, "GUIYI_P8_BENCH_STREAM": "1"}
+    if case == "query_real_rebuild_10000_index":
+        environment = {**environment, "GUIYI_P8_BENCH_INDEX": "1"}
     if case == "stream_300_mds":
         environment = {**environment, "GUIYI_P8_BENCH_MDS_STREAM": "1"}
     process = subprocess.Popen(
@@ -130,6 +140,8 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
     query_metrics = None
     stream_metrics = None
     mds_stream_metrics = None
+    index_metrics = None
+    retained_metrics = None
     for line in output.splitlines():
         if line.startswith("P8_QUERY_METRIC="):
             query_metrics = json.loads(line.removeprefix("P8_QUERY_METRIC="))
@@ -137,6 +149,10 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
             stream_metrics = json.loads(line.removeprefix("P8_STREAM_METRIC="))
         if line.startswith("P8_MDS_STREAM_METRIC="):
             mds_stream_metrics = json.loads(line.removeprefix("P8_MDS_STREAM_METRIC="))
+        if line.startswith("P8_INDEX_METRIC="):
+            index_metrics = json.loads(line.removeprefix("P8_INDEX_METRIC="))
+        if line.startswith("P8_RETAINED_WORKER_METRIC="):
+            retained_metrics = json.loads(line.removeprefix("P8_RETAINED_WORKER_METRIC="))
     if process.returncode == 0 and (
         case == "historical_13_streams" or case.startswith("query_")
     ) and query_metrics is None:
@@ -145,6 +161,10 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         raise RuntimeError("stream benchmark did not emit worker metrics")
     if process.returncode == 0 and case == "stream_300_mds" and mds_stream_metrics is None:
         raise RuntimeError("MDS stream benchmark did not emit metrics")
+    if process.returncode == 0 and case == "query_real_rebuild_10000_index" and index_metrics is None:
+        raise RuntimeError("index benchmark did not emit EXPLAIN metrics")
+    if process.returncode == 0 and case == "stream_300_mds_retained" and retained_metrics is None:
+        raise RuntimeError("retained worker benchmark did not emit metrics")
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     return {
         "case_id": case,
@@ -157,6 +177,8 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         "query_metrics": query_metrics,
         "stream_metrics": stream_metrics,
         "mds_stream_metrics": mds_stream_metrics,
+        "index_metrics": index_metrics,
+        "retained_worker_metrics": retained_metrics,
         "test_tail": (
             output.strip().splitlines()[-30 if process.returncode else -1:]
             if output else []

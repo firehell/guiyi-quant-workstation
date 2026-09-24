@@ -36,7 +36,9 @@ from app.reference_trading.contracts import SeedChunk
 from app.reference_trading.forward_inputs import (
     capture_htdy_live, capture_newow_live, capture_subing_live,
 )
-from app.reference_trading.models import ReferenceBatch, ReferenceRevision
+from app.reference_trading.models import (
+    ReferenceActionRow, ReferenceBatch, ReferenceMarkRow, ReferenceRevision,
+)
 from app.reference_trading.repository import ReferenceRepository, _digest
 from guiyi_quant.newow.product_adapters import (
     build_product_identity, replay_step, seed_replay_state,
@@ -151,6 +153,64 @@ class _MdsMarketRead:
             symbol=self.product, series_kind="actual_dominant", frequency="15m",
             trading_day=trading_day, contract=self.contract, cutoff=end,
             bars=bars, bar_contracts=(self.contract,) * len(bars),
+        )
+
+    def validate_alert_window(self, window, *, context_bars):
+        assert context_bars == 32 and len(window.bars) == 32
+
+
+class _LongLivedMdsMarketRead:
+    """Expose successive completed fixture endpoints to one retained worker."""
+
+    def __init__(self, service: MarketDataService):
+        self.service = service
+        self.wave = 0
+        self.read_count = 0
+
+    def target(self, frequency: str) -> CanonicalBar:
+        end = (
+            datetime(2026, 9, 23, 8, tzinfo=UTC) + timedelta(minutes=15 * self.wave)
+            if frequency == "15m" else
+            datetime(2026, 9, 23, 5 + self.wave, tzinfo=UTC)
+        )
+        return CanonicalBar(
+            end, date(2026, 9, 23), Decimal(3500), Decimal(3510),
+            Decimal(3490), Decimal(3500), Decimal(100), None, Decimal(200),
+        )
+
+    def _read(self, query, limit: int) -> tuple[CanonicalBar, ...]:
+        frequency = query.frequency.value
+        target = self.target(frequency)
+        reader = _MdsMarketRead(
+            self.service, query.symbol, frequency, query.symbol.upper() + "2701", target,
+        )
+        bars = reader._page(limit, target.bar_end)
+        self.read_count += reader.read_count
+        return bars
+
+    def observation_snapshot(self, query, after, _now):
+        target = self.target(query.frequency.value)
+        if after is not None and target.bar_end <= after:
+            return MarketObservationSnapshot(
+                state=None, source="none", trading_day=target.trading_day,
+                contract=None, bars=(),
+            )
+        bars = self._read(query, 1)
+        return MarketObservationSnapshot(
+            state=None, source="realtime", trading_day=target.trading_day,
+            contract=query.symbol.upper() + "2701", bars=bars,
+        )
+
+    def bars_until(self, query, *, trading_day, end, limit):
+        target = self.target(query.frequency.value)
+        assert query.frequency.value == "15m" and trading_day == target.trading_day
+        assert end == target.bar_end and limit == 32
+        bars = self._read(query, limit)
+        assert len(bars) == 32
+        return MarketReadWindow(
+            symbol=query.symbol, series_kind="actual_dominant", frequency="15m",
+            trading_day=trading_day, contract=query.symbol.upper() + "2701",
+            cutoff=end, bars=bars, bar_contracts=(query.symbol.upper() + "2701",) * 32,
         )
 
     def validate_alert_window(self, window, *, context_bars):
@@ -325,7 +385,9 @@ def test_postgresql_real_kernel_forward_worker_capacity(capacity_postgresql, str
         }, sort_keys=True))
 
 
-def _publish_mds_fixture(engine: Engine, root: Path, products: tuple[str, ...]) -> None:
+def _publish_mds_fixture(
+    engine: Engine, root: Path, products: tuple[str, ...], *, long_lived: bool = False,
+) -> None:
     """Publish only disposable one-day physical partitions and rank-1 facts."""
     day = date(2026, 9, 23)
     store = CanonicalMonthlyStore(root)
@@ -346,7 +408,8 @@ def _publish_mds_fixture(engine: Engine, root: Path, products: tuple[str, ...]) 
         ) for product in products)
         session.add_all(TradingSession(
             exchange_code="SHFE", instrument_symbol=product.lower(),
-            session_name="fixture_day", start_time=time(9), end_time=time(17),
+            session_name="fixture_day", start_time=time(8 if long_lived else 9),
+            end_time=time(17),
             effective_from=day, effective_to=day, is_active=True, provider="rqdata",
         ) for product in products)
         session.flush()
@@ -356,9 +419,10 @@ def _publish_mds_fixture(engine: Engine, root: Path, products: tuple[str, ...]) 
             for product in products
         ))
         for product in products:
-            for frequency, step_minutes, count in (("60m", 60, 8), ("15m", 15, 32)):
+            periods = (("60m", 60, 8), ("15m", 15, 36 if long_lived else 32))
+            for frequency, step_minutes, count in periods:
                 bars = tuple(CanonicalBar(
-                    datetime(2026, 9, 23, 1, tzinfo=UTC)
+                    datetime(2026, 9, 23, 0 if long_lived and frequency == "15m" else 1, tzinfo=UTC)
                     + timedelta(minutes=step_minutes * index), day,
                     Decimal(3500), Decimal(3510), Decimal(3490), Decimal(3500),
                     Decimal(100), None, Decimal(200),
@@ -479,4 +543,127 @@ def test_postgresql_300_mds_same_process_rss_soak(
     print("P8_MDS_SOAK_METRIC=" + json.dumps({
         "settled_rss_kib": settled_rss_kib,
         "last_minus_first_kib": settled_rss_kib[-1] - settled_rss_kib[0],
+    }, sort_keys=True), flush=True)
+
+
+def test_postgresql_300_mds_retained_worker_five_completed_bars(
+    capacity_postgresql: Engine, tmp_path,
+) -> None:
+    """Keep the same worker, streams, schema and MDS across equal 300-Bar waves."""
+    products = tuple((_ROOT / "data/universe/operational_products.txt").read_text().splitlines())
+    assert len(products) == 60 and len(set(products)) == 60
+    _publish_mds_fixture(capacity_postgresql, tmp_path, products, long_lived=True)
+    factory = sessionmaker(capacity_postgresql, expire_on_commit=False)
+    repo = ReferenceRepository(factory)
+    families = (
+        "newow_trend", "newow_oscillation", "newow_main_rise",
+        "subing_reference", "htdy",
+    )
+    settled_rss_kib: list[int] = []
+    wave_seconds: list[float] = []
+    with Session(capacity_postgresql) as session:
+        market_data = MarketDataService(
+            MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path),
+        )
+        read = _LongLivedMdsMarketRead(market_data)
+        seeded_stream_ids = []
+        for product in products:
+            for family in families:
+                frequency = "15m" if family == "htdy" else "60m"
+                seed_read = _MdsMarketRead(
+                    market_data, product, frequency, product.upper() + "2701",
+                    read.target(frequency),
+                )
+                seeded_stream_ids.append(_seed_and_capture(
+                    repo, factory, product, family, market_read=seed_read,
+                ))
+                read.read_count += seed_read.read_count
+        stream_ids = tuple(seeded_stream_ids)
+        assert len(stream_ids) == len(set(stream_ids)) == 300
+        main_rise_ids = {
+            stream_id for stream_id, family in zip(stream_ids, families * 60, strict=True)
+            if family == "newow_main_rise"
+        }
+
+        def owner_segments(identity, contract, _day, _end):
+            owner = build_segment_id(
+                identity.product.lower(), contract, datetime(2026, 1, 1, tzinfo=UTC),
+            )
+            return owner, owner
+
+        worker = build_forward_reference_worker(
+            repository=repo, market_read=read, newow_reader=None,
+            owner_segments=owner_segments,
+            expected_endpoints=lambda _identity, _contract, _day, _after, end: (end,),
+            newow_capability_ready=lambda _: True,
+            now=lambda: datetime(2026, 9, 23, 9, 1, tzinfo=UTC), enabled=True,
+        )
+        for wave in range(5):
+            assert read.wave == wave
+            if wave == 0:
+                worker.scan()
+            else:
+                for stream_id, family in zip(stream_ids, families * 60, strict=True):
+                    worker.wake(
+                        stream_id, kind="live_event" if family == "htdy" else "scan",
+                        bar_end=read.target("15m").bar_end if family == "htdy" else None,
+                    )
+            started = perf_counter()
+            completed = 0
+            rounds = 0
+            while worker.health().pending_keys:
+                completed += worker.run_round()
+                rounds += 1
+                assert rounds <= 21
+            elapsed = perf_counter() - started
+            wave_seconds.append(round(elapsed, 3))
+            assert completed == 300, worker.health().blocked
+            assert not worker.health().blocked
+            assert worker.health().pending_keys == 0
+            with factory() as check:
+                seqs = check.execute(select(ReferenceRevision.last_seq)).scalars().all()
+                pending = check.scalar(select(func.count()).select_from(ReferenceBatch).where(
+                    ReferenceBatch.kind == "capture",
+                    ReferenceBatch.consumed_by_batch_id.is_(None),
+                ))
+                calculations = check.scalar(select(func.count()).select_from(ReferenceBatch).where(
+                    ReferenceBatch.kind == "calculation",
+                ))
+                action_rows = check.execute(select(
+                    ReferenceActionRow.stream_id, ReferenceActionRow.kind,
+                    ReferenceActionRow.bar_end, ReferenceActionRow.observed_at,
+                )).all()
+                actions = len(action_rows)
+                marks = check.scalar(select(func.count()).select_from(ReferenceMarkRow))
+            assert len(seqs) == 300 and set(seqs) == {2 + wave}
+            assert pending == 0 and calculations == 300 * (wave + 1)
+            assert actions == (60 if wave == 4 else 0)
+            if wave == 4:
+                assert {row.stream_id for row in action_rows} == main_rise_ids
+                assert {row.kind for row in action_rows} == {"HINT"}
+                assert {row.bar_end for row in action_rows} == {
+                    datetime(2026, 9, 23, 9, tzinfo=UTC),
+                }
+                assert {row.observed_at for row in action_rows} == {
+                    datetime(2026, 9, 23, 9, 1, tzinfo=UTC),
+                }
+            gc.collect()
+            result = subprocess.run(
+                ["ps", "-o", "rss=", "-p", str(os.getpid())],
+                capture_output=True, text=True, check=True, timeout=5,
+            )
+            settled_rss_kib.append(int(result.stdout.strip()))
+            print("P8_RETAINED_WORKER_WAVE=" + json.dumps({
+                "wave": wave + 1, "completed": completed,
+                "worker_seconds": wave_seconds[-1],
+                "settled_rss_kib": settled_rss_kib[-1],
+                "mds_reads": read.read_count,
+                "actions": actions, "marks": marks, "pending": pending,
+            }, sort_keys=True), flush=True)
+            read.wave += 1
+        assert read.read_count == 5 * 360
+    print("P8_RETAINED_WORKER_METRIC=" + json.dumps({
+        "settled_rss_kib": settled_rss_kib,
+        "worker_seconds": wave_seconds,
+        "last_minus_second_kib": settled_rss_kib[-1] - settled_rss_kib[1],
     }, sort_keys=True), flush=True)

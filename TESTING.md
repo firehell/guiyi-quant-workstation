@@ -449,6 +449,12 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.
   services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
   --case query_real_rebuild_10000 --repeats 5 --timeout-seconds 300
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case query_real_rebuild_10000_index --repeats 5 --timeout-seconds 300
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case stream_300_mds_retained --repeats 5 --timeout-seconds 180
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
   services/quant-api/.venv/bin/python -m pytest -q -s -m isolated_postgresql \
   services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py::test_postgresql_300_mds_same_process_rss_soak
 ```
@@ -461,6 +467,10 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.
 HTDY 再读取 32 Bar 上下文；其测试适配器把历史夹具包装成完成观察，不能替代真实 Live/Runtime 验收。
 `query_real_rebuild_10000` 用真实策略输出、修改价格后的第二版、旧 cutoff 和每轮 100 次热查询检验查询容量；
 同进程浸泡在五个独立临时 schema 中重复等量 300 流，记录每轮回收后的 RSS。
+`stream_300_mds_retained` 在同一 worker、MDS、schema 和 300 条流上跨五个完成 Bar 重复处理，
+记录每轮处理时间、持久化动作和回收后的 RSS；只证明该有界窗口，不证明自然 Live 长期稳定。
+`query_real_rebuild_10000_index` 在真实投影 Bar 重建后记录表/索引字节、首次业务调用、
+100 次热查询的 p50/p95 和 PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`；首次业务调用不等于冷缓存启动。
 
 真实浏览器验收只连接上述一次性 PostgreSQL 测试库。先在单独终端运行
 `PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core`

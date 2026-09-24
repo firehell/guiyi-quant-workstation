@@ -160,10 +160,9 @@ def evaluate_newow_capture(token, checkpoint, evidence, *, dependency_manifest):
             end, day, contract, owner, calculation, product_bar.bar.close,
             fingerprint, NewowHistoricalPayload(identity, product_bar, False),
         )
-        next_checkpoint, raw_sources, transition = _newow_step(
-            stream, checkpoint, item, points,
+        next_checkpoint, sources, transition = _newow_step(
+            stream, checkpoint, item, points, observed_at=observed,
         )
-        sources = tuple(SourceAction(source.action, observed) for source in raw_sources)
         for point in points:
             value = point.get("value")
             if isinstance(value, dict):

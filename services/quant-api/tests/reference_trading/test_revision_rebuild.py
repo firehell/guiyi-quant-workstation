@@ -7,6 +7,7 @@ import os
 from time import perf_counter
 
 import pytest
+from sqlalchemy import event, text
 
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
 
@@ -17,6 +18,71 @@ from app.reference_trading.service import ServiceInterrupted
 from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
 from tests.reference_trading.test_bootstrap import Reader, _plan, _repository
 from tests.reference_trading.test_repository_postgresql import reference_postgresql  # noqa: F401
+
+
+def _reference_relation_bytes(engine) -> dict[str, dict[str, int]]:
+    schema = engine.get_execution_options()["schema_translate_map"][None]
+    result = {}
+    with engine.connect() as connection:
+        for table in ("reference_trades", "reference_actions", "reference_marks", "reference_batches"):
+            relation = f"{schema}.{table}"
+            table_bytes, index_bytes = connection.execute(text(
+                "SELECT pg_table_size(to_regclass(:relation)), "
+                "pg_indexes_size(to_regclass(:relation))"
+            ), {"relation": relation}).one()
+            result[table] = {"table_bytes": table_bytes, "index_bytes": index_bytes}
+    return result
+
+
+def _reference_query_plan(engine, invoke) -> dict[str, object]:
+    captured = []
+
+    def on_execute(_connection, _cursor, statement, parameters, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT") and "reference_trades" in statement:
+            captured.append((statement, parameters))
+
+    event.listen(engine, "before_cursor_execute", on_execute)
+    try:
+        invoke()
+    finally:
+        event.remove(engine, "before_cursor_execute", on_execute)
+    assert captured
+    statement, parameters = captured[-1]
+    with engine.connect() as connection:
+        raw = connection.exec_driver_sql(
+            "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + statement, parameters,
+        ).scalar_one()
+    plan = (json.loads(raw) if isinstance(raw, str) else raw)[0]
+    scans = []
+
+    def buffers(node):
+        return {
+            name: node.get(name, 0)
+            for name in (
+                "Shared Hit Blocks", "Shared Read Blocks", "Shared Dirtied Blocks",
+                "Shared Written Blocks", "Local Hit Blocks", "Local Read Blocks",
+                "Temp Read Blocks", "Temp Written Blocks",
+            )
+        }
+
+    def walk(node):
+        if "Scan" in node["Node Type"]:
+            scans.append({
+                "node": node["Node Type"], "index": node.get("Index Name"),
+                "relation": node.get("Relation Name"),
+                "rows": node["Actual Rows"], "loops": node["Actual Loops"],
+                "removed": node.get("Rows Removed by Filter", 0),
+                "index_cond": node.get("Index Cond"),
+                "buffers": buffers(node),
+            })
+        for child in node.get("Plans", ()):
+            walk(child)
+
+    walk(plan["Plan"])
+    return {
+        "execution_ms": round(plan["Execution Time"], 3),
+        "buffers": buffers(plan["Plan"]), "scans": scans,
+    }
 
 
 def test_rebuild_invalidates_changed_active_and_publishes_complete_new_revision() -> None:
@@ -165,6 +231,8 @@ def test_postgresql_long_history_price_rebuild_keeps_past_cutoff(
     built = HistoricalReferenceService(repository, reader).execute(build_plan, build_plan.plan_hash)
     build_seconds = perf_counter() - started
     assert built.status == "completed"
+    index_probe = count == 10000 and os.getenv("GUIYI_P8_BENCH_INDEX") == "1"
+    built_bytes = _reference_relation_bytes(reference_postgresql) if index_probe else None
     query = HistoricalReferenceQuery(factory)
     window = {"since": reader.bars[0].trading_day, "through": reader.bars[-1].trading_day}
     cutoff = reader.bars[499].bar_end
@@ -197,10 +265,15 @@ def test_postgresql_long_history_price_rebuild_keeps_past_cutoff(
     )
     rebuild_seconds = perf_counter() - started
     assert rebuilt.status == "completed"
+    rebuilt_bytes = _reference_relation_bytes(reference_postgresql) if index_probe else None
+    first_use_started = perf_counter()
     current_full = query.trades(stream.stream_id, **window)
+    first_page_ms = round((perf_counter() - first_use_started) * 1000, 3)
+    first_use_started = perf_counter()
     current_summary = query.summary(
         stream.stream_id, snapshot_token=current_full["snapshot"], **window,
     )
+    first_summary_ms = round((perf_counter() - first_use_started) * 1000, 3)
     current_prefix = query.trades(stream.stream_id, cutoff=cutoff, **window)
     current_prefix_summary = query.summary(
         stream.stream_id, cutoff=cutoff, snapshot_token=current_prefix["snapshot"], **window,
@@ -233,7 +306,10 @@ def test_postgresql_long_history_price_rebuild_keeps_past_cutoff(
             query.summary(stream.stream_id, snapshot_token=current_full["snapshot"], **window)
             timings["summary"].append((perf_counter() - started) * 1000)
         metrics = {
-            key: {"n": len(values), "p95_ms": round(sorted(values)[94], 3)}
+            key: {
+                "n": len(values), "p50_ms": round(sorted(values)[49], 3),
+                "p95_ms": round(sorted(values)[94], 3),
+            }
             for key, values in timings.items()
         }
         metrics["row_counts"] = {"bars": count, "closed_trades": current_summary["closed_count"]}
@@ -241,3 +317,25 @@ def test_postgresql_long_history_price_rebuild_keeps_past_cutoff(
         assert metrics["deep_page"]["p95_ms"] <= 500
         assert metrics["summary"]["p95_ms"] <= 1000
         print("P8_QUERY_METRIC=" + json.dumps(metrics, sort_keys=True), flush=True)
+        if index_probe:
+            plans = {
+                "first_page": _reference_query_plan(
+                    reference_postgresql,
+                    lambda: query.trades(stream.stream_id, **page_params),
+                ),
+                "deep_page": _reference_query_plan(
+                    reference_postgresql,
+                    lambda: query.trades(stream.stream_id, cursor=cursor, **page_params),
+                ),
+                "summary": _reference_query_plan(
+                    reference_postgresql,
+                    lambda: query.summary(
+                        stream.stream_id, snapshot_token=current_full["snapshot"], **window,
+                    ),
+                ),
+            }
+            print("P8_INDEX_METRIC=" + json.dumps({
+                "first_use_ms": {"first_page": first_page_ms, "summary": first_summary_ms},
+                "relation_bytes": {"built": built_bytes, "rebuilt": rebuilt_bytes},
+                "plans": plans,
+            }, sort_keys=True), flush=True)

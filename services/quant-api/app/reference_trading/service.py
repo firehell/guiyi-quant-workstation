@@ -6,7 +6,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from functools import partial
 from hashlib import sha256
 import json
@@ -316,6 +316,7 @@ def _newow_step(
     checkpoint: AdapterCheckpoint[object],
     item: HistoricalInputBar,
     presentation: list[dict[str, object]] | None = None,
+    *, observed_at: datetime | None = None,
 ) -> tuple[
     AdapterCheckpoint[object], tuple[SourceAction, ...], ReferenceTransition,
 ]:
@@ -519,7 +520,7 @@ def _newow_step(
             stream,
             transition.state,
         ),
-        tuple(SourceAction(action) for action in actions),
+        tuple(SourceAction(action, observed_at) for action in actions),
         transition,
     )
 
