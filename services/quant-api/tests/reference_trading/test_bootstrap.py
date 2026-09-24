@@ -50,9 +50,9 @@ def _stream() -> StreamIdentity:
 
 
 class Reader:
-    def __init__(self) -> None:
-        at = datetime(2026, 1, 1, 15, tzinfo=UTC)
-        prices = [100] * 50 + [120, 80, 120, 80]
+    def __init__(self, *, prices: list[int] | None = None, at: datetime | None = None) -> None:
+        at = at or datetime(2026, 1, 1, 15, tzinfo=UTC)
+        prices = prices if prices is not None else [100] * 50 + [120, 80, 120, 80]
         raw = tuple(
             ReferenceBar(at + timedelta(days=i), (at + timedelta(days=i)).date(), Decimal(price))
             for i, price in enumerate(prices)

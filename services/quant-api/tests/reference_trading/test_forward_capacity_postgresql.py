@@ -10,9 +10,11 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from hashlib import sha256
+import gc
 import json
 import os
 from pathlib import Path
+import subprocess
 from time import perf_counter
 from uuid import uuid4
 
@@ -442,3 +444,39 @@ def test_postgresql_300_streams_acquire_from_real_mds(capacity_postgresql, tmp_p
             "total_seconds": round(total_seconds, 3),
             "rounds": rounds, "calculations": calculations, "pending": pending,
         }, sort_keys=True))
+
+
+def test_postgresql_300_mds_same_process_rss_soak(
+    isolated_postgres_engine: Engine, tmp_path_factory,  # noqa: F811
+) -> None:
+    """Repeat an equal real-MDS workload in one process and report settled RSS."""
+    settled_rss_kib: list[int] = []
+    for wave in range(5):
+        schema = "reference_p8_soak_" + uuid4().hex
+        with isolated_postgres_engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+        scoped = isolated_postgres_engine.execution_options(
+            schema_translate_map={None: schema},
+        )
+        try:
+            Base.metadata.create_all(scoped)
+            test_postgresql_300_streams_acquire_from_real_mds(
+                scoped, tmp_path_factory.mktemp(f"p8-mds-soak-{wave}"),
+            )
+        finally:
+            with isolated_postgres_engine.begin() as connection:
+                connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        del scoped
+        gc.collect()
+        result = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(os.getpid())],
+            capture_output=True, text=True, check=True, timeout=5,
+        )
+        settled_rss_kib.append(int(result.stdout.strip()))
+        print("P8_MDS_SOAK_WAVE=" + json.dumps({
+            "wave": wave + 1, "settled_rss_kib": settled_rss_kib[-1],
+        }, sort_keys=True), flush=True)
+    print("P8_MDS_SOAK_METRIC=" + json.dumps({
+        "settled_rss_kib": settled_rss_kib,
+        "last_minus_first_kib": settled_rss_kib[-1] - settled_rss_kib[0],
+    }, sort_keys=True), flush=True)

@@ -445,6 +445,12 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
   services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
   --case stream_300_mds --repeats 5 --timeout-seconds 120
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case query_real_rebuild_10000 --repeats 5 --timeout-seconds 300
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python -m pytest -q -s -m isolated_postgresql \
+  services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py::test_postgresql_300_mds_same_process_rss_soak
 ```
 
 同一入口还接受 `--case query_100` 和 `--case query_1000`，分别保存对应 JSON。
@@ -453,6 +459,8 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.
 分区断言在 `test_historical_integration.py`，含 45 天过期窗口拒绝和未完成日不读取。
 `--case stream_300_mds` 对每条流读取临时 Canonical 经 Catalog/rank-1/MDS 的页面，
 HTDY 再读取 32 Bar 上下文；其测试适配器把历史夹具包装成完成观察，不能替代真实 Live/Runtime 验收。
+`query_real_rebuild_10000` 用真实策略输出、修改价格后的第二版、旧 cutoff 和每轮 100 次热查询检验查询容量；
+同进程浸泡在五个独立临时 schema 中重复等量 300 流，记录每轮回收后的 RSS。
 
 真实浏览器验收只连接上述一次性 PostgreSQL 测试库。先在单独终端运行
 `PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core`
@@ -461,7 +469,10 @@ HTDY 再读取 32 Bar 上下文；其测试适配器把历史夹具包装成完�
 再运行 `pnpm -C apps/quant-web exec vite --config vite.p8.config.ts`，用真实浏览器打开
 `http://127.0.0.1:5178/p8-reference-acceptance.html`。此页面挂载实际
 `ReferenceTradePanel` 并经 Vite proxy 请求实际 FastAPI 和隔离 PostgreSQL，未拦截 API；
-仅用于组件/API/持久化闭环，不等于完整 Market 路由或正式产品能力开放。退出两台服务后
+组件页用于组件/API/持久化闭环。完整 Market 路由验收改为打开
+`http://127.0.0.1:5178/market/chart?symbol=rb&view=newow&frequency=1d`，按夹具日期
+2026-01-05–03-27 设置 Newow 与 SuBing legacy 窗口，再切换 SuBing/HTDY 标签；
+默认当前日期超出生成数据窗口时的 typed error 不算夹具内成功读回。退出两台服务后
 脚本仅删除它创建的随机 schema 和临时 Canonical 文件。
 
 ## Market WebSocket 与统一详情页

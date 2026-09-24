@@ -40,6 +40,10 @@ CASES = {
         )
         for count in (100, 1000, 10000)
     },
+    "query_real_rebuild_10000": (
+        "services/quant-api/tests/reference_trading/test_revision_rebuild.py",
+        "test_postgresql_long_history_price_rebuild_keeps_past_cutoff[10000]",
+    ),
     **{
         f"stream_{count}": (
             "services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py",
@@ -153,7 +157,10 @@ def run_case(case: str, *, timeout_seconds: int, environment: dict[str, str]) ->
         "query_metrics": query_metrics,
         "stream_metrics": stream_metrics,
         "mds_stream_metrics": mds_stream_metrics,
-        "test_tail": output.strip().splitlines()[-1:] if output else [],
+        "test_tail": (
+            output.strip().splitlines()[-30 if process.returncode else -1:]
+            if output else []
+        ),
     }
 
 

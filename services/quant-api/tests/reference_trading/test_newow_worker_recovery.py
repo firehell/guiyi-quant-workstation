@@ -27,7 +27,7 @@ from app.reference_trading.forward_inputs import (
     ForwardInputUnavailable, capture_htdy_live, capture_newow_canonical,
     capture_newow_live, capture_subing_live,
 )
-from app.reference_trading.models import ReferenceBatch, ReferenceStream
+from app.reference_trading.models import ReferenceActionRow, ReferenceBatch, ReferenceStream
 from app.reference_trading.newow_forward import _whole_number
 from app.reference_trading.recovery import capture_observation_gap, evaluate_observation_gap
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict, _digest
@@ -493,6 +493,145 @@ def test_postgresql_htdy_successive_windows_preserve_first_seen_and_reject_repai
     assert ReferenceRepository(factory).read_pending_capture(identity.stream_id) is not None
     assert len(query.signals(identity.stream_id, **params)["items"]) == 2
     assert query.signals(identity.stream_id, snapshot_token=old_snapshot, **params)["items"] == [first_signal]
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_htdy_actual_buy_then_sell_reverses_durable_trade(
+    forward_postgresql: Engine,
+) -> None:
+    from guiyi_quant.reference_trading.htdy import HtdyForwardState, MODEL_VERSION
+
+    base = datetime(2026, 9, 23, 0, tzinfo=UTC)
+    neutral = ("10", "11", "9", "10")
+    buy = ("0.1", "10", "0.1", "0.1")
+    sell = ("0.1", "40", "0.1", "30.025")
+    prices = [neutral] * 29 + [buy] * 3 + [neutral] + [sell] * 3
+    bars = tuple(CanonicalBar(
+        base + timedelta(minutes=15 * index), base.date(),
+        *(Decimal(value) for value in prices[index]), Decimal(100), None, None,
+    ) for index in range(len(prices)))
+    identity = StreamIdentity(
+        "htdy", ("huotian_dayou_original_v0",), "htdy-v1", MODEL_VERSION,
+        "actual_dominant_v1", "RB", "15m", "actual_dominant",
+        RecordingMode.FORWARD_OBSERVATION, "latest_only_32_v1",
+    )
+    factory, repo, revision = _setup_other_forward_family(
+        forward_postgresql, identity,
+        HtdyForwardState(MODEL_VERSION, "latest_only_32_v1"),
+        "htdy_first_seen_v1", bars[31].bar_end - timedelta(seconds=4),
+    )
+
+    class MarketRead:
+        def __init__(self, window):
+            self.window = window
+
+        def observation_snapshot(self, _query, _after, _now):
+            return MarketObservationSnapshot(
+                state=None, source="realtime", trading_day=base.date(),
+                contract="RB2610", bars=(self.window[-1],),
+            )
+
+        def bars_until(self, _query, *, trading_day, end, limit):
+            assert trading_day == base.date() and end == self.window[-1].bar_end and limit == 32
+            return MarketReadWindow(
+                symbol="RB", series_kind="actual_dominant", frequency="15m",
+                trading_day=trading_day, contract="RB2610", cutoff=end,
+                bars=self.window, bar_contracts=("RB2610",) * 32,
+            )
+
+        def validate_alert_window(self, _window, *, context_bars):
+            assert context_bars == 32
+
+    for index in range(31, 36):
+        end = bars[index].bar_end
+        observed = end + timedelta(seconds=5)
+        capture = capture_htdy_live(
+            MarketRead(bars[index - 31:index + 1]), identity,
+            revision_id=revision, generation=1,
+            after=None if index == 31 else bars[index - 1].bar_end,
+            now=observed, wake_kind="live_event", event_bar_end=end,
+            owner_segments=lambda *_: ("owner", "calc"),
+        )
+        assert capture is not None
+        repo.capture_forward(capture)
+        worker = _worker(repo, object(), observed)
+        worker.wake(identity.stream_id)
+        assert worker.run_round() == 1, worker.health().blocked
+
+    with factory() as session:
+        actions = session.query(ReferenceActionRow).filter_by(
+            stream_id=identity.stream_id,
+        ).order_by(ReferenceActionRow.bar_end, ReferenceActionRow.sequence).all()
+    assert [action.kind for action in actions] == ["OPEN_LONG", "CLOSE", "OPEN_SHORT"]
+    assert actions[1].entry_source_action_id == actions[0].source_action_id
+    query = HistoricalReferenceQuery(factory)
+    params = {"since": base.date(), "through": base.date()}
+    signals = query.signals(identity.stream_id, point_kind="signal", **params)["items"]
+    assert [item["value"]["observation_types"] for item in signals] == [
+        ["buy"], [], [], [], ["sell"],
+    ]
+    summary = query.summary(identity.stream_id, **params)
+    assert summary["closed_count"] == 1 and summary["open_count"] == 1
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_htdy_actual_same_bar_conflict_stays_pending(
+    forward_postgresql: Engine,
+) -> None:
+    from guiyi_quant.reference_trading.htdy import HtdyForwardState, MODEL_VERSION
+
+    base = datetime(2026, 9, 23, 0, tzinfo=UTC)
+    neutral = ("10", "11", "9", "10")
+    conflict = ("0.1", "18", "0.1", "18")
+    prices = [neutral] * 29 + [conflict] * 3
+    bars = tuple(CanonicalBar(
+        base + timedelta(minutes=15 * index), base.date(),
+        *(Decimal(value) for value in prices[index]), Decimal(100), None, None,
+    ) for index in range(32))
+    end = bars[-1].bar_end
+    identity = StreamIdentity(
+        "htdy", ("huotian_dayou_original_v0",), "htdy-v1", MODEL_VERSION,
+        "actual_dominant_v1", "RB", "15m", "actual_dominant",
+        RecordingMode.FORWARD_OBSERVATION, "latest_only_32_v1",
+    )
+    factory, repo, revision = _setup_other_forward_family(
+        forward_postgresql, identity,
+        HtdyForwardState(MODEL_VERSION, "latest_only_32_v1"),
+        "htdy_first_seen_v1", end - timedelta(seconds=4),
+    )
+
+    class MarketRead:
+        def observation_snapshot(self, _query, _after, _now):
+            return MarketObservationSnapshot(
+                state=None, source="realtime", trading_day=base.date(),
+                contract="RB2610", bars=(bars[-1],),
+            )
+
+        def bars_until(self, _query, *, trading_day, end, limit):
+            assert trading_day == base.date() and end == bars[-1].bar_end and limit == 32
+            return MarketReadWindow(
+                symbol="RB", series_kind="actual_dominant", frequency="15m",
+                trading_day=trading_day, contract="RB2610", cutoff=end,
+                bars=bars, bar_contracts=("RB2610",) * 32,
+            )
+
+        def validate_alert_window(self, _window, *, context_bars):
+            assert context_bars == 32
+
+    observed = end + timedelta(seconds=5)
+    capture = capture_htdy_live(
+        MarketRead(), identity, revision_id=revision, generation=1,
+        after=None, now=observed, wake_kind="live_event", event_bar_end=end,
+        owner_segments=lambda *_: ("owner", "calc"),
+    )
+    assert capture is not None
+    repo.capture_forward(capture)
+    worker = _worker(repo, object(), observed)
+    worker.wake(identity.stream_id)
+    assert worker.run_round() == 0
+    assert worker.health().blocked
+    assert ReferenceRepository(factory).read_pending_capture(identity.stream_id) is not None
+    assert ReferenceRepository(factory).load_checkpoint(identity.stream_id, revision)[0].seq == 1
 
 
 @pytest.mark.isolated_postgresql

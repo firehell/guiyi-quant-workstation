@@ -27,7 +27,7 @@
 | Build/resume/advance/rebuild | `test_bootstrap`, `test_historical_incremental`, `test_revision_rebuild`; P8 PostgreSQL build/advance and rebuild/old-snapshot readback | Rebuild at larger realistic stream scale |
 | Historical CLI | `test_reference_cli` | No additional synonymous unit test planned |
 | Persisted presentation | `test_presentation`, `test_historical_integration`; P8 PostgreSQL build/advance | Browser source identity readback |
-| Bounded P5 query | `test_query`, `test_query_postgresql`, `test_api`; P8 100/1000/10000 synthetic row query pagination and five code-commit-bound repetitions | Exact query index plans, realistic closed/versioned trade mix, past cutoff at scale |
+| Bounded P5 query | `test_query`, `test_query_postgresql`, `test_api`; P8 synthetic pagination plus five 10,000-Bar actual-trade changed-price rebuild repetitions with old cutoff and warm queries | Production distribution, longer-duration planner stability and natural Runtime readback |
 | Fail-closed page adapters | `test_persisted_subing_window`, `test_newow_persisted_query`, `test_api`; P8 PostgreSQL pipeline checks both adapters; Playwright CLI readback through actual Market detail route, FastAPI, MDS and PG | Broader page error matrix and natural Runtime readback |
 
 ## Runs to date
@@ -56,8 +56,13 @@
 | P8-S3 | Same 300 streams; temporary physical Canonical, Catalog/rank-1, real `MarketDataService.query_page`, durable capture and kernel worker | `reference_trading_benchmark.py --case stream_300_mds --repeats 5 --timeout-seconds 120`: five passes at clean code commit `159d3ecf3`; 300 calculations and zero pending each | PASS isolated real-MDS implementation throughput; generated bars and test-only observation adapter |
 | P8-B1 | Actual Vue panel/Vite proxy/FastAPI/PG, Newow oscillation 1d historical and three forward families; no route interception | Playwright CLI open/snapshot/click; 50 CLOSED + 1 OPEN, page 2 appends row 51, HTDY first-seen, disabled-mode readback; API requests 200, sole console error was missing fixture favicon | PASS isolated component/API/DB E2E; not full Market route |
 | P8-B2 | Actual `/market/chart` router/MainLayout/Newow/Subing/HTDY workspaces, temporary Canonical/Catalog/MDS, disposable PG/Redis | Playwright CLI navigation and Tab switching; Newow historical 50 CLOSED + 1 OPEN, second page 51 rows; SuBing 60m persisted forward coverage; HTDY 15m first-seen signal; no route interception | PASS unified-reference full-route E2E for fixture data; legacy reference panels fail closed on fixture Calendar boundary |
+| P8-B3 | Full Market route with a one-year synthetic Calendar/Session horizon and isolated persisted SuBing AlertEvent | Playwright CLI: bounded Newow legacy 1d 200, bounded SuBing legacy 15m 200, separate AlertEvent S↑ and unified forward panels, HTDY 15m first-seen; direct SuBing API 200 | PASS for explicit fixture windows; default current-date legacy requests still exceed the fixture horizon and return typed 409 |
+| P8-S4 | Repeat 300 real-MDS fixture streams on current dirty task tree | `reference_trading_benchmark.py --case stream_300_mds --repeats 5 --timeout-seconds 180`: five passes, 300 calculations, 360 MDS reads and zero pending each | PASS isolated implementation throughput; generated Canonical and observation adapter |
+| P8-S5 | Same-process equal-load 300 real-MDS waves | `test_postgresql_300_mds_same_process_rss_soak`: five waves, each 300 calculations and zero pending; settled RSS 170240, 157088, 157520, 157936, 157968 KiB | PASS observed no sustained RSS growth in five fixture waves |
+| P8-Q3 | 10,000 actual projected Bars, 9,948 CLOSED trades, changed-price rebuild and prior-revision cutoff | `query_real_rebuild_10000 --repeats 5`: five passes, 100 warm first/deep/summary queries per run; worst p95 317.739/335.243/299.623 ms against 500/500/1000 ms limits | PASS isolated real-trade query/rebuild capacity on dirty task tree |
 | P8-H3 | PostgreSQL rebuild with changed source manifest, old token and new active revision | `test_revision_rebuild.py -m isolated_postgresql`: 1 passed | PASS isolated revision switch/old-snapshot rejection on one fixture stream; scale remains open |
 | P8-H4 | HTDY two consecutive completed windows, old first-seen point snapshot, then later overlapping-bar repaint | `test_newow_worker_recovery.py -k htdy_successive_windows -m isolated_postgresql`: 1 passed | PASS isolated PG checkpoint/first-seen-point retention and `OBSERVATION_GAP` fail-closed; buy/sell model/Live acceptance remains separate |
+| P8-H5 | HTDY valid buy→sell windows and same-Bar conflicting signals against isolated PostgreSQL | `test_newow_worker_recovery.py -k 'actual_buy_then_sell or actual_same_bar_conflict' -m isolated_postgresql`: 2 passed, 33 deselected | PASS isolated model/capture/worker behavior; wider real-data and Live acceptance remains separate |
 | P8-R5 | Final affected reference-trading PostgreSQL module regression | `pytest -q -m isolated_postgresql services/quant-api/tests/reference_trading`: 38 passed, 219 deselected, exit 0; non-PG affected query/rebuild/snapshot/forward files: 19 passed, 2 deselected; Web production build and Ruff passed | PASS for this branch increment; does not clear remaining performance or develop-integration gates |
 | P8-R4 | Final affected Python/Web verification | non-PG selected suite: 438 passed, 1 skipped, 35 deselected; isolated PG selected suite: 36 passed, 213 deselected; targeted query/input/guard: 132 passed; `pnpm -C apps/quant-web build`: exit 0 | PASS; skip is not Redis evidence |
 
@@ -138,6 +143,28 @@ production data freshness, real Live acquisition, or natural Runtime behavior.
 Direct test publication of 15m/60m partitions does not exercise the upstream
 Canonical 1m aggregation Gate.
 
+On 2026-09-24 the same 300-stream MDS case was rerun five times after the
+Market-route fixture edits on the dirty task tree at `e6a8ff347`. Capture-to-worker
+totals were 24.009, 24.198, 24.009, 22.113 and 26.004 seconds; each run read
+360 MDS pages, committed 300 calculations and drained pending to zero. Observed
+child peak RSS was 168912–169984 KiB. A separate single-process soak then ran
+five equal 300-stream waves against five disposable schemas; settled RSS was
+170240, 157088, 157520, 157936 and 157968 KiB after garbage collection and
+schema disposal. The first-to-last difference was -12272 KiB. These are
+fixture-capacity and process-memory observations, not production Live evidence.
+
+The real-trade query follow-up builds and rebuilds 10,000 completed Bars with a
+changed source price, yielding 9,948 CLOSED trades. It checks that the rebuilt
+trade amounts differ and that the old cutoff still returns the old revision.
+An initial SQL summary implementation intermittently exceeded PostgreSQL's
+30-second statement timeout: the planner nested a full trade scan under a
+windowed latest-version subquery. The corrected query uses a scalar latest
+version lookup backed by the stream/revision/trade primary key. After that
+change, five independent `query_real_rebuild_10000` runs passed 100 warm
+first-page, full deep-page and summary queries each. The worst p95 was
+317.739/335.243/299.623 ms, within the frozen 500/500/1000 ms limits.
+This exercises generated prices and a test-only dataset, not natural data.
+
 ## Full Market route browser readback
 
 The isolated browser fixture uses the same temporary Canonical root, random PostgreSQL
@@ -161,15 +188,19 @@ persisted forward coverage ending 2026-09-23 10:00; switching to HTDY 15m return
 the persisted 2026-09-23 15:45 first-seen signal. Product casing and HTDY forward
 date filtering were corrected after the browser showed 422 and a hidden signal.
 
-The older Newow/Subing reference widgets on the same route returned
-`TRADING_CALENDAR_MISSING` against the short generated Calendar, including a SuBing
-request explicitly bounded to 2026-01-05–2026-03-27. The Newow legacy widget did
-render after its statistics window was set to that fixture range, but this does not
-clear the older widgets as a group. Their typed, fail-closed UI is observed; no full
-legacy-widget pass or production Calendar claim is made. The browser console's HTTP
-409 entries are those fixture-bound legacy requests; SuBing also requested absent
-AlertEvent fixtures and received 404. Neither response is a persisted-reference
-read success. Real provider acquisition,
+The initial legacy-widget check exposed three fixture limits: the SuBing service
+requires a one-year Calendar and Session horizon even for the shorter selected
+window; the fixture lacked an AlertRule/Event; and the reused integration-test
+monkeypatch deliberately disabled legacy projection. The browser fixture now
+restores the real kernel, adds disposable Calendar/Session facts from 2025-03-27,
+and seeds one disabled test Rule with a persisted S↑ AlertEvent. In the real
+`/market/chart` route, a Newow 1d window of 2026-01-05–03-27 rendered its legacy
+statistics; a SuBing 15m window for the same dates returned 200 and rendered
+historical statistics independently of the unified forward panel and persisted
+AlertEvent. The direct bounded SuBing API returned 200 with a 195478-byte body.
+The default legacy request still extends to the actual current day beyond this
+generated fixture and returns a typed Calendar 409 until a bounded window is
+chosen. No production Calendar or default-current-window pass is claimed. Real provider acquisition,
 natural Runtime and upstream 1m aggregation remain outside this isolated E2E.
 
 ## Independent review
@@ -192,26 +223,21 @@ limit. The five-run measurements above were completed after that review.
 
 ## Current acceptance boundary
 
-The five requested follow-up evidence groups now have isolated passing results: actual
-browser panel/API/PG, all supported strategy-family forward fixtures, real child-process
-crash recovery, 60/300 typed-capture/worker throughput, and D1/W1 bounded normal append.
-P8 as a whole remains **PARTIAL**: the unified-reference full Market route has isolated
-browser evidence, but the legacy panels remain Calendar-blocked in this fixture.
-Historical rebuild/revision/cutoff at scale, index-plan and sustained-memory evidence,
-and wider HTDY model/Live acceptance still need separate proof. The single
-stream PostgreSQL rebuild test only changes a dependency manifest and proves revision
-switching and old-token rejection; it does not prove changed-price recalculation or an
-old cutoff at scale. The HTDY fixture accepted two 32-Bar windows sharing 31 completed
-Bars, kept the first first-seen point unchanged in the new and old snapshots, and blocked
-a third window that rewrote an overlapping Bar with exact `OBSERVATION_GAP`: checkpoint
-stayed at seq 3, the bad capture remained pending, and both stored first-seen points
-remained readable. The constant-price fixture does not prove buy/sell signal parity.
-No fixture opens HTDY acceptance
-or any production capability. This
-branch is an engineering candidate only; develop integration, release, Runtime
-promotion, Canonical writes and P9 remain separate Gates.
-The current checked `develop@554545586` has advanced beyond the P8 base, including
-changes to `market_data_service.py` and Newow capability contracts. Since the listed P8
-acceptance gaps remain, develop integration is **not approved by this evidence**;
-before integration, reconcile those dependencies and rerun affected checks on the
-combined tree.
+The requested follow-up groups now have isolated passing results: full Market-route
+browser/API/PG readback for bounded fixture windows, all supported strategy-family
+forward fixtures, child-process crash recovery, 60/300 real-MDS fixture throughput,
+D1/W1 bounded append, changed-price rebuild at 10,000 Bars, same-process memory
+soak and HTDY model buy/sell plus same-Bar conflict. The successive HTDY-window
+fixture also retained the old first-seen point and rejected a repaint with exact
+`OBSERVATION_GAP`, leaving the capture pending. These are fixture and engineering
+Gates. The browser default-current-date legacy request remains outside the
+generated Calendar horizon; real provider, natural Live, upstream 1m aggregation
+and production acceptance were not exercised. No fixture opens HTDY acceptance
+or any production capability.
+
+P8 develop integration is still **pending** combined-tree verification. The checked
+`develop@10e6805665` changed `market_data_service.py` and Newow capability
+contracts beyond this branch; `git merge-tree` reports one shared-file change
+there. Reconcile the current develop dependency, rerun affected checks on the
+combined tree, and obtain final independent Review before deciding the integration
+Gate. Release, Runtime promotion, Canonical writes and P9 remain separate Gates.
