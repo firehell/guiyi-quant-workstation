@@ -12,8 +12,8 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v13"] = (
-    "newow_product_capabilities_v13"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v14"] = (
+    "newow_product_capabilities_v14"
 )
 RELEASE_STAGE: Literal["daily_weekly"] = "daily_weekly"
 OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
@@ -39,12 +39,12 @@ OPEN_WEEKLY_PRODUCTS = (
     "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
     "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
     "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
-    "rm", "ru", "sa", "sc", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
+    "rm", "rs", "ru", "sa", "sc", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
 )
 REMAINING_WEEKLY_V2_PRODUCTS = (
-    "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm",
+    "pf", "pk", "pl", "pr", "px", "sf", "sh", "sm",
 )
-FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "cj", "eb", "eg", "j", "oi", "pg", "si", "sr")
+FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "cj", "eb", "eg", "j", "oi", "pg", "rs", "si", "sr")
 # v9 is an immutable candidate wire contract. Keep its original ordering even as
 # products graduate into later formal capability versions.
 CANDIDATE_WEEKLY_PRODUCTS = (
@@ -55,9 +55,9 @@ CANDIDATE_WEEKLY_PRODUCTS = (
     "cj", "oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm", "sr",
 )
 if (
-    len(OPEN_WEEKLY_PRODUCTS) != 51
-    or len(REMAINING_WEEKLY_V2_PRODUCTS) != 9
-    or len(FORMAL_WEEKLY_V2_PRODUCTS) != 10
+    len(OPEN_WEEKLY_PRODUCTS) != 52
+    or len(REMAINING_WEEKLY_V2_PRODUCTS) != 8
+    or len(FORMAL_WEEKLY_V2_PRODUCTS) != 11
     or set(FORMAL_WEEKLY_V2_PRODUCTS) - set(OPEN_WEEKLY_PRODUCTS)
     or set(OPEN_WEEKLY_PRODUCTS) & set(REMAINING_WEEKLY_V2_PRODUCTS)
     or len(CANDIDATE_WEEKLY_PRODUCTS) != 60

@@ -47,6 +47,7 @@ export function newowErrorDisplay(error: string | null): string | null {
     NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING: '本周尚未形成已完成周线',
     NEWOW_REFERENCE_WINDOW_PARTIAL: '所选统计终点晚于权威可用截止',
     NEWOW_CHART_WARMING: '策略输入仍在预热',
+    NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING: '来源价格不可用后，当前策略参考正在重新预热',
   }
   if (Object.hasOwn(labels, error)) return `${labels[error]}（技术码 ${error}）`
   // Structured diagnostics are assembled only from the allow-listed reasons and

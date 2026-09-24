@@ -13,6 +13,7 @@ import type {
   NewowReferenceTrade,
 } from '../src/types/newowProduct.ts'
 import * as viewModels from '../src/utils/newowProductViewModel.ts'
+import { newowErrorDisplay } from '../src/utils/newowDataDiagnostics.ts'
 
 const buildReference = (viewModels as unknown as {
   buildNewowReferencePanelViewModel: (
@@ -68,6 +69,17 @@ test('weekly partial uses only the server-provided completed boundary across cal
     assert.deepEqual(model.completeWindowAction, { since: '2026-01-01', through: available })
     assert.match(model.statusExplanation, /本周尚未完成/)
   }
+})
+
+test('source price interruption explains reference rewarming in the page', () => {
+  const response = referenceResponse()
+  response.status = {
+    status: 'warming', evidence_status: 'ACTIVE_CODE_VERIFIED',
+    reason_code: 'NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING',
+  }
+  const model = buildReference(response, null)
+  assert.match(model.statusExplanation, /来源价格不可用.*重新预热/)
+  assert.match(newowErrorDisplay(response.status.reason_code) ?? '', /来源价格不可用.*重新预热/)
 })
 
 test('non-weekly or unavailable completed boundaries never expose a guessed action', () => {

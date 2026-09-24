@@ -80,14 +80,14 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v13",
+        "schema_version": "newow_product_capabilities_v14",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
             "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
-            "rm", "ru", "sa", "sc", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
+            "rm", "rs", "ru", "sa", "sc", "si", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
@@ -102,12 +102,22 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
     }
 
 
-def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_nine_closed():
+def test_formal_sr_weekly_scope_uses_v2_and_keeps_other_eight_closed():
     require_open_weekly_product("sr")
     assert candidate_input_quality_policy(
         "sr", ProductFrequency.WEEKLY, candidate_weekly=False
     ) is InputQualityPolicy.WEEKLY_V2
-    for product in ("pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm"):
+    for product in ("pf", "pk", "pl", "pr", "px", "sf", "sh", "sm"):
+        with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
+            require_open_weekly_product(product)
+
+
+def test_formal_rs_weekly_scope_uses_v2_and_keeps_other_eight_closed():
+    require_open_weekly_product("rs")
+    assert candidate_input_quality_policy(
+        "rs", ProductFrequency.WEEKLY, candidate_weekly=False
+    ) is InputQualityPolicy.WEEKLY_V2
+    for product in ("pf", "pk", "pl", "pr", "px", "sf", "sh", "sm"):
         with pytest.raises(ValueError, match="NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"):
             require_open_weekly_product(product)
 
