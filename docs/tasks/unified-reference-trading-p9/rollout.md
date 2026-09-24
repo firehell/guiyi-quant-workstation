@@ -2,6 +2,18 @@
 
 ## 2026-09-25 production checkpoint
 
+The W1 quality-gap correction is integrated at `develop@f3cf595738d2a2fdd20a69e4ec21e23e3a905dbf`.
+It labels Newow calculation segments before historical replay and retains the
+source gap while omitting a reducer boundary before the owner's first eligible
+completed W1 Bar. The targeted regression suite passed 361 tests with 45 skipped;
+Ruff and diff checks passed, and independent review found no confirmed issue.
+Production-bound, read-only planning at code `45afe2e2a342434ec59cb63440aa49158755845c`
+returned `SOURCE_READY=9/9` for PL/PX/RS W1, using each product's authoritative
+start and the frozen 2026-09-23 cutoff. The [exact audit](../../../outputs/reference-p9-source-inventory-20260925/w1-45afe2e2-readonly.json)
+has file SHA-256 `1070422ef973adecd4910ac50d228456cabca887ccfc182d21e2e4249f0610dd`.
+This is source planning evidence, not a historical build or production reader
+switch. The 600-stream matrix must be regenerated for the final code identity.
+
 The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
 Production application schema is still `20260919_0047`; the persisted reader and
 Reference worker remain disabled. The previously missing 2026-09-24 rank-1

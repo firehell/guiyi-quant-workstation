@@ -47,6 +47,17 @@ SC/SI 六条 `SOURCE_READY`，PL/PX/RS 九条仍因
 9 noop 的原回执见 `outputs/subing-four-period-readiness-20260918/`）；不可重用该批次
 覆盖本次长历史前缀缺口。新批次仍须来源事实分类、精确旧指针/哈希与独立数据 Gate。
 
+2026-09-25 W1 质量中断修复：`develop@f3cf595738d2a2fdd20a69e4ec21e23e3a905dbf`
+已集成并推送。历史读取现在按原产品计算合同标记质量中断后的计算 Segment；
+无合格 Bar 之前的 W1 质量边界只保留为原始来源与页面部分覆盖证据，不生成无法
+归属 OPEN 交易的 reducer 事件。相关回归 `361 passed / 45 skipped`、Ruff 和
+`git diff --check` 通过，独立复审无 Confirmed Issue。生产库/Canonical 只读按
+原权威起点复核 PL/PX/RS 九条 W1 流全部 `SOURCE_READY`，证据见
+`outputs/reference-p9-source-inventory-20260925/w1-45afe2e2-readonly.json`
+（文件 SHA-256 `1070422ef973adecd4910ac50d228456cabca887ccfc182d21e2e4249f0610dd`）。
+该结果仅证明当前代码的这九条历史输入可规划；全 600 流须按最终代码重新核对，
+历史构建、0048、reader 切换、worker、发布与 Runtime Gate 均尚未执行。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
