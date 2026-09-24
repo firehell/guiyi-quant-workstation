@@ -513,6 +513,8 @@ PostgreSQL `READ ONLY` 事务，校验连接库名后读现存 stream 状态；�
 输出只是 source-readiness audit，仅有 plan hash、计数和 digest，未保存完整可执行
 `HistoricalReferencePlan`。正式 apply 前须另生成完整 frozen plan 并重新核对 exact code、
 源与 DB 状态。该入口没有 apply，DB 事务只读且每流维护 advisory lock 在上下文结束时释放。
+秒数预算在每次读取前后检查；单次底层阻塞 MDS 读取不会被强制中断。现场审计须避开
+盘后自然任务窗口，并由外部运行预算监控。
 生产全 600 流规划仍须绑定后续联合候选，不可沿用 develop 或旧 Release 的身份。
 
 ```bash
