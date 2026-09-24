@@ -12,7 +12,9 @@
 完整流级矩阵见 `outputs/reference-p9-source-inventory-20260925/matrix.json`。尚未执行
 `0048` migration、其余历史构建、全局 persisted reader 切换或 Reference worker 启用；
 本轮修复代码尚未发布。分层证据与计划身份见
-`docs/tasks/unified-reference-trading-p9/rollout.md`。
+`docs/tasks/unified-reference-trading-p9/rollout.md`。本次只读服务回查仍为现役
+`v1.10.33`、Reference worker disabled，API/Web 200、Runtime health `ok`、
+overall `passed`，weekly audit `not_run`；这不构成 Reference 自然运行验收。
 
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
