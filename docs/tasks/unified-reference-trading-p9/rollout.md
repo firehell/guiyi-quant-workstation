@@ -20,6 +20,9 @@ not proof of live observation or a switched page.
 
 `develop` now declares 60 formal Newow W1 products while the active v1.10.30
 declares 50. The separate v1.10.31 release candidate is still in progress.
+Its current `b46fdfd8f8177f530049f920a4aae3853d92ecbd` commit does not
+contain the P8 develop commit (`git merge-base --is-ancestor` returned 1), so
+it cannot serve as the P9 execution version without a new combined candidate.
 Newow 60m is not formally open. Any P9 matrix must bind to one immutable
 published code identity and its actual capability and source-data readback;
 the RB pilot count is not the remaining-work count.
@@ -86,7 +89,9 @@ enabled by this arithmetic.
 - An unknown commit result, a first-seen gap, a model not accepted, or a
   natural-runtime fault; investigate read-only and do not retry or replay it.
 - The v1.10.31 candidate is not released, or its published code differs from
-  the matrix. Regenerate plans rather than carrying v1.10.30 counts forward.
+  the matrix. A later combined candidate must contain P8/P9 and the intended
+  formal capability. Regenerate plans rather than carrying v1.10.30 counts
+  forward.
 
 P9 completion is reported per stream and per gate. A release, migration,
 historical build, reader cutover, worker installation and natural evidence are
