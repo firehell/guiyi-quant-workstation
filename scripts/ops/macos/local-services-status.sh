@@ -127,6 +127,28 @@ if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" && -f "$runti
 fi
 printf '[local-services-status] alert_runtime_enabled=%s\n' "$alert_marker_enabled"
 
+reference_marker="$runtime_root/.run/reference-worker-enabled"
+reference_worker_enabled=false
+if [[ -e "$reference_marker" || -L "$reference_marker" ]]; then
+  if [[ -f "$reference_marker" && ! -L "$reference_marker" ]] \
+    && [[ "$(stat -f '%Lp' "$reference_marker" 2>/dev/null)" == "600" ]] \
+    && [[ "$(stat -f '%u' "$reference_marker" 2>/dev/null)" == "$(id -u)" ]] \
+    && cmp -s "$reference_marker" <(printf 'enabled\n'); then
+    reference_worker_enabled=true
+  else
+    reference_worker_enabled=invalid
+    record_failure
+  fi
+fi
+printf '[local-services-status] reference_worker_enabled=%s\n' "$reference_worker_enabled"
+if [[ "$reference_worker_enabled" == "true" || -e "$AGENT_DIR/com.guiyi.quant-reference-worker.plist" || -L "$AGENT_DIR/com.guiyi.quant-reference-worker.plist" ]]; then
+  labels+=(com.guiyi.quant-reference-worker)
+  if [[ "$reference_worker_enabled" != "true" ]]; then
+    printf '[local-services-status] reference_worker_orphan_plist=true\n'
+    record_failure
+  fi
+fi
+
 pushplus_present=false
 if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" ]]; then
   pushplus_path="$runtime_root/services/quant-api/app/alerts/pushplus.py"
@@ -193,6 +215,7 @@ for label in "${labels[@]}"; do
     com.guiyi.quant-api|com.guiyi.quant-web) required=true ;;
     com.guiyi.quant-live|com.guiyi.quant-after-market) [[ "$marker_enabled" == "true" ]] && required=true ;;
     com.guiyi.quant-alert) [[ "$alert_marker_enabled" == "true" ]] && required=true ;;
+    com.guiyi.quant-reference-worker) [[ "$reference_worker_enabled" == "true" ]] && required=true ;;
   esac
 
   if [[ "$root" != "missing" && "$root" != "$runtime_root" ]]; then

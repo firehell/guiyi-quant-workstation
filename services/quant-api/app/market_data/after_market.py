@@ -33,6 +33,7 @@ from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import HistoricalDataManager, MaintenanceProgressEvent, UpdateRequest
 from app.market_data.live_market import RedisLiveStore
 from app.market_data.live_recovery_guard import after_market_recovery_guard
+from app.market_data.metadata import CalendarNightAuthorityError
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.session_clock import SHANGHAI
@@ -88,6 +89,7 @@ def _diagnostic_warning(
     template: str, *args: object, stage: str | None = None,
     detail_code: str | None = None, attempt: int | None = None,
     exception_type: str | None = None,
+    failure_context: Mapping[str, str] | None = None,
 ) -> None:
     """Only fixed call-site templates and bounded values can reach any handler."""
     allowed = _PUBLIC_ERROR_CODES | {
@@ -103,6 +105,7 @@ def _diagnostic_warning(
         fields = {key: value for key, value in {
             "stage": stage, "detail_code": detail_code,
             "attempt": attempt, "exception_type": exception_type,
+            **(failure_context or {}),
         }.items() if value is not None}
         _LOGGER.warning(message, extra={"diagnostic_code": "AFTER_MARKET_DIAGNOSTIC", "diagnostic_fields": fields})
     except Exception:
@@ -184,9 +187,11 @@ class AfterMarketUpdater:
         self._current: dict[str, Any] = {}
         self._progress_failed = False
         self._last_progress_write = 0.0
+        self._failure_context: dict[str, str] | None = None
 
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
+        self._failure_context = None
         with self.recovery_guard_factory():
             result = self._run_guarded()
         if self.consumer_audit is not None:
@@ -480,6 +485,22 @@ class AfterMarketUpdater:
                 raise _ProgressPersistenceError() from None
             if isinstance(exc, StorageError) and exc.code == "COMMIT_OUTCOME_UNKNOWN":
                 return exc.code
+            if isinstance(exc, CalendarNightAuthorityError):
+                context = {
+                    "exchange_code": exc.exchange_code,
+                    "calendar_day": exc.calendar_day.isoformat(),
+                    "reason_code": exc.reason_code,
+                }
+                self._failure_context = context
+                _diagnostic_warning(
+                    "after_market_attempt_failed stage=canonical_update attempt=%s "
+                    "detail_code=%s exception_type=%s",
+                    attempt, exc.code, "ValueError",
+                    stage="canonical_update", attempt=attempt,
+                    detail_code=exc.code, exception_type="ValueError",
+                    failure_context=context,
+                )
+                return exc.code
             if (
                 type(exc) is ValueError
                 and len(exc.args) == 1
@@ -595,6 +616,10 @@ class AfterMarketUpdater:
                 "finished_at": finished_at.isoformat(),
                 "products": list(products),
                 "error_code": result.error_code,
+                "failure_context": (
+                    self._failure_context
+                    if result.error_code == "CALENDAR_NIGHT_AUTHORITY_MISSING" else None
+                ),
                 "failure_notification": None,
             },
             "last_successful_trading_day": _public_trading_day(
@@ -1377,6 +1402,11 @@ def _public_last_run(
     finished_at = _public_timestamp(value.get("finished_at"))
     products = value.get("products")
     error_code = value.get("error_code")
+    failure_context = _public_calendar_failure_context(value.get("failure_context"))
+    if value.get("failure_context") is not None and (
+        error_code != "CALENDAR_NIGHT_AUTHORITY_MISSING" or failure_context is None
+    ):
+        return None
     normalized_products = (
         [product.strip().lower() for product in products]
         if isinstance(products, list)
@@ -1432,6 +1462,8 @@ def _public_last_run(
         "products": normalized_products,
         "error_code": error_code,
     }
+    if failure_context is not None:
+        public["failure_context"] = failure_context
     if schema_version >= 2:
         failure_notification = _public_failure_notification(
             value.get("failure_notification")
@@ -1443,6 +1475,22 @@ def _public_last_run(
             return None
         public["failure_notification"] = failure_notification
     return public
+
+
+def _public_calendar_failure_context(value: object) -> dict[str, str] | None:
+    if not isinstance(value, Mapping) or set(value) != {
+        "exchange_code", "calendar_day", "reason_code"
+    }:
+        return None
+    exchange = value.get("exchange_code")
+    day = _public_trading_day(value.get("calendar_day"))
+    reason = value.get("reason_code")
+    if (type(exchange) is not str
+            or exchange not in {"CFFEX", "CZCE", "DCE", "GFEX", "INE", "SHFE"}
+            or day is None or type(reason) is not str
+            or reason not in CalendarNightAuthorityError.reasons):
+        return None
+    return {"exchange_code": exchange, "calendar_day": day, "reason_code": reason}
 
 
 def _public_current_run(value: object, *, schema_version: int = 2) -> dict[str, object] | None:

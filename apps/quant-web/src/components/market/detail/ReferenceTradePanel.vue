@@ -14,7 +14,7 @@ const props = withDefaults(defineProps<{
 }>(), { initialMode: 'forward_observation', historicalAvailable: true })
 const mode = ref<ReferenceMode>(props.initialMode)
 const reference = useReferenceTrading()
-const throughDate = computed(() => props.through || new Intl.DateTimeFormat('en-CA', {
+const throughDate = computed(() => (mode.value === 'historical_replay' ? props.through : undefined) || new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date()))
 const since = computed(() => {
@@ -53,13 +53,13 @@ onBeforeUnmount(reference.dispose)
         观察连续性 {{ reference.page.value.coverage?.complete_window_proven ? '已证明' : '待核对' }} ·
         Canonical 核对待执行
       </p>
-      <p v-if="reference.summary.value">已平 {{ reference.summary.value.closed_count }} · 未平 {{ reference.summary.value.open_count }} · 中断 {{ reference.summary.value.interrupted_count }}</p>
+      <p v-if="reference.summary.value">已平 {{ reference.summary.value.closed_count }} · 未平 {{ reference.summary.value.open_count }} · 中断 {{ reference.summary.value.interrupted_count }} · 窗口初始 {{ reference.summary.value.initial_count }}</p>
       <section v-if="mode === 'forward_observation' && reference.signals.value.length" aria-label="首次观察记录">
         <h3>首次观察记录</h3>
         <ul>
           <li v-for="(signal, index) in reference.signals.value" :key="index">
             {{ formatBeijingInstant(String(signal.value.observed_at ?? '')) }} ·
-            {{ Array.isArray(signal.value.observation_types) ? signal.value.observation_types.join(' / ') : String(signal.value.direction ?? '信号') }} ·
+            {{ Array.isArray(signal.value.observation_types) && signal.value.observation_types.length ? signal.value.observation_types.join(' / ') : String(signal.value.direction ?? '首次观察') }} ·
             {{ formatBeijingInstant(String(signal.value.bar_end ?? '')) }}
           </li>
         </ul>

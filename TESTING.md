@@ -399,6 +399,130 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL` 入口；环境变量缺失导致的 skip 不算通过。所有 P4 测试均不授权或执行
 生产 migration/bootstrap、Canonical/provider 写入、HTTP/Web、worker、通知或 Runtime。
 
+## Unified Reference Trading P8 隔离验收
+
+先核对测试工作树、`develop` 基线及专用一次性依赖。P8 PostgreSQL 必须是新建空白可销毁实例、
+loopback 非 5432 端口和独立 `guiyi_reference_isolated_test` 数据库；Redis 必须是无持久卷的
+loopback 非 6379 实例。不得读取生产 `.env`、复用现役 5432/6379 或把 skip 计为通过。
+真实 PostgreSQL 测试各自在随机 schema 建表并仅删除自己的 schema。
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/reference_trading/test_historical_integration.py \
+  services/quant-api/tests/reference_trading/test_newow_worker_recovery.py \
+  services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py \
+  services/quant-api/tests/reference_trading/test_forward_query.py \
+  services/quant-api/tests/reference_trading/test_query_capacity_postgresql.py \
+  services/quant-api/tests/reference_trading/test_repository_postgresql.py \
+  services/quant-api/tests/reference_trading/test_query_postgresql.py \
+  services/quant-api/tests/alembic/test_reference_trading_migration.py \
+  services/quant-api/tests/alembic/test_reference_forward_migration.py \
+  -m isolated_postgresql
+GUIYI_ISOLATED_REDIS_URL='redis://127.0.0.1:PORT/0' \
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/reference_trading/test_live_wake.py
+```
+
+真实存储 pipeline/recovery、60/300 条 fixture 流、300 条临时 Canonical→Catalog→MDS 流和 synthetic 100/1000/10000 行查询工具只接受独立测试库、
+loopback 非 5432 端口、无 libpq 环境路由覆盖和临时目录输出。每次启动五个独立进程；
+`historical_13_streams` 与 `forward_recovery` 耗时不代表 60/300 流容量，
+`query_*` 行是直接构建的查询负载，不代表策略计算结果。原始 JSON、缺口和固定目标见
+`docs/tasks/unified-reference-trading-p8/acceptance.md`。
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case historical_13_streams --repeats 5 --timeout-seconds 120
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case forward_recovery --repeats 5 --timeout-seconds 120
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case query_10000 --repeats 5 --timeout-seconds 180
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case stream_300_mds --repeats 5 --timeout-seconds 120
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case query_real_rebuild_10000 --repeats 5 --timeout-seconds 300
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case query_real_rebuild_10000_index --repeats 5 --timeout-seconds 300
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case stream_300_mds_retained --repeats 5 --timeout-seconds 180
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python -m pytest -q -s -m isolated_postgresql \
+  services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py::test_postgresql_300_mds_same_process_rss_soak
+```
+
+同一入口还接受 `--case query_100` 和 `--case query_1000`，分别保存对应 JSON。
+`--case stream_60` 和 `--case stream_300` 分别测量 typed capture 持久化及真实 kernel worker
+投影；它们不测 60/300 条真实 MDS 行情采集。D1/W1 有界增量的逐值与最多四个物理
+分区断言在 `test_historical_integration.py`，含 45 天过期窗口拒绝和未完成日不读取。
+`--case stream_300_mds` 对每条流读取临时 Canonical 经 Catalog/rank-1/MDS 的页面，
+HTDY 再读取 32 Bar 上下文；其测试适配器把历史夹具包装成完成观察，不能替代真实 Live/Runtime 验收。
+`query_real_rebuild_10000` 用真实策略输出、修改价格后的第二版、旧 cutoff 和每轮 100 次热查询检验查询容量；
+同进程浸泡在五个独立临时 schema 中重复等量 300 流，记录每轮回收后的 RSS。
+`stream_300_mds_retained` 在同一 worker、MDS、schema 和 300 条流上跨五个完成 Bar 重复处理，
+记录每轮处理时间、持久化动作和回收后的 RSS；只证明该有界窗口，不证明自然 Live 长期稳定。
+`query_real_rebuild_10000_index` 在真实投影 Bar 重建后记录表/索引字节、首次业务调用、
+100 次热查询的 p50/p95 和 PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`；首次业务调用不等于冷缓存启动。
+
+真实浏览器验收只连接上述一次性 PostgreSQL 测试库。先在单独终端运行
+`PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core`
+加上同一 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，执行
+`services/quant-api/.venv/bin/python scripts/reference_trading_browser_fixture.py`；
+再运行 `pnpm -C apps/quant-web exec vite --config vite.p8.config.ts`，用真实浏览器打开
+`http://127.0.0.1:5178/p8-reference-acceptance.html`。此页面挂载实际
+`ReferenceTradePanel` 并经 Vite proxy 请求实际 FastAPI 和隔离 PostgreSQL，未拦截 API；
+组件页用于组件/API/持久化闭环。完整 Market 路由验收改为打开
+`http://127.0.0.1:5178/market/chart?symbol=rb&view=newow&frequency=1d`，按夹具日期
+2026-01-05–03-27 设置 Newow 与 SuBing legacy 窗口，再切换 SuBing/HTDY 标签；
+默认当前日期超出生成数据窗口时的 typed error 不算夹具内成功读回。退出两台服务后
+脚本仅删除它创建的随机 schema 和临时 Canonical 文件。
+
+## Unified Reference Trading P9 工程准备
+
+Reference worker 安装器的 `--confirm-reference-worker` 仅在精确受控 Runtime 批次中使用；
+本地工程验证只运行临时 HOME、假 launchctl 和只读 manifest 测试，不加载真实服务。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider \
+  tests/engineering/test_market_runtime_launchd.py \
+  tests/engineering/test_reference_trading_p9_manifest.py
+```
+
+`scripts/reference_trading_p9_manifest.py` 对干净 exact SHA 枚举正式历史/forward 身份，
+`--with-db --expected-database-name NAME` 只在已核对目标 Runtime 安全配置下开
+PostgreSQL `READ ONLY` 事务，校验连接库名后读现存 stream 状态；输出称
+`queried_schema_version`，不单凭版本号宣称连接的是生产实例。
+输出只允许新的系统临时目录文件。它不检查 Canonical/MDS readiness、日期窗口、预算或授权，
+因此 `FORMAL_CANDIDATE` 不能直接执行 build、reader 切换或 activation。
+
+`scripts/reference_trading_p9_source_plan.py` 只对显式产品批次和统一 `since/through/as_of`
+逐流调用现有 HistoricalReferencePlanner/MDS。调用方必须提供 exact code SHA、能力版本、
+两个 universe 文件哈希、目标数据库名和 schema 版本、单流与总 bars/bytes/seconds 预算。
+运行前只读核对 DB 身份/版本，运行中漂移或连接失败使整个命令失败。结果只写新的系统
+临时文件，逐流记录 `SOURCE_READY` 计划哈希/输入摘要或类型化 `BLOCKED`；
+`requested_operation` 尚未经现存 stream/revision/watermark 核对，`execution_gate=UNVERIFIED`，
+输出只是 source-readiness audit，仅有 plan hash、计数和 digest，未保存完整可执行
+`HistoricalReferencePlan`。正式 apply 前须另生成完整 frozen plan 并重新核对 exact code、
+源与 DB 状态。该入口没有 apply，DB 事务只读且每流维护 advisory lock 在上下文结束时释放。
+秒数预算在每次读取前后检查；单次底层阻塞 MDS 读取不会被强制中断。现场审计须避开
+盘后自然任务窗口，并由外部运行预算监控。
+生产全 600 流规划仍须绑定后续联合候选，不可沿用 develop 或旧 Release 的身份。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider \
+  tests/engineering/test_reference_trading_p9_source_plan.py
+```
+
 ## Market WebSocket 与统一详情页
 
 ```bash

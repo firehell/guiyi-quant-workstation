@@ -53,6 +53,7 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
             and identity.observation_policy_version is None
         )
     if normalized.startswith("newow_"):
+        from app.market_data.newow.product_release import candidate_input_quality_policy
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
         from guiyi_quant.newow.product_identity import (
@@ -63,7 +64,13 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
         try:
             strategy = ProductStrategy(normalized.removeprefix("newow_"))
             frequency = ProductFrequency(identity.frequency)
-            expected = build_product_identity(identity.product, strategy, frequency)
+            policy = candidate_input_quality_policy(
+                identity.product, frequency, candidate_weekly=False,
+            )
+            expected = build_product_identity(
+                identity.product, strategy, frequency,
+                input_quality_policy=policy,
+            )
         except ValueError:
             return False
         return (
@@ -71,7 +78,7 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
             and identity.profile_id == expected.profile_id
             and identity.reference_model_version == REFERENCE_MODEL_VERSION
             and identity.futures_adaptation_version
-            == futures_adaptation_version(frequency.value)
+            == futures_adaptation_version(frequency.value, policy)
             and identity.observation_policy_version is None
         )
     return False

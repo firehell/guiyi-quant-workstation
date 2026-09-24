@@ -1,0 +1,174 @@
+{
+  "case_id": "stream_300_mds_retained",
+  "code_sha": "a62e5014b05dcf3791e78ca6335aa7b3a413a89a",
+  "database": "guiyi_reference_isolated_test",
+  "dirty_worktree": false,
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "postgresql_server_version": "160014",
+  "python": "3.13.9",
+  "repeats": 5,
+  "results": [
+    {
+      "case_id": "stream_300_mds_retained",
+      "child_cpu_seconds": 30.365,
+      "elapsed_seconds": 58.828,
+      "exit_code": 0,
+      "index_metrics": null,
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 170384,
+      "query_metrics": null,
+      "repeat": 1,
+      "retained_worker_metrics": {
+        "last_minus_second_kib": 64,
+        "settled_rss_kib": [
+          170192,
+          170256,
+          170272,
+          170304,
+          170320
+        ],
+        "worker_seconds": [
+          8.006,
+          9.828,
+          9.847,
+          9.893,
+          9.955
+        ]
+      },
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 58.55s"
+      ]
+    },
+    {
+      "case_id": "stream_300_mds_retained",
+      "child_cpu_seconds": 30.958,
+      "elapsed_seconds": 59.178,
+      "exit_code": 0,
+      "index_metrics": null,
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 170416,
+      "query_metrics": null,
+      "repeat": 2,
+      "retained_worker_metrics": {
+        "last_minus_second_kib": 128,
+        "settled_rss_kib": [
+          170224,
+          170272,
+          170336,
+          170352,
+          170400
+        ],
+        "worker_seconds": [
+          8.061,
+          9.899,
+          9.914,
+          9.938,
+          10.026
+        ]
+      },
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 58.94s"
+      ]
+    },
+    {
+      "case_id": "stream_300_mds_retained",
+      "child_cpu_seconds": 30.497,
+      "elapsed_seconds": 58.82,
+      "exit_code": 0,
+      "index_metrics": null,
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 169712,
+      "query_metrics": null,
+      "repeat": 3,
+      "retained_worker_metrics": {
+        "last_minus_second_kib": 96,
+        "settled_rss_kib": [
+          169440,
+          169488,
+          169536,
+          169584,
+          169584
+        ],
+        "worker_seconds": [
+          8.056,
+          9.878,
+          9.902,
+          9.885,
+          9.951
+        ]
+      },
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 58.54s"
+      ]
+    },
+    {
+      "case_id": "stream_300_mds_retained",
+      "child_cpu_seconds": 30.807,
+      "elapsed_seconds": 59.535,
+      "exit_code": 0,
+      "index_metrics": null,
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 170128,
+      "query_metrics": null,
+      "repeat": 4,
+      "retained_worker_metrics": {
+        "last_minus_second_kib": 352,
+        "settled_rss_kib": [
+          169664,
+          169712,
+          169952,
+          170000,
+          170064
+        ],
+        "worker_seconds": [
+          8.066,
+          9.874,
+          10.276,
+          10.138,
+          10.035
+        ]
+      },
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 59.28s"
+      ]
+    },
+    {
+      "case_id": "stream_300_mds_retained",
+      "child_cpu_seconds": 30.692,
+      "elapsed_seconds": 59.218,
+      "exit_code": 0,
+      "index_metrics": null,
+      "mds_stream_metrics": null,
+      "observed_peak_rss_kib": 171184,
+      "query_metrics": null,
+      "repeat": 5,
+      "retained_worker_metrics": {
+        "last_minus_second_kib": 112,
+        "settled_rss_kib": [
+          170992,
+          171008,
+          171024,
+          171024,
+          171120
+        ],
+        "worker_seconds": [
+          8.086,
+          9.921,
+          9.916,
+          9.92,
+          9.978
+        ]
+      },
+      "stream_metrics": null,
+      "test_tail": [
+        "1 passed in 58.95s"
+      ]
+    }
+  ],
+  "started_at": "2026-09-24T07:47:50.899376+00:00",
+  "timeout_seconds_per_repeat": 180
+}

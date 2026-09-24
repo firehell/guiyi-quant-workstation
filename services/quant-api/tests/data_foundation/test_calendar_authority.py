@@ -5,8 +5,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
-from app.market_data.metadata import _upsert_calendar
-from app.models import TradingCalendar
+from app.market_data.catalog import MarketCatalog
+from app.market_data.metadata import CalendarNightAuthorityError, MetadataSynchronizer, _upsert_calendar, calendar_night_fact, calendar_session_index
+from app.models import Contract, Exchange, Instrument, MainContractMap, TradingCalendar, TradingSession
 
 DAY = date(2026, 9, 9)
 
@@ -60,8 +61,11 @@ def test_full_exchange_day_coverage_proves_holiday_negative(db):
 
 
 def test_partial_exchange_coverage_cannot_prove_negative(db):
-    with pytest.raises(ValueError, match="CALENDAR_NIGHT_AUTHORITY_MISSING"):
+    with pytest.raises(CalendarNightAuthorityError, match="CALENDAR_NIGHT_AUTHORITY_MISSING") as failure:
         _upsert_calendar(db, calendar(False, ("au", "wr")), (session_row("wr"),))
+    assert (failure.value.exchange_code, failure.value.calendar_day, failure.value.reason_code) == (
+        "SHFE", DAY, "SOURCE_CLAIM_MISMATCH"
+    )
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -161,3 +165,98 @@ def test_adapter_preserves_exchange_subset_and_holiday_boundaries():
     assert rows[previous]["has_night_session"] is True
     assert rows[DAY]["has_night_session"] is False
     assert rows[DAY]["night_session_products"] == ("au", "wr")
+
+
+def test_current_day_uses_full_exchange_context_but_publishes_only_operational(db, tmp_path):
+    import pandas as pd
+    from app.market_data.rqdata_adapter import RQDataClient
+
+    current, following = date(2026, 9, 24), date(2026, 9, 28)
+
+    class Api:
+        @property
+        def futures(self):
+            return self
+
+        def all_instruments(self, **_kwargs):
+            return pd.DataFrame([
+                dict(underlying_symbol=symbol, exchange="SHFE", order_book_id=symbol + "2612",
+                     listed_date=date(2026, 1, 1), de_listed_date=date(2026, 12, 31))
+                for symbol in ("AU", "WR")
+            ])
+
+        def get_trading_dates(self, **_kwargs):
+            return (current, following)
+
+        def get_dominant(self, symbol, **_kwargs):
+            assert symbol == "WR"
+            return pd.Series(["WR2612", "WR2612"], index=pd.to_datetime([current, following]))
+
+        def get_trading_periods(self, contracts, **_kwargs):
+            assert set(contracts) == {"AU2612", "WR2612"}
+            return pd.DataFrame([
+                dict(order_book_id=contract, date=day,
+                     trading_hours="21:01-23:00,09:01-15:00" if day == current else "09:01-15:00")
+                for contract in contracts for day in (current, following)
+            ])
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+    snapshot = client.current_day_metadata_snapshot(("wr",), current)
+    day_rows = {(row["exchange_code"], row["trade_date"]): row for row in snapshot.calendars}
+    assert day_rows[("SHFE", following)]["has_night_session"] is False
+    assert day_rows[("SHFE", following)]["night_session_products"] == ("au", "wr")
+    assert {row["instrument_symbol"] for row in snapshot.sessions} == {"au", "wr"}
+
+    db.add(Exchange(code="SHFE", name="SHFE"))
+    db.add(Instrument(symbol="wr", name="WR", exchange_code="SHFE", is_active=True))
+    db.add(Contract(contract_code="WR2612", instrument_symbol="wr", exchange_code="SHFE"))
+    db.flush()
+    synchronizer = MetadataSynchronizer(None, MarketCatalog(db, tmp_path))
+    prepared = synchronizer.prepare_current_day_snapshot(snapshot, ("wr",), current)
+    assert {row["instrument_symbol"] for row in prepared.sessions} == {"wr"}
+    assert {row["instrument_symbol"] for row in prepared.calendar_sessions} == {"au", "wr"}
+    synchronizer.apply_current_day_snapshot(snapshot, ("wr",), current)
+    assert {row.instrument_symbol for row in db.scalars(select(TradingSession))} == {"wr"}
+    assert [(row.symbol, row.trade_date) for row in db.scalars(select(MainContractMap))] == [("wr", current)]
+    assert db.scalar(select(TradingCalendar).where(TradingCalendar.trade_date == following)).has_night_session is False
+
+
+def test_missing_exchange_context_remains_unknown():
+    import pandas as pd
+    from app.market_data.rqdata_adapter import RQDataClient
+
+    current, following = date(2026, 9, 24), date(2026, 9, 28)
+
+    class Api:
+        futures = None
+
+        def __init__(self):
+            self.futures = self
+
+        def all_instruments(self, **_kwargs):
+            return pd.DataFrame([
+                dict(underlying_symbol=symbol, exchange="SHFE", order_book_id=symbol + "2612",
+                     listed_date=date(2026, 1, 1), de_listed_date=date(2026, 12, 31))
+                for symbol in ("AU", "WR")
+            ])
+
+        def get_trading_dates(self, **_kwargs):
+            return (current, following)
+
+        def get_dominant(self, *_args, **_kwargs):
+            return pd.Series(["WR2612", "WR2612"], index=pd.to_datetime([current, following]))
+
+        def get_trading_periods(self, contracts, **_kwargs):
+            return pd.DataFrame([
+                dict(order_book_id="WR2612", date=day, trading_hours="09:01-15:00")
+                for day in (current, following)
+            ])
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+    snapshot = client.current_day_metadata_snapshot(("wr",), current)
+    values = next(row for row in snapshot.calendars if row["trade_date"] == following)
+    evidence = calendar_session_index(snapshot.sessions)[("SHFE", following)]
+    assert calendar_night_fact(values, evidence) is None
+    assert values["night_session_products"] == ("au", "wr")

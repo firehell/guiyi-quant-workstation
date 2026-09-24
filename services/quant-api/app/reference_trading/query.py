@@ -12,10 +12,9 @@ from dataclasses import replace
 from datetime import date, datetime
 from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 import json
-from time import monotonic
 
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, false, func, or_, select, tuple_
+from sqlalchemy.orm import Session, aliased
 
 from app.db.readonly import readonly_transaction
 from app.reference_trading.contracts import SnapshotIdentity, manifest_sha256
@@ -146,13 +145,26 @@ class HistoricalReferenceQuery:
         ):
             raise QueryConflict("QUERY_INVALID")
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
-            rows = session.execute(select(ReferenceStream).where(
-                ReferenceStream.strategy_code == strategy,
-                ReferenceStream.product == product,
-                ReferenceStream.frequency == frequency,
-                ReferenceStream.recording_mode == mode,
-            ).order_by(ReferenceStream.stream_id).limit(20)).scalars().all()
-            return [self._stream_info(row) for row in rows if self._registered(row)]
+            def matching(code: str) -> list[ReferenceStream]:
+                rows = session.execute(select(ReferenceStream).where(
+                    ReferenceStream.strategy_code == code,
+                    ReferenceStream.product == product,
+                    ReferenceStream.frequency == frequency,
+                    ReferenceStream.recording_mode == mode,
+                ).order_by(ReferenceStream.stream_id).limit(20)).scalars().all()
+                return [row for row in rows if self._registered(row)]
+
+            exact = matching(strategy)
+            fallback_code = strategy.replace("-", "_")
+            fallback = matching(fallback_code) if fallback_code != strategy else []
+            def readable(rows: list[ReferenceStream]) -> list[ReferenceStream]:
+                return [
+                    row for row in rows
+                    if row.active_revision_id is not None
+                    and (mode == "historical_replay" or row.enabled)
+                ]
+            selected = readable(exact) or readable(fallback) or exact or fallback
+            return [self._stream_info(row) for row in selected]
 
     @staticmethod
     def _stream_info(row: ReferenceStream) -> dict[str, object]:
@@ -660,81 +672,95 @@ class HistoricalReferenceQuery:
                 if row.strategy_code.replace("-", "_") == "subing_reference"
                 else frozenset()
             )
-            counts = {"closed_count": 0, "win_count": 0, "loss_count": 0,
-                      "flat_count": 0, "open_count": 0, "interrupted_count": 0,
-                      "rollover_interrupted_count": 0, "data_interrupted_count": 0}
             trade = ReferenceTradeRow
-            eligible = [
-                trade.stream_id == stream_id,
-                trade.revision_id == snapshot.revision_id,
-                trade.valid_from_seq <= snapshot.seq,
-                trade.entry_trading_day <= through,
-            ]
+            newer = aliased(ReferenceTradeRow)
+
+            def eligible(candidate):
+                clauses = [
+                    candidate.stream_id == stream_id,
+                    candidate.revision_id == snapshot.revision_id,
+                    candidate.valid_from_seq <= snapshot.seq,
+                    candidate.entry_trading_day <= through,
+                ]
+                if cutoff is not None:
+                    clauses.extend((
+                        candidate.entry_bar_end <= cutoff,
+                        candidate.effective_bar_end <= cutoff,
+                        or_(candidate.exit_bar_end.is_(None), candidate.exit_bar_end <= cutoff),
+                    ))
+                    if row.recording_mode == "forward_observation":
+                        clauses.append(candidate.observed_at <= cutoff)
+                return clauses
+
+            latest_seq = select(newer.valid_from_seq).where(
+                newer.stream_id == trade.stream_id,
+                newer.revision_id == trade.revision_id,
+                newer.trade_id == trade.trade_id,
+                newer.valid_from_seq <= snapshot.seq,
+                newer.entry_trading_day <= through,
+            )
             if cutoff is not None:
-                eligible.extend((
-                    trade.entry_bar_end <= cutoff,
-                    trade.effective_bar_end <= cutoff,
-                    or_(trade.exit_bar_end.is_(None), trade.exit_bar_end <= cutoff),
-                ))
+                latest_seq = latest_seq.where(
+                    newer.entry_bar_end <= cutoff,
+                    newer.effective_bar_end <= cutoff,
+                    or_(newer.exit_bar_end.is_(None), newer.exit_bar_end <= cutoff),
+                )
                 if row.recording_mode == "forward_observation":
-                    eligible.append(trade.observed_at <= cutoff)
-            latest = select(
-                trade.trade_id.label("trade_id"),
-                trade.valid_from_seq.label("valid_from_seq"),
-                func.row_number().over(
-                    partition_by=trade.trade_id,
-                    order_by=trade.valid_from_seq.desc(),
-                ).label("rank"),
-            ).where(*eligible).subquery()
-            rows = session.execute(select(trade).join(latest, and_(
-                latest.c.trade_id == trade.trade_id,
-                latest.c.valid_from_seq == trade.valid_from_seq,
-                latest.c.rank == 1,
-            )).where(
-                trade.stream_id == stream_id,
-                trade.revision_id == snapshot.revision_id,
-            ).order_by(
-                trade.entry_bar_end, trade.trade_id,
-            ).execution_options(yield_per=200)).scalars()
-            deadline = monotonic() + 25
-            initial_count = 0
-            total = Decimal("0")
+                    latest_seq = latest_seq.where(newer.observed_at <= cutoff)
+            latest_seq = latest_seq.order_by(newer.valid_from_seq.desc()).limit(1).correlate(trade).scalar_subquery()
+            initial = trade.entry_trading_day < since
+            current = trade.entry_trading_day >= since
+            if row.recording_mode == "forward_observation":
+                initial_member = and_(initial, or_(
+                    trade.status == "OPEN",
+                    and_(trade.status == "CLOSED", trade.exit_trading_day >= since),
+                ))
+            elif row.strategy_code.replace("-", "_") == "subing_reference":
+                interrupted_boundary = (
+                    tuple_(trade.physical_contract, trade.owner_segment_id,
+                           trade.calculation_segment_id).in_(tuple(boundary_keys))
+                    if boundary_keys else false()
+                )
+                initial_member = and_(initial, or_(
+                    trade.status == "OPEN",
+                    and_(trade.status == "CLOSED", trade.exit_trading_day >= since),
+                    and_(trade.status.notin_(("OPEN", "CLOSED")), interrupted_boundary),
+                ))
+            else:
+                initial_member = initial
+            closed_member = and_(current, trade.status == "CLOSED")
+            open_member = and_(current, trade.status == "OPEN")
+            interrupted_member = and_(current, trade.status.notin_(("OPEN", "CLOSED")))
+            values = session.execute(select(
+                func.count().filter(initial_member),
+                func.count().filter(closed_member),
+                func.count().filter(and_(closed_member, trade.reference_return > 0)),
+                func.count().filter(and_(closed_member, trade.reference_return < 0)),
+                func.count().filter(and_(closed_member, trade.reference_return == 0)),
+                func.count().filter(open_member),
+                func.count().filter(interrupted_member),
+                func.count().filter(and_(interrupted_member, trade.status == "ROLLOVER_INTERRUPTED")),
+                func.count().filter(and_(interrupted_member, trade.status == "DATA_INTERRUPTED")),
+                func.count().filter(and_(closed_member, trade.reference_return.is_(None))),
+                func.sum(trade.reference_return).filter(closed_member),
+            ).select_from(trade).where(
+                *eligible(trade), trade.valid_from_seq == latest_seq,
+            )).one()
+            (initial_count, closed, wins, losses, flats, opened,
+             interrupted, rollovers, data_interruptions, missing_return, summed) = values
+            if missing_return:
+                raise QueryConflict("SUMMARY_DATA_CONFLICT")
+            counts = {
+                "closed_count": closed, "win_count": wins, "loss_count": losses,
+                "flat_count": flats, "open_count": opened,
+                "interrupted_count": interrupted,
+                "rollover_interrupted_count": rollovers,
+                "data_interrupted_count": data_interruptions,
+            }
+            total = summed if summed is not None else Decimal("0")
             with localcontext(Context(prec=28, rounding=ROUND_HALF_EVEN)):
-                for item in rows:
-                    if monotonic() >= deadline:
-                        raise QueryConflict("QUERY_BUDGET_EXCEEDED")
-                    initial = item.entry_trading_day < since
-                    if initial:
-                        if row.strategy_code.replace("-", "_") == "subing_reference":
-                            if item.status == "CLOSED" and item.exit_trading_day < since:
-                                continue
-                            if item.status not in ("OPEN", "CLOSED"):
-                                key = (
-                                    item.physical_contract, item.owner_segment_id,
-                                    item.calculation_segment_id,
-                                )
-                                if key not in boundary_keys:
-                                    continue
-                        initial_count += 1
-                        continue
-                    if item.status == "CLOSED":
-                        if item.reference_return is None:
-                            raise QueryConflict("SUMMARY_DATA_CONFLICT")
-                        counts["closed_count"] += 1
-                        total += item.reference_return
-                        counts["win_count" if item.reference_return > 0 else
-                               "loss_count" if item.reference_return < 0 else "flat_count"] += 1
-                    elif item.status == "OPEN":
-                        counts["open_count"] += 1
-                    else:
-                        counts["interrupted_count"] += 1
-                        if item.status == "ROLLOVER_INTERRUPTED":
-                            counts["rollover_interrupted_count"] += 1
-                        elif item.status == "DATA_INTERRUPTED":
-                            counts["data_interrupted_count"] += 1
-                closed = counts["closed_count"]
                 mean = total / Decimal(closed) if closed else None
-                rate = Decimal(counts["win_count"]) / Decimal(closed) * 100 if closed else None
+                rate = Decimal(wins) / Decimal(closed) * 100 if closed else None
             return {
                 **counts, "initial_count": initial_count,
                 "win_rate_pct": str(rate) if rate is not None else None,

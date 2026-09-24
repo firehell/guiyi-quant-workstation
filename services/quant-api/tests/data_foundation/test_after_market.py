@@ -24,6 +24,7 @@ from app.guiyi_cli.main import main as guiyi_main
 from app.runtime_entry import main as runtime_main
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import MaintenanceResult
+from app.market_data.metadata import CalendarNightAuthorityError
 from app.market_data.operational_universe import load_active_products
 
 
@@ -1191,6 +1192,34 @@ def test_calendar_night_authority_missing_is_stable_public_code_without_retry(
         "after_market_attempt_failed stage=canonical_update attempt=1 "
         "detail_code=CALENDAR_NIGHT_AUTHORITY_MISSING exception_type=ValueError",
     ]
+
+
+def test_calendar_authority_failure_records_bounded_exchange_day_and_reason(tmp_path, caplog):
+    updater, manager, _rqdata, sleeps, notices, _live_store = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[],
+    )
+
+    def fail_update(_request, *, before_apply=None, observer=None):
+        raise CalendarNightAuthorityError(
+            "DCE", date(2026, 9, 28), "SESSION_COVERAGE_INCOMPLETE"
+        )
+
+    manager.update = fail_update
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+    result = updater.run()
+
+    assert result.error_code == "CALENDAR_NIGHT_AUTHORITY_MISSING"
+    assert result.attempts == 1 and sleeps == []
+    assert _notice_error_codes(notices) == [result.error_code]
+    context = {"exchange_code": "DCE", "calendar_day": "2026-09-28",
+               "reason_code": "SESSION_COVERAGE_INCOMPLETE"}
+    raw_status = json.loads(updater.status_path.read_text())
+    assert public_after_market_status(raw_status)[
+        "last_run"
+    ]["failure_context"] == context
+    raw_status["last_run"]["failure_context"]["reason_code"] = ["untrusted"]
+    assert public_after_market_status(raw_status) == {}
+    assert caplog.records[0].diagnostic_fields.items() >= context.items()
 
 
 def test_next_trading_session_not_ready_is_retried_with_stable_public_code(

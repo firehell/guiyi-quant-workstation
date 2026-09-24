@@ -3,8 +3,13 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
+from sqlalchemy.engine import Engine
+
+from app.db.base import Base
+from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
 
 from guiyi_quant.reference_trading import (
     ActionKind, CompletedReferenceBar, ReferenceAction, reduce_reference,
@@ -66,7 +71,27 @@ def test_forward_read_filters_observation_time_and_binds_generation(monkeypatch)
 
 
 def test_forward_read_keeps_open_trade_across_query_window(monkeypatch):
-    factory, identity, revision, _activation = _active()
+    _assert_forward_window_summary_matches_trade_page(monkeypatch)
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_forward_summary_excludes_pre_window_closed_trade(
+    isolated_postgres_engine: Engine, monkeypatch,  # noqa: F811
+):
+    schema = "reference_p8_summary_" + uuid4().hex
+    with isolated_postgres_engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+    scoped = isolated_postgres_engine.execution_options(schema_translate_map={None: schema})
+    try:
+        Base.metadata.create_all(scoped)
+        _assert_forward_window_summary_matches_trade_page(monkeypatch, engine=scoped)
+    finally:
+        with isolated_postgres_engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+def _assert_forward_window_summary_matches_trade_page(monkeypatch, engine=None):
+    factory, identity, revision, _activation = _active(engine)
     repository = ReferenceRepository(factory)
     capture = _capture(identity, revision)
     capture_id = repository.capture_forward(capture)
@@ -152,3 +177,9 @@ def test_forward_read_keeps_open_trade_across_query_window(monkeypatch):
         identity.stream_id, since=later, through=later,
         cutoff=next_capture.observed_at + timedelta(days=1),
     )["items"] == []
+    later_summary = query.summary(
+        identity.stream_id, since=later, through=later,
+        cutoff=next_capture.observed_at + timedelta(days=1),
+    )
+    assert later_summary["initial_count"] == 0
+    assert later_summary["closed_count"] == 0

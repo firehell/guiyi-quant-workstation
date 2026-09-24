@@ -6,6 +6,8 @@ from hashlib import sha256
 import pytest
 from sqlalchemy import event, select
 
+from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary, reduce_reference
+
 from app.db.readonly import readonly_transaction
 from app.reference_trading.contracts import SnapshotIdentity
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
@@ -48,6 +50,55 @@ def test_sql_page_preserves_old_snapshot_and_cutoff_without_future_exit() -> Non
         )
     assert len(initial.items) == 1
     assert initial.items[0].entry_trading_day < date(2026, 9, 20)
+
+
+def test_historical_page_preserves_closed_trade_as_initial_before_window() -> None:
+    repository, factory, stream, revision, manifest, seed = _seed_repository()
+    repository.commit_batch(seed, _open_batch(stream, revision, manifest, seed))
+    token, _ = repository.load_checkpoint(stream.stream_id, revision)
+    repository.publish_revision(stream.stream_id, revision, token.row_version, _digest(manifest))
+    token, _ = repository.load_checkpoint(stream.stream_id, revision)
+    closed = repository.commit_batch(token, _close_batch(repository, stream, revision, manifest, token))
+    with factory() as session, readonly_transaction(session):
+        page = repository.query_historical_trades(
+            session, SnapshotIdentity(stream.stream_id, revision, closed.seq),
+            since=date(2026, 9, 21), through=date(2026, 9, 22),
+            cutoff=None, limit=50,
+        )
+    assert len(page.items) == 1
+    assert page.items[0].status.value == "CLOSED"
+
+
+def test_historical_summary_preserves_interruption_as_initial_before_window(monkeypatch) -> None:
+    repository, factory, stream, revision, manifest, seed = _seed_repository()
+    repository.commit_batch(seed, _open_batch(stream, revision, manifest, seed, evidence={
+        "presentation_v1": envelope([presentation_point(
+            kind="trade_identity", trading_day=date(2026, 9, 19),
+            formula_versions=("v1",),
+            value={"source_action_id": "build-1", "public_trade_id": "public-one"},
+        )]),
+    }))
+    token, opened = repository.load_checkpoint(stream.stream_id, revision)
+    boundary = ReferenceBoundary(
+        stream, BoundaryReason.ROLLOVER, "RB2610", "owner-1", "calc-1",
+        datetime(2026, 9, 20, 7, tzinfo=UTC), date(2026, 9, 20),
+    )
+    transition = reduce_reference(opened.reference_state, boundaries=(boundary,))
+    close_batch = _close_batch(repository, stream, revision, manifest, token)
+    interrupted = replace(
+        close_batch,
+        source_actions=(), transitions=(transition,),
+        checkpoint=replace(close_batch.checkpoint, reference_state=transition.state),
+        source_evidence={"presentation_v1": envelope([])},
+    )
+    repository.commit_batch(token, interrupted)
+    token, _ = repository.load_checkpoint(stream.stream_id, revision)
+    repository.publish_revision(stream.stream_id, revision, token.row_version, _digest(manifest))
+    monkeypatch.setattr(HistoricalReferenceQuery, "_registered", staticmethod(lambda _row: True))
+    query = HistoricalReferenceQuery(factory)
+    params = {"since": date(2026, 9, 21), "through": date(2026, 9, 22)}
+    assert len(query.trades(stream.stream_id, **params)["items"]) == 1
+    assert query.summary(stream.stream_id, **params)["initial_count"] == 1
 
 
 def test_hint_known_later_than_cutoff_is_not_visible(monkeypatch) -> None:
@@ -138,6 +189,11 @@ def test_summary_uses_full_window_and_same_snapshot(monkeypatch) -> None:
     assert summary["closed_count"] == 1
     assert summary["sum_return_percentage_points"] == str(page["items"][0]["reference_return"])
     assert summary["snapshot"] == page["snapshot"]
+    later = {"since": date(2026, 9, 21), "through": date(2026, 9, 22)}
+    assert len(query.trades(stream.stream_id, **later)["items"]) == 1
+    later_summary = query.summary(stream.stream_id, **later)
+    assert later_summary["closed_count"] == 0
+    assert later_summary["initial_count"] == 1
 
 
 def test_large_history_page_uses_sql_limit_without_mark_n_plus_one() -> None:

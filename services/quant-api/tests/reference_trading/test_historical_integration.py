@@ -4,8 +4,17 @@ from collections import defaultdict
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+import json
+import os
+from time import perf_counter
+from unittest.mock import patch
+from uuid import uuid4
+from zoneinfo import ZoneInfo
 
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from guiyi_quant.newow.product_adapters import build_product_identity
@@ -25,7 +34,10 @@ from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import CanonicalBar, DatasetKey
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.newow.product_reader import NewowProductReader
+from app.market_data.newow.product_reader import (
+    NewowForwardInputGap, NewowProductReadError, NewowProductReader,
+)
+from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_service import (
     NewowProductService, ProductSection, ProductServiceQuery,
 )
@@ -35,6 +47,7 @@ from app.market_data.subing_reference import SubingReferenceService
 from app.market_data.subing_reference import SubingReferenceQuery
 from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 from app.reference_trading.inputs import MarketDataHistoricalInputReader
+from app.reference_trading.forward_inputs import ForwardInputUnavailable, capture_newow_canonical
 from app.reference_trading.planning import (
     HistoricalReferencePlanner,
     HistoricalReferenceRequest,
@@ -46,7 +59,13 @@ from app.reference_trading.service import HistoricalReferenceService
 from app.reference_trading.persisted_subing import PersistedSubingReference
 from app.reference_trading.persisted_newow import PersistedNewowReference
 from app.api.market_newow import _product_response
-from app.reference_trading.models import ReferenceBatch
+from app.reference_trading.models import (
+    ReferenceActionRow, ReferenceBatch, ReferenceMarkRow, ReferenceTradeRow,
+)
+from app.reference_trading.query import HistoricalReferenceQuery
+from app.api import reference_trading as reference_api
+from app.main import app
+from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
 
 
 class _Coverage:
@@ -121,6 +140,26 @@ def _subing_stream(frequency: str) -> StreamIdentity:
 def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp_path, monkeypatch) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    _verify_historical_pipeline(engine, tmp_path, monkeypatch)
+
+
+@pytest.mark.isolated_postgresql
+def test_historical_pipeline_persists_thirteen_streams_in_postgresql(
+    isolated_postgres_engine: Engine, tmp_path, monkeypatch,  # noqa: F811
+) -> None:
+    schema = "reference_p8_" + uuid4().hex
+    with isolated_postgres_engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+    scoped = isolated_postgres_engine.execution_options(schema_translate_map={None: schema})
+    try:
+        Base.metadata.create_all(scoped)
+        _verify_historical_pipeline(scoped, tmp_path, monkeypatch)
+    finally:
+        with isolated_postgres_engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
     factory = sessionmaker(engine, expire_on_commit=False)
     first = date(2026, 1, 5)
     days = tuple(first + timedelta(days=offset) for offset in range(84))
@@ -203,12 +242,100 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
         subing_service = SubingReferenceService(
             market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
         )
+        newow_reader = NewowProductReader(
+            market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
+        )
         reader = MarketDataHistoricalInputReader(
-            newow_reader=NewowProductReader(
-                market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
-            ),
+            newow_reader=newow_reader,
             subing_service=subing_service,
         )
+        for frequency in (ProductFrequency.DAILY, ProductFrequency.WEEKLY):
+            full = newow_reader.load(NewowProductQuery(
+                "rb", ProductStrategy.TREND, frequency, first, last,
+                performance_since=first, performance_through=last, as_of=as_of,
+            ), as_of)
+            prior, expected = full.replay_bars[-2:]
+            with patch.object(
+                market_data, "read_physical_daily_quality",
+                wraps=market_data.read_physical_daily_quality,
+            ) as physical_read, patch.object(
+                store, "read_catalog_partition",
+                wraps=store.read_catalog_partition,
+            ) as partition_read, patch.object(
+                store, "read_catalog_partition_quality",
+                wraps=store.read_catalog_partition_quality,
+            ) as quality_partition_read:
+                incremental = newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency, after=prior.bar.bar_end,
+                    as_of=as_of,
+                    prior_owner_segment_id=prior.bar.segment_id,
+                    prior_calculation_segment_id=prior.calculation_segment_id,
+                )
+            assert incremental == (expected, full.input_quality_policy)
+            assert physical_read.call_args_list
+            assert 1 <= partition_read.call_count + quality_partition_read.call_count <= 4
+            oldest = min(
+                call.args[0].start.astimezone(ZoneInfo("Asia/Shanghai")).date()
+                for call in physical_read.call_args_list
+            )
+            assert oldest >= prior.bar.trading_day - timedelta(days=7)
+            with patch.object(newow_reader, "load", side_effect=AssertionError("full read forbidden")):
+                capture = capture_newow_canonical(
+                    newow_reader, _newow_stream(ProductStrategy.TREND, frequency),
+                    revision_id="fixture-revision", generation=1,
+                    after=prior.bar.bar_end,
+                    recording_start=prior.bar.bar_end - timedelta(microseconds=1),
+                    now=as_of, capability_ready=lambda _identity: True,
+                    prior_owner_segment_id=prior.bar.segment_id,
+                    prior_calculation_segment_id=prior.calculation_segment_id,
+                )
+            assert capture is not None
+            assert capture.bar_end == expected.bar.bar_end
+            assert capture.source_proof["calculation_segment_id"] == expected.calculation_segment_id
+            assert capture.input_payload["source_bar_sha256"] == expected.source_bar_sha256
+            earlier = full.replay_bars[-3]
+            with pytest.raises(NewowForwardInputGap) as gap:
+                newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency, after=earlier.bar.bar_end,
+                    as_of=as_of,
+                    prior_owner_segment_id=earlier.bar.segment_id,
+                    prior_calculation_segment_id=earlier.calculation_segment_id,
+                )
+            assert gap.value.endpoints == (prior.bar.bar_end, expected.bar.bar_end)
+            with pytest.raises(ForwardInputUnavailable, match="OBSERVATION_GAP") as forwarded:
+                capture_newow_canonical(
+                    newow_reader, _newow_stream(ProductStrategy.TREND, frequency),
+                    revision_id="fixture-revision", generation=1,
+                    after=earlier.bar.bar_end,
+                    recording_start=earlier.bar.bar_end - timedelta(microseconds=1),
+                    now=as_of, capability_ready=lambda _identity: True,
+                    prior_owner_segment_id=earlier.bar.segment_id,
+                    prior_calculation_segment_id=earlier.calculation_segment_id,
+                )
+            assert forwarded.value.endpoints == gap.value.endpoints
+            with patch.object(
+                coverage, "latest_complete_day", return_value=prior.bar.trading_day,
+            ), patch.object(
+                market_data, "query_actual_dominant_trading_days_quality",
+                side_effect=AssertionError("unfinished day read forbidden"),
+            ):
+                assert newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency, after=prior.bar.bar_end,
+                    as_of=as_of,
+                    prior_owner_segment_id=prior.bar.segment_id,
+                    prior_calculation_segment_id=prior.calculation_segment_id,
+                ) is None
+            oldest_bar = full.replay_bars[0]
+            with patch.object(
+                market_data, "query_actual_dominant_trading_days_quality",
+                side_effect=AssertionError("unbounded read forbidden"),
+            ), pytest.raises(NewowProductReadError, match="NEWOW_INCREMENTAL_WINDOW_EXCEEDED"):
+                newow_reader.forward_incremental_bar(
+                    product="rb", frequency=frequency,
+                    after=oldest_bar.bar.bar_end, as_of=as_of,
+                    prior_owner_segment_id=oldest_bar.bar.segment_id,
+                    prior_calculation_segment_id=oldest_bar.calculation_segment_id,
+                )
         streams = tuple(
             HistoricalStreamRequest(stream, first, last, as_of)
             for stream in (
@@ -257,6 +384,19 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
         report = HistoricalReferenceService(
             repository, reader, step_counter=count,
         ).advance(advance_plan, advance_plan.plan_hash)
+        hyphen_identity = replace(streams[0].identity, strategy_code="newow-trend")
+        repository.ensure_stream(hyphen_identity)
+        query_aliases = HistoricalReferenceQuery(factory)
+        for alias, expected in (
+            ("newow-trend", streams[0].identity),
+            ("newow_trend", streams[0].identity),
+            ("subing-reference", streams[-2].identity),
+        ):
+            matches = query_aliases.streams(
+                strategy=alias, product=expected.product,
+                frequency=expected.frequency, mode="historical_replay",
+            )
+            assert [item["stream_id"] for item in matches] == [expected.stream_id]
 
         daily_query = SubingReferenceQuery(
             "rb", first, last, as_of, frequency="1d",
@@ -281,6 +421,55 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
         assert persisted_intraday["indicators"] == legacy_intraday["indicators"]
         assert persisted_intraday["items"] == legacy_intraday["items"]
         assert persisted_intraday["summary"] == legacy_intraday["summary"]
+        if engine.dialect.name == "postgresql":
+            with factory() as api_evidence_session:
+                batches_before_get = api_evidence_session.query(ReferenceBatch).count()
+            monkeypatch.setattr(reference_api, "_query", HistoricalReferenceQuery(factory))
+            client = TestClient(app)
+            path = f"/api/v1/reference-trading/streams/{streams[-4].identity.stream_id}"
+            params = {"since": first.isoformat(), "through": last.isoformat(), "limit": 50}
+            indicators_response = client.get(f"{path}/indicators", params=params)
+            assert indicators_response.status_code == 200, indicators_response.text
+            indicators = indicators_response.json()
+            assert indicators["items"]
+            summary_response = client.get(f"{path}/summary", params={
+                "since": first.isoformat(), "through": last.isoformat(),
+                "snapshot": indicators["snapshot"],
+            })
+            assert summary_response.status_code == 200, summary_response.text
+            assert summary_response.json()["snapshot"] == indicators["snapshot"]
+            with factory() as api_evidence_session:
+                assert api_evidence_session.query(ReferenceBatch).count() == batches_before_get
+            if os.getenv("GUIYI_P8_BENCH_QUERY") == "1":
+                query = HistoricalReferenceQuery(factory)
+                durations: dict[str, list[float]] = {"trades": [], "summary": []}
+                for _ in range(100):
+                    started = perf_counter()
+                    query.trades(
+                        streams[-4].identity.stream_id, since=first, through=last,
+                        limit=50,
+                    )
+                    durations["trades"].append((perf_counter() - started) * 1000)
+                    started = perf_counter()
+                    query.summary(
+                        streams[-4].identity.stream_id, since=first, through=last,
+                    )
+                    durations["summary"].append((perf_counter() - started) * 1000)
+                metrics = {
+                    name: {
+                        "n": len(samples),
+                        "p50_ms": round(sorted(samples)[49], 3),
+                        "p95_ms": round(sorted(samples)[94], 3),
+                    }
+                    for name, samples in durations.items()
+                }
+                with factory() as measured_session:
+                    metrics["row_counts"] = {
+                        "action": measured_session.query(ReferenceActionRow).count(),
+                        "trade_version": measured_session.query(ReferenceTradeRow).count(),
+                        "mark": measured_session.query(ReferenceMarkRow).count(),
+                    }
+                print("P8_QUERY_METRIC=" + json.dumps(metrics, sort_keys=True))
         bounded_daily = PersistedSubingReference(factory, subing_service).query(
             SubingReferenceQuery("rb", first, prior_day, prior_as_of, frequency="1d"),
         )

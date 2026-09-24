@@ -280,7 +280,7 @@ class ReferenceRepository:
 
     def forward_source_context(
         self, stream_id: str,
-    ) -> tuple[StreamIdentity, str, int, datetime, datetime | None, str] | None:
+    ) -> tuple[StreamIdentity, str, int, datetime, datetime | None, str, str | None, str | None] | None:
         """Freeze the persisted activation and watermark before a source read."""
         with self._session_factory() as session:
             stream = session.get(ReferenceStream, stream_id)
@@ -313,6 +313,8 @@ class ReferenceRepository:
                 _required_aware(stream.recording_start, "RECORDING_START"),
                 checkpoint.computed_through,
                 receipt.recovery_policy,
+                checkpoint.owner_segment_id,
+                checkpoint.calculation_segment_id,
             )
 
     def create_revision(

@@ -1,21 +1,20 @@
 # 当前状态
 
-## 2026-09-24 v1.10.31 精确候选检查点
+## 2026-09-24 v1.10.32 P8/P9 合并候选
 
-正式 `main` 与 annotated tag `v1.10.30` 指向
-`120c5c9490b9909bb64b2e55a5fb5893e57a04c0`；GitHub Release 已发布。
-本机现役 Runtime checkout `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1`
-detached 于同一提交。正式 Newow W1 Scope 为 50/60。
+正式 `main` 与 annotated tag `v1.10.31` 指向
+`bf5dbbfbae905111498a0a2b10ede30e73d03c50`；它不包含 P8/P9。
+本机受监督服务只读读回仍指向 detached
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1@120c5c9490b9909bb64b2e55a5fb5893e57a04c0`，
+Reference worker 未启用；该次即时 Runtime health 为 `failed`，需单独诊断。
 
-`codex/release-v1.10.31-newow-weekly` 是以 v1.10.30 为发布基线的精确候选，
-目标版本统一为 `v1.10.31`，拟纳入 PF、PK、PL、PR、PX、RS、SF、SH、SM、SR，
-使 W1 Scope 达到 60/60。候选还包含对 OI、PF、PK、PL、PR、PX、RS、SF、SH、SM
-的版本化 D1 质量策略，以及 RS W1 震荡预热页面验收断言修正。
-此检查点尚待冻结提交上的 D1/W1 策略和真实页面矩阵、相关测试、独立 Review 与发布判定；
-PR #394 仍为草稿。候选尚未合入 main、创建 `v1.10.31` tag/Release 或切换 Runtime。
-这些验证及受控发布操作的实际结果以对应提交、报告、Release 和服务读回为准。
+隔离 `codex/reference-p9-combined-rc` 将 `develop@3f5144a2b7acb5fa061a5db9c395153a5a90829b`
+的 P8/P9 工程与已发布 `v1.10.31` 基线合并，候选应用版本为 `1.10.32`。
+本候选仅用于冻结身份、测试和只读核对；未合入 `main`、未创建 `v1.10.32` tag/Release，
+也未执行生产 0048 migration、历史构建、reader 切换、forward 激活或 Runtime promotion。
+精确候选 SHA、能力与数据身份以本任务冻结记录和实际只读输出为准。
 
-以下 v1.10.29/v1.10.30 段落保留为各自当时的历史检查点，不代表本页首检查点的现役状态。
+以下旧版本段落保留为各自当时的历史检查点，不代表本页首检查点的现役状态。
 
 文档整理：2026-09-24。正式 Release 为
 `v1.10.29@52e360037720f7a4d642599dcece33bf3dc5eb63`：PR #392 精确候选
@@ -287,6 +286,7 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker 或全局 persisted reader；P4/P5 代码已随 v1.10.22 发布 |
 | Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_COMPLETE` | RB 十条开放参考流 exact-hash 构建并读回 READY/active revision，全部 enabled=false；12 个物理合约的 1m/15m/30m/60m 预热已完成。苏冰 15m/30m/60m 依严格 checkpoint 完成，分别 228/120/71 批；P6 worker 未启用，全局 reader 仍为 legacy |
 | Unified Reference Trading P5 读取与页面 | `RELEASED / RUNTIME_PROMOTED / READER_LEGACY` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已随 v1.10.22 发布；隔离 Canonical/MDS/P4 浏览器实读与两笔交易分页通过，独立 Review 无 Confirmed Issue。生产 0047 已执行；v1.10.25 时全局 reader=legacy，RB 苏冰 15m 旧接口两页生产只读 HTTP 200；persisted reader 尚未切换 |
+| Unified Reference Trading P8 工程证据 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | `a62e5014b` 五次独立隔离测试：同一 worker 连续五个完成 Bar 的 300 条真实 MDS 流、10,000 Bar 真实参考交易重建及查询计划/表索引大小均已记录；完整 Market 路由浏览器、进程崩溃恢复和 D1/W1 有界增量见 P8 验收文档。当前 Runtime v1.10.30 未安装 Reference worker；真实冷缓存、自然 Live、正式数据与 release/promotion 仍未验收，不开放生产能力 |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
