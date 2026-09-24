@@ -17,7 +17,7 @@ function transport(options: ReferenceRequestOptions) {
 
 export async function getReferenceStreams(identity: ReferenceIdentity, options: ReferenceRequestOptions = {}): Promise<ReferenceStreamInfo[]> {
   const result = await transport(options)('/reference-trading/streams', {
-    params: { strategy: identity.strategy, product: identity.product, frequency: identity.frequency, mode: 'historical_replay' },
+    params: { strategy: identity.strategy, product: identity.product, frequency: identity.frequency, mode: identity.mode ?? 'historical_replay' },
     signal: options.signal,
   }) as { items?: unknown }
   if (!result || !Array.isArray(result.items)) throw new Error('REFERENCE_RESPONSE_INVALID')

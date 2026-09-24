@@ -39,6 +39,8 @@ from ..newow.trend_band import TrendBandStateValue
 from ..subing_reference import ReferenceTrade as SubingReferenceTrade, SubingReplayState
 from .adapters import AdapterCheckpoint
 from .checkpoint import checkpoint_from_json, checkpoint_to_json
+from .htdy import HtdyBarFact, HtdyForwardState, MODEL_VERSION as HTDY_MODEL_VERSION
+from .subing_forward import SubingForwardState
 from .contracts import (
     RecordingMode, ReferenceState, ReferenceTrade, Side, StreamIdentity, TradeStatus,
 )
@@ -51,7 +53,8 @@ _DATACLASSES = {
         ProductReplayState, _PairingState, TrendBandStateValue, EscapeState,
         OscillationState, MainRiseState, Magic11State, ProductIdentity, StrategyAction,
         StrategyHint, NewowReferenceReplayState, NewowReferenceTrade,
-        StreamIdentity, ReferenceState, ReferenceTrade,
+        StreamIdentity, ReferenceState, ReferenceTrade, HtdyBarFact, HtdyForwardState,
+        SubingForwardState,
     )
 }
 _DATACLASS_TAGS = {cls: tag for tag, cls in _DATACLASSES.items()}
@@ -69,6 +72,8 @@ _STRATEGY_STATE_TYPES = {
     "subing_replay_v1": SubingReplayState,
     "newow_product_replay_v1": ProductReplayState,
     "newow_reference_replay_v1": NewowReferenceReplayState,
+    "htdy_first_seen_v1": HtdyForwardState,
+    "subing_forward_v1": SubingForwardState,
 }
 
 
@@ -326,6 +331,22 @@ def _validate_strategy_state(
         raise ValueError("strategy checkpoint strategy state type is invalid")
     if isinstance(state, SubingReplayState):
         _validate_subing_state(state, reference_state)
+    if isinstance(state, HtdyForwardState):
+        if (
+            state.model_version != HTDY_MODEL_VERSION
+            or state.model_version != reference_state.stream.reference_model_version
+            or state.observation_policy_version != reference_state.stream.observation_policy_version
+        ):
+            raise ValueError("strategy checkpoint HTDY identity is inconsistent")
+    if isinstance(state, SubingForwardState):
+        if state.processed_count < 0 or any(
+            count != state.processed_count for count in (
+                state.kernel_state.macd.fast.count,
+                state.kernel_state.macd.slow.count,
+                state.kernel_state.ema21.count,
+            )
+        ):
+            raise ValueError("strategy checkpoint SuBing progress is inconsistent")
     if isinstance(state, NewowReferenceReplayState):
         if state.stream != reference_state.stream:
             raise ValueError("strategy checkpoint Newow reference stream is inconsistent")
@@ -473,7 +494,16 @@ def adapter_checkpoint_from_json(
             raise ValueError(f"strategy checkpoint {name} is invalid")
     if (computed is None) != (payload["last_fingerprint"] is None):
         raise ValueError("strategy checkpoint progress is inconsistent")
-    if computed is not None and any(payload[name] is None for name in (
+    ownerless_gap = (
+        expected_stream.recording_mode is RecordingMode.FORWARD_OBSERVATION
+        and isinstance(payload["last_fingerprint"], str)
+        and payload["last_fingerprint"].startswith("observation-gap:")
+        and all(payload[name] is None for name in (
+            "physical_contract", "owner_segment_id", "calculation_segment_id",
+        ))
+        and reference_state.open_trade is None
+    )
+    if computed is not None and not ownerless_gap and any(payload[name] is None for name in (
         "physical_contract", "owner_segment_id", "calculation_segment_id",
     )):
         raise ValueError("strategy checkpoint owner progress is inconsistent")

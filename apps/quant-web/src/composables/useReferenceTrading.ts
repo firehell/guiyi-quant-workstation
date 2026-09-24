@@ -55,9 +55,10 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
     try {
       const matches = await client.streams(identity, options)
       if (current !== generation) return
-      if (matches.length !== 1) throw new Error(matches.length ? 'STREAM_IDENTITY_AMBIGUOUS' : 'NOT_BUILT')
+      if (matches.length !== 1) throw new Error(matches.length ? 'STREAM_IDENTITY_AMBIGUOUS' : identity.mode === 'forward_observation' ? 'NOT_ENABLED' : 'NOT_BUILT')
       const chosen = matches[0]!
-      if (!chosen.readable) throw new Error('NOT_BUILT')
+      stream.value = chosen
+      if (!chosen.readable) throw new Error(identity.mode === 'forward_observation' ? 'NOT_ENABLED' : 'NOT_BUILT')
       const first = await client.trades(chosen.stream_id, selectedWindow, options)
       if (current !== generation) return
       const [stats, signalPoints, indicatorPoints] = await Promise.all([
@@ -137,6 +138,7 @@ function referenceError(reason: unknown): string {
     ?? (reason instanceof Error ? reason.message : '')
   if (code === 'SNAPSHOT_CONFLICT' || code === 'CURSOR_CONFLICT') return '历史参考快照已变化，请刷新后重试。'
   if (code === 'NOT_BUILT') return '历史参考尚未构建。'
+  if (code === 'NOT_ENABLED') return '盘中观察参考尚未启用。'
   if (code === 'PRESENTATION_NOT_MATERIALIZED') return '已保存的历史参考缺少展示数据，需要重新构建。'
   return '已保存的历史参考暂不可用，请稍后重试。'
 }

@@ -4,9 +4,124 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 
 from app.reference_trading.inputs import HistoricalInputReader
 from app.reference_trading.planning import HistoricalReferencePlanner
+
+
+def build_forward_reference_worker(
+    *, repository, market_read, newow_reader, owner_segments,
+    expected_endpoints, newow_capability_ready,
+    canonical_read_guard=None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    enabled: bool = False,
+):
+    """Compose a default-off worker; callers provide authoritative read seams."""
+    from app.reference_trading.forward_inputs import (
+        ForwardInputUnavailable, capture_htdy_live, capture_newow_canonical,
+        capture_newow_live, capture_subing_live,
+    )
+    from app.reference_trading.forward_service import ForwardReferenceService
+    from app.reference_trading.htdy import evaluate_htdy_capture
+    from app.reference_trading.newow_forward import evaluate_newow_capture
+    from app.reference_trading.recovery import (
+        capture_observation_gap, evaluate_observation_gap,
+    )
+    from app.reference_trading.runtime import ForwardReferenceWorker
+    from app.reference_trading.subing_forward import evaluate_subing_capture
+
+    def service_for(stream_id: str) -> ForwardReferenceService:
+        state = repository.read_state(stream_id)
+        _, checkpoint = repository.load_checkpoint(stream_id, state.revision_id)
+        stream = checkpoint.stream
+        if stream is None:
+            raise ValueError("FORWARD_CHECKPOINT_INVALID")
+        code = stream.strategy_code.replace("-", "_")
+        if code.startswith("newow_"):
+            evaluator = evaluate_newow_capture
+        elif code == "subing_reference":
+            evaluator = evaluate_subing_capture
+        elif code == "htdy":
+            evaluator = evaluate_htdy_capture
+        else:
+            raise ValueError("FORWARD_STRATEGY_UNSUPPORTED")
+        def evaluate(token, checkpoint, evidence):
+            capture = evidence.get("forward_capture_v1")
+            selected = (
+                evaluate_observation_gap
+                if isinstance(capture, dict) and capture.get("eligibility") == "gap_recovery"
+                else evaluator
+            )
+            return selected(
+                token, checkpoint, evidence,
+                dependency_manifest=state.dependency_manifest,
+            )
+
+        return ForwardReferenceService(repository, evaluate)
+
+    def read_input(stream_id: str, kind: str, event_bar_end: datetime | None):
+        context = repository.forward_source_context(stream_id)
+        if context is None:
+            return None
+        identity, revision_id, generation, recording_start, computed_through, recovery_policy = context
+        observed = now()
+        after = (
+            computed_through if computed_through is not None
+            else recording_start - timedelta(microseconds=1)
+        )
+        common = dict(
+            revision_id=revision_id, generation=generation, after=after, now=observed,
+        )
+        code = identity.strategy_code.replace("-", "_")
+        try:
+            if code == "htdy":
+                return capture_htdy_live(
+                    market_read, identity, wake_kind=kind,
+                    event_bar_end=event_bar_end,
+                    owner_segments=owner_segments, **common,
+                )
+            if code == "subing_reference":
+                return capture_subing_live(
+                    market_read, identity, wake_kind=kind,
+                    owner_segments=owner_segments,
+                    expected_endpoints=expected_endpoints,
+                    event_bar_end=event_bar_end,
+                    **common,
+                )
+            if code.startswith("newow_"):
+                if identity.frequency == "60m":
+                    return capture_newow_live(
+                        market_read, identity, wake_kind=kind,
+                        owner_segments=owner_segments,
+                        expected_endpoints=expected_endpoints,
+                        event_bar_end=event_bar_end,
+                        capability_ready=newow_capability_ready, **common,
+                    )
+                if identity.frequency in {"1d", "1w"}:
+                    if canonical_read_guard is None:
+                        raise ForwardInputUnavailable("CANONICAL_READ_GUARD_MISSING")
+                    with canonical_read_guard():
+                        return capture_newow_canonical(
+                            newow_reader(identity) if callable(newow_reader) else newow_reader,
+                            identity, revision_id=revision_id,
+                            generation=generation, after=computed_through,
+                            recording_start=recording_start, now=observed,
+                            capability_ready=newow_capability_ready,
+                        )
+        except ForwardInputUnavailable as error:
+            if recovery_policy != "interrupt_and_restart" or str(error) not in {
+                "OBSERVATION_GAP", "FIRST_SEEN_NOT_PROVEN",
+            }:
+                raise
+            return capture_observation_gap(
+                identity, revision_id=revision_id, generation=generation,
+                previous_watermark=computed_through, observed_at=observed,
+                reason=str(error), trading_day=error.trading_day,
+                endpoints=error.endpoints,
+            )
+        raise ValueError("FORWARD_STRATEGY_UNSUPPORTED")
+
+    return ForwardReferenceWorker(repository, service_for, read_input, enabled=enabled)
 
 
 def build_historical_reference_planner(

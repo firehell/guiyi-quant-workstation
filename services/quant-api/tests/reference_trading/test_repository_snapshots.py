@@ -120,9 +120,12 @@ def test_forward_trade_requires_observed_at_before_cutoff() -> None:
 
     from app.db.base import Base
     from app.reference_trading.contracts import SeedChunk
+    from app.reference_trading.activation import ForwardActivation
+    from app.reference_trading.capture import ForwardCapture
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
-    repository = ReferenceRepository(sessionmaker(engine, expire_on_commit=False))
+    factory = sessionmaker(engine, expire_on_commit=False)
+    repository = ReferenceRepository(factory)
     historical = _stream()
     stream = replace(
         historical,
@@ -141,6 +144,14 @@ def test_forward_trade_requires_observed_at_before_cutoff() -> None:
     token = repository.seal_seed(
         revision, manifest, checkpoint, "newow_product_replay_v1"
     )
+    activation = ForwardActivation(factory)
+    plan = activation.plan(
+        stream.stream_id, revision, host="test", environment="isolated",
+        recording_start=AT, expires_at=AT - timedelta(minutes=30),
+        budget={"max_pending": 1},
+    )
+    activation.apply(plan, expected_plan_hash=plan.plan_hash, now=AT - timedelta(hours=1))
+    token, _ = repository.load_checkpoint(stream.stream_id, revision)
     action = ReferenceAction(
         stream=stream, source_action_id="observed-build", physical_contract="RB2610",
         owner_segment_id="owner-1", calculation_segment_id="calc-1",
@@ -159,17 +170,22 @@ def test_forward_trade_requires_observed_at_before_cutoff() -> None:
         stream, transition.state,
     )
     observed_at = AT + timedelta(hours=1)
+    capture = ForwardCapture(
+        stream.stream_id, revision, 1, "observed-bar", AT, observed_at,
+        "completed_live", {"close": "3501"}, {"contract": "RB2610"}, "first_seen",
+    )
+    capture_id = repository.capture_forward(capture)
     prepared = PreparedBatch(
         stream.stream_id, revision, "observed-bar", token, manifest,
         (SourceAction(action, observed_at=observed_at),), (transition,), next_checkpoint,
-        "newow_product_replay_v1", {"live": "fixture"},
+        "newow_product_replay_v1", {"forward_capture_v1": {
+            "capture_id": capture_id, "hash": capture.capture_hash, "generation": 1,
+        }},
         input_observed_at=observed_at,
     )
     repository.commit_batch(token, prepared)
     token, _ = repository.load_checkpoint(stream.stream_id, revision)
-    snapshot = repository.publish_revision(
-        stream.stream_id, revision, token.row_version, _digest(manifest)
-    )
+    snapshot = SnapshotIdentity(stream.stream_id, revision, token.seq)
 
     assert repository.read_trades(
         snapshot, cutoff=AT + timedelta(minutes=30), limit=20
@@ -223,12 +239,14 @@ def test_same_bar_actions_use_stable_keyset_without_dropping_an_item() -> None:
     assert second.next_key is None
 
 
-def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
+def test_forward_reprojection_without_captured_observation_is_rejected() -> None:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from app.db.base import Base
     from app.reference_trading.contracts import SeedChunk
+    from app.reference_trading.activation import ForwardActivation
+    from app.reference_trading.capture import ForwardCapture
 
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -252,6 +270,14 @@ def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
     token = repository.seal_seed(
         first_revision, manifest, seed_checkpoint, "newow_product_replay_v1",
     )
+    activation = ForwardActivation(factory)
+    plan = activation.plan(
+        stream.stream_id, first_revision, host="test", environment="isolated",
+        recording_start=AT, expires_at=AT - timedelta(minutes=30),
+        budget={"max_pending": 1},
+    )
+    activation.apply(plan, expected_plan_hash=plan.plan_hash, now=AT - timedelta(hours=1))
+    token, _ = repository.load_checkpoint(stream.stream_id, first_revision)
     action = ReferenceAction(
         stream=stream, source_action_id="observed-build", physical_contract="RB2610",
         owner_segment_id="owner-1", calculation_segment_id="calc-1",
@@ -260,6 +286,11 @@ def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
     )
     transition = reduce_reference(seed_checkpoint.reference_state, actions=(action,))
     observed_at = AT + timedelta(minutes=5)
+    capture = ForwardCapture(
+        stream.stream_id, first_revision, 1, "observed-build", AT, observed_at,
+        "completed_live", {"close": "3500"}, {"contract": "RB2610"}, "first_seen",
+    )
+    capture_id = repository.capture_forward(capture)
     first_batch = PreparedBatch(
         stream.stream_id, first_revision, "observed-build", token, manifest,
         (SourceAction(action, observed_at=observed_at),), (transition,),
@@ -267,14 +298,13 @@ def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
             seed_replay_state(), None, None, "RB2610", "owner-1", "calc-1",
             stream, transition.state,
         ),
-        "newow_product_replay_v1", {"live": "first-projection"},
+        "newow_product_replay_v1", {"forward_capture_v1": {
+            "capture_id": capture_id, "hash": capture.capture_hash, "generation": 1,
+        }},
         input_observed_at=observed_at,
     )
     repository.commit_batch(token, first_batch)
     token, _ = repository.load_checkpoint(stream.stream_id, first_revision)
-    repository.publish_revision(
-        stream.stream_id, first_revision, token.row_version, _digest(manifest),
-    )
 
     token, _ = repository.load_checkpoint(stream.stream_id, first_revision)
     second_revision = repository.create_revision(
@@ -298,18 +328,12 @@ def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
         "newow_product_replay_v1", {"live": "second-projection"},
         input_observed_at=observed_at,
     )
-    repository.commit_batch(second_seed, second_batch)
-    second_token, _ = repository.load_checkpoint(stream.stream_id, second_revision)
-    second_snapshot = repository.publish_revision(
-        stream.stream_id, second_revision, second_token.row_version, _digest(manifest),
-    )
+    with __import__("pytest").raises(RepositoryConflict, match="FORWARD_CAPTURE_REQUIRED"):
+        repository.commit_batch(second_seed, second_batch)
 
     with factory() as session:
         action_count = session.scalar(select(func.count()).select_from(ReferenceActionRow))
-    projected = repository.read_actions(second_snapshot, cutoff=None, limit=20)
-
     assert action_count == 1
-    assert [item.source_action_id for item in projected.items] == ["observed-build"]
 
 
 def test_cutoff_before_an_unsealed_boundary_keeps_the_prior_open_version() -> None:

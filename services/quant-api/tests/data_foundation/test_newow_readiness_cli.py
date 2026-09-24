@@ -284,6 +284,38 @@ def test_real_composition_missing_metadata_never_constructs_provider_writer_or_r
         session.rollback()
 
 
+def test_real_daily_composition_does_not_apply_weekly_quality_policy(
+    monkeypatch, tmp_path
+):
+    from app.db.base import Base
+    from app.market_data import composition
+    from app.market_data.newow import readiness_composition
+    from app.market_data.newow.readiness import ReadinessRequest
+    from datetime import UTC, datetime
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+
+    monkeypatch.setattr(composition, "canonical_root", lambda: tmp_path / "canonical")
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.execute(text("PRAGMA query_only = ON"))
+        report = readiness_composition.build_newow_readiness(
+            session,
+            request=ReadinessRequest(
+                ("a", "b"),
+                datetime(2026, 9, 23, 8, tzinfo=UTC),
+                max_work=100,
+                matrix=True,
+                frequencies=(ProductFrequency.DAILY,),
+                consumer_only=True,
+            ),
+        )
+
+        assert report["complete"] is False
+        assert report["writes"] == report["provider_requests"] == 0
+        session.rollback()
+
+
 def test_shared_readonly_transaction_rejects_writes_and_rolls_back():
     from app.db import readonly
     from sqlalchemy.exc import OperationalError

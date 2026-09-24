@@ -34,7 +34,7 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 ## 配置与变更 Gate
 
-- [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market/Alert、默认未安装的 weekly audit 与日志轮转模板；验证命令见
+- [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market/Alert、默认未安装的 weekly audit/reference worker 与日志轮转模板；验证命令见
   `TESTING.md`。
 - API 与 Alert 模板只共享一个 Git 外 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`；PushPlus token 与 Topic code
   不进入 plist、仓库或状态输出。
@@ -46,6 +46,8 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 `--render-only` 可用于本地无副作用验证。任何 launchd 加载/重载、Runtime switch、腾讯云配置应用或
 Nginx reload 都是受控外部操作，必须明确包含在目标、环境、服务范围匹配的授权中。
+Reference worker 模板只在 `--render-only` 中渲染，安装器没有加载此 label 的模式；其进程入口还要求
+exact `.run/reference-worker-enabled` marker。此候选配置不启用 forward 流，也不授权 schema 升级或 Runtime 切换。
 同一任务可一次批准发布、切换及指定恢复步骤，分别核验对应 Gate；跨会话恢复与有界重试按 `AGENTS.md`，
 不增加逐命令审批，不放宽 exact identity、preflight、兼容性或安装器失败恢复合同。
 

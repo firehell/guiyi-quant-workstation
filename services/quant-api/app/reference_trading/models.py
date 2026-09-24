@@ -36,6 +36,9 @@ REFERENCE_TABLES = {
     "reference_trades",
     "reference_marks",
 }
+FORWARD_REFERENCE_TABLES = {
+    "reference_activation_receipts", "reference_capture_reconciliations",
+}
 
 
 class ReferenceStream(Base):
@@ -80,6 +83,48 @@ class ReferenceStream(Base):
     latest_seq: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"), nullable=False)
     row_version: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"), nullable=False)
     health: Mapped[str] = mapped_column(String(32), default="NOT_BUILT", server_default=text("'NOT_BUILT'"), nullable=False)
+    activation_generation: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"), nullable=False)
+    recording_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activation_plan_hash: Mapped[str | None] = mapped_column(String(64))
+
+
+class ReferenceActivationReceipt(Base):
+    __tablename__ = "reference_activation_receipts"
+    __table_args__ = (
+        ForeignKeyConstraint(["stream_id"], ["reference_streams.stream_id"], ondelete="RESTRICT"),
+        UniqueConstraint("stream_id", "generation", name="uq_reference_activation_generation"),
+        CheckConstraint("generation > 0", name="ck_reference_activation_generation"),
+    )
+
+    receipt_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    stream_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    revision_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    recording_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    environment: Mapped[str] = mapped_column(String(64), nullable=False)
+    host: Mapped[str] = mapped_column(String(128), nullable=False)
+    budget: Mapped[dict[str, object]] = mapped_column(JsonType, nullable=False)
+    recovery_policy: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class ReferenceCaptureReconciliation(Base):
+    __tablename__ = "reference_capture_reconciliations"
+    __table_args__ = (
+        ForeignKeyConstraint(["capture_batch_id"], ["reference_batches.batch_id"], ondelete="RESTRICT"),
+        UniqueConstraint("capture_batch_id", "source_revision", name="uq_reference_capture_reconciliation"),
+        CheckConstraint("status IN ('matched','mismatch','pending')", name="ck_reference_capture_reconciliation_status"),
+    )
+
+    reconciliation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    capture_batch_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    source_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    captured_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_sha256: Mapped[str | None] = mapped_column(String(64))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ReferenceRevision(Base):
@@ -129,7 +174,7 @@ class ReferenceBatch(Base):
         CheckConstraint("expected_seq >= 0", name="ck_reference_batches_expected_seq"),
         CheckConstraint(
             "(kind = 'diagnostic' AND seq IS NULL) OR "
-            "(kind = 'seed_chunk' AND seq IS NULL) OR "
+            "(kind IN ('seed_chunk','capture') AND seq IS NULL) OR "
             "(kind IN ('seed_seal','calculation') AND seq IS NOT NULL)",
             name="ck_reference_batches_kind_seq",
         ),
@@ -166,6 +211,7 @@ class ReferenceBatch(Base):
     seed_chunk_count: Mapped[int | None] = mapped_column(BigInteger)
     seed_root_hash: Mapped[str | None] = mapped_column(String(64))
     seed_chunk_text: Mapped[str | None] = mapped_column(Text)
+    consumed_by_batch_id: Mapped[str | None] = mapped_column(String(96))
 
 
 class ReferenceActionRow(Base):

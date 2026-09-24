@@ -250,6 +250,27 @@ class MarketDataService:
         to committed coverage or backfill missing prices with older valid Bars.
         Ordinary series/page readers remain strict.
         """
+        bars, gaps = self._query_physical_daily_quality_as_of(
+            symbol=symbol, contract=contract, trading_day=trading_day, limit=limit,
+            include_nonpositive_close=False,
+        )
+        if any(not isinstance(item, PriceUnavailableFact) for item in gaps):
+            raise MarketDataError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+        return bars, tuple(item for item in gaps if isinstance(item, PriceUnavailableFact))
+
+    def query_physical_daily_quality_union_as_of(
+        self, *, symbol: str, contract: str, trading_day: date, limit: int,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
+        """Read a bounded D1 window while preserving every approved quality fact."""
+        return self._query_physical_daily_quality_as_of(
+            symbol=symbol, contract=contract, trading_day=trading_day, limit=limit,
+            include_nonpositive_close=True,
+        )
+
+    def _query_physical_daily_quality_as_of(
+        self, *, symbol: str, contract: str, trading_day: date, limit: int,
+        include_nonpositive_close: bool,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
         page = SeriesPageQuery(
             SeriesKind.CONTRACT, symbol, BarFrequency.D1,
             contract=contract, limit=limit,
@@ -264,11 +285,20 @@ class MarketDataService:
         )[-page.limit:]
         if not expected or expected[-1] != (cutoff, trading_day):
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
-        bars, gaps = self.read_physical_daily_quality(SeriesQuery(
+        request = SeriesQuery(
             SeriesKind.CONTRACT, page.symbol, BarFrequency.D1,
             expected[0][0] - timedelta(microseconds=1), cutoff,
             contract=page.contract,
-        ), require_window_coverage=False)
+        )
+        if include_nonpositive_close:
+            bars, gaps = self.read_physical_daily_quality_union(
+                request, require_window_coverage=False,
+            )
+        else:
+            bars, legacy_gaps = self.read_physical_daily_quality(
+                request, require_window_coverage=False,
+            )
+            gaps = tuple(legacy_gaps)
         actual = tuple(sorted(
             [(bar.bar_end, bar.trading_day) for bar in bars]
             + [(gap.bar_end, gap.trading_day) for gap in gaps]

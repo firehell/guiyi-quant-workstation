@@ -62,7 +62,8 @@ base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 market_runtime_labels=(com.guiyi.quant-after-market com.guiyi.quant-live)
 alert_runtime_labels=(com.guiyi.quant-alert)
 weekly_audit_labels=(com.guiyi.quant-weekly-audit)
-render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}")
+reference_worker_labels=(com.guiyi.quant-reference-worker)
+render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}" "${reference_worker_labels[@]}")
 load_labels=("${base_labels[@]}")
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" || "$MODE" == "--confirm-weekly-audit" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-weekly-audit]\n' "$0" >&2; exit 2; }

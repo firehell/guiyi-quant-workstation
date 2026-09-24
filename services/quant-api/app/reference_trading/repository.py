@@ -44,8 +44,10 @@ from app.reference_trading.contracts import (
     StoredStream,
     validate_dependency_advance,
 )
+from app.reference_trading.capture import ForwardCapture
 from app.reference_trading.models import (
     ReferenceActionRow,
+    ReferenceActivationReceipt,
     ReferenceBatch,
     ReferenceMarkRow,
     ReferenceRevision,
@@ -172,6 +174,146 @@ class ReferenceRepository:
                 raise RepositoryConflict("STREAM_IDENTITY_CONFLICT")
             result = _stored(row)
         return result
+
+    def capture_forward(self, capture: ForwardCapture) -> str:
+        """Persist one immutable observation without advancing reference state."""
+        if not isinstance(capture, ForwardCapture):
+            raise TypeError("capture must be ForwardCapture")
+        with self._session_factory() as session, session.begin():
+            stream = session.execute(select(ReferenceStream).where(
+                ReferenceStream.stream_id == capture.stream_id,
+            ).with_for_update()).scalar_one_or_none()
+            if stream is None or stream.recording_mode != RecordingMode.FORWARD_OBSERVATION.value:
+                raise RepositoryConflict("STREAM_NOT_FORWARD")
+            revision = session.execute(select(ReferenceRevision).where(
+                ReferenceRevision.stream_id == capture.stream_id,
+                ReferenceRevision.revision_id == capture.revision_id,
+            ).with_for_update()).scalar_one_or_none()
+            if (
+                revision is None or revision.status != "active"
+                or stream.active_revision_id != capture.revision_id
+                or not stream.enabled or stream.activation_generation != capture.generation
+            ):
+                raise RepositoryConflict("ACTIVATION_GENERATION_CONFLICT")
+            if stream.recording_start is None or capture.observed_at < _required_aware(
+                stream.recording_start, "recording_start",
+            ):
+                raise RepositoryConflict("BEFORE_RECORDING_START")
+            if capture.eligibility == "gap_recovery":
+                receipt = session.scalar(select(ReferenceActivationReceipt).where(
+                    ReferenceActivationReceipt.stream_id == capture.stream_id,
+                    ReferenceActivationReceipt.generation == capture.generation,
+                    ReferenceActivationReceipt.disabled_at.is_(None),
+                ))
+                if receipt is None or receipt.recovery_policy != "interrupt_and_restart":
+                    raise RepositoryConflict("RECOVERY_POLICY_NOT_APPROVED")
+            existing = session.scalar(select(ReferenceBatch).where(
+                ReferenceBatch.stream_id == capture.stream_id,
+                ReferenceBatch.revision_id == capture.revision_id,
+                ReferenceBatch.batch_key == capture.batch_key,
+            ))
+            if existing is not None:
+                if existing.kind != "capture" or existing.payload_hash != capture.capture_hash:
+                    raise RepositoryConflict("CAPTURE_CONTENT_CONFLICT")
+                return existing.batch_id
+            pending = session.scalar(select(ReferenceBatch.batch_id).where(
+                ReferenceBatch.stream_id == capture.stream_id,
+                ReferenceBatch.revision_id == capture.revision_id,
+                ReferenceBatch.kind == "capture",
+                ReferenceBatch.consumed_by_batch_id.is_(None),
+            ).limit(1))
+            if pending is not None:
+                raise RepositoryConflict("PENDING_CAPTURE_FIRST")
+            batch_id = uuid4().hex
+            session.add(ReferenceBatch(
+                batch_id=batch_id, stream_id=capture.stream_id,
+                revision_id=capture.revision_id, batch_key=capture.batch_key,
+                payload_hash=capture.capture_hash, kind="capture", outcome="pending",
+                seq=None, expected_seq=revision.last_seq,
+                dependency_manifest={}, source_evidence=capture.evidence(),
+                projected_action_pks=[], diagnostics=[], observed_at=capture.observed_at,
+                processed_at=datetime.now(UTC),
+            ))
+            return batch_id
+
+    def read_pending_capture(self, stream_id: str) -> tuple[str, dict[str, object]] | None:
+        with self._session_factory() as session:
+            stream = session.get(ReferenceStream, stream_id)
+            if stream is None or not stream.enabled or stream.active_revision_id is None:
+                return None
+            row = session.scalar(select(ReferenceBatch).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == stream.active_revision_id,
+                ReferenceBatch.kind == "capture",
+                ReferenceBatch.consumed_by_batch_id.is_(None),
+            ).order_by(ReferenceBatch.processed_at, ReferenceBatch.batch_id).limit(1))
+            return None if row is None else (row.batch_id, dict(row.source_evidence))
+
+    def enabled_forward_stream_ids(
+        self, *, limit: int = 512, after: str | None = None,
+    ) -> tuple[str, ...]:
+        if type(limit) is not int or not 1 <= limit <= 512:
+            raise ValueError("limit must be between 1 and 512")
+        with self._session_factory() as session:
+            query = select(ReferenceStream.stream_id).where(
+                ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+                ReferenceStream.enabled.is_(True),
+            )
+            if after is not None:
+                query = query.where(ReferenceStream.stream_id > after)
+            return tuple(session.scalars(
+                query.order_by(ReferenceStream.stream_id).limit(limit),
+            ).all())
+
+    def enabled_forward_routes(self, product: str, frequency: str) -> tuple[str, ...]:
+        """Bounded routing read; capture still validates activation generation."""
+        with self._session_factory() as session:
+            stream_ids = tuple(session.scalars(select(ReferenceStream.stream_id).where(
+                ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+                ReferenceStream.enabled.is_(True),
+                func.lower(ReferenceStream.product) == product,
+                ReferenceStream.frequency == frequency,
+            ).order_by(ReferenceStream.stream_id).limit(513)).all())
+        if len(stream_ids) > 512:
+            raise RepositoryConflict("FORWARD_EVENT_SCOPE_EXCEEDED")
+        return stream_ids
+
+    def forward_source_context(
+        self, stream_id: str,
+    ) -> tuple[StreamIdentity, str, int, datetime, datetime | None, str] | None:
+        """Freeze the persisted activation and watermark before a source read."""
+        with self._session_factory() as session:
+            stream = session.get(ReferenceStream, stream_id)
+            if (
+                stream is None or not stream.enabled
+                or stream.recording_mode != RecordingMode.FORWARD_OBSERVATION.value
+                or stream.active_revision_id is None or stream.recording_start is None
+            ):
+                return None
+            revision = session.get(ReferenceRevision, (stream_id, stream.active_revision_id))
+            if revision is None or revision.status != "active" or revision.checkpoint_batch_id is None:
+                raise RepositoryConflict("FORWARD_ACTIVATION_INVALID")
+            batch = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+            if batch is None or batch.checkpoint_text is None or batch.strategy_schema is None:
+                raise RepositoryConflict("CHECKPOINT_CORRUPT")
+            identity = _identity_from_row(stream)
+            checkpoint = adapter_checkpoint_from_json(
+                batch.checkpoint_text, expected_stream=identity,
+                expected_strategy_schema=batch.strategy_schema,
+            )
+            receipt = session.scalar(select(ReferenceActivationReceipt).where(
+                ReferenceActivationReceipt.stream_id == stream_id,
+                ReferenceActivationReceipt.generation == stream.activation_generation,
+                ReferenceActivationReceipt.disabled_at.is_(None),
+            ))
+            if receipt is None:
+                raise RepositoryConflict("ACTIVATION_RECEIPT_MISSING")
+            return (
+                identity, revision.revision_id, stream.activation_generation,
+                _required_aware(stream.recording_start, "RECORDING_START"),
+                checkpoint.computed_through,
+                receipt.recovery_policy,
+            )
 
     def create_revision(
         self, stream_id: str, expected_row_version: int, dependency_digest: str,
@@ -468,6 +610,25 @@ class ReferenceRepository:
                 return CommitResult(
                     "noop", prepared.revision_id, existing.seq, existing.post_state_hash,
                 )
+            capture_row = None
+            if stream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value:
+                proof = prepared.source_evidence.get("forward_capture_v1")
+                if not isinstance(proof, dict) or not isinstance(proof.get("capture_id"), str):
+                    raise RepositoryConflict("FORWARD_CAPTURE_REQUIRED")
+                capture_row = session.get(ReferenceBatch, proof["capture_id"])
+                if (
+                    not stream.enabled or stream.active_revision_id != revision.revision_id
+                    or type(proof.get("generation")) is not int
+                    or proof["generation"] != stream.activation_generation
+                    or capture_row is None or capture_row.kind != "capture"
+                    or capture_row.stream_id != stream.stream_id
+                    or capture_row.revision_id != revision.revision_id
+                    or capture_row.consumed_by_batch_id is not None
+                    or capture_row.payload_hash != proof.get("hash")
+                    or _aware(capture_row.observed_at) != prepared.input_observed_at
+                    or capture_row.expected_seq != revision.last_seq
+                ):
+                    raise RepositoryConflict("FORWARD_CAPTURE_CONFLICT")
             if revision.status not in {"candidate", "active"}:
                 raise RepositoryConflict("REVISION_NOT_WRITABLE")
             if (
@@ -559,6 +720,9 @@ class ReferenceRepository:
             )
             session.add(batch)
             session.flush()
+            if capture_row is not None:
+                capture_row.consumed_by_batch_id = batch_id
+                capture_row.outcome = "consumed"
             action_pks = self._insert_actions(
                 session, prepared, batch_id=batch_id, batch_seq=seq,
             )
@@ -588,6 +752,7 @@ class ReferenceRepository:
 
     def read_batch(
         self, stream_id: str, revision_id: str, batch_key: str,
+        *, expected_payload_hash: str | None = None,
     ) -> CommitResult | None:
         with self._session_factory() as session:
             row = session.execute(select(ReferenceBatch).where(
@@ -597,9 +762,20 @@ class ReferenceRepository:
             )).scalar_one_or_none()
             if row is None:
                 return None
+            if expected_payload_hash is not None and row.payload_hash != expected_payload_hash:
+                raise RepositoryConflict("BATCH_CONTENT_CONFLICT")
             if row.seq is None or row.post_state_hash is None:
                 raise RepositoryConflict("BATCH_NOT_COMMITTED")
             return CommitResult("committed", revision_id, row.seq, row.post_state_hash)
+
+    def read_prepared_batch(self, prepared: PreparedBatch) -> CommitResult | None:
+        checkpoint_text = adapter_checkpoint_to_json(
+            prepared.checkpoint, strategy_schema=prepared.strategy_schema,
+        )
+        return self.read_batch(
+            prepared.stream_id, prepared.revision_id, prepared.batch_key,
+            expected_payload_hash=self._prepared_hash(prepared, checkpoint_text),
+        )
 
     def read_batch_evidence(
         self, stream_id: str, revision_id: str, batch_key: str,
@@ -671,6 +847,8 @@ class ReferenceRepository:
         cutoff: datetime | None,
         limit: int,
         after_key: tuple[object, ...] | None = None,
+        since: date | None = None,
+        through: date | None = None,
     ) -> StoredPage[ReferenceTrade]:
         self._validate_page(limit, cutoff)
         with self._session_factory() as session:
@@ -718,6 +896,18 @@ class ReferenceRepository:
                         continue
                     chosen = opens[0]
                 trade = self._trade_domain(session, identity, chosen)
+                if since is not None and trade.entry_trading_day < since:
+                    if not (
+                        stream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value
+                        and (
+                            trade.status is TradeStatus.OPEN
+                            or trade.exit_trading_day is not None
+                            and trade.exit_trading_day >= since
+                        )
+                    ):
+                        continue
+                if through is not None and trade.entry_trading_day > through:
+                    continue
                 if trade.status is TradeStatus.OPEN:
                     mark_statement = select(ReferenceMarkRow).where(
                         ReferenceMarkRow.stream_id == snapshot.stream_id,
@@ -769,6 +959,7 @@ class ReferenceRepository:
         since: date, through: date, cutoff: datetime | None,
         limit: int, after_key: tuple[datetime, str] | None = None,
         initial_interruptions: frozenset[tuple[str, str, str]] = frozenset(),
+        forward: bool = False,
     ) -> StoredPage[ReferenceTrade]:
         """Select one eligible version per trade in SQL, then hydrate one page.
 
@@ -779,32 +970,37 @@ class ReferenceRepository:
         if type(since) is not date or type(through) is not date or since > through:
             raise ValueError("TRADING_DAY_WINDOW_INVALID")
         stream, _revision = self._validate_snapshot(session, snapshot)
-        if stream.recording_mode != RecordingMode.HISTORICAL_REPLAY.value:
+        expected_mode = (
+            RecordingMode.FORWARD_OBSERVATION.value if forward
+            else RecordingMode.HISTORICAL_REPLAY.value
+        )
+        if stream.recording_mode != expected_mode:
             raise RepositoryConflict("MODE_NOT_AVAILABLE")
         row = ReferenceTradeRow
         eligible = [
             row.stream_id == snapshot.stream_id,
             row.revision_id == snapshot.revision_id,
             row.valid_from_seq <= snapshot.seq,
-            row.entry_trading_day <= through,
         ]
-        if stream.strategy_code.replace("-", "_") == "subing_reference":
-            eligible.append(or_(
-                row.entry_trading_day >= since,
-                row.exit_trading_day >= since,
-                row.status == "OPEN",
-                and_(
-                    row.status.in_(("DATA_INTERRUPTED", "ROLLOVER_INTERRUPTED")),
-                    tuple_(row.physical_contract, row.owner_segment_id,
-                           row.calculation_segment_id).in_(initial_interruptions),
-                ),
-            ))
         if cutoff is not None:
             eligible.extend((
                 row.entry_bar_end <= cutoff,
                 row.effective_bar_end <= cutoff,
                 or_(row.exit_bar_end.is_(None), row.exit_bar_end <= cutoff),
             ))
+            if forward:
+                eligible.extend((
+                    select(ReferenceActionRow.action_pk).where(
+                        ReferenceActionRow.action_pk == row.entry_action_pk,
+                        ReferenceActionRow.observed_at <= cutoff,
+                    ).exists(),
+                    select(ReferenceBatch.batch_id).where(
+                        ReferenceBatch.stream_id == row.stream_id,
+                        ReferenceBatch.revision_id == row.revision_id,
+                        ReferenceBatch.seq == row.valid_from_seq,
+                        ReferenceBatch.observed_at <= cutoff,
+                    ).exists(),
+                ))
         ranked = select(
             row.trade_id.label("trade_id"),
             row.valid_from_seq.label("valid_from_seq"),
@@ -823,7 +1019,25 @@ class ReferenceRepository:
         ).where(
             row.stream_id == snapshot.stream_id,
             row.revision_id == snapshot.revision_id,
+            row.entry_trading_day <= through,
         )
+        if forward:
+            statement = statement.where(or_(
+                row.entry_trading_day >= since,
+                row.exit_trading_day >= since,
+                row.status == "OPEN",
+            ))
+        elif stream.strategy_code.replace("-", "_") == "subing_reference":
+            statement = statement.where(or_(
+                row.entry_trading_day >= since,
+                row.exit_trading_day >= since,
+                row.status == "OPEN",
+                and_(
+                    row.status.in_(("DATA_INTERRUPTED", "ROLLOVER_INTERRUPTED")),
+                    tuple_(row.physical_contract, row.owner_segment_id,
+                           row.calculation_segment_id).in_(initial_interruptions),
+                ),
+            ))
         if after_key is not None:
             if (
                 len(after_key) != 2 or not isinstance(after_key[0], datetime)
@@ -862,6 +1076,8 @@ class ReferenceRepository:
             ]
             if cutoff is not None:
                 mark_eligible.append(mark.bar_end <= cutoff)
+                if forward:
+                    mark_eligible.append(mark.observed_at <= cutoff)
             latest = select(
                 mark.trade_id.label("trade_id"), mark.batch_seq.label("batch_seq"),
                 mark.bar_end.label("bar_end"),

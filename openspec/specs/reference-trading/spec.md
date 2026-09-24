@@ -5,10 +5,45 @@
 定义所有策略共用的 ReferenceTrading 领域合同。它只投影研究用途的参考交易，`executable=false`、
 `auto_order=false`，绝不创建 Order、Fill、Position、Ledger、Account PnL、AlertEvent 或通知。本规格冻结
 P0/P1 的公共身份和纯状态语义、P3 的持久化/原子批次/内部快照合同，以及 P4 的离线历史计划、构建、恢复、
-增量与重建应用合同。HTTP 查询、Web 与 Runtime 仍是后续计划能力，不声明 active；代码与测试不授权生产
+增量与重建应用合同，以及 P5 历史 HTTP 查询与 Web 读取合同。P6/P7 forward 编码为默认关闭的开发候选，
+不声明 Runtime active；代码与测试不授权生产
 migration、历史 bootstrap、Canonical 写入或 Runtime enable。
 
 ## Requirements
+
+### Requirement: Forward activation and capture are separate from historical publication
+
+Forward enablement SHALL require an exact, unexpired activation plan bound to stream/revision,
+checkpoint hash, dependency digest, host/environment, recording start, resource budget, recovery policy
+and accepted model. The default recovery policy SHALL be `block`; `interrupt_and_restart` requires an exact
+activation plan and shall persist the detected endpoints, authoritative trading day and observation time.
+Its seed MUST be FLAT at the exact recording start; a historical OPEN or watermark SHALL NOT be copied.
+Activation and disable SHALL change a persistent generation under the stream lock. A worker holding an older
+generation SHALL fail before committing. Forward calculation SHALL consume one immutable bounded capture in the
+same transaction as actions, marks, presentation and checkpoint. A capture alone SHALL NOT advance sequence.
+An unknown commit result SHALL be read back by exact batch identity before any retry decision.
+An interruption boundary SHALL NOT be presented as a completed market Bar watermark; coverage and health
+SHALL expose it separately from the last completed Bar.
+
+#### Scenario: A worker finishes after disable
+
+- **WHEN** disable increments activation generation before a prepared calculation commits
+- **THEN** the stale calculation is rejected while its captured observation remains durable
+- **AND** no action, mark or checkpoint from that calculation becomes visible
+
+### Requirement: HTDY first-seen candidate stays separate from Alert and retrospective history
+
+`htdy_first_seen_reverse_close_v1` SHALL evaluate exactly the latest Bar of a verified 32 Bar
+completed-input window. A `buy` opens LONG and `sell` opens SHORT; a reverse creates an explicitly linked CLOSE
+followed by opposite OPEN at the same Bar Close. Same-direction observations add no trade, while still persisting
+the observed signal and state. Simultaneous buy/sell is a conflict. Subsequent repainting SHALL NOT rewrite a
+previously observed action. Code availability SHALL NOT count as owner model acceptance or production activation.
+
+#### Scenario: A scan finds an old uncaptured candidate
+
+- **WHEN** a worker scan discovers a completed Bar whose first observation was not durably captured
+- **THEN** it reports an observation gap rather than claiming the old Bar was first seen now
+- **AND** it creates no AlertEvent or notification
 
 ### Requirement: Recording modes are isolated
 
@@ -79,9 +114,9 @@ No row may infer enabled Runtime from tests, a page, a script or a historical re
 
 | Strategy family | Frequencies | Historical code support | Independently verified evidence | Forward code support | Runtime enablement |
 |---|---|---|---|---|---|
-| Newow trend / oscillation / main-rise | 1w, 1d, 60m | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and fixtures are verified; real per-product/per-frequency data evidence remains separate | Not implemented | Disabled / no worker |
-| SuBing reference | 15m, 30m, 60m, 1d | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and formula fixtures are verified; D1 quality/readiness remains separately gated | Not implemented | Disabled / no worker |
-| HTDY first-seen | observation policy frequencies | Not approved; repainting boundary | `MODEL_NOT_APPROVED`; P7 owner decision required | Proposed only | Disabled / no worker |
+| Newow trend / oscillation / main-rise | 1w, 1d, 60m | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and fixtures are verified; real per-product/per-frequency data evidence remains separate | Candidate code for completed Live 60m and completed Canonical D1/W1 capture, durable projection and restart recovery; per-product capability remains gated | Disabled / no worker |
+| SuBing reference | 15m, 30m, 60m, 1d | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and formula fixtures are verified; D1 quality/readiness remains separately gated | Candidate code for completed Live 15m/30m/60m capture and durable projection; D1 authoritative input remains unavailable | Disabled / no worker |
+| HTDY first-seen | observation policy frequencies | Not approved; repainting boundary | `MODEL_NOT_APPROVED`; P7 owner decision required | Candidate model and completed Live capture; owner model acceptance remains gated | Disabled / no worker |
 
 All rows are disabled by default. This matrix neither opens a Scope nor authorizes Canonical, database, notification,
 release or Runtime work.

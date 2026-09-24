@@ -33,7 +33,7 @@ def _run(args: list[str], **factories):
 def test_parser_exposes_only_active_runtime_domains_and_commands() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
-    assert set(domain_action.choices) == {"data", "runtime"}
+    assert set(domain_action.choices) == {"data", "reference", "runtime"}
     runtime_parser = domain_action.choices["runtime"]
     command_action = next(
         action for action in runtime_parser._actions if action.dest == "runtime_command"
