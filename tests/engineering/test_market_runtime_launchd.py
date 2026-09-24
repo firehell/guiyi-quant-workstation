@@ -16,6 +16,241 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 NOTIFICATION_CONFIG_ENV = "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"
 
 
+def test_reference_worker_install_loads_only_exact_runtime_label(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = print ] && [ "$2" = "gui/$UID" ]; then exit 0; fi\n'
+        'if [ "$1" = print ]; then exit 113; fi\n'
+        'printf "%s\\n" "$*" >> "$HOME/calls"\n'
+        "exit 0\n"
+    )
+    launchctl.chmod(0o755)
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40,
+    }}))
+    shared = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    shared.parent.mkdir(parents=True)
+    shutil.copy2(repo / "scripts/ops/macos/run-local-service.sh", shared)
+    original_launcher = shared.read_bytes()
+
+    result = _run_installer(repo, home, fake_bin, "--confirm-reference-worker")
+
+    assert "mode=--confirm-reference-worker services=1" in result.stdout
+    assert shared.read_bytes() == original_launcher
+    assert (repo / ".run/reference-worker-enabled").read_text() == "enabled\n"
+    assert (agents / "com.guiyi.quant-reference-worker.plist").exists()
+    assert all("quant-reference-worker" in call for call in (home / "calls").read_text().splitlines())
+
+
+def test_reference_worker_install_rejects_other_runtime_before_mutation(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": "/different/runtime", "GUIYI_RUNTIME_COMMIT": "1" * 40,
+    }}))
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-reference-worker")
+
+    assert result.returncode != 0
+    assert "reference worker runtime identity mismatch" in result.stderr
+    assert not (repo / ".run/reference-worker-enabled").exists()
+    assert not (agents / "com.guiyi.quant-reference-worker.plist").exists()
+
+
+def test_reference_worker_install_rejects_invalid_existing_marker(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40,
+    }}))
+    shared = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    shared.parent.mkdir(parents=True)
+    shutil.copy2(repo / "scripts/ops/macos/run-local-service.sh", shared)
+    marker = repo / ".run/reference-worker-enabled"
+    marker.parent.mkdir()
+    marker.write_text("enabled\n")
+    marker.chmod(0o644)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-reference-worker")
+
+    assert result.returncode != 0
+    assert "reference worker activation marker invalid" in result.stderr
+    assert marker.read_text() == "enabled\n"
+    assert not (agents / "com.guiyi.quant-reference-worker.plist").exists()
+
+
+@pytest.mark.parametrize("marker_state", ["missing", "symlink"])
+def test_reference_worker_install_rejects_loaded_invalid_preimage(tmp_path, marker_state):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40,
+    }}))
+    worker = agents / "com.guiyi.quant-reference-worker.plist"
+    worker.write_bytes(plistlib.dumps({"Label": "com.guiyi.quant-reference-worker"}))
+    state = home / "launchd-state"
+    state.mkdir()
+    (state / "com.guiyi.quant-reference-worker").touch()
+    shared = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    shared.parent.mkdir(parents=True)
+    shutil.copy2(repo / "scripts/ops/macos/run-local-service.sh", shared)
+    marker = repo / ".run/reference-worker-enabled"
+    marker.parent.mkdir()
+    if marker_state == "symlink":
+        marker.symlink_to(marker.parent / "missing-target")
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-reference-worker")
+
+    assert result.returncode != 0
+    assert "reference worker" in result.stderr
+    assert worker.exists()
+    assert (state / "com.guiyi.quant-reference-worker").exists()
+    assert not (home / "calls").exists()
+
+
+def test_reference_worker_install_rejects_stale_shared_launcher(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40,
+    }}))
+    shared = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("stale launcher")
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-reference-worker")
+
+    assert result.returncode != 0
+    assert "reference worker shared launcher mismatch" in result.stderr
+    assert shared.read_text() == "stale launcher"
+    assert not (repo / ".run/reference-worker-enabled").exists()
+    assert not (agents / "com.guiyi.quant-reference-worker.plist").exists()
+
+
+def test_failed_reference_worker_install_restores_absent_marker_and_plist(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = print ] && [ "${2:-}" = "gui/$UID" ]; then exit 0; fi\n'
+        'if [ "${1:-}" = print ]; then exit 113; fi\n'
+        'if [ "${1:-}" = bootstrap ]; then exit 81; fi\n'
+        "exit 0\n"
+    )
+    launchctl.chmod(0o755)
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40,
+    }}))
+    shared = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    shared.parent.mkdir(parents=True)
+    shutil.copy2(repo / "scripts/ops/macos/run-local-service.sh", shared)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-reference-worker")
+
+    assert result.returncode != 0
+    assert not (repo / ".run/reference-worker-enabled").exists()
+    assert not (agents / "com.guiyi.quant-reference-worker.plist").exists()
+    assert shared.read_bytes() == (repo / "scripts/ops/macos/run-local-service.sh").read_bytes()
+
+
+def test_failed_reference_worker_upgrade_restores_loaded_preimage(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "sleep").write_text("#!/bin/sh\nexit 0\n")
+    (fake_bin / "sleep").chmod(0o755)
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'label="${2##*/}"\n'
+        'if [ "${1:-}" = bootout ]; then rm -f "$HOME/launchd-state/$label"; exit 0; fi\n'
+        'if [ "${1:-}" = bootstrap ]; then\n'
+        '  count="$(cat "$HOME/bootstrap-count" 2>/dev/null || echo 0)"\n'
+        '  count=$((count + 1)); echo "$count" > "$HOME/bootstrap-count"\n'
+        '  if [ "$count" -le 5 ]; then exit 81; fi\n'
+        '  label="${3##*/}"; touch "$HOME/launchd-state/${label%.plist}"; exit 0\n'
+        'fi\n'
+        "exit 0\n"
+    )
+    launchctl.chmod(0o755)
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    api = agents / "com.guiyi.quant-api.plist"
+    api.write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40,
+    }}))
+    worker = agents / "com.guiyi.quant-reference-worker.plist"
+    worker.write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": "/old/runtime", "GUIYI_RUNTIME_COMMIT": "0" * 40,
+    }}))
+    previous_plist = worker.read_bytes()
+    state = home / "launchd-state"
+    state.mkdir()
+    (state / "com.guiyi.quant-reference-worker").touch()
+    marker = repo / ".run/reference-worker-enabled"
+    marker.parent.mkdir()
+    marker.write_text("enabled\n")
+    marker.chmod(0o600)
+    shared = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    shared.parent.mkdir(parents=True)
+    shutil.copy2(repo / "scripts/ops/macos/run-local-service.sh", shared)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-reference-worker")
+
+    assert result.returncode != 0
+    assert worker.read_bytes() == previous_plist
+    assert marker.read_text() == "enabled\n"
+    assert (state / "com.guiyi.quant-reference-worker").exists()
+
+
+def test_local_status_reads_reference_worker_identity_and_rejects_orphan_plist(tmp_path):
+    repo, home, fake_bin, calls = _status_fixture(tmp_path)
+    marker = repo / ".run/reference-worker-enabled"
+    marker.write_text("enabled\n")
+    marker.chmod(0o600)
+    agents = home / "Library/LaunchAgents"
+    api = plistlib.loads((agents / "com.guiyi.quant-api.plist").read_bytes())
+    (agents / "com.guiyi.quant-reference-worker.plist").write_bytes(plistlib.dumps({
+        "Label": "com.guiyi.quant-reference-worker",
+        "EnvironmentVariables": api["EnvironmentVariables"],
+    }))
+
+    active = _run_status(repo, home, fake_bin)
+    assert active.returncode == 0
+    assert "reference_worker_enabled=true" in active.stdout
+    assert "com.guiyi.quant-reference-worker loaded state=running" in active.stdout
+    assert "overall=passed" in active.stdout
+
+    marker.unlink()
+    orphan = _run_status(repo, home, fake_bin)
+    assert orphan.returncode != 0
+    assert "reference_worker_enabled=false" in orphan.stdout
+    assert "overall=failed" in orphan.stdout
+    assert not calls.exists()
+
+
 def test_weekly_render_is_saturday_and_install_only_loads_weekly_without_shared_launcher_write(tmp_path):
     repo = _copy_launchd_fixture(tmp_path / "repo")
     home = tmp_path / "home"

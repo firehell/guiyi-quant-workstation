@@ -46,8 +46,12 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 `--render-only` 可用于本地无副作用验证。任何 launchd 加载/重载、Runtime switch、腾讯云配置应用或
 Nginx reload 都是受控外部操作，必须明确包含在目标、环境、服务范围匹配的授权中。
-Reference worker 模板只在 `--render-only` 中渲染，安装器没有加载此 label 的模式；其进程入口还要求
-exact `.run/reference-worker-enabled` marker。此候选配置不启用 forward 流，也不授权 schema 升级或 Runtime 切换。
+Reference worker 默认只在 `--render-only` 中渲染。`--confirm-reference-worker` 仅加载该 label，
+要求已安装 API 的 root/commit 与候选完全一致、共享 launcher 字节一致，并创建权限为 0600 的
+exact `.run/reference-worker-enabled` marker；失败时恢复 marker、原 plist 与原加载状态。
+`local-services-status.sh` 对已启用的 worker 核对 marker、loaded root/commit 和运行状态，
+对无 marker 的残留 plist 报错。安装模式不创建/激活 forward 流、不执行 0048 migration，
+也不授予 Runtime 切换或模型接受；这些仍按 P9 精确批次分别验证和授权。
 同一任务可一次批准发布、切换及指定恢复步骤，分别核验对应 Gate；跨会话恢复与有界重试按 `AGENTS.md`，
 不增加逐命令审批，不放宽 exact identity、preflight、兼容性或安装器失败恢复合同。
 

@@ -485,6 +485,25 @@ HTDY 再读取 32 Bar 上下文；其测试适配器把历史夹具包装成完�
 默认当前日期超出生成数据窗口时的 typed error 不算夹具内成功读回。退出两台服务后
 脚本仅删除它创建的随机 schema 和临时 Canonical 文件。
 
+## Unified Reference Trading P9 工程准备
+
+Reference worker 安装器的 `--confirm-reference-worker` 仅在精确受控 Runtime 批次中使用；
+本地工程验证只运行临时 HOME、假 launchctl 和只读 manifest 测试，不加载真实服务。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider \
+  tests/engineering/test_market_runtime_launchd.py \
+  tests/engineering/test_reference_trading_p9_manifest.py
+```
+
+`scripts/reference_trading_p9_manifest.py` 对干净 exact SHA 枚举正式历史/forward 身份，
+`--with-db --expected-database-name NAME` 只在已核对目标 Runtime 安全配置下开
+PostgreSQL `READ ONLY` 事务，校验连接库名后读现存 stream 状态；输出称
+`queried_schema_version`，不单凭版本号宣称连接的是生产实例。
+输出只允许新的系统临时目录文件。它不检查 Canonical/MDS readiness、日期窗口、预算或授权，
+因此 `FORMAL_CANDIDATE` 不能直接执行 build、reader 切换或 activation。
+
 ## Market WebSocket 与统一详情页
 
 ```bash

@@ -7,6 +7,7 @@ RENDER_DIR="$PROJECT_ROOT/.run/launchd"
 MARKET_RUNTIME_MARKER="$PROJECT_ROOT/.run/market-runtime-enabled"
 ALERT_RUNTIME_MARKER="$PROJECT_ROOT/.run/alert-runtime-enabled"
 WEEKLY_AUDIT_MARKER="$PROJECT_ROOT/.run/weekly-audit-enabled"
+REFERENCE_WORKER_MARKER="$PROJECT_ROOT/.run/reference-worker-enabled"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
@@ -66,15 +67,32 @@ reference_worker_labels=(com.guiyi.quant-reference-worker)
 render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}" "${reference_worker_labels[@]}")
 load_labels=("${base_labels[@]}")
 
-[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" || "$MODE" == "--confirm-weekly-audit" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-weekly-audit]\n' "$0" >&2; exit 2; }
-if [[ "$MODE" == "--confirm-weekly-audit" ]]; then
+[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" || "$MODE" == "--confirm-weekly-audit" || "$MODE" == "--confirm-reference-worker" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-weekly-audit|--confirm-reference-worker]\n' "$0" >&2; exit 2; }
+if [[ "$MODE" == "--confirm-weekly-audit" || "$MODE" == "--confirm-reference-worker" ]]; then
   api_plist="$AGENT_DIR/com.guiyi.quant-api.plist"
+  identity_subject="weekly audit"
+  [[ "$MODE" != "--confirm-reference-worker" ]] || identity_subject="reference worker"
   if [[ ! -f "$api_plist" || -L "$api_plist" ]] \
     || [[ "$(plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$api_plist" 2>/dev/null)" != "$PROJECT_ROOT" ]] \
     || [[ "$(plutil -extract EnvironmentVariables.GUIYI_RUNTIME_COMMIT raw -o - "$api_plist" 2>/dev/null)" != "$RUNTIME_COMMIT" ]]; then
-    printf '[install-local-services] weekly audit runtime identity mismatch\n' >&2
+    printf '[install-local-services] %s runtime identity mismatch\n' "$identity_subject" >&2
     exit 1
   fi
+fi
+if [[ "$MODE" == "--confirm-reference-worker" ]] \
+  && { [[ ! -f "$RUNTIME_DIR/run-local-service.sh" || -L "$RUNTIME_DIR/run-local-service.sh" ]] \
+    || ! cmp -s "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh"; }; then
+  printf '[install-local-services] reference worker shared launcher mismatch\n' >&2
+  exit 1
+fi
+if [[ "$MODE" == "--confirm-reference-worker" ]] \
+  && [[ -e "$REFERENCE_WORKER_MARKER" || -L "$REFERENCE_WORKER_MARKER" ]] \
+  && { [[ ! -f "$REFERENCE_WORKER_MARKER" || -L "$REFERENCE_WORKER_MARKER" ]] \
+    || [[ "$(stat -f '%Lp' "$REFERENCE_WORKER_MARKER" 2>/dev/null)" != "600" ]] \
+    || [[ "$(stat -f '%u' "$REFERENCE_WORKER_MARKER" 2>/dev/null)" != "$(id -u)" ]] \
+    || ! cmp -s "$REFERENCE_WORKER_MARKER" <(printf 'enabled\n'); }; then
+  printf '[install-local-services] reference worker activation marker invalid\n' >&2
+  exit 1
 fi
 if [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   notification_config_ready || {
@@ -115,6 +133,8 @@ elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   load_labels=("${alert_runtime_labels[@]}")
 elif [[ "$MODE" == "--confirm-weekly-audit" ]]; then
   load_labels=("${weekly_audit_labels[@]}")
+elif [[ "$MODE" == "--confirm-reference-worker" ]]; then
+  load_labels=("${reference_worker_labels[@]}")
 fi
 
 if [[ "$MODE" == "--confirm-market-runtime" ]]; then
@@ -300,6 +320,62 @@ restore_market_install_preimage() {
   discard_market_install_preimage
 }
 
+reference_preimage_dir=""
+reference_preimage_existed=0
+reference_preimage_loaded=0
+
+prepare_reference_install_preimage() {
+  local label="com.guiyi.quant-reference-worker"
+  local plist="$AGENT_DIR/${label}.plist" state
+  [[ "$MODE" == "--confirm-reference-worker" ]] || return 0
+  reference_preimage_dir="$(mktemp -d "$RENDER_DIR/reference-install-preimage.XXXXXX")" || return 1
+  chmod 700 "$reference_preimage_dir" || return 1
+  if [[ -e "$plist" || -L "$plist" ]]; then
+    [[ -f "$plist" && ! -L "$plist" ]] || return 1
+    cp -p "$plist" "$reference_preimage_dir/plist" || return 1
+    reference_preimage_existed=1
+  fi
+  if launchd_service_state "$label"; then
+    reference_preimage_loaded=1
+  else
+    state=$?
+    [[ "$state" == "1" ]] || return 1
+  fi
+  if [[ "$reference_preimage_loaded" == "1" ]]; then
+    [[ "$reference_preimage_existed" == "1" ]] || return 1
+    [[ -f "$REFERENCE_WORKER_MARKER" && ! -L "$REFERENCE_WORKER_MARKER" ]] || return 1
+    [[ "$(stat -f '%Lp' "$REFERENCE_WORKER_MARKER" 2>/dev/null)" == "600" ]] || return 1
+    [[ "$(stat -f '%u' "$REFERENCE_WORKER_MARKER" 2>/dev/null)" == "$(id -u)" ]] || return 1
+    cmp -s "$REFERENCE_WORKER_MARKER" <(printf 'enabled\n') || return 1
+  fi
+}
+
+restore_reference_install_preimage() {
+  local label="com.guiyi.quant-reference-worker"
+  local plist="$AGENT_DIR/${label}.plist"
+  [[ "$MODE" == "--confirm-reference-worker" ]] || return 0
+  [[ -n "$reference_preimage_dir" ]] || return 1
+  if [[ "$reference_preimage_existed" == "1" ]]; then
+    [[ -f "$reference_preimage_dir/plist" && ! -L "$reference_preimage_dir/plist" ]] || return 1
+    cp -p "$reference_preimage_dir/plist" "$plist" || return 1
+  else
+    rm -f "$plist" || return 1
+  fi
+  if [[ "$reference_preimage_loaded" == "1" ]]; then
+    reload_launch_agent "$label" "$plist" || return 1
+    launchctl enable "gui/$UID/$label" || return 1
+    launchctl kickstart -k "gui/$UID/$label" || return 1
+  fi
+  discard_reference_install_preimage
+}
+
+discard_reference_install_preimage() {
+  [[ -n "$reference_preimage_dir" ]] || return 0
+  [[ "$reference_preimage_existed" == "0" ]] || rm -f "$reference_preimage_dir/plist" || return 1
+  rmdir "$reference_preimage_dir" || return 1
+  reference_preimage_dir=""
+}
+
 write_runtime_activation_marker() {
   local marker="$1" temporary_marker marker_mode
   temporary_marker="$(mktemp "${marker}.tmp.XXXXXX")" || return 1
@@ -334,6 +410,10 @@ write_weekly_audit_activation_marker() {
   write_runtime_activation_marker "$WEEKLY_AUDIT_MARKER"
 }
 
+write_reference_worker_activation_marker() {
+  write_runtime_activation_marker "$REFERENCE_WORKER_MARKER"
+}
+
 activation_marker=""
 activation_marker_backup=""
 activation_marker_existed=0
@@ -350,6 +430,9 @@ prepare_runtime_activation_marker() {
   elif [[ "$MODE" == "--confirm-weekly-audit" ]]; then
     activation_marker="$WEEKLY_AUDIT_MARKER"
     writer=write_weekly_audit_activation_marker
+  elif [[ "$MODE" == "--confirm-reference-worker" ]]; then
+    activation_marker="$REFERENCE_WORKER_MARKER"
+    writer=write_reference_worker_activation_marker
   else
     return 0
   fi
@@ -406,14 +489,14 @@ load_selected_services() {
     attempted_load_labels+=("$label")
     reload_launch_agent "$label" "$target_plist" || return 1
     launchctl enable "gui/$UID/$label" || return 1
-    if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" ]]; then
+    if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" || "$label" == "com.guiyi.quant-reference-worker" ]]; then
       launchctl kickstart -k "gui/$UID/$label" || return 1
     fi
   done
 }
 
 perform_selected_service_install() {
-  if [[ "$MODE" != "--confirm-weekly-audit" ]]; then
+  if [[ "$MODE" != "--confirm-weekly-audit" && "$MODE" != "--confirm-reference-worker" ]]; then
     cp "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh" || return 1
     chmod 700 "$RUNTIME_DIR/run-local-service.sh" || return 1
     cp "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh" || return 1
@@ -453,6 +536,11 @@ stop_attempted_services() {
 }
 
 prepare_market_install_preimage
+if ! prepare_reference_install_preimage; then
+  discard_reference_install_preimage || true
+  printf '[install-local-services] ERROR: reference worker preimage unavailable\n' >&2
+  exit 1
+fi
 
 if ! perform_selected_service_install; then
   if ! stop_attempted_services; then
@@ -463,7 +551,16 @@ if ! perform_selected_service_install; then
     printf '[install-local-services] ERROR: market authority restore unknown; activation marker retained\n' >&2
     exit 1
   fi
-  if ! restore_runtime_activation_marker; then
+  if [[ "$MODE" == "--confirm-reference-worker" ]]; then
+    if ! restore_runtime_activation_marker; then
+      printf '[install-local-services] ERROR: reference worker marker rollback failed\n' >&2
+      exit 1
+    fi
+    if ! restore_reference_install_preimage; then
+      printf '[install-local-services] ERROR: reference worker restore unknown; do not retry\n' >&2
+      exit 1
+    fi
+  elif ! restore_runtime_activation_marker; then
     printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
     exit 1
   fi
@@ -478,6 +575,9 @@ if ! discard_runtime_activation_marker_backup; then
   post_commit_cleanup="unknown"
 fi
 if ! discard_market_install_preimage; then
+  post_commit_cleanup="unknown"
+fi
+if ! discard_reference_install_preimage; then
   post_commit_cleanup="unknown"
 fi
 if [[ "$post_commit_cleanup" == "unknown" ]]; then
