@@ -45,6 +45,19 @@ products, including 79 within owner intervals and 460 product/contract/month
 investigation keys. Its SHA-256 is
 `323ada53dff3521389571fadf8bce2c3ff44bbdda10e946d7e05abac7cacc4f8`.
 This inventory is not provider source classification or a publication plan.
+The [source-only candidate](../../../outputs/reference-p9-d1-source-20260925/candidate.json)
+at task commit `94e513fbdf84ec5b1e15cf70c97e4e89e6506105` binds that
+date-level inventory to 460 unique product/contract/month requests, 3,113
+target dates and 2,166 same-month response context dates. Its plan SHA-256 is
+`337024d346e6c9e8d903f84010027d699f6f33e0ebcef50dd2f18278bd113f0b`.
+It uses one concurrent request, zero retries and source capture only; there
+is no Canonical or Catalog write. The [official read-only preflight](../../../outputs/reference-p9-d1-source-20260925/preflight-94e513fb.json)
+passed with zero provider requests and zero writes; file SHA-256 is
+`176eae04a49c54fc81414170e03e593d75f1a9f1217ca577f86f806d2497761a`.
+The source verifier suite passed 35 tests, Ruff and diff checks passed, and
+independent review found no Confirmed Issue. Execution requires an exact
+provider-query authorization; source classification and any quality publication
+remain separate steps.
 
 The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
 Production application schema is still `20260919_0047`; the persisted reader and

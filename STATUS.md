@@ -99,6 +99,16 @@ warm-up 的 43 个 D1 直接月目标重合 0 个，与 9/19 已应用质量批�
 （SHA-256 `323ada53dff3521389571fadf8bce2c3ff44bbdda10e946d7e05abac7cacc4f8`）。
 它只冻结本地异常日期，不证明 RQData 原始价格分类，不授权来源请求或质量发布。
 
+苏冰 D1 来源核验的独立代码和精确候选已在任务分支 `94e513fbdf84ec5b1e15cf70c97e4e89e6506105` 冻结：
+按上述日期级清单限制为 11 品种、460 个合约月请求、3,113 个目标日期及 2,166 个同月
+上下文日期；串行、零重试、仅来源捕获，不写 Canonical/Catalog。候选计划 SHA-256 为
+`337024d346e6c9e8d903f84010027d699f6f33e0ebcef50dd2f18278bd113f0b`，
+见 `outputs/reference-p9-d1-source-20260925/candidate.json`。正式 CLI 只读预检通过，
+实际 provider 请求与写入均为 0，凭证见同目录 `preflight-94e513fb.json`（SHA-256
+`176eae04a49c54fc81414170e03e593d75f1a9f1217ca577f86f806d2497761a`）。
+定向测试 35 项通过、Ruff 与 diff check 通过；独立复审无 Confirmed Issue。
+真实来源查询仍待精确批次授权，来源结果未分类，后续质量发布须另立精确计划。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
