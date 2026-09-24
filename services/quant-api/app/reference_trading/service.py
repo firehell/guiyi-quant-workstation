@@ -192,6 +192,9 @@ def _subing_step(
             (),
             transition,
         )
+    reference_price = item.reference_price
+    if reference_price is None:
+        raise ValueError("REFERENCE_INPUT_PRICE_MISSING")
     payload = item.payload
     if not isinstance(payload, SubingHistoricalPayload):
         raise ValueError("REFERENCE_INPUT_PAYLOAD_INVALID")
@@ -241,7 +244,7 @@ def _subing_step(
                 trading_day=item.trading_day,
                 sequence=0,
                 kind=ActionKind.CLOSE,
-                reference_price=item.reference_price,
+                reference_price=reference_price,
                 entry_action_id=prior_reference.open_trade.entry_action_id,
                 reference_price_type="subing_signal_close",
             ))
@@ -261,7 +264,7 @@ def _subing_step(
                     ActionKind.OPEN_LONG
                     if signal.action.endswith("LONG") else ActionKind.OPEN_SHORT
                 ),
-                reference_price=item.reference_price,
+                reference_price=reference_price,
                 reference_price_type="subing_signal_close",
             ))
     in_owner_window = (
@@ -279,7 +282,7 @@ def _subing_step(
                 item.calculation_segment_id,
                 item.bar_end,
                 item.trading_day,
-                item.reference_price,
+                reference_price,
             )
             if in_owner_window else None
         ),
@@ -350,6 +353,9 @@ def _newow_step(
             (),
             transition,
         )
+    reference_price = item.reference_price
+    if reference_price is None:
+        raise ValueError("REFERENCE_INPUT_PRICE_MISSING")
     payload = item.payload
     if (
         not isinstance(payload, NewowHistoricalPayload)
@@ -501,7 +507,7 @@ def _newow_step(
             item.calculation_segment_id,
             item.bar_end,
             item.trading_day,
-            item.reference_price,
+            reference_price,
         )
     transition = reduce_reference(
         prior_reference,
@@ -1108,7 +1114,7 @@ class HistoricalReferenceService:
                 stream.stream_id, state.revision_id,
             )
             chunk = tail[index:index + plan.batch_size]
-            presentation = []
+            presentation: list[dict[str, object]] = []
             next_checkpoint, sources, transitions, schema = _advance_batch(
                 stream, checkpoint, chunk, presentation,
             )

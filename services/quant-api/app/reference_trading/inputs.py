@@ -12,9 +12,9 @@ from decimal import Decimal
 from contextlib import AbstractContextManager, nullcontext
 from hashlib import sha256
 import json
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
-from guiyi_quant.reference_trading import ReferenceBoundary, StreamIdentity
+from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary, StreamIdentity
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +24,7 @@ class HistoricalInputBar:
     physical_contract: str
     owner_segment_id: str
     calculation_segment_id: str
-    reference_price: Decimal
+    reference_price: Decimal | None
     fingerprint: str
     payload: object
     boundaries: tuple[ReferenceBoundary, ...] = ()
@@ -39,7 +39,11 @@ class HistoricalInputBar:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be non-empty text")
-        if (
+        if type(self.strategy_input) is not bool:
+            raise TypeError("strategy_input must be bool")
+        if self.reference_price is None and not self.strategy_input:
+            pass
+        elif (
             not isinstance(self.reference_price, Decimal)
             or not self.reference_price.is_finite()
             or self.reference_price <= 0
@@ -54,8 +58,6 @@ class HistoricalInputBar:
         object.__setattr__(self, "boundaries", tuple(self.boundaries))
         if not all(isinstance(item, ReferenceBoundary) for item in self.boundaries):
             raise TypeError("boundaries must contain ReferenceBoundary")
-        if type(self.strategy_input) is not bool:
-            raise TypeError("strategy_input must be bool")
         if not self.strategy_input and not self.boundaries:
             raise ValueError("boundary-only input must contain a boundary")
 
@@ -144,7 +146,7 @@ def _newow_input_fingerprint(
 
 
 def _newow_replay_fingerprints(
-    replay_bars: tuple[object, ...], quality_policy: str,
+    replay_bars: tuple[Any, ...], quality_policy: str,
 ) -> tuple[str, ...]:
     return tuple(
         _newow_input_fingerprint(
@@ -158,8 +160,41 @@ def _newow_replay_fingerprints(
     )
 
 
+def _owned_newow_interruptions(read: Any) -> tuple[object, ...]:
+    """Only an owned price gap can interrupt a page reference trade."""
+    owners = read.owners
+    boundaries = read.boundaries
+    if not owners or len(boundaries) != len(owners) - 1:
+        raise ValueError("REFERENCE_BOUNDARY_OWNER_CONFLICT")
+    if boundaries:
+        if boundaries[0].old_contract != owners[0].contract:
+            raise ValueError("REFERENCE_BOUNDARY_OWNER_CONFLICT")
+        first_segment_id = boundaries[0].old_segment_id
+    elif read.replay_bars:
+        first_segment_id = read.replay_bars[0].bar.segment_id
+    else:
+        raise ValueError("REFERENCE_BOUNDARY_OWNER_CONFLICT")
+    starts = {first_segment_id: (owners[0].contract, owners[0].start_trading_day)}
+    for owner, boundary in zip(owners[1:], boundaries, strict=True):
+        if (
+            boundary.new_contract != owner.contract
+            or boundary.effective_trading_day != owner.start_trading_day
+            or boundary.new_segment_id in starts
+        ):
+            raise ValueError("REFERENCE_BOUNDARY_OWNER_CONFLICT")
+        starts[boundary.new_segment_id] = (owner.contract, owner.start_trading_day)
+    owned = []
+    for gap in read.data_interruptions:
+        owner = starts.get(gap.segment_id)
+        if owner is None or owner[0] != gap.physical_contract:
+            raise ValueError("REFERENCE_BOUNDARY_OWNER_CONFLICT")
+        if gap.trading_day >= owner[1]:
+            owned.append(gap)
+    return tuple(owned)
+
+
 def _boundary_input(
-    anchor: HistoricalInputBar, boundary: ReferenceBoundary,
+    anchor: HistoricalInputBar | None, boundary: ReferenceBoundary,
 ) -> HistoricalInputBar:
     """Create an explicit replay event when no physical Bar exists at a boundary."""
     fingerprint = sha256(_canonical({
@@ -178,7 +213,7 @@ def _boundary_input(
         boundary.physical_contract,
         boundary.owner_segment_id,
         boundary.calculation_segment_id,
-        anchor.reference_price,
+        None if anchor is None else anchor.reference_price,
         fingerprint,
         None,
         (boundary,),
@@ -209,6 +244,7 @@ def _insert_boundaries(
 ) -> list[HistoricalInputBar]:
     """Insert each boundary after the last preceding Bar of its owner segment."""
     insertions: dict[int, list[HistoricalInputBar]] = {}
+    before: dict[int, list[HistoricalInputBar]] = {}
     for boundary in sorted(boundaries, key=lambda item: item.bar_end):
         exact = [
             (index, bar)
@@ -244,7 +280,17 @@ def _insert_boundaries(
             and bar.bar_end < boundary.bar_end
         ]
         if not candidates:
-            raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+            following = [
+                index for index, bar in enumerate(bars)
+                if bar.strategy_input
+                and bar.physical_contract == boundary.physical_contract
+                and bar.owner_segment_id == boundary.owner_segment_id
+                and bar.bar_end > boundary.bar_end
+            ]
+            if boundary.reason is not BoundaryReason.DATA_INTERRUPTED or not following:
+                raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+            before.setdefault(following[0], []).append(_boundary_input(None, boundary))
+            continue
         index, anchor = candidates[-1]
         normalized = ReferenceBoundary(
             boundary.stream,
@@ -258,6 +304,7 @@ def _insert_boundaries(
         insertions.setdefault(index, []).append(_boundary_input(anchor, normalized))
     output: list[HistoricalInputBar] = []
     for index, bar in enumerate(bars):
+        output.extend(sorted(before.get(index, ()), key=lambda item: item.bar_end))
         output.append(bar)
         output.extend(sorted(
             insertions.get(index, ()), key=lambda item: item.bar_end,
@@ -544,7 +591,9 @@ class MarketDataHistoricalInputReader:
     def _read_newow(self, request):
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
-        from guiyi_quant.newow.product_identity import futures_adaptation_version
+        from guiyi_quant.newow.product_identity import (
+            build_calculation_segment_id, futures_adaptation_version,
+        )
         from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
         from app.market_data.newow.product_query import NewowProductQuery
         from app.reference_trading.service import NewowHistoricalPayload
@@ -580,13 +629,15 @@ class MarketDataHistoricalInputReader:
                 boundary.effective_at,
                 boundary.effective_trading_day,
             ))
-        for gap in read.data_interruptions:
+        for gap in _owned_newow_interruptions(read):
             boundaries.append(ReferenceBoundary(
                 request.identity,
                 BoundaryReason.DATA_INTERRUPTED,
                 gap.physical_contract,
                 gap.segment_id,
-                gap.segment_id,
+                build_calculation_segment_id(
+                    gap.segment_id, gap.effective_at, read.input_quality_policy,
+                ),
                 gap.effective_at,
                 gap.trading_day,
             ))

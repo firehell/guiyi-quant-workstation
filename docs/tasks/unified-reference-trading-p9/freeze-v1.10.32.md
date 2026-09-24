@@ -1,9 +1,12 @@
-# P8/P9 combined release candidate: v1.10.32
+# P8/P9 input to the combined v1.10.32 release candidate
 
 This is a code and scope freeze for read-only P9 planning. It is not a release,
 Runtime promotion, database migration, historical build, reader cutover, or
-forward activation approval. The exact candidate commit is the immutable HEAD
-of `codex/reference-p9-combined-rc`; the generated P9 manifest records it.
+forward activation approval. The P8/P9 input commit is
+`aef423c5f896807d12f0e3610db76c650f537c02`. The final combined candidate
+also includes the after-market Calendar repair from `79b8f3fc0` and the P9
+owned-gap boundary repair. Read its exact commit from the clean
+`codex/release-v1.10.32-combined` branch; the P9 manifest records that identity.
 
 ## Inputs and formal capability
 
