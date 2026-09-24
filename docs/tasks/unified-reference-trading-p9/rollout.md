@@ -13,6 +13,12 @@ start and the frozen 2026-09-23 cutoff. The [exact audit](../../../outputs/refer
 has file SHA-256 `1070422ef973adecd4910ac50d228456cabca887ccfc182d21e2e4249f0610dd`.
 This is source planning evidence, not a historical build or production reader
 switch. The 600-stream matrix must be regenerated for the final code identity.
+The remaining four Newow D1 product blockers (EB, PB, PD and PG) were
+classified read-only as physical D1 replay-prefix gaps. Their exact 43 monthly
+direct targets are all already within the frozen wave-1 candidate target set;
+the four dry-run plans made zero provider requests. See the
+[source diagnosis](../../../outputs/reference-p9-source-inventory-20260925/newow-d1-prefix-a7621201-readonly.json)
+and [four exact dry-run plans](../../../outputs/reference-p9-source-inventory-20260925/newow-d1-warmup-a7621201-readonly.json).
 
 The installed workstation remains `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`.
 Production application schema is still `20260919_0047`; the persisted reader and

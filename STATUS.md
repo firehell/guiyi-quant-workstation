@@ -58,6 +58,15 @@ SC/SI 六条 `SOURCE_READY`，PL/PX/RS 九条仍因
 该结果仅证明当前代码的这九条历史输入可规划；全 600 流须按最终代码重新核对，
 历史构建、0048、reader 切换、worker、发布与 Runtime Gate 均尚未执行。
 
+同日只读定位另四个牛哇 D1 产品 EB/PB/PD/PG：首个阻断均为
+`CONTRACT_REPLAY_COVERAGE_UNAVAILABLE / REPLAY_PREFIX_MISSING`，分别在
+EB2611、PB2611、PD2612、PG2611，缺少 201/206/188/200 个预期回放端点。
+四份 D1 warm-up dry-run 计划合计 43 个直接月分区、805 个预期 Bar、最多
+43 个 provider 请求；这 43 个目标全部已包含在首波冻结的 2,011 个目标内，
+不扩大首波范围，也尚未执行。只读证据见
+`outputs/reference-p9-source-inventory-20260925/newow-d1-prefix-a7621201-readonly.json`
+和 `newow-d1-warmup-a7621201-readonly.json`。
+
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
 9/28 元数据获批批次已在生产库写入并独立只读回查，切换预检通过 `snapshot_ready`。
