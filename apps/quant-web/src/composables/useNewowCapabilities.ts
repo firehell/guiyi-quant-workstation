@@ -52,7 +52,8 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
       || current?.schema_version === 'newow_product_capabilities_v17'
       || current?.schema_version === 'newow_product_capabilities_v18'
       || current?.schema_version === 'newow_product_capabilities_v19'
-      || current?.schema_version === 'newow_product_capabilities_v20') {
+      || current?.schema_version === 'newow_product_capabilities_v20'
+      || current?.schema_version === 'newow_product_capabilities_v21') {
       return current.open_frequencies.filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
     }
     if (current?.schema_version === 'newow_product_capabilities_v5' && normalized !== 'au') return []
