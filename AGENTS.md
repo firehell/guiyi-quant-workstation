@@ -1,15 +1,15 @@
 # 归一量化执行规则
 
-本文件是项目全局工作流与授权的唯一入口，取代旧版长篇执行指引；领域 canonical 定义业务合同，
+本文件是项目全局任务边界与执行规则的唯一入口，取代旧版长篇执行指引；领域 canonical 定义业务合同，
 不重复设置人工审批流程。旧文档或技能的流程要求与本文件冲突时按本文件执行，机器校验不因此取消。当前
 release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不得用聊天记忆替代仓库事实。
 
 ## 项目定位与事实源
 
-归一量化是本地、单用户的国内期货研究与策略运行工作站，采用模块化单体。AI 可以自动研究和完成工程工作，
-但不能自动晋升策略、阶段或 Runtime；当前 `auto_order=false`，不得创建或提交真实订单。
+归一量化是本地、单用户的国内期货研究与策略运行工作站，采用模块化单体。owner 决定方向并交办任务；
+Codex 负责范围内的研究、工程和实际执行。当前 `auto_order=false`，不能从研究结果自行决定无人值守真实交易。
 
-- 用户本轮目标和边界决定任务授权；代码、测试和真实 evidence 决定实现事实；accepted canonical 与
+- 用户明确交办的目标和边界就是该任务的执行授权，不再为任务内的每个阶段、命令或新会话重复请示；代码、测试和真实 evidence 决定实现事实；accepted canonical 与
   `DECISIONS.md` 决定长期合同；当前阶段以 `STATUS.md` 为准。
 - 开始任务先核对 branch、HEAD、worktree、dirty state、相关实现、测试和当前 develop 依赖。保留并避开
   用户或其他任务修改，不覆盖、回滚、批量清理或全量暂存无关内容。
@@ -18,11 +18,11 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 
 ## AI 开发与 owner 决策
 
-- AI 负责日常开发维护闭环；owner 负责产品方向、重要架构与业务语义取舍、生产操作边界和阶段晋升。
+- owner 负责产品方向和重要架构取舍；Codex 负责已交办目标的完整交付，包括必要的生产操作、发布和运行切换。
 - 用户要求讨论、比较方案、只读审计或 Plan-only 时，只产出分析；明确要求实现且目标、范围、验收清楚时，
-  连续完成实现、必要局部重构、测试、修复、自审、commit/push 和条件满足的 develop 集成，不重复申请批准。
-- 小任务直接执行；复杂任务先说明简短计划再推进。仅重要设计取舍或业务合同变化需要 owner 决策，
-  不因涉及策略、数据或 Runtime 代码就强制新会话、Plan-only 或再次审批。修复实现以符合已批准合同可自主完成。
+  连续完成实现、必要局部重构、测试、修复、自审、commit/push 和交办目标所需的集成、发布、Runtime 与验收，不重复申请批准。
+- 小任务直接执行；复杂任务先说明简短计划再推进。检查后续动作是否仍服务于交办目标、是否改变产品或业务语义；
+  未偏离就继续。只有无法依据任务与仓库事实决定的重要取舍才请 owner 决策，不因任务跨阶段或换会话停下。
 - 内部模块、文件、函数和算法实现可按目标调整；改变领域职责、外部合同、公式、收益或风险语义、
   引入基础设施或扩大产品范围时先说明取舍。调查先取证定位，不以无关重构代替根因修复。
 - branch、worktree、PR、并行协作与独立 Review 按冲突、共享状态、资源及风险选择，不是固定仪式。
@@ -30,76 +30,64 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 - 小任务使用聊天说明和 Git diff；复杂任务才落必要设计文档，不重复制造 Spec、Plan、report 和 receipt。
   设计遵循本地单用户、简单可维护原则，不为假设需求建通用框架。
 - 项目新建 Codex 线程默认使用 `gpt-6-sol` + `medium`，由 `.codex/config.toml` 固定；单次任务在 Codex App/CLI 中显式选择模型或推理强度时可覆盖。
-- 任务级模型路由见 `docs/DEVELOPMENT.md`：GPT-6 Luna 处理边界明确、高吞吐的小任务；GPT-6 Sol 是默认工程模型；GPT-6 Astra 用于架构、跨域设计和高风险独立 Review；Ultra 只用于前述层级仍无法可靠收敛的极端复杂问题。模型选择不改变测试、Review、受控外部操作或人工 Gate。
+- 任务级模型路由见 `docs/DEVELOPMENT.md`：GPT-6 Luna 处理边界明确、高吞吐的小任务；GPT-6 Sol 是默认工程模型；GPT-6 Astra 用于架构、跨域设计和高风险独立 Review；Ultra 只用于前述层级仍无法可靠收敛的极端复杂问题。模型选择不改变必要的验证和任务边界。
 - GPT-5.6 Sol/Terra 只作为历史会话续接、兼容性对照或 GPT-6 回归时的备用，不作为新任务默认。确定性检查优先使用代码和工具。
-- 技能是执行工具。已明确授权且目标、范围、验收清楚时，不因技能要求重复批准设计或计划；
+- 技能是执行工具。已交办且目标、范围、验收清楚时，不因技能要求重复批准设计或计划；
   TDD、计划文件、分支收尾等步骤按风险采用，必要回归、独立 Review 和完成验证仍需落实。
   本规则不修改全局技能、用户级配置或宿主安全控制。
 
 ## 需要停止相关动作的条件
 
-只在受影响部分出现以下情况时停止并请 owner 决定；其余独立、安全且已授权的工作继续：
+只在受影响部分出现以下情况时停止并请 owner 决定；其余独立、安全且符合任务目标的工作继续：
 
 - 仓库事实无法消除、会改变产品或架构的重要歧义；
 - 必须改变目标、验收、业务合同或真实操作范围；
 - 必须覆盖、删除或改写不属于本任务的用户修改；
 - 必须扩大工具权限、修改用户级/全局配置或绕过宿主安全控制；
-- 必须执行尚未明确授权的受控外部操作。
+- 必须执行明显超出交办目标的外部操作，或无法从目标、现场与既有合同确定其对象和影响。
 
-## 受控外部操作
+## 任务内的真实操作
 
-下列操作必须在首次执行前取得目标、环境和范围明确的授权，可按一个明确任务或批次一次批准：
+交办目标包含真实数据修复、数据库变更、通知、发布、Runtime 切换或 Broker 操作时，交办本身覆盖为完成该目标
+所需的连续步骤；Codex 不再索取第二次人工授权，也不要求 owner 在执行前指定后来才能确定的 commit、plan hash
+或每个分包。Codex 从当前事实和既有合同推导精确对象，执行前核对目标、环境、范围和影响，按结果继续或停止。
+只要求讨论、编码、候选或只读审计的任务，不自动扩大为生产执行。实现完成也不虚报已发布或已运行。
 
-- 真实 RQData 下载或写入，Canonical/primary 数据覆盖、迁移或删除；
-- production PostgreSQL、Redis、Scope 或仓库外真实业务数据写入/删除；
-- Runtime/live enable、switch、promotion 或 production acknowledgment；
-- 真实通知或收件范围变更；
-- main merge、tag、GitHub Release、历史重写、force update 或 GitHub rules 修改；
-- Broker 接入、订单草稿发送及任何真实下单、撤单或改单。
+- RQData 查询/下载、Canonical/primary 与 Catalog/生产 DB 修复、migration、Scope/Redis 写入等，
+  在交办目标需要且精确计划与机器校验通过时连续执行；覆盖、迁移和删除须有可验证恢复办法。
+- 任务目标包含发布或上线时，Codex 可按已验证候选完成 main merge、annotated tag、GitHub Release、
+  Runtime promotion 与必要的现场回读。发布、切换和自然验收仍分别记录，不能以一个阶段的成功冒充另一个。
+- 任务目标包含真实通知或接入 Broker 时，先确定收件范围、账户与具体动作；不得根据研究结论自行新增受众、
+  创建订单或改变 `auto_order=false`。未交办的真实交易不在任务范围内。
+- 历史重写、force update、GitHub rules、远端或仓库归属变更属于方向性操作；只有交办目标确实需要时才做，
+  不作为普通开发和发布的顺手步骤。本项目普通推送目标为 `origin = git@github.com:firehell/guiyi-quant-workstation.git`。
+- 跨会话继续时核对任务目标、已完成步骤和现场状态；既已完成的操作不重复执行。生产结果不明先停止受影响
+  mutation 并只读核对；只有确认重试安全且符合既有幂等、次数、预算和恢复约束时才继续。不能证明安全时报告阻断，
+  不盲目重试；Alert one-shot 等业务禁重试合同仍有效。
 
-- 只读 PostgreSQL/Catalog/MDS 查询、审计、dry-run、计划生成、结果回读和隔离开发预览可在任务范围内自主执行，
-  不逐项审批；真实 provider 下载不归入默认只读权限。
-- 数据批次明确品种、物理合约、周期、窗口、环境、资源预算及异常处理边界，可同时包含下载、Canonical 发布和
-  Catalog 写入。仅批准下载不等于批准入库；范围内分包、逐项校验和收尾不重复确认。
-- 发布批次可一次批准精确版本的 main merge、annotated tag 和 GitHub Release。Runtime promotion 是独立
-  授权项，可在同次批准中明确列出工作站、exact tag/commit、服务及恢复范围，不能由发布授权隐含推导。
-- 授权绑定任务、目标和范围，不绑定会话。未撤销、未到期且尚未完成时，恢复前核对原授权、已完成项和现场状态，
-  仅继续未完成部分；已完成的历史授权不授权重新执行。
-- 生产失败或结果不明先停止受影响 mutation 并只读核对。仅在结果查明、重试安全且属于已批准的幂等、次数、
-  预算及恢复边界时继续；未包含重试或恢复时请求新授权，不盲目重试。Alert one-shot 等业务禁重试合同仍有效。
-  测试、构建和普通开发失败由 AI 自主修复重测。
-- 批量授权替代逐命令、逐品种、逐 phase 的重复确认；input validation、preflight、exact plan hash、维护锁、
-  质量校验、幂等提交、原子性和失败恢复约束保持不变。计划变化须核对仍在授权范围内，不能借此绕过机器校验。
-
-- owner 已确认本项目唯一授权远端为 `origin = git@github.com:firehell/guiyi-quant-workstation.git`。任务范围内的普通文档、代码和
-  `develop` branch push 可直接执行，不再要求重复验证 origin 归属或文档外发授权。远程地址、仓库归属、推送目标发生变化，或向任何
-  其他外部目的地发布时，仍须另行确认。
-
-测试、dry-run、health、配置存在、commit hash 或 approval packet 本身不授予生产权限。
-普通 develop commit/push、开发测试配置和任务内普通文件操作可自主完成；
-集成 develop 不授权生产写入、发布或 Runtime promotion。生产凭据、权限、成本或外部行为的配置变化须明确授权。
+测试、dry-run、health 或配置存在只证明各自范围，不代替真实操作读回。input validation、preflight、exact plan hash、
+维护锁、质量校验、幂等提交、原子性与失败恢复是执行条件，不是新的人工审批环节。
 
 不得将凭据读取到模型上下文、显示、提交或记录；允许既有程序通过安全配置加载使用。
-生产 `.env` 仅在明确配置变更授权下通过不暴露秘密的方式修改。
+生产 `.env` 仅在交办目标需要配置变更时通过不暴露秘密的方式修改。
 外部输入须在敏感操作前校验类型、范围、身份和关联字段；系统命令使用固定 executable 与离散参数，
 SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根内。
 错误输出不得暴露凭据、内部地址、SQL 或 stack trace。失败、质量异常或安全开关缺失时 fail-closed。
 生产数据删除、覆盖、迁移前明确精确目标、影响、dry-run、可验证恢复办法与幂等边界；不触碰无关修改。
 仓库指引不能覆盖宿主或工具的安全控制。
 
-## 持续 Runtime 授权边界
+## 持续 Runtime 边界
 
-持续授权只在 owner 已对识别出的本地工作站明确启用后成立，当前是否启用只看 `STATUS.md` 和实际 readback：
+当前启用状态只看 `STATUS.md` 和实际 readback；交办新的运行目标时 Codex 按该目标完成必要的配置、切换和验证：
 
 - Market Runtime 只对 `operational_products.txt` 订阅当日 rank1 completed 1m；每日 18:05 及最多一次一小时后
   retry 只对同一集合运行 `HistoricalDataManager.update`。盘后主业务失败最多向 owner 发起一次既有运维通知；
   `missed/stuck` 只进入 health。
 - 已启用的 Alert Runtime 只按既有 Rule、Scope、audience 和 transport 处理新的 completed observation；Event
   先提交，transport 最多一次。不得自动新增 Scope、Rule、收件人、retry、replay、backfill、fallback 或订单。
-- 默认关闭的 Live recovery、weekly audit 或其他可选任务不因模板存在而启用。已明确启用的既有定时任务按合同
-  自然运行，不需每天重新询问；新增任务、Scope、数据范围、重试或 Runtime 版本仍需新的明确意图。
-- 上述持续授权不覆盖其他生产数据/DB、Canonical、main/tag/release、Runtime 版本切换、真实交易或失败后的
-  任意重试。Market/Live/盘后细则见 `docs/DATA_CENTER.md`，Alert 细则见
+- 默认关闭的 Live recovery、weekly audit 或其他可选任务不因模板存在而启用。已启用的既有定时任务按合同
+  自然运行；新增任务、Scope、数据范围或 Runtime 版本须属于交办目标，不能从模板或旧成功记录推导。
+- 持续运行不会自行扩大到其他生产数据、发布或交易，也不授权失败后的盲目重试。Market/Live/盘后细则见 `docs/DATA_CENTER.md`，Alert 细则见
   `openspec/specs/subing-ths-alert/spec.md`，安装、服务清单和 promotion 合同见 `deploy/README.md`。
 
 ## 跨模块硬约束

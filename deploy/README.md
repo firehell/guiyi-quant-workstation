@@ -1,5 +1,8 @@
 # 运维拓扑与只读检查
 
+本页描述安装顺序、现场校验和恢复条件；是否执行由 `AGENTS.md` 的交办任务范围决定。
+文中“执行意图”指已交办目标与当前精确对象一致，不要求每个 phase 再向 owner 请示。
+
 仓库唯一 active 运维链为：Mac launchd 受监督 Runtime → FRPC 本地隧道 → 腾讯云 FRPS → Nginx
 HTTPS/Basic Auth 公网入口。腾讯云不运行第二套 API/Web 应用副本。
 
@@ -45,14 +48,14 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 `GUIYI_PROJECT_ROOT`、该 commit 与当前 supervised checkout，避免把移动后的工作树 HEAD 当成已运行版本。
 
 `--render-only` 可用于本地无副作用验证。任何 launchd 加载/重载、Runtime switch、腾讯云配置应用或
-Nginx reload 都是受控外部操作，必须明确包含在目标、环境、服务范围匹配的授权中。
+Nginx reload 都是真实外部操作，须属于交办目标并核对环境、服务范围与现场身份；无需逐项再次请示。
 Reference worker 默认只在 `--render-only` 中渲染。`--confirm-reference-worker` 仅加载该 label，
 要求已安装 API 的 root/commit 与候选完全一致、共享 launcher 字节一致，并创建权限为 0600 的
 exact `.run/reference-worker-enabled` marker；失败时恢复 marker、原 plist 与原加载状态。
 `local-services-status.sh` 对已启用的 worker 核对 marker、loaded root/commit 和运行状态，
 对无 marker 的残留 plist 报错。安装模式不创建/激活 forward 流、不执行 0048 migration，
-也不授予 Runtime 切换或模型接受；这些仍按 P9 精确批次分别验证和授权。
-同一任务可一次批准发布、切换及指定恢复步骤，分别核验对应 Gate；跨会话恢复与有界重试按 `AGENTS.md`，
+也不代表 Runtime 已切换或模型已接受；这些仍按 P9 精确批次分别验证。
+交办目标覆盖发布、切换及必要恢复时可连续完成，分别核验对应 Gate；跨会话恢复与有界重试按 `AGENTS.md`，
 不增加逐命令审批，不放宽 exact identity、preflight、兼容性或安装器失败恢复合同。
 
 ### Weekly operational full-history audit
@@ -92,13 +95,13 @@ guiyi data close-interrupted-after-market --runtime-root /absolute/current-runti
   --runtime-commit EXACT_40_HEX_COMMIT --expected-status-sha256 EXACT_64_HEX_SHA256
 ```
 
-只有获得针对相同身份的一次实际收尾执行意图后才追加 `--apply`。该操作只将原运行记录为 interrupted，
+只有交办目标包含该收尾、且现场身份与精确计划一致时才追加 `--apply`。该操作只将原运行记录为 interrupted，
 不证明更新完成，不修复行情、不安装调度。blocked/结果不确定立即停止，不删 JSON、不重跑；明确写入不确定时
 须重新只读核实。旧 Runtime reader 不认识 schema v4/v5 会降级；新候选 reader 可以读取，但 promotion 的
 phase/Live snapshot Gate 完全保留。安全收尾、发布、五服务同步和周审计安装仍是各自受控操作。
 现役 v1.10.5 writer 下次自然运行会写回 schema v2，不能承接 v5 中断摘要；reader 降级不阻止覆盖。
-收尾 apply 前须核对下一次旧任务窗口，明确届时使用已批准的新 writer，或另行取得暂停旧盘后调度的
-执行意图；保留收尾读回证据。不得据此自动暂停调度或切换 Runtime。
+收尾 apply 前须核对下一次旧任务窗口，确认届时使用任务目标内的新 writer，或任务范围确实包含暂停旧盘后调度；
+保留收尾读回证据。不得仅凭收尾结果推导暂停调度或切换 Runtime。
 旧 Runtime 在五服务解除引用前不得清理。
 
 #### Compatible recovery proof and failed-install boundary
@@ -124,7 +127,7 @@ guiyi data compatible-recovery-proof \
 集合及 DB/Redis/Canonical/RQData 配置身份，只输出候选 commit/tree、hash/count、规范化中断摘要与配置
 类别，不输出配置值。它没有 provider、DB/Canonical 写入、网络、通知、launchctl mutation、marker/plist
 mutation 或安装能力；结果中的 `recovery_ready` 固定为 `false`，直到发布 Gate 另行证明 exact tag/peeled
-commit 和 immutable recovery root，并取得一次匹配的恢复执行意图。
+commit 和 immutable recovery root，并确认恢复属于交办目标。
 
 Market 安装固定先加载 idle 的 `com.guiyi.quant-after-market`，再加载并 kickstart
 `com.guiyi.quant-live`；新 writer 的 root/commit 与 status ownership 因而先于新 Live 建立。新 root 不继承旧
@@ -140,7 +143,7 @@ exact requested label/user 缺席可成为 absent，其他结果一律 unknown/f
 状态外，每个恢复为 loaded 的服务还必须由 Python authority 精确核对进程 root、commit、arguments、working
 directory 与 environment，全部通过后才恢复 activation marker 前像，并明确输出
 `partial market install is blocked`。该恢复不会重试安装，也不会加载原本 stopped 的旧 writer；下一次安装仍需
-新的 promotion preflight 与一次匹配的安装意图。任一 candidate label 仍 loaded、bootout/print 不是当前请求
+新的 promotion preflight 与交办目标内匹配的安装操作。任一 candidate label 仍 loaded、bootout/print 不是当前请求
 label 的 exact not-found、恢复或读回结果不明时，marker 保留且状态为 unknown/blocked，不能声称 stopped 或
 recovered，也不切换到 v1.10.5/v1.10.6。
 
