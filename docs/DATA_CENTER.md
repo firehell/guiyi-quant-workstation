@@ -214,8 +214,9 @@ UNKNOWN 仅可保留 trading-day 身份一致的已有 Calendar；缺键报 `CAL
 有证据的源事实与已有 Calendar 任一布尔字段冲突则整事务 `CALENDAR_SOURCE_CONFLICT`，不得自动
 覆盖已更正的共享历史；实际纠正仍需绑定源证据、精确前像并确认属于交办目标。首次 bootstrap 或未来
 交易日缺键不能靠猜测填充，必须补齐上述逐日权威证据后再同步。
-下一交易日 Session 尚未由 provider 发布时精确返回 `NEXT_TRADING_SESSION_NOT_READY`，最多一小时后再
-尝试一次；格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
+当日 RQData 期货日线或分钟线品类未就绪时返回 `RQDATA_NOT_READY`；下一交易日 Session 尚未由
+provider 发布时返回 `NEXT_TRADING_SESSION_NOT_READY`。这两种未就绪共享最多一次一小时后的重试；
+格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
 事实，同时不会提前发布未来主力映射，也不写 Dataset、Partition 或 Parquet。
 
 after-market 是可写命令。其进程边界若在会话、组装、状态持久化或维护阶段收到未处理异常，公开错误载荷
@@ -386,7 +387,7 @@ Newow 默认日线由独立只读解析取得最近完整收盘快照，并显�
 若当日映射尚未发布，Newow 仅允许验证并显示前一完成日，标记当日待更新；
 其他输入质量或身份冲突继续失败关闭。此机制不引入盘中 RQData 抓取或额外重试。
 盘后主任务终态写入并释放维护锁后，以新只读事务分别验证 operational 60 的 D1 和固定候选
-41 品种的 W1。两个范围都覆盖三策略主图、参考与 5 个已开放辅助面板；D1 按每品种目标日
+60 品种的 W1。两个范围都覆盖三策略主图、参考与 5 个已开放辅助面板；D1 按每品种目标日
 Session 截止，W1 按已发布完整周截止。健康路径复用同一行情窗口，先验证消费者；只有阻断失败
 品种才调用 `ContractWarmupPlanner` 生成只读差量提案，不在消费者阶段执行下载或写入。D1/W1
 各使用 600 秒、总计 1200 秒的非抢占协作预算，在产品、分组与报告调用边界检查；底层只读事务仍以数据库
