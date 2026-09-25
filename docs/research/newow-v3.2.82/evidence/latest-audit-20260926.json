@@ -1,0 +1,268 @@
+{
+  "audit_date": "2026-09-26",
+  "timezone": "Asia/Shanghai",
+  "scope": "public source and UI audit; documentation only; no implementation or production mutation",
+  "repository_start": "3967b4f86a9255747e5e2951c7c6deecfee8f09a",
+  "repository_final_read": "759bdc43d6367f10b3aacafd50bf8e6c0b606eba",
+  "parallel_integration": [
+    "806a63a14bf5efeb8df48979d4ed455c3b9852e9",
+    "75c0a1eaa52b0da578d9f39579dd52072afb0041",
+    "759bdc43d6367f10b3aacafd50bf8e6c0b606eba"
+  ],
+  "page_versions": {
+    "detail": "3.3.59",
+    "home_shell": "3.3.65",
+    "screener": "3.2.103",
+    "composite_core": "1.2.0",
+    "reversal_core": "1.0.0",
+    "position_kernel": "1.0.0"
+  },
+  "source_root_local_only": "/private/tmp/newow-public-audit-20260926",
+  "sources": [
+    {
+      "file": "stock_detail.html",
+      "url": "https://www.v8848.cn/stock_detail.html?code=688702.SH",
+      "bytes": 1026541,
+      "sha256": "b12da74d89a7ac304d7479999d11f13ab53ced834a8472f937d78a0c1bd03709",
+      "retrieved_at": "2026-09-25T16:02:53.672482+00:00"
+    },
+    {
+      "file": "strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.3.59",
+      "bytes": 17066,
+      "sha256": "a91f3a7685e0dadb95927229c45b7ecffeee052d1269b79207ccb9fa08612a9e",
+      "retrieved_at": "2026-09-25T16:02:54.661595+00:00"
+    },
+    {
+      "file": "composite-decision-v2.js",
+      "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.3.59",
+      "bytes": 45097,
+      "sha256": "68c634c05bddc7191de884a37ae5c8877dfd8416a43e53d93c66838ea8585fbb",
+      "retrieved_at": "2026-09-25T16:02:54.891283+00:00"
+    },
+    {
+      "file": "position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.0.0",
+      "bytes": 17040,
+      "sha256": "31e133d5288ed2b9f89ec084384871e5907afb8cb30acc2cee6629ee882e754d",
+      "retrieved_at": "2026-09-25T16:02:55.090405+00:00"
+    },
+    {
+      "file": "trend-reversal-core.js",
+      "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.3.59",
+      "bytes": 8684,
+      "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80",
+      "retrieved_at": "2026-09-25T16:02:55.234430+00:00"
+    },
+    {
+      "file": "home-route.html",
+      "url": "https://www.v8848.cn/strategy_analysis.html?code=688702.SH",
+      "bytes": 1602791,
+      "sha256": "88c03a238bae0041a4ad2180ef9d33b31933017d18b4eb201f8eeb4d07374bdb",
+      "retrieved_at": "2026-09-25T16:05:35.747628+00:00"
+    },
+    {
+      "file": "screener.html",
+      "url": "https://www.v8848.cn/screener.html?embed=1&v=3.3.20",
+      "bytes": 231020,
+      "sha256": "eb20cec126e94c583d1432c8e245e76f8591bd01ec6436921f7442653edb5319",
+      "retrieved_at": "2026-09-25T16:05:37.321443+00:00"
+    }
+  ],
+  "observations": [
+    {
+      "file": "screenshots/20260926/688702-ai-ranking.png",
+      "bytes": 128104,
+      "sha256": "ab4e5b2f127504276f43ded7a8abe9d7b6c1ed8129731991b0f399e5fe861168",
+      "kind": "screenshot"
+    },
+    {
+      "file": "screenshots/20260926/688702-ai-ranking.txt",
+      "bytes": 8307,
+      "sha256": "c3902d38d51551a5a16b879164f7e80602c6d1388de02cd1a6d29e56c28b3ace",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/688702-composite.png",
+      "bytes": 140867,
+      "sha256": "96a5a1e1162e0c66dd42f41bea9d36ca3bbf9d8fac6b37705af015d8c0acdb26",
+      "kind": "screenshot"
+    },
+    {
+      "file": "screenshots/20260926/688702-composite.txt",
+      "bytes": 6857,
+      "sha256": "cca0011e5ea7e3c1b58969c0821fc7847e6ac7d720a8424dd53f20c9f8c57a71",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/688702-dual.png",
+      "bytes": 102095,
+      "sha256": "bd81fcb4edf2bfa054a97ad6e601e9480a169cfdc55e28f14ef52ac347c248d8",
+      "kind": "screenshot"
+    },
+    {
+      "file": "screenshots/20260926/688702-dual.txt",
+      "bytes": 7005,
+      "sha256": "9baee5cfb3797b02b1ce017e7b9ab0e6c0ab15f48aea1b07de1b6481b8088040",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/688702-main-rise-60min.txt",
+      "bytes": 6332,
+      "sha256": "bd7aca776c024bfb240b06f5cc3864331b2cd622d3a09b31cf3a34708cda52f3",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/688702-main-rise.txt",
+      "bytes": 6274,
+      "sha256": "811662bcaf8007e444ee4c58e1e79d11f4691bbff1ec1eee4bc920a0e3bc0b35",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/688702-nested-path.txt",
+      "bytes": 7852,
+      "sha256": "66322c6dc6a9287a575a7b51a977def7d252b2b9bb9197948b9786f6dd1488c4",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/energy-help.txt",
+      "bytes": 7813,
+      "sha256": "aac22b0ed95de81ae91c7480ced55b5b11040589a67d30bf1ef40ce79ea2f095",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/magic11-help.png",
+      "bytes": 129589,
+      "sha256": "e5446d0ae9f310bb3222389b20e79862ab742d463c8e5e798baeb2e5c18f28cf",
+      "kind": "screenshot"
+    },
+    {
+      "file": "screenshots/20260926/magic11-help.txt",
+      "bytes": 7603,
+      "sha256": "1e671afc9f764c94c5f096dad6f2b35a7ec72edc1aea49f5fe71b53642439496",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/main-force-help.txt",
+      "bytes": 7426,
+      "sha256": "3436d08b8a18bcf7e1211137a89ccf58f60ebd21e5a75e57a0c4a97c3c6db0de",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/period-menu.txt",
+      "bytes": 6477,
+      "sha256": "45d679ba2184b417c4dac7353dbf5d17bee2524073101c9e97839399c7cb500a",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/screener-features.png",
+      "bytes": 33936,
+      "sha256": "7b97d5b59e54847980cd2950b1071e8c7392191ae1eea904333f7cccdc05199a",
+      "kind": "screenshot"
+    },
+    {
+      "file": "screenshots/20260926/screener-features.txt",
+      "bytes": 1718,
+      "sha256": "d48e09116cc8460cd6e2fcbc1d38b45438919eec31ac8a3e6e4027d8c6b8e9eb",
+      "kind": "accessibility_observation"
+    },
+    {
+      "file": "screenshots/20260926/trend-reversal-help.png",
+      "bytes": 118806,
+      "sha256": "9aea999ccae6b1f285d28b12a41147d89f8f871b39b6b8393240b10a22d40323",
+      "kind": "screenshot"
+    },
+    {
+      "file": "screenshots/20260926/trend-reversal-help.txt",
+      "bytes": 8028,
+      "sha256": "11eb650b78063554bd12ab4526d9024b0b67bc9db0d57790cd426fd62c3dd63e",
+      "kind": "accessibility_observation"
+    }
+  ],
+  "browser_samples": [
+    {
+      "symbol": "688702.SH",
+      "views": [
+        "initial daily trend",
+        "AI ranking",
+        "dual fusion daily",
+        "nested path",
+        "main-rise daily",
+        "main-rise 60min",
+        "main-rise weekly",
+        "indicator help",
+        "period menu"
+      ],
+      "same_input_frozen": false
+    },
+    {
+      "view": "technical screener",
+      "observation": "14 visible strategies and mainrise result; 99% coverage, evaluated5541/total5621, 79 insufficient Kline/1 not evaluated; snapshot2026-09-25 fallback"
+    },
+    {
+      "view": "local Market",
+      "url": "http://127.0.0.1:5173/market",
+      "observation": "60/60 D1 quotes; separate historical indicator gaps; RB detail navigation only before browser timeout",
+      "screenshot_saved": false
+    }
+  ],
+  "unfinished_ui": [
+    "theory view final state not read back after timeout",
+    "local RB detail final chart not read back",
+    "remaining periods are visible menu only",
+    "private account area rejected by approval review; inspected anonymous embedded manual instead",
+    "full member report and notification sending not exercised"
+  ],
+  "validation": {
+    "public_source_hashes": {
+      "result": "PASS",
+      "source_files": 7,
+      "persisted_observation_files": 18,
+      "algorithm": "SHA-256 and byte length; all 25 matched"
+    },
+    "documentation_links": {
+      "result": "PASS",
+      "markdown_documents": 7,
+      "local_links_and_anchors": 118,
+      "broken": 0,
+      "fences": "balanced",
+      "new_document_trailing_whitespace": "none"
+    },
+    "diff_check": {
+      "result": "PASS",
+      "command": "git -c core.fsmonitor=false diff --check"
+    },
+    "independent_review": {
+      "result": "PASS",
+      "repository_baseline": "759bdc43d6367f10b3aacafd50bf8e6c0b606eba",
+      "confirmed_issues_remaining": 0,
+      "resolved": [
+        "dual fusion function name",
+        "generic absorption cost fallback scope",
+        "homepage daily/weekly cross and correction order"
+      ],
+      "notes": "Final bounded re-review also confirmed date filter rounding and empty-range behavior, A07 evidence qualification, and B05 wording."
+    },
+    "existing_tests": {
+      "binding": "start worktree before concurrent integration; not final SHA certification",
+      "backend": "322 passed, 1 skipped in 7.04s",
+      "frontend": "57 passed, 0 failed, 0 skipped",
+      "skip": "test_page_comparator.py::test_frozen_601_bar_source_oracle_matches_all_rows_and_rank requires GUIYI_NEWOW_TASK13_EVIDENCE_ROOT",
+      "backend_command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short services/quant-api/tests/newow/test_product_adapters.py services/quant-api/tests/newow/test_product_auxiliary.py services/quant-api/tests/newow/test_composite_explanation.py services/quant-api/tests/newow/test_target_absorb_display.py services/quant-api/tests/newow/test_chart_price_reference.py services/quant-api/tests/newow/test_trend_channel_display.py services/quant-api/tests/newow/test_page_comparator.py services/quant-api/tests/newow/test_reference_statistics.py services/quant-api/tests/newow/test_context_alignment.py services/quant-api/tests/newow/test_page_parity_fixture_contract.py",
+      "frontend_command": "pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowTrendReversalPrimitive.test.ts tests/newowMainForceControlPrimitive.test.ts tests/newowUpDownEnergyPrimitive.test.ts tests/newowTrendChannelParity.test.ts tests/newowComparatorSorting.test.ts tests/newowExplanationPanel.test.ts"
+    },
+    "secret_scan": {
+      "result": "PASS",
+      "findings": 0,
+      "command": "python3 scripts/engineering/secret_scan.py --json docs/research/newow-current-review.md docs/research/newow-v3.2.82/REPLICATION_MANUAL.md docs/research/newow-v3.2.82/CURRENT_AUDIT.md docs/research/newow-v3.2.82/README.md docs/research/newow-v3.2.82/REPORT.md docs/research/newow-v3.2.82/AUDIT_20260926.md docs/research/newow-v3.2.82/FORMULA_CATALOG_20260926.md docs/research/newow-v3.2.82/evidence/latest-audit-20260926.json docs/research/newow-v3.2.82/screenshots/20260926"
+    }
+  },
+  "limits": [
+    "No latest-version full OHLCV capture or input/output replay",
+    "No third-party code executed",
+    "No private screener or backend text algorithm certification",
+    "Displayed performance is not evidence of futures benefit",
+    "No repository release/runtime identity attestation",
+    "Source snapshots are temporary and may be removed by OS"
+  ]
+}

@@ -1,0 +1,186 @@
+Browser tab: 1, Title: "个股详情 - 牛哇盯盘 (v3.3.59)", URL: "https://www.v8848.cn/stock_detail.html?code=688702.SH&strategy=zhushenglang&period=day".
+1 AXWebArea 个股详情 - 牛哇盯盘 (v3.3.59), URL: v8848.cn/stock_detail.html?code=688702.SH&strategy=zhushenglang&period=day
+	2 container
+		3 image
+		4 text 返回
+		5 text 日K | 1
+		6 text ▼
+		103 text 盛科通信-U
+		7 text 688702
+		104 text 日期：2026-09-26
+		204 text 328.50
+		205 text -6.50 -1.94%
+		11 text 最高 
+		206 text 339.80
+		13 text 最低 
+		207 text 328.30
+		15 text 开盘 
+		208 text 330.00元
+		17 text 市值 
+		110 text 0亿
+		19 text 成交量 
+		209 text 0万
+		21 text 换手 
+		112 text 0
+		23 text 主力
+		113 text 无庄控盘
+		25 container strategyToggle
+			26 button 震荡策略
+			27 button 趋势策略
+			28 button 双策略
+			29 button ✨AI分析
+			30 container donchianToggle
+				31 text 通道
+		114 container compositeActionCard
+			115 container
+				116 text 综合决策
+				117 container compositeScoreWrap
+					118 text 68分
+				119 text 中等确定性
+				120 text 共振 R2
+				121 text 错配
+				122 text 收盘终值·已收盘 K 线
+				123 text ▾
+			124 container compositeBody
+				125 container compositeFirstAction
+					126 text 提示
+					127 text 风险提示：周线空仓（蓝色带）· 日线持股（黄色带）——下跌中的反弹
+					128 text 周线仍处空头，日线反弹多为下跌中继的背离走势（易二次探底）。若参与建议仓位 10%-30%，设好止损、不追涨；日线转弱或周线未反转前不加仓；震荡短暂持有不改趋势。同步确认大盘趋势状态。
+				129 container compositeMismatchRow
+					130 text 错配期·逃顶窗口
+					131 text 逢高减仓·保留底仓
+					132 text 震荡已清 4 根
+					133 text 趋势日线仍在黄带，未发生下穿
+				134 container compositeCertRow
+					135 text 30
+					136 text 趋势一致
+					137 text 30
+					138 text 震荡确认
+					139 text 10
+					140 text 共振
+					141 text 6
+					142 text 方向拐点
+					143 text -8
+					144 text 波动折损
+				145 container compositeResonanceRow
+					146 text 错配预警
+					147 text ●●○○○
+					148 text 趋势与震荡方向背离，或趋势缺数据而震荡已明确转向，均属错配期，仅作事件级响应。
+				149 container compositeDetailToggle
+					150 text 展开依据 · 波动率 / 三周期 / 方向判读
+					151 text ▾
+				152 container compositeDecisionCard
+					153 text 逢高减仓·保留底仓
+					154 text 中等确定性
+					155 text 建议仓位 10%-30%
+					156 text 震荡已转空但趋势日线仍在黄带，属旧趋势动摇、新趋势未立的错配期。保留底仓跟随趋势，逢反弹分批减仓；不追高、不加仓。若趋势日线转蓝带，按趋势信号执行。近期波动率偏高（6.3%），注意控制仓位、等待回踩确认。
+				157 text 本结论基于策略信号的机械判定，仅供参考，不构成投资建议。
+		37 container statusCardWrap
+			38 container
+				158 text 筑底反弹
+				159 text 周:空仓
+				160 text 日:持股
+				42 image
+				161 text 减仓观望
+				162 text 建议仓位 10%-30%
+				45 text ▾
+			187 text 周空仓日持股，等右侧确认
+			188 text 目标
+			189 text ¥349.00
+			190 text 吸筹
+			191 text ¥290.00
+			192 text  ~
+			193 text 已跌
+			194 text -5.9%
+			195 text 距吸筹
+			196 text 13.3%
+			197 container Help: 点击展开/收起, ID: cardAiRow
+				198 text AI诊股
+				199 text 筑底反弹，周线空仓但日线已转黄带，筑底反弹，等周线右侧确认。 目标价349.00，无庄控盘，仓位建议 10%-30%。
+			200 button 11周期 · 解读, ID: magic11HelpBtn
+		46 container klineSection
+			47 container klineLegend
+				48 text 目标价:
+				163 text 349.00
+				50 text 吸筹价:
+				164 text 290.00
+			52 container chartPeriods
+				53 button 分时
+				54 button 日K
+				55 button 周K
+				56 button 月K
+				57 button 60分, Help: 更多周期, ID: btn60min
+			58 container klineContainer
+				165 container
+					166 container Charting by TradingView
+						167 link Description: Charting by TradingView, ID: tv-attr-logo, Value: tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=www.v8848.cn/stock_detail.html
+				59 image overlayCanvas
+		61 container subPanelTabs
+			62 text 主力照妖镜
+			63 text 涨跌动能
+			64 text 主力控盘
+			65 text 趋势转折
+		210 container subPanelMainForce
+			211 text 主力控盘 ▲开始 ■庄控 ■高控 ■出货 ■无庄 叠加
+			212 button 指标解读
+		66 container stratSection
+			67 text 策略收益率走势
+			171 text 年化186.2%
+			68 text 收益分析 ›
+			69 container stratLazyContent
+				70 container stratRangeTabs
+					71 button 近3月
+					72 button 近1年
+					73 button 近3年
+					74 button 今年
+					75 button 理论值
+					76 button 全部
+				77 container stratMetrics
+					78 container
+						172 text +160.23%
+						80 text 累计收益
+					81 container
+						173 text 75%
+						83 text 胜率
+					84 container
+						174 text 62.78%
+						175 text 最大回撤
+					87 container
+						176 text 4
+						89 text 交易次数
+		90 container tradeSection
+			91 text 回测操盘提醒 历史回测推演，仅供参考，不作为实时买卖提示
+			92 container tradeLazyContent
+				177 container tradeReminderV2
+					178 text 回测持仓中 2026-09-24 → 至今 盈亏 -7.74% 建仓 买入 356.08 09-24 日K 07-07 → 08-31 盈亏 +22.97% 建仓 买入 305.76 07-07 清仓 卖出 375.98 +22.97% 08-31 日K 12-05 → 06-30 盈亏 +144.94% 建仓 买入 121.06 12-05 清仓 卖出 296.54 +144.94% 06-30
+				179 text 共 4 笔交易记录，仅展示最近 3 笔
+				93 container tradeVipCard
+					180 text 解锁完整回测报告与实时信号推送
+					95 button 查看全部, ID: tradeVipBtn
+				96 container nwPathHead
+					97 text 多周期嵌套波段路径
+					98 text 展开
+		99 container canslimSection
+			100 text AI 基本面诊断 (CANSLIM)
+			101 text --
+			102 text 向下滚动加载基本面诊断
+		213 container mainForceIndicatorModal
+			214 text 主力控盘 · 指标解读
+			215 text 一个完整的控盘周期
+			216 text ▲开始 → ■庄控 → ■高控 → ■出货 → ■无庄
+			217 text 📌 看图口诀
+			218 container
+				219 text 紫三角▲出现  → 控盘启动， 可以关注
+				220 text 红柱连续上升  → 有庄建仓， 持股待涨
+				221 text 洋红柱出现  → 高度控盘， 强势持有
+				222 text 绿柱开始出现  → 主力出货， 考虑减仓
+				223 text 金黄柱子  → 无庄控盘， 观望为主
+			224 text ⚡ 核心要点
+			225 container
+				226 text • 紫三角 ▲ 是最关键的信号——代表主力从"不关注"变成"开始控盘"
+				227 text • 一般 绿色下跌浪 来临前，主力都会先拉高再出货
+				228 text • 看到 绿柱（出货） 就可以减仓了，不要等金黄无庄才反应
+			229 text ▲开始控盘  — 主力刚入场，关注信号 ■有庄控盘  — 主力在加仓，趋势向上 ■高度控盘  — 强势阶段，股价在均线上方 ■主力出货  — 高位派发筹码，注意风险 ■无庄控盘  — 零轴下方，暂无主力关注 ■叠加柱  — 边拉高边出货，洋红+绿双色
+			230 button 知道了
+
+The focused UI element is 212 button 指标解读

@@ -1,0 +1,213 @@
+Browser tab: 1, Title: "个股详情 - 牛哇盯盘 (v3.3.59)", URL: "https://www.v8848.cn/stock_detail.html?code=688702.SH&name=%E7%9B%9B%E7%A7%91%E9%80%9A%E4%BF%A1-U&price=328.5&pct=-1.94&_v=2.9.280".
+0 AXWebArea 个股详情 - 牛哇盯盘 (v3.3.59), URL: v8848.cn/stock_detail.html?code=688702.SH&name=%E7%9B%9B%E7%A7%91%E9%80%9A%E4%BF%A1-U&price=328.5&pct=-1.94&_v=2.9.280
+	1 container
+		2 image
+		3 text 返回
+		4 text 日K | 1
+		5 text ▼
+		6 text 盛科通信-U
+		7 text 688702
+		8 text 日期：2026-09-25
+		188 text 328.50
+		189 text -6.50 -1.94%
+		11 text 最高 
+		190 text 339.80
+		13 text 最低 
+		191 text 328.30
+		15 text 开盘 
+		192 text 330.00元
+		17 text 市值 
+		18 text 0亿
+		19 text 成交量 
+		193 text 0万
+		21 text 换手 
+		22 text 0
+		23 text 主力
+		24 text 无庄控盘
+		25 container strategyToggle
+			26 button 震荡策略
+			27 button 趋势策略
+			28 button 双策略
+			29 button ✨AI分析
+			30 container donchianToggle
+				31 text 通道
+		32 container compositeActionCard
+			33 container
+				34 text 综合决策
+				35 container compositeScoreWrap
+					36 text 68分
+				37 text 中等确定性
+				38 text 共振 R2
+				39 text 错配
+				40 text 收盘终值·已收盘 K 线
+				41 text ▾
+			42 container compositeBody
+				43 container compositeFirstAction
+					44 text 提示
+					45 text 风险提示：周线空仓（蓝色带）· 日线持股（黄色带）——下跌中的反弹
+					46 text 周线仍处空头，日线反弹多为下跌中继的背离走势（易二次探底）。若参与建议仓位 10%-30%，设好止损、不追涨；日线转弱或周线未反转前不加仓；震荡短暂持有不改趋势。同步确认大盘趋势状态。
+				47 container compositeMismatchRow
+					48 text 错配期·逃顶窗口
+					49 text 逢高减仓·保留底仓
+					50 text 震荡已清 4 根
+					51 text 趋势日线仍在黄带，未发生下穿
+				52 container compositeCertRow
+					53 text 30
+					54 text 趋势一致
+					55 text 30
+					56 text 震荡确认
+					57 text 10
+					58 text 共振
+					59 text 6
+					60 text 方向拐点
+					61 text -8
+					62 text 波动折损
+				63 container compositeResonanceRow
+					64 text 错配预警
+					65 text ●●○○○
+					66 text 趋势与震荡方向背离，或趋势缺数据而震荡已明确转向，均属错配期，仅作事件级响应。
+				67 container compositeDetailToggle
+					170 text 收起依据
+					171 text ▴
+				172 container compositeDetailSec
+					173 container compositeVolRow
+						174 text 波动率
+						175 text 6%
+						176 text 高
+					177 text 趋势策略
+					178 text 偏多
+					179 container compositeTrendChips
+						180 text 周线 空仓 日线 持股 60分 空仓
+					181 text 震荡策略
+					182 text 看空
+					183 container compositeOscChips
+						184 text 周线 持有 日线 已清 60分 已清
+					185 container compositeDirRow
+						186 text 方向
+						187 text 从周线开始下跌，当前为周线下跌中的反弹（背离），勿追涨
+				70 container compositeDecisionCard
+					71 text 逢高减仓·保留底仓
+					72 text 中等确定性
+					73 text 建议仓位 10%-30%
+					74 text 震荡已转空但趋势日线仍在黄带，属旧趋势动摇、新趋势未立的错配期。保留底仓跟随趋势，逢反弹分批减仓；不追高、不加仓。若趋势日线转蓝带，按趋势信号执行。近期波动率偏高（6%），注意控制仓位、等待回踩确认。
+				75 text 本结论基于策略信号的机械判定，仅供参考，不构成投资建议。
+		76 container statusCardWrap
+			77 container
+				78 text 筑底反弹
+				79 text 周:空仓
+				80 text 日:持股
+				81 image
+				82 text 减仓观望
+				83 text 建议仓位 10%-30%
+				84 text ▾
+			85 text 周空仓日持股，等右侧确认
+			86 text 目标
+			87 text ¥349.00
+			88 text 吸筹
+			89 text ¥290.00
+			90 text  ~
+			91 text 已跌
+			92 text -5.9%
+			93 text 距吸筹
+			94 text 13.3%
+			95 container Help: 点击展开/收起, ID: cardAiRow
+				96 text AI诊股
+				97 text 筑底反弹，周线空仓但日线已转黄带，筑底反弹，等周线右侧确认。 目标价349.00，无庄控盘，仓位建议 10%-30%。
+		98 container klineSection
+			99 container klineLegend
+				100 text 目标价:
+				101 text 349.00
+				102 text 吸筹价:
+				103 text 292.28
+			104 container chartPeriods
+				105 button 分时
+				106 button 日K
+				107 button 周K
+				108 button 月K
+				109 button 60分, Help: 更多周期, ID: btn60min
+			110 container klineContainer
+				111 container
+					112 container Charting by TradingView
+						113 link Description: Charting by TradingView, ID: tv-attr-logo, Value: tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=www.v8848.cn/stock_detail.html
+				114 image overlayCanvas
+		115 container subPanelTabs
+			116 text 主力照妖镜
+			117 text 涨跌动能
+			118 text 主力控盘
+			119 text 趋势转折
+		120 container subPanelZhaoyao
+			121 text 主力动态 ■进场 ■洗盘 ■拉高 ■出货 ■退场 ■诱多
+			122 button 指标解读
+		123 container stratSection
+			124 text 策略收益率走势
+			125 text 年化178.4%
+			126 text 收益分析 ›
+			127 container stratLazyContent
+				128 container stratRangeTabs
+					129 button 近3月
+					130 button 近1年
+					131 button 近3年
+					132 button 今年
+					133 button 理论值
+					134 button 全部
+				135 container stratMetrics
+					136 container
+						137 text +188.69%
+						138 text 累计收益
+					139 container
+						140 text 63%
+						141 text 胜率
+					142 container
+						143 text 19.07%
+						144 text 最大回撤
+					145 container
+						146 text 24
+						147 text 交易次数
+		148 container tradeSection
+			149 text 回测操盘提醒 历史回测推演，仅供参考，不作为实时买卖提示
+			150 container tradeLazyContent
+				151 container tradeReminderV2
+					152 text 回测持仓中 2026-09-16 → 至今 盈亏 +3.56% 建仓 买入 317.19 09-16 日K 08-31 → 09-01 盈亏 -1.51% 建仓 买入 377.71 08-31 清仓 卖出 371.99 -1.51% 09-01 日K 08-06 → 08-19 盈亏 +12.75% 建仓 买入 355.37 08-06 清仓 卖出 400.69 +12.75% 08-19
+				153 text 共 24 笔交易记录，仅展示最近 3 笔
+				154 container tradeVipCard
+					155 text 解锁完整回测报告与实时信号推送
+					156 button 查看全部, ID: tradeVipBtn
+				157 container nwPathHead
+					158 text 多周期嵌套波段路径
+					159 text 展开
+		160 container canslimSection
+			161 text AI 基本面诊断 (CANSLIM)
+			162 text --
+			163 text 向下滚动加载基本面诊断
+		194 container aiAnalysisModal
+			195 text AI策略分析推荐
+			204 text 震荡策略 · 趋势策略 × 周线 / 日线 / 60分钟 历史回测
+			197 button 重新回测
+			205 container aiBody
+				206 text 🎯 综合评分推荐
+				207 container
+					208 text 建议采用  趋势策略 · 周线
+				209 container
+					210 text 理由：累计收益  +339.3% （6 组合中第 1）；胜率  88% ；最大回撤仅  47.6% （样本较少）。
+				211 text 震荡策略 吸筹—拉高
+				212 container
+					213 text 周线 累计收益 +82.6% 胜率 67% 最大回撤 27.1% 交易 3次
+				214 container
+					215 text 日线 累计收益 +179.6% 胜率 90% 最大回撤 24.4% 交易 10次
+				216 container
+					217 text 60分钟 累计收益 +75.3% 胜率 71% 最大回撤 28.6% 交易 14次
+				218 text 趋势策略 黄蓝带 MA7/MA10
+				219 container
+					220 text 推荐 周线 累计收益 +339.3% 胜率 88% 最大回撤 47.6% 交易 8次
+				221 container
+					222 text 日线 累计收益 +188.7% 胜率 63% 最大回撤 19.1% 交易 24次
+				223 container
+					224 text 60分钟 累计收益 +177.0% 胜率 72% 最大回撤 17.3% 交易 29次
+				225 text 1 趋势策略 · 周线 74.9 2 震荡策略 · 日线 66.6 3 趋势策略 · 60分钟 58.7 4 趋势策略 · 日线 51.2 5 震荡策略 · 60分钟 7.4 6 震荡策略 · 周线 6.9
+			199 container
+				200 text 回测结果基于历史数据模拟，不含手续费/滑点/涨跌停限制，
+				201 text 不构成任何投资建议，历史表现不代表未来收益。
+			202 button 知道了
+			203 button 采纳推荐
+
+The focused UI element is 29 button ✨AI分析
