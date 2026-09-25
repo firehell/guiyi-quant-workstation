@@ -58,7 +58,7 @@ from app.market_data.session_clock import (
     session_windows_for_trading_day,
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
-from app.market_data.source_quality import PriceUnavailableFact, SourceQualityFact
+from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact, SourceQualityFact
 from app.market_data.weekly_quality import (
     WeeklySourceInterruption,
     WEEKLY_SOURCE_CLASSIFICATION_VERSION,
@@ -601,6 +601,23 @@ class MarketDataService:
             raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
         if weekly_classification_version != WEEKLY_SOURCE_CLASSIFICATION_VERSION:
             raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
+        result, facts = self._actual_dominant_daily_quality(request, union=False)
+        return result, tuple(
+            (contract, item) for contract, item in facts
+            if isinstance(item, PriceUnavailableFact)
+        )
+
+    def query_actual_dominant_trading_days_quality_union(
+        self, request: ActualDominantTradingDayQuery,
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, SourceQualityFact], ...]]:
+        """Explicit D1 opt-in for proved PRICE_UNAVAILABLE/NONPOSITIVE_CLOSE."""
+        if request.frequency is not BarFrequency.D1:
+            raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
+        return self._actual_dominant_daily_quality(request, union=True)
+
+    def _actual_dominant_daily_quality(
+        self, request: ActualDominantTradingDayQuery, *, union: bool,
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, SourceQualityFact], ...]]:
         start, end = self._trading_day_window(
             symbol=request.symbol, since=request.since, through=request.through,
         )
@@ -622,13 +639,17 @@ class MarketDataService:
             start, end,
         )
         bars: list[CanonicalBar] = []
-        exceptions: list[tuple[str, PriceUnavailableFact]] = []
+        exceptions: list[tuple[str, SourceQualityFact]] = []
         for contract in dict.fromkeys(by_day.values()):
             physical = SeriesQuery(
                 SeriesKind.CONTRACT, request.symbol, request.frequency,
                 start, end, contract=contract,
             )
-            contract_bars, unavailable = self.read_physical_daily_quality(
+            reader = (
+                self.read_physical_daily_quality_union
+                if union else self.read_physical_daily_quality
+            )
+            contract_bars, unavailable = reader(
                 physical, require_window_coverage=False,
             )
             bars.extend(
@@ -928,6 +949,7 @@ class MarketDataService:
         The ordinary series API remains strict. No W1 Bar is synthesized here.
         """
         weekly_since = since - timedelta(days=since.weekday()) if since is not None else None
+        daily_gaps: tuple[PriceUnavailableFact | NonpositiveCloseFact, ...]
         if classification_version == WEEKLY_SOURCE_CLASSIFICATION_VERSION:
             daily_bars, daily_gaps = self.query_contract_replay_quality(
                 symbol=symbol, contract=contract, through=through, cutoff=cutoff,

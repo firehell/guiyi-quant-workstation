@@ -412,7 +412,7 @@ def test_strategy_detail_returns_only_requested_typed_section(
     monkeypatch.setattr(
         market_newow,
         "_build_product_service",
-        lambda _session, _cancelled=None: type(
+        lambda _session, _cancelled=None, _policy=None: type(
             "Fake", (), {"query": lambda _self, _query: result}
         )(),
         raising=False,
@@ -887,7 +887,7 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
     monkeypatch.setattr(
         market_newow,
         "_build_product_service",
-        lambda _session, _cancelled=None: type(
+        lambda _session, _cancelled=None, _policy=None: type(
             "Fake", (), {"query": lambda _self, _query: result}
         )(),
     )
@@ -925,7 +925,7 @@ def test_strategy_detail_maps_future_as_of_and_safe_internal_errors(monkeypatch)
     monkeypatch.setattr(
         market_newow,
         "_build_product_service",
-        lambda _session, _cancelled=None: Fake(),
+        lambda _session, _cancelled=None, _policy=None: Fake(),
         raising=False,
     )
     app.dependency_overrides[get_db] = lambda: object()
@@ -958,7 +958,7 @@ def test_strategy_detail_normalizes_mds_failure_to_public_conflict(monkeypatch):
     monkeypatch.setattr(
         market_newow,
         "_build_product_service",
-        lambda _session, _cancelled=None: Fake(),
+        lambda _session, _cancelled=None, _policy=None: Fake(),
         raising=False,
     )
     app.dependency_overrides[get_db] = lambda: object()

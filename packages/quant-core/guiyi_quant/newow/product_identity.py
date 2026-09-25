@@ -17,6 +17,8 @@ FUTURES_ADAPTATION_VERSION = "newow_futures_quality_segment_v3"
 WEEKLY_FUTURES_ADAPTATION_VERSION = "newow_futures_weekly_quality_segment_v1"
 WEEKLY_FUTURES_ADAPTATION_VERSION_V2 = "newow_futures_weekly_quality_segment_v2"
 FUTURES_INPUT_POLICY_VERSION = "newow_futures_quality_observation_v2"
+DAILY_FUTURES_ADAPTATION_VERSION_V2 = "newow_futures_daily_quality_segment_v4"
+DAILY_INPUT_POLICY_VERSION_V2 = "newow_futures_daily_quality_observation_v3"
 WEEKLY_INPUT_POLICY_VERSION_V2 = "newow_futures_weekly_quality_observation_v2"
 WEEKLY_SOURCE_CLASSIFICATION_VERSION = "weekly-d1-quality-v1"
 WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2 = "weekly-d1-quality-v2"
@@ -24,6 +26,7 @@ WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2 = "weekly-d1-quality-v2"
 
 class InputQualityPolicy(StrEnum):
     V1 = "newow_input_quality_v1"
+    DAILY_V2 = "newow_daily_input_quality_v2"
     WEEKLY_V2 = "newow_weekly_input_quality_v2"
 
 
@@ -33,6 +36,8 @@ def input_quality_policy(
 ) -> InputQualityPolicy:
     normalized = InputQualityPolicy(policy)
     if normalized is InputQualityPolicy.WEEKLY_V2 and frequency != "1w":
+        raise ValueError("NEWOW_PRODUCT_INPUT_QUALITY_SCOPE_INVALID")
+    if normalized is InputQualityPolicy.DAILY_V2 and frequency != "1d":
         raise ValueError("NEWOW_PRODUCT_INPUT_QUALITY_SCOPE_INVALID")
     return normalized
 
@@ -44,6 +49,8 @@ def futures_adaptation_version(
     normalized = input_quality_policy(frequency, policy)
     if normalized is InputQualityPolicy.WEEKLY_V2:
         return WEEKLY_FUTURES_ADAPTATION_VERSION_V2
+    if normalized is InputQualityPolicy.DAILY_V2:
+        return DAILY_FUTURES_ADAPTATION_VERSION_V2
     return (
         WEEKLY_FUTURES_ADAPTATION_VERSION
         if frequency == "1w" else FUTURES_ADAPTATION_VERSION
@@ -70,6 +77,8 @@ def input_policy_version(
     return (
         WEEKLY_INPUT_POLICY_VERSION_V2
         if normalized is InputQualityPolicy.WEEKLY_V2
+        else DAILY_INPUT_POLICY_VERSION_V2
+        if normalized is InputQualityPolicy.DAILY_V2
         else FUTURES_INPUT_POLICY_VERSION
     )
 

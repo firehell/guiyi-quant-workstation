@@ -69,6 +69,17 @@ test('unwraps only the delivered requested section and preserves every Decimal a
   assert.throws(() => chartCoordinate('1e999'), /finite chart coordinate/)
 })
 
+test('accepts the versioned daily quality identity only on D1', () => {
+  const wire = chartWire()
+  wire.meta.identity.input_quality_policy = 'newow_daily_input_quality_v2'
+  wire.meta.futures_adaptation_version = 'newow_futures_daily_quality_segment_v4'
+  const parsed = normalizeNewowProductResponse(wire, expected)
+  assert.equal(parsed.meta.identity.input_quality_policy, 'newow_daily_input_quality_v2')
+  wire.meta.identity.frequency = '1w'
+  wire.meta.identity.profile_id = 'newow_product_trend_1w_v1'
+  assert.throws(() => normalizeNewowProductResponse(wire, { ...expected, frequency: '1w' }), /frequency mismatch/)
+})
+
 test('accepts explicit partial history intervals without treating warming as a price bar', () => {
   const raw = referenceWire()
   raw.reference.value!.history_coverage = 'PARTIAL'

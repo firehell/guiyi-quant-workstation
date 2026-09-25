@@ -531,10 +531,10 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 该规则对 owner 前同物理合约 warm-up 和 owner 内有效观察一致适用。
 
 部分零价、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST 继续 fail-closed；
-唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
+例外仅为来源质量合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`，以及日线质量策略 v2 显式接受的 `NONPOSITIVE_CLOSE`。
 它是来源质量中断，不是 `NO_TRADE` 或行情 Bar。reader/readiness SHALL 公开 raw、effective、
 `NO_TRADE` 与价格不可用数量，并把 `newow_futures_quality_observation_v2` 纳入输入证明；
-日版产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`；隔离候选 W1 使用
+旧日版产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`；日线质量策略 v2 使用 `newow_futures_daily_quality_segment_v4` 与 `newow_futures_daily_quality_observation_v3`，旧身份不改写；隔离候选 W1 使用
 `newow_futures_weekly_quality_segment_v1`，不改写既有 D1 Trade ID。不得笼统声明证券页面原样 parity。
 
 #### Scenario: A zero-activity futures day appears in warm-up
@@ -551,7 +551,7 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 
 ### Requirement: D1 price-unavailable days split calculation and reference history
 
-同一物理合约的 D1 `PRICE_UNAVAILABLE` 日 MUST 在该合约有效前缀切断计算，即使当时尚未成为
+同一物理合约的 D1 `PRICE_UNAVAILABLE` 日，以及日线质量策略 v2 所接受的已验证 `NONPOSITIVE_CLOSE` 日，MUST 在该合约有效前缀切断计算，即使当时尚未成为
 rank1。物理合约及 owner segment 身份保持原样，计算区段 MUST 有独立版本化身份；后续有效
 completed Bar 从新段重新预热所有依赖指标和策略状态，不得跨断点继承递推状态或配对见证。
 其他 owner 的异常不得传染当前完好 owner。只有满足各自真实预热条件的当前状态可标 READY；
