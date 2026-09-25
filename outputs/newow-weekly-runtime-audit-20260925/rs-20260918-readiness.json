@@ -1,0 +1,676 @@
+{
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "budget_exhausted": false,
+  "cases": [
+    {
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "context": {},
+            "historical_candidate_recoverable": true,
+            "reason": "MAIN_CONTRACT_MAP_MISSING"
+          }
+        },
+        "reason": "MAIN_CONTRACT_MAP_MISSING",
+        "status": "UNKNOWN"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:macd": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:main_force_control": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:up_down_energy": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "chart": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "comparator": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "explanation": {
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        }
+      },
+      "strategy": "trend",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "1d",
+      "main": {
+        "status": "UNSTARTED"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:macd": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNSTARTED"
+        },
+        "chart": {
+          "status": "UNSTARTED"
+        },
+        "comparator": {
+          "status": "UNSTARTED"
+        },
+        "explanation": {
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "status": "UNSTARTED"
+        }
+      },
+      "strategy": "trend",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "60m",
+      "main": {
+        "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+        "status": "UNOPENED"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:macd": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:main_force_control": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:up_down_energy": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "chart": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "comparator": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "explanation": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        }
+      },
+      "strategy": "trend",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "context": {},
+            "historical_candidate_recoverable": true,
+            "reason": "MAIN_CONTRACT_MAP_MISSING"
+          }
+        },
+        "reason": "MAIN_CONTRACT_MAP_MISSING",
+        "status": "UNKNOWN"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:macd": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:main_force_control": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:up_down_energy": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "chart": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "comparator": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "explanation": {
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        }
+      },
+      "strategy": "oscillation",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "1d",
+      "main": {
+        "status": "UNSTARTED"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:macd": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNSTARTED"
+        },
+        "chart": {
+          "status": "UNSTARTED"
+        },
+        "comparator": {
+          "status": "UNSTARTED"
+        },
+        "explanation": {
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "status": "UNSTARTED"
+        }
+      },
+      "strategy": "oscillation",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "60m",
+      "main": {
+        "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+        "status": "UNOPENED"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:macd": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:main_force_control": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:up_down_energy": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "chart": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "comparator": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "explanation": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        }
+      },
+      "strategy": "oscillation",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "context": {},
+            "historical_candidate_recoverable": true,
+            "reason": "MAIN_CONTRACT_MAP_MISSING"
+          }
+        },
+        "reason": "MAIN_CONTRACT_MAP_MISSING",
+        "status": "UNKNOWN"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:macd": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:main_force_control": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:up_down_energy": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "chart": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "comparator": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        },
+        "explanation": {
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "context": {},
+              "historical_candidate_recoverable": true,
+              "reason": "MAIN_CONTRACT_MAP_MISSING"
+            }
+          },
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "status": "UNKNOWN"
+        }
+      },
+      "strategy": "main_rise",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "1d",
+      "main": {
+        "status": "UNSTARTED"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:macd": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNSTARTED"
+        },
+        "chart": {
+          "status": "UNSTARTED"
+        },
+        "comparator": {
+          "status": "UNSTARTED"
+        },
+        "explanation": {
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "status": "UNSTARTED"
+        }
+      },
+      "strategy": "main_rise",
+      "symbol": "rs"
+    },
+    {
+      "frequency": "60m",
+      "main": {
+        "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+        "status": "UNOPENED"
+      },
+      "sections": {
+        "auxiliary:cup_handle": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:macd": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:main_force_control": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:up_down_energy": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "chart": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "comparator": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "explanation": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        },
+        "reference": {
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+          "status": "UNOPENED"
+        }
+      },
+      "strategy": "main_rise",
+      "symbol": "rs"
+    }
+  ],
+  "command": "data.newow-readiness",
+  "complete": false,
+  "dependency_counts": {},
+  "enumeration_counts": {
+    "UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 3,
+    "UNOPENED:NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN": 1
+  },
+  "frequency_scope": [
+    "1w"
+  ],
+  "main_case_count": 9,
+  "main_ready_count": 0,
+  "matrix": true,
+  "metadata_counts": {
+    "UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 3
+  },
+  "metadata_proposals": [
+    {
+      "contract": null,
+      "frequency": "1w",
+      "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+      "reason": "MAIN_CONTRACT_MAP_MISSING",
+      "status": "UNKNOWN",
+      "symbol": "rs",
+      "through": "2026-09-18"
+    },
+    {
+      "contract": null,
+      "frequency": "1w",
+      "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+      "reason": "MAIN_CONTRACT_MAP_MISSING",
+      "status": "UNKNOWN",
+      "symbol": "rs",
+      "through": "2026-09-18"
+    },
+    {
+      "contract": null,
+      "frequency": "1w",
+      "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+      "reason": "MAIN_CONTRACT_MAP_MISSING",
+      "status": "UNKNOWN",
+      "symbol": "rs",
+      "through": "2026-09-18"
+    }
+  ],
+  "product_count": 1,
+  "provider_requests": 0,
+  "readonly": true,
+  "release_stage": "daily_weekly",
+  "repair_counts": {},
+  "repair_targets": [],
+  "schema_version": "newow_readiness_compact_v1",
+  "status": "incomplete",
+  "work_used": 27,
+  "writes": 0
+}

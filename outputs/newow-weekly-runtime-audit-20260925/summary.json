@@ -1,0 +1,13 @@
+{
+  "runtime_api_version": "1.10.33",
+  "capability_schema": "newow_product_capabilities_v22",
+  "product_count": 60,
+  "strategy_count": 3,
+  "api_cases": 180,
+  "api_409_main_contract_map_missing": 180,
+  "browser_cases": 180,
+  "browser_navigation_200_snapshot_409_reason_visible": 180,
+  "api_distinct_cases": 180,
+  "browser_distinct_cases": 180,
+  "matrix_sha256": "ab03e9f46293c789c9877e2eed67009ed738eaf0407fa27206eb95ff3d0a6627"
+}

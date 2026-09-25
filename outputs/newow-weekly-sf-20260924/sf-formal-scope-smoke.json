@@ -1,0 +1,69 @@
+{
+  "status": "passed",
+  "scope_count": 58,
+  "schema_version": "newow_product_capabilities_v20",
+  "sections": [
+    [
+      "trend",
+      "chart",
+      "ready"
+    ],
+    [
+      "trend",
+      "reference",
+      "ready"
+    ],
+    [
+      "trend",
+      "auxiliary",
+      "ready"
+    ],
+    [
+      "trend",
+      "comparator",
+      "not_applicable"
+    ],
+    [
+      "oscillation",
+      "chart",
+      "ready"
+    ],
+    [
+      "oscillation",
+      "reference",
+      "ready"
+    ],
+    [
+      "oscillation",
+      "auxiliary",
+      "ready"
+    ],
+    [
+      "oscillation",
+      "comparator",
+      "unavailable"
+    ],
+    [
+      "main_rise",
+      "chart",
+      "ready"
+    ],
+    [
+      "main_rise",
+      "reference",
+      "ready"
+    ],
+    [
+      "main_rise",
+      "auxiliary",
+      "ready"
+    ],
+    [
+      "main_rise",
+      "comparator",
+      "not_applicable"
+    ]
+  ],
+  "sh_still_closed": true,
+  "database_mode": "read_only"
+}

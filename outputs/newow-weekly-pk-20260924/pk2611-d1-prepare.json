@@ -1,0 +1,42 @@
+{
+  "candidate_sha256": "f00b5023fbd58695aeb91acac56873816d1af5fe3359dcd514f38e460c874305",
+  "candidate_uri": "kind=contract/symbol=pk/series=PK2611/frequency=1d/year=2026/month=08/part.f00b5023fbd58695aeb91acac56873816d1af5fe3359dcd514f38e460c874305.parquet",
+  "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+  "catalog_revision": "2b75be99f44442dbe5b029ddc68dbab6aed3b2393341fbc6610a662b008b45d9",
+  "changed_days": [
+    "2026-08-10"
+  ],
+  "code_sha": "ba986e588f617575b68511669029454107404d97",
+  "contract": "PK2611",
+  "corrected_turnovers": {
+    "2026-08-10": "5055546400.0"
+  },
+  "frequency": "1d",
+  "month": 8,
+  "old_partition": {
+    "month": 8,
+    "quality_sha256": null,
+    "row_count": 21,
+    "sha256": "b62ce91b5beeb5ed1d63e2941723501696692cc4aecb6b2f7e7854c50c8b6a7c",
+    "uri": "kind=contract/symbol=pk/series=PK2611/frequency=1d/year=2026/month=08/part.parquet",
+    "year": 2026
+  },
+  "project_env_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+  "provider_requests": 0,
+  "row_count": 21,
+  "schema_version": "pk2611_august_d1_turnover_repair_v1",
+  "source_plan_sha256": "630fd8ac11540103a6e0c68daff02836c6a3444adfc4018fa6c7302a23336d62",
+  "source_response_sha256": "cad99a27a287049b710507392b2ac5ffe3637eae7aaeeecbae570156c8512848",
+  "source_result_sha256": "645a59a3e96da7c8e74818f5ef98ff7203ffdb2d1f3090d412149a06ae6049b4",
+  "source_sha256": "3befe733910862a2b40ac459a86d5b8b462eeb6bd02bf790b59a961146fd0937",
+  "weekly_evidence": {
+    "month": 8,
+    "quality_sha256": null,
+    "row_count": 4,
+    "sha256": "bffde1a250103f52792d624d1aba5156cd96bf0602eb769e68b49e4ffef60797",
+    "uri": "kind=contract/symbol=pk/series=PK2611/frequency=1w/year=2026/month=08/part.parquet",
+    "year": 2026
+  },
+  "writes": 0,
+  "year": 2026
+}

@@ -1,0 +1,1298 @@
+{
+  "catalog_revision": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+  "rows": [
+    {
+      "symbol": "oi",
+      "contract": "OI2611",
+      "through": "2026-09-08",
+      "owner": {
+        "since": "2026-08-19",
+        "through": "2026-09-08"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2606",
+      "through": "2026-04-30",
+      "owner": {
+        "since": "2026-03-16",
+        "through": "2026-04-30"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-05-06",
+        "through": "2026-06-03"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2608",
+      "through": "2026-07-03",
+      "owner": {
+        "since": "2026-06-04",
+        "through": "2026-07-03"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2609",
+      "through": "2026-08-04",
+      "owner": {
+        "since": "2026-07-06",
+        "through": "2026-08-04"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2610",
+      "through": "2026-09-03",
+      "owner": {
+        "since": "2026-08-05",
+        "through": "2026-09-03"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-09-04",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-07-17",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2605",
+      "through": "2026-04-13",
+      "owner": {
+        "since": "2026-02-04",
+        "through": "2026-04-13"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2607",
+      "through": "2026-06-01",
+      "owner": {
+        "since": "2026-04-14",
+        "through": "2026-06-01"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2609",
+      "through": "2026-08-03",
+      "owner": {
+        "since": "2026-06-02",
+        "through": "2026-08-03"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-04",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2605",
+      "through": "2026-04-09",
+      "owner": {
+        "since": "2026-02-04",
+        "through": "2026-04-09"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2606",
+      "through": "2026-04-29",
+      "owner": {
+        "since": "2026-04-10",
+        "through": "2026-04-29"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-04-30",
+        "through": "2026-06-03"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2609",
+      "through": "2026-08-05",
+      "owner": {
+        "since": "2026-06-04",
+        "through": "2026-08-05"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2610",
+      "through": "2026-08-20",
+      "owner": {
+        "since": "2026-08-06",
+        "through": "2026-08-20"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-21",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-04-21",
+        "through": "2026-06-03"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2609",
+      "through": "2026-08-06",
+      "owner": {
+        "since": "2026-06-05",
+        "through": "2026-08-06"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-07",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "through": "2025-12-04",
+      "owner": {
+        "since": "2025-11-24",
+        "through": "2025-12-04"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "through": "2026-09-11",
+      "owner": {
+        "since": "2026-01-30",
+        "through": "2026-09-11"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2605",
+      "through": "2026-04-07",
+      "owner": {
+        "since": "2026-02-06",
+        "through": "2026-04-07"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2607",
+      "through": "2026-06-11",
+      "owner": {
+        "since": "2026-04-08",
+        "through": "2026-06-11"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-04",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2607",
+      "through": "2026-06-16",
+      "owner": {
+        "since": "2026-04-16",
+        "through": "2026-06-16"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-14",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-04-16",
+        "through": "2026-06-03"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-10",
+        "through": "2026-09-18"
+      },
+      "error_type": "MarketDataError",
+      "error_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+      "code_frames": [
+        {
+          "file": "diagnose.py",
+          "function": "<module>",
+          "line": 29
+        },
+        {
+          "file": "product_reader.py",
+          "function": "check_dependency",
+          "line": 973
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_weekly_replay_quality",
+          "line": 893
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "query_contract_replay_quality",
+          "line": 811
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "_query_contract_replay_quality_union",
+          "line": 845
+        },
+        {
+          "file": "market_data_service.py",
+          "function": "read_physical_daily_quality",
+          "line": 182
+        }
+      ]
+    }
+  ],
+  "readonly": true,
+  "provider_requests": 0,
+  "writes": 0
+}

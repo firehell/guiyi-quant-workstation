@@ -1,0 +1,60 @@
+{
+  "schema_version": "newow_weekly_conflict_source_verify_result_v1",
+  "status": "completed",
+  "stop_reason": null,
+  "plan_sha256": "8ab434338f805552d7c4deabcfb06204bd64c7269fd479868bcd2747660c5c90",
+  "catalog_revision": "a03ac32d7b62cca27a3c5b5b9aa5c55e42024a9a1e1e59e867f939fa2590598e",
+  "code_sha": "a3009d6e1e70be1f5d674d84c5e2ae66bb9a0046",
+  "attempt_id": "sm2311-20230901-001",
+  "provider_request_limit": 1,
+  "retries": 0,
+  "canonical_writes": 0,
+  "database_writes": 0,
+  "attempt": {
+    "responses_saved": 1,
+    "outcome_unknown": false
+  },
+  "weeks": [
+    {
+      "symbol": "sm",
+      "contract": "SM2311",
+      "week_end": "2023-09-01T07:00:00+00:00",
+      "iso_year": 2023,
+      "iso_week": 35,
+      "request_sha256": "37e169b030f993f9ad58fdd7176789f4750321839a8d33389413493c61f7ce60",
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 9,
+        "file_name": "part.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 8,
+          "file_name": "part.e8ac82e6fe6a923512290e5aa8f112129d123cbe3396d2bba4dd0c9d338ab4d6.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        },
+        {
+          "year": 2023,
+          "month": 9,
+          "file_name": "part.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    }
+  ],
+  "classification_counts": {
+    "INCONCLUSIVE": 1
+  },
+  "repair_target_counts": {
+    "NONE": 1
+  }
+}

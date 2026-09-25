@@ -1,0 +1,412 @@
+### Page
+- Page URL: http://127.0.0.1:5174/market/chart?view=newow&symbol=sm&strategy=oscillation&series_kind=actual_dominant&frequency=1w
+- Page Title: 归一量化工作站
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]: 本地候选只读预览 · 非实时 · 身份已核对 代码 10e6805665ede2cff18c3ebd40808dad11471529 · K线 / 牛哇截止上限 2026-09-18T07:00:00.000001Z 候选查询来源 127.0.0.1:8010；首页投影与主力元数据使用各自时间戳。 受监督正式状态来源 127.0.0.1:8000，仅 Runtime health / 当前事件，保留各自时间戳。 仅首页、牛哇与苏冰历史参考可预览；其他接口明确返回 PREVIEW_ROUTE_FORBIDDEN。
+  - main [ref=f1e11]:
+    - generic [ref=f1e12]:
+      - button "归一量化市场首页" [ref=f1e13] [cursor=pointer]: 归一量化
+      - tablist "全局导航" [ref=f1e14]:
+        - tab "市场" [ref=f1e15] [cursor=pointer]
+        - tab "消息" [ref=f1e16] [cursor=pointer]
+      - generic [ref=f1e19]:
+        - generic [ref=f1e20]: 搜索60品种
+        - combobox "搜索60品种" [ref=f1e21]
+    - generic [ref=f1e22]:
+      - button "返回市场" [ref=f1e23] [cursor=pointer]
+      - button "切换品种或合约" [ref=f1e27] [cursor=pointer]:
+        - generic [ref=f1e28]: 锰硅
+        - generic [ref=f1e29]: SM
+      - group "详情页操作" [ref=f1e32]:
+        - button "参考记录" [ref=f1e33] [cursor=pointer]
+    - generic [ref=f1e39]:
+      - generic [ref=f1e40]:
+        - generic [ref=f1e41]:
+          - strong [ref=f1e42]: —
+          - generic [ref=f1e43]: 日涨跌（较前一日收盘） —
+          - generic [ref=f1e44]: 比例 —
+        - generic [ref=f1e45]: 报价不可用
+      - generic [ref=f1e48]:
+        - paragraph [ref=f1e49]: 最近日线收盘 · 非实时 · 截至 —
+        - generic [ref=f1e50]:
+          - paragraph [ref=f1e51]: OHLCV · 最近日线收盘
+          - generic [ref=f1e52]:
+            - generic [ref=f1e53]:
+              - term [ref=f1e54]: 开
+              - definition [ref=f1e55]: —
+            - generic [ref=f1e56]:
+              - term [ref=f1e57]: 高
+              - definition [ref=f1e58]: —
+            - generic [ref=f1e59]:
+              - term [ref=f1e60]: 低
+              - definition [ref=f1e61]: —
+            - generic [ref=f1e62]:
+              - term [ref=f1e63]: 成交量
+              - definition [ref=f1e64]: —
+            - generic [ref=f1e65]:
+              - term [ref=f1e66]: 持仓量
+              - definition [ref=f1e67]: —
+    - navigation "分析视角" [ref=f1e68]:
+      - tablist "分析选项" [ref=f1e69]:
+        - tab "震荡策略" [selected] [ref=f1e70] [cursor=pointer]
+        - tab "趋势策略" [ref=f1e71] [cursor=pointer]
+        - tab "主升浪" [ref=f1e72] [cursor=pointer]
+        - tab "火天大有" [ref=f1e73] [cursor=pointer]
+        - tab "苏冰预警" [ref=f1e74] [cursor=pointer]
+        - tab "自由看盘" [ref=f1e75] [cursor=pointer]
+      - group "周期" [ref=f1e77]:
+        - button "1d" [ref=f1e78] [cursor=pointer]
+        - button "1w" [pressed] [ref=f1e79] [cursor=pointer]
+    - generic [ref=f1e81]:
+      - region "策略概览" [ref=f1e82]:
+        - generic [ref=f1e83]:
+          - strong [ref=f1e84]: 策略概览
+          - generic [ref=f1e85]:
+            - generic [ref=f1e86]: ×
+            - text: 策略空仓
+          - generic [ref=f1e87]: SM2611 · 截至 09-18 15:00
+          - generic [ref=f1e88]: 目标参考 — · 未开放
+          - generic [ref=f1e89]: 吸筹参考 — · 未开放
+          - button "查看依据" [ref=f1e90] [cursor=pointer]
+        - generic [ref=f1e91]:
+          - generic "2026-09-18T07:00:00Z" [ref=f1e92]:
+            - text: 已读取窗口最近主动作
+            - button "参考清仓 · 6050 · 08-28 15:00" [ref=f1e93] [cursor=pointer]
+          - generic [ref=f1e94]: 当前参考交易 当前无未清仓页面参考交易
+          - generic [ref=f1e95]:
+            - text: 参考浮动
+            - generic [ref=f1e96]: —
+            - text: · —
+          - generic "2026-09-18T07:00:00Z" [ref=f1e97]: 已读取状态截至 09-18 15:00
+      - generic [ref=f1e99]:
+        - generic [ref=f1e100]:
+          - generic "Newow 主图图例" [ref=f1e101]:
+            - button "震荡区间 HHV LLV ⓘ" [ref=f1e102] [cursor=pointer]:
+              - text: 震荡区间
+              - generic [ref=f1e103]: HHV
+              - generic [ref=f1e104]: LLV
+              - text: ⓘ
+          - button "图表全屏" [ref=f1e106] [cursor=pointer]: 全屏
+        - table [ref=f1e109]:
+          - row [ref=f1e110]:
+            - cell
+            - cell [ref=f1e111]
+            - cell [ref=f1e115]
+          - row [ref=f1e119]:
+            - cell [ref=f1e120]
+          - row [ref=f1e121]:
+            - cell
+            - cell [ref=f1e122]
+            - cell [ref=f1e126]
+          - row [ref=f1e130]:
+            - cell [ref=f1e131]
+          - row [ref=f1e132]:
+            - cell
+            - cell [ref=f1e133]:
+              - link "Charting by TradingView" [ref=f1e137] [cursor=pointer]:
+                - /url: https://www.tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=127.0.0.1/market/chart
+            - cell [ref=f1e142]
+          - row [ref=f1e146]:
+            - cell
+            - cell [ref=f1e147]
+            - cell [ref=f1e151]
+        - generic "策略参考动作":
+          - generic "建仓，参考价 7304，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7304
+          - generic "清仓，参考价 6820，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6820
+          - generic "建仓，参考价 6590，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6590
+          - generic "清仓，参考价 6546，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6546
+          - generic "建仓，参考价 7280，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7280
+          - generic "建仓，参考价 6082，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6082
+          - generic "清仓，参考价 6864，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6864
+          - generic "建仓，参考价 6052，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6052
+          - generic "清仓，参考价 6414，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6414
+          - generic "建仓，参考价 5590，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5590
+          - generic "清仓，参考价 5956，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 5956
+          - generic "建仓，参考价 5714，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5714
+          - generic "清仓，参考价 6192，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6192
+          - generic "建仓，参考价 5978，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5978
+          - generic "清仓，参考价 6050，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6050
+        - generic: 成交量
+        - region "Newow 辅助图层" [ref=f1e155]:
+          - generic [ref=f1e156]:
+            - button "MACD" [pressed] [ref=f1e157] [cursor=pointer]
+            - button "照妖镜" [ref=f1e158] [cursor=pointer]
+            - button "涨跌动能" [ref=f1e159] [cursor=pointer]
+            - button "主力控盘" [ref=f1e160] [cursor=pointer]
+            - generic [ref=f1e161]: DIF / DEA
+            - button "指标解读" [ref=f1e162] [cursor=pointer]: ⓘ
+            - button "杯柄说明" [ref=f1e163] [cursor=pointer]
+        - status [ref=f1e164]: 辅助资源仍在 warming。
+      - generic [ref=f1e165]:
+        - generic "2026-09-18T07:00:00.000001Z" [ref=f1e166]: 周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定
+        - button "查看最近可用历史快照" [ref=f1e167] [cursor=pointer]
+        - button "刷新当前" [ref=f1e168] [cursor=pointer]
+      - region "Newow 参考与解释" [ref=f1e169]:
+        - button "页面比较说明" [ref=f1e170] [cursor=pointer]
+        - region [ref=f1e171]:
+          - generic [ref=f1e172]:
+            - generic [ref=f1e173]:
+              - heading "参考交易" [level=3] [ref=f1e174]
+              - paragraph [ref=f1e175]: 页面参考 · 零手续费 / 零滑点 · 非账户成交
+              - group [ref=f1e176]:
+                - generic "参考口径说明" [ref=f1e177]
+            - generic [ref=f1e178]:
+              - generic "参考统计快捷窗口" [ref=f1e179]:
+                - button "近3月" [ref=f1e180] [cursor=pointer]
+                - button "近1年" [ref=f1e181] [cursor=pointer]
+                - button "今年" [ref=f1e182] [cursor=pointer]
+                - button "完整窗口" [disabled] [ref=f1e183] [cursor=pointer]
+              - generic [ref=f1e184]:
+                - text: 统计起点
+                - textbox "统计起点" [ref=f1e185]: 2023-01-01
+              - generic [ref=f1e186]:
+                - text: 统计终点
+                - textbox "统计终点" [ref=f1e187]: 2026-09-18
+              - button "应用统计窗口" [ref=f1e188] [cursor=pointer]
+          - region "参考交易统计摘要" [ref=f1e189]:
+            - status [ref=f1e190]: 所选统计区间已按权威截止完成计算。
+            - generic [ref=f1e191]:
+              - generic [ref=f1e192]:
+                - term [ref=f1e193]: 已完成
+                - definition [ref=f1e194]: "2"
+              - generic [ref=f1e195]:
+                - term [ref=f1e196]: 胜率
+                - definition [ref=f1e197]: 100%
+              - generic [ref=f1e198]:
+                - term [ref=f1e199]: 平均单笔
+                - definition [ref=f1e200]: 10.61%
+              - generic [ref=f1e201]:
+                - term [ref=f1e202]: 收益合计
+                - definition [ref=f1e203]: 21.22 百分点（简单相加）
+              - generic [ref=f1e204]:
+                - term [ref=f1e205]: 未清仓
+                - definition [ref=f1e206]: "0"
+              - generic [ref=f1e207]:
+                - term [ref=f1e208]: 换月中断
+                - definition [ref=f1e209]: "6"
+              - generic [ref=f1e210]:
+                - term [ref=f1e211]: 数据中断
+                - definition [ref=f1e212]: "0"
+              - generic [ref=f1e213]:
+                - term [ref=f1e214]: 期初已有
+                - definition [ref=f1e215]: "0"
+            - group [ref=f1e216]:
+              - generic "统计时间与来源" [ref=f1e217]
+          - article [ref=f1e218]:
+            - generic [ref=f1e219]:
+              - strong [ref=f1e220]: 空仓等待中
+              - generic [ref=f1e221]: 策略空仓 · SM2611
+            - paragraph [ref=f1e222]: 状态时间 2026-09-18 · 截至所示已完成 Bar，仅作页面参考。
+            - group [ref=f1e223]:
+              - generic "状态来源" [ref=f1e224]
+          - generic [ref=f1e225]:
+            - generic [ref=f1e226]:
+              - text: 记录筛选
+              - combobox "筛选参考历史" [ref=f1e227]:
+                - option "全部" [selected]
+                - option "已清仓"
+                - option "未清仓"
+                - option "中断记录"
+                - option "期初已有"
+            - generic [ref=f1e228]: 筛选仅改变记录，不改变服务端统计或 Performance window。
+          - generic [ref=f1e229]:
+            - article [ref=f1e230]:
+              - generic "2026-05-08T07:00:00Z → 2026-05-29T07:00:00Z" [ref=f1e231]:
+                - strong [ref=f1e232]: 换月中断
+                - generic [ref=f1e233]: SM2607 · 2026-05-08 → 2026-06-04
+              - generic [ref=f1e234]:
+                - generic [ref=f1e235]:
+                  - generic [ref=f1e236]:
+                    - term [ref=f1e237]: 参考建仓
+                    - definition [ref=f1e238]: ▲ 5978 · 2026-05-08
+                  - generic [ref=f1e239]:
+                    - term [ref=f1e240]: 参考估值
+                    - definition [ref=f1e241]: 5976 · 2026-05-29
+                  - generic [ref=f1e242]:
+                    - term [ref=f1e243]: 中断说明
+                    - definition [ref=f1e244]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=f1e245]:
+                  - text: 中断浮动
+                  - generic [ref=f1e246]: "-0.03%"
+                - button "定位参考记录 5e8a02aa0e3241ce62842879564f3c18d9682b3cd69d60c8c37e26d7226e2535 的建仓信号" [ref=f1e247] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 5e8a02aa0e3241ce62842879564f3c18d9682b3cd69d60c8c37e26d7226e2535" [ref=f1e248] [cursor=pointer]: 查看详情
+            - article [ref=f1e249]:
+              - generic "2026-02-27T07:00:00Z → 2026-03-06T07:00:00Z" [ref=f1e250]:
+                - strong [ref=f1e251]: 已清仓
+                - generic [ref=f1e252]: SM2605 · 2026-02-27 → 2026-03-06
+              - generic [ref=f1e253]:
+                - generic [ref=f1e254]:
+                  - generic [ref=f1e255]:
+                    - term [ref=f1e256]: 参考建仓
+                    - definition [ref=f1e257]: ▲ 5714 · 2026-02-27
+                  - generic [ref=f1e258]:
+                    - term [ref=f1e259]: 参考清仓
+                    - definition [ref=f1e260]: ▼ 6192 · 2026-03-06
+                - paragraph [ref=f1e261]:
+                  - text: 已清仓收益
+                  - generic [ref=f1e262]: +8.37%
+                - button "定位参考记录 42f304cda149fce657ead3c4173875ae24e4879eb47de840122c4d42c6437cc0 的建仓信号" [ref=f1e263] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 42f304cda149fce657ead3c4173875ae24e4879eb47de840122c4d42c6437cc0 的清仓信号" [ref=f1e264] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 42f304cda149fce657ead3c4173875ae24e4879eb47de840122c4d42c6437cc0" [ref=f1e265] [cursor=pointer]: 查看详情
+            - article [ref=f1e266]:
+              - generic "2025-11-21T07:00:00Z → 2025-11-28T07:00:00Z" [ref=f1e267]:
+                - strong [ref=f1e268]: 换月中断
+                - generic [ref=f1e269]: SM2601 · 2025-11-21 → 2025-12-04
+              - generic [ref=f1e270]:
+                - generic [ref=f1e271]:
+                  - generic [ref=f1e272]:
+                    - term [ref=f1e273]: 参考建仓
+                    - definition [ref=f1e274]: ▲ 5590 · 2025-11-21
+                  - generic [ref=f1e275]:
+                    - term [ref=f1e276]: 参考估值
+                    - definition [ref=f1e277]: 5612 · 2025-11-28
+                  - generic [ref=f1e278]:
+                    - term [ref=f1e279]: 中断说明
+                    - definition [ref=f1e280]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=f1e281]:
+                  - text: 中断浮动
+                  - generic [ref=f1e282]: +0.39%
+                - button "定位参考记录 b3141e13d27d77e283bbbb74e7a2590179340e1b21d29c1a0fd955c4b32307bd 的建仓信号" [ref=f1e283] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 b3141e13d27d77e283bbbb74e7a2590179340e1b21d29c1a0fd955c4b32307bd" [ref=f1e284] [cursor=pointer]: 查看详情
+            - article [ref=f1e285]:
+              - generic "2025-03-21T07:00:00Z → 2025-04-11T07:00:00Z" [ref=f1e286]:
+                - strong [ref=f1e287]: 换月中断
+                - generic [ref=f1e288]: SM2505 · 2025-03-21 → 2025-04-17
+              - generic [ref=f1e289]:
+                - generic [ref=f1e290]:
+                  - generic [ref=f1e291]:
+                    - term [ref=f1e292]: 参考建仓
+                    - definition [ref=f1e293]: ▲ 6052 · 2025-03-21
+                  - generic [ref=f1e294]:
+                    - term [ref=f1e295]: 参考估值
+                    - definition [ref=f1e296]: 5956 · 2025-04-11
+                  - generic [ref=f1e297]:
+                    - term [ref=f1e298]: 中断说明
+                    - definition [ref=f1e299]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=f1e300]:
+                  - text: 中断浮动
+                  - generic [ref=f1e301]: "-1.59%"
+                - button "定位参考记录 0f4e95a54a4447eecdcaaabc58e46dae69233736a7a8641ee7589f4152bcd329 的建仓信号" [ref=f1e302] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 0f4e95a54a4447eecdcaaabc58e46dae69233736a7a8641ee7589f4152bcd329" [ref=f1e303] [cursor=pointer]: 查看详情
+            - article [ref=f1e304]:
+              - generic "2024-12-27T07:00:00Z → 2025-01-17T07:00:00Z" [ref=f1e305]:
+                - strong [ref=f1e306]: 已清仓
+                - generic [ref=f1e307]: SM2505 · 2024-12-27 → 2025-01-17
+              - generic [ref=f1e308]:
+                - generic [ref=f1e309]:
+                  - generic [ref=f1e310]:
+                    - term [ref=f1e311]: 参考建仓
+                    - definition [ref=f1e312]: ▲ 6082 · 2024-12-27
+                  - generic [ref=f1e313]:
+                    - term [ref=f1e314]: 参考清仓
+                    - definition [ref=f1e315]: ▼ 6864 · 2025-01-17
+                - paragraph [ref=f1e316]:
+                  - text: 已清仓收益
+                  - generic [ref=f1e317]: +12.86%
+                - button "定位参考记录 3533e217072de3dd92f1159190be1ee7a672da24007fe93dc3ac45d95744a3a5 的建仓信号" [ref=f1e318] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 3533e217072de3dd92f1159190be1ee7a672da24007fe93dc3ac45d95744a3a5 的清仓信号" [ref=f1e319] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 3533e217072de3dd92f1159190be1ee7a672da24007fe93dc3ac45d95744a3a5" [ref=f1e320] [cursor=pointer]: 查看详情
+            - article [ref=f1e321]:
+              - generic "2024-07-12T07:00:00Z → 2024-12-13T07:00:00Z" [ref=f1e322]:
+                - strong [ref=f1e323]: 换月中断
+                - generic [ref=f1e324]: SM2501 · 2024-07-12 → 2024-12-18
+              - generic [ref=f1e325]:
+                - generic [ref=f1e326]:
+                  - generic [ref=f1e327]:
+                    - term [ref=f1e328]: 参考建仓
+                    - definition [ref=f1e329]: ▲ 7280 · 2024-07-12
+                  - generic [ref=f1e330]:
+                    - term [ref=f1e331]: 参考估值
+                    - definition [ref=f1e332]: 6234 · 2024-12-13
+                  - generic [ref=f1e333]:
+                    - term [ref=f1e334]: 中断说明
+                    - definition [ref=f1e335]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=f1e336]:
+                  - text: 中断浮动
+                  - generic [ref=f1e337]: "-14.37%"
+                - button "定位参考记录 c9032727fba9da0faed9b9c342ad80aee4726a617420800ee37e125bb9741e61 的建仓信号" [ref=f1e338] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 c9032727fba9da0faed9b9c342ad80aee4726a617420800ee37e125bb9741e61" [ref=f1e339] [cursor=pointer]: 查看详情
+            - article [ref=f1e340]:
+              - generic "2023-10-20T07:00:00Z → 2023-11-03T07:00:00Z" [ref=f1e341]:
+                - strong [ref=f1e342]: 换月中断
+                - generic [ref=f1e343]: SM2312 · 2023-10-20 → 2023-11-06
+              - generic [ref=f1e344]:
+                - generic [ref=f1e345]:
+                  - generic [ref=f1e346]:
+                    - term [ref=f1e347]: 参考建仓
+                    - definition [ref=f1e348]: ▲ 6590 · 2023-10-20
+                  - generic [ref=f1e349]:
+                    - term [ref=f1e350]: 参考估值
+                    - definition [ref=f1e351]: 6800 · 2023-11-03
+                  - generic [ref=f1e352]:
+                    - term [ref=f1e353]: 中断说明
+                    - definition [ref=f1e354]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=f1e355]:
+                  - text: 中断浮动
+                  - generic [ref=f1e356]: +3.19%
+                - button "定位参考记录 f2d1b5ea9e994f6d496c94d15092226209533d284c26b73a4b631d70510a6409 的建仓信号" [ref=f1e357] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 f2d1b5ea9e994f6d496c94d15092226209533d284c26b73a4b631d70510a6409" [ref=f1e358] [cursor=pointer]: 查看详情
+            - article [ref=f1e359]:
+              - generic "2023-03-10T07:00:00Z → 2023-04-14T07:00:00Z" [ref=f1e360]:
+                - strong [ref=f1e361]: 换月中断
+                - generic [ref=f1e362]: SM2305 · 2023-03-10 → 2023-04-17
+              - generic [ref=f1e363]:
+                - generic [ref=f1e364]:
+                  - generic [ref=f1e365]:
+                    - term [ref=f1e366]: 参考建仓
+                    - definition [ref=f1e367]: ▲ 7304 · 2023-03-10
+                  - generic [ref=f1e368]:
+                    - term [ref=f1e369]: 参考估值
+                    - definition [ref=f1e370]: 7132 · 2023-04-14
+                  - generic [ref=f1e371]:
+                    - term [ref=f1e372]: 中断说明
+                    - definition [ref=f1e373]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=f1e374]:
+                  - text: 中断浮动
+                  - generic [ref=f1e375]: "-2.35%"
+                - button "定位参考记录 87baee39ae8c1423cf0e9333dea3fc2f4065a765105febf17ae4f5c3a19160b4 的建仓信号" [ref=f1e376] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 87baee39ae8c1423cf0e9333dea3fc2f4065a765105febf17ae4f5c3a19160b4" [ref=f1e377] [cursor=pointer]: 查看详情
+        - region "统一参考交易" [ref=f1e378]:
+          - generic [ref=f1e379]:
+            - heading "参考交易" [level=2] [ref=f1e380]
+            - navigation "参考记录模式" [ref=f1e381]:
+              - button "历史参考" [ref=f1e382] [cursor=pointer]
+              - button "盘中观察参考" [pressed] [ref=f1e383] [cursor=pointer]
+          - paragraph [ref=f1e384]: 零费用、零滑点的页面参考记录；不代表账户成交。
+          - status [ref=f1e385]: 已保存的历史参考暂不可用，请稍后重试。
+```
+### Events
+- New console entries: .playwright-cli/console-2026-09-24T03-26-19-933Z.log#L1-L8

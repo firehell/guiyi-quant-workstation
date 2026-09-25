@@ -1,0 +1,263 @@
+### Page
+- Page URL: http://127.0.0.1:5174/market/chart?view=newow&symbol=pk&strategy=trend&series_kind=actual_dominant&frequency=1w
+- Page Title: 归一量化工作站
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]: 本地候选只读预览 · 非实时 · 身份已核对 代码 01375ae8bb448487ba7eadca1373a5c5c548dedf · K线 / 牛哇截止上限 2026-09-18T07:00:00.000001Z 候选查询来源 127.0.0.1:8010；首页投影与主力元数据使用各自时间戳。 受监督正式状态来源 127.0.0.1:8000，仅 Runtime health / 当前事件，保留各自时间戳。 仅首页、牛哇与苏冰历史参考可预览；其他接口明确返回 PREVIEW_ROUTE_FORBIDDEN。
+  - main [ref=f1e11]:
+    - generic [ref=f1e12]:
+      - button "归一量化市场首页" [ref=f1e13] [cursor=pointer]: 归一量化
+      - tablist "全局导航" [ref=f1e14]:
+        - tab "市场" [ref=f1e15] [cursor=pointer]
+        - tab "消息" [ref=f1e16] [cursor=pointer]
+      - generic [ref=f1e19]:
+        - generic [ref=f1e20]: 搜索60品种
+        - combobox "搜索60品种" [ref=f1e21]
+    - generic [ref=f1e22]:
+      - button "返回市场" [ref=f1e23] [cursor=pointer]
+      - button "切换品种或合约" [ref=f1e27] [cursor=pointer]:
+        - generic [ref=f1e28]: 花生
+        - generic [ref=f1e29]: PK
+      - group "详情页操作" [ref=f1e32]:
+        - button "参考记录" [ref=f1e33] [cursor=pointer]
+    - generic [ref=f1e39]:
+      - generic [ref=f1e40]:
+        - generic [ref=f1e41]:
+          - strong [ref=f1e42]: —
+          - generic [ref=f1e43]: 日涨跌（较前一日收盘） —
+          - generic [ref=f1e44]: 比例 —
+        - generic [ref=f1e45]: 报价不可用
+      - generic [ref=f1e48]:
+        - paragraph [ref=f1e49]: 最近日线收盘 · 非实时 · 截至 —
+        - generic [ref=f1e50]:
+          - paragraph [ref=f1e51]: OHLCV · 最近日线收盘
+          - generic [ref=f1e52]:
+            - generic [ref=f1e53]:
+              - term [ref=f1e54]: 开
+              - definition [ref=f1e55]: —
+            - generic [ref=f1e56]:
+              - term [ref=f1e57]: 高
+              - definition [ref=f1e58]: —
+            - generic [ref=f1e59]:
+              - term [ref=f1e60]: 低
+              - definition [ref=f1e61]: —
+            - generic [ref=f1e62]:
+              - term [ref=f1e63]: 成交量
+              - definition [ref=f1e64]: —
+            - generic [ref=f1e65]:
+              - term [ref=f1e66]: 持仓量
+              - definition [ref=f1e67]: —
+    - navigation "分析视角" [ref=f1e68]:
+      - tablist "分析选项" [ref=f1e69]:
+        - tab "震荡策略" [ref=f1e70] [cursor=pointer]
+        - tab "趋势策略" [selected] [ref=f1e71] [cursor=pointer]
+        - tab "主升浪" [ref=f1e72] [cursor=pointer]
+        - tab "火天大有" [ref=f1e73] [cursor=pointer]
+        - tab "苏冰预警" [ref=f1e74] [cursor=pointer]
+        - tab "自由看盘" [ref=f1e75] [cursor=pointer]
+      - group "周期" [ref=f1e77]:
+        - button "1d" [ref=f1e78] [cursor=pointer]
+        - button "1w" [pressed] [ref=f1e79] [cursor=pointer]
+    - generic [ref=f1e81]:
+      - region "策略概览" [ref=f1e82]:
+        - generic [ref=f1e83]:
+          - strong [ref=f1e84]: 策略概览
+          - generic [ref=f1e85]:
+            - generic [ref=f1e86]: ×
+            - text: 策略空仓
+          - generic [ref=f1e87]: PK2611 · 截至 09-18 15:00
+          - generic [ref=f1e88]: 目标参考 — · 未开放
+          - generic [ref=f1e89]: 吸筹参考 — · 未开放
+          - button "查看依据" [ref=f1e90] [cursor=pointer]
+        - generic [ref=f1e91]:
+          - generic "2026-09-18T07:00:00Z" [ref=f1e196]:
+            - text: 已读取窗口最近主动作
+            - button "参考清仓 · 8290.2667 · 07-17 15:00" [ref=f1e197] [cursor=pointer]
+          - generic [ref=f1e93]: 当前参考交易 参考交易当前不可用
+          - generic [ref=f1e94]:
+            - text: 参考浮动
+            - generic [ref=f1e95]: —
+            - text: · —
+          - generic "2026-09-18T07:00:00Z" [ref=f1e198]: 已读取状态截至 09-18 15:00
+      - generic [ref=f1e98]:
+        - generic [ref=f1e99]:
+          - generic "Newow 主图图例" [ref=f1e100]:
+            - button "趋势带 B A ⓘ" [ref=f1e199] [cursor=pointer]:
+              - text: 趋势带
+              - generic [ref=f1e200]: B
+              - generic [ref=f1e201]: A
+              - text: ⓘ
+            - group [ref=f1e202]:
+              - generic "过程提示" [ref=f1e203] [cursor=pointer]
+          - button "图表全屏" [ref=f1e103] [cursor=pointer]: 全屏
+        - table [ref=f1e106]:
+          - row [ref=f1e107]:
+            - cell
+            - cell [ref=f1e108]
+            - cell [ref=f1e112]
+          - row [ref=f1e116]:
+            - cell [ref=f1e117]
+          - row [ref=f1e118]:
+            - cell
+            - cell [ref=f1e119]
+            - cell [ref=f1e123]
+          - row [ref=f1e127]:
+            - cell [ref=f1e128]
+          - row [ref=f1e129]:
+            - cell
+            - cell [ref=f1e130]:
+              - link "Charting by TradingView" [ref=f1e134] [cursor=pointer]:
+                - /url: https://www.tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=127.0.0.1/market/chart
+            - cell [ref=f1e139]
+          - row [ref=f1e143]:
+            - cell
+            - cell [ref=f1e144]
+            - cell [ref=f1e148]
+        - generic "策略参考动作":
+          - generic "建仓，参考价 10378，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 10378
+          - generic "清仓，参考价 10599，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 10599
+          - generic "建仓，参考价 10490，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 10490
+          - generic "清仓，参考价 10442，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 10442
+          - generic "建仓，参考价 9937，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 9937
+          - generic "清仓，参考价 9923，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 9923
+          - generic "建仓，参考价 9909，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 9909
+          - generic "清仓，参考价 10279，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 10279
+          - generic "建仓，参考价 8867，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8867
+          - generic "清仓，参考价 8835，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8835
+          - generic "建仓，参考价 8816，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8816
+          - generic "清仓，参考价 9208，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 9208
+          - generic "建仓，参考价 8916，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8916
+          - generic "清仓，参考价 8874，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8874
+          - generic "建仓，参考价 8120，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8120
+          - generic "清仓，参考价 8067，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8067
+          - generic "建仓，参考价 7944，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7944
+          - generic "清仓，参考价 7919，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 7919
+          - generic "建仓，参考价 7905，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7905
+          - generic "清仓，参考价 8138，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8138
+          - generic "建仓，参考价 8155，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8155
+          - generic "建仓，参考价 8198，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8198
+          - generic "清仓，参考价 8222，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8222
+          - generic "建仓，参考价 8231，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8231
+          - generic "清仓，参考价 8242，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8242
+          - generic "建仓，参考价 7863，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7863
+          - generic "清仓，参考价 7852，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 7852
+          - generic "建仓，参考价 7837，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7837
+          - generic "清仓，参考价 7838，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 7838
+          - generic "建仓，参考价 7862，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7862
+          - generic "清仓，参考价 7971，策略参考动作": ▽
+          - generic "建仓，参考价 7981，策略参考动作": △
+          - generic "建仓，参考价 7929，策略参考动作": △
+          - generic "清仓，参考价 8371，策略参考动作": ▽
+          - generic "建仓，参考价 8311，策略参考动作": △
+          - generic "清仓，参考价 8290，策略参考动作": ▽
+        - generic: 成交量
+        - region "Newow 辅助图层" [ref=f1e152]:
+          - generic [ref=f1e153]:
+            - button "MACD" [pressed] [ref=f1e154] [cursor=pointer]
+            - button "照妖镜" [ref=f1e155] [cursor=pointer]
+            - button "涨跌动能" [ref=f1e156] [cursor=pointer]
+            - button "主力控盘" [ref=f1e157] [cursor=pointer]
+            - generic [ref=f1e158]: DIF / DEA
+            - button "指标解读" [ref=f1e159] [cursor=pointer]: ⓘ
+            - button "杯柄说明" [ref=f1e160] [cursor=pointer]
+        - status [ref=f1e204]: 正在加载辅助资源…
+      - generic [ref=f1e162]:
+        - generic "2026-09-18T07:00:00.000001Z" [ref=f1e163]: 周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定
+        - button "查看最近可用历史快照" [ref=f1e164] [cursor=pointer]
+        - button "刷新当前" [ref=f1e165] [cursor=pointer]
+      - region "Newow 参考与解释" [ref=f1e166]:
+        - button "页面比较说明" [ref=f1e167] [cursor=pointer]
+        - region [ref=f1e168]:
+          - generic [ref=f1e169]:
+            - generic [ref=f1e170]:
+              - heading "参考交易" [level=3] [ref=f1e171]
+              - paragraph [ref=f1e172]: 页面参考 · 零手续费 / 零滑点 · 非账户成交
+              - group [ref=f1e173]:
+                - generic "参考口径说明" [ref=f1e174]
+            - generic [ref=f1e175]:
+              - generic "参考统计快捷窗口" [ref=f1e176]:
+                - button "近3月" [disabled] [ref=f1e177] [cursor=pointer]
+                - button "近1年" [disabled] [ref=f1e178] [cursor=pointer]
+                - button "今年" [disabled] [ref=f1e179] [cursor=pointer]
+                - button "完整窗口" [disabled] [ref=f1e180] [cursor=pointer]
+              - generic [ref=f1e181]:
+                - text: 统计起点
+                - textbox "统计起点" [ref=f1e182]
+              - generic [ref=f1e183]:
+                - text: 统计终点
+                - textbox "统计终点" [ref=f1e184]
+              - button "读取中…" [disabled] [ref=f1e205] [cursor=pointer]
+          - status [ref=f1e186]: 正在加载…
+        - region "统一参考交易" [ref=f1e188]:
+          - generic [ref=f1e189]:
+            - heading "参考交易" [level=2] [ref=f1e190]
+            - navigation "参考记录模式" [ref=f1e191]:
+              - button "历史参考" [ref=f1e192] [cursor=pointer]
+              - button "盘中观察参考" [pressed] [ref=f1e193] [cursor=pointer]
+          - paragraph [ref=f1e194]: 零费用、零滑点的页面参考记录；不代表账户成交。
+          - status [ref=f1e195]: 已保存的历史参考暂不可用，请稍后重试。
+```
+### Events
+- New console entries: .playwright-cli/console-2026-09-24T01-55-47-646Z.log#L7

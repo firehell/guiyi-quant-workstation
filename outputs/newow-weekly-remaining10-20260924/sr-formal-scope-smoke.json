@@ -1,0 +1,54 @@
+{
+  "status": "passed",
+  "scope_count": 51,
+  "schema_version": "newow_product_capabilities_v13",
+  "formal_sections": [
+    [
+      "trend",
+      "chart",
+      "READY"
+    ],
+    [
+      "trend",
+      "reference",
+      "READY"
+    ],
+    [
+      "trend",
+      "auxiliary",
+      "READY"
+    ],
+    [
+      "oscillation",
+      "chart",
+      "READY"
+    ],
+    [
+      "oscillation",
+      "reference",
+      "READY"
+    ],
+    [
+      "oscillation",
+      "auxiliary",
+      "READY"
+    ],
+    [
+      "main_rise",
+      "chart",
+      "READY"
+    ],
+    [
+      "main_rise",
+      "reference",
+      "READY"
+    ],
+    [
+      "main_rise",
+      "auxiliary",
+      "READY"
+    ]
+  ],
+  "pf_still_closed": true,
+  "database_mode": "read_only"
+}

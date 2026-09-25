@@ -1,0 +1,33 @@
+{
+  "schema_version": "newow_weekly_release_candidate_preflight_v1",
+  "code_commit": "10e6805665ede2cff18c3ebd40808dad11471529",
+  "branch": "codex/release-newow-weekly-60-rc",
+  "baseline_release": "v1.10.30@120c5c9490b9909bb64b2e55a5fb5893e57a04c0",
+  "as_of": "2026-09-18T07:00:00.000001Z",
+  "frequency": "1w",
+  "strategies": [
+    "trend",
+    "oscillation",
+    "main_rise"
+  ],
+  "product_count": 60,
+  "case_count": 180,
+  "product_set_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+  "added_products": [
+    "pf",
+    "pk",
+    "pl",
+    "pr",
+    "px",
+    "rs",
+    "sf",
+    "sh",
+    "sm",
+    "sr"
+  ],
+  "release_version": "PENDING",
+  "main_merge": false,
+  "tag": false,
+  "github_release": false,
+  "runtime_promotion": false
+}

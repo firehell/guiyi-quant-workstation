@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "provider_requests": 0,
+  "writes": 0,
+  "catalog_revision": "614a2185c7d59cb63f495a3194c0477cc08d21484d5c02846009f1b2098c6406",
+  "active_w1_uri": "kind=contract/symbol=sr/series=SR2303/frequency=1w/year=2022/month=03/part.bfea4244281706b53333d6e170997a5eedf581090e0ce2f4f657961c3c073ac8.parquet",
+  "active_w1_sha256": "bfea4244281706b53333d6e170997a5eedf581090e0ce2f4f657961c3c073ac8",
+  "old_w1_retained": true,
+  "month_rows": 2,
+  "changed_week_ends": [
+    "2022-03-18"
+  ],
+  "d1_preimages_unchanged": true,
+  "mds_quality_readback": "passed",
+  "new_ohlc": {
+    "close": "6011.000000000000000000",
+    "high": "6053.000000000000000000",
+    "low": "5954.000000000000000000",
+    "open": "6053.000000000000000000"
+  }
+}

@@ -1,0 +1,1 @@
+{"applied":0,"blocked":0,"failed":1,"failures":[{"dataset":["contract","a","A2611","1w"],"month":9,"reason_code":"RecoveryError","year":2026}],"provider_requests":2,"status":"failed"}

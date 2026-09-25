@@ -1,0 +1,53 @@
+{
+  "schema_version": "newow_weekly_conflict_source_verify_result_v1",
+  "status": "completed",
+  "stop_reason": null,
+  "plan_sha256": "21171de4b2e8f6e8f6fa5969aea4012479d22d214348af4e225f1f8098768495",
+  "catalog_revision": "2b75be99f44442dbe5b029ddc68dbab6aed3b2393341fbc6610a662b008b45d9",
+  "code_sha": "ba986e588f617575b68511669029454107404d97",
+  "attempt_id": "pk2611-20260814-001",
+  "provider_request_limit": 1,
+  "retries": 0,
+  "canonical_writes": 0,
+  "database_writes": 0,
+  "attempt": {
+    "responses_saved": 1,
+    "outcome_unknown": false
+  },
+  "weeks": [
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "week_end": "2026-08-14T07:00:00+00:00",
+      "iso_year": 2026,
+      "iso_week": 33,
+      "request_sha256": "af5b077e986af9d1e7cea5846be893e3f9f6d9782141dff091ce398f609734bd",
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 8,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file_name": "part.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "PROVIDER_MATCHES_NEITHER_D1_STALE",
+      "repair_target": "D1_THEN_W1",
+      "stop_queue": false,
+      "reason": "STORED_D1_TURNOVER_STALE"
+    }
+  ],
+  "classification_counts": {
+    "PROVIDER_MATCHES_NEITHER_D1_STALE": 1
+  },
+  "repair_target_counts": {
+    "D1_THEN_W1": 1
+  }
+}

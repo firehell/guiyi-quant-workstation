@@ -1,0 +1,170 @@
+{
+  "status": "audited",
+  "complete": true,
+  "budget_exhausted": false,
+  "weekly": [
+    {
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+          "reason": "NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE"
+        }
+      }
+    },
+    {
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "UNAVAILABLE",
+          "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+          "reason": "NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS"
+        }
+      }
+    },
+    {
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+          "reason": "NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE"
+        }
+      }
+    }
+  ],
+  "basis": "actual post-apply Catalog read; candidate weekly policy; no Scope change"
+}

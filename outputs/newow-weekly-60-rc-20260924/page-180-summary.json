@@ -1,0 +1,18 @@
+{
+  "schema_version": "newow_weekly_candidate_180_page_v1",
+  "code_commit": "10e6805665ede2cff18c3ebd40808dad11471529",
+  "as_of": "2026-09-18T07:00:00.000001Z",
+  "products": 60,
+  "cases": 180,
+  "first_load_valid_cases": 180,
+  "page_chart_states": {
+    "ready": 179,
+    "warming": 1
+  },
+  "reference_summary_visible": 180,
+  "status_mismatch_count": 0,
+  "initial_attempts": 192,
+  "initial_429_count": 8,
+  "final_unresolved_count": 0,
+  "browser_jsonl_sha256": "16e5ddb8cddd1254197e6ad48c9e1f359f683031d8ab0d0fbca94e01869ca5d0"
+}

@@ -1,0 +1,51 @@
+{
+  "august_evidence": {
+    "month": 8,
+    "quality_sha256": null,
+    "row_count": 23,
+    "sha256": "e8ac82e6fe6a923512290e5aa8f112129d123cbe3396d2bba4dd0c9d338ab4d6",
+    "uri": "kind=contract/symbol=sm/series=SM2311/frequency=1d/year=2023/month=08/part.e8ac82e6fe6a923512290e5aa8f112129d123cbe3396d2bba4dd0c9d338ab4d6.parquet",
+    "year": 2023
+  },
+  "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+  "catalog_revision": "a03ac32d7b62cca27a3c5b5b9aa5c55e42024a9a1e1e59e867f939fa2590598e",
+  "code_sha": "a3009d6e1e70be1f5d674d84c5e2ae66bb9a0046",
+  "project_env_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+  "provider_requests": 0,
+  "schema_version": "sm2311_paired_turnover_repair_v1",
+  "source_plan_sha256": "aa523b08464072f29aea656bb44034b82b93aac5c50e5470f264680ff255fc9a",
+  "source_response_sha256": "e076a50b8733563864ed5af8d188494579426cd0a83bee3b040cfe5876550af4",
+  "source_result_sha256": "d0d100d743ee337ad9137f8c7c94677860ceac6b72696b54593e8137e1c5f98a",
+  "source_sha256": "9871a8bab9e92d3514e4d53aed7864489b114ff166bf6c03395acd389acad63f",
+  "targets": [
+    {
+      "candidate_sha256": "5b8f9cbc1c195414007a2843e9419133fda2e95724a8ccd52da90856bc06b4c7",
+      "candidate_uri": "kind=contract/symbol=sm/series=SM2311/frequency=1d/year=2023/month=09/part.5b8f9cbc1c195414007a2843e9419133fda2e95724a8ccd52da90856bc06b4c7.parquet",
+      "frequency": "1d",
+      "old": {
+        "month": 9,
+        "quality_sha256": null,
+        "row_count": 20,
+        "sha256": "e08412f672d4f0ec8ff7b0d5899eb2747ee8d24c69492c71e5e66d98da3a1a93",
+        "uri": "kind=contract/symbol=sm/series=SM2311/frequency=1d/year=2023/month=09/part.parquet",
+        "year": 2023
+      },
+      "row_count": 20
+    },
+    {
+      "candidate_sha256": "3472b652fd4c81ee36ae48ca4a7ca37af70c1081c4745249284c0f498fc7ef0d",
+      "candidate_uri": "kind=contract/symbol=sm/series=SM2311/frequency=1w/year=2023/month=09/part.3472b652fd4c81ee36ae48ca4a7ca37af70c1081c4745249284c0f498fc7ef0d.parquet",
+      "frequency": "1w",
+      "old": {
+        "month": 9,
+        "quality_sha256": null,
+        "row_count": 5,
+        "sha256": "d00b57d00288b4df2798d65a332cbf1114c5c7567cc9192e9d04806620ceff50",
+        "uri": "kind=contract/symbol=sm/series=SM2311/frequency=1w/year=2023/month=09/part.parquet",
+        "year": 2023
+      },
+      "row_count": 5
+    }
+  ],
+  "writes": 0
+}

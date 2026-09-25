@@ -1,0 +1,5537 @@
+{
+  "audit_identity": {
+    "code_sha": "6423d85131e1f0ae3855bd7096c911d795461556",
+    "products": [
+      "cj",
+      "oi",
+      "pf",
+      "pk",
+      "pl",
+      "pr",
+      "px",
+      "rs",
+      "sf",
+      "sh",
+      "sm",
+      "sr"
+    ],
+    "started_at": "2026-09-23T01:01:29.815977+00:00",
+    "readonly": true,
+    "provider_requests": 0,
+    "writes": 0,
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+    "complete_week": {
+      "cj": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "oi": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pf": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pk": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pl": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pr": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "px": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "rs": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sf": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sh": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sm": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sr": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ]
+    },
+    "as_of": "2026-09-18T07:00:00.000001+00:00",
+    "catalog_revision_before": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+    "catalog_revision_after": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+    "catalog_revision_stable": true,
+    "catalog_revision_fresh_after": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+    "fresh_revision_unchanged": true,
+    "finished_at": "2026-09-23T01:13:26.490795+00:00"
+  },
+  "cases": [
+    {
+      "symbol": "cj",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "SOURCE_EXCEPTION",
+        "error": {
+          "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+          "diagnostic": {
+            "reason": "SOURCE_NONPOSITIVE_PRICE",
+            "context": {
+              "symbol": "cj",
+              "contract": "CJ2305",
+              "frequency": "1w",
+              "trading_day": "2022-05-20",
+              "cutoff": "2022-05-20T07:00:00+00:00"
+            },
+            "historical_candidate_recoverable": false
+          }
+        },
+        "reason": "SOURCE_NONPOSITIVE_PRICE"
+      },
+      "sections": {
+        "chart": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:macd": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:main_force_control": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:cup_handle": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "reference": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      }
+    },
+    {
+      "symbol": "cj",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "SOURCE_EXCEPTION",
+        "error": {
+          "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+          "diagnostic": {
+            "reason": "SOURCE_NONPOSITIVE_PRICE",
+            "context": {
+              "symbol": "cj",
+              "contract": "CJ2305",
+              "frequency": "1w",
+              "trading_day": "2022-05-20",
+              "cutoff": "2022-05-20T07:00:00+00:00"
+            },
+            "historical_candidate_recoverable": false
+          }
+        },
+        "reason": "SOURCE_NONPOSITIVE_PRICE"
+      },
+      "sections": {
+        "chart": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:macd": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:main_force_control": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:cup_handle": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "reference": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      }
+    },
+    {
+      "symbol": "cj",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "SOURCE_EXCEPTION",
+        "error": {
+          "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+          "diagnostic": {
+            "reason": "SOURCE_NONPOSITIVE_PRICE",
+            "context": {
+              "symbol": "cj",
+              "contract": "CJ2305",
+              "frequency": "1w",
+              "trading_day": "2022-05-20",
+              "cutoff": "2022-05-20T07:00:00+00:00"
+            },
+            "historical_candidate_recoverable": false
+          }
+        },
+        "reason": "SOURCE_NONPOSITIVE_PRICE"
+      },
+      "sections": {
+        "chart": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:macd": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:main_force_control": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:cup_handle": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "reference": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "cj",
+                "contract": "CJ2305",
+                "frequency": "1w",
+                "trading_day": "2022-05-20",
+                "cutoff": "2022-05-20T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "OI2611",
+              "trading_day": "2025-11-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "OI2611",
+              "trading_day": "2025-11-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "OI2611",
+              "trading_day": "2025-11-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "OI2611",
+                "trading_day": "2025-11-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pf",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2304",
+              "trading_day": "2022-04-22"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pf",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2304",
+              "trading_day": "2022-04-22"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pf",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2304",
+              "trading_day": "2022-04-22"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PF2304",
+                "trading_day": "2022-04-22"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pk",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PK2411",
+              "trading_day": "2023-11-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pk",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PK2411",
+              "trading_day": "2023-11-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pk",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PK2411",
+              "trading_day": "2023-11-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PK2411",
+                "trading_day": "2023-11-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pl",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2603",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pl",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2603",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pl",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2603",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PL2603",
+                "trading_day": "2025-07-25"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pr",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2506",
+              "trading_day": "2024-08-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pr",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2506",
+              "trading_day": "2024-08-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "pr",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2506",
+              "trading_day": "2024-08-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PR2506",
+                "trading_day": "2024-08-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "px",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2505",
+              "trading_day": "2024-05-24"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "px",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2505",
+              "trading_day": "2024-05-24"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "px",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2505",
+              "trading_day": "2024-05-24"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "PX2505",
+                "trading_day": "2024-05-24"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "rs",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "RS2609",
+              "trading_day": "2025-09-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "rs",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "RS2609",
+              "trading_day": "2025-09-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "rs",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "RS2609",
+              "trading_day": "2025-09-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "RS2609",
+                "trading_day": "2025-09-30"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sf",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2306",
+              "trading_day": "2022-06-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sf",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2306",
+              "trading_day": "2022-06-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sf",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2306",
+              "trading_day": "2022-06-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SF2306",
+                "trading_day": "2022-06-17"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sh",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2501",
+              "trading_day": "2024-01-19"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sh",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2501",
+              "trading_day": "2024-01-19"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sh",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2501",
+              "trading_day": "2024-01-19"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SH2501",
+                "trading_day": "2024-01-19"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sm",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2310",
+              "trading_day": "2022-10-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sm",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2310",
+              "trading_day": "2022-10-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sm",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "DATA_UNAVAILABLE",
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2310",
+              "trading_day": "2022-10-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        },
+        "reason": "REPLAY_ENDPOINTS_MISSING"
+      },
+      "sections": {
+        "chart": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:macd": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "reference": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "DATA_UNAVAILABLE",
+          "error": {
+            "code": "NEWOW_DATA_UNAVAILABLE",
+            "diagnostic": {
+              "reason": "REPLAY_ENDPOINTS_MISSING",
+              "context": {
+                "contract": "SM2310",
+                "trading_day": "2022-10-28"
+              },
+              "historical_candidate_recoverable": true
+            }
+          },
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      }
+    },
+    {
+      "symbol": "sr",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "SOURCE_EXCEPTION",
+        "error": {
+          "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+          "diagnostic": {
+            "reason": "SOURCE_NONPOSITIVE_PRICE",
+            "context": {
+              "symbol": "sr",
+              "contract": "SR2303",
+              "frequency": "1w",
+              "trading_day": "2022-03-18",
+              "cutoff": "2022-03-18T07:00:00+00:00"
+            },
+            "historical_candidate_recoverable": false
+          }
+        },
+        "reason": "SOURCE_NONPOSITIVE_PRICE"
+      },
+      "sections": {
+        "chart": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:macd": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:main_force_control": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:cup_handle": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "reference": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      }
+    },
+    {
+      "symbol": "sr",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "SOURCE_EXCEPTION",
+        "error": {
+          "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+          "diagnostic": {
+            "reason": "SOURCE_NONPOSITIVE_PRICE",
+            "context": {
+              "symbol": "sr",
+              "contract": "SR2303",
+              "frequency": "1w",
+              "trading_day": "2022-03-18",
+              "cutoff": "2022-03-18T07:00:00+00:00"
+            },
+            "historical_candidate_recoverable": false
+          }
+        },
+        "reason": "SOURCE_NONPOSITIVE_PRICE"
+      },
+      "sections": {
+        "chart": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:macd": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:main_force_control": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:cup_handle": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "reference": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      }
+    },
+    {
+      "symbol": "sr",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "SOURCE_EXCEPTION",
+        "error": {
+          "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+          "diagnostic": {
+            "reason": "SOURCE_NONPOSITIVE_PRICE",
+            "context": {
+              "symbol": "sr",
+              "contract": "SR2303",
+              "frequency": "1w",
+              "trading_day": "2022-03-18",
+              "cutoff": "2022-03-18T07:00:00+00:00"
+            },
+            "historical_candidate_recoverable": false
+          }
+        },
+        "reason": "SOURCE_NONPOSITIVE_PRICE"
+      },
+      "sections": {
+        "chart": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:macd": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:main_force_control": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "auxiliary:cup_handle": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "reference": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "SOURCE_EXCEPTION",
+          "error": {
+            "code": "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+            "diagnostic": {
+              "reason": "SOURCE_NONPOSITIVE_PRICE",
+              "context": {
+                "symbol": "sr",
+                "contract": "SR2303",
+                "frequency": "1w",
+                "trading_day": "2022-03-18",
+                "cutoff": "2022-03-18T07:00:00+00:00"
+              },
+              "historical_candidate_recoverable": false
+            }
+          },
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      }
+    }
+  ]
+}

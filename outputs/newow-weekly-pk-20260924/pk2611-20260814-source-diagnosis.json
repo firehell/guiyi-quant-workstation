@@ -1,0 +1,229 @@
+{
+  "schema_version": "newow_weekly_conflict_diagnosis_v2",
+  "status": "diagnosed",
+  "catalog_revision_stable": true,
+  "catalog_revision_before": "2b75be99f44442dbe5b029ddc68dbab6aed3b2393341fbc6610a662b008b45d9",
+  "catalog_revision_after": "2b75be99f44442dbe5b029ddc68dbab6aed3b2393341fbc6610a662b008b45d9",
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "code_sha": "ba986e588f617575b68511669029454107404d97",
+  "input_sha256": "49ed566cd4fe68363a6365cb2e46ee1d9b0857ac1e66f0b5b8ac083e530bb7c8",
+  "contracts": [
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "requested_through": "2026-09-18",
+      "first_conflict_week": {
+        "iso_year": 2026,
+        "iso_week": 29,
+        "week_end": "2026-07-17T07:00:00+00:00",
+        "trading_day": "2026-07-17",
+        "first_daily_endpoint": "2026-07-13T07:00:00+00:00",
+        "last_daily_endpoint": "2026-07-17T07:00:00+00:00",
+        "daily_trading_days": [
+          "2026-07-13",
+          "2026-07-14",
+          "2026-07-15",
+          "2026-07-16",
+          "2026-07-17"
+        ],
+        "cross_month": false
+      },
+      "conflict_week_count": 1,
+      "conflict_weeks": [
+        {
+          "iso_year": 2026,
+          "iso_week": 33,
+          "week_end": "2026-08-14T07:00:00+00:00",
+          "trading_day": "2026-08-14",
+          "first_daily_endpoint": "2026-08-10T07:00:00+00:00",
+          "last_daily_endpoint": "2026-08-14T07:00:00+00:00",
+          "daily_trading_days": [
+            "2026-08-10",
+            "2026-08-11",
+            "2026-08-12",
+            "2026-08-13",
+            "2026-08-14"
+          ],
+          "cross_month": false,
+          "identity": {
+            "stored_weekly_bar_end": "2026-08-14T07:00:00+00:00",
+            "stored_weekly_trading_day": "2026-08-14",
+            "d1_aggregate_bar_end": "2026-08-14T07:00:00+00:00",
+            "d1_aggregate_trading_day": "2026-08-14",
+            "contract_owner_equal": true,
+            "session_endpoint_equal": true
+          },
+          "fields": {
+            "open": {
+              "stored": "8212.000000000000000000",
+              "d1_aggregate": "8212.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "high": {
+              "stored": "8274.000000000000000000",
+              "d1_aggregate": "8274.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "low": {
+              "stored": "8160.000000000000000000",
+              "d1_aggregate": "8160.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "close": {
+              "stored": "8230.000000000000000000",
+              "d1_aggregate": "8230.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "volume": {
+              "stored": "592860.000000000000000000",
+              "d1_aggregate": "592860.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "turnover": {
+              "stored": "24319865600.000000000000000000",
+              "d1_aggregate": "24320323690.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": false,
+              "precision_equal": true
+            },
+            "open_interest": {
+              "stored": "209264.000000000000000000",
+              "d1_aggregate": "209264.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            }
+          },
+          "numeric_conflict_fields": [
+            "turnover"
+          ],
+          "precision_only_fields": [],
+          "stored_w1_partition": {
+            "year": 2026,
+            "month": 8,
+            "file_name": "part.parquet",
+            "row_count": 4,
+            "source_quality_sha256": null
+          },
+          "d1_partitions": [
+            {
+              "year": 2026,
+              "month": 8,
+              "file_name": "part.parquet",
+              "row_count": 21,
+              "source_quality_sha256": null
+            }
+          ],
+          "d1_revision_sha256": "1a6fa5cb2d5ce242524b416260846c1e421b3f7eeebbb2bea015a9bcff0f822d"
+        }
+      ],
+      "identity": {
+        "stored_weekly_bar_end": "2026-07-17T07:00:00+00:00",
+        "stored_weekly_trading_day": "2026-07-17",
+        "d1_aggregate_bar_end": "2026-07-17T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2026-07-17",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "8444.000000000000000000",
+          "d1_aggregate": "8444.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "8452.000000000000000000",
+          "d1_aggregate": "8452.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "8212.000000000000000000",
+          "d1_aggregate": "8212.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "8230.000000000000000000",
+          "d1_aggregate": "8230.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "568640.000000000000000000",
+          "d1_aggregate": "568640.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "23645584020.000000000000000000",
+          "d1_aggregate": "23645067700.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "168436.000000000000000000",
+          "d1_aggregate": "168436.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 7,
+        "file_name": "part.parquet",
+        "row_count": 3,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 7,
+          "file_name": "part.67c7eb22eb65a31e42ef28b6f58a010ae88118f538f6f86a5b3a8074223a6d17.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "48453e7cf0847aa49b5f792277a423f88e721863a8912575e6df3b763ceed7fe",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    }
+  ]
+}
