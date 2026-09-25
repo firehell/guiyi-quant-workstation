@@ -1038,3 +1038,20 @@ def test_all_research_sections_validate_against_explicit_wire_models(product_cas
             )
         )
         assert response.auxiliary.value is not None
+
+    short_bars = trend.bars[:20]
+    short_service = NewowProductService(
+        lambda _context, _cancelled: _MultiReader({ProductFrequency.DAILY: short_bars}),
+        now=lambda: short_bars[-1].bar.bar_end,
+    )
+    short_response = market_newow._product_response(
+        short_service.query(
+            ProductServiceQuery(
+                "rb", "trend", "1d", section="auxiliary",
+                component="trend_reversal", as_of=short_bars[-1].bar.bar_end,
+            )
+        )
+    )
+    assert short_response.auxiliary.status.status == "warming"
+    assert short_response.auxiliary.value.segments[0].status.status == "warming"
+    assert short_response.auxiliary.value.segments[0].data.enough is False

@@ -445,6 +445,7 @@ def calculate_auxiliary_component(
                 calculator=calculate_trend_reversal,
                 warming_code="NEWOW_TREND_REVERSAL_WARMING",
                 repainting=False,
+                ready_when=lambda value: value.enough,
             ),
         )
     if component == "zhaoyao_mirror":

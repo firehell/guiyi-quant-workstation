@@ -8,7 +8,10 @@ import pytest
 from guiyi_quant.newow.cup_handle import calculate_cup_handle_series
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_adapters import label_calculation_segments, replay_strategy
-from guiyi_quant.newow.product_auxiliary import calculate_product_auxiliary
+from guiyi_quant.newow.product_auxiliary import (
+    calculate_auxiliary_component,
+    calculate_product_auxiliary,
+)
 from guiyi_quant.newow.product_contracts import (
     DataInterruption,
     FeatureRuntimeStatus,
@@ -95,6 +98,12 @@ def test_trend_reversal_short_owner_segment_stays_warming(product_cases):
     assert segment.value is not None
     assert segment.value.bar_count == 20
     assert segment.value.enough is False
+    component = calculate_auxiliary_component(
+        case.identity, case.bars[:20], "trend_reversal"
+    )
+    assert component.availability.status == FeatureRuntimeStatus.WARMING
+    assert component.segments[0].status.status == FeatureRuntimeStatus.WARMING
+    assert component.segments[0].value == segment.value
 
 
 def _two_owner_segments(bars: tuple[ProductBar, ...]) -> tuple[ProductBar, ...]:
