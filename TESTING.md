@@ -642,7 +642,9 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
 ```
 
 总包 CLI 保持 `prepare / apply / inspect` 三阶段。`prepare` 缺省为既有 W1；显式 `--frequency 1d`
-生成独立 D1 schema，并且每个子包只含 physical contract `1d` target。下面命令依赖调用者先设置任务专用变量，仓库不记录
+生成独立 D1 schema，并且每个子包只含 physical contract `1d` target。正式 60 品种 W1 使用两种输入质量策略时，
+须分别对完整的 v1（41 品种）和 v2（19 品种）策略组运行原生 readiness 审计，并分别以各自原始报告、SHA-256
+和独立 campaign 名称执行 prepare/apply；不能裁剪报告或混合两组计划。下面命令依赖调用者先设置任务专用变量，仓库不记录
 production 路径、hash 或 attempt 身份：
 
 ```bash
@@ -665,7 +667,7 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
 provider；其输入必须是完整、未耗尽预算、`frequency_scope=[1d]` 且 `matrix=false` 的原生 readiness
 报告。W1 与 D1 的 policy、manifest、result、invocation 和 prior-isolation hash 均不可互换。
 
-`apply` 是一次受控真实写入 Gate；只有 owner 对精确 campaign hash 和 attempt 明确授权后才运行：
+`apply` 是受控真实写入 Gate；先核对精确 campaign hash、attempt、环境与已授权批次范围，且必须通过机器 preflight：
 
 需要按已批准设计隔离单元级来源质量异常时，必须在新的 `prepare` 显式加入
 `--isolate-known-source-quality`；无此选项保持原有首次失败停批。当前 allowlist 仅为

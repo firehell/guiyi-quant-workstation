@@ -18,10 +18,14 @@ import subprocess
 import sys
 from typing import Any, Callable, Literal, Mapping, Sequence, cast
 
-from guiyi_quant.newow.product_contracts import ProductStrategy
+from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 from app.market_data.newow import readiness as native_readiness
-from app.market_data.newow.product_release import deferred_section_reason
+from app.market_data.newow.product_release import (
+    candidate_input_quality_policy,
+    deferred_section_reason,
+)
 from app.market_data.operational_universe import load_operational_products
 from scripts import newow_recovery_partial_exception as partial_exception
 from scripts import newow_weekly_recovery as native
@@ -2331,7 +2335,11 @@ def _validated_report_targets(
     if any(report.get(key) != value for key, value in _REPORT_REQUIRED.items()):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     frequency_scope = _campaign_frequency(report, recovery_frequency)
-    allowed_stages = {"weekly", "daily"} if frequency_scope == "1w" else {"daily"}
+    allowed_stages = (
+        {"weekly", "daily", "daily_weekly"}
+        if frequency_scope == "1w"
+        else {"daily", "daily_weekly"}
+    )
     if report.get("release_stage") not in allowed_stages:
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     if not _REPORT_STRUCTURAL.issubset(report):
@@ -2439,11 +2447,37 @@ def _validate_native_report_sections(
     product_count = report.get("product_count")
     main_case_count = report.get("main_case_count")
     main_ready_count = report.get("main_ready_count")
+    expected_products = operational
+    if recovery_frequency == "1w" and report.get("release_stage") == "daily_weekly":
+        # The formal 60-product release contains two incompatible W1 quality
+        # policies. Native readiness therefore audits each complete policy group.
+        reported_symbols = (
+            {raw.get("symbol") for raw in enumerations if isinstance(raw, Mapping)}
+            if isinstance(enumerations, list)
+            else set()
+        )
+        policy_groups = [
+            tuple(
+                symbol
+                for symbol in operational
+                if candidate_input_quality_policy(
+                    symbol, ProductFrequency.WEEKLY, candidate_weekly=False
+                )
+                == policy
+            )
+            for policy in InputQualityPolicy
+        ]
+        matching_groups = [
+            group for group in policy_groups if group and reported_symbols == set(group)
+        ]
+        if len(matching_groups) != 1:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        expected_products = matching_groups[0]
     if (
         not operational
         or not isinstance(product_count, int)
         or isinstance(product_count, bool)
-        or product_count != len(operational)
+        or product_count != len(expected_products)
         or not isinstance(main_case_count, int)
         or isinstance(main_case_count, bool)
         or main_case_count != 0
@@ -2458,7 +2492,7 @@ def _validate_native_report_sections(
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_enumerations = {
         (symbol, recovery_frequency, section)
-        for symbol in operational
+        for symbol in expected_products
         for section in _REPORT_SECTIONS
     }
     actual_enumerations: set[tuple[str, str, str]] = set()
@@ -2501,7 +2535,7 @@ def _validate_native_report_sections(
     covered_owner_counts: Counter[tuple[str, str]] = Counter()
     repair_through: dict[tuple[str, str, str], str] = {}
     repair_consumers: dict[tuple[str, str, str], set[tuple[str, str, str]]] = {}
-    operational_set = set(operational)
+    operational_set = set(expected_products)
     for raw in dependencies:
         if not isinstance(raw, Mapping):
             raise RecoveryError("CAMPAIGN_REPORT_INVALID")
@@ -2689,7 +2723,7 @@ def _validate_native_report_sections(
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_work = (
         sum(deferred_section_reason(section) is None for section in _REPORT_SECTIONS)
-        * len(operational)
+        * len(expected_products)
         + len(dependencies)
         + len(repairs)
     )
