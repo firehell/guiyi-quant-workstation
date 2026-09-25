@@ -1,5 +1,15 @@
 # 当前状态
 
+2026-09-25 牛哇正式 60 品种 W1 收尾：9/24 rank1 已补齐，随后只读原生审计按正式输入质量策略
+分成 v1 41 品种与 v2 19 品种，60/60 均有 `PROPOSED`，合计 238 个 D1/W1 直接目标。
+恢复入口修复经 186 项定向测试和独立 Review 无 finding，由 PR #397 合入 develop
+`f83c3d401a90521ca83973f1ac97233474304aef`。两组精确 campaign 已只读冻结；获批
+v1 apply 在首个 A2611 来源响应缺失 2026-09-24 日期后以 `SOURCE_RESPONSE_IDENTITY_INVALID`
+停止：首单元 0 写入、余 40 未尝试、`retry_allowed=false`，v2 未启动。独立只读重规划的
+A2611 plan hash 与执行前相同。现役 Runtime 仍为 v1.10.33；数据修复、180 项页面 READY、
+新版 Release/Runtime promotion 与自然验收均未完成。原始审计、冻结计划和失败 journal 见
+`outputs/newow-weekly-60-closeout-20260925/summary.json`；本批不得重试该来源请求。
+
 2026-09-25 参考交易收尾现场：生产应用库仍为 `20260919_0047`，现役版本仍为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`。9/24 缺失的 operational
 60 品种 rank1 映射已用冻结源、精确计划和维护锁一次性补齐，只读回查 `equal=60 / insert=0`；
