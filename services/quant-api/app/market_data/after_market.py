@@ -344,7 +344,10 @@ class AfterMarketUpdater:
                 result = AfterMarketResult("passed", trading_day, attempt, None)
                 self._write_status(result, started_at, products)
                 return result
-            if attempt == 1 and error_code == "NEXT_TRADING_SESSION_NOT_READY":
+            if attempt == 1 and error_code in {
+                "NEXT_TRADING_SESSION_NOT_READY",
+                "RQDATA_NOT_READY",
+            }:
                 self._current["retry_at"] = (_local_timestamp(self.now()) + timedelta(hours=1)).isoformat()
                 self._stage("retry_wait")
                 self.sleep(3600)

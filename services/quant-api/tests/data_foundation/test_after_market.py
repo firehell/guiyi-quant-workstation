@@ -975,7 +975,7 @@ def test_current_day_metadata_is_delegated_to_the_locked_update(tmp_path) -> Non
     assert manager.calls[0].sync_current_day_metadata is True
 
 
-def test_does_not_retry_when_rqdata_is_not_ready(tmp_path) -> None:
+def test_retries_once_when_rqdata_is_not_ready(tmp_path) -> None:
     updater, manager, rqdata, sleeps, notices, live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
@@ -983,14 +983,44 @@ def test_does_not_retry_when_rqdata_is_not_ready(tmp_path) -> None:
         results=[_result("passed")],
     )
 
+    waiting: list[dict[str, object]] = []
+
+    def observe_wait(seconds: float) -> None:
+        assert seconds == 3600
+        waiting.append(public_after_market_status(
+            _status(tmp_path / "after-market-status.json")
+        )["current_run"])
+
+    updater.sleep = observe_wait
+    result = updater.run()
+
+    assert result.status == "passed"
+    assert result.attempts == 2
+    assert result.error_code is None
+    assert rqdata.calls == [date(2026, 8, 10)] * 2
+    assert len(manager.calls) == 1
+    assert waiting[0]["stage"] == "retry_wait"
+    assert waiting[0]["retry_at"] == "2026-08-10T18:00:00+08:00"
+    assert notices == []
+    assert live_store.published
+
+
+def test_rqdata_not_ready_after_retry_fails_once(tmp_path) -> None:
+    updater, manager, rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[False, False],
+        results=[_result("passed")],
+    )
+
     result = updater.run()
 
     assert result.status == "failed"
-    assert result.attempts == 1
+    assert result.attempts == 2
     assert result.error_code == "RQDATA_NOT_READY"
-    assert rqdata.calls == [date(2026, 8, 10)]
+    assert rqdata.calls == [date(2026, 8, 10)] * 2
     assert manager.calls == []
-    assert sleeps == []
+    assert sleeps == [3600]
     assert _notice_error_codes(notices) == ["RQDATA_NOT_READY"]
     assert live_store.published == []
 
@@ -1051,7 +1081,7 @@ def test_natural_failure_records_owner_provider_acceptance_without_delivery_clai
     updater, _manager, _rqdata, _sleeps, notices, _live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
-        readiness=[False],
+        readiness=[False, False],
         results=[],
     )
 
@@ -1059,7 +1089,7 @@ def test_natural_failure_records_owner_provider_acceptance_without_delivery_clai
     status = _status(tmp_path / "after-market-status.json")
 
     assert result == AfterMarketResult(
-        "failed", date(2026, 8, 10), 1, "RQDATA_NOT_READY"
+        "failed", date(2026, 8, 10), 2, "RQDATA_NOT_READY"
     )
     assert notices == [
         NotificationDelivery(
@@ -1068,7 +1098,7 @@ def test_natural_failure_records_owner_provider_acceptance_without_delivery_clai
             content=(
                 "trading_day=2026-08-10\n"
                 "error_code=RQDATA_NOT_READY\n"
-                "attempts=1\n"
+                "attempts=2\n"
                 "系统运维提醒，非交易指令"
             ),
         )
@@ -1087,7 +1117,7 @@ def test_notification_failure_is_recorded_once_without_changing_primary_failure(
     updater, _manager, _rqdata, _sleeps, notices, _live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
-        readiness=[False],
+        readiness=[False, False],
         results=[],
         notification_error=NotificationTransportError(
             "ALERT_NOTIFICATION_TRANSPORT_FAILED"
