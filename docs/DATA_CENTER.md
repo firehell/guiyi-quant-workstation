@@ -42,7 +42,7 @@ Dataset。
 
 苏冰 D1 候选合同新增显式 opt-in 的 source-quality union：正常 Bar、既有 `PRICE_UNAVAILABLE` 与版本化
 `NONPOSITIVE_CLOSE` 必须精确覆盖 expected endpoints。全零行归入后者，不得称为 `NO_TRADE`。普通 strict
-reader 和既有 Newow reader 的接受范围不变；未知、缺失、重复、Session/Map/owner 或证据身份冲突继续
+reader 和旧版 Newow reader 的接受范围不变；Newow D1 质量策略 v2 单独接入已验证 union，按新计算与输入版本切断计算；未知、缺失、重复、Session/Map/owner 或证据身份冲突继续
 fail closed。生产发布须使用不可变文件、旧 pointer/hash compare、维护锁、原子 Catalog commit、严格读回和
 可恢复旧 pointer；候选代码与 prepare-only plan 不证明生产写入已完成。
 分区写入、正式数据恢复及 Runtime 切换分别受各自 Gate 约束。

@@ -93,6 +93,8 @@ def candidate_input_quality_policy(
 ) -> InputQualityPolicy:
     """Resolve the one immutable input policy for a product-frequency scope."""
     selected = ProductFrequency(frequency)
+    if selected is ProductFrequency.DAILY:
+        return InputQualityPolicy.DAILY_V2
     if selected is not ProductFrequency.WEEKLY:
         return InputQualityPolicy.V1
     if product in FORMAL_WEEKLY_V2_PRODUCTS:

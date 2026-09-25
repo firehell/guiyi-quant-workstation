@@ -847,7 +847,7 @@ def test_partition_accepts_daily_stage_weekly_report() -> None:
     assert len(units) == 1
 
 
-@pytest.mark.parametrize("policy", list(InputQualityPolicy))
+@pytest.mark.parametrize("policy", (InputQualityPolicy.V1, InputQualityPolicy.WEEKLY_V2))
 def test_partition_accepts_complete_formal_weekly_policy_group(
     policy: InputQualityPolicy,
 ) -> None:
