@@ -345,10 +345,19 @@ def test_commit_unknown_is_not_masked_when_cleanup_rollback_fails(tmp_path, monk
             )
 
 
-def test_post_commit_readback_failure_restores_old_pointer(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("legacy_null_source_coverage", [False, True])
+def test_post_commit_readback_failure_restores_old_pointer(
+    tmp_path, monkeypatch, legacy_null_source_coverage,
+) -> None:
     import app.market_data.subing_d1_quality_apply as module
 
     engine, active_root, candidate_root, plan, manifest, old = _case(tmp_path)
+    if legacy_null_source_coverage:
+        with Session(engine) as session:
+            row = session.query(MarketPartition).one()
+            row.source_coverage_start = None
+            row.source_coverage_end = None
+            session.commit()
     real_readback = module._strict_batch_readback
     calls = 0
 

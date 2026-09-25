@@ -240,7 +240,7 @@ def _cli(
             argv, cwd=ROOT, env=env, capture_output=True, text=True,
             timeout=timeout_seconds, check=False,
         )
-        if result.returncode != 0 or len(result.stdout) > 16 * 1024 * 1024:
+        if len(result.stdout) > 16 * 1024 * 1024:
             raise CampaignBlocked(
                 "UNIT_OUTCOME_UNKNOWN" if plan_hash is not None else "UNIT_PLAN_FAILED"
             )
@@ -261,6 +261,23 @@ def _cli(
         raise CampaignBlocked(
             "UNIT_OUTCOME_UNKNOWN" if plan_hash is not None else "UNIT_PLAN_FAILED"
         )
+    if result.returncode != 0:
+        if (
+            plan_hash is None or result.returncode != 1
+            or payload.get("schema_version") != 2
+            or payload.get("command") != "data.contract-warmup"
+            or payload.get("status") not in {"failed", "partial"}
+            or payload.get("readonly") is not False
+            or payload.get("plan_sha256") != plan_hash
+            or any(payload.get(key) != unit[key] for key in ("symbol", "contract", "frequency"))
+            or any(type(payload.get(key)) is not int or payload[key] < 0
+                   for key in ("provider_requests", "applied", "blocked", "failed"))
+            or not isinstance(payload.get("failures"), list)
+            or any(not isinstance(item, dict)
+                   or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", str(item.get("reason_code", ""))) is None
+                   for item in payload["failures"])
+        ):
+            raise CampaignBlocked("UNIT_OUTCOME_UNKNOWN")
     return payload
 
 
@@ -379,12 +396,30 @@ def _apply(
                 unit, env, plan_hash=plan_hash,
                 timeout_seconds=max(1, min(1800, int(deadline - monotonic()))),
             )
+            known_failure = result.get("status") in {"failed", "partial"}
+            if known_failure and (
+                result.get("schema_version") != 2
+                or result.get("command") != "data.contract-warmup"
+                or result.get("readonly") is not False
+                or result.get("plan_sha256") != plan_hash
+                or any(result.get(key) != unit[key] for key in ("symbol", "contract", "frequency"))
+                or any(type(result.get(key)) is not int or result[key] < 0
+                       for key in ("provider_requests", "applied", "blocked", "failed"))
+                or result["provider_requests"] > proposed_provider
+                or not isinstance(result.get("failures"), list)
+                or any(not isinstance(item, dict)
+                       or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", str(item.get("reason_code", ""))) is None
+                       for item in result["failures"])
+            ):
+                raise CampaignBlocked("UNIT_OUTCOME_UNKNOWN")
             try:
                 _write_new(path / "result.json", {
                     "status": result.get("status"), "applied": result.get("applied"),
                     "blocked": result.get("blocked"), "failed": result.get("failed"),
                     "provider_requests": result.get("provider_requests"),
                     "plan_sha256": plan_hash,
+                    **({"failure_codes": [item["reason_code"] for item in result["failures"]]}
+                       if known_failure else {}),
                 })
             except CampaignBlocked as exc:
                 raise CampaignBlocked("UNIT_OUTCOME_UNKNOWN") from exc

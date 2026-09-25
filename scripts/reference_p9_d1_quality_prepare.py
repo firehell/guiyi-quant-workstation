@@ -7,6 +7,7 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
@@ -39,8 +40,23 @@ def _load_json(path: Path) -> tuple[dict, str]:
 
 def _write_exclusive(path: Path, value: dict) -> None:
     content = (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != content:
+            raise CandidatePreparationError("P9_OUTPUT_CONFLICT")
+        return
     with path.open("xb") as output:
         output.write(content)
+
+
+def _source_attempt_path_valid(project_root: Path, attempt: Path, attempt_id: str) -> bool:
+    if re.fullmatch(r"p9-d1-source-20260925-[0-9]{3}", attempt_id) is None:
+        return False
+    expected = project_root / "outputs/reference-p9-d1-source-20260925" / attempt_id
+    return (
+        attempt.is_absolute() and attempt == expected
+        and attempt.resolve(strict=True) == attempt and not attempt.is_symlink()
+        and attempt.is_dir()
+    )
 
 
 def _validate_output_paths(
@@ -81,8 +97,9 @@ def prepare(args: argparse.Namespace) -> dict[str, object]:
         or sum(len(item["affected_dates"]) for item in plan["targets"]) != 3113
         or candidate_sha != source["candidate_file_sha256"]
         or candidate.get("plan_sha256") != source["candidate_plan_sha256"]
-        or args.source_attempt != Path(source["attempt_local_path"])
-        or args.source_attempt.name != source["attempt_id"]
+        or not _source_attempt_path_valid(
+            PROJECT_ROOT, args.source_attempt, source["attempt_id"],
+        )
         or sha256((args.source_attempt / "journal.jsonl").read_bytes()).hexdigest()
         != source["journal_sha256"]
         or sha256((args.source_attempt / "source-only-result.json").read_bytes()).hexdigest()
@@ -109,7 +126,7 @@ def prepare(args: argparse.Namespace) -> dict[str, object]:
     expected_candidate = args.candidate_root
     expected_output.mkdir(parents=True, exist_ok=True)
     expected_candidate.parent.mkdir(parents=True, exist_ok=True)
-    expected_candidate.mkdir(exist_ok=False)
+    expected_candidate.mkdir(exist_ok=True)
     _write_exclusive(expected_output / "plan.json", plan)
 
     engine = create_engine(normalize_database_url(settings["DATABASE_URL"]), pool_pre_ping=True)

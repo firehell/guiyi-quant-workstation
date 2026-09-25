@@ -47,6 +47,30 @@ def test_same_bar_hint_before_exit_sequence_is_retained() -> None:
     assert attached == {"trade-1": ["hint-before-clear"]}
 
 
+def test_data_interruption_does_not_attach_later_hint_to_old_trade() -> None:
+    trade = {
+        "reference_trade_id": "old", "physical_contract": "RB2610",
+        "owner_segment_id": "owner-1", "calculation_segment_id": "calc-1",
+        "entry_bar_end": "2026-09-01T08:00:00+00:00", "entry_sequence": 0,
+        "status": "DATA_INTERRUPTED", "interrupted_at": "2026-09-02T08:00:00+00:00",
+    }
+    hint = {"value": {
+        "hint_id": "after-gap", "kind": "process", "retrospective": False,
+        "physical_contract": "RB2610", "segment_id": "owner-1",
+        "calculation_segment_id": "calc-2",
+        "bar_end": "2026-09-03T08:00:00+00:00",
+        "known_at": "2026-09-03T08:00:00+00:00", "sequence": 1,
+    }}
+    same_segment_hint = {"value": {
+        **hint["value"], "hint_id": "after-gap-same-segment",
+        "calculation_segment_id": "calc-1",
+    }}
+    assert PersistedNewowReference._hint_ids(
+        [trade], [], [hint, same_segment_hint],
+        datetime.fromisoformat("2026-09-04T08:00:00+00:00"),
+    ) == {"old": []}
+
+
 def test_newow_goldens_keep_public_trade_ids_and_decimal_statistics() -> None:
     from newow.product_fixtures import ProductCases
 

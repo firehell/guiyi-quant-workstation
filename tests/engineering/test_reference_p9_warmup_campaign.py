@@ -155,6 +155,56 @@ def test_cli_nonzero_apply_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
         MODULE["_cli"](unit, {}, plan_hash="a" * 64, timeout_seconds=30)
 
 
+def test_cli_retains_bounded_structured_apply_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    unit, _, _ = _one()
+    plan_hash = "a" * 64
+    payload = {
+        "schema_version": 2, "command": "data.contract-warmup",
+        "status": "failed", "readonly": False,
+        "symbol": unit["symbol"], "contract": unit["contract"],
+        "frequency": unit["frequency"], "plan_sha256": plan_hash,
+        "provider_requests": 1, "applied": 0, "blocked": 0, "failed": 1,
+        "failures": [{"reason_code": "SOURCE_RESPONSE_IDENTITY_INVALID", "detail": "private"}],
+    }
+    monkeypatch.setattr(
+        MODULE["_cli"].__globals__["subprocess"], "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=1, stdout=json.dumps(payload)),
+    )
+    assert MODULE["_cli"](unit, {}, plan_hash=plan_hash, timeout_seconds=30) == payload
+
+
+def test_known_apply_failure_records_safe_counts_and_stops(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    unit, allowed, plan = _one()
+    failed = {
+        "schema_version": 2, "command": "data.contract-warmup",
+        "status": "failed", "readonly": False,
+        "symbol": unit["symbol"], "contract": unit["contract"],
+        "frequency": unit["frequency"], "plan_sha256": plan["plan_sha256"],
+        "provider_requests": 1, "applied": 0, "blocked": 0, "failed": 1,
+        "failures": [{"reason_code": "SOURCE_RESPONSE_IDENTITY_INVALID", "detail": "private"}],
+    }
+    calls = []
+
+    def cli(_unit, _env, *, plan_hash, timeout_seconds):
+        calls.append(plan_hash)
+        return plan if plan_hash is None else failed
+
+    monkeypatch.setitem(MODULE["_apply"].__globals__, "_cli", cli)
+    journal = tmp_path / "campaign"
+    with pytest.raises(MODULE["CampaignBlocked"], match="UNIT_APPLY_FAILED"):
+        MODULE["_apply"](
+            [unit], allowed, {}, journal_dir=journal,
+            max_provider_requests=1, max_total_seconds=30,
+        )
+    result = json.loads((next(journal.iterdir()) / "result.json").read_text())
+    assert result["provider_requests"] == 1
+    assert result["failure_codes"] == ["SOURCE_RESPONSE_IDENTITY_INVALID"]
+    assert "private" not in json.dumps(result)
+    assert calls == [None, plan["plan_sha256"]]
+
+
 def test_cli_accepts_only_known_apply_progress_before_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
