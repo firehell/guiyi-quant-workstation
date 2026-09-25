@@ -102,6 +102,7 @@ class AuxiliaryComponent(StrEnum):
     MACD = "macd"
     MAIN_FORCE_CONTROL = "main_force_control"
     UP_DOWN_ENERGY = "up_down_energy"
+    TREND_REVERSAL = "trend_reversal"
     ZHAOYAO_MIRROR = "zhaoyao_mirror"
     CUP_HANDLE = "cup_handle"
 

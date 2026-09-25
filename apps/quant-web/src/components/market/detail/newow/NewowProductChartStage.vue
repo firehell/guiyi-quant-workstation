@@ -20,6 +20,9 @@ import {
 import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
 import { NewowTrendChannelPrimitive } from '@/components/market/detail/newow/newowTrendChannelPrimitive'
 import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
+import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
+import { NewowMainForceControlPrimitive, buildNewowMainForceData } from '@/components/market/detail/newow/newowMainForceControlPrimitive'
+import { NewowTrendReversalPrimitive, buildNewowTrendReversalData } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
@@ -72,6 +75,7 @@ const actionOverlayWidth = ref(0)
 const positionedActions = ref<PositionedCallout[]>([])
 const ACTION_LABEL_BOX = { width: 96, height: 38 }
 const container = ref<HTMLElement | null>(null)
+const auxiliaryToolbar = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
 const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
@@ -91,6 +95,9 @@ let volume: ISeriesApi<'Histogram'> | null = null
 const band = new NewowProductBandPrimitive()
 const trendChannel = new NewowTrendChannelPrimitive()
 const zhaoyaoMirror = new NewowZhaoyaoMirrorPrimitive()
+const upDownEnergy = new NewowUpDownEnergyPrimitive()
+const mainForceControl = new NewowMainForceControlPrimitive()
+const trendReversal = new NewowTrendReversalPrimitive()
 let auxiliaryAnchor: ISeriesApi<'Line'> | null = null
 let auxiliaryZeroLine: { applyOptions(options: { color: string }): void } | null = null
 const auxiliaryLines = new Map<string, ISeriesApi<'Line'> | ISeriesApi<'Histogram'>>()
@@ -138,6 +145,9 @@ onMounted(async () => {
   auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 2)
   auxiliaryZeroLine = auxiliaryAnchor.createPriceLine({ price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
   auxiliaryAnchor.attachPrimitive(zhaoyaoMirror)
+  auxiliaryAnchor.attachPrimitive(upDownEnergy)
+  auxiliaryAnchor.attachPrimitive(mainForceControl)
+  auxiliaryAnchor.attachPrimitive(trendReversal)
   if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   actionMarkers = adapter.createSeriesMarkers(candles as never)
   chart.subscribeClick(onClick)
@@ -159,6 +169,9 @@ onUnmounted(createNewowProductChartDisposer({
     candles?.detachPrimitive(band)
     candles?.detachPrimitive(trendChannel)
     auxiliaryAnchor?.detachPrimitive(zhaoyaoMirror)
+    auxiliaryAnchor?.detachPrimitive(upDownEnergy)
+    auxiliaryAnchor?.detachPrimitive(mainForceControl)
+    auxiliaryAnchor?.detachPrimitive(trendReversal)
     chart?.remove()
     chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null
     mainLines.clear(); auxiliaryLines.clear()
@@ -166,7 +179,7 @@ onUnmounted(createNewowProductChartDisposer({
 }))
 
 watch(model, (value) => renderModel(value))
-watch([auxiliaryModel, auxiliaryPresentation], renderAuxiliary)
+watch([auxiliaryModel, auxiliaryPresentation], renderAuxiliary, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
   renderMarkers(model.value)
   resolveSelectedSignal()
@@ -418,6 +431,7 @@ function resize(): void {
     chart.resize(container.value.clientWidth, container.value.clientHeight, true)
     volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
     auxiliaryTop.value = volumeTop.value + chart.panes()[1]!.getHeight()
+    renderAuxiliary()
     projectActionLabels()
   }
 }
@@ -427,12 +441,22 @@ function renderAuxiliary(): void {
   const active = new Set<string>()
   const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
   const theme = resolveChartTheme(container.value ?? document.documentElement)
-  const colors: Record<string, string> = { dif: '#FF6B2C', dea: '#365AF5', kongpan: '#FF6B2C', var4: '#FF6B2C', ma10: '#365AF5', var3: '#9333EA', ma120: '#667085', entry: '#FF403A', wash: '#F5B726', distribution: '#22B95D', markup: '#FF6B2C', exit: '#365AF5', inducement: '#9333EA', peaks: '#B45309', caution: '#667085', band_entry: '#FF403A', rebound_entry: '#F5B726', oversold_entry: '#22B95D' }
+  const colors: Record<string, string> = { dif: '#FF6B2C', dea: '#365AF5', var4: '#FF6B2C', ma10: '#365AF5', var3: '#9333EA', ma120: '#667085', entry: '#FF403A', wash: '#F5B726', distribution: '#22B95D', markup: '#FF6B2C', exit: '#365AF5', inducement: '#9333EA', peaks: '#B45309', caution: '#667085', band_entry: '#FF403A', rebound_entry: '#F5B726', oversold_entry: '#22B95D' }
   const mirror = value?.component === 'zhaoyao_mirror'
-  auxiliaryZeroLine?.applyOptions({ color: mirror ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
+  const energy = value?.component === 'up_down_energy'
+  const control = value?.component === 'main_force_control'
+  const reversal = value?.component === 'trend_reversal'
+  auxiliaryZeroLine?.applyOptions({ color: mirror || energy || control || reversal ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
   zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series) : [])
+  upDownEnergy.setData(energy && model.value ? buildNewowUpDownEnergyData(value.series, model.value.bars) : [],
+    Math.max(72, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 14))
+  mainForceControl.setData(control && props.auxiliaryResponse?.value?.component === 'main_force_control'
+    ? buildNewowMainForceData(value.series, props.auxiliaryResponse.value.segments) : [],
+    Math.max(72, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 14))
+  trendReversal.setData(reversal ? buildNewowTrendReversalData(value.series) : [],
+    Math.max(72, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 14))
   for (const item of value?.series ?? []) {
-    if (value?.component === 'zhaoyao_mirror') continue
+    if (mirror || energy || control || reversal) continue
     const id = `${value!.component}:${item.id}`
     active.add(id)
     let series = auxiliaryLines.get(id)
@@ -527,7 +551,7 @@ defineExpose({ revealSignal, scrollToLatest })
       ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></div>
     </div>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
-    <div class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
+    <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
     <p v-if="auxiliaryPresentation.message || fullscreenError" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">正在读取 Newow 主图…</p>
     <p v-else-if="response?.value === null" class="newow-product-chart-stage__status" role="status">当前组合主图不可用。</p>

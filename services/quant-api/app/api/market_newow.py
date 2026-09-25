@@ -581,7 +581,7 @@ def newow_strategy_detail(
     chart_before: str | None = Query(None, min_length=1, max_length=2048),
     chart_older_window: str | None = Query(None, min_length=1, max_length=256),
     component: Literal[
-        "macd", "main_force_control", "up_down_energy", "zhaoyao_mirror", "cup_handle"
+        "macd", "main_force_control", "up_down_energy", "trend_reversal", "zhaoyao_mirror", "cup_handle"
     ]
     | None = Query(None),
     history_limit: int = Query(50, ge=1, le=200),

@@ -664,6 +664,23 @@ test('validates auxiliary component data fields and aligned source bars instead 
   )
 })
 
+test('accepts only aligned trend reversal facts and checks the complete-window flag', () => {
+  const raw: any = auxiliaryWire()
+  const value = raw.auxiliary.value
+  value.component = 'trend_reversal'
+  value.formula_version = 'newow_trend_reversal_core_1_0_0_futures_segment_v1'
+  value.segments[0].data = {
+    wr1: [2.5], wr2: [0], bias: [4], rebound: [0], adjust: [4],
+    ma120: [100], hhv: [110], llv: [90], enough: false, bar_count: 1,
+    formula_version: value.formula_version,
+  }
+  const parsed = normalizeNewowProductResponse(raw, { ...expected, section: 'auxiliary', component: 'trend_reversal' })
+  assert.equal(parsed.value?.component, 'trend_reversal')
+  const invalid: any = structuredClone(raw)
+  invalid.auxiliary.value.segments[0].data.enough = true
+  assert.throws(() => normalizeNewowProductResponse(invalid, { ...expected, section: 'auxiliary', component: 'trend_reversal' }), /enough/)
+})
+
 test('binds reference performance windows to the exact section request', () => {
   assert.throws(
     () => normalizeNewowProductResponse(referenceWire(), {

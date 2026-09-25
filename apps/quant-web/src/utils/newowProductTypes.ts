@@ -614,7 +614,7 @@ function normalizeAuxiliary(payload: unknown, meta: NewowProductMeta, expectedCo
   }
   const value = exactRecord(payload, 'auxiliary.value', ['component', 'formula_version', 'segments', 'repainting', 'formal_signal_eligible', 'page_parity', 'source_category', 'allowed_uses'])
   requireExact(value.source_category, 'guiyi_product_auxiliary_adapter', 'auxiliary.source_category')
-  const component = literal(value.component, ['main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'], 'auxiliary.component')
+  const component = literal(value.component, ['main_force_control', 'up_down_energy', 'trend_reversal', 'zhaoyao_mirror', 'cup_handle'], 'auxiliary.component')
   if (expectedComponent !== undefined) requireExact(component, expectedComponent, 'auxiliary.component')
   const formulaVersion = text(value.formula_version, 'auxiliary.formula_version')
   const segments = array(value.segments, 'auxiliary.segments').map((segment, index) => {
@@ -698,6 +698,22 @@ function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue
 function normalizeAuxiliaryData(payload: unknown, component: NewowAuxiliaryValue['component'], formulaVersion: string, size: number, field: string) {
   if (component === 'cup_handle') {
     return array(payload, field).map((item, index) => normalizeCupWitness(item, `${field}[${index}]`, formulaVersion))
+  }
+  if (component === 'trend_reversal') {
+    const value = exactRecord(payload, field, ['wr1', 'wr2', 'bias', 'rebound', 'adjust', 'ma120', 'hhv', 'llv', 'enough', 'bar_count', 'formula_version'])
+    const result = {
+      wr1: finiteArray(value.wr1, `${field}.wr1`), wr2: finiteArray(value.wr2, `${field}.wr2`),
+      bias: finiteArray(value.bias, `${field}.bias`), rebound: finiteArray(value.rebound, `${field}.rebound`),
+      adjust: finiteArray(value.adjust, `${field}.adjust`), ma120: finiteArray(value.ma120, `${field}.ma120`),
+      hhv: finiteArray(value.hhv, `${field}.hhv`), llv: finiteArray(value.llv, `${field}.llv`),
+      enough: boolean(value.enough, `${field}.enough`), bar_count: count(value.bar_count, `${field}.bar_count`),
+      formula_version: text(value.formula_version, `${field}.formula_version`),
+    }
+    requireAligned(size, field, result.wr1, result.wr2, result.bias, result.rebound, result.adjust, result.ma120, result.hhv, result.llv)
+    requireExact(result.bar_count, size, `${field}.bar_count`)
+    requireExact(result.enough, size >= 120, `${field}.enough`)
+    requireExact(result.formula_version, formulaVersion, `${field}.formula_version`)
+    return result
   }
   if (component === 'main_force_control') {
     const value = exactRecord(payload, field, ['kongpan', 'status', 'current_status', 'formula_version'])

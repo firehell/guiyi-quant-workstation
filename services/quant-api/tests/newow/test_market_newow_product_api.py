@@ -1021,6 +1021,7 @@ def test_all_research_sections_validate_against_explicit_wire_models(product_cas
     for component in (
         "main_force_control",
         "up_down_energy",
+        "trend_reversal",
         "zhaoyao_mirror",
         "cup_handle",
     ):
