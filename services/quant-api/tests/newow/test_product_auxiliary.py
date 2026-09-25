@@ -21,6 +21,7 @@ from guiyi_quant.newow.subplots import (
     calculate_up_down_energy,
     calculate_zhaoyao_mirror,
 )
+from guiyi_quant.newow.trend_reversal import calculate_trend_reversal
 from tests.newow.fixtures import bullish_true_cup_handle
 
 
@@ -46,6 +47,54 @@ def test_d1_auxiliary_restarts_at_price_gap_without_changing_owner(product_cases
     assert len(full.main_force_control.segments) == 2
     assert full.main_force_control.segments[1].segment_id != after.segment_id
     assert full.main_force_control.segments[1].value == suffix.main_force_control.segments[0].value
+    assert full.trend_reversal.segments[1].value == suffix.trend_reversal.segments[0].value
+
+
+@pytest.mark.parametrize(
+    ("close", "rebound", "adjust"),
+    [(4, False, False), (3.9, True, False), (98, False, False), (98.1, False, True)],
+)
+def test_trend_reversal_strict_thresholds_and_prefix(product_cases, close, rebound, adjust):
+    case = product_cases.primitive_input("trend", "1d")
+    template = case.bars[0].bar
+    from decimal import Decimal
+
+    bars = tuple(
+        replace(template, bar_end=template.bar_end + timedelta(days=index), trading_day=template.trading_day + timedelta(days=index),
+                open=Decimal("50"), high=Decimal("101"), low=Decimal("1"),
+                close=Decimal(str(close if index == 119 else 50)))
+        for index in range(120)
+    )
+    assert len(bars) == 120
+    result = calculate_trend_reversal(bars)
+    assert result is not None and result.enough and result.bar_count == 120
+    assert (result.rebound[-1] != 0) is rebound
+    assert (result.adjust[-1] != 0) is adjust
+    prefix = calculate_trend_reversal(bars[:119])
+    assert prefix is not None and not prefix.enough
+    assert prefix.bias == result.bias[:119]
+
+
+def test_trend_reversal_flat_range_is_neutral(product_cases):
+    from decimal import Decimal
+
+    case = product_cases.primitive_input("trend", "1d")
+    flat = tuple(replace(item.bar, open=Decimal(100), high=Decimal(100), low=Decimal(100), close=Decimal(100)) for item in case.bars[:120])
+    result = calculate_trend_reversal(flat)
+    assert result is not None
+    assert result.wr1[-1] == result.wr2[-1] == 50
+    assert result.rebound[-1] == result.adjust[-1] == 0
+
+
+def test_trend_reversal_short_owner_segment_stays_warming(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    result = calculate_product_auxiliary(case.identity, case.bars[:20])
+    segment = result.trend_reversal.segments[0]
+    assert result.trend_reversal.status == FeatureRuntimeStatus.WARMING
+    assert segment.status.status == FeatureRuntimeStatus.WARMING
+    assert segment.value is not None
+    assert segment.value.bar_count == 20
+    assert segment.value.enough is False
 
 
 def _two_owner_segments(bars: tuple[ProductBar, ...]) -> tuple[ProductBar, ...]:

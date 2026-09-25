@@ -298,6 +298,7 @@ export interface NewowAuxiliaryChartModel {
 
 const AUXILIARY_SERIES_LABELS = {
   main_force_control: [['kongpan', '主力控盘']],
+  trend_reversal: [['bias', '偏离'], ['rebound', '反弹'], ['adjust', '调整'], ['wr1', 'WR1'], ['wr2', 'WR2']],
   up_down_energy: [
     ['var4', 'VAR4'], ['ma10', 'MA10'], ['band_entry', '波段介入'],
     ['rebound_entry', '反弹介入'], ['oversold_entry', '超跌介入'], ['var3', 'VAR3'], ['ma120', 'MA120'],
@@ -418,6 +419,7 @@ export interface NewowAuxiliaryDisclosure {
 const AUXILIARY_TITLES: Readonly<Record<NewowAuxiliaryComponent, string>> = {
   macd: 'MACD',
   main_force_control: '主力控盘',
+  trend_reversal: '趋势转折',
   up_down_energy: '涨跌动能',
   zhaoyao_mirror: '主力照妖镜',
   cup_handle: '杯柄',

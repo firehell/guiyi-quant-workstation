@@ -70,7 +70,7 @@ export interface NewowWeeklySnapshot {
 
 export const NEWOW_PRODUCT_SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
 export type NewowProductSection = (typeof NEWOW_PRODUCT_SECTIONS)[number]
-export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'zhaoyao_mirror' | 'cup_handle'
+export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'trend_reversal' | 'zhaoyao_mirror' | 'cup_handle'
 
 export interface NewowProductIdentity {
   readonly product: string
@@ -353,7 +353,21 @@ export interface NewowCupWitness {
   readonly formula_version: string
 }
 
-export type NewowAuxiliaryData = NewowMainForceControlData | NewowZhaoyaoMirrorData | NewowUpDownEnergyData | readonly NewowCupWitness[]
+export interface NewowTrendReversalData {
+  readonly wr1: readonly number[]
+  readonly wr2: readonly number[]
+  readonly bias: readonly number[]
+  readonly rebound: readonly number[]
+  readonly adjust: readonly number[]
+  readonly ma120: readonly number[]
+  readonly hhv: readonly number[]
+  readonly llv: readonly number[]
+  readonly enough: boolean
+  readonly bar_count: number
+  readonly formula_version: string
+}
+
+export type NewowAuxiliaryData = NewowMainForceControlData | NewowZhaoyaoMirrorData | NewowUpDownEnergyData | NewowTrendReversalData | readonly NewowCupWitness[]
 
 export interface NewowAuxiliarySegment {
   readonly physical_contract: string

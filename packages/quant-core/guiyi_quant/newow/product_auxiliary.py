@@ -24,6 +24,11 @@ from .product_contracts import (
 )
 from .product_identity import utc_timestamp
 from .profile import NEWOW_TREND_D1_V1
+from .trend_reversal import (
+    TREND_REVERSAL_FORMULA_VERSION,
+    TrendReversalResult,
+    calculate_trend_reversal,
+)
 from .subplots import (
     MAIN_FORCE_CONTROL_FORMULA_VERSION,
     UP_DOWN_ENERGY_FORMULA_VERSION,
@@ -108,6 +113,7 @@ class AuxiliaryResult:
     as_of: datetime
     main_force_control: AuxiliaryLayer[MainForceControlResult]
     up_down_energy: AuxiliaryLayer[UpDownEnergyResult]
+    trend_reversal: AuxiliaryLayer[TrendReversalResult]
     retrospective_layers: tuple[AuxiliaryLayer[ZhaoyaoMirrorResult], ...]
     cup_handle: AuxiliaryLayer[tuple[CupReadyWitness, ...]]
 
@@ -207,13 +213,14 @@ def _subplot_layer(
     calculator: Callable[[tuple[NewowDailyBar, ...]], _T | None],
     warming_code: str,
     repainting: bool,
+    ready_when: Callable[[_T], bool] | None = None,
 ) -> AuxiliaryLayer[_T]:
     values: list[AuxiliarySegment[_T]] = []
     for owner in owners:
         result = calculator(owner.bars)
         status = (
             _status(FeatureRuntimeStatus.READY)
-            if result is not None
+            if result is not None and (ready_when is None or ready_when(result))
             else _status(FeatureRuntimeStatus.WARMING, warming_code)
         )
         values.append(
@@ -350,6 +357,15 @@ def calculate_product_auxiliary(
         warming_code="NEWOW_UP_DOWN_ENERGY_WARMING",
         repainting=False,
     )
+    reversal = _subplot_layer(
+        name="trend_reversal",
+        formula_version=TREND_REVERSAL_FORMULA_VERSION,
+        owners=owners,
+        calculator=calculate_trend_reversal,
+        warming_code="NEWOW_TREND_REVERSAL_WARMING",
+        repainting=False,
+        ready_when=lambda value: value.enough,
+    )
     mirror = _subplot_layer(
         name="zhaoyao_mirror",
         formula_version=ZHAOYAO_MIRROR_FORMULA_VERSION,
@@ -363,6 +379,7 @@ def calculate_product_auxiliary(
         as_of=cutoff,
         main_force_control=control,
         up_down_energy=energy,
+        trend_reversal=reversal,
         retrospective_layers=(mirror,),
         cup_handle=_cup_layer(identity, owners),
     )
@@ -415,6 +432,18 @@ def calculate_auxiliary_component(
                 owners=owners,
                 calculator=calculate_up_down_energy,
                 warming_code="NEWOW_UP_DOWN_ENERGY_WARMING",
+                repainting=False,
+            ),
+        )
+    if component == "trend_reversal":
+        return cast(
+            AuxiliaryLayer[object],
+            _subplot_layer(
+                name=component,
+                formula_version=TREND_REVERSAL_FORMULA_VERSION,
+                owners=owners,
+                calculator=calculate_trend_reversal,
+                warming_code="NEWOW_TREND_REVERSAL_WARMING",
                 repainting=False,
             ),
         )
