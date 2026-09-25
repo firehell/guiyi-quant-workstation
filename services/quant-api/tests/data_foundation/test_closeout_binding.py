@@ -150,10 +150,121 @@ def _failed_terminal_status():
     }
 
 
+def _skipped_terminal_status():
+    return {
+        "schema_version": 3,
+        "current_run": None,
+        "last_run": {
+            "trading_day": "2028-01-01",
+            "status": "skipped",
+            "attempts": 0,
+            "started_at": "2028-01-02T18:05:00+08:00",
+            "finished_at": "2028-01-02T18:05:01+08:00",
+            "products": ["au"],
+            "error_code": "NON_TRADING_DAY",
+            "failure_notification": None,
+        },
+        "last_successful_trading_day": None,
+        "last_failure": None,
+    }
+
+
 def _write_status(path, payload):
     content = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
     path.write_bytes(content)
     return hashlib.sha256(content).hexdigest()
+
+
+def test_recovery_binding_accepts_exact_schema_v3_non_trading_day_skip(target):
+    skipped_sha256 = _write_status(target.status, _skipped_terminal_status())
+
+    binding = target.module.RuntimeDataBinding(
+        target.root, "a" * 40, skipped_sha256, home=target.home,
+        allow_failed_terminal=True, allow_skipped_terminal=True,
+    )
+
+    assert binding.after_market_state == "loaded"
+    assert binding.recovery_terminal == "skipped"
+    assert binding.failure_code is None
+    assert binding.products == ("au",)
+
+
+def test_recovery_binding_accepts_skip_with_earlier_failure(target):
+    skipped = _skipped_terminal_status()
+    skipped["last_failure"] = {
+        "trading_day": "2027-12-31", "error_code": "UPDATE_FAILED",
+    }
+    skipped_sha256 = _write_status(target.status, skipped)
+
+    binding = target.module.RuntimeDataBinding(
+        target.root, "a" * 40, skipped_sha256, home=target.home,
+        allow_failed_terminal=True, allow_skipped_terminal=True,
+    )
+
+    assert binding.recovery_terminal == "skipped"
+    assert binding.failure_code is None
+
+
+@pytest.mark.parametrize("invalid", [
+    "wrong_error", "attempts", "bool_attempts", "failure", "notification",
+    "chronology", "future_finish", "same_day_as_trading_day", "naive_time",
+    "future_success", "products", "schema",
+])
+def test_recovery_binding_rejects_invalid_schema_v3_skip(target, invalid):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    skipped = _skipped_terminal_status()
+    if invalid == "wrong_error":
+        skipped["last_run"]["error_code"] = "UPDATE_FAILED"
+    elif invalid == "attempts":
+        skipped["last_run"]["attempts"] = 1
+    elif invalid == "bool_attempts":
+        skipped["last_run"]["attempts"] = False
+    elif invalid == "failure":
+        skipped["last_failure"] = {"trading_day": "2028-01-02", "error_code": "UPDATE_FAILED"}
+    elif invalid == "notification":
+        skipped["last_run"]["failure_notification"] = {"attempted_at": "2028-01-02T18:05:02+08:00", "state": "failed", "error_type": "AFTER_MARKET_FAILURE_NOTIFICATION_FAILED"}
+    elif invalid == "chronology":
+        skipped["last_run"]["finished_at"] = "2028-01-02T18:04:59+08:00"
+    elif invalid == "future_finish":
+        skipped["last_run"]["finished_at"] = "2099-01-02T18:05:01+08:00"
+    elif invalid == "same_day_as_trading_day":
+        skipped["last_run"]["started_at"] = "2028-01-01T18:05:00+08:00"
+        skipped["last_run"]["finished_at"] = "2028-01-01T18:05:01+08:00"
+    elif invalid == "naive_time":
+        skipped["last_run"]["started_at"] = "2028-01-02T18:05:00"
+    elif invalid == "future_success":
+        skipped["last_successful_trading_day"] = "2028-01-02"
+    elif invalid == "products":
+        skipped["last_run"]["products"] = ["ag"]
+    elif invalid == "schema":
+        skipped["schema_version"] = 2
+    skipped_sha256 = _write_status(target.status, skipped)
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        target.module.RuntimeDataBinding(
+            target.root, "a" * 40, skipped_sha256, home=target.home,
+            allow_failed_terminal=True, allow_skipped_terminal=True,
+        )
+
+    assert captured.value.code in {
+        "RUNTIME_RECOVERY_STATUS_UNSUPPORTED", "RUNTIME_RECOVERY_IDENTITY_DRIFT",
+    }
+
+
+def test_default_binding_still_rejects_schema_v3_skip(target):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    skipped_sha256 = _write_status(target.status, _skipped_terminal_status())
+    with pytest.raises(ValueError):
+        target.module.RuntimeDataBinding(
+            target.root, "a" * 40, skipped_sha256, home=target.home,
+        )
+    with pytest.raises(RuntimeRecoveryBindingError):
+        target.module.RuntimeDataBinding(
+            target.root, "a" * 40, skipped_sha256, home=target.home,
+            allow_failed_terminal=True,
+        )
 
 
 def test_recovery_binding_accepts_exact_schema_v3_failed_terminal(target):
