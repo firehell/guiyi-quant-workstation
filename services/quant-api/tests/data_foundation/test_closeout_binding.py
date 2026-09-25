@@ -189,10 +189,11 @@ def test_recovery_binding_accepts_exact_schema_v3_non_trading_day_skip(target):
     assert binding.products == ("au",)
 
 
-def test_recovery_binding_accepts_skip_with_earlier_failure(target):
+@pytest.mark.parametrize("failure_day", ["2027-12-31", "2028-01-01"])
+def test_recovery_binding_accepts_skip_with_retained_failure(target, failure_day):
     skipped = _skipped_terminal_status()
     skipped["last_failure"] = {
-        "trading_day": "2027-12-31", "error_code": "UPDATE_FAILED",
+        "trading_day": failure_day, "error_code": "UPDATE_FAILED",
     }
     skipped_sha256 = _write_status(target.status, skipped)
 

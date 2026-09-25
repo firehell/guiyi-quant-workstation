@@ -447,7 +447,7 @@ class RuntimeDataBinding:
                         or last_run.get("failure_notification") is not None
                         or (
                             last_failure is not None
-                            and last_failure["trading_day"] >= last_run["trading_day"]
+                            and last_failure["trading_day"] > last_run["trading_day"]
                         )
                     ):
                         raise ValueError
