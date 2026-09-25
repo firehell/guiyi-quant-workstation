@@ -1,0 +1,80 @@
+{
+  "candidate_file_sha256": "de734c196c2e02426a41618a5840bdfcbfaab39e74be5fac13a01b7f403c5505",
+  "code_commit": "3555b060438e99ca8c2ab4b69e2e84da54613bfb",
+  "completed_unit_count": 6,
+  "completed_units": [
+    {
+      "applied": 8,
+      "attempt_sha256": "9dc447e8e7309bb7889c612c7a392e3d642ddc35ca25a1c499853c1542984a0e",
+      "provider_requests": 0,
+      "readback_sha256": "a8f1695c3823bfaf7fdb515c330459343f3d31eed68536c1edcb65feefd96f10",
+      "result_sha256": "696be4b35228d4a53234dc33d9d1b2faeff3dfb25018d93163259911dac3c76b",
+      "target_count": 8,
+      "unit": "unit-001-a-A2305-15m"
+    },
+    {
+      "applied": 8,
+      "attempt_sha256": "b16d2694b51728c832d9b3d0ecfbe4c8a6bf5b6c0ed5e3dc08ece2ddd66d4138",
+      "provider_requests": 0,
+      "readback_sha256": "af88ad0ec5471dc5082d2041307e89e4ab4bb25d8cb0fb1f7cf44326ccebdd77",
+      "result_sha256": "c86799e942131ce56dc18d02494644762843bd32eebaab6d98593f1771a3d71e",
+      "target_count": 8,
+      "unit": "unit-002-a-A2305-30m"
+    },
+    {
+      "applied": 20,
+      "attempt_sha256": "9c3e8d305d658828e29fbca14521b2c3c0be3614a72973ba485cd1a24dbb8b9c",
+      "provider_requests": 10,
+      "readback_sha256": "a7586022b1bbcea1c781034d0b39f42d8497efd031a606745ec9f6e6479e28dc",
+      "result_sha256": "9e5080959b06c1e3b111dd1d9678c1d1705d38b6b8f6997e15be73402a576861",
+      "target_count": 20,
+      "unit": "unit-003-a-A2405-60m"
+    },
+    {
+      "applied": 22,
+      "attempt_sha256": "d463e5e8b64f6c5955c253cd60aec4c14be822f3be57e526e94302d43ca557da",
+      "provider_requests": 11,
+      "readback_sha256": "4e13ac3ec94d7988c1bc13fdad811de126c201d4b660b083f48971c18a9043e1",
+      "result_sha256": "1523e026c49083489c45ac9a4df7b462d4d73b9f502f03f089fd94607235de69",
+      "target_count": 22,
+      "unit": "unit-004-ag-AG2302-15m"
+    },
+    {
+      "applied": 11,
+      "attempt_sha256": "ab5c24b3f4ede496364c804aa107e0315f3d8a93ebae5c00e5806f33938e05bb",
+      "provider_requests": 0,
+      "readback_sha256": "1ede911a5386367886f7f6de0b117a81a30ae685503c4b3cb7410e3dc596e5be",
+      "result_sha256": "b64b51e44e6e766b85d8c603b4a8759c29b61442605d1b3d542c240d3c669086",
+      "target_count": 11,
+      "unit": "unit-005-ag-AG2302-30m"
+    },
+    {
+      "applied": 11,
+      "attempt_sha256": "e44cec3fcb9466f5bd5390a5405c7a6aca19c774a1a94a20f9ae08b58fc14435",
+      "provider_requests": 0,
+      "readback_sha256": "77deebc5988d308e723d5297d7a720a65e7e1b5697d61d87a8bc83a17bf402e6",
+      "result_sha256": "1d9773f547dfb090b4afff7b36351fb878a656c439fa7b787a8a870203785d9e",
+      "target_count": 11,
+      "unit": "unit-006-ag-AG2302-60m"
+    }
+  ],
+  "journal_local_path": "/private/var/folders/5f/3h8_rqbd2nnf_yz0rg3zhhym0000gn/T/reference-p9-wave1-apply-20260925-01",
+  "known_applied_partitions": 80,
+  "known_provider_requests": 21,
+  "preflight_file_sha256": "9e996c42e6776dc630488be8857c7a188feda12a0b143b6090df665c1ef9b2a5",
+  "remaining_units_not_started": 168,
+  "retry_performed": false,
+  "schema": "reference_p9_wave1_apply_observation_v1",
+  "status": "STOPPED_UNIT_OUTCOME_UNKNOWN",
+  "uncertain_unit": {
+    "attempt_sha256": "e750bda240034a17409dbc2a108c1c966e9eeac80f4085ef2be75f31b848f836",
+    "planned_provider_requests": 11,
+    "planned_targets": 22,
+    "provider_requests_actual": "UNKNOWN",
+    "read_only_replan_plan_sha256": "de4ce463acc4df471a3cf1ee039137cd444d9206f08dcb597529d221474fcd83",
+    "read_only_replan_remaining_targets": 22,
+    "readback_file_present": false,
+    "result_file_present": false,
+    "unit": "unit-007-al-AL2302-15m"
+  }
+}

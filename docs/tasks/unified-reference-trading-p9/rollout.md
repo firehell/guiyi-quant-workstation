@@ -1,5 +1,47 @@
 # Unified Reference Trading P9 rollout
 
+## 2026-09-25 authorized batch outcome
+
+The wave-1 warm-up preflight passed 175/175 units. The one authorized apply
+stopped on unit 7, `al/AL2302/15m`, with `UNIT_OUTCOME_UNKNOWN`. Units 1–6
+have committed results and strict readbacks for 80 partitions, using 21 known
+provider requests. Unit 7 has only an attempt record: there is no result or
+readback, its actual provider request count is unknown, and read-only replan
+still finds all 22 targets missing. The remaining 168 units were not started;
+no retry was attempted. The [exact observation](../../../outputs/reference-p9-warmup-wave1-20260925/apply-observation-20260925.json)
+has SHA-256 `c248f4cf816571ac0ed0182aa890c919373f393e05abd19a3722c61d6b497014`.
+The attempt journal remains local at the path recorded there. Recovery needs a
+fresh exact scope and a known outcome before another provider request or apply.
+
+The separate SuBing D1 source-only attempt completed 460/460 provider requests
+and saved 460/460 responses, with all 3,113 target dates and 2,166 context
+dates accounted for. The 3,113 target Close values are zero in the original
+RQData responses. They are `NONPOSITIVE_CLOSE_SOURCE_FACT`, never valid
+prices. The [source verification](../../../outputs/reference-p9-source-inventory-20260925/subing-d1-provider-verification-20260925.json)
+has SHA-256 `77b04974a6a7c33f263ed076923c50e52a3f40b4d176c50ad4558a33fff8b7de`;
+raw responses and journal remain local in its `attempt_local_path`.
+The [production read-only inventory](../../../outputs/reference-p9-source-inventory-20260925/subing-d1-quality-inventory-20260925.json)
+has SHA-256 `f18613bdeb91e22529758dad9c4cd95ab8ff4faf8e947a31ecfabc6df2766641`:
+460/460 old partitions and all 3,113 zero-Close Bars remain, with zero
+published quality facts.
+
+The approved quality-break contract was used to prepare isolated replacements
+only. The [frozen plan](../../../outputs/reference-p9-d1-quality-20260925/plan.json)
+has plan SHA-256 `4cba25557a0d0b967ec2b39e77e79d986e292f512923365bf24a8cc399625310`
+and file SHA-256 `64a9046a64569f8ebe519d47d54a23da7f347c196c7d5eb651cade23e11641d8`.
+The [manifest](../../../outputs/reference-p9-d1-quality-20260925/manifest.json)
+has manifest SHA-256 `20d1a38d1205aabbf94f634b3a921fe016f5cfda0322e4ec4640a50e21c59781`
+and file SHA-256 `24444926c899d33a08f7da0240fd4104a33e75174d37326c57d2fe50d7dbf680`.
+It binds 460 candidates, 5,175 retained valid Bars and 3,113 quality breaks.
+All 920 isolated candidate files were hash-checked; 25 focused tests, Ruff and
+diff checks passed, and independent review found no Confirmed Issue. The
+[independent post-prepare readback](../../../outputs/reference-p9-source-inventory-20260925/subing-d1-post-prepare-pointer-readback-20260925.json)
+(SHA-256 `7f041670ea716ba6a4290a737921578471dcd567e55d1165dc44fbaf307eee39`)
+found all 460 Catalog pointers and active Canonical file hashes unchanged.
+Candidate-preparation code is integrated on `develop@67ddd18ce21201309810a28a53394931b632194f`.
+Production quality publication is a separate Gate, as are schema 0048,
+historical builds, reader/worker activation, release and Runtime promotion.
+
 ## 2026-09-25 production checkpoint
 
 The W1 quality-gap correction is integrated at `develop@f3cf595738d2a2fdd20a69e4ec21e23e3a905dbf`.

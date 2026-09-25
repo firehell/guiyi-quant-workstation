@@ -1,5 +1,22 @@
 # 当前状态
 
+2026-09-25 参考交易获批两批操作结果：175 单元首波 warm-up 的生产只读预检
+175/175 通过；正式执行一次后，前 6 单元已提交并严格读回 80 个分区，已知
+provider 请求 21 次。第 7 单元 `al/AL2302/15m` 返回 `UNIT_OUTCOME_UNKNOWN`，
+没有结果/读回文件；只读重规划显示该单元 22 个目标仍缺失，实际 provider 请求数
+未知。执行器按合同停止，余 168 单元未启动，未重试。精确观察见
+`outputs/reference-p9-warmup-wave1-20260925/apply-observation-20260925.json`。
+苏冰 D1 来源专用批次一次完成 460/460 请求与响应、3,113/3,113 目标日期和
+2,166 个上下文日期；3,113 个目标 Close 在 RQData 原始响应中均为 0，分类为
+`NONPOSITIVE_CLOSE_SOURCE_FACT`，不是有效价格。生产只读盘点确认这 460 个旧
+分区均存在，3,113 个零价 Bar 仍在、质量事实为 0。隔离准备已冻结 460 个替换
+候选，保留 5,175 根有效 Bar，生成 3,113 个显式质量事实；独立复核无
+Confirmed Issue，定向测试 25 项通过。候选准备后生产 Catalog 指针和 active
+Canonical 文件哈希 460/460 未变。代码已集成 develop；生产质量发布、首波
+失败单元的恢复请求、0048 migration、历史构建、reader/worker、发布与 Runtime
+均未获本批授权，保持 pending。精确来源、质量盘点、候选计划/manifest 及生产
+回读见 `docs/tasks/unified-reference-trading-p9/rollout.md`。
+
 2026-09-25 牛哇正式 60 品种 W1 收尾：9/24 rank1 已补齐，随后只读原生审计按正式输入质量策略
 分成 v1 41 品种与 v2 19 品种，60/60 均有 `PROPOSED`，合计 238 个 D1/W1 直接目标。
 恢复入口修复经 186 项定向测试和独立 Review 无 finding，由 PR #397 合入 develop
@@ -26,7 +43,7 @@ A2611 plan hash 与执行前相同。现役 Runtime 仍为 v1.10.33；数据修�
 独立 Review 的 CLI 多行输出与 RQData 配置绑定问题已修复，9 项定向测试及 Ruff 通过。
 175/175 份冻结计划的生产只读预检通过，receipt 文件 SHA-256 为
 `9e996c42e6776dc630488be8857c7a188feda12a0b143b6090df665c1ef9b2a5`；
-尚无正式数据写入或实际 provider 请求。
+此处为执行前预检状态；执行结果见本文开头的新检查点。
 完整流级矩阵见 `outputs/reference-p9-source-inventory-20260925/matrix.json`。尚未执行
 `0048` migration、其余历史构建、全局 persisted reader 切换或 Reference worker 启用；
 本轮修复代码尚未发布。分层证据与计划身份见
@@ -117,7 +134,7 @@ warm-up 的 43 个 D1 直接月目标重合 0 个，与 9/19 已应用质量批�
 实际 provider 请求与写入均为 0，凭证见同目录 `preflight-94e513fb.json`（SHA-256
 `176eae04a49c54fc81414170e03e593d75f1a9f1217ca577f86f806d2497761a`）。
 定向测试 35 项通过、Ruff 与 diff check 通过；独立复审无 Confirmed Issue。
-真实来源查询仍待精确批次授权，来源结果未分类，后续质量发布须另立精确计划。
+此处为执行前预检状态；来源核验及隔离质量候选结果见本文开头的新检查点。
 
 文档整理：2026-09-24。最新 main/annotated tag/GitHub Release 为
 `v1.10.33@943c23b61a18156e0d068726ace843aacb6d4e43`（PR #396）。冻结源恢复入口已发布；
