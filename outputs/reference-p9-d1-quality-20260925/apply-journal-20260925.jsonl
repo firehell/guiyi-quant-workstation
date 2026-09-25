@@ -1,0 +1,2 @@
+{"at": "2026-09-25T01:44:02.822633+00:00", "backup_file_sha256": "eed6fd47794c892e17b33707ea57205ef61e652705aa3586e1eccba267b0fc29", "code_sha": "d7cfeba1879937b178345c658753f0c9f3e03f35", "manifest_sha256": "20d1a38d1205aabbf94f634b3a921fe016f5cfda0322e4ec4640a50e21c59781", "plan_sha256": "4cba25557a0d0b967ec2b39e77e79d986e292f512923365bf24a8cc399625310", "status": "started", "target_count": 460}
+{"applied_count": 460, "at": "2026-09-25T01:44:07.317848+00:00", "noop_count": 0, "status": "applied", "target_count": 460}
