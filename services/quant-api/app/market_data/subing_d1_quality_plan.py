@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import date
 from hashlib import sha256
 import json
+from pathlib import PurePosixPath
 from typing import Any, Mapping
 
 FIXED_CUTOFF = "2026-09-18T18:30:00+08:00"
@@ -153,3 +155,155 @@ def validate_apply_binding(plan: Mapping[str, Any], expected_plan_sha256: str) -
         raise ValueError("SUBING_D1_PLAN_HASH_MISMATCH")
     if plan.get("mode") != "PREPARE_ONLY" or plan.get("provider_request_budget") != 0:
         raise ValueError("SUBING_D1_PLAN_MODE_CONFLICT")
+
+
+def build_p9_quality_plan(
+    inventory: Mapping[str, Any],
+    source: Mapping[str, Any],
+    inventory_file_sha256: str,
+    source_file_sha256: str,
+) -> dict[str, Any]:
+    """Freeze P9's proven zero-close D1 Bars as replacement candidates only."""
+    def digest(value: object) -> bool:
+        return isinstance(value, str) and len(value) == 64 and all(
+            character in "0123456789abcdef" for character in value
+        )
+
+    if not all(digest(value) for value in (
+        inventory_file_sha256,
+        source_file_sha256,
+        inventory.get("source_inventory_sha256"),
+        source.get("inventory_file_sha256"),
+        source.get("candidate_plan_sha256"),
+        source.get("candidate_file_sha256"),
+        source.get("journal_sha256"),
+        source.get("result_sha256"),
+    )) or inventory.get("source_inventory_sha256") != source.get("inventory_file_sha256"):
+        raise ValueError("P9_SOURCE_IDENTITY_INVALID")
+    items = inventory.get("targets")
+    summary = inventory.get("summary")
+    if (
+        inventory.get("schema") != "reference_p9_d1_quality_inventory_v1"
+        or inventory.get("readonly") is not True
+        or not isinstance(items, list)
+        or not isinstance(summary, Mapping)
+        or not items
+        or summary.get("targets") != len(items)
+        or summary.get("states") != {"TARGETS_PRESENT": len(items)}
+        or summary.get("quality_fact_targets") != 0
+        or summary.get("missing_dates") != 0
+    ):
+        raise ValueError("P9_QUALITY_INVENTORY_INVALID")
+    if (
+        source.get("status") != "SOURCE_ZERO_CLOSE_CONFIRMED"
+        or source.get("canonical_writes") != 0
+        or source.get("database_writes") != 0
+        or type(source.get("requests_started")) is not int
+        or source["requests_started"] <= 0
+        or source.get("responses_saved") != source["requests_started"]
+        or source.get("target_date_identities") != summary.get("affected_dates")
+        or source.get("target_rows_zero_close") != summary.get("affected_dates")
+        or summary.get("zero_bar_targets") != summary.get("affected_dates")
+    ):
+        raise ValueError("P9_SOURCE_SCOPE_INVALID")
+
+    targets: list[dict[str, Any]] = []
+    identities: set[tuple[str, str, str]] = set()
+    for item in items:
+        if not isinstance(item, Mapping):
+            raise ValueError("P9_QUALITY_TARGET_INVALID")
+        symbol, contract, month = (
+            item.get("product"), item.get("contract"), item.get("month")
+        )
+        days = item.get("affected_dates")
+        uri = item.get("old_file_uri")
+        try:
+            year, month_number = (int(value) for value in str(month).split("-"))
+            parsed_days = [date.fromisoformat(str(value)) for value in days]
+            path = PurePosixPath(str(uri))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("P9_QUALITY_TARGET_INVALID") from exc
+        identity = (str(symbol), str(contract), str(month))
+        if (
+            not isinstance(symbol, str)
+            or not isinstance(contract, str)
+            or not isinstance(month, str)
+            or month != f"{year:04d}-{month_number:02d}"
+            or identity in identities
+            or item.get("state") != "TARGETS_PRESENT"
+            or type(item.get("partition_id")) is not int
+            or item["partition_id"] <= 0
+            or not digest(item.get("old_file_sha256"))
+            or item.get("old_source_quality_sha256") is not None
+            and not digest(item.get("old_source_quality_sha256"))
+            or not isinstance(days, list)
+            or not parsed_days
+            or parsed_days != sorted(set(parsed_days))
+            or any(day.year != year or day.month != month_number for day in parsed_days)
+            or item.get("affected_count") != len(parsed_days)
+            or item.get("target_zero_bars") != len(parsed_days)
+            or item.get("target_quality_facts") != 0
+            or item.get("target_missing") != 0
+            or path.is_absolute()
+            or ".." in path.parts
+            or path.parts[:6] != (
+                "kind=contract", f"symbol={symbol}", f"series={contract}",
+                "frequency=1d", f"year={year:04d}", f"month={month_number:02d}",
+            )
+        ):
+            raise ValueError("P9_QUALITY_TARGET_INVALID")
+        identities.add(identity)
+        targets.append({
+            "symbol": symbol,
+            "contract": contract,
+            "month": month,
+            "partition_id": item["partition_id"],
+            "old_file_uri": uri,
+            "old_file_sha256": item["old_file_sha256"],
+            "old_source_quality_sha256": item["old_source_quality_sha256"],
+            "affected_dates": [day.isoformat() for day in parsed_days],
+            "source_fact_type": "nonpositive_close_source_quality",
+            "operation": "REPLACE_EXISTING_PARTITION",
+        })
+    if sum(len(item["affected_dates"]) for item in targets) != summary["affected_dates"]:
+        raise ValueError("P9_QUALITY_INVENTORY_INVALID")
+    targets.sort(key=lambda row: (row["symbol"], row["contract"], row["month"]))
+    products = sorted({item["symbol"] for item in targets})
+    body: dict[str, Any] = {
+        "schema": "subing-d1-quality-production-plan-v1",
+        "mode": "PREPARE_ONLY",
+        "fixed_cutoff": "2026-09-23T16:00:00+08:00",
+        "provider_request_budget": 0,
+        "production_writes": 0,
+        "products": products,
+        "product_count": len(products),
+        "target_partition_count": len(targets),
+        "targets": targets,
+        "versions": {
+            "quality_policy": "subing-d1-quality-segment-v1",
+            "endpoint_union": "canonical-source-quality-union-v1",
+            "reference_model": "subing_reference_reverse_close_quality_segment_v2",
+            "formula": "subing_ths_1d_v1",
+        },
+        "apply_preconditions": {
+            "maintenance_lock": "market-data-canonical-publication-exclusive-v1",
+            "compare_old_pointer_and_hashes": True,
+            "stage_validate_fsync_atomic_pointer_commit": True,
+            "catalog_and_file_commit_are_one_recoverable_unit": True,
+            "post_commit_strict_readback": True,
+            "idempotent_already_applied_requires_exact_hash_match": True,
+            "stale_pointer_or_hash": "ABORT_WITHOUT_WRITE",
+            "partial_commit": "RESTORE_OLD_POINTER_AND_RETAIN_IMMUTABLE_FILE",
+        },
+        "input_evidence": {
+            "quality_inventory_file_sha256": inventory_file_sha256,
+            "source_summary_file_sha256": source_file_sha256,
+            "source_inventory_file_sha256": source["inventory_file_sha256"],
+            "source_candidate_plan_sha256": source["candidate_plan_sha256"],
+            "source_candidate_file_sha256": source["candidate_file_sha256"],
+            "source_journal_sha256": source["journal_sha256"],
+            "source_result_sha256": source["result_sha256"],
+        },
+    }
+    body["plan_sha256"] = sha256(canonical_json(body)).hexdigest()
+    return body

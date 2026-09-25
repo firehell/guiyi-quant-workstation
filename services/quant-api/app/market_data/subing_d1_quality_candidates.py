@@ -261,15 +261,17 @@ def build_source_proof_index(
 def build_recovery_source_proof_index(
     recovery_candidate: Mapping[str, Any], *, attempt: Path
 ) -> dict[tuple[str, str, date], SourceProof]:
-    """Verify a completed recovery attempt and expose only its frozen target rows."""
+    """Verify a completed source-only attempt and expose its frozen target rows."""
     plan_sha256 = recovery_candidate.get("plan_sha256")
     body = dict(recovery_candidate)
     body.pop("plan_sha256", None)
     if (
         not isinstance(plan_sha256, str)
         or sha256(_canonical_json(body)).hexdigest() != plan_sha256
-        or recovery_candidate.get("schema")
-        != "subing-d1-source-response-recovery-candidate-v1"
+        or recovery_candidate.get("schema") not in {
+            "subing-d1-source-response-recovery-candidate-v1",
+            "subing-d1-reference-p9-source-candidate-v1",
+        }
     ):
         raise CandidatePreparationError("RECOVERY_PLAN_INVALID")
     requests = recovery_candidate.get("requests")
