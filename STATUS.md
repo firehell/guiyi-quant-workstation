@@ -1,5 +1,13 @@
 # 当前状态
 
+2026-09-25 本机旧 Runtime 工作树 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1`
+已按 owner 要求移除；已安装服务仍指向 `v1.10.33`。旧树的 436 个 `outputs` 文件与
+develop 工作区对应文件逐字节一致，旧盘后状态另存于
+`outputs/runtime-v1.10.30-retained/after-market-status.json`，SHA-256 为
+`1c9f75f6eb2398d6e791060925a2e6188f41ad4a4b6095fc42ff4f61ffab68d4`。
+以下关于旧根保留的记录是当时发布读回，不代表当前仍有该工作树；若需重建旧版本，
+须从 exact tag 重新建立隔离根并完成当时适用的预检和授权。
+
 2026-09-25 参考交易获批两批操作结果：175 单元首波 warm-up 的生产只读预检
 175/175 通过；正式执行一次后，前 6 单元已提交并严格读回 80 个分区，已知
 provider 请求 21 次。第 7 单元 `al/AL2302/15m` 返回 `UNIT_OUTCOME_UNKNOWN`，
