@@ -1,5 +1,24 @@
 # Unified Reference Trading P9 rollout
 
+## 2026-09-25 D1 quality publication and remaining gate
+
+The frozen 460-partition D1 quality batch was published once at
+`develop@d7cfeba1879937b178345c658753f0c9f3e03f35`, after a production
+read-only preflight returned `ready / old_count=460 / noop_count=0`. The apply
+returned `applied_count=460`; an independent production read-only preflight
+afterwards returned `already_applied / old_count=0 / target_count=460`. The
+[pre-apply pointer backup](../../../outputs/reference-p9-d1-quality-20260925/preapply-pointer-backup-20260925.json)
+has file SHA-256 `eed6fd47794c892e17b33707ea57205ef61e652705aa3586e1eccba267b0fc29`;
+the [apply journal](../../../outputs/reference-p9-d1-quality-20260925/apply-journal-20260925.jsonl)
+records the start and result. Both are retained at `develop@9680a7f62f777b7d652d72abdec6c470502b8f30`.
+
+The wave-1 minute warm-up remains stopped at `al/AL2302/15m`: the read-only
+replan still shows 22 missing targets, while its provider request count cannot
+be reconstructed from the attempt-only journal. No retry or additional unit
+was run. This prevents a final same-code 600-stream matrix, subsequent history
+build and page/worker cutover from being claimed. The current production schema
+and Runtime still require fresh readback before those later stages.
+
 ## 2026-09-25 authorized batch outcome
 
 The wave-1 warm-up preflight passed 175/175 units. The one authorized apply

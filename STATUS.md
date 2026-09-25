@@ -1,5 +1,17 @@
 # 当前状态
 
+2026-09-25 参考交易本轮收尾：两个已确认代码问题已修复并补回归，另修正了
+SuBing D1 旧分区缺少 source coverage 时的回滚核验。460 个冻结 D1 质量候选
+已在 `develop@d7cfeba1879937b178345c658753f0c9f3e03f35` 上一次性原子发布，
+结果 `applied=460/460`；发布后生产只读回读为 `already_applied=460/460`、
+`old_count=0`。精确备份和 journal 见
+`outputs/reference-p9-d1-quality-20260925/`，证据提交为
+`develop@9680a7f62f777b7d652d72abdec6c470502b8f30`。另一数据批次仍被
+`al/AL2302/15m` 第 7 单元的未知 provider 请求结局阻断：只读重规划确认
+22 个目标未发布，但无法从现存 attempt 证明请求次数，故未重试，余 168 单元
+未启动。同一版本 600 流全量矩阵、历史构建、页面切换和持续更新验收尚未执行；
+现役 Runtime 和 Reference reader/worker 未切换。
+
 2026-09-25 本机旧 Runtime 工作树 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.30-r1`
 已按 owner 要求移除；已安装服务仍指向 `v1.10.33`。旧树的 436 个 `outputs` 文件与
 develop 工作区对应文件逐字节一致，旧盘后状态另存于
