@@ -13,9 +13,18 @@ claimed文件与父目录均fsync；崩溃/partial/unknown不重试；原自然�
 未写未来rank1或提前发布行情；未来OHLCV是否准时仍需自然运行证明。
 公告机器入口未识别，按owner确认记录unavailable并保留默认延后单次检查。
 
-发布PR操作被宿主自动审批拒绝：本轮授权被识别为补丁/develop集成，未覆盖main/tag发布。
-正在等待owner明确发布及Runtime切换授权；现役仍v1.10.33，候选未发布、未安装新调度，
-未手工运行after-market或制造自然验收。该检查点不是RUNTIME_READY或自然盘后PASSED。
+owner随后明确授权发布v1.10.34并切换Runtime；PR #399已合入main，annotated tag与Release已发布。
+正式身份：`v1.10.34@85d235206cd4a41602c68a637a9d563c60941ece`。
+当前正式根：`/Users/zhangzhao/Library/Application Support/GuiyiQuant/runtime-v1.10.34`，
+独立Git存储、detached、clean；v1.10.33原根保留作回退及原自然状态证据。
+2026-09-26 10:12 CST现场只读回读：API/Web HTTP200；Runtime ok、readonly=true；
+API/Web/Live/Alert running，loaded root/commit均匹配；after-market和late-provider-recovery
+已加载、schedule-only not_running正常。Reference worker仍关闭，既有通知受众未变且未发送通知。
+既有weekly audit旧根最近exit126（外置盘脚本Operation not permitted），本轮迁至上述本机根；
+新根自然审计尚无结果，through/findings未知，不能据此声明全历史完整。
+未手工运行after-market、延后恢复或weekly audit；未写Canonical/生产DB、未执行migration或Scope变更。
+发布与现场切换已完成；9/28自然盘后及新根自然weekly audit仍待发生，本记录不是自然PASSED或RUNTIME_READY。
+Release：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.34
 
 # 当前状态
 
