@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   marketDetailEventIdentity,
+  isNewowStrategySwitch,
   parseMarketDetailRoute,
   resolveViewSwitchIdentity,
   serializeMarketDetailIdentity,
@@ -197,4 +198,21 @@ test('only Newow strategy changes preserve the price shell', async () => {
   assert.equal(isNewowStrategySwitch(previous, { ...previous, strategy: 'oscillation', symbol: 'rb' }), false)
   assert.equal(isNewowStrategySwitch(previous, { ...previous, strategy: 'oscillation', frequency: '1w' }), false)
   assert.equal(isNewowStrategySwitch(previous, { ...previous, view: 'free', strategy: undefined }), false)
+})
+
+
+test('dual presentation roundtrips without inventing a fourth strategy kernel', () => {
+  const identity = { view: 'newow' as const, symbol: 'jm', strategy: 'trend' as const,
+    newowMode: 'dual' as const, seriesKind: 'actual_dominant' as const, frequency: '1w' as const }
+  assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(identity)), { kind: 'valid', identity })
+  assert.equal(isNewowStrategySwitch({ ...identity, newowMode: undefined }, identity), true)
+  assert.equal(isNewowStrategySwitch(identity, { ...identity, newowMode: undefined }), true)
+  assert.equal(isNewowStrategySwitch(identity, { ...identity, symbol: 'rb' }), false)
+  for (const query of [
+    { view: 'newow', strategy: 'main_rise', newow_mode: 'dual' },
+    { view: 'newow', strategy: 'oscillation', newow_mode: 'dual' },
+    { view: 'newow', strategy: 'trend', newow_mode: 'fusion' },
+    { view: 'free', newow_mode: 'dual', frequency: '1d', series_kind: 'actual_dominant' },
+  ]) assert.equal(parseMarketDetailRoute({ symbol: 'jm', ...query }).kind, 'invalid')
+  assert.equal(parseMarketDetailRoute({ view: 'newow', symbol: 'jm', strategy: 'main_rise' }).kind, 'valid')
 })

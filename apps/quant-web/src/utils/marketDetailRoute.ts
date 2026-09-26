@@ -14,7 +14,7 @@ import {
 /** Only strategy-owned content changes; the product, series and period stay fixed. */
 export function isNewowStrategySwitch(previous: MarketDetailIdentity | null, next: MarketDetailIdentity): boolean {
   return previous?.view === 'newow' && next.view === 'newow'
-    && previous.strategy !== next.strategy
+    && (previous.strategy !== next.strategy || previous.newowMode !== next.newowMode)
     && NEWOW_STRATEGIES.includes(previous.strategy!) && NEWOW_STRATEGIES.includes(next.strategy!)
     && previous.symbol === next.symbol && previous.frequency === next.frequency
     && previous.seriesKind === next.seriesKind && previous.contract === next.contract
@@ -53,6 +53,10 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     return invalid('DETAIL_STRATEGY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
 
+  if (query.newow_mode !== undefined && (!isNewow || query.newow_mode !== 'dual' || strategy !== 'trend')) {
+    return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
+  }
+
   const fixed = viewValue === 'subing' ? FIXED_IDENTITIES.subing : null
   const seriesKind = query.series_kind === undefined && (fixed || isNewow)
     ? fixed?.seriesKind ?? 'actual_dominant'
@@ -86,7 +90,9 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     return valid(viewValue, symbol, seriesKind, frequency, contract, query.focus_bar_end, strategy ?? undefined)
   }
   if (query.contract !== undefined) return invalid('DETAIL_SERIES_KIND_INVALID', symbol, recoveryFor(viewValue, symbol))
-  return valid(viewValue, symbol, seriesKind, frequency, undefined, query.focus_bar_end, strategy ?? undefined)
+  const result = valid(viewValue, symbol, seriesKind, frequency, undefined, query.focus_bar_end, strategy ?? undefined)
+  if (result.kind === 'valid' && query.newow_mode === 'dual') result.identity.newowMode = 'dual'
+  return result
 }
 
 export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): Record<string, string | undefined> {
@@ -97,7 +103,7 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
   return {
     view: identity.view,
     symbol: identity.symbol,
-    ...(identity.view === 'newow' ? { strategy: identity.strategy } : {}),
+    ...(identity.view === 'newow' ? { strategy: identity.strategy, newow_mode: identity.newowMode } : {}),
     series_kind: identity.seriesKind,
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,
@@ -115,7 +121,7 @@ export function resolveViewSwitchIdentity(
     if (previous?.view === 'newow' && sameSymbol(previous.symbol, symbol) && previous.strategy
       && NEWOW_STRATEGY_SET.has(previous.strategy) && NEWOW_FREQUENCY_SET.has(previous.frequency)) {
       return {
-        view, symbol, strategy: previous.strategy,
+        view, symbol, strategy: previous.strategy, ...(previous.newowMode ? { newowMode: previous.newowMode } : {}),
         seriesKind: 'actual_dominant', frequency: previous.frequency,
       }
     }
@@ -254,7 +260,7 @@ function allowsFocus(view: MarketDetailView, seriesKind: SeriesKind, frequency: 
 }
 
 function parseLegacyTrendRoute(query: Record<string, unknown>, symbol: string): MarketDetailRouteResult {
-  if (query.strategy !== undefined || query.contract !== undefined) {
+  if (query.strategy !== undefined || query.contract !== undefined || query.newow_mode !== undefined) {
     return invalid('DETAIL_TREND_IDENTITY_INVALID', symbol, recoveryFor('trend', symbol))
   }
   const seriesKind = query.series_kind === undefined ? 'actual_dominant' : parseSeriesKind(query.series_kind)

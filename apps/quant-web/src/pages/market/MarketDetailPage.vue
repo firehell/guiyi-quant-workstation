@@ -87,7 +87,7 @@ const migrationNotice = ref<string | null>(
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
-    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
+    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.newowMode ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
     : 'invalid'
 })
 let activationGeneration = 0
@@ -95,7 +95,8 @@ let activatedIdentity: MarketDetailIdentity | null = null
 async function activateRoute() {
   const generation = ++activationGeneration
   const result = routeResult.value
-  const strategyOnly = newowHistoricalAsOf.value === null && result.kind === 'valid' && isNewowStrategySwitch(activatedIdentity, result.identity)
+  const strategyOnly = result.kind === 'valid' && isNewowStrategySwitch(activatedIdentity, result.identity)
+    && (newowHistoricalAsOf.value === null || activatedIdentity?.strategy === result.identity.strategy)
   activatedIdentity = result.kind === 'valid' ? result.identity : null
   if (!strategyOnly) {
     newowHistoricalAsOf.value = null

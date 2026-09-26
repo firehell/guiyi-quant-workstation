@@ -83,7 +83,7 @@ test('SuBing keeps the chart surface free of runtime summary and reference-versi
 
 test('view navigation exposes six flat analysis choices and emits exact identities', () => {
   const { source, template } = parsedComponent('MarketDetailViewNav')
-  for (const label of ['震荡策略', '趋势策略', '主升浪', '火天大有', '苏冰预警', '自由看盘']) {
+  for (const label of ['震荡策略', '趋势策略', '双策略', '火天大有', '苏冰预警', '自由看盘']) {
     assert.match(source, new RegExp(label))
   }
   assert.match(source, /newowFrequencies/)

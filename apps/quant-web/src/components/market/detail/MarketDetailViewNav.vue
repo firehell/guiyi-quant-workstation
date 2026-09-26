@@ -29,18 +29,18 @@ const emit = defineEmits<{
   'contract-cleared': [identity: MarketDetailIdentity]
 }>()
 
-type AnalysisChoice = NewowStrategy | Extract<MarketDetailView, 'htdy' | 'subing' | 'free'>
+type AnalysisChoice = NewowStrategy | 'dual' | Extract<MarketDetailView, 'htdy' | 'subing' | 'free'>
 
 const views: readonly { value: AnalysisChoice; label: string }[] = [
   { value: 'oscillation', label: '震荡策略' },
   { value: 'trend', label: '趋势策略' },
-  { value: 'main_rise', label: '主升浪' },
+  { value: 'dual', label: '双策略' },
   { value: 'htdy', label: '火天大有' },
   { value: 'subing', label: '苏冰预警' },
   { value: 'free', label: '自由看盘' },
 ]
 const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'newow'
-  ? props.identity.strategy ?? 'trend'
+  ? props.identity.newowMode === 'dual' ? 'dual' : props.identity.strategy ?? 'trend'
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
 const seriesLabels: Record<SeriesKind, string> = { actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' }
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
@@ -57,13 +57,14 @@ watch(() => props.identity, (identity) => {
 }, { deep: true })
 
 function chooseView(view: AnalysisChoice) {
-  if (view === 'trend' || view === 'oscillation' || view === 'main_rise') {
+  if (view === 'trend' || view === 'oscillation' || view === 'main_rise' || view === 'dual') {
     const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
     const frequency = props.identity.view === 'newow'
       ? props.identity.frequency
       : props.newowFrequencies.includes(restored.frequency) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
     emit('select', {
-      view: 'newow', symbol: props.identity.symbol, strategy: view,
+      view: 'newow', symbol: props.identity.symbol, strategy: view === 'dual' ? 'trend' : view,
+      ...(view === 'dual' ? { newowMode: 'dual' as const } : {}),
       seriesKind: 'actual_dominant', frequency,
     })
     return

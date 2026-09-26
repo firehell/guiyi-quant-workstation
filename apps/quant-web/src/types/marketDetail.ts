@@ -27,6 +27,8 @@ export interface MarketDetailIdentity {
   view: MarketDetailView
   symbol: string
   strategy?: NewowStrategy
+  /** Presentation mode; fusion is not a fourth strategy kernel. */
+  newowMode?: 'dual'
   seriesKind: SeriesKind
   contract?: string
   frequency: MarketFrequency
