@@ -241,8 +241,8 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
             <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.category === 'open', 'is-interrupted': row.category === 'interrupted' }">{{ row.category === 'open' ? '持仓参考中' : row.category === 'interrupted' ? (row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断') : row.trade.frequency === '1w' ? '周K' : row.trade.frequency === '1d' ? '日K' : '60分' }}</strong><span>{{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.exit_bar_end ?? row.trade.interrupted_at) }}</span><span>{{ row.trade.physical_contract }}</span><span v-if="row.initial">期初已有</span></div>
             <strong class="newow-reference__record-return" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ row.category === 'closed' ? '盈亏' : row.category === 'open' ? '参考浮动' : '中断浮动' }} {{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</strong>
           </header>
-          <div class="newow-reference__record-line"><span><b class="newow-reference__entry">建仓</b> <span>参考买入</span> <strong>{{ formatMarketDecimal(row.trade.entry_reference_price) }}</strong></span><time :datetime="row.trade.entry_bar_end">{{ rowTime(row.trade, row.trade.entry_bar_end) }}</time></div>
-          <div v-if="row.category === 'closed'" class="newow-reference__record-line"><span><b class="newow-reference__exit">清仓</b> <span>参考卖出</span> <strong>{{ formatMarketDecimal(row.trade.exit_reference_price) }}</strong> <strong class="newow-reference__inline-return" :data-direction="referencePercentDisplay(row.trade.reference_return_pct).direction">{{ referencePercentDisplay(row.trade.reference_return_pct).text }}</strong></span><time :datetime="row.trade.exit_bar_end ?? undefined">{{ rowTime(row.trade, row.trade.exit_bar_end) }}</time></div>
+          <div class="newow-reference__record-line"><span><b class="newow-reference__entry">建仓</b> <span>买入</span> <strong>{{ formatMarketDecimal(row.trade.entry_reference_price) }}</strong></span><time :datetime="row.trade.entry_bar_end">{{ rowTime(row.trade, row.trade.entry_bar_end) }}</time></div>
+          <div v-if="row.category === 'closed'" class="newow-reference__record-line"><span><b class="newow-reference__exit">清仓</b> <span>卖出</span> <strong>{{ formatMarketDecimal(row.trade.exit_reference_price) }}</strong> <strong class="newow-reference__inline-return" :data-direction="referencePercentDisplay(row.trade.reference_return_pct).direction">{{ referencePercentDisplay(row.trade.reference_return_pct).text }}</strong></span><time :datetime="row.trade.exit_bar_end ?? undefined">{{ rowTime(row.trade, row.trade.exit_bar_end) }}</time></div>
           <div v-else class="newow-reference__record-line"><span><b class="newow-reference__valuation">参考估值</b> <strong>{{ formatMarketDecimal(row.trade.mark_reference_price) }}</strong></span><time :datetime="row.trade.mark_bar_end ?? undefined">{{ rowTime(row.trade, row.trade.mark_bar_end) }}</time></div>
           <p v-if="row.category === 'interrupted'" class="newow-reference__interruption">{{ referenceInterruptionLabel(row.trade.interruption_reason) }} · 中断浮动不计入已完成收益</p>
           <p v-else-if="row.category === 'open'" class="newow-reference__interruption">未清仓 · 浮动不计入已完成收益</p>
@@ -273,16 +273,17 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__records-heading h3 { font-size:16px; font-weight:700; }
 .newow-reference__records-heading span { font-size:12px; color:#999; }
 .newow-reference__cards { display:grid; gap:12px; }
-.newow-reference__card { padding:16px 18px; border:1px solid #ebedf0; border-radius:12px; background:#fff; min-width:0; cursor:default; }
-.newow-reference__record-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
-.newow-reference__record-meta { display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:13px; color:#999; }
-.newow-reference__period { padding:5px 10px; border-radius:4px; background:#ff9500; color:#fff; font-size:14px; white-space:nowrap; }
+.newow-reference__card { padding:12px 16px; border:1px solid #ebedf0; border-radius:12px; background:#fff; min-width:0; cursor:default; }
+.newow-reference__record-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; }
+.newow-reference__record-meta { display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:14px; line-height:24px; color:#999; }
+.newow-reference__period { padding:4px 8px; line-height:20px; border-radius:4px; background:#ff9500; color:#fff; font-size:14px; white-space:nowrap; }
 .newow-reference__period.is-open,.newow-reference__waiting header strong { background:#007aff; color:#fff; }
 .newow-reference__period.is-interrupted { background:#98a2b3; }
-.newow-reference__record-return { font-size:17px; white-space:nowrap; }
-.newow-reference__record-line { display:flex; justify-content:space-between; align-items:baseline; gap:16px; margin-top:10px; font-size:16px; color:#292929; font-variant-numeric:tabular-nums; }
+.newow-reference__record-return { font-size:18px; font-weight:700; line-height:26px; white-space:nowrap; }
+.newow-reference__record-line { display:flex; justify-content:space-between; align-items:baseline; gap:16px; margin-top:6px; font-size:18px; font-weight:600; line-height:24px; color:#292929; font-variant-numeric:tabular-nums; }
 .newow-reference__record-line > span { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; }
-.newow-reference__record-line time { color:#999; font-size:13px; white-space:nowrap; }
+.newow-reference__record-line strong,.newow-reference__record-line b { font-weight:700; }
+.newow-reference__record-line time { color:#999; font-size:14px; font-weight:400; white-space:nowrap; }
 .newow-reference__entry,[data-direction="up"].newow-reference__record-return,[data-direction="up"].newow-reference__inline-return { color:#ff403a; }
 .newow-reference__exit,[data-direction="down"].newow-reference__record-return,[data-direction="down"].newow-reference__inline-return { color:#2ac758; }
 .newow-reference__valuation { color:#8992a4; }
