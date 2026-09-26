@@ -16,6 +16,7 @@ import {
 } from '@/utils/newowProductViewModel'
 
 const props = defineProps<{
+  updatingStrategy?: boolean
   recordsResponse?: NewowProductSectionResponse<'reference'> | null
   recordsLoading?: boolean
   recordsError?: string | null
@@ -196,6 +197,7 @@ function usePreset(preset: NewowReferencePreset): void {
     </p>
 
     <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
+    <div v-if="!model && (updatingStrategy || lifecycle === 'loading' || chartLifecycle === 'loading')" class="newow-reference__loading-curve" aria-hidden="true" />
     <template v-if="model">
       <section class="newow-reference__curve" aria-label="已完成参考交易累计收益曲线">
         <p v-if="curve?.message" role="status">{{ curve.message }}</p>
@@ -325,6 +327,7 @@ function usePreset(preset: NewowReferencePreset): void {
 .newow-reference__custom-window input,.newow-reference__custom-window button { min-height:32px; font-size:12px; }
 .newow-reference__curve { border:0; padding:8px 0; border-radius:0; }
 .newow-reference__curve header { gap:10px; font-size:14px; }
+.newow-reference__loading-curve { min-height:292px; }
 .newow-reference__curve svg { height:200px; min-height:0; margin:10px 0 0; }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
 .newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:16px 0; margin:8px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }

@@ -301,6 +301,7 @@ test('same product and frequency strategy switches keep viewport while replacing
   const ranges: Array<typeof range> = []
   const bandCalls: unknown[][] = []
   const channelCalls: unknown[][] = []
+  const candleCalls: unknown[][] = []
   const { NewowProductBandPrimitive } = await import('../src/components/market/detail/newow/newowProductBandPrimitive.ts')
   const { NewowTrendChannelPrimitive } = await import('../src/components/market/detail/newow/newowTrendChannelPrimitive.ts')
   const originalBand = NewowProductBandPrimitive.prototype.setData
@@ -310,8 +311,9 @@ test('same product and frequency strategy switches keep viewport while replacing
   try {
     const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
     const strategy = ref<'trend' | 'oscillation' | 'main_rise'>('trend')
+    const switching = ref(false)
     const fakeChart = {
-      addSeries: () => ({ setData() {}, createPriceLine() {} }), removeSeries() {},
+      addSeries: (definition: { type: string }) => ({ setData(items: unknown[]) { if (definition.type === 'Candlestick') candleCalls.push([...items]) }, createPriceLine() {} }), removeSeries() {},
       timeScale: () => ({
         fitContent() {},
         setVisibleLogicalRange(value: typeof range) { range = value; ranges.push(value) },
@@ -321,16 +323,18 @@ test('same product and frequency strategy switches keep viewport while replacing
       subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
     }
     const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
-      response: response.value, strategy: strategy.value, selectedSignalId: null,
+      response: response.value, strategy: strategy.value, strategySwitching: switching.value, selectedSignalId: null,
     }) }))
     app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
     app.mount(element('root')); await nextTick()
     range = { from: 12, to: 42 }
 
-    response.value = null; strategy.value = 'oscillation'; await nextTick()
+    const acceptedCandles = candleCalls.at(-1)
+    switching.value = true; response.value = null; strategy.value = 'oscillation'; await nextTick()
+    assert.deepEqual(candleCalls.at(-1), acceptedCandles, 'strategy loading preserves market candles while revoking strategy overlays')
     assert.deepEqual(bandCalls.at(-1), [])
     assert.deepEqual(channelCalls.at(-1), [])
-    response.value = strategyResponse('oscillation'); await nextTick()
+    switching.value = false; response.value = strategyResponse('oscillation'); await nextTick()
     assert.deepEqual(range, { from: 12, to: 42 })
     assert.deepEqual(bandCalls.at(-1), [])
     assert.equal(channelCalls.at(-1)?.length, 1)
@@ -339,6 +343,11 @@ test('same product and frequency strategy switches keep viewport while replacing
     assert.deepEqual(range, { from: 12, to: 42 })
     assert.equal(bandCalls.at(-1)?.length, 1)
     assert.deepEqual(channelCalls.at(-1), [])
+
+    switching.value = true; response.value = null; await nextTick()
+    switching.value = false; await nextTick()
+    assert.deepEqual(candleCalls.at(-1), [], 'failed strategy transition revokes retained price display')
+    response.value = strategyResponse('main_rise'); await nextTick()
 
     const incompatible = strategyResponse('trend')
     incompatible.value!.bars[0]!.bar_end = '2026-08-15T06:00:00Z'

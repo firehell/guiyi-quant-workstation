@@ -10,6 +10,15 @@ import {
   type MarketDetailView,
   type MarketDetailViewRestore,
 } from '../types/marketDetail.ts'
+
+/** Only strategy-owned content changes; the product, series and period stay fixed. */
+export function isNewowStrategySwitch(previous: MarketDetailIdentity | null, next: MarketDetailIdentity): boolean {
+  return previous?.view === 'newow' && next.view === 'newow'
+    && previous.strategy !== next.strategy
+    && NEWOW_STRATEGIES.includes(previous.strategy!) && NEWOW_STRATEGIES.includes(next.strategy!)
+    && previous.symbol === next.symbol && previous.frequency === next.frequency
+    && previous.seriesKind === next.seriesKind && previous.contract === next.contract
+}
 import { isHtdyAlertEvent } from './alertRules.ts'
 
 const SERIES_KINDS = new Set<SeriesKind>(['continuous', 'actual_dominant', 'contract'])

@@ -183,3 +183,18 @@ test('events enter their exact view and bar', () => {
     { symbol: 'jm', view: 'newow', overlay: 'htdy' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 })
+
+
+test('only Newow strategy changes preserve the price shell', async () => {
+  const { isNewowStrategySwitch } = await import('../src/utils/marketDetailRoute.ts')
+  const previous = { view: 'newow', symbol: 'jm', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant' } as const
+  for (const strategy of ['oscillation', 'main_rise'] as const) {
+    assert.equal(isNewowStrategySwitch(previous, { ...previous, strategy }), true)
+    assert.equal(isNewowStrategySwitch({ ...previous, strategy }, previous), true)
+  }
+  assert.equal(isNewowStrategySwitch(previous, previous), false)
+  assert.equal(isNewowStrategySwitch(null, previous), false)
+  assert.equal(isNewowStrategySwitch(previous, { ...previous, strategy: 'oscillation', symbol: 'rb' }), false)
+  assert.equal(isNewowStrategySwitch(previous, { ...previous, strategy: 'oscillation', frequency: '1w' }), false)
+  assert.equal(isNewowStrategySwitch(previous, { ...previous, view: 'free', strategy: undefined }), false)
+})

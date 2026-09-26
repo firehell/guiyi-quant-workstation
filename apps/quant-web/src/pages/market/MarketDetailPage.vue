@@ -28,7 +28,7 @@ import {
   saveMarketDetailPreferences,
   type FlexibleDetailPreferences,
 } from '@/utils/marketDetailPreferences'
-import { parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/marketDetailRoute'
+import { isNewowStrategySwitch, parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/marketDetailRoute'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,15 +91,20 @@ const identityKey = computed(() => {
     : 'invalid'
 })
 let activationGeneration = 0
+let activatedIdentity: MarketDetailIdentity | null = null
 async function activateRoute() {
   const generation = ++activationGeneration
-  newowHistoricalAsOf.value = null
-  newowDailyAsOf.value = null
-  newowDailyPending.value = false
-  newowWeeklyQuoteContext.value = { asOf: null, physicalContract: null }
+  const result = routeResult.value
+  const strategyOnly = newowHistoricalAsOf.value === null && result.kind === 'valid' && isNewowStrategySwitch(activatedIdentity, result.identity)
+  activatedIdentity = result.kind === 'valid' ? result.identity : null
+  if (!strategyOnly) {
+    newowHistoricalAsOf.value = null
+    newowDailyAsOf.value = null
+    newowDailyPending.value = false
+    newowWeeklyQuoteContext.value = { asOf: null, physicalContract: null }
+  }
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
-  const result = routeResult.value
   if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'subing'].includes(result.identity.view)) return
   if (route.query.view === undefined || route.query.view === 'trend') {
     if (route.query.view === 'trend') {

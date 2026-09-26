@@ -67,6 +67,7 @@ const props = withDefaults(defineProps<{
   selectedSignalId: string | null
   focusRequestId?: number
   loading?: boolean
+  strategySwitching?: boolean
   hasMoreBefore?: boolean
 }>(), { loading: false, hasMoreBefore: false, focusRequestId: 0 })
 
@@ -240,7 +241,7 @@ onUnmounted(createNewowProductChartDisposer({
   },
 }))
 
-watch(model, (value) => { volumeScoreIndex.value = null; renderModel(value) })
+watch([model, () => props.strategySwitching], ([value]) => { volumeScoreIndex.value = null; renderModel(value) })
 watch([() => props.targetPrice, () => props.absorbPrice], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => renderMarkers(model.value))
@@ -292,9 +293,12 @@ function renderModel(value: NewowProductChartModel | null): void {
       const visibleRange = chart.timeScale().getVisibleLogicalRange()
       if (visibleRange !== null) retainedVisibleRange = visibleRange
     }
-    candles.setData([])
-    volume?.setData([])
-    auxiliaryAnchor?.setData([])
+    // Keep only the price facts while switching strategy, never its old indicators or signals.
+    if (!props.strategySwitching) {
+      candles.setData([])
+      volume?.setData([])
+      auxiliaryAnchor?.setData([])
+    }
     band.setData([])
     trendChannel.setData([])
     renderAuxiliary()
@@ -727,7 +731,7 @@ defineExpose({ revealSignal, scrollToLatest })
     </section>
     <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
     <p v-if="auxiliaryPresentation.message || fullscreenError" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
-    <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">正在读取 Newow 主图…</p>
+    <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">{{ strategySwitching ? '正在切换策略，更新指标与信号…' : '正在读取 Newow 主图…' }}</p>
     <p v-else-if="response?.value === null" class="newow-product-chart-stage__status" role="status">当前组合主图不可用。</p>
     <p v-else-if="model?.bars.length === 0" class="newow-product-chart-stage__status" role="status">当前窗口没有已完成 Bar。</p>
   </section>
