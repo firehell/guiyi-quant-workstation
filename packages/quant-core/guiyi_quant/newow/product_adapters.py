@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -748,16 +749,19 @@ def label_calculation_segments(
         (gap.physical_contract, gap.segment_id, gap.effective_at) for gap in gaps
     }) != len(gaps):
         raise ValueError("NEWOW_PRODUCT_INVALID_DATA_INTERRUPTION")
-    gap_cursor = 0
-    last_gap_by_owner: dict[tuple[str, str], datetime] = {}
+    gaps_by_owner: dict[tuple[str, str], list[datetime]] = {}
+    for gap in gaps:
+        gaps_by_owner.setdefault(
+            (gap.physical_contract, gap.segment_id), []
+        ).append(gap.effective_at)
     labeled: list[ProductBar] = []
     for product_bar in inputs:
-        while gap_cursor < len(gaps) and gaps[gap_cursor].effective_at <= product_bar.bar.bar_end:
-            gap = gaps[gap_cursor]
-            last_gap_by_owner[(gap.physical_contract, gap.segment_id)] = gap.effective_at
-            gap_cursor += 1
+        # Inputs are owner ordered, not globally chronological: each physical
+        # lifecycle prefix can rewind behind the previous owner's last bar.
         owner = (product_bar.bar.physical_contract, product_bar.bar.segment_id)
-        gap_at = last_gap_by_owner.get(owner)
+        owner_gaps = gaps_by_owner.get(owner, [])
+        gap_index = bisect_right(owner_gaps, product_bar.bar.bar_end)
+        gap_at = owner_gaps[gap_index - 1] if gap_index else None
         labeled.append(replace(
             product_bar,
             calculation_segment_id=build_calculation_segment_id(

@@ -554,6 +554,9 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 同一物理合约的 D1 `PRICE_UNAVAILABLE` 日，以及日线质量策略 v2 所接受的已验证 `NONPOSITIVE_CLOSE` 日，MUST 在该合约有效前缀切断计算，即使当时尚未成为
 rank1。物理合约及 owner segment 身份保持原样，计算区段 MUST 有独立版本化身份；后续有效
 completed Bar 从新段重新预热所有依赖指标和策略状态，不得跨断点继承递推状态或配对见证。
+按 owner 排列的物理生命周期前缀不保证全局时间递增。每根 Bar 的断点归属 MUST 仅取同一
+`physical_contract + owner segment` 中 `effective_at <= bar_end` 的最近中断；不得因前一 owner
+已推进到较晚日期而提前应用后一 owner 的中断。完整窗口与独立 owner 前缀的标记及重放 MUST 一致。
 其他 owner 的异常不得传染当前完好 owner。只有满足各自真实预热条件的当前状态可标 READY；
 最新已完成日恰为缺价或仍在预热时，不得以断点前旧 Frame 冒充当前 READY。
 
