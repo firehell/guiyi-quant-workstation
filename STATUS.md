@@ -1,3 +1,17 @@
+# v1.10.34 节假日晚到盘后候选（2026-09-26）
+
+从现役 v1.10.33 精确基线制作，仅增加全目标源预检、一小时单次重试、失败日加两个
+自然日 19:05 单次精确恢复。原自然状态与恢复状态分开，unknown/crash 不重试，
+不改变 Scope、公式、订单、通知受众或 Reference reader/worker。
+
+工程证据：develop 定向 629 passed；安装/回滚与新恢复组合 93 passed，Ruff、bash syntax、
+diff check 通过，三轮独立 Review 无剩余 Confirmed Issue。发布分支仍须独立回归。
+米筐真实只读查询：9/28、9/29、9/30、10/8 的原 P60 rank1 物理合约 Session 均 60/60 可用；
+Calendar 交易日为9/28–30、10/8–9（10/10不交易），未写未来主力映射或提前发布行情。
+公告机器接口未识别，记录 unavailable，按 owner 确认继续默认两自然日后检查。
+
+当前尚未发布、尚未切换 Runtime；本记录不是自然盘后通过证据。
+
 # 当前状态
 
 文档整理：2026-09-24。最新 main/annotated tag 为
