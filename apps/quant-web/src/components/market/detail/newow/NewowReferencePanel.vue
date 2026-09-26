@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { newowReferenceCurve, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
+import { newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
@@ -50,6 +50,7 @@ const recordsModel = computed(() => records.value?.value ? buildNewowReferencePa
 const displayValue = computed(() => props.response?.value ? acceptedPreset.value === 'ideal' ? newowTheoreticalDisplay(props.response.value) : props.response.value : null)
 const displaySummary = computed(() => displayValue.value && props.response ? buildNewowReferencePanelViewModel({ ...props.response, value: displayValue.value }, props.chartResponse, props.crossSectionCompatible).summary : null)
 const curve = computed(() => displayValue.value ? newowReferenceCurve(displayValue.value) : { points: [], message: '理论值所需的完整持仓区段暂不可用。' })
+const maximumDrawdown = computed(() => displayValue.value ? newowReferenceDrawdown(displayValue.value) : null)
 const annualized = computed(() => displayValue.value && model.value ? newowReferenceAnnualized(displayValue.value) : null)
 const selectedTradeId = ref<string | null>(null)
 const recordElements = new Map<string, HTMLElement>()
@@ -212,10 +213,10 @@ function usePreset(preset: NewowReferencePreset): void {
           <ul><li v-for="interval in response.value.coverage_intervals" :key="`${interval.segment_id}:${interval.since}:${interval.status}`">{{ interval.since }} → {{ interval.through }} · {{ interval.physical_contract }} · {{ interval.status === 'VALID' ? '有效计算区段' : interval.status === 'PRICE_UNAVAILABLE' ? '来源价格不可用' : '重新预热中' }}</li></ul>
         </div>
         <dl class="newow-reference__metrics">
-          <div><dt>累计参考收益</dt><dd :data-direction="referencePercentDisplay(displayValue?.summary.sum_return_percentage_points).direction">{{ displaySummary?.sumText ?? '—' }} <small>百分点</small></dd></div>
+          <div><dt>累计收益</dt><dd title="已完成页面参考交易收益简单累加；零费用、零滑点，不代表账户收益。" :data-direction="referencePercentDisplay(displayValue?.summary.sum_return_percentage_points).direction">{{ referencePercentDisplay(displayValue?.summary.sum_return_percentage_points).text }}</dd></div>
           <div><dt>胜率</dt><dd>{{ displaySummary?.winRateText ?? '—' }}</dd></div>
-          <div><dt>平均单笔</dt><dd>{{ displaySummary?.meanText ?? '—' }}</dd></div>
-          <div><dt>已完成交易</dt><dd>{{ model.summary.closedCount }}</dd></div>
+          <div><dt>最大回撤</dt><dd class="newow-reference__drawdown" title="页面参考累计曲线回撤：(峰值权益−后续权益)÷峰值权益；以100为起点，仅含已完成交易，不含持仓浮动。">{{ maximumDrawdown === null ? '—' : `${maximumDrawdown}%` }}</dd></div>
+          <div><dt>交易次数</dt><dd>{{ model.summary.closedCount }}</dd></div>
         </dl>
         <p v-if="response?.status.reason_code" class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>
 
@@ -322,15 +323,16 @@ function usePreset(preset: NewowReferencePreset): void {
 .newow-reference__curve header { gap:10px; font-size:14px; }
 .newow-reference__curve svg { height:220px; min-height:0; margin:10px 0 4px; }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
-.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:6.5px 0; margin:8px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
+.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:16px 0; margin:8px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
 .newow-reference__summary .newow-reference__metrics > div { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:0 8px; border-radius:0; background:transparent; border:0; }
-.newow-reference__summary .newow-reference__metrics > div:not(:last-child)::after { content:''; position:absolute; right:0; top:50%; transform:translateY(-50%); height:24px; width:1px; background:#ebedf0; }
+.newow-reference__summary .newow-reference__metrics > div:not(:last-child)::after { content:''; position:absolute; right:0; top:50%; transform:translateY(-50%); height:30px; width:1px; background:#ebedf0; }
 .newow-reference__metrics > div:last-child { border-right:0 !important; }
-.newow-reference__metrics dd { order:-1; font-size:18px; line-height:22px; font-weight:700; color:#242424; margin:0; }
+.newow-reference__metrics dd { order:-1; font-size:24px; line-height:30px; font-weight:700; color:#242424; margin:0; }
 .newow-reference__metrics dd[data-direction="up"] { color:#ff403a; }
 .newow-reference__metrics dd[data-direction="down"] { color:#2ac758; }
+.newow-reference__metrics dd.newow-reference__drawdown { color:#2ac758; }
 .newow-reference__metrics dd small { font-size:10px; font-weight:400; }
-.newow-reference__metrics dt { font-size:11px; line-height:16px; color:#999; }
+.newow-reference__metrics dt { font-size:14px; line-height:20px; color:#999; }
 .newow-reference__availability { color:#98a2b3; font-size:11px; line-height:20px; }
 .newow-reference__tools { padding:6px 0; border:0; border-top:1px solid #f2f4f7; border-radius:0; font-size:12px; align-items:center; }
 .newow-reference__tools select { min-height:28px; font-size:12px; margin-left:6px; }
