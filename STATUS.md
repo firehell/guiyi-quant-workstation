@@ -1,3 +1,22 @@
+## 2026-09-26 节假日晚到盘后补丁检查点
+
+补丁已集成 `develop@1ca1b379d`：全部精确源窗口在历史发布前验证、冻结批次复用；
+18:05 后仅一次一小时重试；安全晚到失败日加两个自然日19:05单次检查，齐全才精确CAS恢复和读回。
+claimed文件与父目录均fsync；崩溃/partial/unknown不重试；原自然状态和通知不重放。
+多轮独立Review无剩余Confirmed Issue。最小发布候选从现役v1.10.33制作，仅含本补丁及重试修复：
+`codex/release-v1.10.34-holiday@b7e08ad739b1e1a254f909a8b0d2c185c55a86f6`。
+候选629项定向测试通过；launchd/恢复组合93项通过；Ruff、bash syntax、diff、Web build通过。
+09:58正式只读Runtime预检passed，reason=non_trading_interval，P60、snapshot_count=0。
+
+真实只读MDS读回：9/24 P60七周期各60/60，包含RS；不证明多年全历史零缺口。
+米筐Calendar返回9/24、28、29、30及10/8、9、12；9/28、29、30、10/8原P60物理合约Session均60/60可用。
+未写未来rank1或提前发布行情；未来OHLCV是否准时仍需自然运行证明。
+公告机器入口未识别，按owner确认记录unavailable并保留默认延后单次检查。
+
+发布PR操作被宿主自动审批拒绝：本轮授权被识别为补丁/develop集成，未覆盖main/tag发布。
+正在等待owner明确发布及Runtime切换授权；现役仍v1.10.33，候选未发布、未安装新调度，
+未手工运行after-market或制造自然验收。该检查点不是RUNTIME_READY或自然盘后PASSED。
+
 # 当前状态
 
 2026-09-25 参考交易本轮收尾：两个已确认代码问题已修复并补回归，另修正了
