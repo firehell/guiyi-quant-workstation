@@ -126,8 +126,11 @@ class ProductServiceQuery:
     history_limit: int = 50
     history_before: str | None = None
     snapshot_token: str | None = None
+    include_fusion: bool = False
 
     def __post_init__(self) -> None:
+        if self.include_fusion and (self.section != "reference" or self.strategy not in ("trend", "oscillation") or self.history_before is not None):
+            raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         object.__setattr__(self, "strategy", ProductStrategy(self.strategy))
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
         object.__setattr__(self, "section", ProductSection(self.section))
@@ -226,6 +229,7 @@ class ReferenceSectionValue:
     history_coverage: str = "FULL"
     unavailable_days: tuple[date, ...] = ()
     coverage_intervals: tuple[ReferenceCoverageInterval, ...] = ()
+    fusion_comparison: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1053,6 +1057,7 @@ class NewowProductService:
             request.chart_older_window,
             request.history_limit,
             request.history_before,
+            request.include_fusion,
         )
 
     def _page_identity(
@@ -1132,7 +1137,7 @@ class NewowProductService:
             assert resolved is not None
             deliveries[request.section] = (
                 self._reference(request, read, identity, fact_key, page_identity, resolved)
-                if self._persisted_reference is None else
+                if self._persisted_reference is None or request.include_fusion else
                 self._persisted_reference(
                     request, read, identity, reader, fact_key, page_identity, resolved,
                 )
@@ -1343,6 +1348,26 @@ class NewowProductService:
                 for interval in coverage_intervals
             )
         }))
+        fusion = None
+        if request.include_fusion:
+            from guiyi_quant.newow.fusion_reference import fusion_reference_comparison
+            replays = {}
+            for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION):
+                source_identity = build_product_identity(
+                    identity.product, strategy, identity.frequency,
+                    input_quality_policy=identity.input_quality_policy,
+                )
+                replays[strategy] = replay if strategy is identity.strategy else replay_strategy(
+                    source_identity, read.replay_bars,
+                    lifecycle_evidence=read.lifecycle_evidence,
+                    data_interruptions=read.data_interruptions,
+                )
+            fusion = fusion_reference_comparison(
+                replays[ProductStrategy.TREND], replays[ProductStrategy.OSCILLATION],
+                read.boundaries, read.data_interruptions,
+                PerformanceWindow(resolved.requested_since, resolved.requested_through, resolved.cutoff),
+            )
+            fusion["reference_input_sha256"] = fact_key
         value = ReferenceSectionValue(
             projection,
             summary,
@@ -1358,6 +1383,7 @@ class NewowProductService:
             ) else "FULL",
             unavailable_days,
             coverage_intervals,
+            fusion,
         )
         status = (
             _ready()

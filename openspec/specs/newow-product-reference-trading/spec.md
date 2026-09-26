@@ -1047,3 +1047,14 @@ All prices and returns SHALL remain server Decimal strings; no frontend return f
 
 - **WHEN** 主要事实冲突导致全部 section 失效
 - **THEN** chart current-window provenance、分页与 generation signature 被清除，旧 auxiliary cache 不得恢复结果，后续 token 选择不能命中失效快照
+
+### Independent dual-source fusion reference v1
+
+`newow_dual_fusion_reference_zero_cost_v1` is an opt-in page-parity, non-executable long/flat reference model, not a new strategy kernel or account model. The reference section accepts `include_fusion=true` only for trend/oscillation, without a history cursor. It replays both formula identities over the same authoritative full input and cutoff and returns independent trend, oscillation and fusion summaries. Chart limits, viewport and history pagination do not enter fusion arithmetic.
+
+- One fusion position. Within each completed observation-eligible bar, process CLEAR before BUILD. When holding, any source CLEAR exits; then a BUILD may reopen on that same bar. Flat CLEAR is ignored. Holding BUILD is ignored.
+- Multiple CLEARs or BUILDs on the same bar select oscillation before trend, then source sequence. Use the selected action's explicit reference price. Cross-strategy pairing is permitted. A source CLEAR with `NO_ELIGIBLE_ENTRY` can close a fusion entry; `WARMUP_ONLY` actions cannot enter fusion.
+- Both replays must have identical market bars and input-quality identity. Owner lifecycle prewarm bars are excluded from transaction time ordering. Authoritative rollover/data interruptions break positions; owner/calculation identity changes fail closed by interrupting, never pairing across contracts or calculation segments.
+- Stable fusion trade identity includes model version, product/frequency, both formula versions and the selected entry signal. Original strategy pair relationships remain unchanged. Decimal precision 28 arithmetic, zero fees/slippage, `(exit/entry-1)*100`. Holding bars exclude the entry bar.
+- Window membership remains `entry_in_window_v1`; entries before the window are separately marked initial and excluded from all three summaries. Only CLOSED returns are simply added in percentage points. OPEN is not force-closed on the last bar. OPEN mark change and interruption-before mark change use the last eligible Close and are not realized reference returns.
+- Response includes full-window summaries and at most the latest 200 fusion rows, with explicit truncation. Input hash, cutoff, formula versions and independent model version remain visible. This model is computed on request, not persisted into the existing reference assets and not enabled in Runtime.

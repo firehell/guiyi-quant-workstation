@@ -268,6 +268,7 @@ export interface NewowReferenceTrade {
 }
 
 export interface NewowReferenceValue {
+  readonly fusion_comparison?: import('../api/newowFusion').FusionComparison
   readonly performance_since: string
   readonly performance_through: string
   readonly actual_available_through: string
@@ -689,7 +690,7 @@ interface NewowRequestCommon {
 export type NewowProductRequest =
   | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
-  | (NewowRequestCommon & { readonly section: 'reference'; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
+  | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
   | (NewowRequestCommon & { readonly section: 'explanation' })
   | (NewowRequestCommon & { readonly section: 'comparator' })
 

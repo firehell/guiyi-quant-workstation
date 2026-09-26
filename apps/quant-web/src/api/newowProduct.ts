@@ -378,6 +378,7 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     common.component = request.component
     addWindow(common, request.from, request.through)
   } else if (request.section === 'reference') {
+    if (request.includeFusion) common.include_fusion = true
     if ((request.performanceSince === undefined) !== (request.performanceThrough === undefined)) throw new NewowProductRequestError('NEWOW_INVALID_PERFORMANCE_WINDOW', 'invalid')
     if (request.performanceSince !== undefined) {
       common.performance_since = request.performanceSince

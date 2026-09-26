@@ -262,6 +262,54 @@ class ReferenceCoverageIntervalOut(_Out):
     calculation_segment_id: str | None
 
 
+class FusionGroupOut(_Out):
+    model: Literal["trend", "oscillation", "fusion"]
+    reference_model_version: str
+    closed_count: int
+    sum_return_percentage_points: str | None
+    open_count: int
+    interrupted_count: int
+
+
+class FusionTradeOut(_Out):
+    reference_trade_id: str
+    reference_model_version: str
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str
+    entry_source: Literal["trend", "oscillation"]
+    entry_signal_id: str
+    entry_bar_end: datetime
+    entry_trading_day: date
+    entry_reference_price: str
+    exit_source: Literal["trend", "oscillation"] | None
+    exit_signal_id: str | None
+    exit_bar_end: datetime | None
+    exit_reference_price: str | None
+    status: Literal["OPEN", "CLOSED", "ROLLOVER_INTERRUPTED", "DATA_INTERRUPTED"]
+    holding_bars: int
+    reference_return_pct: str | None
+    mark_bar_end: datetime | None
+    mark_reference_price: str | None
+    mark_change_pct: str | None
+    interrupted_at: datetime | None
+    statistics_membership: Literal["entry_in_window_v1", "initial_before_window"]
+
+
+class FusionComparisonOut(_Out):
+    reference_model_version: str
+    reference_input_sha256: str
+    performance_since: date
+    performance_through: date
+    reference_cutoff: datetime
+    source_formula_versions: list[str]
+    page_parity: Literal[True]
+    executable: Literal[False]
+    groups: list[FusionGroupOut]
+    items: list[FusionTradeOut]
+    records_truncated: bool
+
+
 class ReferenceValueOut(_Out):
     performance_since: date
     performance_through: date
@@ -271,6 +319,7 @@ class ReferenceValueOut(_Out):
     history_coverage: Literal["FULL", "PARTIAL"]
     unavailable_days: list[date]
     coverage_intervals: list[ReferenceCoverageIntervalOut]
+    fusion_comparison: FusionComparisonOut | None = Field(default=None, exclude_if=lambda value: value is None)
     summary: ReferenceSummaryOut
     items: list[ReferenceTradeOut]
     next_before: str | None

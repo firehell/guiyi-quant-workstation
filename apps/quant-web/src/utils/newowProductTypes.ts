@@ -474,6 +474,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     'history_coverage', 'unavailable_days', 'coverage_intervals',
     'summary', 'items', 'next_before', 'executable', 'auto_order', 'allowed_uses',
     ...(hasStorageMode ? ['storage_mode'] : []),
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'fusion_comparison') ? ['fusion_comparison'] : []),
   ])
   if (hasStorageMode) requireExact(value.storage_mode, 'persisted', 'reference.storage_mode')
   const performanceSince = day(value.performance_since, 'reference.performance_since')
@@ -515,6 +516,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     reference_cutoff: referenceCutoff,
     reference_input_sha256: sha256(value.reference_input_sha256, 'reference.reference_input_sha256'),
     history_coverage: historyCoverage, unavailable_days: unavailableDays, coverage_intervals: coverageIntervals,
+    ...(value.fusion_comparison === undefined ? {} : { fusion_comparison: normalizeFusion(value.fusion_comparison, performanceSince, performanceThrough, value.reference_input_sha256, value.reference_cutoff) }),
     summary, items, next_before: nullableText(value.next_before, 'reference.next_before'), executable: false, auto_order: false,
     ...(hasStorageMode ? { storage_mode: 'persisted' as const } : {}),
     allowed_uses: exactStringArray(value.allowed_uses, ['page_parity_reference', 'research_display'] as const, 'reference.allowed_uses'),
@@ -973,4 +975,40 @@ function deepFreeze<T>(value: T): T {
     Object.freeze(value)
   }
   return value
+}
+
+function normalizeFusion(payload: unknown, since: string, through: string, hash: unknown, cutoff: unknown): import('../api/newowFusion').FusionComparison {
+  const value = record(payload, 'fusion')
+  requireExact(value.reference_model_version, 'newow_dual_fusion_reference_zero_cost_v1', 'fusion.version')
+  requireExact(value.page_parity, true, 'fusion.parity')
+  requireExact(value.executable, false, 'fusion.executable')
+  requireExact(value.performance_since, since, 'fusion.since')
+  requireExact(value.performance_through, through, 'fusion.through')
+  requireExact(value.reference_input_sha256, hash, 'fusion.hash')
+  requireExact(value.reference_cutoff, cutoff, 'fusion.cutoff')
+  instant(value.reference_cutoff, 'fusion.cutoff')
+  if (!Array.isArray(value.groups) || value.groups.length !== 3 || !Array.isArray(value.items) || typeof value.records_truncated !== 'boolean') throw new Error('invalid fusion')
+  const decimal = (v: unknown, nullable = true) => v === null && nullable || typeof v === 'string' && /^-?\d+(?:\.\d+)?$/.test(v)
+  const source = (v: unknown) => v === 'trend' || v === 'oscillation'
+  value.groups.forEach((raw, i) => {
+    const g = record(raw, 'fusion.group')
+    requireExact(g.model, ['trend', 'oscillation', 'fusion'][i], 'fusion.model')
+    if (![g.closed_count, g.open_count, g.interrupted_count].every(v => Number.isSafeInteger(v) && Number(v) >= 0) || !decimal(g.sum_return_percentage_points)) throw new Error('invalid fusion group')
+  })
+  const ids = new Set()
+  value.items.forEach(raw => {
+    const r = record(raw, 'fusion.trade')
+    if (typeof r.reference_trade_id !== 'string' || ids.has(r.reference_trade_id) || !source(r.entry_source) || !(r.exit_source === null || source(r.exit_source)) || typeof r.physical_contract !== 'string') throw new Error('invalid fusion trade')
+    ids.add(r.reference_trade_id)
+    instant(r.entry_bar_end, 'fusion.entry')
+    if (Date.parse(String(r.entry_bar_end)) > Date.parse(String(cutoff))) throw new Error('future fusion entry')
+    if (r.exit_bar_end !== null) {
+      instant(r.exit_bar_end, 'fusion.exit')
+      if (Date.parse(String(r.exit_bar_end)) > Date.parse(String(cutoff)) || Date.parse(String(r.exit_bar_end)) < Date.parse(String(r.entry_bar_end))) throw new Error('invalid fusion chronology')
+    }
+    if (!decimal(r.entry_reference_price, false) || Number(r.entry_reference_price) <= 0 || !decimal(r.exit_reference_price) || !decimal(r.reference_return_pct) || !decimal(r.mark_change_pct)) throw new Error('invalid fusion price')
+    if (!['CLOSED', 'OPEN', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'].includes(String(r.status)) || !['entry_in_window_v1', 'initial_before_window'].includes(String(r.statistics_membership))) throw new Error('invalid fusion status')
+    if ((r.status === 'CLOSED') !== (r.exit_source !== null && r.exit_reference_price !== null && r.reference_return_pct !== null)) throw new Error('invalid fusion close')
+  })
+  return value as unknown as import('../api/newowFusion').FusionComparison
 }

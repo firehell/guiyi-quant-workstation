@@ -234,6 +234,9 @@ test('reference panel keeps the server summary while native controls filter, exp
     assert.match(fullText, new RegExp(phrase))
   }
   assert.match(fullText, /同 Bar Close 仅属于独立 comparator/)
+  assert.match(fullText, /双策略融合参考/)
+  assert.match(fullText, /同根先清仓，再建仓/)
+  assert.ok(findNode(root, node => node.type === 'button' && nodeText(node) === '查看三组结果'))
   for (const label of ['已清仓', '未清仓', '换月中断', '期初已有', '定位建仓', '查看详情']) assert.match(fullText, new RegExp(label))
   assert.match(readFileSync(componentUrl, 'utf8'), /<option value="all">全部<\/option>/)
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
@@ -515,11 +518,17 @@ function ready() { return { status: 'ready' as const, evidence_status: 'ACTIVE_C
 type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? Mutable<U>[] : T[K] extends object ? Mutable<T[K]> : T[K] }
 
 async function loadComponent() {
-  const source = readFileSync(componentUrl, 'utf8')
-  const { descriptor, errors } = parse(source, { filename: componentUrl.pathname })
+  return (await import(await compileComponentModule(componentUrl))).default
+}
+
+async function compileComponentModule(url: URL): Promise<string> {
+  const source = readFileSync(url, 'utf8')
+  const { descriptor, errors } = parse(source, { filename: url.pathname })
   assert.deepEqual(errors, [])
   const compiled = compileScript(descriptor, { id: 'newow-reference-panel', inlineTemplate: true })
+  const childUrl = url === componentUrl ? await compileComponentModule(new URL('../src/components/market/detail/newow/NewowFusionPanel.vue', import.meta.url)) : null
   const transpiled = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+    .replace(/from ['"]\.\/NewowFusionPanel\.vue['"]/g, `from '${childUrl}'`)
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
       for (const suffix of ['', '.ts', '.vue']) {
@@ -528,7 +537,8 @@ async function loadComponent() {
       }
       throw new Error(`cannot resolve source import: ${specifier}`)
     })
-  return (await import(`data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`)).default
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`
+  return moduleUrl
 }
 
 interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string }

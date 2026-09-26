@@ -155,6 +155,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "history_limit",
         "history_before",
         "snapshot_token",
+        "include_fusion",
     }
 )
 _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
@@ -593,6 +594,7 @@ def newow_strategy_detail(
     history_limit: int = Query(50, ge=1, le=200),
     history_before: str | None = Query(None, min_length=1, max_length=2048),
     snapshot_token: str | None = Query(None, min_length=1, max_length=256),
+    include_fusion: bool = Query(False),
     session: Session = Depends(get_db),
 ) -> NewowProductResponse:
     unknown = set(request.query_params) - _PRODUCT_QUERY_FIELDS
@@ -637,6 +639,7 @@ def newow_strategy_detail(
             history_limit=history_limit,
             history_before=history_before,
             snapshot_token=snapshot_token,
+            include_fusion=include_fusion,
         )
         policy = _input_quality_policy(request, product, frequency)
         service = (
@@ -919,6 +922,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
                 for item in value.items
             ],
+            **({"fusion_comparison": value.fusion_comparison} if value.fusion_comparison is not None else {}),
             "next_before": value.next_before,
             "executable": False,
             "auto_order": False,

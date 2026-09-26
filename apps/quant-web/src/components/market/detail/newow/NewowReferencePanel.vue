@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import NewowFusionPanel from './NewowFusionPanel.vue'
 import { newowReferenceCurve } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
@@ -183,6 +184,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
     </p>
 
     <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
+    <NewowFusionPanel v-if="model && response && response.meta.identity.strategy !== 'main_rise'" :response="response" />
     <template v-if="model">
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
         <p class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>

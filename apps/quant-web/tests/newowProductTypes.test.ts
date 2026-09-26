@@ -1063,3 +1063,24 @@ function macdWire() {
     segments: [{ ...base.auxiliary.value.segments[0]!, data: { dif: [point(true)], dea: [point(false)], histogram: [point(false)] } }],
   } } }
 }
+
+test('fusion reference validates independent version and parent snapshot', () => {
+  const raw = referenceWire()
+  const parent = raw.reference.value!
+  const fusion = {
+    reference_model_version: 'newow_dual_fusion_reference_zero_cost_v1',
+    reference_input_sha256: parent.reference_input_sha256,
+    reference_cutoff: parent.reference_cutoff,
+    performance_since: parent.performance_since,
+    performance_through: parent.performance_through,
+    page_parity: true, executable: false,
+    groups: ['trend', 'oscillation', 'fusion'].map(model => ({ model, closed_count: 0, open_count: 0, interrupted_count: 0, sum_return_percentage_points: null })),
+    items: [], records_truncated: false,
+  }
+  const value = { ...raw, reference: { ...raw.reference, value: { ...parent, fusion_comparison: fusion } } }
+  assert.equal(normalizeNewowProductResponse(value, { ...expected, section: 'reference' }).value!.fusion_comparison!.groups.length, 3)
+  for (const bad of [{ reference_input_sha256: 'different' }, { reference_cutoff: '2026-09-01T07:00:00Z' }, { executable: true }]) {
+    const invalid = { ...value, reference: { ...value.reference, value: { ...value.reference.value, fusion_comparison: { ...fusion, ...bad } } } }
+    assert.throws(() => normalizeNewowProductResponse(invalid, { ...expected, section: 'reference' }), /fusion/)
+  }
+})

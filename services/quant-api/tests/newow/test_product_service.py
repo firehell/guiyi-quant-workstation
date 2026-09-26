@@ -1440,3 +1440,32 @@ def test_comparator_is_explicit_and_never_becomes_reference_trade(product_cases)
     assert query.frequency is ProductFrequency.DAILY
     assert query.since == case.bars[0].bar.trading_day
     assert query.through == case.bars[-1].bar.trading_day
+
+
+def test_fusion_reference_is_opt_in_and_independent(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    query = ProductServiceQuery(
+        'rb', 'trend', '1d', section='reference',
+        performance_since=build.trading_day, performance_through=clear.trading_day,
+        as_of=clear.bar_end,
+    )
+    normal = service.query(query)
+    fused = service.query(replace(query, include_fusion=True))
+    assert normal.reference.value.fusion_comparison is None
+    from app.api.market_newow import _product_response
+    wire = _product_response(fused).model_dump(mode='json')
+    assert wire['reference']['value']['fusion_comparison']['executable'] is False
+    value = fused.reference.value.fusion_comparison
+    assert [g['model'] for g in value['groups']] == ['trend', 'oscillation', 'fusion']
+    assert value['groups'][0]['closed_count'] == normal.reference.value.summary.closed_count
+    assert value['executable'] is False
+    assert all(r['reference_model_version'] == value['reference_model_version'] for r in value['items'])
+    assert len({r['reference_trade_id'] for r in value['items']}) == len(value['items'])
+    paged = service.query(replace(query, include_fusion=True, history_limit=1))
+    assert paged.reference.value.fusion_comparison == value
+
+
+@pytest.mark.parametrize('section,strategy', [('chart', 'trend'), ('reference', 'mainrise')])
+def test_fusion_rejects_invalid_sections(section, strategy):
+    with pytest.raises(ValueError, match='NEWOW_SECTION_PARAMETER_INVALID'):
+        ProductServiceQuery('rb', strategy, '1d', section=section, include_fusion=True)
