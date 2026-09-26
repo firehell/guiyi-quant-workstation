@@ -701,8 +701,8 @@ defineExpose({ revealSignal, scrollToLatest })
     </div>
     <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量 <button v-if="yellowVolumeIndexes.length" class="newow-product-chart-stage__volume-help" type="button" @click="showLatestVolumeScore">黄色柱说明</button></span>
-    <section v-if="volumeScoreBar && selectedVolumeScores.length" class="newow-product-chart-stage__volume-score" :style="{ top: `${volumeTop + 8}px` }" role="dialog" aria-label="震荡突破评分">
-      <header><strong>震荡突破评分</strong><button type="button" aria-label="关闭突破评分" @click="volumeScoreIndex = null">×</button></header>
+    <section v-if="volumeScoreBar && selectedVolumeScores.length" class="newow-product-chart-stage__volume-score" :style="{ top: `${volumeTop + 8}px` }" role="dialog" aria-label="成交量突破评分">
+      <header><strong>成交量突破评分</strong><button type="button" aria-label="关闭突破评分" @click="volumeScoreIndex = null">×</button></header>
       <p>{{ volumeScoreBar.tradingDay }} · {{ volumeScoreBar.physicalContract }} · 成交量 {{ volumeScoreBar.volume }}</p>
       <article v-for="score in selectedVolumeScores" :key="score.actionId">
         <strong>{{ score.kind === 'BUILD' ? '建仓 · 下沿' : '清仓 · 上沿' }} {{ score.reference }} · {{ score.total }}/6 分</strong>
