@@ -7,6 +7,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from '
 import {
   CandlestickSeries,
   ColorType,
+  CrosshairMode,
   createChart,
   createSeriesMarkers,
   LineSeries,
@@ -157,6 +158,7 @@ onMounted(async () => {
     layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: '#EBEDF0' } },
     grid: { vertLines: { color: theme.grid }, horzLines: { color: theme.grid } },
     rightPriceScale: { borderColor: theme.axis, scaleMargins: { top: 0.24, bottom: 0.1 } },
+    crosshair: { mode: CrosshairMode.Normal },
     localization: { timeFormatter: formatChartTimeInShanghai },
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
   })
