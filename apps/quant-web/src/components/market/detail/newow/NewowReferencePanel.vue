@@ -59,19 +59,21 @@ const curvePoints = computed(() => {
   const points = curve.value?.points ?? []
   const minimum = Math.min(0, ...points.map(p => p.value))
   const maximum = Math.max(0, ...points.map(p => p.value))
-  const padding = (maximum - minimum || 1) * 0.05
-  const low = minimum - padding
-  const high = maximum + padding
-  const y = (value: number) => 160 - (value - low) / (high - low || 1) * 142
+  // Public-page axis headroom follows each actual extremum, never inventing a loss below zero.
+  const low = minimum < 0 ? minimum * 1.1 : 0
+  const high = maximum > 0 ? maximum * 1.1 : low === 0 ? 1 : 0
+  const y = (value: number) => 140 - (value - low) / (high - low) * 140
   const start = Date.parse(model.value?.performanceWindow.since ?? '')
-  const end = Date.parse(points.at(-1)?.trade.exit_trading_day ?? '')
+  const through = model.value?.performanceWindow.through ?? ''
+  const availableThrough = model.value?.actualAvailableThrough ?? ''
+  const end = Date.parse(through < availableThrough ? through : availableThrough)
   const duration = end - start
-  const x = (day: string) => 52 + (duration > 0 ? (Date.parse(day) - start) / duration : 1) * 712
+  const x = (day: string) => (duration > 0 ? (Date.parse(day) - start) / duration : 1) * 712
   const tickCount = duration > 0 ? Math.min(7, Math.floor(duration / 86_400_000) + 1) : 1
   const ticks = Number.isFinite(start) && Number.isFinite(end) ? Array.from({ length: tickCount }, (_, index) => {
     const ratio = tickCount === 1 ? 1 : index / (tickCount - 1)
     const day = new Date(start + duration * ratio).toISOString().slice(0, 10)
-    return { x: 52 + ratio * 712, day, label: day.slice(5), anchor: index === 0 && tickCount > 1 ? 'start' : index === tickCount - 1 ? 'end' : 'middle' }
+    return { x: ratio * 712, day, label: day.slice(5), anchor: index === 0 && tickCount > 1 ? 'start' : index === tickCount - 1 ? 'end' : 'middle' }
   }) : []
   const levels = Array.from({ length: 5 }, (_, index) => {
     const value = high - (high - low) * index / 4
@@ -202,16 +204,20 @@ function usePreset(preset: NewowReferencePreset): void {
       <section class="newow-reference__curve" aria-label="已完成参考交易累计收益曲线">
         <p v-if="curve?.message" role="status">{{ curve.message }}</p>
         <template v-else>
-          <svg viewBox="0 0 780 192" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
-            <defs><linearGradient id="newow-reference-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.16" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
-            <line v-for="level in curvePoints.levels" :key="level.y" x1="52" x2="764" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
-            <polygon :points="`${52},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` ${curvePoints.points.at(-1)?.x ?? 52},${curvePoints.zero}`" fill="url(#newow-reference-area)" />
-            <line x1="52" x2="764" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
-            <text v-for="level in curvePoints.levels" :key="level.y" x="46" :y="level.y" text-anchor="end" dominant-baseline="middle" class="newow-reference__value-tick">{{ level.label }}</text>
-            <polyline :points="`${52},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" stroke="#ff403a" stroke-width="1.8" />
-            <circle v-for="point in curvePoints.points" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
-            <text v-for="tick in curvePoints.ticks" :key="tick.x" :x="tick.x" y="174" :text-anchor="tick.anchor" class="newow-reference__date-tick"><title>{{ tick.day }}</title>{{ tick.label }}</text>
-          </svg>
+          <div class="newow-reference__plot">
+            <div class="newow-reference__plot-area">
+              <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
+                <defs><linearGradient id="newow-reference-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.16" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
+                <line v-for="level in curvePoints.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
+                <polygon :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero} 712,${curvePoints.zero}`" fill="url(#newow-reference-area)" />
+                <line x1="0" x2="712" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
+                <polyline :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero}`" fill="none" stroke="#ff403a" stroke-width="1.8" />
+                <circle v-for="point in curvePoints.points" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
+              </svg>
+            <span v-for="level in curvePoints.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
+            <span v-for="tick in curvePoints.ticks" :key="tick.x" class="newow-reference__date-tick" :title="tick.day" :data-anchor="tick.anchor" :style="{ left: `${tick.x / 712 * 100}%` }">{{ tick.label }}</span>
+            </div>
+          </div>
         </template>
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
         <div v-if="response?.value?.history_coverage === 'PARTIAL'" role="status">
@@ -318,7 +324,7 @@ function usePreset(preset: NewowReferencePreset): void {
 .newow-reference__header details[open] { flex-basis:100%; }
 .newow-reference__window { margin:14px 0 10px; justify-content:center; align-items:center; gap:10px; }
 .newow-reference__presets { align-items:center; gap:8px; }
-.newow-reference__presets button { min-height:30px; padding:0 18px; border-radius:18px; font-size:13px; }
+.newow-reference__presets button { min-height:26px; padding:4px 14px; border-radius:14px; font-size:12px; }
 .newow-reference__presets button[aria-pressed="true"] { background:#222; border-color:#222; color:white; }
 .newow-reference__presets .newow-reference__ideal { color:#ff9000; }
 .newow-reference__custom-window { color:#98a2b3; font-size:12px; }
@@ -328,18 +334,25 @@ function usePreset(preset: NewowReferencePreset): void {
 .newow-reference__curve { border:0; padding:8px 0; border-radius:0; }
 .newow-reference__curve header { gap:10px; font-size:14px; }
 .newow-reference__loading-curve { min-height:292px; }
-.newow-reference__curve svg { height:200px; min-height:0; margin:10px 0 0; }
+.newow-reference__plot { position:relative; height:180px; margin-top:0; }
+.newow-reference__plot-area { position:absolute; top:20px; bottom:20px; left:44px; right:30px; }
+.newow-reference__plot-area svg { width:100%; height:100%; min-height:0; margin:0; }
+.newow-reference__value-tick,.newow-reference__date-tick { position:absolute; color:#999; font:10px/12px Arial,sans-serif; white-space:nowrap; pointer-events:none; }
+.newow-reference__value-tick { right:calc(100% + 4px); transform:translateY(-50%); }
+.newow-reference__date-tick { top:calc(100% + 5px); transform:translateX(-50%); }
+.newow-reference__date-tick[data-anchor="start"] { transform:none; }
+.newow-reference__date-tick[data-anchor="end"] { transform:translateX(-100%); }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
-.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:16px 0; margin:8px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
+.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:12px 0; margin:2px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
 .newow-reference__summary .newow-reference__metrics > div { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:0 8px; border-radius:0; background:transparent; border:0; }
-.newow-reference__summary .newow-reference__metrics > div:not(:last-child)::after { content:''; position:absolute; right:0; top:50%; transform:translateY(-50%); height:30px; width:1px; background:#ebedf0; }
+.newow-reference__summary .newow-reference__metrics > div:not(:last-child)::after { content:''; position:absolute; right:0; top:50%; transform:translateY(-50%); height:70%; width:1px; background:#ebedf0; }
 .newow-reference__metrics > div:last-child { border-right:0 !important; }
-.newow-reference__metrics dd { order:-1; font-size:24px; line-height:30px; font-weight:700; color:#242424; margin:0; }
-.newow-reference__metrics dd[data-direction="up"] { color:#ff403a; }
-.newow-reference__metrics dd[data-direction="down"] { color:#2ac758; }
-.newow-reference__metrics dd.newow-reference__drawdown { color:#2ac758; }
+.newow-reference__metrics dd { order:-1; font-size:15px; line-height:18px; font-weight:700; color:#242424; margin:0; }
+.newow-reference__metrics dd[data-direction="up"] { color:#E53935; }
+.newow-reference__metrics dd[data-direction="down"] { color:#34c759; }
+.newow-reference__metrics dd.newow-reference__drawdown { color:#34c759; }
 .newow-reference__metrics dd small { font-size:10px; font-weight:400; }
-.newow-reference__metrics dt { font-size:14px; line-height:20px; color:#999; }
+.newow-reference__metrics dt { font-size:10px; line-height:14px; color:#999; }
 .newow-reference__availability { color:#98a2b3; font-size:11px; line-height:20px; }
 .newow-reference__tools { padding:6px 0; border:0; border-top:1px solid #f2f4f7; border-radius:0; font-size:12px; align-items:center; }
 .newow-reference__tools select { min-height:28px; font-size:12px; margin-left:6px; }
@@ -347,6 +360,6 @@ function usePreset(preset: NewowReferencePreset): void {
 .newow-reference :deep(.fusion-panel header) { align-items:center; }
 .newow-reference :deep(.fusion-panel header p) { margin:3px 0 0; font-size:11px; }
 .newow-reference :deep(.fusion-panel button) { min-height:28px; padding:4px 10px; font-size:12px; }
-@media(max-width:600px) { .newow-reference__curve svg { height:170px; }.newow-reference__metrics dd { font-size:16px; }.newow-reference__metrics dt { font-size:11px; }.newow-reference__presets button { padding:0 12px; } }
+@media(max-width:600px) { .newow-reference__metrics dd { font-size:15px; }.newow-reference__metrics dt { font-size:10px; }.newow-reference__presets button { padding:0 12px; } }
 .newow-reference__returns-heading { display:flex; align-items:baseline; gap:0; padding-top:10px; font-size:14px; }.newow-reference__returns-heading .newow-reference__annualized { color:#ff9000; font-size:14px; font-weight:700; }
 </style>

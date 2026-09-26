@@ -213,28 +213,37 @@ test('simple sum keeps percentage points separate and never appends a percent un
   assert.equal(model.summary.sumText.includes('%'), false)
 })
 
-test('curve axes show five percentage levels and short dates across years', async () => {
-  const Panel = await loadComponent()
-  const response = referenceResponse()
-  response.value!.performance_since = '2025-09-24'
-  response.value!.items = [trade('closed', { status: 'CLOSED', reference_return_pct: '10', statistics_membership: 'entry_in_window_v1', exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15' })]
-  response.value!.next_before = null
-  response.value!.summary.closed_count = 1
-  response.value!.summary.sum_return_percentage_points = '10'
-  const root = element('root')
-  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
-    response, chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
-    selectedSignalId: null, locateMessage: null, loadingPage: false,
-  }) }))
-  app.mount(root)
-  await nextTick()
-  const ticks = findNodes(root, node => node.props.class === 'newow-reference__value-tick')
-  assert.equal(ticks.length, 5)
-  assert.ok(ticks.every(node => /-?\d+\.\d%/.test(nodeText(node))))
-  const dates = findNodes(root, node => node.props.class === 'newow-reference__date-tick')
-  assert.equal(dates.length, 7)
-  assert.ok(dates.every(node => /^\d{2}-\d{2}$/.test(node.children.filter(child => child.type !== 'title').map(nodeText).join('').trim())))
-  app.unmount()
+test('curve axes use true extrema, unscaled labels and the full accepted statistics window', async () => {
+  for (const result of ['10', '-10', '0']) {
+    const Panel = await loadComponent()
+    const response = referenceResponse()
+    response.value!.performance_since = '2025-09-24'
+    response.value!.items = [trade('closed', { status: 'CLOSED', reference_return_pct: result, statistics_membership: 'entry_in_window_v1', exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15' })]
+    response.value!.next_before = null
+    response.value!.summary.closed_count = 1
+    response.value!.summary.sum_return_percentage_points = result
+    response.value!.performance_through = '2026-09-24'
+    response.value!.actual_available_through = '2026-09-24'
+    const root = element('root')
+    const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
+      response, chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
+      selectedSignalId: null, locateMessage: null, loadingPage: false,
+    }) }))
+    app.mount(root)
+    await nextTick()
+    const ticks = findNodes(root, node => node.props.class === 'newow-reference__value-tick')
+    assert.equal(ticks.length, 5)
+    assert.ok(ticks.every(node => node.type === 'span' && /-?\d+\.\d%/.test(nodeText(node))))
+    assert.equal(nodeText(ticks[0]!), result === '10' ? '11.0%' : result === '-10' ? '0.0%' : '1.0%')
+    assert.equal(nodeText(ticks.at(-1)!), result === '-10' ? '-11.0%' : '0.0%')
+    const dates = findNodes(root, node => node.props.class === 'newow-reference__date-tick')
+    assert.equal(dates.length, 7)
+    assert.ok(dates.every(node => /^\d{2}-\d{2}$/.test(nodeText(node))))
+    assert.equal(nodeText(dates[0]!), '09-24')
+    assert.equal(dates.at(-1)!.props.title, '2026-09-24')
+    assert.equal(nodeText(dates.at(-1)!), '09-24')
+    app.unmount()
+  }
 })
 
 test('performance loading and tab responses do not replace recent record cards', async () => {
