@@ -229,6 +229,11 @@ test('reference panel keeps the server summary while native controls filter pass
   const summary = findNode(root, (node) => node.props['data-testid'] === 'newow-reference-summary')!
   assert.match(nodeText(summary), /胜率\s*—/)
   assert.match(nodeText(summary), /简单相加/)
+  assert.deepEqual(findNodes(summary, node => node.type === 'dt').map(nodeText), ['累计参考收益', '胜率', '平均单笔', '已完成交易'])
+  const returns = findNode(root, node => node.props['aria-label'] === '已完成参考交易累计收益曲线')!
+  assert.ok(findNode(returns, node => node.props['data-testid'] === 'newow-reference-summary'))
+  assert.doesNotMatch(nodeText(returns), /年化|最大回撤/)
+
   const fullText = nodeText(root)
   for (const phrase of ['long/flat', '趋势 B', '震荡 Low/High', '主升浪 MA45', 'API reference_price', '零手续费', '零滑点', '不计资金占用与真实成交限制', '不推断手数', '不推断空单', '不推断账户净值', '不推断真实收益', '非因果回测', '非模拟账户', '非真实成交']) {
     assert.match(fullText, new RegExp(phrase))
