@@ -31,7 +31,6 @@ import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowComparisonCompatible } from '@/utils/newowComparison'
-import { newowChartReadout } from '@/utils/newowChartReadout'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
 import { layoutReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import {
@@ -97,8 +96,6 @@ const detailLabels = ref(true)
 const showActions = ref(true)
 const showStructure = ref(true)
 const showHints = ref(true)
-const cursorTime = ref<Time | null>(null)
-const cursorReadout = computed(() => newowChartReadout(model.value, auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null, cursorTime.value))
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
 const comparisonActive = computed(() => newowComparisonCompatible(props.response, props.comparisonResponse ?? null))
 const partnerModel = computed(() => comparisonActive.value && props.comparisonResponse ? buildNewowProductChartModel(props.comparisonResponse) : null)
@@ -177,7 +174,6 @@ onMounted(async () => {
   if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   actionMarkers = adapter.createSeriesMarkers(candles as never)
   chart.subscribeClick(onClick)
-  chart.subscribeCrosshairMove?.(onCrosshair)
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
   observer = adapter.createResizeObserver(resize)
   observer.observe(container.value)
@@ -192,7 +188,6 @@ onUnmounted(createNewowProductChartDisposer({
   disconnectResizeObserver: () => observer?.disconnect(),
   removeChart: () => {
     rememberViewport()
-    chart?.unsubscribeCrosshairMove?.(onCrosshair)
     if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
     if (actionProjectionFrame !== null) cancelAnimationFrame(actionProjectionFrame)
     if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
@@ -255,7 +250,6 @@ function renderModel(value: NewowProductChartModel | null): void {
   renderReferencePrices()
   if (value === null) {
     rememberViewport()
-    cursorTime.value = null
     paginationArmed = false
     if (renderedIdentity !== null && renderedBars.length > 0) {
       const visibleRange = chart.timeScale().getVisibleLogicalRange()
@@ -477,7 +471,6 @@ function resolveSelectedSignal(): void {
   if (props.selectedSignalId !== null) revealSignal(props.selectedSignalId)
 }
 
-function onCrosshair(event: MouseEventParams<Time>): void { cursorTime.value = event.time ?? null }
 
 function onClick(event: MouseEventParams<Time>): void {
   if (event.hoveredInfo?.objectKind !== 'series-marker' || typeof event.hoveredInfo.objectId !== 'string') return
@@ -627,7 +620,6 @@ defineExpose({ revealSignal, scrollToLatest })
       <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
     </div>
     </div>
-    <div class="newow-product-chart-stage__readout" data-testid="newow-chart-readout"><template v-if="cursorReadout.length"><span v-for="(text, index) in cursorReadout" :key="index">{{ text }}</span></template><span v-else>移动十字光标查看同一 Bar 的价格、成交量与副图读数</span></div>
     <details v-if="response?.value?.price_unavailable_days.length" class="newow-product-chart-stage__quality-gaps" data-testid="newow-chart-price-gaps">
       <summary>日线来源价格不可用 {{ response.value.price_unavailable_days.length }} 日；指标已分段重算</summary>
       <ul><li v-for="gap in response.value.price_unavailable_days" :key="`${gap.segment_id}:${gap.trading_day}`">{{ gap.trading_day }} · {{ gap.physical_contract }} · 无可用开高低价；未生成 K 线或交易信号</li></ul>
@@ -685,7 +677,6 @@ defineExpose({ revealSignal, scrollToLatest })
 
 .newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:auto; min-height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
-.newow-product-chart-stage__readout { display:flex; flex-wrap:wrap; gap:4px 12px; min-height:32px; flex-shrink:0; padding:4px 12px; box-sizing:border-box; color:#667085; font-size:11px; font-variant-numeric:tabular-nums; border-bottom:1px solid #ebedf0; }
 .newow-product-chart-stage:fullscreen .newow-product-chart-stage__chart { height:0; flex:1 1 auto; min-height:0; }
 .newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:clamp(500px,60vh,840px); min-height:500px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
