@@ -551,12 +551,12 @@ function renderAuxiliary(): void {
   auxiliaryZeroLine?.applyOptions({ color: mirror || energy || control || reversal ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
   zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series) : [])
   upDownEnergy.setData(energy && model.value ? buildNewowUpDownEnergyData(value.series, model.value.bars) : [],
-    Math.max(72, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 14))
+    Math.max(96, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 28))
   mainForceControl.setData(control && props.auxiliaryResponse?.value?.component === 'main_force_control'
     ? buildNewowMainForceData(value.series, props.auxiliaryResponse.value.segments) : [],
-    Math.max(72, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 14))
+    Math.max(96, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 28))
   trendReversal.setData(reversal ? buildNewowTrendReversalData(value.series) : [],
-    Math.max(72, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 14))
+    Math.max(96, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 28))
   for (const item of value?.series ?? []) {
     if (mirror || energy || control || reversal) continue
     const id = `${value!.component}:${item.id}`

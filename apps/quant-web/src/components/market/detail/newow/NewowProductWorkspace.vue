@@ -382,8 +382,8 @@ onBeforeUnmount(() => {
           <span v-if="selectedAuxiliary === 'macd'" class="newow-macd-legend"><span>DIF</span> / <span>DEA</span></span>
           <button v-if="identity.strategy === 'trend' && identity.frequency === '1d'" @click="openDialog('cup_handle')">杯柄说明</button><button @click="openDialog('formula')">公式速查</button>
         </div>
-        <button class="newow-product-workspace__indicator-help" type="button" @click="openDialog('indicator')">指标解读</button>
       </div>
+      <div class="newow-product-workspace__auxiliary-legend-row">
       <div v-if="selectedAuxiliary === 'zhaoyao_mirror'" class="newow-mirror-legend" role="group" aria-label="主力动态颜色说明">
         <span class="newow-mirror-legend__title">主力动态</span>
         <span v-for="item in zhaoyaoMirrorLegend" :key="item.label" class="newow-mirror-legend__item"><i aria-hidden="true" :style="{ backgroundColor: item.color }" />{{ item.label }}</span>
@@ -400,6 +400,9 @@ onBeforeUnmount(() => {
         <div><strong>趋势转折</strong><span>20 根 Bar 威廉位置 · 120 根 Bar 均线乖离</span></div>
         <div><span>最新偏离 {{ trendReversalLatest ?? '—' }}</span><span class="newow-trend-reversal-legend__keys"><span v-for="item in trendReversalLegend" :key="item.label" class="newow-mirror-legend__item"><i aria-hidden="true" :class="{ 'newow-trend-reversal-legend__bias': item.label === '偏离' }" :style="item.label === '偏离' ? {} : { backgroundColor: item.color }" />{{ item.label }}</span></span></div>
         <p v-if="trendReversalWarmup !== null" role="status">当前合约计算段仅 {{ trendReversalWarmup }} 根 Bar，未满 120 根；图形为预热参考。</p>
+      </div>
+      <span v-if="selectedAuxiliary === 'macd'" class="newow-mirror-legend__title">MACD</span>
+        <button class="newow-product-workspace__indicator-help" type="button" @click="openDialog('indicator')">指标解读</button>
       </div>
       <p v-if="currentAuxiliaryError" role="status">{{ newowErrorDisplay(currentAuxiliaryError) }} · 辅助图层不可用 <button @click="loadAuxiliaryForChart()">重试指标</button></p>
     </section>
@@ -555,7 +558,9 @@ onBeforeUnmount(() => {
 .newow-product-workspace__auxiliary-tabs { display:flex; flex:1 1 auto; min-width:0; align-items:center; overflow-x:auto; white-space:nowrap; }
 .newow-product-workspace__auxiliary-controls button { flex:none; min-height:36px; padding:0 10px; }
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { color:#ff6b2c; border-bottom:2px solid #ff6b2c; }
-.newow-product-workspace__auxiliary-controls .newow-product-workspace__indicator-help { flex:none; min-height:25px; margin:0 8px 0 12px; padding:2px 10px; border:1px solid #1677ff; border-radius:16px; background:#fff; color:#1677ff; font-size:12px; line-height:18px; cursor:pointer; }
+.newow-product-workspace__indicator-help { flex:none; min-height:25px; margin:0 8px 0 12px; padding:2px 10px; border:1px solid #1677ff; border-radius:16px; background:#fff; color:#1677ff; font-size:12px; line-height:18px; cursor:pointer; }
+.newow-product-workspace__auxiliary-legend-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:4px 0 16px; }
+.newow-product-workspace__auxiliary-legend-row > .newow-product-workspace__indicator-help { margin-left:auto; flex-shrink:0; }
 .newow-product-workspace__indicator-help:hover { background:#f2f7ff; }
 .newow-product-workspace__indicator-help:focus-visible { outline:2px solid #1677ff; outline-offset:2px; }
 .newow-macd-legend { padding:0 6px; color:#667085; }.newow-macd-legend span:first-child { color:#ff6b2c; }.newow-macd-legend span:last-child { color:#365af5; }
