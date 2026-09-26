@@ -503,7 +503,7 @@ export function productChartMarker(
     text: action
       ? newowInitialClearLabel(item.tradeEligibility) ?? ''
       : item.kind,
-    size: action ? 1.5 : 1,
+    size: 1,
   }
 }
 

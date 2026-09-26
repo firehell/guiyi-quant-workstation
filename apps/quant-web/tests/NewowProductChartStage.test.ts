@@ -217,7 +217,7 @@ test('connects action labels to the exact server reference price coordinate', as
   assert.ok(label)
   assert.equal(label.props['data-reference-price'], '90')
   assert.equal(label.props['data-anchor-y'], 180)
-  assert.match(textContent(label), /建仓.*参考价 90/)
+  assert.match(textContent(label), /建仓.*建仓价:90/)
   const line = findNode(root, node => node.type === 'line')
   assert.equal(line?.props.y1, 180)
   app.unmount()

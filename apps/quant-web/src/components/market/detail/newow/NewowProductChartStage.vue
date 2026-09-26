@@ -88,7 +88,7 @@ const positionedComparison = ref<Array<PositionedCallout & { origin: 'trend' | '
 const trendTrack = ref(true)
 const oscillationTrack = ref(true)
 const comparisonBackground = ref(true)
-const ACTION_LABEL_BOX = { width: 96, height: 38 }
+const ACTION_LABEL_BOX = { width: 96, height: 30 }
 const container = ref<HTMLElement | null>(null)
 const auxiliaryToolbar = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
@@ -410,7 +410,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
         const x = timeToCoordinate.call(scale, chartMarkerTime(action.barEnd, value.identity.frequency, action.tradingDay))
         if (x === null) return []
         return [{ callout: { ...callout, title: `${origin === 'trend' ? '趋势' : '震荡'}${callout.title}` }, x, y: trackHeight / 2,
-          boxWidth: detailLabels.value ? 108 : 70, boxHeight: detailLabels.value ? 38 : 28 }]
+          boxWidth: detailLabels.value ? 108 : 70, boxHeight: detailLabels.value ? 30 : 24 }]
       })
       positionedComparison.value.push(...layoutReferenceCallouts(points, width, trackHeight).map(point => ({ ...point, top: point.top + offset, origin })))
     }
@@ -654,12 +654,12 @@ defineExpose({ revealSignal, scrollToLatest })
         :aria-label="`${item.callout.title}，${item.callout.detail}，策略参考动作`"
         :title="`${item.callout.title} · ${item.callout.detail} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`"
         @click="emit('select-signal', item.callout.id)"
-      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
+      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail.replace('参考价 ', item.callout.above ? '' : '建仓价:') }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
     </div>
     <div v-if="comparisonActive && showActions" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双轨对照">
       <span class="newow-product-chart-stage__track-name">趋势上轨 · 本视图 {{ positionedComparison.filter(item => item.origin === 'trend').length }} 个标签</span>
       <span class="newow-product-chart-stage__track-name is-lower">震荡下轨 · 本视图 {{ positionedComparison.filter(item => item.origin === 'oscillation').length }} 个标签</span>
-      <button v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" type="button" class="newow-product-chart-stage__action-label" :class="`is-${item.callout.tone}`" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :title="`${item.callout.title} · ${item.callout.price} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${item.callout.title}，${item.callout.price}，${item.callout.time}，${item.callout.physicalContract}`" @click="emit('select-comparison-signal', item.origin, item.callout.id)"><strong>{{ item.compact ? (item.callout.above ? '▼' : '▲') : item.callout.title }}</strong><span v-if="detailLabels && !item.compact">{{ item.callout.detail }}</span></button>
+      <button v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" type="button" class="newow-product-chart-stage__action-label" :class="`is-${item.callout.tone}`" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :title="`${item.callout.title} · ${item.callout.price} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${item.callout.title}，${item.callout.price}，${item.callout.time}，${item.callout.physicalContract}`" @click="emit('select-comparison-signal', item.origin, item.callout.id)"><strong>{{ item.compact ? (item.callout.above ? '▼' : '▲') : item.callout.title }}</strong><span v-if="detailLabels && !item.compact">{{ item.callout.detail.replace('参考价 ', item.callout.above ? '' : '建仓价:') }}</span></button>
     </div>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
     <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
@@ -683,13 +683,13 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:clamp(500px,60vh,840px); min-height:500px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
-.newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; cursor:pointer; min-height:0; display:grid; place-content:center; gap:1px; box-sizing:border-box; padding:3px 8px; overflow:hidden; border:1px solid #AA927B; border-radius:8px; background:#FFFEFA; color:#665343; font-size:10px; line-height:15px; text-align:center; box-shadow:0 1px 3px #8C73551A; }
-.newow-product-chart-stage__action-label strong { font-size:10px; font-weight:500; }
-.newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { display:block; line-height:15px; overflow:hidden; white-space:nowrap; }
+.newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; cursor:pointer; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:1px 4px; overflow:hidden; border:1.5px solid #AD5734; border-radius:3px; background:#FFFEFA; color:#665044; font-size:11px; line-height:13px; text-align:center; box-shadow:none; }
+.newow-product-chart-stage__action-label strong { font-size:11px; font-weight:600; }
+.newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { display:block; line-height:13px; overflow:hidden; white-space:nowrap; }
 .newow-product-chart-stage__track-name { position:absolute; top:4px; left:8px; color:#667085; font-size:10px; background:#fffffff0; }
 .newow-product-chart-stage__track-name.is-lower { top:50%; }
-.newow-product-chart-stage__action-label.is-gain span { color:#CB3737; }
-.newow-product-chart-stage__action-label.is-loss span { color:#188052; }
+.newow-product-chart-stage__action-label.is-gain span { color:#665044; }
+.newow-product-chart-stage__action-label.is-loss span { color:#ff3030; }
 .newow-product-chart-stage__action-label.is-density-node { min-width:0; min-height:0; }
 .newow-product-chart-stage__action-label.is-compact { padding:0; place-items:center; }
 .newow-product-chart-stage__action-label.is-selected { z-index:5; outline:2px solid #8B653D; background:#FFF3D9; }
