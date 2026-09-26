@@ -80,8 +80,9 @@ def test_restore_scope_rejects_foreign_month_even_with_self_consistent_hash() ->
         repair._validate_scope(omitted)
 
 
+@pytest.mark.parametrize("dynamic", [False, True])
 def test_apply_removes_empty_month_and_replaces_partial_month_atomically(
-    monkeypatch, tmp_path: Path,
+    monkeypatch, tmp_path: Path, dynamic: bool,
 ) -> None:
     monkeypatch.setattr(repair, "_validate_scope", lambda _: None)
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -110,11 +111,20 @@ def test_apply_removes_empty_month_and_replaces_partial_month_atomically(
                           (rs_old[0],))]
         packet = {"schema_version": "pf_rs_weekly_quality_repair_v1",
                   "cutoff": repair.CUTOFF.isoformat(),
-                  "contracts": [{"contract": contract, "d1_preimages": []} for contract in repair.TARGETS],
+                  "canonical_root_sha256": "root",
+                  "contracts": [{"contract": contract, "d1_preimages": [], "weeks": []} for contract in repair.TARGETS],
                   "months": months}
-        monkeypatch.setattr(repair, "prepare", lambda *_: (packet, ((), (rs_old[0],))))
+        calls = []
+        if dynamic:
+            packet.update(schema_version="newow_weekly_quality_repair_v2",
+                          target_scope={"PF2611": ["2025-11-21", "2025-11-28"], "RS2609": ["2026-08-14"]})
+        def reprepare(*_, **kwargs):
+            calls.append(kwargs)
+            return packet, ((), (rs_old[0],))
+        monkeypatch.setattr(repair, "prepare", reprepare)
         assert repair.inspect(session, root, packet)["status"] == "old"
         assert repair.apply(session, root, "root", packet)["status"] == "committed"
+        assert calls == ([{"targets": packet["target_scope"], "cutoff": repair.CUTOFF}] if dynamic else [{}])
     with Session(engine) as readback:
         catalog = MarketCatalog(readback, root)
         assert repair.inspect(readback, root, packet)["status"] == "candidate"
@@ -163,7 +173,7 @@ def test_apply_rejects_stale_packet_before_write(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr(repair, "prepare", lambda *_: ({"new": True}, ()))
     session = FakeSession()
     with pytest.raises(repair.QualityRepairError, match="PREPARE_IDENTITY_MOVED"):
-        repair.apply(session, tmp_path, "root", {"old": True})
+        repair.apply(session, tmp_path, "root", {"old": True, "canonical_root_sha256": "root"})
     assert (session.commits, session.rollbacks) == (0, 1)
 
 
@@ -193,7 +203,7 @@ def test_failed_second_publish_rolls_back_both_month_pointers(
             catalog.register_partition(store.publish(PublishRequest(
                 key, year, month, bars, tuple(bar.bar_end for bar in bars))))
         session.commit()
-        packet = {"months": [
+        packet = {"canonical_root_sha256": "root", "months": [
             _record(store, catalog, root, pf, date(2025, 11, 21), pf_old, ()),
             _record(store, catalog, root, rs, date(2026, 8, 14), rs_old, (rs_old[0],))]}
         monkeypatch.setattr(repair, "prepare", lambda *_: (packet, ((), (rs_old[0],))))
@@ -209,3 +219,43 @@ def test_failed_second_publish_rolls_back_both_month_pointers(
         assert catalog.all_partitions(pf)[0].row_count == 1
         assert catalog.all_partitions(rs)[0].row_count == 2
     engine.dispose()
+
+
+@pytest.mark.parametrize("scope", [
+    {"CJ2305": ["2022-05-20", "2022-05-20"]},
+    {"CJ2305": ["2022-05-27", "2022-05-20"]},
+    {"CJ2305": ["2027-05-20"]},
+    {"../CJ2305": ["2022-05-20"]},
+    {"OI2305": ["2022-05-20"]},
+])
+def test_dynamic_targets_reject_duplicates_future_and_foreign_scope(scope):
+    with pytest.raises(repair.QualityRepairError, match="PREPARED_SCOPE_INVALID"):
+        repair._validated_targets(scope, repair.CUTOFF)
+
+
+def test_dynamic_targets_accept_exact_historical_quality_contracts():
+    assert repair._validated_targets({"CJ2305": ["2022-05-20"]}, repair.CUTOFF) == {
+        "CJ2305": ("2022-05-20",)}
+
+
+def test_dynamic_targets_keep_contract_order_after_json_roundtrip():
+    import json
+    unsorted = {"RS2609": ["2026-08-14"], "CJ2305": ["2022-05-20"]}
+    before = repair._validated_targets(unsorted, repair.CUTOFF)
+    after = repair._validated_targets(json.loads(json.dumps(unsorted, sort_keys=True)), repair.CUTOFF)
+    assert list(before.items()) == list(after.items())
+
+
+def test_dynamic_scope_requires_exact_months_and_removed_days():
+    base = "kind=contract/symbol=cj/series=CJ2305/frequency=1w/year=2022/month=05/"
+    packet = {"schema_version": "newow_weekly_quality_repair_v2", "cutoff": repair.CUTOFF.isoformat(),
+              "repair_source_sha256": repair._sha(Path(repair.__file__).read_bytes()),
+              "target_scope": {"CJ2305": ["2022-05-20"]},
+              "contracts": [{"contract": "CJ2305", "weeks": [{"week_end": "2022-05-20"}]}],
+              "months": [{"contract": "CJ2305", "year": 2022, "month": 5, "action": "remove_pointer",
+                          "removed_days": ["2022-05-20"], "retained_days": [], "old_count": 1, "new_count": 0,
+                          "old": {"uri": base + "part.parquet"}}]}
+    repair._validate_scope(packet)
+    packet["months"][0]["removed_days"] = ["2022-05-27"]
+    with pytest.raises(repair.QualityRepairError, match="PREPARED_SCOPE_INVALID"):
+        repair._validate_scope(packet)

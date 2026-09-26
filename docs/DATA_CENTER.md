@@ -40,6 +40,12 @@ Dataset。
 有缺价的周只形成 `weekly-d1-quality-v1` 计算中断，不返回 W1 价格 Bar；普通 MDS W1 查询仍严格失败。
 同周还有未解释缺日、重复或身份冲突时不得豁免。现有正常 W1 必须与同一 D1 来源聚合数值一致；
 
+已登记的 D1 `NONPOSITIVE_CLOSE` 使 V2 周形成中断时，矛盾的旧 W1 Bar 可由现有
+`scripts/pf_rs_weekly_quality_repair.py` 精确撤下。新增 v2 packet 接受哈希绑定的合约/周末清单与
+固定 cutoff，重新证明 D1 完整端点、来源质量、旧 W1 行和分区前像；只变更 W1，不下载或写 D1。
+锁内重算完整 packet，所有指针同事务发布；空月份只撤 Catalog 指针，旧 immutable 文件保留。
+inspect 区分 old/candidate/mixed，恢复核对旧文件哈希、D1 前像和当前 candidate 身份；结果不明不重试。
+
 苏冰 D1 候选合同新增显式 opt-in 的 source-quality union：正常 Bar、既有 `PRICE_UNAVAILABLE` 与版本化
 `NONPOSITIVE_CLOSE` 必须精确覆盖 expected endpoints。全零行归入后者，不得称为 `NO_TRADE`。普通 strict
 reader 和旧版 Newow reader 的接受范围不变；Newow D1 质量策略 v2 单独接入已验证 union，按新计算与输入版本切断计算；未知、缺失、重复、Session/Map/owner 或证据身份冲突继续
