@@ -24,7 +24,11 @@ from guiyi_quant.newow.product_contracts import (
     ProductFrequency,
     TradeEligibility,
 )
-from guiyi_quant.newow.product_identity import build_segment_id
+from guiyi_quant.newow.product_identity import (
+    InputQualityPolicy,
+    build_calculation_segment_id,
+    build_segment_id,
+)
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 from guiyi_quant.newow.trend_band import initial_trend_band_state
 
@@ -39,6 +43,60 @@ def test_adapter_preserves_every_primitive_prefix_value(
         prefix = replace(case, bars=case.bars[:end])
         actual = replay_strategy(prefix.identity, prefix.bars)
         assert actual.main_values == prefix.run_original_primitive().main_values
+
+
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+@pytest.mark.parametrize("frequency,quality_policy", [
+    ("1d", InputQualityPolicy.V1),
+    ("1d", InputQualityPolicy.DAILY_V2),
+    ("1w", InputQualityPolicy.V1),
+])
+@pytest.mark.parametrize("reuse_contract", [False, True])
+def test_price_gap_uses_owner_clock_when_lifecycle_prefix_rewinds(
+    product_cases, strategy, frequency, quality_policy, reuse_contract
+):
+    case = product_cases.primitive_input(strategy, frequency)
+    identity = replace(case.identity, input_quality_policy=quality_policy)
+    second_segment = "second-owner-with-overlapping-prefix"
+    second = tuple(
+        replace(item, bar=replace(
+            item.bar,
+            physical_contract=(item.bar.physical_contract if reuse_contract else "RB9999"),
+            segment_id=second_segment,
+        ), calculation_segment_id=second_segment)
+        for item in case.bars
+    )
+    split = len(second) // 2
+    gap_at = second[split - 1].bar.bar_end + (
+        second[split].bar.bar_end - second[split - 1].bar.bar_end
+    ) / 2
+    gap = DataInterruption(
+        case.identity.product, case.identity.frequency,
+        second[0].bar.physical_contract, second_segment,
+        gap_at.date(), gap_at, "source-quality:second-owner",
+    )
+    combined = case.bars + second
+    labeled = adapters.label_calculation_segments(identity, combined, (gap,))
+    expected_before = build_calculation_segment_id(
+        second_segment, None, identity.input_quality_policy
+    )
+    expected_after = build_calculation_segment_id(
+        second_segment, gap_at, identity.input_quality_policy
+    )
+    assert all(item.calculation_segment_id == expected_before
+               for item in labeled[len(case.bars):len(case.bars) + split])
+    assert all(item.calculation_segment_id == expected_after
+               for item in labeled[len(case.bars) + split:])
+    isolated = replay_strategy(identity, second, data_interruptions=(gap,))
+    full = replay_strategy(identity, combined, data_interruptions=(gap,))
+    assert tuple((f.main_values, f.main_state, f.availability, f.actions, f.hints)
+                 for f in full.frames[len(case.bars):]) == tuple(
+                     (f.main_values, f.main_state, f.availability, f.actions, f.hints)
+                     for f in isolated.frames)
+    prefix = adapters.label_calculation_segments(
+        identity, combined[:len(case.bars) + split], (gap,)
+    )
+    assert prefix == labeled[:len(prefix)]
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
