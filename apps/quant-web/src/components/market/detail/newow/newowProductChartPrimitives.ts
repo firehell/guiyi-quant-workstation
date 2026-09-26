@@ -566,7 +566,8 @@ export function alignNewowAuxiliaryChartModel(
       points = []
     }
     for (const bar of chart.value.bars) {
-      const point = pointsByOwnerTime.get(`${bar.physical_contract}:${bar.segment_id}:${bar.bar_end}`)
+      // Auxiliary segment_id identifies the calculation segment, including quality resets.
+      const point = pointsByOwnerTime.get(`${bar.physical_contract}:${bar.calculation_segment_id}:${bar.bar_end}`)
       if (!point) { flush(); continue }
       points.push({ ...point, time: chartMarkerTime(bar.bar_end, chart.meta.identity.frequency, bar.trading_day) })
     }

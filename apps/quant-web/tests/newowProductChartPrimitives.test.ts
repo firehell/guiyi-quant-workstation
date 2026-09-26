@@ -333,6 +333,21 @@ test('aligns auxiliary by chart owner and exact time, never auxiliary array inde
 })
 
 
+test('auxiliary alignment uses calculation identity and rejects points from before a quality reset', () => {
+  const chart = chartResponse('trend', '1d')
+  const calculationId = 'segment-1|input-quality:newow_daily_input_quality_v2'
+  for (const bar of chart.value!.bars) bar.calculation_segment_id = calculationId
+  const value = auxiliaryValue('main_force_control', { kongpan: [20, 30], status: [], current_status: 'weak', formula_version: 'test' })
+  value.segments[0]!.segment_id = calculationId
+  const auxiliary = { meta: chart.meta, section: 'auxiliary', status: chart.status, value } as NewowProductSectionResponse<'auxiliary'>
+  assert.deepEqual(primitives.alignNewowAuxiliaryChartModel(chart, auxiliary)!.series[0]!.points.map(point => point.value), [20, 30])
+  // Same physical owner and timestamp cannot borrow values across a calculation reset.
+  chart.value!.bars[1]!.calculation_segment_id = `${calculationId}|price-gap:2026-08-14`
+  assert.deepEqual(primitives.alignNewowAuxiliaryChartModel(chart, auxiliary)!.series[0]!.points.map(point => point.value), [20])
+  for (const bar of chart.value!.bars) bar.calculation_segment_id = 'other-calculation'
+  assert.deepEqual(primitives.alignNewowAuxiliaryChartModel(chart, auxiliary)!.series, [])
+})
+
 test('trend model projects one 35%-opacity column per ready Bar with its own state', () => {
   const response = chartResponse('trend', '1d')
   const model = buildNewowProductChartModel(response)
