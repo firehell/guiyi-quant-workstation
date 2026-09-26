@@ -308,7 +308,6 @@ function renderModel(value: NewowProductChartModel | null): void {
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
   })))
-  const theme = resolveChartTheme(container.value ?? document.documentElement)
   const volumeColors = newowVolumeColors(value, 'rgba(255,59,48,0.6)', 'rgba(52,199,89,0.6)')
   volume?.setData(value.bars.map((bar, index) => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: volumeColors[index] })))
   auxiliaryAnchor?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })))

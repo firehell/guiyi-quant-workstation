@@ -379,8 +379,8 @@ test('creates three native panes with volume zero/color and releases resources',
   assert.equal(paneCount, 3)
   const volume = records.find(record => record.pane === 1 && record.definition.type === 'Histogram')!
   assert.equal(volume.data[0]!.value, 0)
-  assert.equal(volume.data[0]!.color, '#FF8383')
-  assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, '#FF8383'], [9, '#80DCA1']])
+  assert.equal(volume.data[0]!.color, 'rgba(255,59,48,0.6)')
+  assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, 'rgba(255,59,48,0.6)'], [9, 'rgba(52,199,89,0.6)']])
   assert.equal(records.filter(record => record.pane === 2).length > 0, true, 'keep empty auxiliary pane without manufacturing an indicator zero')
   assert.equal(resizeCalls.at(-1)?.[2], true, 'pane labels require completed native layout before reading pane heights')
   app.unmount()
