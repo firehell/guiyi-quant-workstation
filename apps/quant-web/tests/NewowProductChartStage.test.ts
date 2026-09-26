@@ -70,7 +70,7 @@ test('trend A/B boundaries render as lightweight one-pixel lines above the colum
   app.unmount()
 })
 
-test('emits stable signal selection and preserves an established viewport and focus when earlier data arrives', async () => {
+test('keeps action labels passive and preserves an established viewport and focus when earlier data arrives', async () => {
   const Stage = await loadComponent()
   let range = { from: 0, to: 1 }
   let rangeListener: ((value: typeof range) => void) | undefined
@@ -126,7 +126,11 @@ test('emits stable signal selection and preserves an established viewport and fo
 
   clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'build-stable' } })
   clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'unknown' } })
-  assert.deepEqual(selected, ['build-stable'])
+  assert.deepEqual(selected, [], 'clicking a native marker must not open signal details')
+  const passiveLabel = findNode(root, node => node.props['data-action-id'] === 'build-stable')!
+  assert.equal(passiveLabel.type, 'div')
+  assert.equal(passiveLabel.props.onClick, undefined)
+  assert.equal(passiveLabel.props.tabindex, undefined)
 
   range = { from: 0.25, to: 1.25 }
   rangeListener!(range)

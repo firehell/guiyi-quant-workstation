@@ -514,9 +514,7 @@ function onClick(event: MouseEventParams<Time>): void {
     volumeScoreIndex.value = newowVolumeScores(model.value, index).length ? index : null
     return
   }
-  if (event.hoveredInfo?.objectKind !== 'series-marker' || typeof event.hoveredInfo.objectId !== 'string') return
-  const value = model.value
-  if (value?.actions.some((action) => action.id === event.hoveredInfo?.objectId)) emit('select-signal', event.hoveredInfo.objectId)
+
 }
 
 function onRangeChange(range: LogicalRange | null): void {
@@ -681,7 +679,7 @@ defineExpose({ revealSignal, scrollToLatest })
       aria-label="策略参考动作"
     >
       <svg aria-hidden="true"><line v-for="item in positionedActions.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
-      <button type="button"
+      <div
         v-for="item in positionedActions"
         :key="item.callout.id"
         class="newow-product-chart-stage__action-label"
@@ -694,13 +692,12 @@ defineExpose({ revealSignal, scrollToLatest })
         :data-anchor-y="item.y"
         :aria-label="`${actionTitle(item.callout)}，${actionDisplay(item.callout).text}，策略参考动作`"
         :title="`${actionTitle(item.callout)} · ${actionDisplay(item.callout).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`"
-        @click="emit('select-signal', item.callout.id)"
-      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ actionTitle(item.callout) }}</strong><span>{{ actionDisplay(item.callout).text }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
+      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ actionTitle(item.callout) }}</strong><span>{{ actionDisplay(item.callout).text }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></div>
     </div>
     <div v-if="comparisonActive && showActions" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双轨对照">
       <span class="newow-product-chart-stage__track-name">趋势上轨 · 本视图 {{ positionedComparison.filter(item => item.origin === 'trend').length }} 个标签</span>
       <span class="newow-product-chart-stage__track-name is-lower">震荡下轨 · 本视图 {{ positionedComparison.filter(item => item.origin === 'oscillation').length }} 个标签</span>
-      <button v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" type="button" class="newow-product-chart-stage__action-label" :class="`return-${actionDisplay(item.callout, item.origin).direction}`" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :title="`${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`" @click="emit('select-comparison-signal', item.origin, item.callout.id)"><strong>{{ item.compact ? (item.callout.above ? '▼' : '▲') : actionTitle(item.callout, item.origin) }}</strong><span v-if="detailLabels && !item.compact">{{ actionDisplay(item.callout, item.origin).text }}</span></button>
+      <div v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" class="newow-product-chart-stage__action-label" :class="`return-${actionDisplay(item.callout, item.origin).direction}`" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :title="`${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`"><strong>{{ item.compact ? (item.callout.above ? '▼' : '▲') : actionTitle(item.callout, item.origin) }}</strong><span v-if="detailLabels && !item.compact">{{ actionDisplay(item.callout, item.origin).text }}</span></div>
     </div>
     <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量 <button v-if="yellowVolumeIndexes.length" class="newow-product-chart-stage__volume-help" type="button" @click="showLatestVolumeScore">黄色柱说明</button></span>
@@ -736,7 +733,7 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:clamp(500px,60vh,840px); min-height:500px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
-.newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; cursor:pointer; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:1px 4px; overflow:hidden; border:1.5px solid #AD5734; border-radius:8px; background:#FFFEFA; color:#665044; font-size:11px; line-height:13px; text-align:center; box-shadow:none; }
+.newow-product-chart-stage__action-label { position:absolute; pointer-events:none; cursor:default; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:1px 4px; overflow:hidden; border:1.5px solid #AD5734; border-radius:8px; background:#FFFEFA; color:#665044; font-size:11px; line-height:13px; text-align:center; box-shadow:none; }
 .newow-product-chart-stage__action-label strong { font-size:11px; font-weight:600; }
 .newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { display:block; line-height:13px; overflow:hidden; white-space:nowrap; }
 .newow-product-chart-stage__track-name { position:absolute; top:4px; left:8px; color:#667085; font-size:10px; background:#fffffff0; }
