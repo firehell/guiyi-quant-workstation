@@ -10,6 +10,7 @@ labels=(
   com.guiyi.quant-web
   com.guiyi.quant-live
   com.guiyi.quant-after-market
+  com.guiyi.quant-late-provider-recovery
   com.guiyi.quant-alert
 )
 failed=0
@@ -213,7 +214,7 @@ for label in "${labels[@]}"; do
   required=false
   case "$label" in
     com.guiyi.quant-api|com.guiyi.quant-web) required=true ;;
-    com.guiyi.quant-live|com.guiyi.quant-after-market) [[ "$marker_enabled" == "true" ]] && required=true ;;
+    com.guiyi.quant-live|com.guiyi.quant-after-market|com.guiyi.quant-late-provider-recovery) [[ "$marker_enabled" == "true" ]] && required=true ;;
     com.guiyi.quant-alert) [[ "$alert_marker_enabled" == "true" ]] && required=true ;;
     com.guiyi.quant-reference-worker) [[ "$reference_worker_enabled" == "true" ]] && required=true ;;
   esac
@@ -244,7 +245,7 @@ for label in "${labels[@]}"; do
       printf '[local-services-status] %s commit_mismatch checkout_commit=%s loaded_commit=%s\n' "$label" "${runtime_checkout_commit:0:8}" "${loaded_commit:0:8}"
       record_failure
     fi
-    if [[ "$required" == "true" && "$label" != "com.guiyi.quant-after-market" && "$state" != "running" ]]; then
+    if [[ "$required" == "true" && "$label" != "com.guiyi.quant-after-market" && "$label" != "com.guiyi.quant-late-provider-recovery" && "$state" != "running" ]]; then
       record_failure
     fi
   else

@@ -1608,3 +1608,13 @@ pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright 
 隔离回归覆盖 W1 同周日历查询次数、下一次读取看到日历变更、分页/缺失映射语义，及慢/失败/零行 overview
 下黄金和焦煤的独立搜索与消息筛选。可见页恢复覆盖成功缓存 TTL、失败重读、并发去重和旧响应隔离。
 这些测试不启用生产投影，不下载行情，不写生产数据库或切换 Runtime。
+
+
+节假日晚到受限恢复（隔离，不调用真实 RQData）：
+
+```bash
+uv run --project services/quant-api pytest services/quant-api/tests/data_foundation/test_late_provider_recovery.py services/quant-api/tests/data_foundation/test_daily_source_preflight.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/data_foundation/test_metadata.py services/quant-api/tests/data_foundation/test_infrastructure.py
+```
+
+测试证明双自然日/单次 claim、精确 CAS、源缺失零历史发布、Calendar/Session 有界解析。
+不能代替部署或下一交易日自然盘后成功。

@@ -159,6 +159,9 @@ def build_runtime_health(
     components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
         identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time,
         configured_enabled=weekly_enabled)
+    from app.market_data.late_provider_recovery import recovery_health
+    components["late_provider_recovery"] = recovery_health(
+        PROJECT_ROOT / ".run" / "late-provider-recovery-status.json", current_time)
     return {
         "status": overall,
         "generated_at": _iso(current_time),

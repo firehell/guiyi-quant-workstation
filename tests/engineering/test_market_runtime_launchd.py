@@ -424,7 +424,7 @@ def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tm
     runtime_result = _run_installer(repo, home, fake_bin, "--confirm-market-runtime")
     assert marker.read_text(encoding="utf-8") == "enabled\n"
     assert (
-        "[install-local-services] loaded=true mode=--confirm-market-runtime services=2"
+        "[install-local-services] loaded=true mode=--confirm-market-runtime services=3"
         in runtime_result.stdout
     )
 
@@ -784,6 +784,7 @@ def test_market_install_establishes_new_after_market_owner_before_live(
     ]
     assert bootstraps == [
         "com.guiyi.quant-after-market.plist",
+        "com.guiyi.quant-late-provider-recovery.plist",
         "com.guiyi.quant-live.plist",
     ]
 
@@ -812,8 +813,9 @@ def test_market_install_delegates_state_to_python_authority(
 
     assert result.returncode == 0, result.stdout + result.stderr
     calls = (home / "authority-state-calls").read_text(encoding="utf-8").splitlines()
-    assert calls[:2] == [
+    assert calls[:3] == [
         "com.guiyi.quant-after-market",
+        "com.guiyi.quant-late-provider-recovery",
         "com.guiyi.quant-live",
     ]
 
@@ -1595,6 +1597,7 @@ def _status_fixture(
         "com.guiyi.quant-web",
         "com.guiyi.quant-live",
         "com.guiyi.quant-after-market",
+        "com.guiyi.quant-late-provider-recovery",
         "com.guiyi.quant-alert",
     ):
         if label == "com.guiyi.quant-alert" and missing_alert:
@@ -1629,7 +1632,7 @@ def _status_fixture(
     calls = home / "mutation-calls.log"
     fake_launchctl = fake_bin / "launchctl"
     missing_clause = (
-        'if [ "$label" = "com.guiyi.quant-after-market" ]; then exit 1; fi\n'
+        'if { [ "$label" = "com.guiyi.quant-after-market" ] || [ "$label" = "com.guiyi.quant-late-provider-recovery" ]; }; then exit 1; fi\n'
         if missing_after_market
         else ""
     )
@@ -1651,7 +1654,7 @@ def _status_fixture(
         + missing_alert_clause
         + f'loaded_commit="{checkout_commit}"\n'
         + mismatch_clause
-        + 'if [ "$label" = "com.guiyi.quant-after-market" ]; then echo "state = not running"; else echo "state = running"; fi\n'
+        + 'if { [ "$label" = "com.guiyi.quant-after-market" ] || [ "$label" = "com.guiyi.quant-late-provider-recovery" ]; }; then echo "state = not running"; else echo "state = running"; fi\n'
         + f'echo "GUIYI_PROJECT_ROOT => {repo.resolve()}"\n'
         + 'echo "GUIYI_RUNTIME_COMMIT => $loaded_commit"\n',
         encoding="utf-8",

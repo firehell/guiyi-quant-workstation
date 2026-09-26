@@ -183,6 +183,7 @@ class UpdateRequest:
     apply: bool = False
     sync_current_day_metadata: bool = False
     mode: Literal["full", "daily"] = "full"
+    require_source_ready: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1082,6 +1083,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         self.metadata = metadata
         self._planning_check = lambda: None
         self.provider = provider
+        self._ready_batches: dict[BarFetchRequest, BarBatch] | None = None
         # 同进程内已同步过的 (products, through) 不再重复拉 metadata，减少 RQData 调用。
         self._metadata_watermarks: set[tuple[tuple[str, ...], date]] = set()
         self._observer: MaintenanceObserver | None = None
@@ -1106,6 +1108,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         finally:
             self._observer = None
             self._source_cache = None
+            self._ready_batches = None
 
     def daily_recovery(
         self,
@@ -1169,6 +1172,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         verify_identity()
                     if before_apply is not None:
                         before_apply()
+                    if request.require_source_ready:
+                        self._prepare_daily_sources(locked_plan)
                     maintenance = self._execute_daily_recovery_plan(
                         locked_plan,
                         request.through,
@@ -1201,6 +1206,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         finally:
             self._observer = None
             self._source_cache = None
+            self._ready_batches = None
 
     @contextmanager
     def _progress(self, phase, key=None, year=None, month=None, *, symbol=None):
@@ -1257,6 +1263,10 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     )
                 if request.mode == "daily":
                     through = request.through or self.coverage.latest_complete_day(request.products)
+                    if request.require_source_ready:
+                        plan = self._plan_daily_recovery(request.products, through)
+                        self._prepare_daily_sources(plan)
+                        return self._execute_daily_recovery_plan(plan, through, console_progress=False)
                     return self._execute_daily(request.products, through, apply=True)
                 watermark = (request.products, metadata_through)
                 # 日历/会话/主力映射不齐时先 synchronize；失败则不会进入拉 bar。
@@ -1786,6 +1796,51 @@ class HistoricalDataManager(ContractWarmupPlanner):
             0,
             target_windows=plan.target_windows,
         )
+
+    def _fetch_many(self, requests: tuple[BarFetchRequest, ...]) -> tuple[BarBatch, ...]:
+        if self._ready_batches is None:
+            return self.provider.fetch_many(requests)
+        try:
+            return tuple(self._ready_batches[item] for item in requests)
+        except KeyError:
+            raise StorageError("SOURCE_PREFLIGHT_PLAN_CHANGED") from None
+
+    def _prepare_daily_sources(self, plan: _DailyRecoveryPlan) -> None:
+        """Validate every source window before any historical publication.
+
+        Frozen response batches are reused by the exact writer, never refetched.
+        Only absent endpoints mean late data; malformed/quality failures stay closed.
+        """
+        if sum(len(target.missing) for group in plan.groups for targets in group.fetch_groups
+               for target in targets) > 250_000:
+            raise StorageError("SOURCE_PREFLIGHT_BUDGET_EXCEEDED")
+        buffered: dict[BarFetchRequest, BarBatch] = {}
+        for group in plan.groups:
+            for targets in group.fetch_groups:
+                requests = tuple(BarFetchRequest(
+                    target.key, target.missing,
+                    self.coverage.trading_days_for_bar_ends(target.key, target.missing)
+                    if target.key.frequency is BarFrequency.M1 else None,
+                ) for target in targets)
+                batches = self.provider.fetch_many(requests)
+                if len(batches) != len(targets):
+                    raise StorageError("PROVIDER_BATCH_COUNT_MISMATCH")
+                for target, request, batch in zip(targets, requests, batches, strict=True):
+                    try:
+                        bars, facts, expected = self._merged_publish_payload(target, (batch,))
+                        self.store.validate(PublishRequest(
+                            target.key, target.year, target.month, bars, expected,
+                            tuple(fact for fact in facts if isinstance(fact, PriceUnavailableFact)),
+                            tuple(fact for fact in facts if isinstance(fact, NonpositiveCloseFact)),
+                        ))
+                    except StorageError as exc:
+                        if exc.code == "TARGET_WINDOW_INCOMPLETE":
+                            raise InfrastructureError("RQDATA_NOT_READY") from None
+                        raise
+                    if request in buffered and buffered[request] != batch:
+                        raise StorageError("PROVIDER_BATCH_CONFLICT")
+                    buffered[request] = batch
+        self._ready_batches = buffered
 
     def _execute_daily_recovery_plan(
         self,
@@ -2524,7 +2579,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 planned += len(fetch_targets)
                 provider_requests += len(fetch_targets)
                 with self._progress("provider", target.key, target.year, target.month):
-                    batches = self.provider.fetch_many(tuple(
+                    batches = self._fetch_many(tuple(
                         BarFetchRequest(
                             fetch_target.key,
                             fetch_target.missing,
@@ -2674,7 +2729,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 with self._progress(
                     "provider", failure_target.key, failure_target.year, failure_target.month
                 ):
-                    batches = self.provider.fetch_many(tuple(
+                    batches = self._fetch_many(tuple(
                         BarFetchRequest(
                             item.key, item.missing,
                             self.coverage.trading_days_for_bar_ends(item.key, item.missing)
