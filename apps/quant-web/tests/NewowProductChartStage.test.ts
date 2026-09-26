@@ -548,6 +548,37 @@ test('same chart instance restores identity-specific layers and viewport across 
   app.unmount()
 })
 
+
+test('reference price lines use supplied values and remove stale levels on replacement or invalidation', async () => {
+  const Stage = await loadComponent()
+  const active = new Set<{ price: number; title?: string; lineStyle?: number; axisLabelVisible?: boolean }>()
+  const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+  const target = ref<string | null>('3143')
+  const absorb = ref<string | null>('3088')
+  const fakeChart = { addSeries: () => ({ setData() {},
+    createPriceLine(options: { price: number; title?: string }) { const line = { ...options, applyOptions() {} }; active.add(line); return line },
+    removePriceLine(line: { price: number }) { active.delete(line) },
+  }), removeSeries() {}, timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+    scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: 'trend', selectedSignalId: null, targetPrice: target.value, absorbPrice: absorb.value,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  const prices = () => [...active].filter(line => line.title === '目标价' || line.title === '吸筹价')
+  assert.deepEqual(prices().map(line => [line.title, line.price, line.lineStyle, line.axisLabelVisible]), [['目标价', 3143, 1, true], ['吸筹价', 3088, 1, true]])
+  target.value = null; absorb.value = '3090'; await nextTick()
+  assert.deepEqual(prices().map(line => [line.title, line.price]), [['吸筹价', 3090]])
+  absorb.value = 'NaN'; await nextTick()
+  assert.equal(prices().length, 0)
+  target.value = '3143'; await nextTick()
+  response.value = null; await nextTick()
+  assert.equal(prices().length, 0)
+  app.unmount()
+})
+
 function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { projectNewowAuxiliaryReadiness } from '@/utils/newowDetailPresentation'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
@@ -9,6 +10,7 @@ import {
   LineSeries,
   HistogramSeries,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type LineData,
@@ -49,6 +51,9 @@ import {
 const props = withDefaults(defineProps<{
   response: NewowProductSectionResponse<'chart'> | null
   strategy: NewowProductStrategy
+  targetPrice?: string | null
+  absorbPrice?: string | null
+  referencePriceStatus?: string
   comparisonResponse?: NewowProductSectionResponse<'chart'> | null
   auxiliaryResponse?: NewowProductSectionResponse<'auxiliary'> | null
   auxiliaryLifecycle?: import('@/types/newowProduct').NewowResourceLifecycle
@@ -69,6 +74,7 @@ const emit = defineEmits<{
   'explain-auxiliary': []
 }>()
 
+const referencePriceLines = new Map<string, IPriceLine>()
 const stageRoot = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
 const fullscreenError = ref<string | null>(null)
@@ -196,6 +202,7 @@ onUnmounted(createNewowProductChartDisposer({
     auxiliaryAnchor?.detachPrimitive(upDownEnergy)
     auxiliaryAnchor?.detachPrimitive(mainForceControl)
     auxiliaryAnchor?.detachPrimitive(trendReversal)
+    referencePriceLines.clear()
     chart?.remove()
     chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null
     mainLines.clear(); auxiliaryLines.clear()
@@ -203,6 +210,7 @@ onUnmounted(createNewowProductChartDisposer({
 }))
 
 watch(model, (value) => renderModel(value))
+watch([() => props.targetPrice, () => props.absorbPrice], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => renderMarkers(model.value))
 watch(detailLabels, scheduleActionProjection, { flush: 'post' })
@@ -225,8 +233,26 @@ function rememberViewport(): void {
     actions: showActions.value, structure: showStructure.value, hints: showHints.value,
   } })
 }
+function renderReferencePrices(): void {
+  if (!candles) return
+  for (const line of referencePriceLines.values()) candles.removePriceLine?.(line)
+  referencePriceLines.clear()
+  if (!model.value) return
+  for (const [key, value, color, title] of [
+    ['target', props.targetPrice, '#ff4d9d', '目标价'],
+    ['absorb', props.absorbPrice, '#ff3b30', '吸筹价'],
+  ] as const) {
+    if (value == null || !/^\d+(\.\d+)?$/.test(value)) continue
+    const price = Number(value)
+    if (!Number.isFinite(price) || price <= 0) continue
+    referencePriceLines.set(key, candles.createPriceLine({ price, color, title, lineWidth: 1, lineStyle: 1,
+      axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' }))
+  }
+}
+
 function renderModel(value: NewowProductChartModel | null): void {
   if (chart === null || candles === null) return
+  renderReferencePrices()
   if (value === null) {
     rememberViewport()
     cursorTime.value = null
@@ -586,6 +612,10 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-selected-signal-id="selectedSignalId ?? ''"
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
   >
+    <div class="newow-product-chart-stage__reference-prices" aria-label="主图参考价格">
+      <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ formatMarketDecimal(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
+      <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ formatMarketDecimal(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
+    </div>
     <div class="newow-product-chart-stage__toolbar">
     <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button><details v-if="showHints && model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details></div>
     <div class="newow-product-chart-stage__controls"><slot name="main-controls" />
@@ -648,6 +678,11 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
+.newow-product-chart-stage__reference-prices { display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 12px; border-bottom:1px solid #eef0f3; background:#fafafa; font-size:12px; font-weight:600; }
+.newow-product-chart-stage__reference-prices .is-target { color:#ff6935; }
+.newow-product-chart-stage__reference-prices .is-absorb { color:#34c759; }
+.newow-product-chart-stage__reference-prices small { font-weight:400; }
+
 .newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:auto; min-height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage__readout { display:flex; flex-wrap:wrap; gap:4px 12px; min-height:32px; flex-shrink:0; padding:4px 12px; box-sizing:border-box; color:#667085; font-size:11px; font-variant-numeric:tabular-nums; border-bottom:1px solid #ebedf0; }
