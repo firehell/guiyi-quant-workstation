@@ -591,7 +591,7 @@ function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: 
       assert.equal(options.crosshair?.mode, 0, 'crosshair follows pointer prices without candle magnet snapping')
       const chart = fakeChart as { addSeries: (...args: unknown[]) => object; panes?: () => unknown[]; addPane?: () => unknown }
       const add = chart.addSeries.bind(chart)
-      chart.addSeries = (...args) => ({ attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, ...add(...args) })
+      chart.addSeries = (...args) => ({ attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, priceScale: () => ({ applyOptions() {} }), ...add(...args) })
       chart.panes ??= () => [pane(), pane(), pane()]
       chart.addPane ??= () => pane()
       return chart as never

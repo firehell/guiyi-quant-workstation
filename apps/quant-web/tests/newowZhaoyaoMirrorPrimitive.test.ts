@@ -82,3 +82,14 @@ test('visible-window scaling ignores offscreen values and keeps dashed stems/cau
   assert.equal(caution.text, '小 心'); assert.deepEqual(caution.dash, [3, 3])
   assert.equal(commands.items.some(item => item.x === -20 || item.x === 120), false)
 })
+
+test('mirror zero and upward bars remain below an overlaid toolbar', () => {
+  const result = buildNewowZhaoyaoMirrorCommands(rows.slice(0, 2), 100, 343, () => 50, 128)
+  assert.ok(result.zeroY > 128)
+  assert.ok(result.zeroY < 343 - 15)
+  for (const item of result.items.filter(item => item.kind === 'entry' || item.kind === 'wash')) {
+    assert.ok(item.fromY >= 128)
+    assert.equal(item.toY, result.zeroY)
+  }
+  assert.ok(result.items.some(item => item.kind === 'caution' && item.fromY >= 128))
+})

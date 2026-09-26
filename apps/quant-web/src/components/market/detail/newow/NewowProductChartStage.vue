@@ -31,6 +31,7 @@ import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/comp
 import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
 import { NewowMainForceControlPrimitive, buildNewowMainForceData } from '@/components/market/detail/newow/newowMainForceControlPrimitive'
 import { NewowTrendReversalPrimitive, buildNewowTrendReversalData } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
+import { newowAuxiliaryPaneLayout } from '@/components/market/detail/newow/newowAuxiliaryPaneLayout'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
@@ -211,6 +212,7 @@ onMounted(async () => {
   observer = adapter.createResizeObserver(resize)
   observer.observe(container.value)
   if (stageRoot.value) observer.observe(stageRoot.value)
+  if (auxiliaryToolbar.value) observer.observe(auxiliaryToolbar.value)
   renderModel(model.value)
   resize()
 })
@@ -245,7 +247,7 @@ watch(showActions, () => renderMarkers(model.value))
 watch([model, () => props.referenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
 watch(detailLabels, scheduleActionProjection, { flush: 'post' })
 watch([partnerModel, trendTrack, oscillationTrack, comparisonBackground], () => renderModel(model.value))
-watch([auxiliaryModel, auxiliaryPresentation], () => { cursorRows.value = []; renderAuxiliary() }, { flush: 'post' })
+watch([auxiliaryModel, auxiliaryPresentation], () => { cursorRows.value = []; resize() }, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
   renderMarkers(model.value)
   resolveSelectedSignal()
@@ -561,6 +563,10 @@ function scrollToLatest(): void {
 
 function resize(): void {
   if (chart !== null && container.value !== null) {
+    const layout = newowAuxiliaryPaneLayout(container.value.clientHeight, auxiliaryToolbar.value?.offsetHeight ?? 0)
+    chart.panes()[0]!.setStretchFactor(layout.mainHeight)
+    chart.panes()[1]!.setStretchFactor(layout.volumeHeight)
+    chart.panes()[2]!.setStretchFactor(layout.auxiliaryHeight)
     // Repaint synchronously so native pane heights include the shared time axis.
     chart.resize(container.value.clientWidth, container.value.clientHeight, true)
     volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
@@ -581,14 +587,15 @@ function renderAuxiliary(): void {
   const control = value?.component === 'main_force_control'
   const reversal = value?.component === 'trend_reversal'
   auxiliaryZeroLine?.applyOptions({ color: mirror || energy || control || reversal ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
-  zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series) : [])
+  const { topInset, auxiliaryHeight } = newowAuxiliaryPaneLayout(container.value?.clientHeight ?? 700, auxiliaryToolbar.value?.offsetHeight ?? 0)
+  zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series) : [], topInset)
   upDownEnergy.setData(energy && model.value ? buildNewowUpDownEnergyData(value.series, model.value.bars) : [],
-    Math.max(96, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 28))
+    topInset)
   mainForceControl.setData(control && props.auxiliaryResponse?.value?.component === 'main_force_control'
     ? buildNewowMainForceData(value.series, props.auxiliaryResponse.value.segments) : [],
-    Math.max(96, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 28))
+    topInset)
   trendReversal.setData(reversal ? buildNewowTrendReversalData(value.series) : [],
-    Math.max(96, (auxiliaryToolbar.value?.offsetHeight ?? 0) + 28))
+    topInset)
   for (const item of value?.series ?? []) {
     if (mirror || energy || control || reversal) continue
     const id = `${value!.component}:${item.id}`
@@ -604,6 +611,7 @@ function renderAuxiliary(): void {
       series = item.key === 'histogram' ? chart.addSeries(HistogramSeries, options, 2) : chart.addSeries(LineSeries, options, 2)
       auxiliaryLines.set(id, series)
     }
+    series.priceScale().applyOptions({ scaleMargins: { top: topInset / auxiliaryHeight, bottom: 0.06 } })
     series.setData(item.points.map(point => ({ time: point.time, value: point.value, ...(item.key === 'histogram' ? { color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : {}) })))
   }
   for (const [id, series] of auxiliaryLines) {
@@ -730,7 +738,7 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:auto; min-height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage:fullscreen .newow-product-chart-stage__chart { height:0; flex:1 1 auto; min-height:0; }
-.newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:clamp(500px,60vh,840px); min-height:500px; }
+.newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(500px,60vh,840px) + 200px); min-height:700px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
 .newow-product-chart-stage__action-label { position:absolute; pointer-events:none; cursor:default; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:1px 4px; overflow:hidden; border:1.5px solid #AD5734; border-radius:8px; background:#FFFEFA; color:#665044; font-size:11px; line-height:13px; text-align:center; box-shadow:none; }
@@ -763,7 +771,7 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-product-chart-stage__hint-kind.is-neutral { color:#64748B; }
 .newow-product-chart-stage__auxiliary-status { margin:0; padding:6px 12px; color:#b45309; font-size:12px; }
 .newow-product-chart-stage__status { position:absolute; z-index:5; top:64px; left:12px; margin:0; color:#b45309; background:#fff; }
-@media(max-width:640px) { .newow-product-chart-stage { height:auto; } .newow-product-chart-stage__chart { height:500px; min-height:500px; } }
+@media(max-width:640px) { .newow-product-chart-stage { height:auto; } .newow-product-chart-stage__chart { height:700px; min-height:700px; } }
 .newow-product-chart-stage__volume-help { pointer-events:auto; min-height:24px; padding:0 6px; color:#b77900; font-size:11px; }
 .newow-product-chart-stage__volume-score { position:absolute; right:76px; z-index:8; width:min(340px,calc(100% - 100px)); max-height:360px; overflow:auto; background:#fff; border:1px solid #efce68; border-radius:8px; padding:12px; box-shadow:0 4px 16px #00000014; font-size:12px; }
 .newow-product-chart-stage__volume-score header { display:flex; justify-content:space-between; align-items:center; }.newow-product-chart-stage__volume-score button { min-height:28px; }
