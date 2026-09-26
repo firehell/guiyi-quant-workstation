@@ -38,7 +38,7 @@ import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/util
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowComparisonCompatible } from '@/utils/newowComparison'
 import { initialNewowChartLogicalRange } from '@/utils/chartViewport'
-import { layoutReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
+import { layoutReferenceCallouts, layoutNiuwaReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import {
   buildNewowProductChartModel,
   buildNewowActionCallouts,
@@ -455,13 +455,18 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     return
   }
   const actionById = new Map(value.actions.map(action => [action.id, action]))
-  positionedActions.value = layoutReferenceCallouts(buildNewowActionCallouts(value).flatMap(callout => {
+  positionedActions.value = layoutNiuwaReferenceCallouts(buildNewowActionCallouts(value).flatMap(callout => {
     const action = actionById.get(callout.id)
     if (action === undefined) return []
     const x = timeToCoordinate.call(scale, chartMarkerTime(action.barEnd, value.identity.frequency, action.tradingDay))
     const y = priceToCoordinate.call(candles, action.value)
+    const bar = value.bars.find(bar => bar.barEnd === action.barEnd)
+    const highY = bar ? priceToCoordinate.call(candles, bar.high) : null
+    const lowY = bar ? priceToCoordinate.call(candles, bar.low) : null
+    const candle = x !== null && highY !== null && lowY !== null
+      ? { left: x - 8, top: Math.min(highY, lowY) - 3, width: 16, height: Math.abs(lowY - highY) + 6 } : undefined
     return x === null || y === null ? [] : [{
-      callout, x, y,
+      callout, x, y, candle,
       boxWidth: actionWidth(callout),
       boxHeight: ACTION_LABEL_BOX.height,
       expanded: props.selectedSignalId === callout.id,
@@ -686,7 +691,7 @@ defineExpose({ revealSignal, scrollToLatest })
       :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }"
       aria-label="策略参考动作"
     >
-      <svg aria-hidden="true"><line v-for="item in positionedActions.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
+      <svg aria-hidden="true"><polyline v-for="item in positionedActions" :key="item.callout.id" :points="`${item.x},${item.y} ${item.x},${(item.y + item.lineY) / 2} ${item.lineX},${(item.y + item.lineY) / 2} ${item.lineX},${item.lineY}`" fill="none" /></svg>
       <div
         v-for="item in positionedActions"
         :key="item.callout.id"

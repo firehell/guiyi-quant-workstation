@@ -11,6 +11,7 @@ export interface ProjectedCallout {
   boxWidth?: number
   boxHeight?: number
   expanded?: boolean
+  candle?: { left: number; top: number; width: number; height: number }
 }
 export interface PositionedCallout extends ProjectedCallout {
   left: number
@@ -145,3 +146,44 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 export function matchesReferenceBar(callout: Pick<KlineReferenceCallout, 'time' | 'physicalContract'>, bar: { time: string; physicalContract?: string }): boolean { return bar.physicalContract === callout.physicalContract && Date.parse(bar.time) === Date.parse(callout.time) }
+
+/** Public Niuwa four-direction search: redraw visible labels on zoom; never merge signal facts. */
+export function layoutNiuwaReferenceCallouts(points: readonly ProjectedCallout[], width: number, height: number): PositionedCallout[] {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 4 || height <= 4) return []
+  const placed: PositionedCallout[] = []
+  const directions = [[0, -1], [0.7, -0.7], [0, 1], [-0.7, -0.7]] as const
+  const ordered = points.filter(point => point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height)
+    .sort((a, b) => Number(b.expanded === true) - Number(a.expanded === true) || a.x - b.x || a.callout.id.localeCompare(b.callout.id))
+  for (const point of ordered) {
+    const boxWidth = boundedDimension(point.boxWidth, 96)
+    const boxHeight = boundedDimension(point.boxHeight, 30)
+    if (boxWidth > width - 4 || boxHeight > height - 4) continue
+    const preference = point.callout.above ? [2, 1, 3, 0] : [0, 3, 1, 2]
+    let best: Rectangle | null = null
+    for (const distance of [28, 48, 72, 100]) {
+      let bestDistance = Infinity
+      for (const index of preference) {
+        const [dx, dy] = directions[index]!
+        const left = clamp(dx > 0.5 ? point.x + distance * 0.6 : dx < -0.5 ? point.x - boxWidth - distance * 0.6 : point.x - boxWidth / 2, 2, width - boxWidth - 2)
+        const top = clamp(point.y + dy * distance - boxHeight / 2, 2, height - boxHeight - 2)
+        const rectangle = { left, top, width: boxWidth, height: boxHeight }
+        if (placed.some(other => rectanglesOverlap(rectangle, other, 8))) continue
+        if (point.candle && rectanglesOverlap(rectangle, point.candle, 3)) continue
+        const score = Math.hypot(left + boxWidth / 2 - point.x, top + boxHeight / 2 - point.y)
+        if (score < bestDistance) { bestDistance = score; best = rectangle }
+      }
+      if (best) break
+    }
+    // Crowding only suppresses the text box. Native markers and reference records retain every action.
+    if (best) {
+      const line = lineEndpoint(point.x, point.y, best)
+      placed.push({ ...point, ...best, compact: false, lineX: line.x, lineY: line.y })
+    }
+  }
+  return placed.sort((a, b) => a.x - b.x || a.callout.id.localeCompare(b.callout.id))
+}
+
+function rectanglesOverlap(a: Rectangle, b: Rectangle, gap: number): boolean {
+  return a.left <= b.left + b.width + gap && a.left + a.width + gap >= b.left
+    && a.top <= b.top + b.height + gap && a.top + a.height + gap >= b.top
+}
