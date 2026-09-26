@@ -410,24 +410,19 @@ onBeforeUnmount(() => {
     </section>
     </template>
     </NewowProductChartStage><button v-if="locatedTradeId !== null" type="button" class="newow-product-workspace__return" @click="returnToReferenceTrade">返回原记录</button></div>
-    <div class="newow-product-workspace__snapshot-controls" :data-as-of="loader.historicalSnapshot.value?.as_of ?? loader.dailySnapshot.value?.as_of ?? loader.weeklySnapshot.value?.as_of">
+    <div v-if="loader.historicalSnapshot.value || loader.dailyLoading.value || loader.dailySnapshot.value?.freshness === 'pending_update' || loader.weeklySnapshot.value?.freshness === 'pending_update' || (loader.dailyError.value && chartResponse !== null)" class="newow-product-workspace__load-notice" role="status">
       <template v-if="loader.historicalSnapshot.value">
-        <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}（交易日 {{ loader.historicalSnapshot.value.trading_day }}）</span>
-        <button @click="loader.returnToCurrent">返回当前</button>
+        <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}</span>
+        <button type="button" @click="loader.returnToCurrent">返回当前</button>
       </template>
-      <template v-else>
-        <span v-if="loader.dailySnapshot.value" :title="loader.dailySnapshot.value.as_of">日线截至 {{ loader.dailySnapshot.value.available_trading_day }} 收盘</span>
-        <span v-if="loader.dailySnapshot.value?.freshness === 'pending_update'" role="status">{{ loader.dailySnapshot.value.expected_trading_day }} 日线待更新</span>
-        <span v-if="loader.weeklySnapshot.value" :title="loader.weeklySnapshot.value.as_of">周线截至 {{ loader.weeklySnapshot.value.available_period_end }}，当前主力 {{ loader.weeklySnapshot.value.current_context.physical_contract ?? '不可判定' }}</span>
-        <span v-if="loader.weeklySnapshot.value?.freshness === 'pending_update'" role="status">{{ loader.weeklySnapshot.value.expected_period_end }} 周线待发布</span>
-        <span v-if="loader.dailyLoading.value" role="status">正在确认最近完整{{ identity.frequency === '1w' ? '周线' : '日线' }}…</span>
-        <span v-if="loader.dailyError.value" role="status">{{ newowErrorDisplay(loader.dailyError.value) }}</span>
-        <button :disabled="loader.historicalLoading.value" @click="loader.switchToHistorical">查看最近可用历史快照</button>
-        <button :disabled="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" @click="refreshCurrent">{{ loader.dailyLoading.value || loader.sections.chart.state.value === 'loading' ? '读取中…' : '刷新当前' }}</button>
-        <span v-if="loader.historicalError.value" role="status">{{ newowErrorDisplay(loader.historicalError.value) }}</span>
+      <span v-else-if="loader.dailyLoading.value">正在加载{{ identity.frequency === '1w' ? '周线' : '日线' }}…</span>
+      <template v-else-if="loader.dailyError.value">
+        <span>{{ newowErrorDisplay(loader.dailyError.value) }}</span>
+        <button type="button" @click="refreshCurrent">重试加载</button>
       </template>
+      <span v-else-if="loader.dailySnapshot.value?.freshness === 'pending_update'">{{ loader.dailySnapshot.value.expected_trading_day }} 日线待更新，当前显示截至 {{ loader.dailySnapshot.value.available_trading_day }} 的完整日线</span>
+      <span v-else-if="loader.weeklySnapshot.value?.freshness === 'pending_update'">{{ loader.weeklySnapshot.value.expected_period_end }} 周线待发布，当前显示截至 {{ loader.weeklySnapshot.value.available_period_end }} 的完整周线</span>
     </div>
-    <div class="newow-product-workspace__read-state" aria-live="polite"><span>主图 · {{ loader.dailyLoading.value ? '正在确认完整周期' : newowUiStateLabel(loader.sections.chart.state.value) }}</span><span>副图 · {{ newowUiStateLabel(currentAuxiliaryLifecycle) }}</span><span>参考 · {{ newowUiStateLabel(loader.sections.reference.state.value) }}</span></div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
       <NewowReferencePanel :key="identityKey" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
@@ -539,10 +534,9 @@ onBeforeUnmount(() => {
 .newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:#667085; }
 .newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:#fff; color:#667085; min-height:32px; padding:0 12px; cursor:pointer; }
 .newow-product-workspace__comparison-controls button[aria-pressed="true"] { color:#c2410c; border-color:#ff6b2c; background:#fff4ee; }
-.newow-product-workspace__read-state { display:flex; flex-wrap:wrap; gap:4px 16px; color:#667085; font-size:11px; min-height:20px; align-items:center; padding:0 8px; }
 .newow-product-workspace__unavailable-chart { min-height:clamp(580px,70vh,920px); box-sizing:border-box; }
 .newow-summary { display:grid; gap:8px; padding:8px 12px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
-.newow-product-workspace__snapshot-controls { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:#667085; font-size:12px; }
+.newow-product-workspace__load-notice { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:#667085; font-size:12px; }
 .newow-summary__main,.newow-summary__facts { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; }
 .newow-summary__scope { font-size:10px; font-weight:400; color:#667085; margin-left:6px; }
 .newow-summary__main > strong { font-size:14px; }
