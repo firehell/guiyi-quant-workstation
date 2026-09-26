@@ -19,3 +19,14 @@ export function newowActionReturnDisplay(
   return result.text === '—' ? { text: price, direction: 'neutral' }
     : { text: `${price}(${result.text})`, direction: result.direction }
 }
+
+/** Entry-linked interruption badges never borrow a later exit or imply a closed return. */
+export function newowActionStatus(callout: KlineReferenceCallout, strategy: NewowProductStrategy, trades: readonly NewowReferenceTrade[]): string | null {
+  if (callout.above) return null
+  const matches = trades.filter(trade => trade.strategy_code === strategy
+    && trade.entry_signal_id === callout.id && trade.entry_bar_end === callout.time
+    && trade.physical_contract === callout.physicalContract && trade.entry_reference_price === callout.price)
+  if (matches.length !== 1) return null
+  return matches[0]!.status === 'ROLLOVER_INTERRUPTED' ? '换月中断'
+    : matches[0]!.status === 'DATA_INTERRUPTED' ? '数据中断' : null
+}

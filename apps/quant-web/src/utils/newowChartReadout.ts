@@ -15,10 +15,13 @@ export function newowChartReadout(model: NewowProductChartModel | null, auxiliar
   if (!bar) return []
   const number = (value: number) => Number.isFinite(value) ? String(value) : '—'
   const rows = [bar.tradingDay, bar.physicalContract, `开 ${number(bar.open)} 高 ${number(bar.high)} 低 ${number(bar.low)} 收 ${number(bar.close)}`, `量 ${number(bar.volume)}`]
-  for (const series of auxiliary?.series ?? []) {
-    const point = series.points.find(item => newowTimeKey(item.time) === key)
-    if (point) rows.push(`${series.label} ${number(point.value)}`)
+  const labels = new Set((auxiliary?.series ?? []).map(series => series.label))
+  for (const label of labels) {
+    const points = (auxiliary?.series ?? []).filter(series => series.label === label)
+      .flatMap(series => series.points.filter(item => newowTimeKey(item.time) === key))
+    rows.push(`${label} ${points.length === 1 ? number(points[0]!.value) : '—（该 Bar 缺值 / 预热）'}`)
   }
+  if (!auxiliary) rows.push('副图不可用 / 预热')
   if (auxiliary && rows.length === 4) rows.push('该 Bar 无副图读数 / 预热')
   return rows
 }

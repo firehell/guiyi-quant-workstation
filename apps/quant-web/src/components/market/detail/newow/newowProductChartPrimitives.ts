@@ -510,7 +510,7 @@ export function productChartMarker(
 export function newowInitialClearLabel(
   tradeEligibility: NewowProductAction['trade_eligibility'],
 ): '清仓（无入场）' | null {
-  return tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY' ? '清仓（无入场）' : null
+  return tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY' || tradeEligibility === 'NO_ELIGIBLE_ENTRY' ? '清仓（无入场）' : null
 }
 
 export function describeNewowProductAction(item: NewowProductActionMarker): {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { newowVolumeColors } from '@/utils/newowVolumeDisplay'
-import { newowActionReturnDisplay } from '@/utils/newowActionReturnDisplay'
+import { newowChartReadout } from '@/utils/newowChartReadout'
+import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { projectNewowAuxiliaryReadiness } from '@/utils/newowDetailPresentation'
@@ -82,6 +83,22 @@ function actionDisplay(callout: KlineReferenceCallout, strategy = props.strategy
   return newowActionReturnDisplay(callout, strategy, props.referenceTrades ?? [])
 }
 
+function actionTitle(callout: KlineReferenceCallout, strategy = props.strategy) {
+  const status = newowActionStatus(callout, strategy, props.referenceTrades ?? [])
+  return status ? `${callout.title} · ${status}` : callout.title
+}
+function actionWidth(callout: KlineReferenceCallout, strategy = props.strategy): number {
+  return Math.max(ACTION_LABEL_BOX.width, Math.min(180, Math.max(actionTitle(callout, strategy).length, actionDisplay(callout, strategy).text.length) * 7 + 14))
+}
+const cursorRows = ref<string[]>([])
+const cursorTop = ref(0)
+function onCrosshair(event: MouseEventParams<Time>): void {
+  cursorRows.value = event.point == null ? [] : newowChartReadout(model.value, auxiliaryModel.value, event.time ?? null)
+  const chartTop = container.value?.offsetTop ?? 0
+  const paneOffset = chart?.panes?.().slice(0, event.paneIndex ?? 0).reduce((height, pane) => height + pane.getHeight(), 0) ?? 0
+  const cardHeight = cursorRows.value.length * 18 + 20
+  cursorTop.value = chartTop + Math.max(0, Math.min((event.point?.y ?? 0) + paneOffset - 100, (container.value?.clientHeight ?? 0) - cardHeight))
+}
 const referencePriceLines = new Map<string, IPriceLine>()
 const stageRoot = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
@@ -184,6 +201,7 @@ onMounted(async () => {
   if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   actionMarkers = adapter.createSeriesMarkers(candles as never)
   chart.subscribeClick(onClick)
+  chart.subscribeCrosshairMove?.(onCrosshair)
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
   observer = adapter.createResizeObserver(resize)
   observer.observe(container.value)
@@ -197,6 +215,7 @@ onUnmounted(createNewowProductChartDisposer({
   unsubscribeClick: () => chart?.unsubscribeClick(onClick),
   disconnectResizeObserver: () => observer?.disconnect(),
   removeChart: () => {
+    chart?.unsubscribeCrosshairMove?.(onCrosshair)
     rememberViewport()
     if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
     if (actionProjectionFrame !== null) cancelAnimationFrame(actionProjectionFrame)
@@ -218,9 +237,10 @@ watch(model, (value) => renderModel(value))
 watch([() => props.targetPrice, () => props.absorbPrice], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => renderMarkers(model.value))
+watch([model, () => props.referenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
 watch(detailLabels, scheduleActionProjection, { flush: 'post' })
 watch([partnerModel, trendTrack, oscillationTrack, comparisonBackground], () => renderModel(model.value))
-watch([auxiliaryModel, auxiliaryPresentation], renderAuxiliary, { flush: 'post' })
+watch([auxiliaryModel, auxiliaryPresentation], () => { cursorRows.value = []; renderAuxiliary() }, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
   renderMarkers(model.value)
   resolveSelectedSignal()
@@ -377,11 +397,11 @@ function renderMarkers(value: NewowProductChartModel | null): void {
   if (comparisonActive.value) { actionMarkers.setMarkers([]); return }
   const actions: SeriesMarker<Time>[] = [...(showActions.value ? value.actions : [])]
     .sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
-    .map((item) => productChartMarker(
+    .map((item) => ({ ...productChartMarker(
       item,
       props.selectedSignalId,
       chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay),
-    ))
+    ), text: '' }))
   actionMarkers.setMarkers(actions)
 }
 
@@ -420,7 +440,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
         const x = timeToCoordinate.call(scale, chartMarkerTime(action.barEnd, value.identity.frequency, action.tradingDay))
         if (x === null) return []
         return [{ callout: { ...callout, title: `${origin === 'trend' ? '趋势' : '震荡'}${callout.title}` }, x, y: trackHeight / 2,
-          boxWidth: detailLabels.value ? 108 : 70, boxHeight: detailLabels.value ? 30 : 24 }]
+          boxWidth: detailLabels.value ? Math.max(108, actionWidth(callout, origin)) : 70, boxHeight: detailLabels.value ? 30 : 24 }]
       })
       positionedComparison.value.push(...layoutReferenceCallouts(points, width, trackHeight).map(point => ({ ...point, top: point.top + offset, origin })))
     }
@@ -435,7 +455,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     const y = priceToCoordinate.call(candles, action.value)
     return x === null || y === null ? [] : [{
       callout, x, y,
-      boxWidth: ACTION_LABEL_BOX.width,
+      boxWidth: actionWidth(callout),
       boxHeight: ACTION_LABEL_BOX.height,
       expanded: props.selectedSignalId === callout.id,
     }]
@@ -661,16 +681,17 @@ defineExpose({ revealSignal, scrollToLatest })
         :data-reference-time="item.callout.time"
         :data-reference-contract="item.callout.physicalContract"
         :data-anchor-y="item.y"
-        :aria-label="`${item.callout.title}，${item.callout.detail}，策略参考动作`"
-        :title="`${item.callout.title} · ${item.callout.detail} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`"
+        :aria-label="`${actionTitle(item.callout)}，${actionDisplay(item.callout).text}，策略参考动作`"
+        :title="`${actionTitle(item.callout)} · ${actionDisplay(item.callout).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`"
         @click="emit('select-signal', item.callout.id)"
-      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ actionDisplay(item.callout).text }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
+      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ actionTitle(item.callout) }}</strong><span>{{ actionDisplay(item.callout).text }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
     </div>
     <div v-if="comparisonActive && showActions" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双轨对照">
       <span class="newow-product-chart-stage__track-name">趋势上轨 · 本视图 {{ positionedComparison.filter(item => item.origin === 'trend').length }} 个标签</span>
       <span class="newow-product-chart-stage__track-name is-lower">震荡下轨 · 本视图 {{ positionedComparison.filter(item => item.origin === 'oscillation').length }} 个标签</span>
-      <button v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" type="button" class="newow-product-chart-stage__action-label" :class="`return-${actionDisplay(item.callout, item.origin).direction}`" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :title="`${item.callout.title} · ${item.callout.price} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${item.callout.title}，${item.callout.price}，${item.callout.time}，${item.callout.physicalContract}`" @click="emit('select-comparison-signal', item.origin, item.callout.id)"><strong>{{ item.compact ? (item.callout.above ? '▼' : '▲') : item.callout.title }}</strong><span v-if="detailLabels && !item.compact">{{ actionDisplay(item.callout, item.origin).text }}</span></button>
+      <button v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" type="button" class="newow-product-chart-stage__action-label" :class="`return-${actionDisplay(item.callout, item.origin).direction}`" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :title="`${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`" @click="emit('select-comparison-signal', item.origin, item.callout.id)"><strong>{{ item.compact ? (item.callout.above ? '▼' : '▲') : actionTitle(item.callout, item.origin) }}</strong><span v-if="detailLabels && !item.compact">{{ actionDisplay(item.callout, item.origin).text }}</span></button>
     </div>
+    <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
     <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
     <p v-if="auxiliaryPresentation.message || fullscreenError" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
@@ -710,6 +731,7 @@ button,summary { min-height:44px; padding:0 10px; border:0; color:#667085; backg
 .newow-product-chart-stage__main-legend { display:flex; align-items:center; gap:6px; }
 button:focus-visible,summary:focus-visible { outline:2px solid #365af5; outline-offset:2px; }
 summary { display:flex; align-items:center; }
+.newow-product-chart-stage__cursor-card { position:absolute; right:76px; z-index:6; max-width:calc(100% - 100px); padding:8px 10px; border:1px solid #ebedf0; border-radius:8px; background:#ffffffed; color:#667085; font-size:11px; line-height:18px; pointer-events:none; box-shadow:0 2px 8px #0000000a; }
 .newow-product-chart-stage__volume-label { position:absolute; left:12px; margin-top:4px; color:#667085; font-size:11px; pointer-events:none; z-index:2; background:#fff; padding-right:4px; }
 .newow-product-chart-stage__auxiliary-toolbar { position:absolute; left:1px; right:70px; min-height:32px; background:#fff; z-index:3; }
 details { position:relative; } details[open] { z-index:6; } details[open] > button { display:block; white-space:nowrap; }

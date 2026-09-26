@@ -559,7 +559,7 @@ onBeforeUnmount(() => {
 .newow-product-workspace__auxiliary-controls button { flex:none; min-height:36px; padding:0 10px; }
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { color:#ff6b2c; border-bottom:2px solid #ff6b2c; }
 .newow-product-workspace__indicator-help { flex:none; min-height:25px; margin:0 8px 0 12px; padding:2px 10px; border:1px solid #1677ff; border-radius:16px; background:#fff; color:#1677ff; font-size:12px; line-height:18px; cursor:pointer; }
-.newow-product-workspace__auxiliary-legend-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:4px 0 16px; }
+.newow-product-workspace__auxiliary-legend-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:4px 10px 16px; font-size:12px; }
 .newow-product-workspace__auxiliary-legend-row > .newow-product-workspace__indicator-help { margin-left:auto; flex-shrink:0; }
 .newow-product-workspace__indicator-help:hover { background:#f2f7ff; }
 .newow-product-workspace__indicator-help:focus-visible { outline:2px solid #1677ff; outline-offset:2px; }
