@@ -409,6 +409,7 @@ def test_failed_second_market_label_boots_out_every_touched_service(
     cleanup_bootouts = [call for call in cleanup if call.startswith("bootout ")]
     assert [call.rsplit("/", 1)[-1] for call in cleanup_bootouts] == [
         "com.guiyi.quant-live",
+        "com.guiyi.quant-late-provider-recovery",
         "com.guiyi.quant-after-market",
     ]
 

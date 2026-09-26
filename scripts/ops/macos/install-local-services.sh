@@ -60,7 +60,7 @@ base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 # Establish the new status writer before starting the new live reader.  If a
 # later stage fails, cleanup runs in reverse before the exact previous market
 # authority is restored from its bounded install preimage.
-market_runtime_labels=(com.guiyi.quant-after-market com.guiyi.quant-live)
+market_runtime_labels=(com.guiyi.quant-after-market com.guiyi.quant-late-provider-recovery com.guiyi.quant-live)
 alert_runtime_labels=(com.guiyi.quant-alert)
 weekly_audit_labels=(com.guiyi.quant-weekly-audit)
 reference_worker_labels=(com.guiyi.quant-reference-worker)
@@ -169,10 +169,11 @@ market_preimage_paths=(
   "$RUNTIME_DIR/run-local-service.sh"
   "$RUNTIME_DIR/rotate-local-service-logs.sh"
   "$AGENT_DIR/com.guiyi.quant-after-market.plist"
+  "$AGENT_DIR/com.guiyi.quant-late-provider-recovery.plist"
   "$AGENT_DIR/com.guiyi.quant-live.plist"
 )
 market_preimage_existed=()
-market_preimage_labels=(com.guiyi.quant-after-market com.guiyi.quant-live)
+market_preimage_labels=(com.guiyi.quant-after-market com.guiyi.quant-late-provider-recovery com.guiyi.quant-live)
 market_preimage_loaded=()
 
 discard_market_install_preimage() {

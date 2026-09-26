@@ -66,7 +66,7 @@ def _command_result(
 def _read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
     if re.fullmatch(
-        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|log-rotate|weekly-audit)",
+        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit)",
         label,
     ) is None:
         _reject("IDENTITY_UNAVAILABLE")
@@ -177,7 +177,7 @@ def _verify_after_market_plist(
     home: Path | None = None,
 ) -> None:
     """Require the installed schedule to retain the same guarded after-market code root."""
-    if label not in {f"com.guiyi.quant-{name}" for name in ("api", "web", "live", "alert", "after-market")}:
+    if label not in {f"com.guiyi.quant-{name}" for name in ("api", "web", "live", "alert", "after-market", "late-provider-recovery")}:
         _reject("SERVICE_CONFIGURATION_INVALID")
     account_home = home if home is not None else Path.home()
     path = account_home / "Library" / "LaunchAgents" / f"{label}.plist"

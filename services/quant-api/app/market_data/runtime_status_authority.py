@@ -31,6 +31,7 @@ from app.market_data.closeout_binding import (
 _LABEL = "com.guiyi.quant-after-market"
 _MARKET_LABELS = {
     "com.guiyi.quant-after-market": "after-market",
+    "com.guiyi.quant-late-provider-recovery": "late-provider-recovery",
     "com.guiyi.quant-live": "live",
 }
 _INSTALLABLE_LABELS = {
@@ -169,8 +170,8 @@ def verify_restored_loaded_market_service(
             output,
             root=root,
             commit=commit,
-            allow_idle=service == "after-market",
-            require_idle=service == "after-market",
+            allow_idle=service in {"after-market", "late-provider-recovery"},
+            require_idle=service in {"after-market", "late-provider-recovery"},
             working_directory=root,
         )
         if _arguments(output) != arguments:

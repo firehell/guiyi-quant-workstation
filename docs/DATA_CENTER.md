@@ -211,8 +211,9 @@ UNKNOWN 仅可保留 trading-day 身份一致的已有 Calendar；缺键报 `CAL
 有证据的源事实与已有 Calendar 任一布尔字段冲突则整事务 `CALENDAR_SOURCE_CONFLICT`，不得自动
 覆盖已更正的共享历史；实际纠正仍需绑定源证据、精确前像和独立执行意图。首次 bootstrap 或未来
 交易日缺键不能靠猜测填充，必须补齐上述逐日权威证据后再同步。
-下一交易日 Session 尚未由 provider 发布时精确返回 `NEXT_TRADING_SESSION_NOT_READY`，最多一小时后再
-尝试一次；格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
+当日 RQData 期货日线或分钟线品类未就绪时返回 `RQDATA_NOT_READY`；下一交易日 Session 尚未由
+provider 发布时返回 `NEXT_TRADING_SESSION_NOT_READY`。这两种未就绪共享最多一次一小时后的重试；
+格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
 事实，同时不会提前发布未来主力映射，也不写 Dataset、Partition 或 Parquet。
 
 after-market 是可写命令。其进程边界若在会话、组装、状态持久化或维护阶段收到未处理异常，公开错误载荷
@@ -383,7 +384,7 @@ Newow 默认日线由独立只读解析取得最近完整收盘快照，并显�
 若当日映射尚未发布，Newow 仅允许验证并显示前一完成日，标记当日待更新；
 其他输入质量或身份冲突继续失败关闭。此机制不引入盘中 RQData 抓取或额外重试。
 盘后主任务终态写入并释放维护锁后，以新只读事务分别验证 operational 60 的 D1 和固定候选
-41 品种的 W1。两个范围都覆盖三策略主图、参考与 5 个已开放辅助面板；D1 按每品种目标日
+60 品种的 W1。两个范围都覆盖三策略主图、参考与 5 个已开放辅助面板；D1 按每品种目标日
 Session 截止，W1 按已发布完整周截止。健康路径复用同一行情窗口，先验证消费者；只有阻断失败
 品种才调用 `ContractWarmupPlanner` 生成只读差量提案，不在消费者阶段执行下载或写入。D1/W1
 各使用 600 秒、总计 1200 秒的非抢占协作预算，在产品、分组与报告调用边界检查；底层只读事务仍以数据库
@@ -770,3 +771,26 @@ active universe 为 `data/universe/active_products.txt` 的 60 品种；退役�
 读取成本优化只改变 SQL 批次，不改变行情事实：Calendar 完整性、精确 provider/active Session、
 合约生命周期、夜盘前一交易日、重叠校验与完整预期端点必须保留。批量读取的 Session 事实仅在
 请求内使用；缓存命中不能跳过 Catalog、物理分区和输入依赖验证，也不能裁剪同合约 warm-up。
+
+
+### 节假日供应商晚到恢复
+
+Market 盘后仍在本地 18:05 自然运行，`RQDATA_NOT_READY` 或
+`NEXT_TRADING_SESSION_NOT_READY` 最多等待一小时重试一次。盘后 daily 写入前必须
+检查全部精确目标的源响应，冻结已验证批次再写入；类别级 ready 不能代替逐目标完整性。
+缺 endpoint 的预检不发布任何历史分区；质量异常、部分提交、未知提交结果不能纳入自动恢复。
+
+两次均因上述安全的晚到原因失败时，独立记录失败交易日和 operational 范围，
+在失败日加两个自然日（即使是假日）19:05 由 `com.guiyi.quant-late-provider-recovery`
+只检查一次。米筐没有已确认的公开机器公告接口时记录 announcement=unavailable，
+不声称不存在公告，按 owner 决策继续默认检查。恢复状态与原自然 after-market 状态分开。
+
+检查前原子落盘 claimed；崩溃、源仍不齐、维护锁冲突、写入或读回失败均消费该次机会，
+不自动补跑。19:05 前不运行；延迟超过一小时或错过当日记 expired。源齐全后，同一范围
+通过有界 metadata 同步、daily-recovery 精确计划/CAS、全部源完整性和物理读回，
+才记录恢复 passed。只清理原交易日 Live，原自然失败不改成成功，不补发通知。
+
+下一交易日与短周边界仅由 RQData Calendar/Session 证明：例如 2026-09-30
+下一交易日是 2026-10-08，10-10 调休工作日不是交易日；不得用工作日算术替代。
+新服务随已交办的 Market Runtime 安装，schedule-only idle 不算服务失败。
+升级时须显式保留未消费的延后恢复状态，不能以新的空状态丢弃未完成检查。

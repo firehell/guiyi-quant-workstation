@@ -561,3 +561,33 @@ refresh SHALL 接受 symbol、since、through，并强制重建相交月份的 c
 
 - **WHEN** 两个目标的物理 family 或月份不同
 - **THEN** 来源依赖不会错误关联两者，成功结果与失败传播仍遵守既有维护合同
+
+
+### Requirement: One bounded late-provider recovery after natural failure
+Natural after-market SHALL check all exact source targets before historical publication,
+reuse the validated response batches and treat missing endpoints as `RQDATA_NOT_READY`.
+The 18:05 run MAY wait one hour and retry once only for `RQDATA_NOT_READY` or
+`NEXT_TRADING_SESSION_NOT_READY`. Other failures MUST NOT be converted into late-data retry.
+
+After the second safe late-data failure, the Market Runtime SHALL persist a separate
+operational-scope record due two calendar days after the failed trading day at 19:05 Shanghai.
+Missing official machine-readable provider-notice evidence SHALL be `unavailable`; by owner
+policy it does not cancel the default single check. A durable file-and-directory-fsynced claim
+MUST precede provider access. Crash, source absence, lock failure, partial or unknown apply,
+or readback failure consumes the one opportunity and MUST NOT trigger automatic retry.
+Missed triggers outside the due-day hour SHALL expire without catch-up.
+
+A complete source MAY be recovered only through bounded metadata, the frozen daily-recovery
+plan hash under the maintenance lease, validated source responses, and strict physical readback.
+The recovery SHALL retain original natural after-market status, SHALL NOT replay notification,
+SHALL NOT widen products/windows, and SHALL clean only the original trading-day Live keys.
+Invalid state ownership, aliases, permissions, scope, Runtime identity or plan drift MUST fail closed.
+The source buffer is bounded to 250,000 requested endpoints; larger maintenance remains explicit.
+
+#### Scenario: Holiday-short week and delayed source
+- **WHEN** September 30 is the last trading day before National Day and the source remains absent at 19:05
+- **THEN** Calendar/Session facts prove the short ISO week and October 8 next trading day; October 2 at 19:05 gets one source check even though it is a holiday
+
+#### Scenario: Unknown recovery commit
+- **WHEN** the claimed recovery commit or readback is uncertain
+- **THEN** recovery remains failed/claimed with bounded diagnostics, the original natural failure remains unchanged, and no automatic second recovery occurs
