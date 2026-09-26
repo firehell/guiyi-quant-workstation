@@ -378,6 +378,7 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     common.component = request.component
     addWindow(common, request.from, request.through)
   } else if (request.section === 'reference') {
+    if (request.includeFusion) common.include_fusion = true
     if ((request.performanceSince === undefined) !== (request.performanceThrough === undefined)) throw new NewowProductRequestError('NEWOW_INVALID_PERFORMANCE_WINDOW', 'invalid')
     if (request.performanceSince !== undefined) {
       common.performance_since = request.performanceSince
@@ -386,6 +387,7 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     if (request.historyLimit !== undefined) common.history_limit = request.historyLimit
     if (request.historyBefore !== undefined) common.history_before = request.historyBefore
   }
+  if (request.section === 'explanation' && request.decisionV2) common.decision_v2 = true
   if (request.snapshotToken !== undefined) common.snapshot_token = request.snapshotToken
   return common
 }

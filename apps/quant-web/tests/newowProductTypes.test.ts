@@ -1063,3 +1063,68 @@ function macdWire() {
     segments: [{ ...base.auxiliary.value.segments[0]!, data: { dif: [point(true)], dea: [point(false)], histogram: [point(false)] } }],
   } } }
 }
+
+test('fusion reference validates independent version and parent snapshot', () => {
+  const raw = referenceWire()
+  const parent = raw.reference.value!
+  const fusion = {
+    reference_model_version: 'newow_dual_fusion_reference_zero_cost_v1',
+    reference_input_sha256: parent.reference_input_sha256,
+    reference_cutoff: parent.reference_cutoff,
+    performance_since: parent.performance_since,
+    performance_through: parent.performance_through,
+    page_parity: true, executable: false,
+    groups: ['trend', 'oscillation', 'fusion'].map(model => ({ model, closed_count: 0, open_count: 0, interrupted_count: 0, sum_return_percentage_points: null })),
+    items: [], records_truncated: false,
+  }
+  const value = { ...raw, reference: { ...raw.reference, value: { ...parent, fusion_comparison: fusion } } }
+  assert.equal(normalizeNewowProductResponse(value, { ...expected, section: 'reference' }).value!.fusion_comparison!.groups.length, 3)
+  for (const bad of [{ reference_input_sha256: 'different' }, { reference_cutoff: '2026-09-01T07:00:00Z' }, { executable: true }]) {
+    const invalid = { ...value, reference: { ...value.reference, value: { ...value.reference.value, fusion_comparison: { ...fusion, ...bad } } } }
+    assert.throws(() => normalizeNewowProductResponse(invalid, { ...expected, section: 'reference' }), /fusion/)
+  }
+})
+
+test('CDV2 explanation rejects future ages, inconsistent totals and executable claims', () => {
+  const make = () => {
+    const wire = explanationWire()
+    const addon = {
+      cdv2: {
+        formula_version: 'newow_composite_decision_cdv2_1_2_0_v1', as_of: AS_OF,
+        executable: false, explanation_only: true, is_probability: false, is_margin_ratio: false,
+        resonance: 'R0', mismatch: null, action: '等待', action_code: 'WAIT',
+        scores: { trend: 0, oscillation: 0, resonance: 0, direction: 0, volatility: 0 },
+        deductions: { j_reduce: 0, care: 0, tent: 0 }, total: 0, cert_extra: 0,
+        certainty_cap: 0, resonance_cap: 0, reference_exposure_cap: 0,
+        trend_state: { week: 'unknown', day: 'unknown', m60: 'unknown' },
+        oscillation_state: { week: 'idle', day: 'idle', m60: 'idle' },
+        facts: ['trend_week','trend_day','trend_m60','oscillation_week','oscillation_day','oscillation_m60'].map(role => ({ role, age: -1, bar_end: null })),
+        missing_roles: ['trend_week','trend_day','trend_m60','oscillation_week','oscillation_day','oscillation_m60'],
+      }, prices: null,
+    }
+    Object.assign(wire.explanation.value, { decision_v2: addon })
+    return { wire, addon }
+  }
+  const valid = make()
+  assert.equal(normalizeNewowProductResponse(valid.wire, { ...expected, section: 'explanation' }).section, 'explanation')
+  const badSum = make(); badSum.addon.cdv2.total = 20
+  assert.throws(() => normalizeNewowProductResponse(badSum.wire, { ...expected, section: 'explanation' }), /sum conflict/)
+  const badExecution = make(); badExecution.addon.cdv2.executable = true
+  assert.throws(() => normalizeNewowProductResponse(badExecution.wire, { ...expected, section: 'explanation' }), /executable/)
+  const badAge = make(); badAge.addon.cdv2.facts[0]!.age = -2
+  assert.throws(() => normalizeNewowProductResponse(badAge.wire, { ...expected, section: 'explanation' }), /age/)
+})
+
+test('reference accepts validated independent hindsight payload and rejects executable or duplicate theory', () => {
+  const raw = referenceWire()
+  raw.reference.value.theoretical = { model_version: 'newow_hindsight_peak_reference_v1', hindsight: true, executable: false,
+    returns: [{ reference_trade_id: 'theory-trade', return_pct: '10', ideal_exit_price: '110' }],
+    sum_return_percentage_points: '10', win_rate_pct: '100', mean_return_pct: '10' }
+  const result = normalizeNewowProductResponse(raw, { ...expected, section: 'reference' })
+  assert.equal(result.value.theoretical.sum_return_percentage_points, '10')
+  raw.reference.value.theoretical.executable = true
+  assert.throws(() => normalizeNewowProductResponse(raw, { ...expected, section: 'reference' }))
+  raw.reference.value.theoretical.executable = false
+  raw.reference.value.theoretical.returns.push(raw.reference.value.theoretical.returns[0])
+  assert.throws(() => normalizeNewowProductResponse(raw, { ...expected, section: 'reference' }), /duplicate theoretical/)
+})

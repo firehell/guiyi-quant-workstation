@@ -155,6 +155,8 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "history_limit",
         "history_before",
         "snapshot_token",
+        "include_fusion",
+        "decision_v2",
     }
 )
 _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
@@ -308,6 +310,7 @@ def _build_product_service(
             coverage=coverage,
             active_products=active,
             context_frequencies=context,
+            context_quality_policy=(lambda product, frequency: candidate_input_quality_policy(product, frequency, candidate_weekly=False)) if context else None,
             cancelled=cancelled,
             input_quality_policy=quality_policy,
         )
@@ -593,6 +596,8 @@ def newow_strategy_detail(
     history_limit: int = Query(50, ge=1, le=200),
     history_before: str | None = Query(None, min_length=1, max_length=2048),
     snapshot_token: str | None = Query(None, min_length=1, max_length=256),
+    include_fusion: bool = Query(False),
+    decision_v2: bool = Query(False),
     session: Session = Depends(get_db),
 ) -> NewowProductResponse:
     unknown = set(request.query_params) - _PRODUCT_QUERY_FIELDS
@@ -611,7 +616,8 @@ def newow_strategy_detail(
     product = _normalize_public_product(product)
     try:
         _enforce_product_frequency(request, product, frequency)
-        require_open_section(section)
+        if not (decision_v2 and section == "explanation"):
+            require_open_section(section)
 
         def cancelled() -> bool:
             try:
@@ -637,6 +643,8 @@ def newow_strategy_detail(
             history_limit=history_limit,
             history_before=history_before,
             snapshot_token=snapshot_token,
+            include_fusion=include_fusion,
+            decision_v2=decision_v2,
         )
         policy = _input_quality_policy(request, product, frequency)
         service = (
@@ -886,6 +894,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "reference_cutoff": value.reference_cutoff,
             "reference_input_sha256": value.reference_input_sha256,
             "history_coverage": value.history_coverage,
+            "theoretical": value.theoretical,
             "unavailable_days": list(value.unavailable_days),
             "coverage_intervals": [
                 {
@@ -919,6 +928,11 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
                 for item in value.items
             ],
+            "curve_trades": sorted([
+                _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
+                for item in value.summary.closed_trades
+            ], key=lambda item: (item["entry_bar_end"], item["entry_sequence"], item["reference_trade_id"]), reverse=True),
+            **({"fusion_comparison": value.fusion_comparison} if value.fusion_comparison is not None else {}),
             "next_before": value.next_before,
             "executable": False,
             "auto_order": False,
@@ -963,6 +977,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
     explanation = _delivery(
         result.explanation,
         lambda value: {
+            **({"decision_v2": value.decision_v2} if value.decision_v2 is not None else {}),
             "context": _context_value(value.context),
             "composite": _json_value(value.composite),
             "target_absorb": _json_value(value.target_absorb),

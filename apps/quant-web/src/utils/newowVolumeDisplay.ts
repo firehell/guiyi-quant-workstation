@@ -16,7 +16,7 @@ export interface NewowVolumeScore {
 /** Shared page decoration and explanation; never changes strategy facts. */
 export function newowVolumeScores(model: NewowProductChartModel, index: number): readonly NewowVolumeScore[] {
   const bar = model.bars[index]
-  if (!bar || model.identity.strategy !== 'oscillation' || index < 9) return []
+  if (!bar || index < 9) return []
   const window = model.bars.slice(index - 9, index + 1)
   if (window.some(item => item.physicalContract !== bar.physicalContract
     || item.segmentId !== bar.segmentId || item.calculationSegmentId !== bar.calculationSegmentId)) return []

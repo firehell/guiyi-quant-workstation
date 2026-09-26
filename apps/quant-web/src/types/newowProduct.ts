@@ -268,6 +268,8 @@ export interface NewowReferenceTrade {
 }
 
 export interface NewowReferenceValue {
+  readonly theoretical?: { readonly model_version: 'newow_hindsight_peak_reference_v1'; readonly hindsight: true; readonly executable: false; readonly returns: readonly { readonly reference_trade_id: string; readonly return_pct: string; readonly ideal_exit_price: string }[]; readonly sum_return_percentage_points: string; readonly win_rate_pct: string | null; readonly mean_return_pct: string | null } | null
+  readonly fusion_comparison?: import('../api/newowFusion').FusionComparison
   readonly performance_since: string
   readonly performance_through: string
   readonly actual_available_through: string
@@ -285,6 +287,7 @@ export interface NewowReferenceValue {
   }[]
   readonly summary: NewowReferenceSummary
   readonly items: readonly NewowReferenceTrade[]
+  readonly curve_trades?: readonly NewowReferenceTrade[]
   readonly next_before: string | null
   readonly storage_mode?: 'persisted'
   readonly executable: false
@@ -583,6 +586,7 @@ export interface NewowSourceFact {
 }
 
 export interface NewowExplanationValue {
+  readonly decision_v2?: import('./newowDecisionV2').NewowDecisionV2
   readonly context: NewowContextSnapshot
   readonly composite: NewowCompositeResult
   readonly target_absorb: NewowTargetAbsorbResult
@@ -689,8 +693,8 @@ interface NewowRequestCommon {
 export type NewowProductRequest =
   | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
-  | (NewowRequestCommon & { readonly section: 'reference'; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
-  | (NewowRequestCommon & { readonly section: 'explanation' })
+  | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
+  | (NewowRequestCommon & { readonly section: 'explanation'; readonly decisionV2?: boolean })
   | (NewowRequestCommon & { readonly section: 'comparator' })
 
 export type NewowResourceLifecycle =

@@ -17,9 +17,9 @@ test('energy steps use server VAR4, same-owner close versus MA10, and never cros
     { key: 'rebound_entry', points: [point(1, 'a', 80)] },
   ]
   const bars = [
-    { barEnd: '2026-09-1', physicalContract: 'a', segmentId: 'a', close: 99 },
-    { barEnd: '2026-09-2', physicalContract: 'a', segmentId: 'a', close: 101 },
-    { barEnd: '2026-09-3', physicalContract: 'b', segmentId: 'b', close: 90 },
+    { barEnd: '2026-09-1', physicalContract: 'a', segmentId: 'physical-a', calculationSegmentId: 'a', close: 99 },
+    { barEnd: '2026-09-2', physicalContract: 'a', segmentId: 'physical-a', calculationSegmentId: 'a', close: 101 },
+    { barEnd: '2026-09-3', physicalContract: 'b', segmentId: 'physical-b', calculationSegmentId: 'b', close: 90 },
   ]
   const data = buildNewowUpDownEnergyData(series, bars)
   assert.deepEqual(data.map(row => [row.previous, row.risingColor, row.signal]), [

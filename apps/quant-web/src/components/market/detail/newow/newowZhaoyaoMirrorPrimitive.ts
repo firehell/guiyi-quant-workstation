@@ -70,10 +70,10 @@ export interface NewowZhaoyaoMirrorCommands {
 /** Projects the frozen v3.2.82 drawZhaoyaoMirror canvas rules without deriving any formula values. */
 export function buildNewowZhaoyaoMirrorCommands(
   data: readonly NewowZhaoyaoMirrorDatum[], width: number, height: number,
-  xOf: (time: Time) => number | null,
+  xOf: (time: Time) => number | null, topInset = 10,
 ): NewowZhaoyaoMirrorCommands {
   const visible = data.map(row => ({ row, x: xOf(row.time) })).filter((item): item is { row: NewowZhaoyaoMirrorDatum; x: number } => item.x !== null && item.x >= 0 && item.x <= width)
-  const padTop = 10
+  const padTop = topInset
   const chartHeight = Math.max(0, height - padTop - 15)
   const zeroY = padTop + chartHeight * 0.48
   const maxUp = Math.max(0.001, ...visible.flatMap(({ row }) => [row.entry || 0, row.wash || 0, row.exit || 0, row.inducement || 0]))
@@ -107,18 +107,19 @@ export function buildNewowZhaoyaoMirrorCommands(
 export class NewowZhaoyaoMirrorPrimitive implements ISeriesPrimitive<Time> {
   private attachment: SeriesAttachedParameter<Time> | null = null
   private data: readonly NewowZhaoyaoMirrorDatum[] = []
+  private topInset = 10
   private readonly view: IPrimitivePaneView = { zOrder: () => 'top', renderer: () => ({ draw: target => this.draw(target) }) }
   attached(value: SeriesAttachedParameter<Time>): void { this.attachment = value }
   detached(): void { this.attachment = null; this.data = [] }
   paneViews(): readonly IPrimitivePaneView[] { return [this.view] }
-  setData(data: readonly NewowZhaoyaoMirrorDatum[]): void { this.data = data; this.attachment?.requestUpdate() }
+  setData(data: readonly NewowZhaoyaoMirrorDatum[], topInset = 10): void { this.data = data; this.topInset = topInset; this.attachment?.requestUpdate() }
   updateAllViews(): void {}
 
   private draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]): void {
     if (!this.attachment || this.data.length === 0) return
     const attachment = this.attachment
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
-      const projected = buildNewowZhaoyaoMirrorCommands(this.data, mediaSize.width, mediaSize.height, time => attachment.chart.timeScale().timeToCoordinate(time))
+      const projected = buildNewowZhaoyaoMirrorCommands(this.data, mediaSize.width, mediaSize.height, time => attachment.chart.timeScale().timeToCoordinate(time), this.topInset)
       context.save()
       for (const item of projected.items) drawItem(context, item, mediaSize.width)
       context.restore()

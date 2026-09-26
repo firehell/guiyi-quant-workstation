@@ -173,7 +173,7 @@ def test_preview_and_formal_scope_select_weekly_v2_by_release_state():
     assert _input_quality_policy(preview, "b", "1w") is InputQualityPolicy.WEEKLY_V2
     assert _input_quality_policy(preview, "cj", "1w") is InputQualityPolicy.WEEKLY_V2
     assert _input_quality_policy(preview, "au", "1w") is InputQualityPolicy.V1
-    assert _input_quality_policy(preview, "b", "1d") is InputQualityPolicy.V1
+    assert _input_quality_policy(preview, "b", "1d") is InputQualityPolicy.DAILY_V2
     assert _input_quality_policy(production, "b", "1w") is InputQualityPolicy.WEEKLY_V2
     assert _input_quality_policy(production, "au", "1w") is InputQualityPolicy.V1
     assert _input_quality_policy(production, "cj", "1w") is InputQualityPolicy.WEEKLY_V2
@@ -500,9 +500,12 @@ def test_historical_resolver_uses_fixed_clock(preview, monkeypatch):
     from app.api import market_newow
     from app.market_data.market_data_service import MarketDataError
 
+    from guiyi_quant.newow.product_identity import InputQualityPolicy
+
     captured = []
 
-    def resolver(session, cancelled, now):
+    def resolver(session, cancelled, now, quality_policy):
+        assert quality_policy is InputQualityPolicy.DAILY_V2
         captured.append(now())
         raise MarketDataError("DATASET_OR_PARTITION_MISSING")
 
@@ -519,9 +522,12 @@ def test_daily_resolver_uses_fixed_preview_clock(preview, monkeypatch):
     from app.api import market_newow
     from app.market_data.market_data_service import MarketDataError
 
+    from guiyi_quant.newow.product_identity import InputQualityPolicy
+
     captured = []
 
-    def resolver(session, cancelled, now):
+    def resolver(session, cancelled, now, quality_policy):
+        assert quality_policy is InputQualityPolicy.DAILY_V2
         captured.append(now())
         raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
 

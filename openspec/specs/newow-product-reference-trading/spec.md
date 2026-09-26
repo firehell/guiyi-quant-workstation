@@ -134,6 +134,11 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 | 五窗口页面比较器 | `oscillation × 1w/1d/60m`，独立 comparator | `newow_hhv_llv_window_optimizer_page_v1` | `RESEARCH_EVIDENCE_ONLY` | 独立页面 as-of/样本假设；期末理论平仓不进入 ReferenceTrade |
 | 页面诊断 token / 六组合评分映射 | 三策略共享解释层候选 | `UNFROZEN` | `EVIDENCE_REQUIRED` | 缺稳定机器合同时 unavailable；不得以“无信号”、0 分或通用知识填补 |
 
+#### Scenario: Product read does not promote execution
+- **WHEN** a supported Newow strategy detail is read
+- **THEN** its output remains read-only and auto_order stays false
+- **AND** no account order or notification scope is created
+
 ### Requirement: Daily historical display remains usable while an update is pending
 
 默认日线看盘 MUST 在最新日线尚未发布时展示最近可验证的历史快照。沿用现有权威交易日候选与
@@ -409,6 +414,10 @@ unavailable。
 `display_window` SHALL 只决定图表 Bar；`performance_since / performance_through` MUST 是明确选择、显示且
 独立的统计窗口。分页、缩放或拖动不得改变 ReferenceTrade identity 或统计。数据不完整时不得静默缩短后
 仍称“全部历史”。
+
+收益曲线使用同一统计窗口、截止与输入身份下的完整 `curve_trades`（仅计入统计的 CLOSED）；
+交易列表 `items / next_before` 独立分页，不得因列表只读取首页而隐藏完整曲线。
+前端必须校验交易身份唯一、已完成笔数和逐笔 Decimal 累计与服务端摘要一致；不一致时明确提示。
 
 默认 membership 使用 `entry_in_window_v1`：BUILD 在统计窗口内才进入样本，且只有截止时点内已 CLEAR 的
 CLOSED 交易进入胜率、均值与 `sum(single_trade_return_pct)` 简单百分比点合计。OPEN、
@@ -1047,3 +1056,43 @@ All prices and returns SHALL remain server Decimal strings; no frontend return f
 
 - **WHEN** 主要事实冲突导致全部 section 失效
 - **THEN** chart current-window provenance、分页与 generation signature 被清除，旧 auxiliary cache 不得恢复结果，后续 token 选择不能命中失效快照
+
+### Independent dual-source fusion reference v1
+
+`newow_dual_fusion_reference_zero_cost_v1` is an opt-in page-parity, non-executable long/flat reference model, not a new strategy kernel or account model. The reference section accepts `include_fusion=true` only for trend/oscillation, without a history cursor. It replays both formula identities over the same authoritative full input and cutoff and returns independent trend, oscillation and fusion summaries. Chart limits, viewport and history pagination do not enter fusion arithmetic.
+
+- One fusion position. Within each completed observation-eligible bar, process CLEAR before BUILD. When holding, any source CLEAR exits; then a BUILD may reopen on that same bar. Flat CLEAR is ignored. Holding BUILD is ignored.
+- Multiple CLEARs or BUILDs on the same bar select oscillation before trend, then source sequence. Use the selected action's explicit reference price. Cross-strategy pairing is permitted. A source CLEAR with `NO_ELIGIBLE_ENTRY` can close a fusion entry; `WARMUP_ONLY` actions cannot enter fusion.
+- Both replays must have identical market bars and input-quality identity. Owner lifecycle prewarm bars are excluded from transaction time ordering. Authoritative rollover/data interruptions break positions; owner/calculation identity changes fail closed by interrupting, never pairing across contracts or calculation segments.
+- Stable fusion trade identity includes model version, product/frequency, both formula versions and the selected entry signal. Original strategy pair relationships remain unchanged. Decimal precision 28 arithmetic, zero fees/slippage, `(exit/entry-1)*100`. Holding bars exclude the entry bar.
+- Window membership remains `entry_in_window_v1`; entries before the window are separately marked initial and excluded from all three summaries. Only CLOSED returns are simply added in percentage points. OPEN is not force-closed on the last bar. OPEN mark change and interruption-before mark change use the last eligible Close and are not realized reference returns.
+- Response includes full-window summaries and at most the latest 200 fusion rows, with explicit truncation. Input hash, cutoff, formula versions and independent model version remain visible. This model is computed on request, not persisted into the existing reference assets and not enabled in Runtime.
+
+#### Scenario: Fusion remains a separate reference model
+- **WHEN** the optional display is requested
+- **THEN** the comparison keeps its own version and never changes account or original strategy facts
+
+### CDV2 explanation and cross-period prices
+
+The opt-in `explanation` request with `decision_v2=true` reads completed D1/W1 context through the unified reader, each with its own admitted quality policy. It does not open the deferred 60m product capability or legacy explanation request. Missing periods are unknown/idle with age -1; no period substitution. Context facts carry source/formula/time/owner and calculation-segment lineage. Legacy explanation remains versioned; new output is independent `decision_v2` data.
+
+`newow_composite_decision_cdv2_1_2_0_v1` replicates the public CDV2 1.2.0 priority chain: trend/oscillation bias, MM3→MM4→MM1→MM2, R4→R3→R2→R1→R0, five scores, explicit J/care/tent deductions, certainty/resonance exposure caps and bearish/insufficient overlays. R4 permits two known aligned cycles per axis. Exposure percentages express page-reference strength, never futures margin, hand count or probability. It cannot gate BUILD/CLEAR or alter reference trades. The futures adapter calculates age from the full same-calculation-segment prefix; it never invents the original page's batch cross age zero. Only recent same-owner main-rise J hints from the current view frequency contribute -5; care/tent are explicitly disabled. Daily mean TR/Close volatility reuses the existing public rounding implementation. Missing J or volatility sources are disclosed.
+
+`newow_target_absorb_selection_v3_3_59_v1` adds the public 1.005 inclusive upgrade buffer, preserves the daily double-HOLD non-upgrade branch, and keeps shared selection and weekly status-card HHV10/LLV10 override distinct. Explicit source facts bind role, frequency, physical owner, calculation segment, time and source family. The pure selector accepts monthly facts; the current futures adapter supplies no monthly input. Canonical HHV10/LLV10 candidates are labelled `canonical_channel` under `guiyi_canonical_channel_cross_period_v1`, never private batch facts. Chart-legend prices remain their independently sourced current-period channel surface. State-card output does not silently replace them.
+
+The guard baseline is a prior completed, observation-eligible D1 Close from the same physical owner/calculation segment. Missing baseline remains unavailable; no settlement, previous-close alias, synthetic roll price or current Close substitution. Shared selection, status-card selection, previous Close and current Close keep distinct source identities. Context owner conflicts become unknown/missing, never mixed prices. All outputs are read-only explanations, not account, execution or causal profitability facts.
+
+
+#### Scenario: Missing cross-period facts stay unavailable
+- **WHEN** the optional display is requested
+- **THEN** missing physical-owner or strict-before facts remain unavailable without fabricated prices
+
+### Independent hindsight theoretical display v1
+
+`newow_hindsight_peak_reference_v1` is a retrospective, non-executable page display. It preserves existing BUILD/CLEAR pairing, entry reference prices, owner and calculation segment, and `entry_in_window_v1` membership. Only CLOSED trades qualify: OPEN and interrupted results are never force-closed. Trend/main-rise use the highest Close from entry through exit inclusive; oscillation uses the highest High. Decimal precision 28 HALF_EVEN produces per-trade returns and simple summed percentage points. Incomplete endpoints, missing holding bars, duplicate bars, or ineligible observations suppress the theoretical payload. This model does not change original reference trades, strategy formulas, persisted records, or account facts.
+
+The theoretical tab requests all available maintained history. Other range tabs continue the existing completed-trade reference model; they do not claim Niuwa's separate floating equity model. Every date tab clamps its start to the initial server-resolved full-history start, whose authority is max(provider/listing start, active history floor). Same effective windows produce the same values. The selected tab changes only when the server accepts its exact requested window. Theoretical curves/statistics use the independently versioned payload while records retain original reference prices. The UI explicitly discloses hindsight and zero costs.
+
+#### Scenario: Theoretical returns preserve original records
+- **WHEN** the optional display is requested
+- **THEN** only complete CLOSED trades contribute hindsight returns while original entry and exit records remain unchanged

@@ -157,6 +157,7 @@ class ProductReadSet:
         ProductFrequency, tuple[DataInterruption, ...]
     ] = field(default_factory=lambda: MappingProxyType({}))
     input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
+    input_quality_policies_by_frequency: Mapping[ProductFrequency, InputQualityPolicy] = field(default_factory=dict)
 
     @property
     def replay_bars(self) -> tuple[ProductBar, ...]:
@@ -182,12 +183,14 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         as_of: datetime,
         check_cancelled: Callable[[], None],
         quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
+        quality_policies: Mapping[ProductFrequency, InputQualityPolicy] | None = None,
     ) -> None:
         super().__init__(market_data)
         self._through = through
         self._as_of = as_of
         self._check_cancelled = check_cancelled
         self._quality_policy = InputQualityPolicy(quality_policy)
+        self._quality_policies = dict(quality_policies or {})
         self.price_unavailable_by_frequency: dict[
             BarFrequency,
             tuple[tuple[str, PriceUnavailableFact | NonpositiveCloseFact | WeeklySourceInterruption], ...],
@@ -200,12 +203,10 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         bounded = replace(request, through=min(request.through, self._through))
         quality_query = getattr(self._market_data, "query_actual_dominant_trading_days_quality", None)
         if bounded.frequency in (BarFrequency.D1, BarFrequency.W1) and quality_query is not None:
-            policy = (
-                self._quality_policy
-                if (bounded.frequency is BarFrequency.D1 and self._quality_policy is InputQualityPolicy.DAILY_V2)
+            policy = self._quality_policies.get(ProductFrequency(bounded.frequency.value),
+                self._quality_policy if (bounded.frequency is BarFrequency.D1 and self._quality_policy is InputQualityPolicy.DAILY_V2)
                 or (bounded.frequency is BarFrequency.W1 and self._quality_policy is InputQualityPolicy.WEEKLY_V2)
-                else InputQualityPolicy.V1
-            )
+                else InputQualityPolicy.V1)
             result, gaps = (
                 getattr(self._market_data, "query_actual_dominant_trading_days_quality_union")(bounded)
                 if policy is InputQualityPolicy.DAILY_V2
@@ -277,6 +278,7 @@ class NewowProductReader:
         now: Callable[[], datetime] | None = None,
         cancelled: Callable[[], bool] | None = None,
         input_quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+        context_quality_policy: Callable[[str, ProductFrequency], InputQualityPolicy] | None = None,
     ) -> None:
         self._market_data = market_data
         self._coverage = coverage
@@ -287,6 +289,7 @@ class NewowProductReader:
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
         self._input_quality_policy = InputQualityPolicy(input_quality_policy)
+        self._context_quality_policy = context_quality_policy
 
     def historical_snapshot_candidates(
         self,
@@ -617,12 +620,18 @@ class NewowProductReader:
         frequencies = tuple(
             dict.fromkeys((query.frequency, *self._context_frequencies))
         )
+        quality_policies = {
+            frequency: policy if frequency is query.frequency else
+            self._context_quality_policy(query.product, frequency) if self._context_quality_policy else InputQualityPolicy.V1
+            for frequency in frequencies
+        }
         segment_loader = _AsOfSegmentLoader(
             self._market_data,
             replay_through,
             cutoff,
             self._check_cancelled,
             policy,
+            quality_policies,
         )
         def load_segments(through: date):
             return segment_loader.load(
@@ -706,7 +715,7 @@ class NewowProductReader:
             ProductFrequency, tuple[DataInterruption, ...]
         ] = {}
         for frequency in frequencies:
-            frequency_policy = policy if frequency is query.frequency else InputQualityPolicy.V1
+            frequency_policy = quality_policies[frequency]
             frequency_gaps = segment_loader.price_unavailable_by_frequency.get(
                 BarFrequency(frequency), ()
             )
@@ -914,6 +923,7 @@ class NewowProductReader:
             MappingProxyType(lifecycle_evidence),
             MappingProxyType(interruptions_by_frequency),
             input_quality_policy=policy,
+            input_quality_policies_by_frequency=MappingProxyType(quality_policies),
         )
 
     def dependency_owners(

@@ -7,11 +7,15 @@ function fixture(): NewowProductChartModel {
   bars[9] = { ...bars[9]!, open: 90, close: 108, volume: 200 }
   return { identity: { product: 'rb', strategy: 'oscillation', frequency: '1d' }, bars, mainLines: [], bandAreas: [], channelPoints: [], hints: [], nextBefore: null, actions: [{ id: 'build', kind: 'BUILD', barEnd: '9', tradingDay: '9', physicalContract: 'RB2610', segmentId: 's', sequence: 1, referencePrice: '90', value: 90, tradeEligibility: 'ELIGIBLE' }] }
 }
-test('yellow requires scored oscillation action, not volume alone', () => {
+test('yellow requires a scored eligible action across every strategy, not volume alone', () => {
   const model = fixture()
   assert.equal(newowVolumeColors(model, 'red', 'green')[9], 'rgba(255,215,0,0.7)')
   assert.equal(newowVolumeColors({ ...model, actions: [] }, 'red', 'green')[9], 'red')
-  assert.equal(newowVolumeColors({ ...model, identity: { ...model.identity, strategy: 'trend' } }, 'red', 'green')[9], 'red')
+  for (const strategy of ['trend', 'oscillation', 'main_rise'] as const) {
+    const variant = { ...model, identity: { ...model.identity, strategy } }
+    assert.equal(newowVolumeColors(variant, 'red', 'green')[9], 'rgba(255,215,0,0.7)')
+    assert.equal(newowVolumeScores(variant, 9)[0]!.total, 6)
+  }
   model.bars[0] = { ...model.bars[0]!, calculationSegmentId: 'old' }
   assert.equal(newowVolumeColors(model, 'red', 'green')[9], 'red')
 })
@@ -40,5 +44,5 @@ test('strict body and penetration boundaries and ordinary bars remain explicit',
   assert.equal(score.volumeScore, 1)
   assert.equal(score.bodyScore, 1, 'exactly 60% does not receive 2 points')
   assert.deepEqual(newowVolumeScores({ ...model, actions: [] }, 9), [])
-  assert.deepEqual(newowVolumeScores({ ...model, identity: { ...model.identity, strategy: 'trend' } }, 9), [])
+  assert.equal(newowVolumeScores({ ...model, identity: { ...model.identity, strategy: 'trend' } }, 9)[0]!.total, score.total)
 })

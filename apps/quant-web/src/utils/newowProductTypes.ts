@@ -473,7 +473,10 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     'performance_since', 'performance_through', 'actual_available_through', 'reference_cutoff', 'reference_input_sha256',
     'history_coverage', 'unavailable_days', 'coverage_intervals',
     'summary', 'items', 'next_before', 'executable', 'auto_order', 'allowed_uses',
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'curve_trades') ? ['curve_trades'] : []),
     ...(hasStorageMode ? ['storage_mode'] : []),
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'fusion_comparison') ? ['fusion_comparison'] : []),
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'theoretical') ? ['theoretical'] : []),
   ])
   if (hasStorageMode) requireExact(value.storage_mode, 'persisted', 'reference.storage_mode')
   const performanceSince = day(value.performance_since, 'reference.performance_since')
@@ -515,7 +518,10 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     reference_cutoff: referenceCutoff,
     reference_input_sha256: sha256(value.reference_input_sha256, 'reference.reference_input_sha256'),
     history_coverage: historyCoverage, unavailable_days: unavailableDays, coverage_intervals: coverageIntervals,
+    ...(value.fusion_comparison === undefined ? {} : { fusion_comparison: normalizeFusion(value.fusion_comparison, performanceSince, performanceThrough, value.reference_input_sha256, value.reference_cutoff) }),
+    ...(value.theoretical === undefined ? {} : { theoretical: normalizeTheoretical(value.theoretical) }),
     summary, items, next_before: nullableText(value.next_before, 'reference.next_before'), executable: false, auto_order: false,
+    ...(value.curve_trades === undefined ? {} : { curve_trades: array(value.curve_trades, 'reference.curve_trades').map((item, index) => normalizeTrade(item, index, meta, referenceCutoff)) }),
     ...(hasStorageMode ? { storage_mode: 'persisted' as const } : {}),
     allowed_uses: exactStringArray(value.allowed_uses, ['page_parity_reference', 'research_display'] as const, 'reference.allowed_uses'),
   }
@@ -777,9 +783,10 @@ function normalizeCupPivot(payload: unknown, field: string): NewowCupPivotValue 
 }
 
 function normalizeExplanation(payload: unknown, meta: NewowProductMeta): NewowExplanationValue {
-  const value = exactRecord(payload, 'explanation.value', ['context', 'composite', 'target_absorb', 'sources', 'page_parity', 'allowed_uses'])
+  const value = exactRecord(payload, 'explanation.value', ['context', 'composite', 'target_absorb', 'sources', 'page_parity', 'allowed_uses', ...(Object.prototype.hasOwnProperty.call(record(payload, 'explanation.value'), 'decision_v2') ? ['decision_v2'] : [])])
   requireExact(value.page_parity, false, 'explanation.page_parity')
   return {
+    ...(value.decision_v2 === undefined ? {} : { decision_v2: normalizeDecisionV2(value.decision_v2, meta) }),
     context: normalizeContext(value.context, meta), composite: normalizeCompositeResult(value.composite, meta),
     target_absorb: normalizeTargetResult(value.target_absorb, meta),
     sources: array(value.sources, 'explanation.sources').map((source, index) => normalizeSourceFact(source, `explanation.sources[${index}]`, meta)), page_parity: false,
@@ -973,4 +980,112 @@ function deepFreeze<T>(value: T): T {
     Object.freeze(value)
   }
   return value
+}
+
+function normalizeFusion(payload: unknown, since: string, through: string, hash: unknown, cutoff: unknown): import('../api/newowFusion').FusionComparison {
+  const value = record(payload, 'fusion')
+  requireExact(value.reference_model_version, 'newow_dual_fusion_reference_zero_cost_v1', 'fusion.version')
+  requireExact(value.page_parity, true, 'fusion.parity')
+  requireExact(value.executable, false, 'fusion.executable')
+  requireExact(value.performance_since, since, 'fusion.since')
+  requireExact(value.performance_through, through, 'fusion.through')
+  requireExact(value.reference_input_sha256, hash, 'fusion.hash')
+  requireExact(value.reference_cutoff, cutoff, 'fusion.cutoff')
+  instant(value.reference_cutoff, 'fusion.cutoff')
+  if (!Array.isArray(value.groups) || value.groups.length !== 3 || !Array.isArray(value.items) || typeof value.records_truncated !== 'boolean') throw new Error('invalid fusion')
+  const decimal = (v: unknown, nullable = true) => v === null && nullable || typeof v === 'string' && /^-?\d+(?:\.\d+)?$/.test(v)
+  const source = (v: unknown) => v === 'trend' || v === 'oscillation'
+  value.groups.forEach((raw, i) => {
+    const g = record(raw, 'fusion.group')
+    requireExact(g.model, ['trend', 'oscillation', 'fusion'][i], 'fusion.model')
+    if (![g.closed_count, g.open_count, g.interrupted_count].every(v => Number.isSafeInteger(v) && Number(v) >= 0) || !decimal(g.sum_return_percentage_points)) throw new Error('invalid fusion group')
+  })
+  const ids = new Set()
+  value.items.forEach(raw => {
+    const r = record(raw, 'fusion.trade')
+    if (typeof r.reference_trade_id !== 'string' || ids.has(r.reference_trade_id) || !source(r.entry_source) || !(r.exit_source === null || source(r.exit_source)) || typeof r.physical_contract !== 'string') throw new Error('invalid fusion trade')
+    ids.add(r.reference_trade_id)
+    instant(r.entry_bar_end, 'fusion.entry')
+    if (Date.parse(String(r.entry_bar_end)) > Date.parse(String(cutoff))) throw new Error('future fusion entry')
+    if (r.exit_bar_end !== null) {
+      instant(r.exit_bar_end, 'fusion.exit')
+      if (Date.parse(String(r.exit_bar_end)) > Date.parse(String(cutoff)) || Date.parse(String(r.exit_bar_end)) < Date.parse(String(r.entry_bar_end))) throw new Error('invalid fusion chronology')
+    }
+    if (!decimal(r.entry_reference_price, false) || Number(r.entry_reference_price) <= 0 || !decimal(r.exit_reference_price) || !decimal(r.reference_return_pct) || !decimal(r.mark_change_pct)) throw new Error('invalid fusion price')
+    if (!['CLOSED', 'OPEN', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'].includes(String(r.status)) || !['entry_in_window_v1', 'initial_before_window'].includes(String(r.statistics_membership))) throw new Error('invalid fusion status')
+    if ((r.status === 'CLOSED') !== (r.exit_source !== null && r.exit_reference_price !== null && r.reference_return_pct !== null)) throw new Error('invalid fusion close')
+  })
+  return value as unknown as import('../api/newowFusion').FusionComparison
+}
+
+function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('../types/newowDecisionV2').NewowDecisionV2 {
+  const value = record(payload, 'decision_v2')
+  const cd = record(value.cdv2, 'cdv2')
+  requireExact(cd.formula_version, 'newow_composite_decision_cdv2_1_2_0_v1', 'cdv2.version')
+  sameInstant(cd.as_of, meta.as_of, 'cdv2.as_of')
+  requireExact(cd.executable, false, 'cdv2.executable')
+  requireExact(cd.explanation_only, true, 'cdv2.explanation_only')
+  requireExact(cd.is_probability, false, 'cdv2.probability')
+  requireExact(cd.is_margin_ratio, false, 'cdv2.margin')
+  literal(cd.resonance, ['R0','R1','R2','R3','R4'] as const, 'cdv2.resonance')
+  if (cd.mismatch !== null) literal(cd.mismatch, ['MM1','MM2','MM3','MM4'] as const, 'cdv2.mismatch')
+  text(cd.action, 'cdv2.action'); text(cd.action_code, 'cdv2.action_code')
+  const scores = exactRecord(cd.scores, 'cdv2.scores', ['trend','oscillation','resonance','direction','volatility'])
+  const deductions = exactRecord(cd.deductions, 'cdv2.deductions', ['j_reduce','care','tent'])
+  if (![...Object.values(scores), ...Object.values(deductions), cd.total, cd.cert_extra, cd.certainty_cap, cd.resonance_cap, cd.reference_exposure_cap].every(v => Number.isInteger(v))) throw new Error('invalid cdv2 score')
+  const extra = Object.values(deductions).reduce<number>((n,v) => n+Number(v),0)
+  const sum = Object.values(scores).reduce<number>((n,v) => n+Number(v),0)
+  if (cd.cert_extra !== extra || cd.total !== Math.max(0,Math.min(100,sum+extra))) throw new Error('cdv2 sum conflict')
+  for (const axis of ['trend_state','oscillation_state']) {
+    const states = exactRecord(cd[axis], 'cdv2.states', ['week','day','m60'])
+    for (const state of Object.values(states)) literal(state, axis === 'trend_state' ? ['up','down','unknown'] : ['holding','cleared','idle'], 'cdv2.state')
+  }
+  const facts = array(cd.facts,'cdv2.facts')
+  if (facts.length !== 6) throw new Error('cdv2 facts missing')
+  facts.forEach(raw => { const f = record(raw,'cdv2.fact'); text(f.role,'cdv2.role'); if (!Number.isInteger(f.age) || Number(f.age)<-1) throw new Error('cdv2 age'); if (f.bar_end !== null) requireNotAfter(instant(f.bar_end,'cdv2.bar_end'),meta.as_of,'cdv2.bar_end','meta.as_of') })
+  stringArray(cd.missing_roles,'cdv2.missing_roles')
+  if (value.prices !== null) {
+    const p = record(value.prices,'cross_period_prices')
+    requireExact(p.formula_version,'newow_target_absorb_selection_v3_3_59_v1','prices.version')
+    sameInstant(p.as_of,meta.as_of,'prices.as_of'); requireExact(p.executable,false,'prices.executable')
+    const current = record(p.current_price,'prices.current')
+    const price = (raw: unknown) => {
+      const fact = record(raw,'price.source')
+      const number = decimal(fact.raw,'price.raw')
+      if (Number(number)<=0) throw new Error('nonpositive price')
+      requireNotAfter(instant(fact.bar_end,'price.bar_end'),meta.as_of,'price.bar_end','meta.as_of')
+      requireExact(fact.physical_contract,current.physical_contract,'price.contract'); requireExact(fact.segment_id,current.segment_id,'price.segment')
+      for (const field of ['source_identity','source_category','calculation_segment_id']) text(fact[field],field)
+      literal(fact.frequency,['1d','1w','1M'] as const,'price.frequency')
+      if (fact.display_value !== undefined) decimal(fact.display_value,'price.display')
+    }
+    price(current)
+    for (const surface of ['shared','status_card']) {
+      const selections = exactRecord(p[surface],surface,['target','absorb'])
+      for (const fact of Object.values(selections)) if (fact !== null) price(fact)
+    }
+    if (p.previous_close !== null) {
+      price(p.previous_close)
+      const previous = record(p.previous_close,'previous')
+      requireExact(previous.source_category,'canonical_previous_daily_close','previous.source')
+      requireExact(previous.frequency,'1d','previous.frequency')
+      if (Date.parse(String(previous.bar_end))>=Date.parse(String(current.bar_end))) throw new Error('previous close order')
+    }
+  }
+  return value as unknown as import('../types/newowDecisionV2').NewowDecisionV2
+}
+
+function normalizeTheoretical(payload: unknown): NewowReferenceValue['theoretical'] {
+  if (payload === null) return null
+  const v = exactRecord(payload, 'theoretical', ['model_version', 'hindsight', 'executable', 'returns', 'sum_return_percentage_points', 'win_rate_pct', 'mean_return_pct'])
+  requireExact(v.model_version, 'newow_hindsight_peak_reference_v1', 'theoretical.model_version')
+  requireExact(v.hindsight, true, 'theoretical.hindsight')
+  requireExact(v.executable, false, 'theoretical.executable')
+  const returns = array(v.returns, 'theoretical.returns').map((row, index) => {
+    const field = `theoretical.returns[${index}]`
+    const r = exactRecord(row, field, ['reference_trade_id', 'return_pct', 'ideal_exit_price'])
+    return { reference_trade_id: text(r.reference_trade_id, `${field}.reference_trade_id`), return_pct: decimal(r.return_pct, `${field}.return_pct`), ideal_exit_price: decimal(r.ideal_exit_price, `${field}.ideal_exit_price`) }
+  })
+  if (new Set(returns.map(r => r.reference_trade_id)).size !== returns.length) throw new Error('duplicate theoretical identity')
+  return { model_version: 'newow_hindsight_peak_reference_v1', hindsight: true, executable: false, returns, sum_return_percentage_points: decimal(v.sum_return_percentage_points, 'theoretical.sum'), win_rate_pct: nullableDecimal(v.win_rate_pct, 'theoretical.win'), mean_return_pct: nullableDecimal(v.mean_return_pct, 'theoretical.mean') }
 }

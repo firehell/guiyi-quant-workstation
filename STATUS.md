@@ -1,3 +1,28 @@
+## 2026-09-26 Newow v1.10.37 发布候选
+
+已整理 v1.10.36 后全部已提交 Newow UI、融合参考、CDV2 与独立理论值改动，版本事实源统一 1.10.37。
+定向 572 passed（另有两项 v1.10.36 既有工程断言失败），前端 726 passed / 1 skipped、build通过；
+Newow spec 校验、新增核心模块 Ruff 和独立Review通过。完整披露见 docs/tasks/newow-release-v1.10.37-20260926.md。
+当前为已验证候选，未提前声明发布或 Runtime 切换。
+
+## 2026-09-26 牛哇日周 v1.10.36 已发布并切换本机 Runtime
+
+最终正式身份 `v1.10.36@4d25ed21bcf51adb662ec44757ac8974f8c24e44`，PR #401、annotated tag/Release完成。
+初次v1.10.35发布后抽查发现RS日线默认快照政策漏接，返回500；已新发v1.10.36修复reader/service正式DAILY_V2绑定，
+没有改公式、数据或预热门槛。v1.10.35 tag未移动，发布说明标为已被替代。
+最终259定向测试、独立178测试通过；真实60/60默认D1接口及RS三策略HTTP200/current通过。
+
+正式根 `/Users/zhangzhao/Library/Application Support/GuiyiQuant/runtime-v1.10.36`，独立Git、detached、clean；
+API/Web/Live/Alert运行且root/commit一致，after-market/late-provider schedule-only idle正常，reference worker仍关闭。
+安装前及内部预检non_trading_interval passed；HTTP200、Runtime ok readonly=true。
+正式五组JM日周、RS震荡日周、AO周线主图/辅助/页面参考均同token、同9/24截点；浏览器RS日线500已消失，
+RS保持正常WARMING，AO当前可计算与历史预热区分正确。旧根保留，无生产数据写入/migration/通知重放。
+
+本次为RELEASED、切换与现场读回通过，不声明自然RUNTIME_READY；9/28自然增量和新根weekly audit结果待验收。
+P9持久化统一参考面板503、旧根全历史周审计3条RS2609分区finding仍未收尾，未计为通过。
+详见 `docs/tasks/newow-d1-w1-release-v1.10.36-20260926.md` 与 `outputs/newow-release-v1.10.36-20260926/`。
+Release：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.36
+
 ## 2026-09-26 牛哇 W1 冻结候选正式路由页面验收完成
 
 第三项用独立 W1 页面证据完成：最终 API `2bfc4a6a8` 的 60/60 默认周线快照均为

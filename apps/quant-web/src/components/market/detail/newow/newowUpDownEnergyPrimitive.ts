@@ -15,7 +15,7 @@ interface EnergyPoint {
 }
 
 interface EnergySeries { readonly key: string; readonly points: readonly EnergyPoint[] }
-interface EnergyBar { readonly barEnd: string; readonly physicalContract: string; readonly segmentId: string; readonly close: number }
+interface EnergyBar { readonly barEnd: string; readonly physicalContract: string; readonly calculationSegmentId: string; readonly close: number }
 
 export interface NewowUpDownEnergyDatum {
   readonly index: number
@@ -29,7 +29,7 @@ export interface NewowUpDownEnergyDatum {
 
 /** Joins the server's formula values with the aligned, same-owner close used by the original color rule. */
 export function buildNewowUpDownEnergyData(series: readonly EnergySeries[], bars: readonly EnergyBar[]): NewowUpDownEnergyDatum[] {
-  const byBar = new Map(bars.map(bar => [`${bar.physicalContract}:${bar.segmentId}:${bar.barEnd}`, bar]))
+  const byBar = new Map(bars.map(bar => [`${bar.physicalContract}:${bar.calculationSegmentId}:${bar.barEnd}`, bar]))
   const byKey = (key: string): Map<string, number> => new Map(series.filter(item => item.key === key).flatMap(item => item.points.map(point => [`${point.segmentId}:${point.index}`, point.value] as const)))
   const ma10 = byKey('ma10')
   const band = byKey('band_entry')

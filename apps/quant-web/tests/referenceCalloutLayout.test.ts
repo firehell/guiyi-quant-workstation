@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { layoutReferenceCallouts, REFERENCE_CALLOUT_BOX } from '../src/utils/referenceCalloutLayout.ts'
+import { layoutReferenceCallouts, layoutNiuwaReferenceCallouts, REFERENCE_CALLOUT_BOX } from '../src/utils/referenceCalloutLayout.ts'
 
 const callout = (id: string, above = false) => ({
   id, time: `2026-09-14T0${Number(id) % 9}:00:00Z`, physicalContract: 'AU2610',
@@ -80,3 +80,23 @@ function assertNoOverlap(items: ReturnType<typeof layoutReferenceCallouts>): voi
     }
   }
 }
+
+test('Niuwa placement searches near anchors and avoids the signal candle', () => {
+  const point = { x: 200, y: 100, callout: callout('1'), boxWidth: 96, boxHeight: 30,
+    candle: { left: 190, top: 60, width: 20, height: 50 } }
+  const result = layoutNiuwaReferenceCallouts([point], 500, 300)
+  assert.equal(result.length, 1)
+  assert.ok(result[0]!.top + 30 < 60 || result[0]!.left + 96 < 190 || result[0]!.left > 210)
+  assert.ok(Math.hypot(result[0]!.left + 48 - 200, result[0]!.top + 15 - 100) <= 170)
+})
+
+test('Niuwa density layout omits crowded text then restores it on zoom without merging identities', () => {
+  const points = Array.from({ length: 10 }, (_, i) => ({x: 200+i, y: 140, callout: callout(String(i)), boxWidth: 96, boxHeight: 30}))
+  const dense = layoutNiuwaReferenceCallouts(points, 500, 300)
+  assert.ok(dense.length < points.length)
+  assertNoOverlap(dense)
+  assert.ok(dense.every(item => !item.compact && points.some(point => point.callout.id === item.callout.id)))
+  const zoomed = layoutNiuwaReferenceCallouts(points.map((point,i)=>({...point,x:80+i*130})), 1500, 300)
+  assert.equal(zoomed.length, points.length)
+  assert.deepEqual(dense, layoutNiuwaReferenceCallouts(points, 500, 300))
+})

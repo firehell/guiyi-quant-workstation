@@ -213,7 +213,7 @@ test('simple sum keeps percentage points separate and never appends a percent un
   assert.equal(model.summary.sumText.includes('%'), false)
 })
 
-test('reference panel keeps the server summary while native controls filter, expand and emit exact locate facts', async () => {
+test('reference panel keeps the server summary and all passive reference records without removed controls', async () => {
   const Panel = await loadComponent()
   const located: Array<{ reference_trade_id: string; entry_signal_id: string; entry_bar_end: string }> = []
   const Host = defineComponent({ setup: () => () => h(Panel, {
@@ -228,38 +228,28 @@ test('reference panel keeps the server summary while native controls filter, exp
 
   const summary = findNode(root, (node) => node.props['data-testid'] === 'newow-reference-summary')!
   assert.match(nodeText(summary), /胜率\s*—/)
-  assert.match(nodeText(summary), /简单相加/)
+  assert.doesNotMatch(nodeText(summary), /统计时间与来源|所选统计区间已按权威截止完成计算|收益为百分点（简单相加）/)
+  assert.deepEqual(findNodes(summary, node => node.type === 'dt').map(nodeText), ['累计参考收益', '胜率', '平均单笔', '已完成交易'])
+  const returns = findNode(root, node => node.props['aria-label'] === '已完成参考交易累计收益曲线')!
+  assert.ok(findNode(returns, node => node.props['data-testid'] === 'newow-reference-summary'))
+  assert.doesNotMatch(nodeText(returns), /年化|最大回撤|未清仓浮动|中断结果|查看交易/)
+
   const fullText = nodeText(root)
-  for (const phrase of ['long/flat', '趋势 B', '震荡 Low/High', '主升浪 MA45', 'API reference_price', '零手续费', '零滑点', '不计资金占用与真实成交限制', '不推断手数', '不推断空单', '不推断账户净值', '不推断真实收益', '非因果回测', '非模拟账户', '非真实成交']) {
-    assert.match(fullText, new RegExp(phrase))
-  }
-  assert.match(fullText, /同 Bar Close 仅属于独立 comparator/)
-  for (const label of ['已清仓', '未清仓', '换月中断', '期初已有', '定位建仓', '查看详情']) assert.match(fullText, new RegExp(label))
-  assert.match(readFileSync(componentUrl, 'utf8'), /<option value="all">全部<\/option>/)
+  assert.doesNotMatch(fullText, /累计百分点 · 已完成交易 · 零成本页面参考/)
+  assert.doesNotMatch(fullText, /双策略融合参考|参考口径说明|筛选参考历史/)
+  for (const label of ['清仓', '未清仓', '换月中断', '期初已有', '回测操盘提醒', '买入', '卖出']) assert.match(fullText, new RegExp(label))
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
-  const expand = findNode(root, (node) => node.props['aria-label'] === '展开参考记录 open')!
-  assert.equal(expand.type, 'button')
-  assert.equal(expand.props['aria-expanded'], false)
-  ;(expand.props.onClick as () => void)()
-  await nextTick()
-  assert.match(nodeText(root), /D4 · 2026-08-14T07:00:00Z · 关联 Hint（不推断与主动作的同 Bar 顺序）/)
-  assert.match(nodeText(root), /不能按邻近日期或当前上下文推断/)
+  const cards = findNodes(root, node => node.type === 'article' && !!node.props['data-reference-category'])
+  assert.equal(cards.length, 4)
+  for (const card of cards) {
+    assert.equal(findNode(card, node => node.type === 'button' || node.type === 'details'), undefined)
+    assert.equal(card.props.onClick, undefined)
+    assert.equal(card.props.tabindex, undefined)
+  }
+  assert.doesNotMatch(fullText, /定位建仓|定位清仓|查看详情|查看曲线/)
+  assert.deepEqual(located, [])
 
-  const locate = findNode(root, (node) => node.props['aria-label'] === '定位参考记录 open 的建仓信号')!
-  assert.equal(locate.type, 'button')
-  assert.equal(nodeText(locate), '定位建仓')
-  ;(locate.props.onClick as () => void)()
-  assert.deepEqual(located.map(({ reference_trade_id, entry_signal_id, entry_bar_end }) => ({ reference_trade_id, entry_signal_id, entry_bar_end })), [
-    { reference_trade_id: 'open', entry_signal_id: 'entry-open', entry_bar_end: '2026-08-14T07:00:00Z' },
-  ])
-
-  const filter = findNode(root, (node) => node.props['aria-label'] === '筛选参考历史')!
-  ;(filter.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'interrupted' } })
-  await nextTick()
-  assert.doesNotMatch(nodeText(root), /entry-open/)
-  assert.ok(findNode(root, node => node.type === 'article' && node.props['data-reference-category'] === 'interrupted'))
-  assert.equal(findNode(root, node => node.type === 'table'), undefined)
-  assert.match(nodeText(summary), /胜率\s*—/, 'filter must not change the server-owned summary')
+  assert.equal(cards.length, 4, 'all loaded records remain visible')
   app.unmount()
 })
 
@@ -274,33 +264,35 @@ test('reference records present entry, exit, valuation and interruption as separ
   app.mount(root)
   await nextTick()
   const fullText = nodeText(root)
-  assert.match(fullText, /参考建仓/)
-  assert.match(fullText, /参考清仓/)
+  assert.match(fullText, /买入/)
+  assert.match(fullText, /卖出/)
   assert.match(fullText, /参考估值/)
-  assert.match(fullText, /中断说明/)
+  assert.match(fullText, /中断浮动不计入已完成收益/)
   app.unmount()
 })
 
-test('reference date application blocks an invalid range with visible feedback', async () => {
+test('range tabs include three years and clamp all to the initial server history floor', async () => {
   const Panel = await loadComponent()
-  let reloads = 0
+  const reloads: Array<{ performanceSince: string; performanceThrough: string }> = []
   const Host = defineComponent({ setup: () => () => h(Panel, {
     response: referenceResponse(), chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
-    selectedSignalId: null, locateMessage: null, loadingPage: false, onReload: () => { reloads += 1 },
+    selectedSignalId: null, locateMessage: null, loadingPage: false,
+    onReload: (window: { performanceSince: string; performanceThrough: string }) => reloads.push(window),
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
   app.mount(root)
   await nextTick()
-  const inputs = findNodes(root, (node) => node.type === 'input')
-  ;(inputs[0]!.props.onInput as (event: { target: { value: string } }) => void)({ target: { value: '2026-09-01' } })
-  ;(inputs[1]!.props.onInput as (event: { target: { value: string } }) => void)({ target: { value: '2026-08-01' } })
-  await nextTick()
-  assert.match(nodeText(root), /统计起点不能晚于统计终点/)
-  const submit = findNode(root, (node) => node.type === 'button' && nodeText(node) === '应用统计窗口')!
-  assert.equal(submit.props.disabled, true)
+  for (const label of ['近1年', '近3年', '全部']) {
+    const button = findNode(root, node => node.type === 'button' && nodeText(node) === label)!
+    assert.ok(button)
+    ;(button.props.onClick as () => void)()
+  }
+  assert.equal(reloads.length, 3)
+  assert.deepEqual(reloads[0], reloads[1])
+  assert.deepEqual(reloads[1], reloads[2])
+  assert.equal(reloads[0]!.performanceSince, '2026-01-01')
   app.unmount()
-  assert.equal(reloads, 0)
 })
 
 test('recent complete window action submits the exact server boundary', async () => {
@@ -324,7 +316,7 @@ test('recent complete window action submits the exact server boundary', async ()
   app.unmount()
 })
 
-test('reference date drafts clear when a new identity has no retained response', async () => {
+test('range tabs cannot load when the current identity has no response', async () => {
   const Panel = await loadComponent()
   const response = ref<NewowProductSectionResponse<'reference'> | null>(referenceResponse())
   const Host = defineComponent({ setup: () => () => h(Panel, {
@@ -335,16 +327,16 @@ test('reference date drafts clear when a new identity has no retained response',
   const app = createRenderer(nodeOperations()).createApp(Host)
   app.mount(root)
   await nextTick()
-  assert.deepEqual(findNodes(root, (node) => node.type === 'input').map((node) => node.props.value), ['2026-01-01', '2026-08-15'])
+  assert.ok(findNode(root, node => node.type === 'button' && nodeText(node) === '近3年'))
 
   response.value = null
   await nextTick()
-  assert.deepEqual(findNodes(root, (node) => node.type === 'input').map((node) => node.props.value), ['', ''])
+  assert.equal(findNode(root, node => node.type === 'button' && nodeText(node) === '近3年')!.props.disabled, true)
   assert.doesNotMatch(nodeText(root), /stale/)
   app.unmount()
 })
 
-test('waiting card requires current ready compatible FLAT evidence and is independent of history filtering', async () => {
+test('waiting card requires current ready compatible FLAT evidence', async () => {
   const Panel = await loadComponent()
   const response = referenceResponse()
   response.value.items = []
@@ -362,10 +354,6 @@ test('waiting card requires current ready compatible FLAT evidence and is indepe
   assert.ok(waiting())
   assert.match(nodeText(waiting()!), /空仓等待中/)
   assert.doesNotMatch(nodeText(waiting()!), /%|收益|参考建仓/)
-  const filter = findNode(root, node => node.props['aria-label'] === '筛选参考历史')!
-  ;(filter.props.onChange as Function)({ target: { value: 'closed' } })
-  await nextTick()
-  assert.ok(waiting(), 'history filter does not invent or hide current strategy state')
   for (const patch of [{ chartLifecycle: 'stale' }, { lifecycle: 'stale' }, { currentChartWindow: false }, { crossSectionCompatible: false }]) {
     const before = inputs.value
     inputs.value = { ...before, ...patch }
@@ -515,11 +503,17 @@ function ready() { return { status: 'ready' as const, evidence_status: 'ACTIVE_C
 type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? Mutable<U>[] : T[K] extends object ? Mutable<T[K]> : T[K] }
 
 async function loadComponent() {
-  const source = readFileSync(componentUrl, 'utf8')
-  const { descriptor, errors } = parse(source, { filename: componentUrl.pathname })
+  return (await import(await compileComponentModule(componentUrl))).default
+}
+
+async function compileComponentModule(url: URL): Promise<string> {
+  const source = readFileSync(url, 'utf8')
+  const { descriptor, errors } = parse(source, { filename: url.pathname })
   assert.deepEqual(errors, [])
   const compiled = compileScript(descriptor, { id: 'newow-reference-panel', inlineTemplate: true })
+  const childUrl = url === componentUrl ? await compileComponentModule(new URL('../src/components/market/detail/newow/NewowFusionPanel.vue', import.meta.url)) : null
   const transpiled = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+    .replace(/from ['"]\.\/NewowFusionPanel\.vue['"]/g, `from '${childUrl}'`)
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
       for (const suffix of ['', '.ts', '.vue']) {
@@ -528,7 +522,8 @@ async function loadComponent() {
       }
       throw new Error(`cannot resolve source import: ${specifier}`)
     })
-  return (await import(`data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`)).default
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`
+  return moduleUrl
 }
 
 interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string }
@@ -552,3 +547,27 @@ function nodeOperations() {
     parentNode(node: TestNode) { return node.parent }, nextSibling(node: TestNode) { if (node.parent === null) return null; const index = node.parent.children.indexOf(node); return node.parent.children[index + 1] ?? null }, querySelector() { return null }, setScopeId() {}, insertStaticContent() { return [element('#static'), element('#static')] as const },
   }
 }
+
+test('theoretical selection survives a same-window history page response', async () => {
+  const Panel = await loadComponent()
+  const response = ref(referenceResponse())
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: response.value, chartResponse: null, crossSectionCompatible: false, lifecycle: 'ready', error: null,
+    selectedSignalId: null, locateMessage: null, loadingPage: false,
+    onReload: (window: { performanceSince: string; performanceThrough: string }) => {
+      response.value = { ...response.value, value: { ...response.value.value, performance_since: window.performanceSince, performance_through: window.performanceThrough } }
+    },
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const ideal = () => findNode(root, node => node.type === 'button' && nodeText(node) === '理论值')!
+  ;(ideal().props.onClick as () => void)()
+  await nextTick()
+  assert.equal(ideal().props['aria-pressed'], true)
+  response.value = { ...response.value, value: { ...response.value.value, items: [...response.value.value.items] } }
+  await nextTick()
+  assert.equal(ideal().props['aria-pressed'], true)
+  app.unmount()
+})

@@ -70,7 +70,7 @@ test('trend A/B boundaries render as lightweight one-pixel lines above the colum
   app.unmount()
 })
 
-test('emits stable signal selection and preserves an established viewport and focus when earlier data arrives', async () => {
+test('keeps action labels passive and preserves an established viewport and focus when earlier data arrives', async () => {
   const Stage = await loadComponent()
   let range = { from: 0, to: 1 }
   let rangeListener: ((value: typeof range) => void) | undefined
@@ -126,7 +126,8 @@ test('emits stable signal selection and preserves an established viewport and fo
 
   clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'build-stable' } })
   clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'unknown' } })
-  assert.deepEqual(selected, ['build-stable'])
+  assert.deepEqual(selected, [], 'clicking a native marker must not open signal details')
+
 
   range = { from: 0.25, to: 1.25 }
   rangeListener!(range)
@@ -215,11 +216,14 @@ test('connects action labels to the exact server reference price coordinate', as
 
   const label = findNode(root, node => node.props['data-action-id'] === 'build-stable')
   assert.ok(label)
+  assert.equal(label.type, 'div')
+  assert.equal(label.props.onClick, undefined)
+  assert.equal(label.props.tabindex, undefined)
   assert.equal(label.props['data-reference-price'], '90')
   assert.equal(label.props['data-anchor-y'], 180)
   assert.match(textContent(label), /建仓.*建仓价:90/)
-  const line = findNode(root, node => node.type === 'line')
-  assert.equal(line?.props.y1, 180)
+  const line = findNode(root, node => node.type === 'polyline')
+  assert.match(String(line?.props.points), /^210,180 /)
   app.unmount()
 })
 
@@ -587,7 +591,7 @@ function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: 
       assert.equal(options.crosshair?.mode, 0, 'crosshair follows pointer prices without candle magnet snapping')
       const chart = fakeChart as { addSeries: (...args: unknown[]) => object; panes?: () => unknown[]; addPane?: () => unknown }
       const add = chart.addSeries.bind(chart)
-      chart.addSeries = (...args) => ({ attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, ...add(...args) })
+      chart.addSeries = (...args) => ({ attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, priceScale: () => ({ applyOptions() {} }), ...add(...args) })
       chart.panes ??= () => [pane(), pane(), pane()]
       chart.addPane ??= () => pane()
       return chart as never
