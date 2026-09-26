@@ -160,7 +160,9 @@ class AfterMarketUpdater:
         consumer_audit: Callable[[tuple[str, ...], date], Mapping[str, object]] | None = None,
         consumer_revision: Callable[[tuple[str, ...], date], str | Mapping[str, str]] | None = None,
         consumer_check_keys: tuple[str, ...] = ("newow_d1",),
+        late_failure_schedule: Callable[..., None] | None = None,
     ) -> None:
+        self.late_failure_schedule = late_failure_schedule
         self.manager = manager
         self.rqdata = rqdata
         self.rqdata_factory = rqdata_factory
@@ -367,6 +369,12 @@ class AfterMarketUpdater:
         products: tuple[str, ...],
     ) -> AfterMarketResult:
         self._write_status(result, started_at, products)
+        if self.late_failure_schedule is not None:
+            try:
+                self.late_failure_schedule(result, products, started_at)
+            except Exception:
+                _diagnostic_warning("after_market_late_schedule_failed detail_code=%s",
+                                    "UPDATE_FAILED", detail_code="UPDATE_FAILED")
         if self.notification_transport is not None:
             notification = self._send_failure_notification(result)
             try:
@@ -456,12 +464,13 @@ class AfterMarketUpdater:
                     apply=True,
                     sync_current_day_metadata=True,
                     mode="daily",
+                    require_source_ready=True,
                 ),
                 before_apply=self._invalidate_market_home_projection,
                 observer=self._observe_progress,
             )
         except InfrastructureError as exc:
-            if exc.code == "HISTORICAL_MAINTENANCE_REQUIRED":
+            if exc.code in {"HISTORICAL_MAINTENANCE_REQUIRED", "RQDATA_NOT_READY"}:
                 return exc.code
             if exc.code == "NEXT_TRADING_SESSION_NOT_READY":
                 _diagnostic_warning(
@@ -831,6 +840,8 @@ def build_after_market_updater(
                 after_market_status=status,
                 clock=time.monotonic,
             )
+    from app.market_data.late_provider_recovery import schedule_failure
+
     return AfterMarketUpdater(
         manager=manager,
         rqdata=None,
@@ -847,6 +858,9 @@ def build_after_market_updater(
         consumer_audit=audit_newow_consumers,
         consumer_revision=lambda products, day: _read_newow_consumer_revisions(products, day),
         consumer_check_keys=("newow_d1", "newow_w1"),
+        late_failure_schedule=lambda result, products, started: schedule_failure(
+            PROJECT_ROOT / ".run" / "late-provider-recovery-status.json", result, products, started
+        ),
     )
 
 

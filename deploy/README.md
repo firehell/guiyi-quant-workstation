@@ -192,3 +192,26 @@ unreadable 或 chronology 不可能的 after-market state 一律阻断；公开 
 `MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED`、`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_INVALID`、
 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。没有 override、repair、synthetic snapshot、retry、replay 或
 fallback；通过预检本身不构成 Runtime promotion、release、Runtime ready 或 production verification。
+
+
+### 节假日供应商晚到恢复
+
+Market 盘后仍在本地 18:05 自然运行，`RQDATA_NOT_READY` 或
+`NEXT_TRADING_SESSION_NOT_READY` 最多等待一小时重试一次。盘后 daily 写入前必须
+检查全部精确目标的源响应，冻结已验证批次再写入；类别级 ready 不能代替逐目标完整性。
+缺 endpoint 的预检不发布任何历史分区；质量异常、部分提交、未知提交结果不能纳入自动恢复。
+
+两次均因上述安全的晚到原因失败时，独立记录失败交易日和 operational 范围，
+在失败日加两个自然日（即使是假日）19:05 由 `com.guiyi.quant-late-provider-recovery`
+只检查一次。米筐没有已确认的公开机器公告接口时记录 announcement=unavailable，
+不声称不存在公告，按 owner 决策继续默认检查。恢复状态与原自然 after-market 状态分开。
+
+检查前原子落盘 claimed；崩溃、源仍不齐、维护锁冲突、写入或读回失败均消费该次机会，
+不自动补跑。19:05 前不运行；延迟超过一小时或错过当日记 expired。源齐全后，同一范围
+通过有界 metadata 同步、daily-recovery 精确计划/CAS、全部源完整性和物理读回，
+才记录恢复 passed。只清理原交易日 Live，原自然失败不改成成功，不补发通知。
+
+下一交易日与短周边界仅由 RQData Calendar/Session 证明：例如 2026-09-30
+下一交易日是 2026-10-08，10-10 调休工作日不是交易日；不得用工作日算术替代。
+新服务随已交办的 Market Runtime 安装，schedule-only idle 不算服务失败。
+升级时须显式保留未消费的延后恢复状态，不能以新的空状态丢弃未完成检查。

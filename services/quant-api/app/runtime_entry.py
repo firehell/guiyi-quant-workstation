@@ -39,6 +39,7 @@ _COMMANDS = {
     "live": "runtime.live",
     "alert": "runtime.alert",
     "after-market": "data.after-market",
+    "late-provider-recovery": "data.late-provider-recovery",
     "weekly-audit": "data.weekly-audit",
     "weekly-audit-scheduled": "data.weekly-audit-scheduled",
 }
@@ -118,6 +119,10 @@ def main(
             )
         elif service == "alert":
             payload = run_alert(alert_runtime_factory=alert_runtime_factory)
+        elif service == "late-provider-recovery":
+            from app.market_data.late_provider_recovery import run_runtime_scheduled
+            with session_factory() as session:
+                payload = run_runtime_scheduled(manager_factory(session))
         elif service in {"weekly-audit", "weekly-audit-scheduled"}:
             payload = run_weekly_audit_service(
                 session_factory=session_factory,
@@ -169,7 +174,7 @@ def run_weekly_audit_service(
 def entrypoint() -> None:
     handler = None
     if len(sys.argv) == 2 and sys.argv[1] in {
-        "live", "alert", "after-market", "weekly-audit", "weekly-audit-scheduled",
+        "live", "alert", "after-market", "late-provider-recovery", "weekly-audit", "weekly-audit-scheduled",
     }:
         from app.runtime_logging import install_runtime_diagnostics
 

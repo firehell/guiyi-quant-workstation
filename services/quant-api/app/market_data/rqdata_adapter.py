@@ -899,6 +899,10 @@ class RQDataClient:
                 end_date=probe_end,
             )
         )
+        if (not probe_dates or probe_dates[0] != trading_day
+                or tuple(sorted(set(probe_dates))) != probe_dates
+                or any(day < trading_day or day > probe_end for day in probe_dates)):
+            raise InfrastructureError("RQDATA_TRADING_DATES_INVALID")
         next_trading_day = next(
             (day for day in probe_dates if day > trading_day),
             None,

@@ -330,6 +330,10 @@ class CanonicalMonthlyStore:
             raise StorageError("CANONICAL_ROOT_ESCAPE")
         return path
 
+    def validate(self, request: PublishRequest) -> None:
+        """Read-only publication validation, without creating a candidate file."""
+        self._validate(request)
+
     def _validate(self, request: PublishRequest) -> None:
         """发布前完整性校验：非空、bar_end 严格递增、与 expected 完全一致、归属正确月份。"""
         if (not request.bars and not request.source_quality) or not request.expected_bar_ends or not 1 <= request.month <= 12:
