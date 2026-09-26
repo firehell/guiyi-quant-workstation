@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 from datetime import UTC, date, datetime
 
 import pytest
@@ -223,6 +224,42 @@ def test_daily_snapshot_endpoint_returns_exact_verified_cutoff_and_pending_day(m
         "as_of": "2026-09-17T07:00:00.000001Z",
         "freshness": "pending_update",
     }
+
+
+@pytest.mark.parametrize("product", ["rs", "rb", "pl", "pf"])
+def test_daily_snapshot_uses_formal_quality_policy(product, monkeypatch):
+    now = datetime(2026, 9, 24, 7, 0, 0, 1, tzinfo=UTC)
+    selected = []
+
+    class Reader:
+        def historical_snapshot_candidates(self, *_args, **_kwargs):
+            return [(now.date(), now)]
+
+    class Service:
+        def query(self, request):
+            return SimpleNamespace(
+                section=request.section, meta=SimpleNamespace(as_of=now),
+                chart=SimpleNamespace(
+                    delivery="delivered", value=object(),
+                    status=SimpleNamespace(status=FeatureRuntimeStatus.WARMING),
+                ),
+            )
+
+    def inputs(_session, _cancelled, _now, quality_policy=InputQualityPolicy.V1):
+        selected.append(quality_policy)
+        return Reader(), lambda _cancelled: Service()
+
+    monkeypatch.setattr(market_newow, "_build_snapshot_inputs", inputs)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/daily-snapshot", params={
+                "product": product, "strategy": "oscillation", "frequency": "1d",
+            })
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert selected == [InputQualityPolicy.DAILY_V2]
 
 
 def test_weekly_snapshot_endpoint_returns_shared_cutoff_and_separate_current_owner(monkeypatch):
