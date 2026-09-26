@@ -1114,3 +1114,17 @@ test('CDV2 explanation rejects future ages, inconsistent totals and executable c
   const badAge = make(); badAge.addon.cdv2.facts[0]!.age = -2
   assert.throws(() => normalizeNewowProductResponse(badAge.wire, { ...expected, section: 'explanation' }), /age/)
 })
+
+test('reference accepts validated independent hindsight payload and rejects executable or duplicate theory', () => {
+  const raw = referenceWire()
+  raw.reference.value.theoretical = { model_version: 'newow_hindsight_peak_reference_v1', hindsight: true, executable: false,
+    returns: [{ reference_trade_id: 'theory-trade', return_pct: '10', ideal_exit_price: '110' }],
+    sum_return_percentage_points: '10', win_rate_pct: '100', mean_return_pct: '10' }
+  const result = normalizeNewowProductResponse(raw, { ...expected, section: 'reference' })
+  assert.equal(result.value.theoretical.sum_return_percentage_points, '10')
+  raw.reference.value.theoretical.executable = true
+  assert.throws(() => normalizeNewowProductResponse(raw, { ...expected, section: 'reference' }))
+  raw.reference.value.theoretical.executable = false
+  raw.reference.value.theoretical.returns.push(raw.reference.value.theoretical.returns[0])
+  assert.throws(() => normalizeNewowProductResponse(raw, { ...expected, section: 'reference' }), /duplicate theoretical/)
+})

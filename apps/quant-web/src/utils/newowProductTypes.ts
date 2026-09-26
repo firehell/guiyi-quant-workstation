@@ -476,6 +476,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'curve_trades') ? ['curve_trades'] : []),
     ...(hasStorageMode ? ['storage_mode'] : []),
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'fusion_comparison') ? ['fusion_comparison'] : []),
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'theoretical') ? ['theoretical'] : []),
   ])
   if (hasStorageMode) requireExact(value.storage_mode, 'persisted', 'reference.storage_mode')
   const performanceSince = day(value.performance_since, 'reference.performance_since')
@@ -518,6 +519,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     reference_input_sha256: sha256(value.reference_input_sha256, 'reference.reference_input_sha256'),
     history_coverage: historyCoverage, unavailable_days: unavailableDays, coverage_intervals: coverageIntervals,
     ...(value.fusion_comparison === undefined ? {} : { fusion_comparison: normalizeFusion(value.fusion_comparison, performanceSince, performanceThrough, value.reference_input_sha256, value.reference_cutoff) }),
+    ...(value.theoretical === undefined ? {} : { theoretical: normalizeTheoretical(value.theoretical) }),
     summary, items, next_before: nullableText(value.next_before, 'reference.next_before'), executable: false, auto_order: false,
     ...(value.curve_trades === undefined ? {} : { curve_trades: array(value.curve_trades, 'reference.curve_trades').map((item, index) => normalizeTrade(item, index, meta, referenceCutoff)) }),
     ...(hasStorageMode ? { storage_mode: 'persisted' as const } : {}),
@@ -1071,4 +1073,19 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
     }
   }
   return value as unknown as import('../types/newowDecisionV2').NewowDecisionV2
+}
+
+function normalizeTheoretical(payload: unknown): NewowReferenceValue['theoretical'] {
+  if (payload === null) return null
+  const v = exactRecord(payload, 'theoretical', ['model_version', 'hindsight', 'executable', 'returns', 'sum_return_percentage_points', 'win_rate_pct', 'mean_return_pct'])
+  requireExact(v.model_version, 'newow_hindsight_peak_reference_v1', 'theoretical.model_version')
+  requireExact(v.hindsight, true, 'theoretical.hindsight')
+  requireExact(v.executable, false, 'theoretical.executable')
+  const returns = array(v.returns, 'theoretical.returns').map((row, index) => {
+    const field = `theoretical.returns[${index}]`
+    const r = exactRecord(row, field, ['reference_trade_id', 'return_pct', 'ideal_exit_price'])
+    return { reference_trade_id: text(r.reference_trade_id, `${field}.reference_trade_id`), return_pct: decimal(r.return_pct, `${field}.return_pct`), ideal_exit_price: decimal(r.ideal_exit_price, `${field}.ideal_exit_price`) }
+  })
+  if (new Set(returns.map(r => r.reference_trade_id)).size !== returns.length) throw new Error('duplicate theoretical identity')
+  return { model_version: 'newow_hindsight_peak_reference_v1', hindsight: true, executable: false, returns, sum_return_percentage_points: decimal(v.sum_return_percentage_points, 'theoretical.sum'), win_rate_pct: nullableDecimal(v.win_rate_pct, 'theoretical.win'), mean_return_pct: nullableDecimal(v.mean_return_pct, 'theoretical.mean') }
 }
