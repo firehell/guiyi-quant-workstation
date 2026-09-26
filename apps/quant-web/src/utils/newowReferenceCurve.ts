@@ -40,3 +40,16 @@ export function newowReferenceCurve(value: NewowReferenceValue) {
   return { points, message: null }
 }
 export type ReferenceCurvePoint = { trade: NewowReferenceTrade; cumulative: string; value: number }
+
+/** Display-only page reference annualization; the additive trade curve remains unchanged. */
+export function newowReferenceAnnualized(value: NewowReferenceValue): number | null {
+  const curve = newowReferenceCurve(value)
+  if (value.history_coverage !== 'FULL' || curve.message !== null || !curve.points.length) return null
+  const start = Date.parse(value.performance_since)
+  const end = Date.parse(value.performance_through < value.actual_available_through ? value.performance_through : value.actual_available_through)
+  const days = (end - start) / 86_400_000
+  const ratio = 1 + curve.points.at(-1)!.value / 100
+  if (!Number.isFinite(days) || days <= 0 || ratio <= 0) return null
+  const annual = (Math.pow(ratio, 365 / days) - 1) * 100
+  return Number.isFinite(annual) ? annual : null
+}

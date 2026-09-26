@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { newowReferenceCurve } from '../src/utils/newowReferenceCurve.ts'
+import { newowReferenceCurve, newowReferenceAnnualized } from '../src/utils/newowReferenceCurve.ts'
 import { buildNewowFixtureEnvelopeForTest } from '../e2e/newow-product.helpers.mjs'
 import type { NewowReferenceValue } from '../src/types/newowProduct.ts'
 function value(): NewowReferenceValue { return buildNewowFixtureEnvelopeForTest('reference').reference.value }
@@ -33,4 +33,16 @@ test('empty, initial and missing returns never synthesize zero returns', () => {
   const trade = v.items.find(t => t.status === 'CLOSED')!
   assert.equal(newowReferenceCurve({ ...v, next_before: null, items: [{ ...trade, reference_return_pct: null }] }).points.length, 0)
   assert.equal(newowReferenceCurve({ ...v, next_before: null, items: [{ ...trade, statistics_membership: 'initial_before_window' }] }).points.length, 0)
+})
+
+test('page reference annualization uses the accepted window and excludes incomplete facts', () => {
+  const v = value()
+  const trade = v.items.find(t => t.status === 'CLOSED')!
+  const input = { ...v, performance_since: '2025-01-01', performance_through: '2026-01-01', actual_available_through: '2026-01-01', history_coverage: 'FULL' as const, next_before: null, curve_trades: [{ ...trade, reference_return_pct: '100' }], summary: { ...v.summary, closed_count: 1, sum_return_percentage_points: '100' } }
+  assert.equal(newowReferenceAnnualized(input), 100)
+  assert.equal(newowReferenceAnnualized({ ...input, history_coverage: 'PARTIAL' }), null)
+  assert.equal(newowReferenceAnnualized({ ...input, performance_since: input.performance_through }), null)
+  assert.equal(newowReferenceAnnualized({ ...input, curve_trades: [] }), null)
+  const loss = { ...input, curve_trades: [{ ...trade, reference_return_pct: '-100' }], summary: { ...input.summary, sum_return_percentage_points: '-100' } }
+  assert.equal(newowReferenceAnnualized(loss), null)
 })

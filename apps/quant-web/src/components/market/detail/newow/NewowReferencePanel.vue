@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { newowReferenceCurve } from '@/utils/newowReferenceCurve'
+import { newowReferenceCurve, newowReferenceAnnualized } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
@@ -43,6 +43,7 @@ const model = computed(() => (
     : null
 ))
 const curve = computed(() => props.response?.value ? newowReferenceCurve(props.response.value) : null)
+const annualized = computed(() => props.response?.value && model.value ? newowReferenceAnnualized(props.response.value) : null)
 const selectedTradeId = ref<string | null>(null)
 const recordElements = new Map<string, HTMLElement>()
 const curvePoints = computed(() => {
@@ -161,7 +162,7 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 
 <template>
   <section class="newow-reference" :aria-busy="loadingPage" aria-labelledby="newow-reference-title">
-    <header class="newow-reference__returns-heading"><strong id="newow-reference-title">参考收益走势</strong></header>
+    <header class="newow-reference__returns-heading"><strong id="newow-reference-title">策略收益率走势</strong><span class="newow-reference__annualized" title="页面参考年化：按所选统计区间的实际天数，将 1 + 累计参考收益 / 100 折算一年；零费用、零滑点，不代表账户收益。">年化{{ annualized === null ? ' —' : `${annualized.toFixed(1)}%` }}</span></header>
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
           <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
@@ -326,5 +327,5 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 .newow-reference :deep(.fusion-panel header p) { margin:3px 0 0; font-size:11px; }
 .newow-reference :deep(.fusion-panel button) { min-height:28px; padding:4px 10px; font-size:12px; }
 @media(max-width:600px) { .newow-reference__curve svg { height:170px; }.newow-reference__metrics dd { font-size:16px; }.newow-reference__metrics dt { font-size:11px; }.newow-reference__presets button { padding:0 12px; } }
-.newow-reference__returns-heading { display:flex; align-items:baseline; gap:10px; padding-top:10px; font-size:14px; }.newow-reference__returns-heading span { color:#98a2b3; font-size:11px; }
+.newow-reference__returns-heading { display:flex; align-items:baseline; gap:0; padding-top:10px; font-size:14px; }.newow-reference__returns-heading .newow-reference__annualized { color:#ff9000; font-size:14px; font-weight:700; }
 </style>
