@@ -228,11 +228,11 @@ test('reference panel keeps the server summary and all passive reference records
 
   const summary = findNode(root, (node) => node.props['data-testid'] === 'newow-reference-summary')!
   assert.match(nodeText(summary), /胜率\s*—/)
-  assert.match(nodeText(summary), /简单相加/)
+  assert.doesNotMatch(nodeText(summary), /统计时间与来源|所选统计区间已按权威截止完成计算|收益为百分点（简单相加）/)
   assert.deepEqual(findNodes(summary, node => node.type === 'dt').map(nodeText), ['累计参考收益', '胜率', '平均单笔', '已完成交易'])
   const returns = findNode(root, node => node.props['aria-label'] === '已完成参考交易累计收益曲线')!
   assert.ok(findNode(returns, node => node.props['data-testid'] === 'newow-reference-summary'))
-  assert.doesNotMatch(nodeText(returns), /年化|最大回撤/)
+  assert.doesNotMatch(nodeText(returns), /年化|最大回撤|未清仓浮动|中断结果|查看交易/)
 
   const fullText = nodeText(root)
   assert.match(fullText, /零成本页面参考/)

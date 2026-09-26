@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { newowReferenceCurve } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
-import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
+import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
 
 import type {
@@ -50,9 +50,19 @@ const curvePoints = computed(() => {
   const low = Math.min(0, ...points.map(p => p.value))
   const high = Math.max(0, ...points.map(p => p.value))
   const y = (value: number) => 160 - (value - low) / (high - low || 1) * 130
-  return { points: points.map((p, i) => ({ ...p, x: 48 + (i + 1) / points.length * 684, y: y(p.value) })), zero: y(0), low, high }
+  const start = Date.parse(model.value?.performanceWindow.since ?? '')
+  const end = Date.parse(points.at(-1)?.trade.exit_trading_day ?? '')
+  const duration = end - start
+  const x = (day: string) => 48 + (duration > 0 ? (Date.parse(day) - start) / duration : 1) * 684
+  const sameYear = new Date(start).getUTCFullYear() === new Date(end).getUTCFullYear()
+  const tickCount = duration > 0 ? Math.min(7, Math.floor(duration / 86_400_000) + 1) : 1
+  const ticks = Number.isFinite(start) && Number.isFinite(end) ? Array.from({ length: tickCount }, (_, index) => {
+    const ratio = tickCount === 1 ? 1 : index / (tickCount - 1)
+    const day = new Date(start + duration * ratio).toISOString().slice(0, 10)
+    return { x: 48 + ratio * 684, label: sameYear ? day.slice(5) : day, anchor: index === 0 && tickCount > 1 ? 'start' : index === tickCount - 1 ? 'end' : 'middle' }
+  }) : []
+  return { points: points.map(p => ({ ...p, x: x(p.trade.exit_trading_day!), y: y(p.value) })), ticks, zero: y(0), low, high }
 })
-const selectedCurvePoint = computed(() => curve.value?.points.find(p => p.trade.reference_trade_id === selectedTradeId.value) ?? curve.value?.points.at(-1))
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
   if (!recordElements.has(trade.reference_trade_id) && props.response?.value?.next_before) {
@@ -185,9 +195,8 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
             <text x="6" y="176">{{ curvePoints.low.toFixed(2) }}</text>
             <polyline :points="`${48},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" stroke="#ff403a" stroke-width="1.8" />
             <circle v-for="point in curvePoints.points" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
-            <text x="48" y="190">统计起点 {{ model.performanceWindow.since }}</text><text x="732" y="190" text-anchor="end">{{ curvePoints.points.at(-1)?.trade.exit_trading_day }}</text>
+            <text v-for="tick in curvePoints.ticks" :key="tick.x" :x="tick.x" y="190" :text-anchor="tick.anchor" class="newow-reference__date-tick">{{ tick.label }}</text>
           </svg>
-          <p v-if="selectedCurvePoint" class="newow-reference__curve-detail">{{ selectedCurvePoint.trade.exit_trading_day }} · {{ selectedCurvePoint.trade.physical_contract }} · 单笔 <span :data-direction="referencePercentDisplay(selectedCurvePoint.trade.reference_return_pct).direction" class="newow-return-badge">{{ referencePercentDisplay(selectedCurvePoint.trade.reference_return_pct).text }}</span> · 累计 {{ formatMarketDecimal(selectedCurvePoint.cumulative) }} 百分点 <button type="button" @click="selectCurveTrade(selectedCurvePoint.trade)">查看交易</button></p>
         </template>
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
         <div v-if="response?.value?.history_coverage === 'PARTIAL'" role="status">
@@ -200,19 +209,11 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
           <div><dt>平均单笔</dt><dd>{{ model.summary.meanText }}</dd></div>
           <div><dt>已完成交易</dt><dd>{{ model.summary.closedCount }}</dd></div>
         </dl>
-        <p class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>
-        <p class="newow-reference__counts">未清仓 {{ model.counts.open }} · 换月中断 {{ model.counts.rolloverInterrupted }} · 数据中断 {{ model.counts.dataInterrupted }} · 期初已有 {{ model.counts.initial }} <span>收益为百分点（简单相加）</span></p>
+        <p v-if="response?.status.reason_code" class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>
 
         <p v-if="model.summary.closedCount === 0">暂无已完成参考交易；统计指标不是 0%。</p>
         <button v-if="model.completeWindowAction" type="button" :disabled="loadingPage" @click="useCompleteWindow">使用最近完整统计区间</button>
-        <details><summary>统计时间与来源</summary><p>用户选择统计区间 {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p><p>实际完整可用截止 {{ model.actualAvailableThrough }} · 参考计算截止 {{ formatBeijingInstant(model.performanceWindow.cutoff) }}</p><p v-if="response?.status.reason_code">技术原因码 {{ response.status.reason_code }}</p></details>
       </section>
-
-        <div class="newow-reference__separate">
-          <div><strong>未清仓浮动 · {{ model.counts.open }} 笔</strong><p v-for="row in model.rows.filter(r => r.category === 'open')" :key="row.id"><span>{{ row.trade.physical_contract }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.trade.mark_change_pct).text }}</span></span></p></div>
-          <details><summary>中断结果 · {{ model.counts.interrupted }} 笔</summary><p v-for="row in model.rows.filter(r => r.category === 'interrupted')" :key="row.id"><span>{{ row.trade.physical_contract }} · {{ row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.trade.mark_change_pct).text }}</span></span></p></details>
-          <small>两者均不加入累计曲线；不是账户权益曲线。</small>
-        </div>
       </section>
 
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
@@ -282,13 +283,11 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 @media (max-width: 720px) { .newow-reference__header { flex-direction: column; } }
 .newow-reference__curve { padding:16px; border:1px solid #ebedf0; border-radius:8px; background:#fff; }
 .newow-reference__curve header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
-.newow-reference__curve header span,.newow-reference__separate { color:#98a2b3; font-size:12px; }
+.newow-reference__curve header span { color:#98a2b3; font-size:12px; }
 .newow-reference__curve header b { margin-left:auto; color:#ff6b2c; font-size:20px; font-variant-numeric:tabular-nums; }
 .newow-reference__curve svg { display:block; width:100%; min-height:170px; margin:12px 0; overflow:visible; }
 .newow-reference__curve svg text { fill:#98a2b3; font-size:10px; }
 .newow-reference__curve circle { cursor:pointer; }.newow-reference__curve circle:focus { stroke:#365af5; stroke-width:3; outline:none; }
-.newow-reference__curve-detail { font-size:12px; }.newow-reference__curve-detail button { min-height:30px; margin-left:8px; color:#ff6b2c; }
-.newow-reference__separate { display:flex; flex-wrap:wrap; gap:12px; padding-top:12px; margin-top:12px; border-top:1px solid #f2f4f7; }
 .newow-reference__summary dd { font-size:20px; }.newow-reference__summary dl div { background:#f8f9fb; border-radius:4px; }
 
 /* A single compact returns surface: toolbar, plot, metrics and source facts. */
@@ -309,8 +308,6 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 .newow-reference__curve { border:0; padding:8px 0; border-radius:0; }
 .newow-reference__curve header { gap:10px; font-size:14px; }
 .newow-reference__curve svg { height:220px; min-height:0; margin:10px 0 4px; }
-.newow-reference__curve-detail { color:#98a2b3; font-size:11px; }
-.newow-reference__curve-detail button { min-height:24px; font-size:11px; }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
 .newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:6.5px 0; margin:8px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
 .newow-reference__summary .newow-reference__metrics > div { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:0 8px; border-radius:0; background:transparent; border:0; }
@@ -321,10 +318,7 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 .newow-reference__metrics dd[data-direction="down"] { color:#2ac758; }
 .newow-reference__metrics dd small { font-size:10px; font-weight:400; }
 .newow-reference__metrics dt { font-size:11px; line-height:16px; color:#999; }
-.newow-reference__availability,.newow-reference__counts,.newow-reference__summary details { color:#98a2b3; font-size:11px; line-height:20px; }
-.newow-reference__counts span { margin-left:10px; }
-.newow-reference__separate { margin-top:6px; padding-top:6px; gap:8px 18px; align-items:baseline; }
-.newow-reference__separate > div { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; }
+.newow-reference__availability { color:#98a2b3; font-size:11px; line-height:20px; }
 .newow-reference__tools { padding:6px 0; border:0; border-top:1px solid #f2f4f7; border-radius:0; font-size:12px; align-items:center; }
 .newow-reference__tools select { min-height:28px; font-size:12px; margin-left:6px; }
 .newow-reference :deep(.fusion-panel) { margin:0; padding:10px 12px; font-size:12px; }
