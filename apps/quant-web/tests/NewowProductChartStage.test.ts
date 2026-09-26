@@ -592,6 +592,51 @@ test('reference price lines use supplied values and remove stale levels on repla
   app.unmount()
 })
 
+test('oscillation breakout is an orange native price line and is revoked on strategy switch or loading', async () => {
+  const Stage = await loadComponent()
+  const payload = chartResponse()
+  const bars = Array.from({ length: 12 }, (_, i) => bar(`2026-08-15T${String(i + 1).padStart(2, '0')}:00:00Z`, '2026-08-15'))
+  bars[9] = { ...bars[9]!, open: '110', close: '95', high: '112', volume: 20 }
+  payload.value!.bars = bars
+  payload.value!.frames = bars.map(item => ({ bar_end: item.bar_end, main_state: 'FLAT', main_values: { upper: '112', lower: '90' }, status: ready(), action_ids: [], hint_ids: [] }))
+  payload.value!.actions = []; payload.value!.hints = []
+  const response = ref<MutableChartResponse | null>(payload)
+  const loading = ref(false)
+  const selectedStrategy = ref('oscillation')
+  const active = new Set<Record<string, unknown>>()
+  const fakeChart = { addSeries: () => ({ setData() {},
+    createPriceLine(options: Record<string, unknown>) { const line = { ...options, applyOptions() {} }; active.add(line); return line },
+    removePriceLine(line: Record<string, unknown>) { active.delete(line) },
+  }), removeSeries() {}, timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+    scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: selectedStrategy.value, loading: loading.value, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  const breakout = () => [...active].filter(line => String(line.title).startsWith('突破'))
+  assert.deepEqual(breakout().map(line => [line.title, line.price, line.color, line.lineStyle, line.axisLabelVisible]), [['突破 6/7', 95, '#FF9800', 2, true]])
+  loading.value = true; await nextTick()
+  assert.equal(breakout().length, 0, 'refresh loading revokes the old line even when a ready response is retained')
+  loading.value = false; await nextTick()
+  assert.equal(breakout().length, 1)
+  selectedStrategy.value = 'trend'; await nextTick()
+  assert.equal(breakout().length, 0, 'new strategy cannot briefly expose the old oscillation overlay')
+  selectedStrategy.value = 'oscillation'; await nextTick()
+  assert.equal(breakout().length, 1)
+  response.value = { ...payload, status: { ...ready(), status: 'warming' } }; await nextTick()
+  assert.equal(breakout().length, 0)
+  response.value = payload; await nextTick()
+  assert.equal(breakout().length, 1)
+  response.value = strategyResponse('trend'); await nextTick()
+  assert.equal(breakout().length, 0)
+  response.value = null; await nextTick()
+  assert.equal(breakout().length, 0)
+  app.unmount()
+})
+
 function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {

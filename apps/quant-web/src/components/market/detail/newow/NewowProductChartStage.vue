@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { newowVolumeColors, newowVolumeScores } from '@/utils/newowVolumeDisplay'
+import { newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
 import { newowChartReadout, newowTimeKey } from '@/utils/newowChartReadout'
 import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
@@ -242,7 +243,7 @@ onUnmounted(createNewowProductChartDisposer({
 }))
 
 watch([model, () => props.strategySwitching], ([value]) => { volumeScoreIndex.value = null; renderModel(value) })
-watch([() => props.targetPrice, () => props.absorbPrice], renderReferencePrices, { flush: 'post' })
+watch([() => props.targetPrice, () => props.absorbPrice, () => props.loading, () => props.strategy], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => renderMarkers(model.value))
 watch([model, () => props.referenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
@@ -281,6 +282,12 @@ function renderReferencePrices(): void {
     referencePriceLines.set(key, candles.createPriceLine({ price, color, title, lineWidth: 1, lineStyle: 1,
       axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' }))
   }
+  const breakout = !props.loading && !props.strategySwitching && props.strategy === model.value.identity.strategy
+    && props.response?.status.status === 'ready' ? newowOscillationBreakout(model.value) : null
+  if (breakout) referencePriceLines.set('breakout', candles.createPriceLine({
+    price: breakout.price, color: '#FF9800', title: `突破 ${breakout.displayScore}/7`,
+    lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelColor: '#FF9800', axisLabelTextColor: '#ffffff',
+  }))
 }
 
 function renderModel(value: NewowProductChartModel | null): void {

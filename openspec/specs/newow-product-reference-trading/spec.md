@@ -635,6 +635,25 @@ MUST NOT 截断 warm-up、owner 验证、参考统计或比较器的必要计算
 - **WHEN** 服务装配响应
 - **THEN** 不调用 ReferenceTrade 统计、三副图、多周期解释或比较器，主图不等待未请求研究
 
+### Requirement: Oscillation breakout price line is independent page decoration
+
+`newow_oscillation_breakout_line_page_v1` SHALL show an orange (`#FF9800`) dashed native price line
+labelled `突破 score/7` on a ready oscillation chart. It uses the existing public volume/body/penetration
+score, selects the latest eligible displayed CLEAR with score >=4, and scans the last 50 loaded Bars for
+the latest high touching inclusive HHV10 with score >=4 regardless of holding state. A newer raw candidate
+uses its close; a same-date CLEAR retains the server reference price. The next one or two available Bars
+may add one point if their close exceeds their own inclusive HHV10; valid aligned OHLC cannot satisfy
+that condition, so Web MUST NOT invent a confirmation or change it to a different threshold.
+
+Selection and score windows SHALL stay within the latest contiguous physical contract/physical Segment/
+calculation Segment. Scoring requires ten loaded, completed Bars in that run; insufficient loaded prefix
+does not borrow from another owner. Per-Bar source identity alone is not a reset. A price outside
+0.01–50 times the latest close SHALL be suppressed. Strategy switches, unavailable/loading charts,
+and absent candidates SHALL remove the old line. The line is page-parity decoration (`executable=false`),
+MUST NOT create Actions/Hints or alter strategy formulas, ReferenceTrade, or returns. Reference source:
+public v3.3.59 `_updateBreakoutLines`, audited HTML SHA-256
+`b12da74d89a7ac304d7479999d11f13ab53ced834a8472f937d78a0c1bd03709`.
+
 ### Requirement: Trend channel dots are independent aligned display facts
 
 `strategy=trend` 的 `chart.value` SHALL 返回独立 `trend_channel` 图层。绿色上轨逐 Bar 使用冻结
