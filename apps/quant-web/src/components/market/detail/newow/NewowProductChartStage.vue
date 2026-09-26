@@ -329,6 +329,7 @@ function syncMainLines(value: NewowProductChartModel): void {
       series = chart.addSeries(LineSeries, {
         color: mainLineColors[line.key] ?? '#64748B',
         lineWidth: value.identity.strategy === 'trend' ? 1 : 2,
+        lineVisible: line.key !== 'upper' && line.key !== 'lower',
         lineStyle: line.key === 'a' || line.key === 'b' || line.key === 'ma35' || line.key === 'ma45' ? 2 : 0,
         lastValueVisible: false,
         priceLineVisible: false,
