@@ -1,9 +1,11 @@
-## 2026-09-26 Newow v1.10.37 发布候选
+## 2026-09-26 Newow v1.10.37 已发布
 
 已整理 v1.10.36 后全部已提交 Newow UI、融合参考、CDV2 与独立理论值改动，版本事实源统一 1.10.37。
 定向 572 passed（另有两项 v1.10.36 既有工程断言失败），前端 726 passed / 1 skipped、build通过；
 Newow spec 校验、新增核心模块 Ruff 和独立Review通过。完整披露见 docs/tasks/newow-release-v1.10.37-20260926.md。
-当前为已验证候选，未提前声明发布或 Runtime 切换。
+正式身份 `v1.10.37@07cdb4b7b72c1fa003d25bf2b47b3c3de127c8a4`，PR #402 已合并，annotated tag 和 GitHub Release 已读回。
+Release：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.37
+本次只发布；正式 Runtime 仍为 v1.10.36，未切换，未声明新版本自然 Runtime 验收。
 
 ## 2026-09-26 牛哇日周 v1.10.36 已发布并切换本机 Runtime
 

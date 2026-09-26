@@ -1,3 +1,9 @@
+# Newow v1.10.37 发布记录
+
+正式身份 `v1.10.37@07cdb4b7b72c1fa003d25bf2b47b3c3de127c8a4`，PR #402。
+候选 `0725157a08c7459e387eda3dbc9aed4f05243796` 与 main 发布源码树一致；annotated tag、正式非草稿 Release 和合并关系已回读。
+Release：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.37
+
 本版本汇总 v1.10.36 之后的 Newow 页面与独立参考研究显示改动。
 
 - 改善主图标签靠近 K 线的碰撞布局，保留原始动作与交易记录。
