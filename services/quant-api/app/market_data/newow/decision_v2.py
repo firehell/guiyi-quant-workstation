@@ -230,7 +230,14 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             if not prefix:
                 continue
             tail = prefix[-1].bar
-            layer = build_trend_channel_layer(tuple(f.bar for f in prefix), (tail,))
+            physical_prefix = tuple(
+                f.bar
+                for f in trend[freq].frames
+                if f.bar.calculation_segment_id == tail.calculation_segment_id
+                and (f.bar.bar.physical_contract, f.bar.bar.segment_id) == owner
+                and f.bar.bar.bar_end <= tail.bar.bar_end
+            )
+            layer = build_trend_channel_layer(physical_prefix, (tail,))
             point = layer.points[-1]
             if point.availability.status is FeatureRuntimeStatus.READY:
                 channels[freq] = (

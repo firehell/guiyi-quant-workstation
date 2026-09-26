@@ -1531,3 +1531,19 @@ def test_cdv2_excludes_foreign_owner_warmup_from_volatility_and_price_prefix(pro
     mixed = replace(replay, frames=(foreign, *replay.frames))
     actual = build_decision_v2({ProductFrequency.DAILY: mixed}, {}, None, read, case.identity)
     assert actual == baseline
+
+
+def test_cdv2_channel_preserves_same_owner_physical_warmup(product_cases):
+    from app.market_data.newow.decision_v2 import build_decision_v2
+    from guiyi_quant.newow.trend_channel_display import build_trend_channel_layer
+    case = product_cases.primitive_input('trend', '1d')
+    replay = replay_strategy(case.identity, case.bars)
+    frames = tuple(replace(f, actions=(), hints=(), bar=replace(f.bar, bar=replace(f.bar.bar,
+        observation_eligible=i >= len(replay.frames)-2))) for i, f in enumerate(replay.frames))
+    replay = replace(replay, frames=frames, actions=(), hints=())
+    last = frames[-1]
+    read = SimpleNamespace(as_of=last.bar.bar.bar_end, boundaries=(), data_interruptions_by_frequency={})
+    result = build_decision_v2({ProductFrequency.DAILY: replay}, {}, None, read, case.identity)
+    layer = build_trend_channel_layer(tuple(f.bar for f in frames), (last.bar,))
+    assert result['prices']['shared']['target']['raw'] == format(layer.points[-1].upper, 'f')
+    assert result['prices']['shared']['absorb']['raw'] == format(layer.points[-1].lower, 'f')
