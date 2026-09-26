@@ -56,21 +56,27 @@ const selectedTradeId = ref<string | null>(null)
 const recordElements = new Map<string, HTMLElement>()
 const curvePoints = computed(() => {
   const points = curve.value?.points ?? []
-  const low = Math.min(0, ...points.map(p => p.value))
-  const high = Math.max(0, ...points.map(p => p.value))
-  const y = (value: number) => 160 - (value - low) / (high - low || 1) * 130
+  const minimum = Math.min(0, ...points.map(p => p.value))
+  const maximum = Math.max(0, ...points.map(p => p.value))
+  const padding = (maximum - minimum || 1) * 0.05
+  const low = minimum - padding
+  const high = maximum + padding
+  const y = (value: number) => 160 - (value - low) / (high - low || 1) * 142
   const start = Date.parse(model.value?.performanceWindow.since ?? '')
   const end = Date.parse(points.at(-1)?.trade.exit_trading_day ?? '')
   const duration = end - start
-  const x = (day: string) => 48 + (duration > 0 ? (Date.parse(day) - start) / duration : 1) * 684
-  const sameYear = new Date(start).getUTCFullYear() === new Date(end).getUTCFullYear()
+  const x = (day: string) => 52 + (duration > 0 ? (Date.parse(day) - start) / duration : 1) * 712
   const tickCount = duration > 0 ? Math.min(7, Math.floor(duration / 86_400_000) + 1) : 1
   const ticks = Number.isFinite(start) && Number.isFinite(end) ? Array.from({ length: tickCount }, (_, index) => {
     const ratio = tickCount === 1 ? 1 : index / (tickCount - 1)
     const day = new Date(start + duration * ratio).toISOString().slice(0, 10)
-    return { x: 48 + ratio * 684, label: sameYear ? day.slice(5) : day, anchor: index === 0 && tickCount > 1 ? 'start' : index === tickCount - 1 ? 'end' : 'middle' }
+    return { x: 52 + ratio * 712, day, label: day.slice(5), anchor: index === 0 && tickCount > 1 ? 'start' : index === tickCount - 1 ? 'end' : 'middle' }
   }) : []
-  return { points: points.map(p => ({ ...p, x: x(p.trade.exit_trading_day!), y: y(p.value) })), ticks, zero: y(0), low, high }
+  const levels = Array.from({ length: 5 }, (_, index) => {
+    const value = high - (high - low) * index / 4
+    return { y: y(value), label: `${Math.abs(value) < 0.05 ? '0.0' : value.toFixed(1)}%` }
+  })
+  return { levels, points: points.map(p => ({ ...p, x: x(p.trade.exit_trading_day!), y: y(p.value) })), ticks, zero: y(0), low, high }
 })
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
@@ -196,15 +202,13 @@ function usePreset(preset: NewowReferencePreset): void {
         <template v-else>
           <svg viewBox="0 0 780 192" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
             <defs><linearGradient id="newow-reference-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.16" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
-            <line v-for="level in [25, 70, 115, 160]" :key="level" x1="48" x2="732" :y1="level" :y2="level" stroke="#f2f3f5" />
-            <polygon :points="`${48},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` ${curvePoints.points.at(-1)?.x ?? 48},${curvePoints.zero}`" fill="url(#newow-reference-area)" />
-            <line x1="48" x2="732" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
-            <text v-if="curvePoints.low < 0 && curvePoints.high > 0" x="6" :y="curvePoints.zero - 4">0</text>
-            <text x="6" y="25">{{ curvePoints.high.toFixed(2) }}</text>
-            <text x="6" y="176">{{ curvePoints.low.toFixed(2) }}</text>
-            <polyline :points="`${48},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" stroke="#ff403a" stroke-width="1.8" />
+            <line v-for="level in curvePoints.levels" :key="level.y" x1="52" x2="764" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
+            <polygon :points="`${52},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` ${curvePoints.points.at(-1)?.x ?? 52},${curvePoints.zero}`" fill="url(#newow-reference-area)" />
+            <line x1="52" x2="764" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
+            <text v-for="level in curvePoints.levels" :key="level.y" x="46" :y="level.y" text-anchor="end" dominant-baseline="middle" class="newow-reference__value-tick">{{ level.label }}</text>
+            <polyline :points="`${52},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" stroke="#ff403a" stroke-width="1.8" />
             <circle v-for="point in curvePoints.points" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
-            <text v-for="tick in curvePoints.ticks" :key="tick.x" :x="tick.x" y="190" :text-anchor="tick.anchor" class="newow-reference__date-tick">{{ tick.label }}</text>
+            <text v-for="tick in curvePoints.ticks" :key="tick.x" :x="tick.x" y="174" :text-anchor="tick.anchor" class="newow-reference__date-tick"><title>{{ tick.day }}</title>{{ tick.label }}</text>
           </svg>
         </template>
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
@@ -299,7 +303,7 @@ function usePreset(preset: NewowReferencePreset): void {
 .newow-reference__curve header span { color:#98a2b3; font-size:12px; }
 .newow-reference__curve header b { margin-left:auto; color:#ff6b2c; font-size:20px; font-variant-numeric:tabular-nums; }
 .newow-reference__curve svg { display:block; width:100%; min-height:170px; margin:12px 0; overflow:visible; }
-.newow-reference__curve svg text { fill:#98a2b3; font-size:10px; }
+.newow-reference__curve svg text { fill:#999; font-size:10px; font-family:Arial, sans-serif; }
 .newow-reference__curve circle { cursor:pointer; }.newow-reference__curve circle:focus { stroke:#365af5; stroke-width:3; outline:none; }
 .newow-reference__summary dd { font-size:20px; }.newow-reference__summary dl div { background:#f8f9fb; border-radius:4px; }
 
@@ -321,7 +325,7 @@ function usePreset(preset: NewowReferencePreset): void {
 .newow-reference__custom-window input,.newow-reference__custom-window button { min-height:32px; font-size:12px; }
 .newow-reference__curve { border:0; padding:8px 0; border-radius:0; }
 .newow-reference__curve header { gap:10px; font-size:14px; }
-.newow-reference__curve svg { height:220px; min-height:0; margin:10px 0 4px; }
+.newow-reference__curve svg { height:200px; min-height:0; margin:10px 0 0; }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
 .newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:16px 0; margin:8px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
 .newow-reference__summary .newow-reference__metrics > div { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:0 8px; border-radius:0; background:transparent; border:0; }
