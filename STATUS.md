@@ -1,3 +1,26 @@
+## 2026-09-26 牛哇日线价格断点修复验收
+
+价格中断原使用全局时间游标，遇到 owner 生命周期前缀时间回退会提前应用未来断点。
+修复 `f475f1488` 按 `physical_contract + owner segment` 和每根 Bar 的时间定位最近已发生中断；
+独立 Review 无阻断项，已集成并推送 develop。公式、输入质量版本及 Canonical 数据未改写。
+真实 PL/RS/PF 输入的标签不一致由 219/404/1425 降为 0；PL2611 当前断点后实际为 88 根，
+替代错误的 99 根。RS2701 9/16 上市，7 根有效日线不足震荡所需 10 根，按正常待计算处理。
+
+固定代码 `f126621baa1b2cabc9685e5bc7216a24cd716c39`、截点
+`2026-09-25T07:00:00.000001+00:00` 的 D1 全量矩阵完整运行：60 品种、180/180 日线组合，
+1972/1972 数据依赖 DATA_READY，repair_targets=0，未耗尽预算，provider_requests/writes 均为 0。
+主图/参考交易各 179 READY、1 WARMING（RS 震荡）；辅助状态 86 处变化，纠正断点后真实短段
+保持 WARMING，不能用旧错误前缀判 READY。旧矩阵不再作为最终计算验收。证据：
+`outputs/newow-d1-60-closeout-20260926/matrix-1d-f126621ba.json`，SHA256
+`a7a5bca57c9d6609f0941aa906bcda7ee6c8d0736aa6177b8d547872c7031284`；真实标签回读
+`warming-label-check-after-fix.json`。日线此前六笔数据修复及严格回读也保留在同一目录。
+
+定向测试 195 passed；扩展测试 229 passed、1 个旧面板数量断言失败，已在未修复 develop 复现；
+强化后的时间回退 regression 18 passed，Ruff/diff 检查通过。Mypy 有一处未改动的
+`ProductIdentity.input_quality_policy` 参数类型错误，同样在未修复 develop 复现。
+本次为 CODE_COMPLETE / TEST_COMPLETE（上述基线问题单列）/ REVIEW_COMPLETE；未发布此修复或
+切换 Runtime。历史与当前辅助可用性仍沿用现有整体汇总口径，后续需与正常待积累显示区分。
+
 ## 2026-09-26 节假日晚到盘后补丁检查点
 
 补丁已集成 `develop@1ca1b379d`：全部精确源窗口在历史发布前验证、冻结批次复用；
