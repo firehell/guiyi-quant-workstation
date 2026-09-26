@@ -16,6 +16,9 @@ import {
 } from '@/utils/newowProductViewModel'
 
 const props = defineProps<{
+  recordsResponse?: NewowProductSectionResponse<'reference'> | null
+  recordsLoading?: boolean
+  recordsError?: string | null
   response: NewowProductSectionResponse<'reference'> | null
   chartResponse: NewowProductSectionResponse<'chart'> | null
   crossSectionCompatible: boolean
@@ -42,6 +45,8 @@ const model = computed(() => (
     ? buildNewowReferencePanelViewModel(props.response, props.chartResponse, props.crossSectionCompatible)
     : null
 ))
+const records = computed(() => props.recordsResponse === undefined ? props.response : props.recordsResponse)
+const recordsModel = computed(() => records.value?.value ? buildNewowReferencePanelViewModel(records.value, props.chartResponse, props.crossSectionCompatible) : null)
 const displayValue = computed(() => props.response?.value ? acceptedPreset.value === 'ideal' ? newowTheoreticalDisplay(props.response.value) : props.response.value : null)
 const displaySummary = computed(() => displayValue.value && props.response ? buildNewowReferencePanelViewModel({ ...props.response, value: displayValue.value }, props.chartResponse, props.crossSectionCompatible).summary : null)
 const curve = computed(() => displayValue.value ? newowReferenceCurve(displayValue.value) : { points: [], message: '理论值所需的完整持仓区段暂不可用。' })
@@ -68,7 +73,7 @@ const curvePoints = computed(() => {
 })
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
-  if (!recordElements.has(trade.reference_trade_id) && props.response?.value?.next_before) {
+  if (!recordElements.has(trade.reference_trade_id) && records.value?.value?.next_before) {
     emit('load-more')
     await nextTick()
     return
@@ -76,18 +81,18 @@ async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   await nextTick()
   recordElements.get(trade.reference_trade_id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
-watch(() => props.response?.value?.items, async () => {
+watch(() => records.value?.value?.items, async () => {
   if (!selectedTradeId.value) return
   await nextTick()
   const record = recordElements.get(selectedTradeId.value)
   if (record) record.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  else if (props.response?.value?.next_before) emit('load-more')
+  else if (records.value?.value?.next_before) emit('load-more')
 })
 watch(() => props.selectedSignalId, id => {
-  const trade = props.response?.value?.items.find(t => t.entry_signal_id === id || t.exit_signal_id === id)
+  const trade = records.value?.value?.items.find(t => t.entry_signal_id === id || t.exit_signal_id === id)
   if (trade) selectedTradeId.value = trade.reference_trade_id
 })
-watch(() => props.response?.value, value => {
+watch(() => records.value?.value, value => {
   if (!value?.items.some(t => t.reference_trade_id === selectedTradeId.value)) selectedTradeId.value = null
 })
 // The initial request is the server-resolved full history; preserve its authoritative floor across range switches.
@@ -99,9 +104,10 @@ const acceptedAnchor = computed(() => model.value?.actualAvailableThrough ?? nul
 // Current FLAT is a chart fact, never a synthetic trade or a guess from a history page.
 const waiting = computed(() => {
   const chart = props.chartResponse
-  const reference = props.response
-  if (props.lifecycle !== 'ready' || props.chartLifecycle !== 'ready' || props.currentChartWindow !== true
-    || !props.crossSectionCompatible || chart?.status.status !== 'ready' || reference?.status.status !== 'ready'
+  const reference = records.value
+  if ((props.recordsResponse === undefined && (props.lifecycle !== 'ready' || !props.crossSectionCompatible))
+    || reference?.status.status !== 'ready' || props.chartLifecycle !== 'ready' || props.currentChartWindow !== true
+    || reference.meta.snapshot_token !== chart?.meta.snapshot_token || chart?.status.status !== 'ready' || reference?.status.status !== 'ready'
     || !chart.value || !reference.value || chart.meta.as_of !== reference.meta.as_of
     || JSON.stringify(chart.meta.identity) !== JSON.stringify(reference.meta.identity)) return null
   const bar = chart.value.bars.at(-1)
@@ -218,6 +224,8 @@ function usePreset(preset: NewowReferencePreset): void {
       </section>
       </section>
 
+    </template>
+    <template v-if="recordsModel">
       <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
         <header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header>
@@ -225,7 +233,7 @@ function usePreset(preset: NewowReferencePreset): void {
       </article>
 
       <div class="newow-reference__cards">
-        <article v-for="row in model.rows" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial">
+        <article v-for="row in recordsModel.rows" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial">
           <header class="newow-reference__record-top">
             <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.category === 'open', 'is-interrupted': row.category === 'interrupted' }">{{ row.category === 'open' ? '持仓参考中' : row.category === 'interrupted' ? (row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断') : row.trade.frequency === '1w' ? '周K' : row.trade.frequency === '1d' ? '日K' : '60分' }}</strong><span>{{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.exit_bar_end ?? row.trade.interrupted_at) }}</span><span>{{ row.trade.physical_contract }}</span><span v-if="row.initial">期初已有</span></div>
             <strong class="newow-reference__record-return" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ row.category === 'closed' ? '盈亏' : row.category === 'open' ? '参考浮动' : '中断浮动' }} {{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</strong>
@@ -237,10 +245,12 @@ function usePreset(preset: NewowReferencePreset): void {
           <p v-else-if="row.category === 'open'" class="newow-reference__interruption">未清仓 · 浮动不计入已完成收益</p>
         </article>
       </div>
-      <p v-if="model.rows.length === 0" class="newow-reference__state">暂无参考交易记录。</p>
+      <p v-if="recordsModel.rows.length === 0" class="newow-reference__state">暂无参考交易记录。</p>
       <p v-if="locateMessage" class="newow-reference__state" role="status">{{ locateMessage }}</p>
-      <button v-if="model.nextBefore" type="button" :disabled="loadingPage" @click="emit('load-more')">加载更多参考历史</button>
+      <button v-if="recordsModel.nextBefore" type="button" :disabled="recordsLoading" @click="emit('load-more')">加载更多参考历史</button>
     </template>
+    <p v-if="recordsLoading" role="status">正在读取近三个月操盘记录…</p>
+    <p v-if="recordsError" role="status">{{ recordsError }} <button @click="emit('load-more')">重试记录</button></p>
   </section>
 </template>
 

@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowUiStateLabel } from '@/utils/newowUiState'
 import { useNewowComparison } from '@/composables/useNewowComparison'
+import { useNewowRecentReference } from '@/composables/useNewowRecentReference'
 import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowProductAction, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
@@ -70,6 +71,7 @@ const referenceResponse = computed(() => (
     : null
 ))
 const chartReferenceResponse = computed(() => loader.chartReference.value as NewowProductSectionResponse<'reference'> | null)
+const recentRecords = useNewowRecentReference(chartReferenceResponse)
 const chartReferenceCompatible = computed(() => chartResponse.value?.meta.snapshot_token != null && chartReferenceResponse.value?.meta.snapshot_token === chartResponse.value.meta.snapshot_token)
 const explanationResponse = computed(() => (
   loader.sections.explanation.data.value?.section === 'explanation'
@@ -427,7 +429,7 @@ onBeforeUnmount(() => {
     </div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
-      <NewowReferencePanel :key="identityKey" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
+      <NewowReferencePanel :key="identityKey" :records-response="recentRecords.response.value" :records-loading="recentRecords.loading.value" :records-error="recentRecords.error.value" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="recentRecords.loadMore" @locate="locateReferenceTrade" />
       <ReferenceTradePanel :strategy="`newow-${selectedStrategy.replace('_', '-')}`" :product="identity.symbol.toLowerCase()" :frequency="identity.frequency" :through="chartResponse?.value?.bars.at(-1)?.trading_day" />
     </section>
     <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle' || dialogKind === 'formula'" :variant="isNiuwaIndicatorDialog ? 'niuwa-indicator' : undefined" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">

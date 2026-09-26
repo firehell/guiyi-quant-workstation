@@ -213,6 +213,33 @@ test('simple sum keeps percentage points separate and never appends a percent un
   assert.equal(model.summary.sumText.includes('%'), false)
 })
 
+test('performance loading and tab responses do not replace recent record cards', async () => {
+  const Panel = await loadComponent()
+  const performance = ref<NewowProductSectionResponse<'reference'> | null>(referenceResponse())
+  const recent = referenceResponse()
+  const busy = ref(false)
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: performance.value, recordsResponse: recent, chartResponse: chartResponse(), crossSectionCompatible: true,
+    lifecycle: busy.value ? 'loading' : 'ready', error: null, selectedSignalId: null, locateMessage: null, loadingPage: busy.value,
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const cards = () => findNodes(root, node => node.props['data-reference-category'] !== undefined).map(nodeText)
+  const before = cards()
+  assert.ok(before.length)
+  busy.value = true
+  performance.value = null
+  await nextTick()
+  assert.deepEqual(cards(), before)
+  busy.value = false
+  performance.value = { ...referenceResponse(), value: { ...referenceResponse().value!, items: [] } }
+  await nextTick()
+  assert.deepEqual(cards(), before)
+  app.unmount()
+})
+
 test('reference panel keeps the server summary and all passive reference records without removed controls', async () => {
   const Panel = await loadComponent()
   const located: Array<{ reference_trade_id: string; entry_signal_id: string; entry_bar_end: string }> = []
@@ -540,7 +567,7 @@ function nodeText(node: TestNode): string { return [node.text, ...node.children.
 function nodeOperations() {
   return {
     patchProp(node: TestNode, key: string, _previous: unknown, next: unknown) { node.props[key] = next },
-    insert(child: TestNode, parent: TestNode, anchor: TestNode | null = null) { child.parent = parent; const index = anchor === null ? -1 : parent.children.indexOf(anchor); if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child) },
+    insert(child: TestNode, parent: TestNode, anchor: TestNode | null = null) { if (child.parent) child.parent.children = child.parent.children.filter(node => node !== child); child.parent = parent; const index = anchor === null ? -1 : parent.children.indexOf(anchor); if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child) },
     remove(child: TestNode) { if (child.parent === null) return; child.parent.children = child.parent.children.filter((item) => item !== child); child.parent = null },
     createElement: (type: string) => element(type), createText(text: string) { const node = element('#text'); node.text = text; return node }, createComment(text: string) { const node = element('#comment'); node.text = text; return node },
     setText(node: TestNode, text: string) { node.text = text }, setElementText(node: TestNode, text: string) { node.text = text; node.children = [] },
