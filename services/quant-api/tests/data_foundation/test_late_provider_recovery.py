@@ -216,7 +216,8 @@ def test_unsafe_owned_state_rejected_without_provider_or_replacement(tmp_path, k
 
 
 def test_claim_directory_fsync_failure_blocks_provider(tmp_path, monkeypatch):
-    import os, stat
+    import os
+    import stat
 
     path = scheduled(tmp_path)
     real = os.fsync
