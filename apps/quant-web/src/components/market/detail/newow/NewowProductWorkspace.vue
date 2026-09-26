@@ -429,8 +429,6 @@ onBeforeUnmount(() => {
     </div>
     <div class="newow-product-workspace__read-state" aria-live="polite"><span>主图 · {{ loader.dailyLoading.value ? '正在确认完整周期' : newowUiStateLabel(loader.sections.chart.state.value) }}</span><span>副图 · {{ newowUiStateLabel(currentAuxiliaryLifecycle) }}</span><span>参考 · {{ newowUiStateLabel(loader.sections.reference.state.value) }}</span></div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
-      <button @click="openDialog('formula')">公式速查</button>
-      <button @click="openDialog('comparator')">页面比较说明</button>
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
       <NewowReferencePanel :key="identityKey" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
       <ReferenceTradePanel :strategy="`newow-${selectedStrategy.replace('_', '-')}`" :product="identity.symbol.toLowerCase()" :frequency="identity.frequency" :through="chartResponse?.value?.bars.at(-1)?.trading_day" />

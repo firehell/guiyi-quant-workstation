@@ -161,7 +161,7 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 
 <template>
   <section class="newow-reference" :aria-busy="loadingPage" aria-labelledby="newow-reference-title">
-    <header class="newow-reference__returns-heading"><strong id="newow-reference-title">参考收益走势</strong><span>累计百分点 · 已完成交易 · 零成本页面参考</span></header>
+    <header class="newow-reference__returns-heading"><strong id="newow-reference-title">参考收益走势</strong></header>
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
           <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
@@ -216,12 +216,12 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
       </section>
       </section>
 
+      <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
         <header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header>
         <p :title="waiting.bar_end">状态时间 {{ referenceTimeDisplay(waiting.bar_end, chartResponse!.meta.identity.frequency, [chartResponse!.meta.as_of]) }} · 截至所示已完成 Bar，仅作页面参考。</p>
       </article>
 
-      <header class="newow-reference__records-heading"><h3>参考操盘提醒</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <div class="newow-reference__cards">
         <article v-for="row in model.rows" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial">
           <header class="newow-reference__record-top">

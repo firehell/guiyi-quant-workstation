@@ -235,9 +235,9 @@ test('reference panel keeps the server summary and all passive reference records
   assert.doesNotMatch(nodeText(returns), /年化|最大回撤|未清仓浮动|中断结果|查看交易/)
 
   const fullText = nodeText(root)
-  assert.match(fullText, /零成本页面参考/)
+  assert.doesNotMatch(fullText, /累计百分点 · 已完成交易 · 零成本页面参考/)
   assert.doesNotMatch(fullText, /双策略融合参考|参考口径说明|筛选参考历史/)
-  for (const label of ['清仓', '未清仓', '换月中断', '期初已有', '参考操盘提醒', '买入', '卖出']) assert.match(fullText, new RegExp(label))
+  for (const label of ['清仓', '未清仓', '换月中断', '期初已有', '回测操盘提醒', '买入', '卖出']) assert.match(fullText, new RegExp(label))
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
   const cards = findNodes(root, node => node.type === 'article' && !!node.props['data-reference-category'])
   assert.equal(cards.length, 4)
