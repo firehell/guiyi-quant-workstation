@@ -127,10 +127,7 @@ test('keeps action labels passive and preserves an established viewport and focu
   clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'build-stable' } })
   clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'unknown' } })
   assert.deepEqual(selected, [], 'clicking a native marker must not open signal details')
-  const passiveLabel = findNode(root, node => node.props['data-action-id'] === 'build-stable')!
-  assert.equal(passiveLabel.type, 'div')
-  assert.equal(passiveLabel.props.onClick, undefined)
-  assert.equal(passiveLabel.props.tabindex, undefined)
+
 
   range = { from: 0.25, to: 1.25 }
   rangeListener!(range)
@@ -219,6 +216,9 @@ test('connects action labels to the exact server reference price coordinate', as
 
   const label = findNode(root, node => node.props['data-action-id'] === 'build-stable')
   assert.ok(label)
+  assert.equal(label.type, 'div')
+  assert.equal(label.props.onClick, undefined)
+  assert.equal(label.props.tabindex, undefined)
   assert.equal(label.props['data-reference-price'], '90')
   assert.equal(label.props['data-anchor-y'], 180)
   assert.match(textContent(label), /建仓.*建仓价:90/)
