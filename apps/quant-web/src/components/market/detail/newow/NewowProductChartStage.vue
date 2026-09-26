@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { newowVolumeColors } from '@/utils/newowVolumeDisplay'
-import { newowChartReadout } from '@/utils/newowChartReadout'
+import { newowVolumeColors, newowVolumeScores } from '@/utils/newowVolumeDisplay'
+import { newowChartReadout, newowTimeKey } from '@/utils/newowChartReadout'
 import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
@@ -99,6 +99,11 @@ function onCrosshair(event: MouseEventParams<Time>): void {
   const cardHeight = cursorRows.value.length * 18 + 20
   cursorTop.value = chartTop + Math.max(0, Math.min((event.point?.y ?? 0) + paneOffset - 100, (container.value?.clientHeight ?? 0) - cardHeight))
 }
+const volumeScoreIndex = ref<number | null>(null)
+const volumeScoreBar = computed(() => volumeScoreIndex.value === null ? null : model.value?.bars[volumeScoreIndex.value] ?? null)
+const selectedVolumeScores = computed(() => volumeScoreIndex.value === null || !model.value ? [] : newowVolumeScores(model.value, volumeScoreIndex.value))
+const yellowVolumeIndexes = computed(() => model.value?.bars.flatMap((_, index) => newowVolumeScores(model.value!, index).some(s => s.total >= 4) ? [index] : []) ?? [])
+function showLatestVolumeScore(): void { volumeScoreIndex.value = yellowVolumeIndexes.value.at(-1) ?? null }
 const referencePriceLines = new Map<string, IPriceLine>()
 const stageRoot = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
@@ -233,7 +238,7 @@ onUnmounted(createNewowProductChartDisposer({
   },
 }))
 
-watch(model, (value) => renderModel(value))
+watch(model, (value) => { volumeScoreIndex.value = null; renderModel(value) })
 watch([() => props.targetPrice, () => props.absorbPrice], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => renderMarkers(model.value))
@@ -503,6 +508,12 @@ function resolveSelectedSignal(): void {
 
 
 function onClick(event: MouseEventParams<Time>): void {
+  if (event.paneIndex === 1 && event.time != null && model.value) {
+    const key = newowTimeKey(event.time)
+    const index = model.value.bars.findIndex(bar => newowTimeKey(chartMarkerTime(bar.barEnd, model.value!.identity.frequency, bar.tradingDay)) === key)
+    volumeScoreIndex.value = newowVolumeScores(model.value, index).length ? index : null
+    return
+  }
   if (event.hoveredInfo?.objectKind !== 'series-marker' || typeof event.hoveredInfo.objectId !== 'string') return
   const value = model.value
   if (value?.actions.some((action) => action.id === event.hoveredInfo?.objectId)) emit('select-signal', event.hoveredInfo.objectId)
@@ -692,7 +703,18 @@ defineExpose({ revealSignal, scrollToLatest })
       <button v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" type="button" class="newow-product-chart-stage__action-label" :class="`return-${actionDisplay(item.callout, item.origin).direction}`" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :title="`${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`" @click="emit('select-comparison-signal', item.origin, item.callout.id)"><strong>{{ item.compact ? (item.callout.above ? '▼' : '▲') : actionTitle(item.callout, item.origin) }}</strong><span v-if="detailLabels && !item.compact">{{ actionDisplay(item.callout, item.origin).text }}</span></button>
     </div>
     <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
-    <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
+    <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量 <button v-if="yellowVolumeIndexes.length" class="newow-product-chart-stage__volume-help" type="button" @click="showLatestVolumeScore">黄色柱说明</button></span>
+    <section v-if="volumeScoreBar && selectedVolumeScores.length" class="newow-product-chart-stage__volume-score" :style="{ top: `${volumeTop + 8}px` }" role="dialog" aria-label="震荡突破评分">
+      <header><strong>震荡突破评分</strong><button type="button" aria-label="关闭突破评分" @click="volumeScoreIndex = null">×</button></header>
+      <p>{{ volumeScoreBar.tradingDay }} · {{ volumeScoreBar.physicalContract }} · 成交量 {{ volumeScoreBar.volume }}</p>
+      <article v-for="score in selectedVolumeScores" :key="score.actionId">
+        <strong>{{ score.kind === 'BUILD' ? '建仓 · 下沿' : '清仓 · 上沿' }} {{ score.reference }} · {{ score.total }}/6 分</strong>
+        <dl><div><dt>量比</dt><dd>{{ score.volumeRatio.toFixed(2) }} 倍 · {{ score.volumeScore }} 分</dd></div><div><dt>实体占比</dt><dd>{{ (score.bodyRatio * 100).toFixed(2) }}% · {{ score.bodyScore }} 分</dd></div><div><dt>穿透率</dt><dd>{{ (score.penetrationRatio * 100).toFixed(2) }}% · {{ score.penetrationScore }} 分</dd></div></dl>
+        <p>{{ score.total >= 4 ? '总分 ≥ 4，该动作达到黄色条件。' : '总分 < 4，该动作未达到黄色条件。' }}</p>
+        <details><summary>查看计算依据</summary><p>量比 = 当前量 / 同段近10根均量（含本根），均量 {{ score.averageVolume.toFixed(2) }}；≥1.5 得2分，≥1 得1分。实体 = |收−开| / max(高−低, 0.001)；>60% 得2分，>30% 得1分。穿透 = |收−通道沿| / 通道沿；>3% 得2分，>1% 得1分。其余0分，确认项固定0分。</p></details>
+      </article>
+      <small>有效震荡动作中任一总分≥4，量柱变黄。仅作页面解释，非成交或执行确认。</small>
+    </section>
     <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
     <p v-if="auxiliaryPresentation.message || fullscreenError" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">正在读取 Newow 主图…</p>
@@ -745,4 +767,9 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-product-chart-stage__auxiliary-status { margin:0; padding:6px 12px; color:#b45309; font-size:12px; }
 .newow-product-chart-stage__status { position:absolute; z-index:5; top:64px; left:12px; margin:0; color:#b45309; background:#fff; }
 @media(max-width:640px) { .newow-product-chart-stage { height:auto; } .newow-product-chart-stage__chart { height:500px; min-height:500px; } }
+.newow-product-chart-stage__volume-help { pointer-events:auto; min-height:24px; padding:0 6px; color:#b77900; font-size:11px; }
+.newow-product-chart-stage__volume-score { position:absolute; right:76px; z-index:8; width:min(340px,calc(100% - 100px)); max-height:360px; overflow:auto; background:#fff; border:1px solid #efce68; border-radius:8px; padding:12px; box-shadow:0 4px 16px #00000014; font-size:12px; }
+.newow-product-chart-stage__volume-score header { display:flex; justify-content:space-between; align-items:center; }.newow-product-chart-stage__volume-score button { min-height:28px; }
+.newow-product-chart-stage__volume-score p,.newow-product-chart-stage__volume-score small { color:#667085; line-height:1.7; margin:6px 0; }
+.newow-product-chart-stage__volume-score dl { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:8px 0; }.newow-product-chart-stage__volume-score dt { color:#98a2b3; }.newow-product-chart-stage__volume-score dd { margin:4px 0; color:#b77900; }.newow-product-chart-stage__volume-score article { border-top:1px solid #f2f4f7; padding-top:8px; }
 </style>
