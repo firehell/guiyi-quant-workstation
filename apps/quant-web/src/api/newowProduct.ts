@@ -387,6 +387,7 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     if (request.historyLimit !== undefined) common.history_limit = request.historyLimit
     if (request.historyBefore !== undefined) common.history_before = request.historyBefore
   }
+  if (request.section === 'explanation' && request.decisionV2) common.decision_v2 = true
   if (request.snapshotToken !== undefined) common.snapshot_token = request.snapshotToken
   return common
 }

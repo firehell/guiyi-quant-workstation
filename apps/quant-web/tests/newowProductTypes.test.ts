@@ -1084,3 +1084,33 @@ test('fusion reference validates independent version and parent snapshot', () =>
     assert.throws(() => normalizeNewowProductResponse(invalid, { ...expected, section: 'reference' }), /fusion/)
   }
 })
+
+test('CDV2 explanation rejects future ages, inconsistent totals and executable claims', () => {
+  const make = () => {
+    const wire = explanationWire()
+    const addon = {
+      cdv2: {
+        formula_version: 'newow_composite_decision_cdv2_1_2_0_v1', as_of: AS_OF,
+        executable: false, explanation_only: true, is_probability: false, is_margin_ratio: false,
+        resonance: 'R0', mismatch: null, action: '等待', action_code: 'WAIT',
+        scores: { trend: 0, oscillation: 0, resonance: 0, direction: 0, volatility: 0 },
+        deductions: { j_reduce: 0, care: 0, tent: 0 }, total: 0, cert_extra: 0,
+        certainty_cap: 0, resonance_cap: 0, reference_exposure_cap: 0,
+        trend_state: { week: 'unknown', day: 'unknown', m60: 'unknown' },
+        oscillation_state: { week: 'idle', day: 'idle', m60: 'idle' },
+        facts: ['trend_week','trend_day','trend_m60','oscillation_week','oscillation_day','oscillation_m60'].map(role => ({ role, age: -1, bar_end: null })),
+        missing_roles: ['trend_week','trend_day','trend_m60','oscillation_week','oscillation_day','oscillation_m60'],
+      }, prices: null,
+    }
+    Object.assign(wire.explanation.value, { decision_v2: addon })
+    return { wire, addon }
+  }
+  const valid = make()
+  assert.equal(normalizeNewowProductResponse(valid.wire, { ...expected, section: 'explanation' }).section, 'explanation')
+  const badSum = make(); badSum.addon.cdv2.total = 20
+  assert.throws(() => normalizeNewowProductResponse(badSum.wire, { ...expected, section: 'explanation' }), /sum conflict/)
+  const badExecution = make(); badExecution.addon.cdv2.executable = true
+  assert.throws(() => normalizeNewowProductResponse(badExecution.wire, { ...expected, section: 'explanation' }), /executable/)
+  const badAge = make(); badAge.addon.cdv2.facts[0]!.age = -2
+  assert.throws(() => normalizeNewowProductResponse(badAge.wire, { ...expected, section: 'explanation' }), /age/)
+})

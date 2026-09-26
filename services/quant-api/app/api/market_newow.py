@@ -156,6 +156,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "history_before",
         "snapshot_token",
         "include_fusion",
+        "decision_v2",
     }
 )
 _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
@@ -309,6 +310,7 @@ def _build_product_service(
             coverage=coverage,
             active_products=active,
             context_frequencies=context,
+            context_quality_policy=(lambda product, frequency: candidate_input_quality_policy(product, frequency, candidate_weekly=False)) if context else None,
             cancelled=cancelled,
             input_quality_policy=quality_policy,
         )
@@ -595,6 +597,7 @@ def newow_strategy_detail(
     history_before: str | None = Query(None, min_length=1, max_length=2048),
     snapshot_token: str | None = Query(None, min_length=1, max_length=256),
     include_fusion: bool = Query(False),
+    decision_v2: bool = Query(False),
     session: Session = Depends(get_db),
 ) -> NewowProductResponse:
     unknown = set(request.query_params) - _PRODUCT_QUERY_FIELDS
@@ -613,7 +616,8 @@ def newow_strategy_detail(
     product = _normalize_public_product(product)
     try:
         _enforce_product_frequency(request, product, frequency)
-        require_open_section(section)
+        if not (decision_v2 and section == "explanation"):
+            require_open_section(section)
 
         def cancelled() -> bool:
             try:
@@ -640,6 +644,7 @@ def newow_strategy_detail(
             history_before=history_before,
             snapshot_token=snapshot_token,
             include_fusion=include_fusion,
+            decision_v2=decision_v2,
         )
         policy = _input_quality_policy(request, product, frequency)
         service = (
@@ -967,6 +972,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
     explanation = _delivery(
         result.explanation,
         lambda value: {
+            **({"decision_v2": value.decision_v2} if value.decision_v2 is not None else {}),
             "context": _context_value(value.context),
             "composite": _json_value(value.composite),
             "target_absorb": _json_value(value.target_absorb),

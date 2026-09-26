@@ -1469,3 +1469,49 @@ def test_fusion_reference_is_opt_in_and_independent(product_cases):
 def test_fusion_rejects_invalid_sections(section, strategy):
     with pytest.raises(ValueError, match='NEWOW_SECTION_PARAMETER_INVALID'):
         ProductServiceQuery('rb', strategy, '1d', section=section, include_fusion=True)
+
+
+def test_cdv2_explanation_uses_only_available_context_and_no_hidden_trade_gate(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    before=service.query(ProductServiceQuery('rb','trend','1d',section='reference',performance_since=build.trading_day,performance_through=clear.trading_day,as_of=clear.bar_end))
+    result=service.query(ProductServiceQuery('rb','trend','1d',section='explanation',decision_v2=True,as_of=clear.bar_end))
+    from app.api.market_newow import _product_response
+    wire=_product_response(result).model_dump(mode='json')['explanation']['value']['decision_v2']
+    assert wire['cdv2']['executable'] is False
+    assert wire['cdv2']['trend_state']['m60']=='unknown'
+    assert 'trend_m60' in wire['cdv2']['missing_roles']
+    assert wire['prices']['source_family']=='canonical_channel'
+    assert wire['prices']['monthly_target_available'] is False
+    after=service.query(ProductServiceQuery('rb','trend','1d',section='reference',performance_since=build.trading_day,performance_through=clear.trading_day,as_of=clear.bar_end))
+    assert before.reference.value==after.reference.value
+
+
+@pytest.mark.parametrize('frequency', ['1d', '1w'])
+def test_cdv2_tail_interruption_does_not_present_old_state_as_current(product_cases, frequency):
+    from app.market_data.newow.decision_v2 import build_decision_v2
+    case = product_cases.primitive_input('trend', frequency)
+    replay = replay_strategy(case.identity, case.bars)
+    last = case.bars[-1].bar
+    cutoff = last.bar_end + timedelta(days=1)
+    gap = DataInterruption('rb', ProductFrequency(frequency), last.physical_contract,
+                           last.segment_id, cutoff.date(), cutoff, 'proven-tail-gap')
+    read = SimpleNamespace(as_of=cutoff, boundaries=(),
+        data_interruptions_by_frequency={ProductFrequency(frequency): (gap,)})
+    result = build_decision_v2({ProductFrequency(frequency): replay}, {}, None, read, case.identity)
+    assert result['prices'] is None
+    assert all(f['status'] == 'unavailable' for f in result['cdv2']['facts'])
+    assert result['cdv2']['trend_state']['week' if frequency == '1w' else 'day'] == 'unknown'
+
+
+@pytest.mark.parametrize('frequency', ['1d', '1w'])
+def test_cdv2_tail_rollover_does_not_reuse_old_contract(product_cases, frequency):
+    from app.market_data.newow.decision_v2 import build_decision_v2
+    case = product_cases.primitive_input('trend', frequency)
+    replay = replay_strategy(case.identity, case.bars)
+    last = case.bars[-1].bar
+    cutoff = last.bar_end + timedelta(days=1)
+    boundary = SimpleNamespace(old_contract=last.physical_contract, old_segment_id=last.segment_id, effective_at=cutoff)
+    read = SimpleNamespace(as_of=cutoff, boundaries=(boundary,), data_interruptions_by_frequency={})
+    result = build_decision_v2({ProductFrequency(frequency): replay}, {}, None, read, case.identity)
+    assert result['prices'] is None
+    assert len(result['cdv2']['missing_roles']) == 6

@@ -13,6 +13,7 @@ import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import NewowProductChartStage from './NewowProductChartStage.vue'
+import NewowDecisionV2Panel from './NewowDecisionV2Panel.vue'
 import { NEWOW_ZHAOYAO_MIRROR_LEGEND } from './newowZhaoyaoMirrorPrimitive'
 import { NEWOW_UP_DOWN_ENERGY_STYLE } from './newowUpDownEnergyPrimitive'
 import { NEWOW_MAIN_FORCE_STYLE } from './newowMainForceControlPrimitive'
@@ -370,6 +371,7 @@ onBeforeUnmount(() => {
     </section>
 
 
+    <NewowDecisionV2Panel v-if="chartResponse?.value && loader.currentChartWindow.value" :response="chartResponse" />
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
     <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :reference-trades="loader.referenceChartCompatible.value ? referenceResponse?.value?.items ?? [] : []" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #reference-controls><slot name="chart-frequency" /></template>

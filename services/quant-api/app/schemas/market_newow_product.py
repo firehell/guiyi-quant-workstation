@@ -699,6 +699,7 @@ class TargetAbsorbResultOut(_Out):
 
 
 class ExplanationValueOut(_Out):
+    decision_v2: dict[str, object] | None = Field(default=None, exclude_if=lambda value: value is None)
     context: ContextSnapshotOut
     composite: CompositeResultOut
     target_absorb: TargetAbsorbResultOut

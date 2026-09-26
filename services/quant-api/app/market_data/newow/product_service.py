@@ -127,8 +127,11 @@ class ProductServiceQuery:
     history_before: str | None = None
     snapshot_token: str | None = None
     include_fusion: bool = False
+    decision_v2: bool = False
 
     def __post_init__(self) -> None:
+        if self.decision_v2 and (self.section != "explanation" or self.frequency not in ("1d", "1w")):
+            raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.include_fusion and (self.section != "reference" or self.strategy not in ("trend", "oscillation") or self.history_before is not None):
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         object.__setattr__(self, "strategy", ProductStrategy(self.strategy))
@@ -255,6 +258,7 @@ class ExplanationSectionValue:
     composite: object
     target_absorb: object
     sources: tuple[SourceFact, ...]
+    decision_v2: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -782,7 +786,7 @@ class NewowProductService:
         cancelled: Callable[[], bool],
     ) -> NewowProductResult:
         context = (
-            tuple(ProductFrequency)
+            (ProductFrequency.DAILY, ProductFrequency.WEEKLY) if request.decision_v2 else tuple(ProductFrequency)
             if request.section is ProductSection.EXPLANATION
             else ()
         )
@@ -1058,6 +1062,7 @@ class NewowProductService:
             request.history_limit,
             request.history_before,
             request.include_fusion,
+            request.decision_v2,
         )
 
     def _page_identity(
@@ -1143,7 +1148,7 @@ class NewowProductService:
                 )
             )
         elif request.section is ProductSection.EXPLANATION:
-            deliveries[request.section] = self._explanation(read, identity)
+            deliveries[request.section] = self._explanation(read, identity, decision_v2=request.decision_v2)
         else:
             deliveries[request.section] = self._comparator(read, identity)
         self._check_cancelled(cancelled)
@@ -1406,7 +1411,7 @@ class NewowProductService:
         return SectionDelivery("delivered", status, value)
 
     def _explanation(
-        self, read: ProductReadSet, identity: ProductIdentity
+        self, read: ProductReadSet, identity: ProductIdentity, *, decision_v2: bool = False
     ) -> SectionDelivery:
         trend = {
             frequency: replay_strategy(
@@ -1414,11 +1419,11 @@ class NewowProductService:
                     identity.product,
                     ProductStrategy.TREND,
                     frequency,
-                    input_quality_policy=(
+                    input_quality_policy=read.input_quality_policies_by_frequency.get(frequency, (
                         identity.input_quality_policy
                         if frequency is ProductFrequency.WEEKLY
                         else InputQualityPolicy.V1
-                    ),
+                    )),
                 ),
                 bars,
                 lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(
@@ -1434,11 +1439,11 @@ class NewowProductService:
                     identity.product,
                     ProductStrategy.OSCILLATION,
                     frequency,
-                    input_quality_policy=(
+                    input_quality_policy=read.input_quality_policies_by_frequency.get(frequency, (
                         identity.input_quality_policy
                         if frequency is ProductFrequency.WEEKLY
                         else InputQualityPolicy.V1
-                    ),
+                    )),
                 ),
                 bars,
                 lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(
@@ -1448,6 +1453,22 @@ class NewowProductService:
             )
             for frequency, bars in read.bars_by_frequency.items()
         }
+        addon = None
+        if decision_v2:
+            from .decision_v2 import build_decision_v2
+            main_frequency = identity.frequency
+            main_bars = read.bars_by_frequency.get(main_frequency, ())
+            main = replay_strategy(
+                build_product_identity(identity.product, ProductStrategy.MAIN_RISE, main_frequency,
+                    input_quality_policy=read.input_quality_policies_by_frequency.get(main_frequency, InputQualityPolicy.V1)),
+                main_bars, lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(main_frequency, ()),
+                data_interruptions=read.data_interruptions_by_frequency.get(main_frequency, ()),
+            ) if main_bars else None
+            addon = build_decision_v2(trend, oscillation, main, read, identity)
+            for replays, strategy in ((trend, ProductStrategy.TREND), (oscillation, ProductStrategy.OSCILLATION)):
+                for frequency in ProductFrequency:
+                    if frequency not in replays:
+                        replays[frequency] = StrategyReplay(build_product_identity(identity.product, strategy, frequency), (), (), (), ())
         inputs = build_composite_inputs(trend, oscillation, read.as_of)
         composite = calculate_composite_explanation(inputs.context, inputs.evidence)
         target = calculate_target_absorb(inputs.context, None)
@@ -1466,10 +1487,13 @@ class NewowProductService:
             status = FeatureStatus(
                 composite.status, composite.evidence_status, composite.reason_code
             )
+        if decision_v2:
+            current_missing = f"trend_{'week' if identity.frequency is ProductFrequency.WEEKLY else 'day'}" in addon['cdv2']['missing_roles']
+            status = FeatureStatus(FeatureRuntimeStatus.WARMING, EvidenceStatus.RESEARCH_EVIDENCE_ONLY, 'NEWOW_CDV2_CURRENT_CONTEXT_UNAVAILABLE') if current_missing else FeatureStatus(FeatureRuntimeStatus.READY, EvidenceStatus.RESEARCH_EVIDENCE_ONLY)
         return SectionDelivery(
             "delivered",
             status,
-            ExplanationSectionValue(inputs.context, composite, target, sources),
+            ExplanationSectionValue(inputs.context, composite, target, sources, addon),
         )
 
     def _comparator(

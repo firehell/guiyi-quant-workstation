@@ -584,6 +584,7 @@ export interface NewowSourceFact {
 }
 
 export interface NewowExplanationValue {
+  readonly decision_v2?: import('./newowDecisionV2').NewowDecisionV2
   readonly context: NewowContextSnapshot
   readonly composite: NewowCompositeResult
   readonly target_absorb: NewowTargetAbsorbResult
@@ -691,7 +692,7 @@ export type NewowProductRequest =
   | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
   | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
-  | (NewowRequestCommon & { readonly section: 'explanation' })
+  | (NewowRequestCommon & { readonly section: 'explanation'; readonly decisionV2?: boolean })
   | (NewowRequestCommon & { readonly section: 'comparator' })
 
 export type NewowResourceLifecycle =
