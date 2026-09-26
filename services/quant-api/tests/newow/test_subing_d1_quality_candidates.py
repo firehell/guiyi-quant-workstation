@@ -336,6 +336,29 @@ def test_recovery_attempt_exposes_verified_target_rows(tmp_path):
     )
 
 
+def test_p9_source_attempt_exposes_verified_target_rows(tmp_path):
+    candidate, attempt = _recovery_attempt_fixture(tmp_path)
+    candidate.pop("plan_sha256")
+    candidate["schema"] = "subing-d1-reference-p9-source-candidate-v1"
+    candidate["plan_sha256"] = sha256(
+        json.dumps(
+            candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    for name in ("invocation-receipt.json", "source-only-result.json"):
+        path = attempt / name
+        payload = json.loads(path.read_text())
+        payload["plan_sha256"] = candidate["plan_sha256"]
+        path.write_text(json.dumps(payload))
+
+    proofs = build_recovery_source_proof_index(candidate, attempt=attempt)
+
+    assert len(proofs) == 1
+    assert proofs[("oi", "OI2609", date(2026, 9, 1))].classification == (
+        "POSITIVE_OHLC_SOURCE_FACT"
+    )
+
+
 @pytest.mark.parametrize(
     ("filename", "section", "field", "value", "error"),
     [

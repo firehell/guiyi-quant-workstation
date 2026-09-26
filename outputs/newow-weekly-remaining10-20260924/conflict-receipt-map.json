@@ -1,0 +1,3205 @@
+{
+  "catalog_revision": "8e7346f6a729681648fa5c1ab4ed95194e1973dab72242265de534a5bdc26e72",
+  "code_sha_at_audit": "55454558629734aff0856d02692c1d4242500980",
+  "receipt_search_root": "outputs/newow-weekly-recovery-attempts",
+  "receipt_scope": "local successful D1 unit-result readback with exact partition SHA",
+  "rows": [
+    {
+      "symbol": "pf",
+      "contract": "PF2304",
+      "week_end": "2023-02-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 2,
+          "file": "part.b27902bf3540e70a5a83e4fa10875740e4fad9fc6efdf737ebaa96db580929ab.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-018/native/unit-012-pf-PF2304/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7338.000000000000000000",
+        "high": "7430.000000000000000000",
+        "low": "7014.000000000000000000",
+        "close": "7080.000000000000000000",
+        "volume": "893714.000000000000000000",
+        "turnover": "32427790840.000000000000000000",
+        "open_interest": "314613.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7338.000000000000000000",
+        "high": "7430.000000000000000000",
+        "low": "7014.000000000000000000",
+        "close": "7080.000000000000000000",
+        "volume": "893714.000000000000000000",
+        "turnover": "32426877520.000000000000000000",
+        "open_interest": "314613.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2305",
+      "week_end": "2023-03-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 3,
+          "file": "part.72c292e1ce62e3e663f9cc288f85b8e534e44a955c8863bb14951090f31ab9b6.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-018/native/unit-013-pf-PF2305/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7336.000000000000000000",
+        "high": "7416.000000000000000000",
+        "low": "7218.000000000000000000",
+        "close": "7218.000000000000000000",
+        "volume": "533386.000000000000000000",
+        "turnover": "19519188920.000000000000000000",
+        "open_interest": "135937.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7336.000000000000000000",
+        "high": "7416.000000000000000000",
+        "low": "7218.000000000000000000",
+        "close": "7218.000000000000000000",
+        "volume": "533386.000000000000000000",
+        "turnover": "19517949500.000000000000000000",
+        "open_interest": "135937.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2306",
+      "week_end": "2023-03-31",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 3,
+          "file": "part.4bcc8b47f848f3cff47dd6bfb7a54ede65965fbdaaeb6e39a5321261c69e841b.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-018/native/unit-014-pf-PF2306/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7350.000000000000000000",
+        "high": "7630.000000000000000000",
+        "low": "7326.000000000000000000",
+        "close": "7546.000000000000000000",
+        "volume": "664432.000000000000000000",
+        "turnover": "25029518920.000000000000000000",
+        "open_interest": "235664.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7350.000000000000000000",
+        "high": "7630.000000000000000000",
+        "low": "7326.000000000000000000",
+        "close": "7546.000000000000000000",
+        "volume": "664432.000000000000000000",
+        "turnover": "25028197460.000000000000000000",
+        "open_interest": "235664.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2307",
+      "week_end": "2023-05-12",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 5,
+          "file": "part.cdb009b9e04babe727a4ca2b31957f55558944eea1aa2849896cdcd5192326da.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-018/native/unit-015-pf-PF2307/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7144.000000000000000000",
+        "high": "7270.000000000000000000",
+        "low": "6982.000000000000000000",
+        "close": "7018.000000000000000000",
+        "volume": "690246.000000000000000000",
+        "turnover": "24540646560.000000000000000000",
+        "open_interest": "354406.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7144.000000000000000000",
+        "high": "7270.000000000000000000",
+        "low": "6982.000000000000000000",
+        "close": "7018.000000000000000000",
+        "volume": "690246.000000000000000000",
+        "turnover": "24541038710.000000000000000000",
+        "open_interest": "354406.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2310",
+      "week_end": "2023-07-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 7,
+          "file": "part.8baadae076e43ec4f5689a227f59a9e2c266c7bf5ec4ccac2b84049eb0206301.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-018/native/unit-017-pf-PF2310/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7038.000000000000000000",
+        "high": "7250.000000000000000000",
+        "low": "7032.000000000000000000",
+        "close": "7220.000000000000000000",
+        "volume": "788013.000000000000000000",
+        "turnover": "28072529970.000000000000000000",
+        "open_interest": "402758.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7038.000000000000000000",
+        "high": "7250.000000000000000000",
+        "low": "7032.000000000000000000",
+        "close": "7220.000000000000000000",
+        "volume": "788013.000000000000000000",
+        "turnover": "28072395560.000000000000000000",
+        "open_interest": "402758.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2312",
+      "week_end": "2023-10-13",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 10,
+          "file": "part.e1c1b76bed5280e54ab7acbd0a3026502aa2ac638bc2510d8d71b1bc046801c3.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-018/native/unit-019-pf-PF2312/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7550.000000000000000000",
+        "high": "7572.000000000000000000",
+        "low": "7282.000000000000000000",
+        "close": "7326.000000000000000000",
+        "volume": "637628.000000000000000000",
+        "turnover": "23565013580.000000000000000000",
+        "open_interest": "405159.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7550.000000000000000000",
+        "high": "7572.000000000000000000",
+        "low": "7282.000000000000000000",
+        "close": "7326.000000000000000000",
+        "volume": "637628.000000000000000000",
+        "turnover": "23564522400.000000000000000000",
+        "open_interest": "405159.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2402",
+      "week_end": "2023-11-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 11,
+          "file": "part.9bf182e2c7deb153778f1966e50f5d090272b3a0bef219ccf1c158b22cf65df0.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-018/native/unit-020-pf-PF2402/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7436.000000000000000000",
+        "high": "7462.000000000000000000",
+        "low": "7262.000000000000000000",
+        "close": "7378.000000000000000000",
+        "volume": "698809.000000000000000000",
+        "turnover": "25767442730.000000000000000000",
+        "open_interest": "336253.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7436.000000000000000000",
+        "high": "7462.000000000000000000",
+        "low": "7262.000000000000000000",
+        "close": "7378.000000000000000000",
+        "volume": "698809.000000000000000000",
+        "turnover": "25767098230.000000000000000000",
+        "open_interest": "336253.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2403",
+      "week_end": "2024-01-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 1,
+          "file": "part.65f0b0d112f359c6bc21ec483ea01d85dbd2333ee7e2942f911b1b5722391ef4.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-001-pf-PF2403/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7338.000000000000000000",
+        "high": "7450.000000000000000000",
+        "low": "7310.000000000000000000",
+        "close": "7392.000000000000000000",
+        "volume": "264641.000000000000000000",
+        "turnover": "9765488840.000000000000000000",
+        "open_interest": "302367.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7338.000000000000000000",
+        "high": "7450.000000000000000000",
+        "low": "7310.000000000000000000",
+        "close": "7392.000000000000000000",
+        "volume": "264641.000000000000000000",
+        "turnover": "9764801280.000000000000000000",
+        "open_interest": "302367.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2407",
+      "week_end": "2024-05-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 5,
+          "file": "part.dca006a95c0a1269354d58c3efe3afd9460b270ed3e566d857bd03fccd359a81.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-004-pf-PF2407/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7320.000000000000000000",
+        "high": "7374.000000000000000000",
+        "low": "7252.000000000000000000",
+        "close": "7332.000000000000000000",
+        "volume": "335043.000000000000000000",
+        "turnover": "12269413820.000000000000000000",
+        "open_interest": "203583.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7320.000000000000000000",
+        "high": "7374.000000000000000000",
+        "low": "7252.000000000000000000",
+        "close": "7332.000000000000000000",
+        "volume": "335043.000000000000000000",
+        "turnover": "12269441960.000000000000000000",
+        "open_interest": "203583.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2408",
+      "week_end": "2024-06-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 6,
+          "file": "part.184fc7fda8307fc078e6b137a367ce2002c661b138286189a809e676f8a5635d.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-005-pf-PF2408/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7458.000000000000000000",
+        "high": "7476.000000000000000000",
+        "low": "7300.000000000000000000",
+        "close": "7404.000000000000000000",
+        "volume": "334283.000000000000000000",
+        "turnover": "12300044030.000000000000000000",
+        "open_interest": "159192.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7458.000000000000000000",
+        "high": "7476.000000000000000000",
+        "low": "7300.000000000000000000",
+        "close": "7404.000000000000000000",
+        "volume": "334283.000000000000000000",
+        "turnover": "12299748560.000000000000000000",
+        "open_interest": "159192.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2410",
+      "week_end": "2024-07-19",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 7,
+          "file": "part.a4591f49536005486299456a7c2b94483c07f54f255e0e419f470b1a1640cc07.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-007-pf-PF2410/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7648.000000000000000000",
+        "high": "7648.000000000000000000",
+        "low": "7516.000000000000000000",
+        "close": "7534.000000000000000000",
+        "volume": "330725.000000000000000000",
+        "turnover": "12499713410.000000000000000000",
+        "open_interest": "146281.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7648.000000000000000000",
+        "high": "7648.000000000000000000",
+        "low": "7516.000000000000000000",
+        "close": "7534.000000000000000000",
+        "volume": "330725.000000000000000000",
+        "turnover": "12499162790.000000000000000000",
+        "open_interest": "146281.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2411",
+      "week_end": "2024-09-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 9,
+          "file": "part.cdb9845de43234f43cd46ff5ab4e35ce2c2bb58801704fc76bf82c926322649b.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-008-pf-PF2411/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7188.000000000000000000",
+        "high": "7218.000000000000000000",
+        "low": "6828.000000000000000000",
+        "close": "6932.000000000000000000",
+        "volume": "554246.000000000000000000",
+        "turnover": "19269585970.000000000000000000",
+        "open_interest": "205733.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7188.000000000000000000",
+        "high": "7218.000000000000000000",
+        "low": "6828.000000000000000000",
+        "close": "6932.000000000000000000",
+        "volume": "554246.000000000000000000",
+        "turnover": "19268449320.000000000000000000",
+        "open_interest": "205733.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2412",
+      "week_end": "2024-10-11",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 10,
+          "file": "part.cde61d744313ba8e739884fa3f6605c0c629dc72e649930f5415ab2de269af50.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-009-pf-PF2412/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7300.000000000000000000",
+        "high": "7402.000000000000000000",
+        "low": "7086.000000000000000000",
+        "close": "7132.000000000000000000",
+        "volume": "303362.000000000000000000",
+        "turnover": "10889018000.000000000000000000",
+        "open_interest": "139521.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7300.000000000000000000",
+        "high": "7402.000000000000000000",
+        "low": "7086.000000000000000000",
+        "close": "7132.000000000000000000",
+        "volume": "303362.000000000000000000",
+        "turnover": "10889373500.000000000000000000",
+        "open_interest": "139521.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2502",
+      "week_end": "2024-11-08",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 11,
+          "file": "part.db475f81f411a99a0925f9918878f1fb30a638ad5ffa2daf0bd98480afb69327.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-010-pf-PF2502/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6866.000000000000000000",
+        "high": "7004.000000000000000000",
+        "low": "6732.000000000000000000",
+        "close": "6952.000000000000000000",
+        "volume": "289446.000000000000000000",
+        "turnover": "9969291050.000000000000000000",
+        "open_interest": "130881.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6866.000000000000000000",
+        "high": "7004.000000000000000000",
+        "low": "6732.000000000000000000",
+        "close": "6952.000000000000000000",
+        "volume": "289446.000000000000000000",
+        "turnover": "9968876380.000000000000000000",
+        "open_interest": "130881.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2503",
+      "week_end": "2025-01-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 1,
+          "file": "part.50917cadb9b35417ebb59abe468fbdb3eb60187390e108ed7d9a1cc0f92ff4f0.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-011-pf-PF2503/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6892.000000000000000000",
+        "high": "6994.000000000000000000",
+        "low": "6808.000000000000000000",
+        "close": "6932.000000000000000000",
+        "volume": "505664.000000000000000000",
+        "turnover": "17449540670.000000000000000000",
+        "open_interest": "180233.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6892.000000000000000000",
+        "high": "6994.000000000000000000",
+        "low": "6808.000000000000000000",
+        "close": "6932.000000000000000000",
+        "volume": "505664.000000000000000000",
+        "turnover": "17449341160.000000000000000000",
+        "open_interest": "180233.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2505",
+      "week_end": "2025-03-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 3,
+          "file": "part.824dde35ea2e29443b2a6859aa09a9b6208055960a802a5b3291f038b89a0e71.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-013-pf-PF2505/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6842.000000000000000000",
+        "high": "6884.000000000000000000",
+        "low": "6642.000000000000000000",
+        "close": "6716.000000000000000000",
+        "volume": "293561.000000000000000000",
+        "turnover": "9886161500.000000000000000000",
+        "open_interest": "136928.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6842.000000000000000000",
+        "high": "6884.000000000000000000",
+        "low": "6642.000000000000000000",
+        "close": "6716.000000000000000000",
+        "volume": "293561.000000000000000000",
+        "turnover": "9885693700.000000000000000000",
+        "open_interest": "136928.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2506",
+      "week_end": "2025-04-11",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file": "part.aaddb20f3fc3fb8d220aca56e4aa718bc48b936d858d6b393476abfd4615a998.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-014-pf-PF2506/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6190.000000000000000000",
+        "high": "6190.000000000000000000",
+        "low": "5668.000000000000000000",
+        "close": "6136.000000000000000000",
+        "volume": "1103975.000000000000000000",
+        "turnover": "32886232050.000000000000000000",
+        "open_interest": "166016.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6190.000000000000000000",
+        "high": "6190.000000000000000000",
+        "low": "5668.000000000000000000",
+        "close": "6136.000000000000000000",
+        "volume": "1103975.000000000000000000",
+        "turnover": "32886232100.000000000000000000",
+        "open_interest": "166016.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2507",
+      "week_end": "2025-05-16",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 5,
+          "file": "part.924dc2da512f01a694863a11f565b997ca0075b38803d4ea5f6b106e822cd9f8.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-015-pf-PF2507/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6266.000000000000000000",
+        "high": "6662.000000000000000000",
+        "low": "6228.000000000000000000",
+        "close": "6550.000000000000000000",
+        "volume": "797472.000000000000000000",
+        "turnover": "26046100870.000000000000000000",
+        "open_interest": "154735.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6266.000000000000000000",
+        "high": "6662.000000000000000000",
+        "low": "6228.000000000000000000",
+        "close": "6550.000000000000000000",
+        "volume": "797472.000000000000000000",
+        "turnover": "26045649300.000000000000000000",
+        "open_interest": "154735.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2509",
+      "week_end": "2025-07-18",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 7,
+          "file": "part.744a8d510d1b0f1697dcc8c02d44bb8b39d7982b265723131e9e251247efbb28.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-017-pf-PF2509/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6392.000000000000000000",
+        "high": "6474.000000000000000000",
+        "low": "6328.000000000000000000",
+        "close": "6372.000000000000000000",
+        "volume": "628473.000000000000000000",
+        "turnover": "20071995330.000000000000000000",
+        "open_interest": "116018.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6392.000000000000000000",
+        "high": "6474.000000000000000000",
+        "low": "6328.000000000000000000",
+        "close": "6372.000000000000000000",
+        "volume": "628473.000000000000000000",
+        "turnover": "20072091630.000000000000000000",
+        "open_interest": "116018.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2510",
+      "week_end": "2025-08-08",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file": "part.40801ed5abbbd7c9a908bafb567b716f897722710387bbacff76d5cfbc83fce9.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-018-pf-PF2510/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6460.000000000000000000",
+        "high": "6484.000000000000000000",
+        "low": "6358.000000000000000000",
+        "close": "6382.000000000000000000",
+        "volume": "579867.000000000000000000",
+        "turnover": "18541758720.000000000000000000",
+        "open_interest": "178205.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6460.000000000000000000",
+        "high": "6484.000000000000000000",
+        "low": "6358.000000000000000000",
+        "close": "6382.000000000000000000",
+        "volume": "579867.000000000000000000",
+        "turnover": "18541456000.000000000000000000",
+        "open_interest": "178205.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2511",
+      "week_end": "2025-09-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 9,
+          "file": "part.054c31803c1465ecd80a7e4789aaca747c2f7923a43253ac5526b3cd408b1a2a.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-019/native/unit-019-pf-PF2511/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6482.000000000000000000",
+        "high": "6500.000000000000000000",
+        "low": "6292.000000000000000000",
+        "close": "6334.000000000000000000",
+        "volume": "823884.000000000000000000",
+        "turnover": "26347312560.000000000000000000",
+        "open_interest": "185144.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6482.000000000000000000",
+        "high": "6500.000000000000000000",
+        "low": "6292.000000000000000000",
+        "close": "6334.000000000000000000",
+        "volume": "823884.000000000000000000",
+        "turnover": "26347510660.000000000000000000",
+        "open_interest": "185144.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2602",
+      "week_end": "2025-11-14",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 11,
+          "file": "part.7db3057bf0ef7094694793ae6742e58b3fdc29e067f34f7bb6d9f482f565794b.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-020/native/unit-001-pf-PF2602/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6250.000000000000000000",
+        "high": "6314.000000000000000000",
+        "low": "6164.000000000000000000",
+        "close": "6238.000000000000000000",
+        "volume": "918418.000000000000000000",
+        "turnover": "28620608380.000000000000000000",
+        "open_interest": "152049.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6250.000000000000000000",
+        "high": "6314.000000000000000000",
+        "low": "6164.000000000000000000",
+        "close": "6238.000000000000000000",
+        "volume": "918418.000000000000000000",
+        "turnover": "28619809710.000000000000000000",
+        "open_interest": "152049.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2604",
+      "week_end": "2026-02-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 2,
+          "file": "part.6649f2c72471e5bce2fbac311190b052a3d3230c6c32a7599f0f74100c1b7342.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-020/native/unit-003-pf-PF2604/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6734.000000000000000000",
+        "high": "6766.000000000000000000",
+        "low": "6516.000000000000000000",
+        "close": "6578.000000000000000000",
+        "volume": "642175.000000000000000000",
+        "turnover": "21164754990.000000000000000000",
+        "open_interest": "167534.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6734.000000000000000000",
+        "high": "6766.000000000000000000",
+        "low": "6516.000000000000000000",
+        "close": "6578.000000000000000000",
+        "volume": "642175.000000000000000000",
+        "turnover": "21164017660.000000000000000000",
+        "open_interest": "167534.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2608",
+      "week_end": "2026-06-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file": "part.037affd950e76adce2bc313ad8787ef3b4203b3bbfb3b9403aa4f84a2921d2d7.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-020/native/unit-006-pf-PF2608/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7600.000000000000000000",
+        "high": "7830.000000000000000000",
+        "low": "7564.000000000000000000",
+        "close": "7748.000000000000000000",
+        "volume": "710428.000000000000000000",
+        "turnover": "27437133280.000000000000000000",
+        "open_interest": "146405.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7600.000000000000000000",
+        "high": "7830.000000000000000000",
+        "low": "7564.000000000000000000",
+        "close": "7748.000000000000000000",
+        "volume": "710428.000000000000000000",
+        "turnover": "27436802719.999999500000000000",
+        "open_interest": "146405.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2610",
+      "week_end": "2026-08-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file": "part.acf8d7a4fac39fcbd593d78995bb4f2796365a4e6aa1010f941c004cbaa33fe3.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-020/native/unit-008-pf-PF2610/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7484.000000000000000000",
+        "high": "7526.000000000000000000",
+        "low": "7086.000000000000000000",
+        "close": "7332.000000000000000000",
+        "volume": "882848.000000000000000000",
+        "turnover": "32171006110.000000000000000000",
+        "open_interest": "175431.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7484.000000000000000000",
+        "high": "7526.000000000000000000",
+        "low": "7086.000000000000000000",
+        "close": "7332.000000000000000000",
+        "volume": "882848.000000000000000000",
+        "turnover": "32169849310.000000000000000000",
+        "open_interest": "175431.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2610",
+      "week_end": "2026-08-14",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file": "part.acf8d7a4fac39fcbd593d78995bb4f2796365a4e6aa1010f941c004cbaa33fe3.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-020/native/unit-008-pf-PF2610/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7308.000000000000000000",
+        "high": "7490.000000000000000000",
+        "low": "7252.000000000000000000",
+        "close": "7476.000000000000000000",
+        "volume": "1028127.000000000000000000",
+        "turnover": "37768195400.000000000000000000",
+        "open_interest": "206427.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7308.000000000000000000",
+        "high": "7490.000000000000000000",
+        "low": "7252.000000000000000000",
+        "close": "7476.000000000000000000",
+        "volume": "1028127.000000000000000000",
+        "turnover": "37768088280.000000000000000000",
+        "open_interest": "206427.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2411",
+      "week_end": "2024-09-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 9,
+          "file": "part.84f43964507f6627503b881264bf4d487a4fd3f91f38314da53d84be332db932.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-022/native/unit-016-pk-PK2411/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8376.000000000000000000",
+        "high": "8390.000000000000000000",
+        "low": "8158.000000000000000000",
+        "close": "8174.000000000000000000",
+        "volume": "245194.000000000000000000",
+        "turnover": "10134312050.000000000000000000",
+        "open_interest": "124915.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8376.000000000000000000",
+        "high": "8390.000000000000000000",
+        "low": "8158.000000000000000000",
+        "close": "8174.000000000000000000",
+        "volume": "245194.000000000000000000",
+        "turnover": "10133765500.000000000000000000",
+        "open_interest": "124915.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2511",
+      "week_end": "2025-08-15",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file": "part.1c17784cbe4b5c12f27bc714c9fb61896127edd933ec0b7f3fcc6383878ac4a5.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-023/native/unit-001-pk-PK2511/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7958.000000000000000000",
+        "high": "8020.000000000000000000",
+        "low": "7818.000000000000000000",
+        "close": "7822.000000000000000000",
+        "volume": "313035.000000000000000000",
+        "turnover": "12396208940.000000000000000000",
+        "open_interest": "121805.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7958.000000000000000000",
+        "high": "8020.000000000000000000",
+        "low": "7818.000000000000000000",
+        "close": "7822.000000000000000000",
+        "volume": "313035.000000000000000000",
+        "turnover": "12395784740.000000200000000000",
+        "open_interest": "121805.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2603",
+      "week_end": "2025-12-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file": "part.5917fef27e21f85dc0f5548c4c84031ea14eba068bf63572a6e20b3a9ca4c4b3.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-023/native/unit-003-pk-PK2603/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8146.000000000000000000",
+        "high": "8146.000000000000000000",
+        "low": "8022.000000000000000000",
+        "close": "8076.000000000000000000",
+        "volume": "533945.000000000000000000",
+        "turnover": "21560424110.000000000000000000",
+        "open_interest": "174806.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8146.000000000000000000",
+        "high": "8146.000000000000000000",
+        "low": "8022.000000000000000000",
+        "close": "8076.000000000000000000",
+        "volume": "533945.000000000000000000",
+        "turnover": "21559923010.000000000000000000",
+        "open_interest": "174806.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "week_end": "2026-07-17",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 7,
+          "file": "part.67c7eb22eb65a31e42ef28b6f58a010ae88118f538f6f86a5b3a8074223a6d17.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-023/native/unit-006-pk-PK2611/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8444.000000000000000000",
+        "high": "8452.000000000000000000",
+        "low": "8212.000000000000000000",
+        "close": "8230.000000000000000000",
+        "volume": "568640.000000000000000000",
+        "turnover": "23645584020.000000000000000000",
+        "open_interest": "168436.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8444.000000000000000000",
+        "high": "8452.000000000000000000",
+        "low": "8212.000000000000000000",
+        "close": "8230.000000000000000000",
+        "volume": "568640.000000000000000000",
+        "turnover": "23645067700.000000000000000000",
+        "open_interest": "168436.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "week_end": "2026-08-14",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file": "part.parquet",
+          "matching_receipts": []
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": false,
+      "stored": {
+        "open": "8212.000000000000000000",
+        "high": "8274.000000000000000000",
+        "low": "8160.000000000000000000",
+        "close": "8230.000000000000000000",
+        "volume": "592860.000000000000000000",
+        "turnover": "24319865600.000000000000000000",
+        "open_interest": "209264.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8212.000000000000000000",
+        "high": "8274.000000000000000000",
+        "low": "8160.000000000000000000",
+        "close": "8230.000000000000000000",
+        "volume": "592860.000000000000000000",
+        "turnover": "24320323690.000000000000000000",
+        "open_interest": "209264.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2603",
+      "week_end": "2025-11-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 11,
+          "file": "part.b4f264e9162626f0676bea448967a2e8e8e811b3fd947e1f6c80bcb57344abbf.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/pl-d1-20260916-001-apply-001/unit-001-pl-PL2603/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6103.000000000000000000",
+        "high": "6122.000000000000000000",
+        "low": "5846.000000000000000000",
+        "close": "5858.000000000000000000",
+        "volume": "166002.000000000000000000",
+        "turnover": "19712886480.000000000000000000",
+        "open_interest": "14268.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6103.000000000000000000",
+        "high": "6122.000000000000000000",
+        "low": "5846.000000000000000000",
+        "close": "5858.000000000000000000",
+        "volume": "166002.000000000000000000",
+        "turnover": "19712790940.000000000000000000",
+        "open_interest": "14268.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2605",
+      "week_end": "2026-02-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 2,
+          "file": "part.a12e321e1db06d9a68ec957c03937ac376cdef2591640b8ebce6957970123b38.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/pl-d1-20260916-001-apply-001/unit-003-pl-PL2605/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6352.000000000000000000",
+        "high": "6404.000000000000000000",
+        "low": "6097.000000000000000000",
+        "close": "6198.000000000000000000",
+        "volume": "99863.000000000000000000",
+        "turnover": "12484851260.000000000000000000",
+        "open_interest": "13792.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6352.000000000000000000",
+        "high": "6404.000000000000000000",
+        "low": "6097.000000000000000000",
+        "close": "6198.000000000000000000",
+        "volume": "99863.000000000000000000",
+        "turnover": "12484806460.000000000000000000",
+        "open_interest": "13792.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2607",
+      "week_end": "2026-04-17",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file": "part.f0041a7dcdfea3ea7df8aa72ea4d8b405a326d602be9dd323a39fcb8ca9ec69c.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/pl-d1-20260916-001-apply-001/unit-004-pl-PL2607/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8159.000000000000000000",
+        "high": "8500.000000000000000000",
+        "low": "8086.000000000000000000",
+        "close": "8277.000000000000000000",
+        "volume": "23186.000000000000000000",
+        "turnover": "3836959240.000000000000000000",
+        "open_interest": "10324.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8159.000000000000000000",
+        "high": "8500.000000000000000000",
+        "low": "8086.000000000000000000",
+        "close": "8277.000000000000000000",
+        "volume": "23186.000000000000000000",
+        "turnover": "3836924160.000000000000000000",
+        "open_interest": "10324.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2609",
+      "week_end": "2026-06-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file": "part.4e3129ea49fb8987219b1a94abf92bff451eda14831e9db91383621c72c0e30f.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/pl-d1-20260916-001-apply-001/unit-005-pl-PL2609/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7989.000000000000000000",
+        "high": "8428.000000000000000000",
+        "low": "7947.000000000000000000",
+        "close": "8305.000000000000000000",
+        "volume": "152590.000000000000000000",
+        "turnover": "25306833760.000000000000000000",
+        "open_interest": "17247.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7989.000000000000000000",
+        "high": "8428.000000000000000000",
+        "low": "7947.000000000000000000",
+        "close": "8305.000000000000000000",
+        "volume": "152590.000000000000000000",
+        "turnover": "25306712820.000000000000000000",
+        "open_interest": "17247.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2611",
+      "week_end": "2026-08-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file": "part.143c64853dc97db543365ea19f12ee0c48172952792826ce60de233cec3d11a0.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/pl-d1-20260916-001-apply-001/unit-006-pl-PL2611/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7535.000000000000000000",
+        "high": "7539.000000000000000000",
+        "low": "6900.000000000000000000",
+        "close": "7105.000000000000000000",
+        "volume": "296564.000000000000000000",
+        "turnover": "42292427980.000000000000000000",
+        "open_interest": "20279.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7535.000000000000000000",
+        "high": "7539.000000000000000000",
+        "low": "6900.000000000000000000",
+        "close": "7105.000000000000000000",
+        "volume": "296564.000000000000000000",
+        "turnover": "42292674480.000000000000000000",
+        "open_interest": "20279.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2506",
+      "week_end": "2025-04-11",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file": "part.aa8e93cbf54bee4fb6b2c1c4648e1c60c8d77d7bef2934d48e142431da69bfc2.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-023/native/unit-020-pr-PR2506/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5722.000000000000000000",
+        "high": "5722.000000000000000000",
+        "low": "5272.000000000000000000",
+        "close": "5638.000000000000000000",
+        "volume": "172401.000000000000000000",
+        "turnover": "14263393980.000000000000000000",
+        "open_interest": "34334.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5722.000000000000000000",
+        "high": "5722.000000000000000000",
+        "low": "5272.000000000000000000",
+        "close": "5638.000000000000000000",
+        "volume": "172401.000000000000000000",
+        "turnover": "14263520330.000000000000000000",
+        "open_interest": "34334.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2507",
+      "week_end": "2025-05-09",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 5,
+          "file": "part.afbb9386b3ac3db36e3d3a3e7b2a7723d33fbc56824e0826a614e3dbb013e9b0.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-001-pr-PR2507/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5638.000000000000000000",
+        "high": "5850.000000000000000000",
+        "low": "5600.000000000000000000",
+        "close": "5822.000000000000000000",
+        "volume": "93717.000000000000000000",
+        "turnover": "8091701820.000000000000000000",
+        "open_interest": "37045.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5638.000000000000000000",
+        "high": "5850.000000000000000000",
+        "low": "5600.000000000000000000",
+        "close": "5822.000000000000000000",
+        "volume": "93717.000000000000000000",
+        "turnover": "8091152050.000000000000000000",
+        "open_interest": "37045.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2509",
+      "week_end": "2025-06-13",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 6,
+          "file": "part.a13e2af5dc6e502e69b143f3b3e838de4386eb06d4df4ff93038bbe271b68f1a.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-002-pr-PR2509/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5850.000000000000000000",
+        "high": "6100.000000000000000000",
+        "low": "5762.000000000000000000",
+        "close": "5972.000000000000000000",
+        "volume": "248607.000000000000000000",
+        "turnover": "21857146080.000000000000000000",
+        "open_interest": "40297.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5850.000000000000000000",
+        "high": "6100.000000000000000000",
+        "low": "5762.000000000000000000",
+        "close": "5972.000000000000000000",
+        "volume": "248607.000000000000000000",
+        "turnover": "21857050850.000000000000000000",
+        "open_interest": "40297.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2511",
+      "week_end": "2025-08-15",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file": "part.bf54ea46405d6a0337f84f878052f70a4b1e14da5f9e41136a7dade22c271fa5.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-004-pr-PR2511/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5910.000000000000000000",
+        "high": "5984.000000000000000000",
+        "low": "5844.000000000000000000",
+        "close": "5896.000000000000000000",
+        "volume": "186496.000000000000000000",
+        "turnover": "16533957210.000000000000000000",
+        "open_interest": "26711.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5910.000000000000000000",
+        "high": "5984.000000000000000000",
+        "low": "5844.000000000000000000",
+        "close": "5896.000000000000000000",
+        "volume": "186496.000000000000000000",
+        "turnover": "16533407240.000000000000000000",
+        "open_interest": "26711.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2512",
+      "week_end": "2025-10-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 10,
+          "file": "part.508527f8c9890a92d9e128d84a16b82e89a580749494ad32a5ed0393fbdbb334.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-005-pr-PR2512/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5738.000000000000000000",
+        "high": "5762.000000000000000000",
+        "low": "5656.000000000000000000",
+        "close": "5668.000000000000000000",
+        "volume": "63934.000000000000000000",
+        "turnover": "5475457020.000000000000000000",
+        "open_interest": "24189.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5738.000000000000000000",
+        "high": "5762.000000000000000000",
+        "low": "5656.000000000000000000",
+        "close": "5668.000000000000000000",
+        "volume": "63934.000000000000000000",
+        "turnover": "5475201720.000000000000000000",
+        "open_interest": "24189.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2601",
+      "week_end": "2025-10-17",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 10,
+          "file": "part.97b99e208a641124801b4e6e49043a9e86e0f1eefc2761f2e86e2ebeb8d98e9e.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-006-pr-PR2601/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5618.000000000000000000",
+        "high": "5650.000000000000000000",
+        "low": "5512.000000000000000000",
+        "close": "5522.000000000000000000",
+        "volume": "204391.000000000000000000",
+        "turnover": "17053390290.000000000000000000",
+        "open_interest": "37178.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5618.000000000000000000",
+        "high": "5650.000000000000000000",
+        "low": "5512.000000000000000000",
+        "close": "5522.000000000000000000",
+        "volume": "204391.000000000000000000",
+        "turnover": "17052491990.000000000000000000",
+        "open_interest": "37178.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2603",
+      "week_end": "2025-12-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file": "part.b19d961c9720eca3050e0f75bcf9faa8d500b8c62037fba8b5a4f5875e26ebc9.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-007-pr-PR2603/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5790.000000000000000000",
+        "high": "5854.000000000000000000",
+        "low": "5736.000000000000000000",
+        "close": "5740.000000000000000000",
+        "volume": "91466.000000000000000000",
+        "turnover": "7959404610.000000000000000000",
+        "open_interest": "27305.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5790.000000000000000000",
+        "high": "5854.000000000000000000",
+        "low": "5736.000000000000000000",
+        "close": "5740.000000000000000000",
+        "volume": "91466.000000000000000000",
+        "turnover": "7959187450.000000000000000000",
+        "open_interest": "27305.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2605",
+      "week_end": "2026-02-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 2,
+          "file": "part.4cd28830fdfb3738213ed205c6626a1ec2eae005606a1c0cf51940abdf0148b4.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-008-pr-PR2605/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6262.000000000000000000",
+        "high": "6308.000000000000000000",
+        "low": "6052.000000000000000000",
+        "close": "6134.000000000000000000",
+        "volume": "191679.000000000000000000",
+        "turnover": "17644526490.000000000000000000",
+        "open_interest": "38102.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6262.000000000000000000",
+        "high": "6308.000000000000000000",
+        "low": "6052.000000000000000000",
+        "close": "6134.000000000000000000",
+        "volume": "191679.000000000000000000",
+        "turnover": "17643631630.000000000000000000",
+        "open_interest": "38102.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2606",
+      "week_end": "2026-04-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file": "part.967fa3b437acf02c16e150ce018d8fd9ba3f2e8335e085eb7bafd14065654512.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-009-pr-PR2606/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8480.000000000000000000",
+        "high": "8588.000000000000000000",
+        "low": "7690.000000000000000000",
+        "close": "7778.000000000000000000",
+        "volume": "136063.000000000000000000",
+        "turnover": "16459115280.000000000000000000",
+        "open_interest": "29135.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8480.000000000000000000",
+        "high": "8588.000000000000000000",
+        "low": "7690.000000000000000000",
+        "close": "7778.000000000000000000",
+        "volume": "136063.000000000000000000",
+        "turnover": "16458964480.000000000000000000",
+        "open_interest": "29135.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2607",
+      "week_end": "2026-04-30",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file": "part.c076e824c6d28b255dcc2fb89185ecc84cf13a5a99f4b32f6534c6568d878c9c.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-010-pr-PR2607/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8042.000000000000000000",
+        "high": "8862.000000000000000000",
+        "low": "8042.000000000000000000",
+        "close": "8652.000000000000000000",
+        "volume": "326905.000000000000000000",
+        "turnover": "42192709320.000000000000000000",
+        "open_interest": "31889.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8042.000000000000000000",
+        "high": "8862.000000000000000000",
+        "low": "8042.000000000000000000",
+        "close": "8652.000000000000000000",
+        "volume": "326905.000000000000000000",
+        "turnover": "42192321100.000002000000000000",
+        "open_interest": "31889.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2609",
+      "week_end": "2026-06-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file": "part.a270dd0f704882cf5eb6b555cf2469182d402c4ff638927223cfbe285e1f03e5.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-011-pr-PR2609/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7510.000000000000000000",
+        "high": "7780.000000000000000000",
+        "low": "7416.000000000000000000",
+        "close": "7604.000000000000000000",
+        "volume": "272202.000000000000000000",
+        "turnover": "31018426350.000000000000000000",
+        "open_interest": "37737.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7510.000000000000000000",
+        "high": "7780.000000000000000000",
+        "low": "7416.000000000000000000",
+        "close": "7604.000000000000000000",
+        "volume": "272202.000000000000000000",
+        "turnover": "31017054960.000000000000000000",
+        "open_interest": "37737.000000000000000000"
+      }
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2610",
+      "week_end": "2026-08-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file": "part.baca774b0418b0fe109bb7214056c44474e4ef8dc96116f9e86ad97a41bd2619.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-024/native/unit-012-pr-PR2610/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7326.000000000000000000",
+        "high": "7380.000000000000000000",
+        "low": "6834.000000000000000000",
+        "close": "7120.000000000000000000",
+        "volume": "272526.000000000000000000",
+        "turnover": "28896387510.000000000000000000",
+        "open_interest": "36347.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7326.000000000000000000",
+        "high": "7380.000000000000000000",
+        "low": "6834.000000000000000000",
+        "close": "7120.000000000000000000",
+        "volume": "272526.000000000000000000",
+        "turnover": "28895932800.000000000000000000",
+        "open_interest": "36347.000000000000000000"
+      }
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2505",
+      "week_end": "2024-12-20",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file": "part.df1ec80a3c9a2358d66029d28eb4344e780caa6c663d10eafacccf2749324b62.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-025/native/unit-005-px-PX2505/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6960.000000000000000000",
+        "high": "7130.000000000000000000",
+        "low": "6920.000000000000000000",
+        "close": "6998.000000000000000000",
+        "volume": "251544.000000000000000000",
+        "turnover": "8864117720.000000000000000000",
+        "open_interest": "69634.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6960.000000000000000000",
+        "high": "7130.000000000000000000",
+        "low": "6920.000000000000000000",
+        "close": "6998.000000000000000000",
+        "volume": "251544.000000000000000000",
+        "turnover": "8863407940.000000000000000000",
+        "open_interest": "69634.000000000000000000"
+      }
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2509",
+      "week_end": "2025-04-18",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file": "part.1074d768a56f44176bf9b7808230ffee6fbdb4dab394773760295c689a2ce10a.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-025/native/unit-006-px-PX2509/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6150.000000000000000000",
+        "high": "6200.000000000000000000",
+        "low": "5924.000000000000000000",
+        "close": "6094.000000000000000000",
+        "volume": "648803.000000000000000000",
+        "turnover": "19678335080.000000000000000000",
+        "open_interest": "101907.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6150.000000000000000000",
+        "high": "6200.000000000000000000",
+        "low": "5924.000000000000000000",
+        "close": "6094.000000000000000000",
+        "volume": "648803.000000000000000000",
+        "turnover": "19677883220.000000000000000000",
+        "open_interest": "101907.000000000000000000"
+      }
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2511",
+      "week_end": "2025-08-15",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file": "part.c33c156cf2f90f7411a583d264d506fa170a9d3219c49f9beddec3c25a043142.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-025/native/unit-007-px-PX2511/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6710.000000000000000000",
+        "high": "6810.000000000000000000",
+        "low": "6596.000000000000000000",
+        "close": "6688.000000000000000000",
+        "volume": "567551.000000000000000000",
+        "turnover": "19024442670.000000000000000000",
+        "open_interest": "102207.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6710.000000000000000000",
+        "high": "6810.000000000000000000",
+        "low": "6596.000000000000000000",
+        "close": "6688.000000000000000000",
+        "volume": "567551.000000000000000000",
+        "turnover": "19024297540.000000500000000000",
+        "open_interest": "102207.000000000000000000"
+      }
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2603",
+      "week_end": "2025-12-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file": "part.8b0575d5f05a790134988cda0e42ea868d61702f3590b7546bec026e9572db59.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-025/native/unit-009-px-PX2603/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6840.000000000000000000",
+        "high": "6968.000000000000000000",
+        "low": "6808.000000000000000000",
+        "close": "6810.000000000000000000",
+        "volume": "863429.000000000000000000",
+        "turnover": "29776809820.000000000000000000",
+        "open_interest": "181107.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6840.000000000000000000",
+        "high": "6968.000000000000000000",
+        "low": "6808.000000000000000000",
+        "close": "6810.000000000000000000",
+        "volume": "863429.000000000000000000",
+        "turnover": "29776169780.000000000000000000",
+        "open_interest": "181107.000000000000000000"
+      }
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2607",
+      "week_end": "2026-04-24",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file": "part.6105bffc45ffc42a39d357c1f58b5efcd1c5a33c52aaaf53dcf78c04ad3f3188.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-025/native/unit-011-px-PX2607/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "9060.000000000000000000",
+        "high": "9658.000000000000000000",
+        "low": "9060.000000000000000000",
+        "close": "9404.000000000000000000",
+        "volume": "1235798.000000000000000000",
+        "turnover": "57865154800.000000000000000000",
+        "open_interest": "172033.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "9060.000000000000000000",
+        "high": "9658.000000000000000000",
+        "low": "9060.000000000000000000",
+        "close": "9404.000000000000000000",
+        "volume": "1235798.000000000000000000",
+        "turnover": "57865066670.000000000000000000",
+        "open_interest": "172033.000000000000000000"
+      }
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2609",
+      "week_end": "2026-06-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file": "part.8aad3b9c5bb731a13787884f933135cfda14cd1f689fc0e2a122b952c96cc2d5.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-025/native/unit-012-px-PX2609/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8570.000000000000000000",
+        "high": "8938.000000000000000000",
+        "low": "8526.000000000000000000",
+        "close": "8776.000000000000000000",
+        "volume": "550086.000000000000000000",
+        "turnover": "24090762400.000000000000000000",
+        "open_interest": "165901.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8570.000000000000000000",
+        "high": "8938.000000000000000000",
+        "low": "8526.000000000000000000",
+        "close": "8776.000000000000000000",
+        "volume": "550086.000000000000000000",
+        "turnover": "24090772660.000000000000000000",
+        "open_interest": "165901.000000000000000000"
+      }
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2611",
+      "week_end": "2026-08-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file": "part.9ae919c9b59999349178ded56be3e2ddcdf7842dfa06dd0a3f3c192029db7df3.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-025/native/unit-014-px-PX2611/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "8118.000000000000000000",
+        "high": "8178.000000000000000000",
+        "low": "7652.000000000000000000",
+        "close": "7936.000000000000000000",
+        "volume": "704169.000000000000000000",
+        "turnover": "27750940000.000000000000000000",
+        "open_interest": "114787.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "8118.000000000000000000",
+        "high": "8178.000000000000000000",
+        "low": "7652.000000000000000000",
+        "close": "7936.000000000000000000",
+        "volume": "704169.000000000000000000",
+        "turnover": "27748943100.000001000000000000",
+        "open_interest": "114787.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2306",
+      "week_end": "2023-04-21",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 4,
+          "file": "part.6ce9201450fe6714c8c7aef461056f4286e0a87cea71c256654d75d559bf504e.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-030/native/unit-013-sf-SF2306/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7670.000000000000000000",
+        "high": "7794.000000000000000000",
+        "low": "7412.000000000000000000",
+        "close": "7444.000000000000000000",
+        "volume": "818560.000000000000000000",
+        "turnover": "31101096320.000000000000000000",
+        "open_interest": "200396.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7670.000000000000000000",
+        "high": "7794.000000000000000000",
+        "low": "7412.000000000000000000",
+        "close": "7444.000000000000000000",
+        "volume": "818560.000000000000000000",
+        "turnover": "31101325670.000000000000000000",
+        "open_interest": "200396.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2307",
+      "week_end": "2023-05-12",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 5,
+          "file": "part.ec63046e21d9b93def2f8ec56e8bb904d82a2cd1ed2eceba5299c1921431865f.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-030/native/unit-014-sf-SF2307/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7516.000000000000000000",
+        "high": "7566.000000000000000000",
+        "low": "7340.000000000000000000",
+        "close": "7492.000000000000000000",
+        "volume": "524623.000000000000000000",
+        "turnover": "19531818170.000000000000000000",
+        "open_interest": "223101.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7516.000000000000000000",
+        "high": "7566.000000000000000000",
+        "low": "7340.000000000000000000",
+        "close": "7492.000000000000000000",
+        "volume": "524623.000000000000000000",
+        "turnover": "19531800730.000000000000000000",
+        "open_interest": "223101.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2309",
+      "week_end": "2023-06-09",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 6,
+          "file": "part.ec4d7604e78a8f3fef98a1cfae982b9e7fef9a3a4d3352b72e9bf0cb4eecbf11.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-030/native/unit-015-sf-SF2309/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7084.000000000000000000",
+        "high": "7100.000000000000000000",
+        "low": "6856.000000000000000000",
+        "close": "7042.000000000000000000",
+        "volume": "590630.000000000000000000",
+        "turnover": "20664899830.000000000000000000",
+        "open_interest": "174864.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7084.000000000000000000",
+        "high": "7100.000000000000000000",
+        "low": "6856.000000000000000000",
+        "close": "7042.000000000000000000",
+        "volume": "590630.000000000000000000",
+        "turnover": "20664417890.000000000000000000",
+        "open_interest": "174864.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2310",
+      "week_end": "2023-07-14",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 7,
+          "file": "part.9b47a8a20f2d0be86605f30f6616caf3b2f5dad88c7c33c1bdf8f301083d85e9.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-030/native/unit-016-sf-SF2310/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6800.000000000000000000",
+        "high": "7020.000000000000000000",
+        "low": "6718.000000000000000000",
+        "close": "6998.000000000000000000",
+        "volume": "588568.000000000000000000",
+        "turnover": "20368256520.000000000000000000",
+        "open_interest": "340411.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6800.000000000000000000",
+        "high": "7020.000000000000000000",
+        "low": "6718.000000000000000000",
+        "close": "6998.000000000000000000",
+        "volume": "588568.000000000000000000",
+        "turnover": "20367792500.000000000000000000",
+        "open_interest": "340411.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2312",
+      "week_end": "2023-10-13",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 10,
+          "file": "part.07c96a23cc903c16597ed485f6aeef4933f1b4ebaa216f34704ab1f7ea262eea.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-030/native/unit-018-sf-SF2312/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "7484.000000000000000000",
+        "high": "7484.000000000000000000",
+        "low": "7040.000000000000000000",
+        "close": "7054.000000000000000000",
+        "volume": "660088.000000000000000000",
+        "turnover": "23749318390.000000000000000000",
+        "open_interest": "338323.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "7484.000000000000000000",
+        "high": "7484.000000000000000000",
+        "low": "7040.000000000000000000",
+        "close": "7054.000000000000000000",
+        "volume": "660088.000000000000000000",
+        "turnover": "23749098890.000000000000000000",
+        "open_interest": "338323.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2402",
+      "week_end": "2023-11-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 11,
+          "file": "part.9fbbad727084762282112ae81b14ef7f972358d4014f75f04f0130aa5f9fa92d.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-030/native/unit-019-sf-SF2402/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6914.000000000000000000",
+        "high": "7230.000000000000000000",
+        "low": "6780.000000000000000000",
+        "close": "7154.000000000000000000",
+        "volume": "877954.000000000000000000",
+        "turnover": "30920294370.000000000000000000",
+        "open_interest": "403187.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6914.000000000000000000",
+        "high": "7230.000000000000000000",
+        "low": "6780.000000000000000000",
+        "close": "7154.000000000000000000",
+        "volume": "877954.000000000000000000",
+        "turnover": "30919952070.000000000000000000",
+        "open_interest": "403187.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2403",
+      "week_end": "2024-01-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 1,
+          "file": "part.bb82e92fc9e952d2f9d971eaf458d476e5484ae2a3861ef0165b90a4fd57ccbc.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-030/native/unit-020-sf-SF2403/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6760.000000000000000000",
+        "high": "6872.000000000000000000",
+        "low": "6708.000000000000000000",
+        "close": "6750.000000000000000000",
+        "volume": "477304.000000000000000000",
+        "turnover": "16203507640.000000000000000000",
+        "open_interest": "320271.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6760.000000000000000000",
+        "high": "6872.000000000000000000",
+        "low": "6708.000000000000000000",
+        "close": "6750.000000000000000000",
+        "volume": "477304.000000000000000000",
+        "turnover": "16203662040.000000000000000000",
+        "open_interest": "320271.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2410",
+      "week_end": "2024-08-23",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 8,
+          "file": "part.bf6bfde67de2babc0037fb2f7ba86ea748f8c24290b8cc9bf1af5d05dc16f2ef.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-004-sf-SF2410/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6342.000000000000000000",
+        "high": "6446.000000000000000000",
+        "low": "6222.000000000000000000",
+        "close": "6312.000000000000000000",
+        "volume": "271287.000000000000000000",
+        "turnover": "8590861030.000000000000000000",
+        "open_interest": "107141.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6342.000000000000000000",
+        "high": "6446.000000000000000000",
+        "low": "6222.000000000000000000",
+        "close": "6312.000000000000000000",
+        "volume": "271287.000000000000000000",
+        "turnover": "8590963180.000000000000000000",
+        "open_interest": "107141.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2501",
+      "week_end": "2024-09-13",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 9,
+          "file": "part.4e8e55bf92ea75cd03bfdb9b9cd14741f38d594e6ef1b91830b6366d8107f2ad.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-005-sf-SF2501/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6144.000000000000000000",
+        "high": "6250.000000000000000000",
+        "low": "6052.000000000000000000",
+        "close": "6156.000000000000000000",
+        "volume": "282302.000000000000000000",
+        "turnover": "8689683790.000000000000000000",
+        "open_interest": "122269.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6144.000000000000000000",
+        "high": "6250.000000000000000000",
+        "low": "6052.000000000000000000",
+        "close": "6156.000000000000000000",
+        "volume": "282302.000000000000000000",
+        "turnover": "8689284700.000000000000000000",
+        "open_interest": "122269.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2502",
+      "week_end": "2024-12-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file": "part.32aa066078397e26a6a823336ca4307d6f804416b709753b07cc14b5860dba32.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-006-sf-SF2502/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6244.000000000000000000",
+        "high": "6374.000000000000000000",
+        "low": "6192.000000000000000000",
+        "close": "6264.000000000000000000",
+        "volume": "460324.000000000000000000",
+        "turnover": "14487620030.000000000000000000",
+        "open_interest": "122636.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6244.000000000000000000",
+        "high": "6374.000000000000000000",
+        "low": "6192.000000000000000000",
+        "close": "6264.000000000000000000",
+        "volume": "460324.000000000000000000",
+        "turnover": "14486966160.000000000000000000",
+        "open_interest": "122636.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2503",
+      "week_end": "2025-01-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 1,
+          "file": "part.991c19aa36b40775eb272d0230abf53023201440e43a68965e6991e769cf4165.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-007-sf-SF2503/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6294.000000000000000000",
+        "high": "6396.000000000000000000",
+        "low": "6190.000000000000000000",
+        "close": "6378.000000000000000000",
+        "volume": "490305.000000000000000000",
+        "turnover": "15449551120.000000000000000000",
+        "open_interest": "163796.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6294.000000000000000000",
+        "high": "6396.000000000000000000",
+        "low": "6190.000000000000000000",
+        "close": "6378.000000000000000000",
+        "volume": "490305.000000000000000000",
+        "turnover": "15449308180.000000000000000000",
+        "open_interest": "163796.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2506",
+      "week_end": "2025-04-11",
+      "fields": [
+        "volume",
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file": "part.4d33804a9a31eaac6680de22c9be78fc017ef0d7e6188233a7beef9b48ec3b2e.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-009-sf-SF2506/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5740.000000000000000000",
+        "high": "6030.000000000000000000",
+        "low": "5740.000000000000000000",
+        "close": "5878.000000000000000000",
+        "volume": "705637.000000000000000000",
+        "turnover": "20644268550.000000000000000000",
+        "open_interest": "197812.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5740.000000000000000000",
+        "high": "6030.000000000000000000",
+        "low": "5740.000000000000000000",
+        "close": "5878.000000000000000000",
+        "volume": "705669.000000000000000000",
+        "turnover": "20644972230.000000000000000000",
+        "open_interest": "197812.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2509",
+      "week_end": "2025-06-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 6,
+          "file": "part.b7abca4fa128246a9fe65ab8aec44f9be66b658ef99550f2397f14bd76694a29.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-011-sf-SF2509/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5150.000000000000000000",
+        "high": "5188.000000000000000000",
+        "low": "5014.000000000000000000",
+        "close": "5104.000000000000000000",
+        "volume": "540680.000000000000000000",
+        "turnover": "13814330950.000000000000000000",
+        "open_interest": "227014.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5150.000000000000000000",
+        "high": "5188.000000000000000000",
+        "low": "5014.000000000000000000",
+        "close": "5104.000000000000000000",
+        "volume": "540680.000000000000000000",
+        "turnover": "13812657140.000000000000000000",
+        "open_interest": "227014.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2511",
+      "week_end": "2025-08-15",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file": "part.fc11f867741cfe6747bc45ced8c96479c08d9993240d2e9f29cce7aeaeba548b.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-012-sf-SF2511/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5980.000000000000000000",
+        "high": "6124.000000000000000000",
+        "low": "5850.000000000000000000",
+        "close": "5932.000000000000000000",
+        "volume": "1088255.000000000000000000",
+        "turnover": "32546766190.000000000000000000",
+        "open_interest": "202744.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5980.000000000000000000",
+        "high": "6124.000000000000000000",
+        "low": "5850.000000000000000000",
+        "close": "5932.000000000000000000",
+        "volume": "1088255.000000000000000000",
+        "turnover": "32542904220.000000000000000000",
+        "open_interest": "202744.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2601",
+      "week_end": "2025-10-17",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 10,
+          "file": "part.647826263ca58539dd8ed84ebf04fb8206fea000dacf63837b8394a0b6eaf01f.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-013-sf-SF2601/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5356.000000000000000000",
+        "high": "5456.000000000000000000",
+        "low": "5308.000000000000000000",
+        "close": "5430.000000000000000000",
+        "volume": "592670.000000000000000000",
+        "turnover": "15954295500.000000000000000000",
+        "open_interest": "203512.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5356.000000000000000000",
+        "high": "5456.000000000000000000",
+        "low": "5308.000000000000000000",
+        "close": "5430.000000000000000000",
+        "volume": "592670.000000000000000000",
+        "turnover": "15953584810.000000000000000000",
+        "open_interest": "203512.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2603",
+      "week_end": "2025-11-21",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 11,
+          "file": "part.7f5eb83d43842db8eba80629c7f3e2e23a2b18070dc89ef0e8211093f9e0b0f4.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-014-sf-SF2603/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5540.000000000000000000",
+        "high": "5730.000000000000000000",
+        "low": "5420.000000000000000000",
+        "close": "5472.000000000000000000",
+        "volume": "1512911.000000000000000000",
+        "turnover": "41815849360.000000000000000000",
+        "open_interest": "205123.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5540.000000000000000000",
+        "high": "5730.000000000000000000",
+        "low": "5420.000000000000000000",
+        "close": "5472.000000000000000000",
+        "volume": "1512911.000000000000000000",
+        "turnover": "41811915040.000000000000000000",
+        "open_interest": "205123.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2605",
+      "week_end": "2026-02-06",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 2,
+          "file": "part.4c86dd7f8c15631a273cd1e1f7b2bc1d4acca0e051e015f11ee68adf2f918e82.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-015-sf-SF2605/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5646.000000000000000000",
+        "high": "5736.000000000000000000",
+        "low": "5590.000000000000000000",
+        "close": "5624.000000000000000000",
+        "volume": "594039.000000000000000000",
+        "turnover": "16801329950.000000000000000000",
+        "open_interest": "159348.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5646.000000000000000000",
+        "high": "5736.000000000000000000",
+        "low": "5590.000000000000000000",
+        "close": "5624.000000000000000000",
+        "volume": "594039.000000000000000000",
+        "turnover": "16799707839.999999800000000000",
+        "open_interest": "159348.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2607",
+      "week_end": "2026-04-10",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file": "part.c9c7164cb21601f0792fb7c4857ce07082e53b5c2faba7a1a4ef0db4e602995f.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-016-sf-SF2607/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5980.000000000000000000",
+        "high": "5980.000000000000000000",
+        "low": "5616.000000000000000000",
+        "close": "5676.000000000000000000",
+        "volume": "667133.000000000000000000",
+        "turnover": "19168371260.000000000000000000",
+        "open_interest": "208382.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5980.000000000000000000",
+        "high": "5980.000000000000000000",
+        "low": "5616.000000000000000000",
+        "close": "5676.000000000000000000",
+        "volume": "667133.000000000000000000",
+        "turnover": "19168204380.000000000000000000",
+        "open_interest": "208382.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2611",
+      "week_end": "2026-08-07",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file": "part.4293b0d18f3d338341b22a68e05165937025efc4a425895e330baaed93674306.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-018-sf-SF2611/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5700.000000000000000000",
+        "high": "5948.000000000000000000",
+        "low": "5618.000000000000000000",
+        "close": "5900.000000000000000000",
+        "volume": "1847001.000000000000000000",
+        "turnover": "54024574280.000000000000000000",
+        "open_interest": "339772.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5700.000000000000000000",
+        "high": "5948.000000000000000000",
+        "low": "5618.000000000000000000",
+        "close": "5900.000000000000000000",
+        "volume": "1847001.000000000000000000",
+        "turnover": "54025054720.000001000000000000",
+        "open_interest": "339772.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2501",
+      "week_end": "2024-08-30",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 8,
+          "file": "part.7ca2ae35c8ec1cb72df185a75833b7255649ec775526d79853f3494819ffa655.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-031/native/unit-020-sh-SH2501/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "2435.000000000000000000",
+        "high": "2563.000000000000000000",
+        "low": "2420.000000000000000000",
+        "close": "2543.000000000000000000",
+        "volume": "250766.000000000000000000",
+        "turnover": "18942171600.000000000000000000",
+        "open_interest": "34504.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "2435.000000000000000000",
+        "high": "2563.000000000000000000",
+        "low": "2420.000000000000000000",
+        "close": "2543.000000000000000000",
+        "volume": "250766.000000000000000000",
+        "turnover": "18942963450.000000000000000000",
+        "open_interest": "34504.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2505",
+      "week_end": "2024-12-20",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file": "part.49aa51cf8ca1489513fdc5a5d8c6fba9705be241ce3599b141e4d2cb14e4c8fa.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-032/native/unit-001-sh-SH2505/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "2622.000000000000000000",
+        "high": "2732.000000000000000000",
+        "low": "2580.000000000000000000",
+        "close": "2716.000000000000000000",
+        "volume": "475943.000000000000000000",
+        "turnover": "38050010460.000000000000000000",
+        "open_interest": "71442.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "2622.000000000000000000",
+        "high": "2732.000000000000000000",
+        "low": "2580.000000000000000000",
+        "close": "2716.000000000000000000",
+        "volume": "475943.000000000000000000",
+        "turnover": "38049263540.000000000000000000",
+        "open_interest": "71442.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2509",
+      "week_end": "2025-04-25",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file": "part.d550472dbad0fc899c2d01352befbb7ea8c98f0d7b7a121d6caacb10da2cf753.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-032/native/unit-002-sh-SH2509/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "2518.000000000000000000",
+        "high": "2518.000000000000000000",
+        "low": "2434.000000000000000000",
+        "close": "2439.000000000000000000",
+        "volume": "1338816.000000000000000000",
+        "turnover": "99432634080.000000000000000000",
+        "open_interest": "131515.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "2518.000000000000000000",
+        "high": "2518.000000000000000000",
+        "low": "2434.000000000000000000",
+        "close": "2439.000000000000000000",
+        "volume": "1338816.000000000000000000",
+        "turnover": "99430314800.000000000000000000",
+        "open_interest": "131515.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2607",
+      "week_end": "2026-04-17",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file": "part.9a1905ffa8b2428e6078367bcbef5274a8689fea33eccabfb55521c3f8a52d72.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-ordinary-20260916-004-apply-001/batch-032/native/unit-006-sh-SH2607/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "2140.000000000000000000",
+        "high": "2141.000000000000000000",
+        "low": "2054.000000000000000000",
+        "close": "2075.000000000000000000",
+        "volume": "822713.000000000000000000",
+        "turnover": "51558766230.000000000000000000",
+        "open_interest": "179551.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "2140.000000000000000000",
+        "high": "2141.000000000000000000",
+        "low": "2054.000000000000000000",
+        "close": "2075.000000000000000000",
+        "volume": "822713.000000000000000000",
+        "turnover": "51557937660.000000000000000000",
+        "open_interest": "179551.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2310",
+      "week_end": "2023-07-21",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 7,
+          "file": "part.040644496e3a31ed92e5d46d273954395b8873e22ff0eb0e61b726a9331d362f.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-closeout-20260916-001-apply-001/batch-002/native/unit-006-sm-SM2310/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6640.000000000000000000",
+        "high": "6730.000000000000000000",
+        "low": "6490.000000000000000000",
+        "close": "6702.000000000000000000",
+        "volume": "796198.000000000000000000",
+        "turnover": "26426766120.000000000000000000",
+        "open_interest": "326755.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6640.000000000000000000",
+        "high": "6730.000000000000000000",
+        "low": "6490.000000000000000000",
+        "close": "6702.000000000000000000",
+        "volume": "796198.000000000000000000",
+        "turnover": "26425599280.000000000000000000",
+        "open_interest": "326755.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2311",
+      "week_end": "2023-09-01",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 8,
+          "file": "part.e8ac82e6fe6a923512290e5aa8f112129d123cbe3396d2bba4dd0c9d338ab4d6.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-closeout-20260916-001-apply-001/batch-002/native/unit-007-sm-SM2311/unit-result.json"
+          ]
+        },
+        {
+          "year": 2023,
+          "month": 9,
+          "file": "part.parquet",
+          "matching_receipts": []
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": false,
+      "stored": {
+        "open": "6846.000000000000000000",
+        "high": "7006.000000000000000000",
+        "low": "6718.000000000000000000",
+        "close": "6990.000000000000000000",
+        "volume": "726207.000000000000000000",
+        "turnover": "24933788650.000000000000000000",
+        "open_interest": "474169.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6846.000000000000000000",
+        "high": "7006.000000000000000000",
+        "low": "6718.000000000000000000",
+        "close": "6990.000000000000000000",
+        "volume": "726207.000000000000000000",
+        "turnover": "24932153280.000000000000000000",
+        "open_interest": "474169.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2312",
+      "week_end": "2023-10-13",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2023,
+          "month": 10,
+          "file": "part.4e74d307dfb140031228b9648bb22aab6db5a7106603e7468f10f8d3ba93279e.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-closeout-20260916-001-apply-001/batch-002/native/unit-008-sm-SM2312/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6960.000000000000000000",
+        "high": "6976.000000000000000000",
+        "low": "6646.000000000000000000",
+        "close": "6666.000000000000000000",
+        "volume": "593821.000000000000000000",
+        "turnover": "20089959500.000000000000000000",
+        "open_interest": "375611.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6960.000000000000000000",
+        "high": "6976.000000000000000000",
+        "low": "6646.000000000000000000",
+        "close": "6666.000000000000000000",
+        "volume": "593821.000000000000000000",
+        "turnover": "20089048700.000000000000000000",
+        "open_interest": "375611.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2403",
+      "week_end": "2024-01-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2024,
+          "month": 1,
+          "file": "part.9fa5091834068ff182de91eb4eb1d01935c23b41e9748db7a48443a582ce93da.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-closeout-20260916-001-apply-001/batch-002/native/unit-010-sm-SM2403/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6360.000000000000000000",
+        "high": "6494.000000000000000000",
+        "low": "6360.000000000000000000",
+        "close": "6406.000000000000000000",
+        "volume": "343676.000000000000000000",
+        "turnover": "11042620230.000000000000000000",
+        "open_interest": "277696.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6360.000000000000000000",
+        "high": "6494.000000000000000000",
+        "low": "6360.000000000000000000",
+        "close": "6406.000000000000000000",
+        "volume": "343676.000000000000000000",
+        "turnover": "11042254780.000000000000000000",
+        "open_interest": "277696.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2603",
+      "week_end": "2025-12-05",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file": "part.c294b64bb4af114efa6c61e38dc31588e52388dc44ebce79d696ca624cd150a8.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-closeout-20260916-001-apply-001/batch-002/native/unit-017-sm-SM2603/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "5636.000000000000000000",
+        "high": "5816.000000000000000000",
+        "low": "5628.000000000000000000",
+        "close": "5758.000000000000000000",
+        "volume": "1467646.000000000000000000",
+        "turnover": "42181993260.000000000000000000",
+        "open_interest": "263926.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "5636.000000000000000000",
+        "high": "5816.000000000000000000",
+        "low": "5628.000000000000000000",
+        "close": "5758.000000000000000000",
+        "volume": "1467646.000000000000000000",
+        "turnover": "42179803730.000000000000000000",
+        "open_interest": "263926.000000000000000000"
+      }
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2607",
+      "week_end": "2026-04-17",
+      "fields": [
+        "turnover"
+      ],
+      "daily_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file": "part.502df65cbef3b160f11c52a8b6d7ca157dbb63caff6dc5f483cd5085a37a5915.parquet",
+          "matching_receipts": [
+            "outputs/newow-weekly-recovery-attempts/d1-closeout-20260916-001-apply-001/batch-002/native/unit-019-sm-SM2607/unit-result.json"
+          ]
+        }
+      ],
+      "weekly_file": "part.parquet",
+      "all_daily_receipted": true,
+      "stored": {
+        "open": "6196.000000000000000000",
+        "high": "6276.000000000000000000",
+        "low": "6166.000000000000000000",
+        "close": "6230.000000000000000000",
+        "volume": "644251.000000000000000000",
+        "turnover": "20019290830.000000000000000000",
+        "open_interest": "256068.000000000000000000"
+      },
+      "from_current_d1": {
+        "open": "6196.000000000000000000",
+        "high": "6276.000000000000000000",
+        "low": "6166.000000000000000000",
+        "close": "6230.000000000000000000",
+        "volume": "644251.000000000000000000",
+        "turnover": "20017974160.000000000000000000",
+        "open_interest": "256068.000000000000000000"
+      }
+    }
+  ]
+}

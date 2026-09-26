@@ -42,7 +42,7 @@ def test_cli_has_no_research_domain() -> None:
         for action in parser._actions
         if isinstance(action, argparse._SubParsersAction)
     )
-    assert set(domain_action.choices) == {"data", "reference", "runtime"}
+    assert set(domain_action.choices) == {"data", "runtime"}
 
 
 def test_alert_models_have_only_htdy_scope_and_event_fields() -> None:

@@ -65,6 +65,7 @@ data/reports/source_interval_provenance_repair_apply_*/backups/
 /outputs/subing-four-period-readiness-20260918/d1-source-response-recovery-*/
 /outputs/subing-four-period-readiness-20260918/source-plan-*.claim.json
 /outputs/current-day-metadata-recovery-20260922/
+/outputs/newow-d1-60-closeout-20260925/
 
 # local scheduled research reports (dated observations, not release assets)
 data/reports/morning-note/

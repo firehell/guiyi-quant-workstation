@@ -5,7 +5,7 @@
   "catalog_revision": "4c5deb8668b87c07789ce14f03a321b9570e3ac409d4d9a2d5e1de7a6c17d3e8",
   "catalog_writes": 0,
   "provider_requests": 0,
-  "repair_source_sha256": "737bd9837850442e780c2730c8d880e92d14abaa8b4b1bae6bec85868cbccf8e",
+  "repair_source_sha256": "43622b2c31aadacc2821b3460b706e88d08046971c0e003b89435840800741fb",
   "schema_version": "cj_weekly_no_trade_prepare_v1",
   "targets": [
     {

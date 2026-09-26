@@ -18,9 +18,9 @@ description: Use when 任务涉及归一量化 RQData、期货合约行情、Can
 
 | 类型 | 允许的默认动作 | 必须保持的边界 |
 |---|---|---|
-| 源码/隔离测试 | 修改 Market Data 代码、fixture 和专用可销毁隔离库 | 通过不授权真实 RQData、Canonical 或生产 DB |
+| 源码/隔离测试 | 修改 Market Data 代码、fixture 和专用可销毁隔离库 | 测试通过不代表真实数据已写入 |
 | 只读诊断 | 在任务范围内自主读取 Catalog/MDS/报告并给出精确缺口 | 不下载、不修复、不把未知写成零缺口 |
-| daily update | 只处理既有基线的最新增量和映射到的新主力 | 真实 provider/发布须纳入明确任务或批次授权；daily 成功不证明全历史完整 |
+| daily update | 只处理既有基线的最新增量和映射到的新主力 | 真实 provider/发布须属于交办目标；daily 成功不证明全历史完整 |
 | full maintenance | 绑定 symbol、physical contract、周期、窗口、plan hash 和当前 readback | 不扩范围、不跨频替代；部分成功/结果不明时停止，不盲目重试 |
 | weekly audit | operational 全历史只读审计 | 不下载、不自动修复、不通知；`skipped_busy` 不算 passed |
 
@@ -29,5 +29,5 @@ description: Use when 任务涉及归一量化 RQData、期货合约行情、Can
 或物理可读性时 fail-closed，不造数、缩窗、插值或跨合约/周期替代。
 
 验证以 `TESTING.md` 为准。生产 mutation 前重读精确计划和现场身份；provider、commit 或网络结果不明时
-先做独立只读核对；结果查明后仅在已批准的重试/预算边界内继续，否则由 owner 决定。
-授权、跨会话恢复和批次内执行统一按 `AGENTS.md`，不增加逐命令审批。
+先做独立只读核对；结果查明后仅在已证明安全且符合任务范围的重试/预算边界内继续，无法证明时停止受影响操作。
+任务边界、跨会话恢复和批次内执行统一按 `AGENTS.md`，不增加逐命令审批。

@@ -151,7 +151,6 @@ def open_historical_reference_components(*, session_factory=None):
     from app.reference_trading.inputs import MarketDataHistoricalInputReader
     from app.reference_trading.repository import ReferenceRepository
     from app.reference_trading.service import HistoricalReferenceService
-    from guiyi_quant.newow.product_identity import futures_adaptation_version
 
     factory = session_factory or SessionLocal
     with factory() as session:
@@ -170,32 +169,25 @@ def open_historical_reference_components(*, session_factory=None):
             finally:
                 lease.release()
 
-        def newow_reader_for_identity(identity):
-            policy = candidate_input_quality_policy(
-                identity.product, identity.frequency, candidate_weekly=False,
-            )
-            if identity.futures_adaptation_version != futures_adaptation_version(
-                identity.frequency, policy,
-            ):
-                raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
+        def newow_for(identity):
             return NewowProductReader(
-                market_data, coverage=coverage, active_products=products,
-                input_quality_policy=policy,
-            )
-
-        reader = MarketDataHistoricalInputReader(
-            newow_reader=NewowProductReader(
                 market_data,
                 coverage=coverage,
                 active_products=products,
-            ),
+                input_quality_policy=candidate_input_quality_policy(
+                    identity.product.lower(), identity.frequency,
+                    candidate_weekly=False,
+                ),
+            )
+
+        reader = MarketDataHistoricalInputReader(
+            newow_reader=newow_for,
             subing_service=SubingReferenceService(
                 market_data,
                 coverage=coverage,
                 active_products=products,
             ),
             read_guard=guard,
-            newow_reader_for_identity=newow_reader_for_identity,
         )
         repository = ReferenceRepository(factory)
         planner = HistoricalReferencePlanner(reader, repository=repository)

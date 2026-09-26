@@ -721,6 +721,10 @@ def test_contract_weekly_quality_v2_opt_in_accepts_proven_nonpositive_close(sess
         session.add(TradingCalendar(
             exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
         ))
+        session.add(MainContractMap(
+            symbol="jm", trade_date=date(2025, 1, day), contract_code="JM2509",
+            rank=1, rule="volume_open_interest",
+        ))
     session.commit()
     gap_end = datetime(2025, 1, 3, 7, tzinfo=UTC)
     fact = NonpositiveCloseFact(
@@ -737,6 +741,16 @@ def test_contract_weekly_quality_v2_opt_in_accepts_proven_nonpositive_close(sess
     )))
     session.commit()
     market = MarketDataService(catalog, store)
+
+    with pytest.raises(MarketDataError, match="SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"):
+        market.query_actual_dominant_trading_days_quality(
+            ActualDominantTradingDayQuery("jm", "1d", date(2025, 1, 2), date(2025, 1, 3)),
+        )
+    actual, gaps = market.query_actual_dominant_trading_days_quality_union(
+        ActualDominantTradingDayQuery("jm", "1d", date(2025, 1, 2), date(2025, 1, 3)),
+    )
+    assert actual.bars == (_bar(2, 100),)
+    assert gaps == (("JM2509", fact),)
 
     with pytest.raises(MarketDataError, match="SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"):
         market.query_contract_weekly_replay_quality(

@@ -1,13 +1,13 @@
 # 牛哇四周期后续工作规划
 
-日期：2026-09-19。本文是工作包与依赖规划，不是已执行结果或生产操作授权。
+日期：2026-09-19；基线复核：2026-09-24。本文是四周期唯一实施路线图，不是已执行结果或生产操作授权。
 执行时遵守 AGENTS.md；当前状态只看 STATUS.md 和 fresh readback。
 
 ## 目标与基线
 
 将原 60m 专项扩展为共享 Canonical 1m 底座的 1m、15m、30m、60m 历史产品能力，覆盖趋势、震荡、主升浪、适用指标与参考交易；随后独立建设盘中 completed observation。
 
-本轮只读核对 develop@e3984d5cc97575345ccb0d783607571caee681a0。主树有用户暂存、删除和未跟踪文件，未修改它们。STATUS.md 记录正式 v1.10.15、Newow D1-only、W1/60m 关闭及 Runtime 自然业务证据待验；本轮未重新查询运行服务，不能把文档记录作为即时 health。
+2026-09-24 复核 `develop@ff4e50bfb65ab6d60e6d97412406c06369defe44`，任务树从该提交建立。`STATUS.md` 记录 `v1.10.33` 已发布并切换本机六项服务，但自然 completed Bar/盘后验收未完成，不能称 `RUNTIME_READY`。develop 的 Newow 产品合同仍仅枚举 1w/1d/60m，正式开放 1d/1w，60m 关闭；1m/15m/30m 尚无 Newow 产品身份。P8/P9 已进入 develop，生产 Reference 的 migration、全范围历史构建、persisted reader 切换和 worker activation 仍须 fresh readback，不能由代码存在推定。
 
 沿用上一轮已读取的方案和证据：
 - [原 W1/60m 逐品种方案](2026-09-17-newow-w1-60m-per-product.md)
@@ -17,23 +17,29 @@
 
 此规划更新分钟工作的目标，不取消 W1 任务，不扩展既有下载、写入、发布或 Runtime 授权。现有 60m 成果经当前身份核验后复用，不重新下载全部来源。原方案中的历史状态、哈希和授权不能直接用于本轮执行。
 
+四周期共用**同一物理合约、已校验的 Canonical 1m**：1m 直接读取，15m/30m/60m 由唯一 Session 聚合器生成。每个周期有独立 dataset、完成水位、产品身份、公式计算、预热、质量判定、Reference stream、页面能力和开放 Gate。Catalog/MDS 是唯一消费者入口；既有 5m 消费者也受 1m revision 变化影响。历史重放和首次 forward 观察使用不同 stream 与统计身份。
+
+本轮只读盘点与报告见 [2026-09-24 四周期盘点](../../tasks/newow-four-period-audit-20260924.md)。240/720 是固定分母。按 owner 修订口径，历史输入验收从 `max(2023-01-01, 品种上市日)` 开始，不要求晚上市品种提供上市前数据。49 个品种的 2023 起点窗口四周期 196/196 可读，11 个晚上市品种从各自上市日起四周期 44/44 可读；两组属于不同只读快照，仅可合计为按新口径选定窗口的 240/240 项历史输入证据。原统一 2023 查询的 44 个 `TRADING_SESSION_MISSING` 是上市前事实，保留原结果但不计为新口径缺口。49 个长样本为第一层，11 个短样本为第二层，后者仍需验证预热及参考统计样本长度。
+
+以 2026-09-25 00:00:33 CST 数据库快照读 9/24 已完成日，240/240 均因 `MAIN_CONTRACT_MAP_MISSING` 受阻；独立回读该日 rank1=0/60，Calendar=5 交易所、Session=60 品种。三策略 720 项均未计算，当前无四周期全就绪品种。第一层试点工程顺序推荐 RB → AU/AG/SC（长夜盘）与 AP（日盘）；第二层优先 AO 作晚上市边界，PD/PT 作最短历史与 `WARMING` 边界。这个顺序以报告为准，不把复选框勾选冒充已实现；补齐 9/24 Map/新鲜度亦不自动打开产品能力。
+
 ## 工作包与完成标准
 
 ### P0：收敛依赖与既有工作
 
 - [ ] 核对 W1 工作树剩余差异与最新 develop，列出 reader、quality、capability、recovery 的共享文件归属及集成先后。
 - [ ] 分别回读已部署版本的 Live、自然盘后、weekly audit 与 Alert 证据，不因改进分钟能力而手工重跑或补发。
-- [ ] 复核 AP/PD/PT 既有 60m 输入和候选证据；对旧 unknown、原子发布失败及 Session 缺失，先确定当前实际对象和状态。
+- [ ] 以当前 60 品种盘点选择试点，不预设 AP/PD/PT 最优；对旧 unknown、原子发布失败及 Session 缺失，先确定当前实际对象和状态。
 
 出口：已有成果、剩余缺口、共享阻塞、可独立推进工作各自明确。W1 交付和纯 Web 改善不必等待全部分钟数据；Runtime 未完成证据不阻塞隔离开发，但受影响的正式上线仍需证据。
 
 ### P1：冻结四周期产品与输入合同
 
-- [ ] 四周期各为独立产品身份；保留既有 D1/W1/60m 身份稳定性，新增周期不静默改变旧结果。
+- [ ] 在 `product_contracts.py` 增加 1m/15m/30m 身份并保留既有 D1/W1/60m 身份稳定性；`product_identity.py`、quality policy、`product_adapters.py` 与 Reference stream identity 同步审查，新增周期不静默改变旧结果。
 - [ ] 复用已接受策略公式，参数按所选周期 Bar 数解释，不擅自按等时长换算或重新寻优。
-- [ ] 定义每项指标的适用范围、预热、重绘和原站证据状态；D1 专属能力不自动扩入分钟。
+- [ ] 按三策略分别冻结每周期的计算前缀、Bar 数预热、适用副图、重绘与原站证据状态；公式参数按该周期 Bar 数，不作等时长换算或重新寻优。D1/W1 缺价与 NO_TRADE 豁免不自动扩入分钟。
 - [ ] 明确历史快照先交付，盘中 completed Live 后交付；分时专属公式、120m、Newow 5m、自动做空及通知不在本轮范围。
-- [ ] 更新受影响的 Newow canonical、API/capability schema 和输入适配版本；公式版本只在公式语义变化时更新。
+- [ ] 更新受影响的 Newow canonical、API/capability schema 和输入适配版本；公式版本只在公式语义变化时更新。不同周期 `as_of` 下分别求 completed cutoff，大周期背景只使用该时点已完成输入。
 
 入口文件：packages/quant-core/guiyi_quant/newow/product_contracts.py、product_identity.py；services/quant-api/app/market_data/newow/product_release.py；openspec/specs/newow-product-reference-trading/spec.md。
 出口：三策略 × 四周期的能力和非适用项明确，候选支持与正式开放分开声明。
@@ -41,8 +47,8 @@
 ### P2：四周期只读依赖盘点和资源估算
 
 - [ ] 扩展 readiness 对 1m/15m/30m 的显式选择；保持无 provider、无写入的审计 composition。
-- [ ] 分别枚举图表、指标、参考统计和每个物理合约生命周期前缀，按合约及来源窗口合并 1m 依赖并保留 consumer 关联。
-- [ ] 将普通缺失、仅派生缺失、metadata 不足、来源异常、完整性异常、正常预热与未启动分别列出；未知计数为未知，不填零。
+- [ ] 分别枚举图表窗口、参考统计窗口、计算所需完整物理合约前缀与 rank1 owner 展示窗口；历史输入验收起点为 `max(2023-01-01, 品种上市日)`，参考统计显式记录真实起点及样本长度。按合约及来源窗口合并 1m 依赖并保留 consumer 关联。同合约预热可早于 owner，不能跨合约拼信号或参考交易。
+- [ ] 将来源 1m 缺失、仅派生缺失、Calendar/Session/Map/lifecycle 不足、来源身份或重复冲突、物理完整性、预热不足、产品未支持与未读取分别列出；多标签可并存，未知计数为未知，不填零。
 - [ ] 输出存量复用量、需下载来源、需派生目标和磁盘/内存/请求预算；数据不足时不能生成可执行的精确 hash。
 
 入口文件：services/quant-api/app/market_data/newow/readiness.py、readiness_composition.py 和既有 native planner/CLI。
@@ -50,10 +56,10 @@
 
 ### P3：完善分钟时间窗口与质量边界
 
-- [ ] 使用权威 Calendar/Session 端点替代固定每日 Bar 根数估算；分别处理 display、performance、prefix 和各周期 completed cutoff。
+- [ ] `product_reader.py` 的 60m 每天约 4 根估算改为权威 `expected_bar_ends` 窗口；分别处理 chart、reference statistics、物理计算 prefix 和各周期 completed cutoff。分钟分页必须用带时区 `bar_end` 严格游标与快照身份，不能沿用 `before: date` 导致同日漏 Bar/重复。
 - [ ] 复用唯一 session 锚点和聚合器，不再次减一分钟，不按自然小时 resample，不跨休市拼桶。
-- [ ] 验证合法短尾桶、首末分钟、跨午夜/月/年、节假日无夜盘、历史 Session 变更及同日多 Bar 分页。
-- [ ] 验证精确端点集合、重复冲突、order_book_id、trading_day、rank1 owner、合约生命周期及来源修订。
+- [ ] 验证合法短尾桶、真正缺分钟、首末分钟、跨午夜/月/年/周末、节假日无夜盘、各品种夜盘结束差异、历史 Session 变更及同日多 Bar 分页。Session 首分钟 adapter 仅转换一次；不按自然小时 resample，不跨休市拼桶。
+- [ ] 验证精确端点集合、重复冲突、order_book_id、trading_day、rank1 owner、上市/到期生命周期及来源修订；1m revision 变化使 5m/15m/30m/60m 派生及下游已存 Reference snapshot 失效，须按依赖摘要重建与回读。
 - [ ] 分钟非正价和 NO_TRADE 按已接受分钟合同处理；未覆盖样本明确阻断。不得把 D1/W1 缺价回执作为分钟缺价依据；如需新的分钟质量语义，单独提交具体样本和取舍。
 
 入口文件：services/quant-api/app/market_data/aggregation.py、session_clock.py、newow/product_reader.py；现有 MDS/coverage 入口。不创建新的缺口权威。
@@ -61,21 +67,21 @@
 
 ### P4：扩展现有维护与恢复编排
 
-- [ ] 扩展现有 native 维护和 scripts/newow_weekly_recovery.py、campaign、acceptance 的显式范围，区分源 1m 与目标 1m/15m/30m/60m。
+- [ ] 扩展现有 native 维护和必要的 campaign/acceptance 显式范围，区分来源 1m 与四个目标。当前 `contract-warmup` 显式只支持 1d/1w/15m/60m，先扩展合同和对应测试，不能假定已有四周期批次入口。
 - [ ] 保持旧 60m 单频合同可验证，四周期使用明确新范围及身份；不得放宽旧校验来接受混频旧回执。
 - [ ] 在一个明确批次内去重来源，源通过后分别派生；已有源变化时核对受影响派生及共享消费者，包括现有 5m。
-- [ ] 计划、hash、执行记录、冻结 expected_bar_ends、独立读回和终态使用同一精确范围。
+- [ ] 计划、hash、来源/目标 scope、预算、冻结 expected_bar_ends、分区提交、独立读回和终态使用同一精确范围；明确来源去重、分区部分成功及幂等恢复。
 - [ ] 验证维护锁、已有提交复用、预算耗尽、发布前失败、提交后结果未知及恢复；不宣称跨分区/跨周期天然原子成功。
 
 出口：离线测试和 dry-run 可证明不会重复下载、越权派生或把部分成功算整批通过。生产批次须另有匹配目标、环境、预算、异常和重试边界的授权。
 
 ### P5：完成四周期策略、参考交易和页面
 
-- [ ] 后端产品类型、输入 adapter、三策略与适用副图支持四周期；参考交易身份包含周期且不跨合约、owner 或质量断点配对。
-- [ ] 新主力预热 HOLD 不补造 BUILD；首次 CLEAR 无入场、短历史 WARMING、零笔 CLOSED 均正确显示。
-- [ ] 前端周期切换、API 验证、快照 token、分页、请求取消和缓存统一更新；旧响应不能污染新周期。
+- [ ] 后端产品类型、输入 adapter、三策略与适用副图支持四周期；接入统一 Reference Trading 的历史 stream、bounded build/checkpoint、持久化 presentation 与快照分页。参考交易身份包含周期且不跨合约、owner 或质量断点配对；不新增第二套页面交易投影，不在每次页面请求全历史重算。
+- [ ] 新主力预热 HOLD 不补造 BUILD；历史 `INITIAL_CLEAR_NO_ENTRY`、短历史 `WARMING`、零笔 CLOSED、`DATA_BLOCKED` 分别解释。forward 首次观察不得借历史回放制造入场或 `INITIAL_CLEAR_NO_ENTRY`。
+- [ ] 前端类型、周期切换、API/capability、快照 token、分页、请求取消和缓存键统一更新；旧响应不能污染新周期或新快照。`persisted` reader 仅在实际 migration/build/覆盖/身份读回通过后切换，当前生产默认 `legacy` 需 fresh evidence 核实。
 - [ ] 页面区分报价、所选周期策略、统计截止和周日背景。未开放解释继续保持未开放，不重新映射原周日评分成分钟评分。
-- [ ] 完整前缀计算保持有界分页和资源门禁；验证冷请求、取消、超时、内存及重复请求。不得通过截短统计或递归前缀制造性能通过。
+- [ ] 完整前缀通过有界构建与 checkpoint 处理；验证 1m 容量、冷请求、取消、超时、内存、重启和重复请求。不得通过截短计算/统计或每次请求重放全历史制造性能通过。
 - [ ] 参考收益沿用独立统计窗口和既有口径；不新增账户净值、年化、资金回撤，不将原站展示称为期货执行收益。
 
 入口文件：packages/quant-core/guiyi_quant/newow/product_adapters.py、reference_trades.py；services/quant-api/app/market_data/newow/product_reader.py、product_service.py、product_release.py；apps/quant-web/src/api/newowProduct.ts、types/newowProduct.ts、composables/useNewowProduct.ts 和 components/market/detail/newow/。
@@ -83,7 +89,7 @@
 
 ### P6：代表品种纵向验收
 
-- [ ] 从 AP/PD/PT 当前审计最完整者选首个试点；再覆盖权威 Session 证明的长夜盘、短历史和换月样本。
+- [ ] 从本轮完整 60 品种真实盘点的长样本第一层选首个试点，再从上市后输入已证明的短样本第二层选 AO 和 PD/PT 等边界；覆盖权威 Session 证明的长夜盘与换月。当前 9/24 Map 仍阻断全部正式候选，不能称任何品种全就绪。
 - [ ] 增加源缺失、冲突、metadata 缺失和未完成桶反例；D1 缺价品种不能自动充当分钟缺价样本。
 - [ ] 同一代码、配置、来源身份与带时区 as_of 下，逐周期验证 MDS、三策略、适用 section 和真实自然首次加载。
 - [ ] 验证前缀不变性、批量/增量一致、重启一致、分页不改变统计，保留旧 D1/W1/60m 定向回归。
@@ -138,5 +144,4 @@ W1 的已批准工作及独立 Web 改善继续，不扩大成新的总阻塞条
 - apps/quant-web/tests/useNewowProduct.test.ts
 - apps/quant-web/e2e/newow-product.spec.mjs
 
-本轮只写此规划。上一轮聚合器 9 项通过仅是既有基础回归，不是四周期实现结果。本轮文档检查也不关闭上述任何工程、数据、发布或 Runtime Gate。
-下一步是 P0/P1：刷新依赖归属并把四周期产品、时间窗口、版本与验收边界收敛为可实施合同。
+本轮更新此规划并进行只读盘点；具体证据与限制见盘点报告。聚合器旧有 9 项通过仅是基础回归，不是四周期实现。文档检查与一天 MDS 探针不关闭完整历史、三策略、产品、发布或 Runtime Gate。

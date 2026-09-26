@@ -160,15 +160,15 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
   requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v3', 'meta.reference_model_version')
-  const adaptationVersion = normalizedIdentity.input_quality_policy === 'newow_daily_input_quality_v2'
-    ? 'newow_futures_daily_quality_segment_v2'
-    : normalizedIdentity.frequency === '1w'
+  const adaptationVersion = normalizedIdentity.frequency === '1w'
     ? (
       normalizedIdentity.input_quality_policy === 'newow_weekly_input_quality_v2'
         ? 'newow_futures_weekly_quality_segment_v2'
         : 'newow_futures_weekly_quality_segment_v1'
     )
-    : 'newow_futures_quality_segment_v3'
+    : normalizedIdentity.frequency === '1d' && normalizedIdentity.input_quality_policy === 'newow_daily_input_quality_v2'
+      ? 'newow_futures_daily_quality_segment_v4'
+      : 'newow_futures_quality_segment_v3'
   requireExact(value.futures_adaptation_version, adaptationVersion, 'meta.futures_adaptation_version')
   return {
     schema_version: 'newow_product_detail_v3',
@@ -201,12 +201,10 @@ function normalizeWireIdentity(
   const formulaVersions = stringArray(value.formula_versions, `${field}.formula_versions`)
   if (!sameStrings(formulaVersions, EXPECTED_FORMULAS[strategy])) throw new Error(`${field}.formula_versions is invalid or out of order`)
   const policy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
-    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2', 'newow_daily_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    ? literal(value.input_quality_policy, ['newow_daily_input_quality_v2', 'newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
     : undefined
-  if ((policy === 'newow_weekly_input_quality_v2' && frequency !== '1w')
-    || (policy === 'newow_daily_input_quality_v2' && frequency !== '1d')) {
-    throw new Error(`${field}.input_quality_policy has invalid frequency`)
-  }
+  if ((policy === 'newow_weekly_input_quality_v2' && frequency !== '1w') ||
+      (policy === 'newow_daily_input_quality_v2' && frequency !== '1d')) throw new Error(`${field}.input_quality_policy frequency mismatch`)
   return {
     product, strategy, frequency, series_kind: 'actual_dominant', profile_id: profileId, formula_versions: formulaVersions,
     ...(policy === undefined ? {} : { input_quality_policy: policy }),
@@ -573,7 +571,7 @@ function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta,
   requireExact(value.reference_model_version, meta.reference_model_version, `${field}.reference_model_version`)
   requireExact(value.futures_adaptation_version, meta.futures_adaptation_version, `${field}.futures_adaptation_version`)
   const tradePolicy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
-    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2', 'newow_daily_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    ? literal(value.input_quality_policy, ['newow_daily_input_quality_v2', 'newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
     : undefined
   if (tradePolicy !== meta.identity.input_quality_policy) throw new Error(`${field}.input_quality_policy conflict`)
   const status = literal(value.status, ['OPEN', 'CLOSED', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'], `${field}.status`)
@@ -619,7 +617,7 @@ function normalizeAuxiliary(payload: unknown, meta: NewowProductMeta, expectedCo
   }
   const value = exactRecord(payload, 'auxiliary.value', ['component', 'formula_version', 'segments', 'repainting', 'formal_signal_eligible', 'page_parity', 'source_category', 'allowed_uses'])
   requireExact(value.source_category, 'guiyi_product_auxiliary_adapter', 'auxiliary.source_category')
-  const component = literal(value.component, ['main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'], 'auxiliary.component')
+  const component = literal(value.component, ['main_force_control', 'up_down_energy', 'trend_reversal', 'zhaoyao_mirror', 'cup_handle'], 'auxiliary.component')
   if (expectedComponent !== undefined) requireExact(component, expectedComponent, 'auxiliary.component')
   const formulaVersion = text(value.formula_version, 'auxiliary.formula_version')
   const segments = array(value.segments, 'auxiliary.segments').map((segment, index) => {
@@ -703,6 +701,22 @@ function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue
 function normalizeAuxiliaryData(payload: unknown, component: NewowAuxiliaryValue['component'], formulaVersion: string, size: number, field: string) {
   if (component === 'cup_handle') {
     return array(payload, field).map((item, index) => normalizeCupWitness(item, `${field}[${index}]`, formulaVersion))
+  }
+  if (component === 'trend_reversal') {
+    const value = exactRecord(payload, field, ['wr1', 'wr2', 'bias', 'rebound', 'adjust', 'ma120', 'hhv', 'llv', 'enough', 'bar_count', 'formula_version'])
+    const result = {
+      wr1: finiteArray(value.wr1, `${field}.wr1`), wr2: finiteArray(value.wr2, `${field}.wr2`),
+      bias: finiteArray(value.bias, `${field}.bias`), rebound: finiteArray(value.rebound, `${field}.rebound`),
+      adjust: finiteArray(value.adjust, `${field}.adjust`), ma120: finiteArray(value.ma120, `${field}.ma120`),
+      hhv: finiteArray(value.hhv, `${field}.hhv`), llv: finiteArray(value.llv, `${field}.llv`),
+      enough: boolean(value.enough, `${field}.enough`), bar_count: count(value.bar_count, `${field}.bar_count`),
+      formula_version: text(value.formula_version, `${field}.formula_version`),
+    }
+    requireAligned(size, field, result.wr1, result.wr2, result.bias, result.rebound, result.adjust, result.ma120, result.hhv, result.llv)
+    requireExact(result.bar_count, size, `${field}.bar_count`)
+    requireExact(result.enough, size >= 120, `${field}.enough`)
+    requireExact(result.formula_version, formulaVersion, `${field}.formula_version`)
+    return result
   }
   if (component === 'main_force_control') {
     const value = exactRecord(payload, field, ['kongpan', 'status', 'current_status', 'formula_version'])

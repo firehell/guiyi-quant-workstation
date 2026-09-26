@@ -645,6 +645,8 @@ def _attach_hints(
         for index, trade in enumerate(trades):
             if owners != (trade.physical_contract, trade.segment_id):
                 continue
+            if hint.calculation_segment_id != trade.calculation_segment_id:
+                continue
             entry = actions_by_id[trade.entry_signal_id]
             if hint.sequence is None:
                 if hint.bar_end <= entry.bar_end:
@@ -663,7 +665,10 @@ def _attach_hints(
                     exit_action.sequence,
                 ):
                     continue
-            elif trade.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
+            elif trade.status in (
+                ReferenceTradeStatus.ROLLOVER_INTERRUPTED,
+                ReferenceTradeStatus.DATA_INTERRUPTED,
+            ):
                 if trade.interrupted_at is None:
                     raise ValueError("NEWOW_REFERENCE_INCONSISTENT_INTERRUPTION")
                 if hint.bar_end > trade.interrupted_at:

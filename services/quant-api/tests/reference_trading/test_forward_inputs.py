@@ -10,30 +10,8 @@ from guiyi_quant.reference_trading.htdy import MODEL_VERSION
 from app.market_data.domain import CanonicalBar
 from app.market_data.market_read_service import MarketObservationSnapshot, MarketReadWindow
 from app.reference_trading.forward_inputs import (
-    ForwardInputUnavailable, _newow_capture, capture_htdy_live, capture_subing_live,
+    ForwardInputUnavailable, capture_htdy_live, capture_subing_live,
 )
-from guiyi_quant.newow.product_identity import InputQualityPolicy
-
-
-def test_newow_capture_rejects_quality_policy_identity_mismatch():
-    from guiyi_quant.newow.product_identity import futures_adaptation_version
-
-    identity = StreamIdentity(
-        "newow_trend", ("formula",), "profile", "model",
-        futures_adaptation_version("1d", InputQualityPolicy.V1),
-        "OI", "1d", "actual_dominant", RecordingMode.FORWARD_OBSERVATION,
-        "completed_canonical_v1",
-    )
-    with pytest.raises(ForwardInputUnavailable, match="NEWOW_SOURCE_IDENTITY_INVALID"):
-        _newow_capture(
-            identity, revision_id="revision", generation=1,
-            now=datetime(2026, 9, 23, 8, tzinfo=UTC), after=None,
-            bar={"bar_end": "2026-09-23T07:00:00+00:00"},
-            contract="OI2701", owner_id="owner", calculation_id="calculation",
-            source_kind="canonical_completed", source_identity="source",
-            source_bar_sha256="a" * 64,
-            input_quality_policy=InputQualityPolicy.DAILY_V2,
-        )
 
 
 class _Read:

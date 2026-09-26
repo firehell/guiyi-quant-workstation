@@ -1,0 +1,11 @@
+{
+  "schema_version": "newow_weekly_conflict_source_verify_preflight_v1",
+  "status": "source_query_preflight_passed",
+  "readonly": true,
+  "maintenance_lock_available": true,
+  "provider_requests": 0,
+  "writes": 0,
+  "plan_sha256": "21171de4b2e8f6e8f6fa5969aea4012479d22d214348af4e225f1f8098768495",
+  "catalog_revision": "2b75be99f44442dbe5b029ddc68dbab6aed3b2393341fbc6610a662b008b45d9",
+  "request_count": 1
+}

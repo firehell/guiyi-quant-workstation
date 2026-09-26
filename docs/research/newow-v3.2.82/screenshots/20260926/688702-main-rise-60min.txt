@@ -1,0 +1,168 @@
+Browser tab: 1, Title: "个股详情 - 牛哇盯盘 (v3.3.59)", URL: "https://www.v8848.cn/stock_detail.html?code=688702.SH&strategy=zhushenglang&period=day".
+1 AXWebArea 个股详情 - 牛哇盯盘 (v3.3.59), URL: v8848.cn/stock_detail.html?code=688702.SH&strategy=zhushenglang&period=day
+	2 container
+		3 image
+		4 text 返回
+		219 text 60分 | 4h
+		6 text ▼
+		103 text 盛科通信-U
+		7 text 688702
+		220 text 日期：2026-09-26
+		221 text 328.50
+		222 text -6.50 -1.94%
+		11 text 最高 
+		223 text 339.80
+		13 text 最低 
+		224 text 328.30
+		15 text 开盘 
+		225 text 330.00元
+		17 text 市值 
+		226 text 0亿
+		19 text 成交量 
+		227 text 0万
+		21 text 换手 
+		228 text 0
+		23 text 主力
+		229 text 无庄控盘
+		25 container strategyToggle
+			26 button 震荡策略
+			27 button 趋势策略
+			28 button 双策略
+			29 button ✨AI分析
+			30 container donchianToggle
+				31 text 通道
+		114 container compositeActionCard
+			115 container
+				116 text 综合决策
+				117 container compositeScoreWrap
+					230 text 68分
+				231 text 中等确定性
+				232 text 共振 R2
+				121 text 错配
+				233 text 收盘终值·已收盘 K 线
+				123 text ▾
+			124 container compositeBody
+				125 container compositeFirstAction
+					234 text 提示
+					235 text 风险提示：周线空仓（蓝色带）· 日线持股（黄色带）——下跌中的反弹
+					236 text 周线仍处空头，日线反弹多为下跌中继的背离走势（易二次探底）。若参与建议仓位 10%-30%，设好止损、不追涨；日线转弱或周线未反转前不加仓；震荡短暂持有不改趋势。同步确认大盘趋势状态。
+				129 container compositeMismatchRow
+					237 text 错配期·逃顶窗口
+					238 text 逢高减仓·保留底仓
+					239 text 震荡已清 4 根
+					240 text 趋势日线仍在黄带，未发生下穿
+				134 container compositeCertRow
+					241 text 30
+					136 text 趋势一致
+					242 text 30
+					138 text 震荡确认
+					243 text 10
+					140 text 共振
+					244 text 6
+					142 text 方向拐点
+					245 text -8
+					144 text 波动折损
+				145 container compositeResonanceRow
+					246 text 错配预警
+					247 text ●●○○○
+					248 text 趋势与震荡方向背离，或趋势缺数据而震荡已明确转向，均属错配期，仅作事件级响应。
+				149 container compositeDetailToggle
+					150 text 展开依据 · 波动率 / 三周期 / 方向判读
+					151 text ▾
+				152 container compositeDecisionCard
+					249 text 逢高减仓·保留底仓
+					250 text 中等确定性
+					251 text 建议仓位 10%-30%
+					252 text 震荡已转空但趋势日线仍在黄带，属旧趋势动摇、新趋势未立的错配期。保留底仓跟随趋势，逢反弹分批减仓；不追高、不加仓。若趋势日线转蓝带，按趋势信号执行。近期波动率偏高（6.3%），注意控制仓位、等待回踩确认。
+				157 text 本结论基于策略信号的机械判定，仅供参考，不构成投资建议。
+		37 container statusCardWrap
+			38 container
+				253 text 筑底反弹
+				254 text 周:空仓
+				255 text 日:持股
+				42 image
+				256 text 减仓观望
+				257 text 建议仓位 10%-30%
+				45 text ▾
+			258 text 周空仓日持股，等右侧确认
+			259 text 目标
+			260 text ¥349.00
+			261 text 吸筹
+			262 text ¥290.00
+			192 text  ~
+			263 text 已跌
+			264 text -5.9%
+			265 text 距吸筹
+			266 text 13.3%
+			197 container Help: 点击展开/收起, ID: cardAiRow
+				198 text AI诊股
+				267 text 筑底反弹，周线空仓但日线已转黄带，筑底反弹，等周线右侧确认。 目标价349.00，无庄控盘，仓位建议 10%-30%。
+			200 button 11周期 · 解读, ID: magic11HelpBtn
+		46 container klineSection
+			47 container klineLegend
+				48 text 目标价:
+				268 text 348.95
+				50 text 吸筹价:
+				269 text 323.89
+			52 container chartPeriods
+				53 button 分时
+				54 button 日K
+				55 button 周K
+				56 button 月K
+				57 button 60分, Help: 更多周期, ID: btn60min
+			58 container klineContainer
+				270 container
+					271 container Charting by TradingView
+						272 link Description: Charting by TradingView, ID: tv-attr-logo, Value: tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=www.v8848.cn/stock_detail.html
+				59 image overlayCanvas
+		61 container subPanelTabs
+			62 text 主力照妖镜
+			63 text 涨跌动能
+			64 text 主力控盘
+			65 text 趋势转折
+		210 container subPanelEnergy
+			211 text 涨跌动能 ■上涨 ■下跌 ▲波段进场 ▲反弹 ▲超跌
+			212 button 指标解读
+		66 container stratSection
+			67 text 策略收益率走势
+			273 text 年化126.4%
+			68 text 收益分析 ›
+			69 container stratLazyContent
+				70 container stratRangeTabs
+					71 button 近3月
+					72 button 近1年
+					73 button 近3年
+					74 button 今年
+					75 button 理论值
+					76 button 全部
+				77 container stratMetrics
+					78 container
+						274 text +44.06%
+						80 text 累计收益
+					81 container
+						275 text 50%
+						83 text 胜率
+					84 container
+						276 text 41.70%
+						277 text 最大回撤
+					87 container
+						278 text 6
+						89 text 交易次数
+		90 container tradeSection
+			91 text 回测操盘提醒 历史回测推演，仅供参考，不作为实时买卖提示
+			92 container tradeLazyContent
+				177 container tradeReminderV2
+					279 text 回测持仓中 2026-09-23 10:30 → 至今 盈亏 +3.79% 建仓 买入 316.51 09-23 10:30 回测 09-07 11:30 → 09-08 14:00 盈亏 -1.46% 建仓 买入 360.31 09-07 11:30 清仓 卖出 355.07 -1.46% 09-08 14:00 回测 08-11 14:00 → 08-24 10:30 盈亏 +10.83% 建仓 买入 358.37 08-11 14:00 清仓 卖出 397.18 +10.83% 08-24 10:30
+				280 text 共 6 笔交易记录，仅展示最近 3 笔
+				93 container tradeVipCard
+					281 text 解锁完整回测报告与实时信号推送
+					95 button 查看全部, ID: tradeVipBtn
+				96 container nwPathHead
+					97 text 多周期嵌套波段路径
+					98 text 展开
+		99 container canslimSection
+			100 text AI 基本面诊断 (CANSLIM)
+			101 text --
+			102 text 向下滚动加载基本面诊断
+
+The focused UI element is 1 AXWebArea 个股详情 - 牛哇盯盘 (v3.3.59), URL: v8848.cn/stock_detail.html?code=688702.SH&strategy=zhushenglang&period=day

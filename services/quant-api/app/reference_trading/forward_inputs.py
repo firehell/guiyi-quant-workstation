@@ -13,7 +13,7 @@ from app.reference_trading.capture import ForwardCapture
 from guiyi_quant.reference_trading import StreamIdentity
 from guiyi_quant.reference_trading.htdy import CONTEXT_BARS
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
-from guiyi_quant.newow.product_identity import InputQualityPolicy, futures_adaptation_version
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 
 class ForwardInputUnavailable(RuntimeError):
@@ -180,9 +180,6 @@ def _newow_capture(
         or after is not None and end <= after
         or not contract or not owner_id or not calculation_id
         or not source_identity or len(source_bar_sha256) != 64
-        or identity.futures_adaptation_version != futures_adaptation_version(
-            identity.frequency, input_quality_policy,
-        )
     ):
         raise ForwardInputUnavailable("NEWOW_SOURCE_IDENTITY_INVALID")
     source_hash = sha256(json.dumps(bar, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

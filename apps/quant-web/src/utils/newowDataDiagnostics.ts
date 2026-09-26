@@ -17,7 +17,6 @@ const REASONS = {
   METADATA_IDENTITY_INVALID: '元数据身份校验失败',
   DATA_INTEGRITY_INVALID: '行情完整性校验失败',
   SOURCE_NONPOSITIVE_PRICE: '原始行情包含非正价格，当前指标不支持此输入',
-  SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED: '当前策略输入版本不支持该行情质量分类',
 } as const
 
 export interface NewowDataDiagnostic {
@@ -79,7 +78,7 @@ export function formatNewowDataDiagnostic(diagnostic: NewowDataDiagnostic): stri
   const { context, reason } = diagnostic
   const location = [context.symbol, context.contract, context.frequency, context.first_missing_at ?? context.first_missing_day ?? context.trading_day ?? context.cutoff].filter((item) => item !== undefined).join(' · ')
   const counts = context.missing_count === undefined ? '' : `，缺失 ${context.missing_count} 根`
-  const hint = reason === 'SOURCE_NONPOSITIVE_PRICE' || reason === 'SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED'
+  const hint = reason === 'SOURCE_NONPOSITIVE_PRICE'
     ? '保留原始记录；需先确认指标支持范围，重复下载不会解决此限制。'
     : diagnostic.historicalCandidateRecoverable
       ? '可重试本面板，或主动查看最近可用历史快照；数据修复需单独处理。'

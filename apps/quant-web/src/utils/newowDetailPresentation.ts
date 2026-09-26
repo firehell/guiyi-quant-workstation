@@ -1,6 +1,6 @@
 import { formatChartTimeInShanghai } from './barTime.ts'
 import { formatMarketPercent } from './marketDisplay.ts'
-import type { NewowProductSectionResponse, NewowResourceLifecycle } from '../types/newowProduct.ts'
+import type { NewowAuxiliaryValue, NewowProductBar, NewowProductSectionResponse, NewowResourceLifecycle } from '../types/newowProduct.ts'
 
 export function priceDirection(value: number | null): 'neutral' | 'up' | 'down' {
   return value === null || !Number.isFinite(value) || value === 0 ? 'neutral' : value > 0 ? 'up' : 'down'
@@ -90,4 +90,22 @@ export function referenceTimeDisplay(
   if (frequency === '1d' || frequency === '1w') return full.slice(0, 10)
   const crossYear = relatedTimes.some(time => time && formatChartTimeInShanghai(time).slice(0, 4) !== full.slice(0, 4))
   return crossYear ? full : full.slice(5)
+}
+
+/** Projects server segment readiness at the last displayed Bar, without recomputing indicators. */
+export function projectNewowAuxiliaryReadiness(value: NewowAuxiliaryValue | null | undefined, latestBar: Pick<NewowProductBar, 'bar_end' | 'physical_contract' | 'calculation_segment_id'> | null | undefined) {
+  if (!value || !latestBar) return null
+  // Auxiliary segment_id is the backend calculation segment identity, including price-gap resets.
+  const latest = value.segments.find(segment => segment.physical_contract === latestBar.physical_contract && segment.segment_id === latestBar.calculation_segment_id && segment.bar_ends.includes(latestBar.bar_end))
+  if (!latest) return null
+  const historicalWarming = value.segments.filter(segment => segment !== latest && segment.status.status === 'warming').length
+  const currentLabel = latest.status.status === 'ready' ? '当前可计算'
+    : latest.status.status === 'warming' ? '当前数据不足，待每日增量积累' : '当前指标不可用'
+  return { currentStatus: latest.status.status, historicalWarming,
+    message: `${currentLabel}${historicalWarming ? `；历史部分仍在预热（${historicalWarming} 个区段）` : ''}` }
+}
+
+/** A readable old snapshot is useful for charts but cannot make the current quote fresh. */
+export function newowQuoteFreshness(hasQuote: boolean, dailyPendingUpdate: boolean): 'fresh' | 'unavailable' {
+  return hasQuote && !dailyPendingUpdate ? 'fresh' : 'unavailable'
 }

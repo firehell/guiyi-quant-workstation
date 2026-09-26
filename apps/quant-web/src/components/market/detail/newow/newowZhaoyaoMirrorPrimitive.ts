@@ -5,6 +5,16 @@ export const NEWOW_ZHAOYAO_MIRROR_STYLE = {
   markup: '#ffcc00', exit: '#0066bb', inducement: '#ff8800', caution: '#00FF00',
 } as const
 
+/** Same field/color mapping as the public canvas; shared by legend and help. */
+export const NEWOW_ZHAOYAO_MIRROR_LEGEND = [
+  { key: 'entry', label: '进场', color: NEWOW_ZHAOYAO_MIRROR_STYLE.entry, shape: '宽柱' },
+  { key: 'wash', label: '洗盘', color: NEWOW_ZHAOYAO_MIRROR_STYLE.wash, shape: '窄柱' },
+  { key: 'markup', label: '拉高', color: NEWOW_ZHAOYAO_MIRROR_STYLE.markup, shape: '宽柱' },
+  { key: 'distribution', label: '出货', color: NEWOW_ZHAOYAO_MIRROR_STYLE.distribution, shape: '窄柱' },
+  { key: 'exit', label: '退场', color: NEWOW_ZHAOYAO_MIRROR_STYLE.exit, shape: '虚线' },
+  { key: 'inducement', label: '诱多', color: NEWOW_ZHAOYAO_MIRROR_STYLE.inducement, shape: '虚线' },
+] as const
+
 export interface NewowZhaoyaoMirrorDatum {
   readonly time: Time
   readonly entry: number

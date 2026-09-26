@@ -37,7 +37,7 @@ function integer(value: number | null): string {
 </script>
 
 <template>
-  <section class="quote-header" :class="{ 'quote-header--unified': unified }" data-detail-section="quote">
+  <section class="quote-header" :class="{ 'quote-header--unified': unified, 'quote-header--newow': newow }" data-detail-section="quote">
     <div class="quote-header__primary">
       <div class="quote-header__price" :class="`quote-header__price--${direction}`">
         <strong>{{ number(header.close) }}</strong>
@@ -52,8 +52,19 @@ function integer(value: number | null): string {
     <div class="quote-header__meta">
       <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · {{ newow ? '非实时 · ' : '' }}截至 {{ asOfText }}</p>
       <div class="quote-header__facts-row">
-        <p class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
-        <dl class="quote-header__facts">
+        <p v-if="!newow" class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
+        <div v-if="newow" class="quote-header__newow-facts">
+          <dl class="quote-header__facts quote-header__facts--prices">
+            <div><dt>最高</dt><dd>{{ number(header.high) }}</dd></div>
+            <div><dt>最低</dt><dd>{{ number(header.low) }}</dd></div>
+            <div><dt>开盘</dt><dd>{{ number(header.open) }}</dd></div>
+          </dl>
+          <dl class="quote-header__facts quote-header__facts--activity">
+            <div><dt>成交量</dt><dd>{{ integer(header.volume) }}</dd></div>
+            <div><dt>持仓量</dt><dd>{{ integer(header.openInterest) }}</dd></div>
+          </dl>
+        </div>
+        <dl v-else class="quote-header__facts">
           <div><dt>开</dt><dd>{{ number(header.open) }}</dd></div>
           <div><dt>高</dt><dd>{{ number(header.high) }}</dd></div>
           <div><dt>低</dt><dd>{{ number(header.low) }}</dd></div>

@@ -1,4 +1,4 @@
-"""Prepare exact PF2611/RS2609 W1 removals contradicted by pinned D1 quality facts.
+"""Prepare exact W1 removals contradicted by pinned D1 quality facts.
 
 Prepare and inspect are read only. Apply requires a reviewed packet and an explicit
 flag; it never contacts RQData or changes D1. Empty W1 months lose their Catalog
@@ -13,6 +13,7 @@ from datetime import date, datetime
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 import pyarrow as pa
@@ -96,18 +97,19 @@ def _candidate_catalog(bars: tuple[CanonicalBar, ...]) -> dict[str, Any]:
 
 
 def _prepare_contract(catalog: MarketCatalog, store: CanonicalMonthlyStore,
-                      mds: MarketDataService, root: Path, contract: str
+                      mds: MarketDataService, root: Path, contract: str,
+                      target_days: tuple[str, ...] | None = None, cutoff: datetime = CUTOFF
                       ) -> tuple[list[dict[str, Any]], list[tuple[CanonicalBar, ...]], list[dict[str, Any]]]:
     symbol = contract[:2].lower()
-    days = tuple(date.fromisoformat(value) for value in TARGETS[contract])
+    days = tuple(date.fromisoformat(value) for value in (target_days or TARGETS[contract]))
     d1_key = DatasetKey("contract", symbol, contract, "1d")
     w1_key = DatasetKey("contract", symbol, contract, "1w")
     expected_w1 = dict((day, end) for end, day in mds.expected_contract_replay_endpoints(
         symbol=symbol, contract=contract, frequency=w1_key.frequency,
-        trading_day=days[-1], cutoff=CUTOFF))
+        trading_day=days[-1], cutoff=cutoff))
     expected_d1 = mds.expected_contract_replay_endpoints(
         symbol=symbol, contract=contract, frequency=d1_key.frequency,
-        trading_day=days[-1], cutoff=CUTOFF)
+        trading_day=days[-1], cutoff=cutoff)
     if any(day not in expected_w1 for day in days):
         raise QualityRepairError("W1_TARGET_CALENDAR_MOVED")
     weeks = {day.isocalendar()[:2] for day in days}
@@ -199,39 +201,79 @@ def _prepare_contract(catalog: MarketCatalog, store: CanonicalMonthlyStore,
                                   "weeks": week_evidence}]
 
 
-def prepare(session: Session, root: Path, root_sha256: str
+def _validated_targets(targets: dict[str, Any], cutoff: datetime) -> dict[str, tuple[str, ...]]:
+    if (not isinstance(targets, dict) or not 1 <= len(targets) <= 200
+            or cutoff.utcoffset() is None or cutoff > datetime.now(cutoff.tzinfo)):
+        raise QualityRepairError("PREPARED_SCOPE_INVALID")
+    result = {}
+    for contract, values in targets.items():
+        if (not isinstance(contract, str) or re.fullmatch(r"[A-Z]{2}[0-9]{4}", contract) is None
+                or contract[:2].lower() not in {"cj", "pf", "sf", "rs", "pr", "sm", "px", "pk", "sh", "pl", "sr"}
+                or not isinstance(values, (list, tuple)) or not values
+                or any(not isinstance(value, str) for value in values)):
+            raise QualityRepairError("PREPARED_SCOPE_INVALID")
+        try:
+            days = tuple(date.fromisoformat(value) for value in values)
+        except ValueError as exc:
+            raise QualityRepairError("PREPARED_SCOPE_INVALID") from exc
+        if (tuple(values) != tuple(sorted(set(values)))
+                or any(day.isoformat() != value or day > cutoff.date() for day, value in zip(days, values, strict=True))):
+            raise QualityRepairError("PREPARED_SCOPE_INVALID")
+        result[contract] = tuple(values)
+    return dict(sorted(result.items()))
+
+
+def prepare(session: Session, root: Path, root_sha256: str,
+            *, targets: dict[str, Any] | None = None, cutoff: datetime = CUTOFF
             ) -> tuple[dict[str, Any], tuple[tuple[CanonicalBar, ...], ...]]:
     catalog = MarketCatalog(session, root)
     store = CanonicalMonthlyStore(root)
     mds = MarketDataService(catalog, store)
-    revision = catalog_revision(session, ("pf", "rs"), CUTOFF.date(), ("1d", "1w"))
-    prepared = tuple(_prepare_contract(catalog, store, mds, root, contract) for contract in TARGETS)
-    if catalog_revision(session, ("pf", "rs"), CUTOFF.date(), ("1d", "1w")) != revision:
+    scope = TARGETS if targets is None else _validated_targets(targets, cutoff)
+    products = tuple(sorted({contract[:2].lower() for contract in scope}))
+    revision = catalog_revision(session, products, cutoff.date(), ("1d", "1w"))
+    prepared = tuple(_prepare_contract(catalog, store, mds, root, contract, tuple(days), cutoff)
+                     for contract, days in scope.items())
+    if catalog_revision(session, products, cutoff.date(), ("1d", "1w")) != revision:
         raise QualityRepairError("CATALOG_REVISION_MOVED")
     packet = {"schema_version": "pf_rs_weekly_quality_repair_v1",
               "classification_version": WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
-              "cutoff": CUTOFF.isoformat(), "canonical_root_sha256": root_sha256,
+              "cutoff": cutoff.isoformat(), "canonical_root_sha256": root_sha256,
               "catalog_revision": revision, "repair_source_sha256": _sha(Path(__file__).read_bytes()),
               "provider_requests": 0, "d1_writes": 0,
               "contracts": [source for _, _, sources in prepared for source in sources],
               "months": [record for records, _, _ in prepared for record in records]}
+    if targets is not None:
+        packet.update(schema_version="newow_weekly_quality_repair_v2",
+                      target_scope={key: list(days) for key, days in scope.items()})
     _validate_scope(packet)
     return packet, tuple(candidate for _, candidates, _ in prepared for candidate in candidates)
 
 
 def _validate_scope(packet: dict[str, Any]) -> None:
-    if (packet.get("schema_version") != "pf_rs_weekly_quality_repair_v1"
-            or packet.get("cutoff") != CUTOFF.isoformat()
+    dynamic = packet.get("schema_version") == "newow_weekly_quality_repair_v2"
+    if dynamic:
+        try:
+            cutoff = datetime.fromisoformat(packet["cutoff"])
+            targets = _validated_targets(packet["target_scope"], cutoff)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise QualityRepairError("PREPARED_SCOPE_INVALID") from exc
+        actions = {(contract, date.fromisoformat(day).year, date.fromisoformat(day).month): None
+                   for contract, days in targets.items() for day in days}
+    else:
+        targets, actions = TARGETS, _MONTH_ACTIONS
+    if ((not dynamic and (packet.get("schema_version") != "pf_rs_weekly_quality_repair_v1"
+                         or packet.get("cutoff") != CUTOFF.isoformat()))
             or packet.get("repair_source_sha256") != _sha(Path(__file__).read_bytes())):
         raise QualityRepairError("PREPARED_SCOPE_INVALID")
     sources = packet.get("contracts")
     months = packet.get("months")
-    if (not isinstance(sources, list) or len(sources) != 2
-            or {source.get("contract") for source in sources} != set(TARGETS)
-            or not isinstance(months, list) or len(months) != len(_MONTH_ACTIONS)):
+    if (not isinstance(sources, list) or len(sources) != len(targets)
+            or {source.get("contract") for source in sources} != set(targets)
+            or not isinstance(months, list) or len(months) != len(actions)):
         raise QualityRepairError("PREPARED_SCOPE_INVALID")
     for source in sources:
-        expected = set(TARGETS[source["contract"]])
+        expected = set(targets[source["contract"]])
         weeks = source.get("weeks")
         if (not isinstance(weeks, list) or len(weeks) != len(expected)
                 or {week.get("week_end") for week in weeks} != expected):
@@ -239,10 +281,12 @@ def _validate_scope(packet: dict[str, Any]) -> None:
     seen: set[tuple[str, int, int]] = set()
     for record in months:
         key = (record.get("contract"), record.get("year"), record.get("month"))
-        if key not in _MONTH_ACTIONS or key in seen or record.get("action") != _MONTH_ACTIONS[key]:
+        if (key not in actions or key in seen
+                or record.get("action") not in {"replace", "remove_pointer"}
+                or (not dynamic and record.get("action") != actions[key])):
             raise QualityRepairError("PREPARED_SCOPE_INVALID")
         seen.add(key)
-        expected_days = [day for day in TARGETS[key[0]]
+        expected_days = [day for day in targets[key[0]]
                          if (date.fromisoformat(day).year, date.fromisoformat(day).month) == key[1:]]
         if record.get("removed_days") != expected_days:
             raise QualityRepairError("PREPARED_SCOPE_INVALID")
@@ -259,7 +303,7 @@ def _validate_scope(packet: dict[str, Any]) -> None:
                 raise QualityRepairError("PREPARED_SCOPE_INVALID")
         elif record.get("new_count") != 0 or record.get("retained_days") != []:
             raise QualityRepairError("PREPARED_SCOPE_INVALID")
-    if seen != set(_MONTH_ACTIONS):
+    if seen != set(actions):
         raise QualityRepairError("PREPARED_SCOPE_INVALID")
 
 
@@ -311,7 +355,12 @@ def apply(session: Session, root: Path, root_sha256: str, packet: dict[str, Any]
         raise QualityRepairError("MAINTENANCE_BUSY")
     committed = False
     try:
-        current, candidates = prepare(session, root, root_sha256)
+        if packet["canonical_root_sha256"] != root_sha256:
+            raise QualityRepairError("CANONICAL_ROOT_MISMATCH")
+        current, candidates = (prepare(session, root, root_sha256,
+                                      targets=packet["target_scope"], cutoff=datetime.fromisoformat(packet["cutoff"]))
+                               if packet.get("schema_version") == "newow_weekly_quality_repair_v2"
+                               else prepare(session, root, root_sha256))
         if current != packet:
             raise QualityRepairError("PREPARE_IDENTITY_MOVED")
         store = CanonicalMonthlyStore(root)
@@ -355,7 +404,8 @@ def apply(session: Session, root: Path, root_sha256: str, packet: dict[str, Any]
         except Exception as exc:
             raise QualityRepairError("COMMIT_OUTCOME_UNKNOWN") from exc
         committed = True
-        return {"status": "committed", "months": len(candidates), "weeks": sum(map(len, TARGETS.values()))}
+        return {"status": "committed", "months": len(candidates),
+                "weeks": sum(len(source["weeks"]) for source in packet["contracts"])}
     finally:
         if not committed:
             session.rollback()
@@ -414,6 +464,11 @@ def main() -> int:
     for mode in ("prepare", "inspect", "apply", "restore"):
         command = sub.add_parser(mode)
         command.add_argument("--project-env", type=Path, required=True)
+        if mode == "prepare":
+            command.add_argument("--target-scope", type=Path)
+            command.add_argument("--expected-target-scope-sha256")
+            command.add_argument("--cutoff")
+            command.add_argument("--output", type=Path)
         if mode != "prepare":
             command.add_argument("--prepared", type=Path, required=True)
             command.add_argument("--expected-prepared-sha256", required=True)
@@ -427,10 +482,22 @@ def main() -> int:
         with Session(engine, autoflush=False) as session:
             if args.mode == "prepare":
                 session.execute(text("SET TRANSACTION READ ONLY"))
-                packet, _ = prepare(session, root, identity["canonical_root_sha256"])
-                output = Path.cwd() / "outputs/pf-rs-weekly-quality/prepare.json"
+                if args.target_scope is not None:
+                    if not args.cutoff or not args.expected_target_scope_sha256 or args.target_scope.is_symlink():
+                        raise QualityRepairError("PREPARED_SCOPE_INVALID")
+                    content = args.target_scope.read_bytes()
+                    if len(content) > 2 * 1024 * 1024 or _sha(content) != args.expected_target_scope_sha256:
+                        raise QualityRepairError("PREPARED_HASH_MISMATCH")
+                    packet, _ = prepare(session, root, identity["canonical_root_sha256"],
+                                        targets=json.loads(content), cutoff=datetime.fromisoformat(args.cutoff))
+                else:
+                    if args.cutoff or args.expected_target_scope_sha256:
+                        raise QualityRepairError("PREPARED_SCOPE_INVALID")
+                    packet, _ = prepare(session, root, identity["canonical_root_sha256"])
+                output = args.output or Path.cwd() / "outputs/pf-rs-weekly-quality/prepare.json"
                 output.parent.mkdir(parents=True, exist_ok=True)
-                output.write_bytes(_json(packet))
+                with output.open("xb") as handle:
+                    handle.write(_json(packet))
                 session.rollback()
                 print(json.dumps({"status": "prepared", "packet_sha256": _sha(output.read_bytes()),
                                   "output": str(output)}))

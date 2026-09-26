@@ -1,0 +1,44 @@
+{
+  "schema_version": "newow_weekly_candidate_180_strategy_v1",
+  "code_commit": "10e6805665ede2cff18c3ebd40808dad11471529",
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "case_count": 180,
+  "product_count": 60,
+  "main_status_counts": {
+    "READY": 179,
+    "WARMING": 1
+  },
+  "reference_status_counts": {
+    "READY": 179,
+    "WARMING": 1
+  },
+  "legal_nonready": [
+    {
+      "symbol": "rs",
+      "strategy": "oscillation",
+      "chart": {
+        "status": "WARMING",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": "NEWOW_OSCILLATION_WARMING"
+      },
+      "reference": {
+        "status": "WARMING",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": "NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING"
+      }
+    }
+  ],
+  "provider_requests": 0,
+  "writes": 0,
+  "budget_exhausted": false,
+  "source_reports": {
+    "v1": {
+      "sha256": "3ad5837c680e785d295de69f86d10ce405d7930e810279fc70a1772df7ff5dda",
+      "case_count": 123
+    },
+    "v2": {
+      "sha256": "0417129b8d8a1e01601348ac55e199c3ecd7a88a7f61391e326b3bb61ca004b8",
+      "case_count": 57
+    }
+  }
+}

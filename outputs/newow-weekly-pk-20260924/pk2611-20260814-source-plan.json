@@ -1,0 +1,65 @@
+{
+  "schema_version": "newow_weekly_conflict_source_plan_v1",
+  "command": "newow.weekly-conflict-source-verification",
+  "method": "futures.get_exchange_daily",
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "code_sha": "ba986e588f617575b68511669029454107404d97",
+  "input_sha256": "49ed566cd4fe68363a6365cb2e46ee1d9b0857ac1e66f0b5b8ac083e530bb7c8",
+  "catalog_revision": "2b75be99f44442dbe5b029ddc68dbab6aed3b2393341fbc6610a662b008b45d9",
+  "provider_execution_authorized": true,
+  "canonical_writes_allowed": false,
+  "database_writes_allowed": false,
+  "retry_allowed": false,
+  "request_count": 1,
+  "expected_source_rows": 5,
+  "requests": [
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "method": "futures.get_exchange_daily",
+      "start": "2026-08-10",
+      "end": "2026-08-14",
+      "expected_dates": [
+        "2026-08-10",
+        "2026-08-11",
+        "2026-08-12",
+        "2026-08-13",
+        "2026-08-14"
+      ],
+      "week_end": "2026-08-14T07:00:00+00:00",
+      "trading_day": "2026-08-14",
+      "iso_year": 2026,
+      "iso_week": 33,
+      "cross_month": false,
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 8,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file_name": "part.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "1a6fa5cb2d5ce242524b416260846c1e421b3f7eeebbb2bea015a9bcff0f822d",
+      "request_sha256": "af5b077e986af9d1e7cea5846be893e3f9f6d9782141dff091ce398f609734bd"
+    }
+  ],
+  "rules": [
+    "capture provider response without OHLC substitution",
+    "settlement and prev_settlement are evidence only",
+    "stop on first extra, missing, or duplicate trading day",
+    "no retry",
+    "no Canonical or database writes"
+  ],
+  "plan_sha256": "21171de4b2e8f6e8f6fa5969aea4012479d22d214348af4e225f1f8098768495"
+}

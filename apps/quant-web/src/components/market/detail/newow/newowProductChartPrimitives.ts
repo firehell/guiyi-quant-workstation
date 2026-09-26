@@ -16,7 +16,7 @@ import type {
   NewowResourceLifecycle,
 } from '../../../../types/newowProduct.ts'
 import { chartCoordinate } from '../../../../utils/newowProductTypes.ts'
-import { formatMarketDecimal } from '../../../../utils/marketDisplay.ts'
+import { formatDecimalText } from '../../../../utils/marketDisplay.ts'
 
 export interface NewowProductChartBar {
   readonly barEnd: string
@@ -269,7 +269,7 @@ export function buildNewowActionCallouts(
     physicalContract: action.physicalContract,
     price: action.referencePrice,
     title: newowInitialClearLabel(action.tradeEligibility) ?? (action.kind === 'BUILD' ? '建仓' : '清仓'),
-    detail: `参考价 ${formatMarketDecimal(action.referencePrice)}`,
+    detail: `参考价 ${formatDecimalText(action.referencePrice, { maximumFractionDigits: 0 })}`,
     tone: action.kind === 'BUILD' ? 'gain' : 'loss',
     above: action.kind === 'CLEAR',
   }))
@@ -298,6 +298,7 @@ export interface NewowAuxiliaryChartModel {
 
 const AUXILIARY_SERIES_LABELS = {
   main_force_control: [['kongpan', '主力控盘']],
+  trend_reversal: [['bias', '偏离'], ['rebound', '反弹'], ['adjust', '调整'], ['wr1', 'WR1'], ['wr2', 'WR2']],
   up_down_energy: [
     ['var4', 'VAR4'], ['ma10', 'MA10'], ['band_entry', '波段介入'],
     ['rebound_entry', '反弹介入'], ['oversold_entry', '超跌介入'], ['var3', 'VAR3'], ['ma120', 'MA120'],
@@ -387,6 +388,7 @@ export function resolveNewowAuxiliaryRenderState(
   lifecycle: NewowResourceLifecycle,
   hasRetainedValue: boolean,
   error: string | null,
+  readinessMessage: string | null = null,
 ): NewowAuxiliaryRenderState {
   if (lifecycle === 'loading') return {
     mode: 'loading', showRetainedValue: hasRetainedValue,
@@ -396,10 +398,10 @@ export function resolveNewowAuxiliaryRenderState(
     mode: 'stale', showRetainedValue: hasRetainedValue,
     message: `刷新失败${error === null ? '' : `（${error}）`}；以下为上次成功的 stale 预览。`,
   }
-  if (lifecycle === 'ready') return { mode: 'ready', showRetainedValue: hasRetainedValue, message: null }
+  if (lifecycle === 'ready') return { mode: 'ready', showRetainedValue: hasRetainedValue, message: readinessMessage }
   if (lifecycle === 'warming') return {
     mode: 'warming', showRetainedValue: hasRetainedValue,
-    message: hasRetainedValue ? '辅助资源仍在 warming；显示已验证的部分序列。' : '辅助资源仍在 warming。',
+    message: readinessMessage ?? (hasRetainedValue ? '辅助资源仍在预热；显示已验证的部分序列。' : '辅助资源仍在预热。'),
   }
   if (lifecycle === 'not_requested') return { mode: 'idle', showRetainedValue: false, message: null }
   return {
@@ -418,6 +420,7 @@ export interface NewowAuxiliaryDisclosure {
 const AUXILIARY_TITLES: Readonly<Record<NewowAuxiliaryComponent, string>> = {
   macd: 'MACD',
   main_force_control: '主力控盘',
+  trend_reversal: '趋势转折',
   up_down_energy: '涨跌动能',
   zhaoyao_mirror: '主力照妖镜',
   cup_handle: '杯柄',
@@ -500,14 +503,14 @@ export function productChartMarker(
     text: action
       ? newowInitialClearLabel(item.tradeEligibility) ?? ''
       : item.kind,
-    size: action ? 1.5 : 1,
+    size: 1,
   }
 }
 
 export function newowInitialClearLabel(
   tradeEligibility: NewowProductAction['trade_eligibility'],
 ): '清仓（无入场）' | null {
-  return tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY' ? '清仓（无入场）' : null
+  return tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY' || tradeEligibility === 'NO_ELIGIBLE_ENTRY' ? '清仓（无入场）' : null
 }
 
 export function describeNewowProductAction(item: NewowProductActionMarker): {

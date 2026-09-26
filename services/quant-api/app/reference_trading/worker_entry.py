@@ -43,7 +43,6 @@ def open_forward_worker():
     from app.reference_trading.live_wake import ForwardLiveWake
     from app.reference_trading.repository import ReferenceRepository
     from guiyi_quant.newow.product_contracts import ProductFrequency
-    from guiyi_quant.newow.product_identity import futures_adaptation_version
 
     with SessionLocal() as session:
         redis = get_redis_connection()
@@ -62,13 +61,6 @@ def open_forward_worker():
                     require_open_frequency(frequency)
                     if frequency is ProductFrequency.WEEKLY:
                         require_open_weekly_product(identity.product)
-                    policy = candidate_input_quality_policy(
-                        identity.product, frequency, candidate_weekly=False,
-                    )
-                    if identity.futures_adaptation_version != futures_adaptation_version(
-                        frequency.value, policy,
-                    ):
-                        return False
                 except ValueError:
                     return False
                 return True

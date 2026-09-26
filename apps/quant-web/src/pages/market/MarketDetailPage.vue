@@ -13,6 +13,7 @@ import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorks
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
 import '@/styles/marketDetailUnified.css'
+import { newowQuoteFreshness } from '@/utils/newowDetailPresentation'
 import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
 import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
@@ -40,6 +41,7 @@ const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].in
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
 const newowDailyAsOf = ref<string | null>(null)
+const newowDailyPending = ref(false)
 const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
 const newowCapabilities = useNewowCapabilities()
 const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
@@ -70,7 +72,7 @@ const header = computed(() => {
   const base = controller.state.value.header
   if (!base || !isNewowView.value) return base
   const quote = dailyQuote.quote.value
-  return { ...base, ...(quote ?? {}), displayContract: quote ? quoteContract.value : null, freshness: quote ? 'fresh' as const : 'unavailable' as const }
+  return { ...base, ...(quote ?? {}), displayContract: quote ? quoteContract.value : null, freshness: newowQuoteFreshness(quote !== null, explicitIdentity.value?.frequency === '1d' && newowDailyPending.value) }
 })
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -93,6 +95,7 @@ async function activateRoute() {
   const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
   newowDailyAsOf.value = null
+  newowDailyPending.value = false
   newowWeeklyQuoteContext.value = { asOf: null, physicalContract: null }
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
@@ -228,6 +231,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 
     <template v-else-if="routeResult.kind === 'valid'">
       <MarketDetailTopBar
+        :hide-back="isNewowView"
         :product-name="header?.productName ?? routeResult.identity.symbol.toUpperCase()"
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
@@ -242,6 +246,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
         :newow-frequencies="newowOpenFrequencies"
+        :newow-frequency-in-chart="isNewowView && !!newowCapabilities.capabilities.value && newowFrequencyOpen"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
@@ -269,9 +274,16 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
+            @daily-snapshot-pending="newowDailyPending = $event"
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
             @refresh-current="dailyQuote.refresh"
-          />
+          >
+            <template #chart-frequency>
+              <div class="newow-chart-frequency" role="group" aria-label="周期">
+                <button v-for="frequency in newowOpenFrequencies" :key="frequency" type="button" :aria-label="frequency" :aria-pressed="routeResult.identity.frequency === frequency" :class="{ 'is-active': routeResult.identity.frequency === frequency }" @click="selectIdentity({ ...routeResult.identity, frequency, focusBarEnd: undefined })">{{ frequency === '1d' ? '日K' : frequency === '1w' ? '周K' : frequency.replace('m', '分') }}</button>
+              </div>
+            </template>
+          </NewowProductWorkspace>
           <MarketDetailUnavailable
             v-else-if="routeResult.identity.view === 'newow'"
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
@@ -338,6 +350,10 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 </template>
 
 <style scoped>
+.newow-chart-frequency { display:flex; gap:2px; padding:3px; border-radius:8px; background:#eeeeef; }
+.newow-chart-frequency button { border:0; border-radius:6px; padding:6px 12px; color:#777; background:transparent; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.newow-chart-frequency button.is-active { color:#333; background:#fff; box-shadow:0 1px 3px #00000012; }
+
 .market-detail-page {
   position: relative;
   min-height: 100vh;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { newowReferenceCurve } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
@@ -35,6 +36,7 @@ const emit = defineEmits<{
   locate: [trade: NewowReferenceTrade, endpoint: 'entry' | 'exit']
 }>()
 
+const compactList = ref(false)
 const filter = ref<'all' | NewowReferenceCategory | 'initial'>('all')
 const expanded = ref<readonly string[]>([])
 const performanceSince = ref('')
@@ -47,6 +49,35 @@ const model = computed(() => (
     : null
 ))
 const visibleModel = computed(() => model.value === null ? null : filterNewowReferenceRows(model.value, filter.value))
+const curve = computed(() => props.response?.value ? newowReferenceCurve(props.response.value) : null)
+const selectedTradeId = ref<string | null>(null)
+const curveRoot = ref<HTMLElement | null>(null)
+const recordElements = new Map<string, HTMLElement>()
+const curvePoints = computed(() => {
+  const points = curve.value?.points ?? []
+  const low = Math.min(0, ...points.map(p => p.value))
+  const high = Math.max(0, ...points.map(p => p.value))
+  const y = (value: number) => 160 - (value - low) / (high - low || 1) * 130
+  return { points: points.map((p, i) => ({ ...p, x: 48 + (i + 1) / points.length * 684, y: y(p.value) })), zero: y(0), low, high }
+})
+const selectedCurvePoint = computed(() => curve.value?.points.find(p => p.trade.reference_trade_id === selectedTradeId.value) ?? curve.value?.points.at(-1))
+async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
+  selectedTradeId.value = trade.reference_trade_id
+  filter.value = 'all'
+  await nextTick()
+  recordElements.get(trade.reference_trade_id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+function showInCurve(trade: NewowReferenceTrade): void {
+  selectedTradeId.value = trade.reference_trade_id
+  curveRoot.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+watch(() => props.selectedSignalId, id => {
+  const trade = props.response?.value?.items.find(t => t.entry_signal_id === id || t.exit_signal_id === id)
+  if (trade) selectedTradeId.value = trade.reference_trade_id
+})
+watch(() => props.response?.value, value => {
+  if (!value?.items.some(t => t.reference_trade_id === selectedTradeId.value)) selectedTradeId.value = null
+})
 const pendingPreset = ref<{ kind: NewowReferencePreset | 'complete'; since: string; through: string } | null>(null)
 const acceptedPreset = ref<NewowReferencePreset | 'complete' | null>(null)
 const acceptedAnchor = computed(() => model.value?.actualAvailableThrough ?? null)
@@ -127,7 +158,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 </script>
 
 <template>
-  <section class="newow-reference" aria-labelledby="newow-reference-title">
+  <section class="newow-reference" :aria-busy="loadingPage" aria-labelledby="newow-reference-title">
     <header class="newow-reference__header">
       <div>
         <h3 id="newow-reference-title">参考交易</h3>
@@ -137,18 +168,18 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
           <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
-          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :aria-pressed="acceptedPreset === 'complete'" :data-pending="pendingPreset?.kind === 'complete'" @click="useCompleteWindow">{{ pendingPreset?.kind === 'complete' ? '读取中…' : '完整窗口' }}</button>
+          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :title="loadingPage ? '正在读取统计窗口' : !model?.completeWindowAction ? '当前统计窗口已完整，或尚无经确认的完整截止' : '使用服务端确认的完整截止'" :aria-pressed="acceptedPreset === 'complete'" :data-pending="pendingPreset?.kind === 'complete'" @click="useCompleteWindow">{{ pendingPreset?.kind === 'complete' ? '读取中…' : '完整窗口' }}</button>
         </div>
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
         <label>统计终点 <input :value="performanceThrough" type="date" @input="updateThrough" /></label>
-        <button type="submit" :disabled="loadingPage || invalidWindow">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
+        <button type="submit" :disabled="loadingPage || invalidWindow || !performanceSince || !performanceThrough">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
       </form>
     </header>
     <p v-if="invalidWindow" class="newow-reference__state" role="alert">统计起点不能晚于统计终点。</p>
 
     <p v-if="presentation.message" class="newow-reference__state" role="status">
       {{ presentation.message }}
-      <span v-if="presentation.staleAt">stale 读取时间 {{ presentation.staleAt }}</span>
+      <span v-if="presentation.staleAt">上次已验证读取时间 {{ presentation.staleAt }}</span>
     </p>
 
     <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
@@ -174,6 +205,28 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
         <details><summary>统计时间与来源</summary><p>用户选择统计区间 {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p><p>实际完整可用截止 {{ model.actualAvailableThrough }} · 参考计算截止 {{ formatBeijingInstant(model.performanceWindow.cutoff) }}</p><p v-if="response?.status.reason_code">技术原因码 {{ response.status.reason_code }}</p></details>
       </section>
 
+      <section ref="curveRoot" class="newow-reference__curve" aria-label="已完成参考交易累计收益曲线">
+        <header><strong>累计参考收益</strong><span>百分点 · 已完成交易简单相加</span><b>{{ model.summary.sumText }} <small>百分点</small></b></header>
+        <p v-if="curve?.message" role="status">{{ curve.message }}</p>
+        <template v-else>
+          <svg viewBox="0 0 780 192" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
+            <line x1="48" x2="732" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
+            <text x="6" :y="curvePoints.zero - 4">0</text>
+            <text x="6" y="25">{{ curvePoints.high.toFixed(2) }}</text>
+            <text x="6" y="176">{{ curvePoints.low.toFixed(2) }}</text>
+            <polyline :points="`${48},${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ')" fill="none" stroke="#ff6b2c" stroke-width="2" />
+            <circle v-for="point in curvePoints.points" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 6 : 4" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
+            <text x="48" y="190">统计起点 {{ model.performanceWindow.since }}</text><text x="732" y="190" text-anchor="end">{{ curvePoints.points.at(-1)?.trade.exit_trading_day }}</text>
+          </svg>
+          <p v-if="selectedCurvePoint" class="newow-reference__curve-detail">{{ selectedCurvePoint.trade.exit_trading_day }} · {{ selectedCurvePoint.trade.physical_contract }} · 单笔 <span :data-direction="referencePercentDisplay(selectedCurvePoint.trade.reference_return_pct).direction" class="newow-return-badge">{{ referencePercentDisplay(selectedCurvePoint.trade.reference_return_pct).text }}</span> · 累计 {{ formatMarketDecimal(selectedCurvePoint.cumulative) }} 百分点 <button type="button" @click="selectCurveTrade(selectedCurvePoint.trade)">查看交易</button></p>
+        </template>
+        <div class="newow-reference__separate">
+          <div><strong>未清仓浮动 · {{ model.counts.open }} 笔</strong><p v-for="row in model.rows.filter(r => r.category === 'open')" :key="row.id"><button type="button" @click="selectCurveTrade(row.trade)">{{ row.trade.physical_contract }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.trade.mark_change_pct).text }}</span></button></p></div>
+          <details><summary>中断结果 · {{ model.counts.interrupted }} 笔</summary><p v-for="row in model.rows.filter(r => r.category === 'interrupted')" :key="row.id"><button type="button" @click="selectCurveTrade(row.trade)">{{ row.trade.physical_contract }} · {{ row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.trade.mark_change_pct).text }}</span></button></p></details>
+          <small>两者均不加入累计曲线；不是账户权益曲线。</small>
+        </div>
+      </section>
+
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
         <header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header>
         <p :title="waiting.bar_end">状态时间 {{ referenceTimeDisplay(waiting.bar_end, chartResponse!.meta.identity.frequency, [chartResponse!.meta.as_of]) }} · 截至所示已完成 Bar，仅作页面参考。</p>
@@ -191,11 +244,12 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
             <option value="initial">期初已有</option>
           </select>
         </label>
-        <span>筛选仅改变记录，不改变服务端统计或 Performance window。</span>
+        <button type="button" :aria-pressed="compactList" @click="compactList = !compactList">{{ compactList ? '卡片视图' : '紧凑列表' }}</button>
+        <span>筛选仅改变记录，不改变服务端统计或统计窗口。</span>
       </div>
 
-      <div class="newow-reference__cards">
-        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id" tabindex="-1">
+      <div class="newow-reference__cards" :class="{ 'is-compact-list': compactList }">
+        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :data-curve-selected="selectedTradeId === row.id" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId !== null && (selectedSignalId === row.trade.entry_signal_id || selectedSignalId === row.trade.exit_signal_id)" tabindex="-1">
           <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? rowTime(row.trade, row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
           <div class="newow-reference__card-body">
             <dl class="newow-reference__facts">
@@ -207,6 +261,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
             <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span></p>
             <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade, 'entry')">定位建仓</button>
             <button v-if="row.trade.exit_signal_id !== null && row.trade.exit_bar_end !== null && row.trade.exit_trading_day !== null" type="button" :aria-label="`定位参考记录 ${row.id} 的清仓信号`" @click="emit('locate', row.trade, 'exit')">定位清仓</button>
+            <button v-if="row.category === 'closed' && curve?.points.some(p => p.trade.reference_trade_id === row.id)" type="button" @click="showInCurve(row.trade)">查看曲线</button>
             <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">查看详情</button>
           </div>
           <div v-if="expanded.includes(row.id)" class="newow-reference__details">
@@ -232,7 +287,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference h3, .newow-reference p, .newow-reference dl { margin: 0; }
 .newow-reference__header p, .newow-reference__tools span, small { color: var(--gy-text-muted); }
 .newow-reference__window, .newow-reference__tools, .newow-reference__presets { display: flex; flex-wrap: wrap; align-items: end; gap: var(--gy-space-2); }
-.newow-reference__presets button { min-height:32px; border-radius:999px; font-size:12px; }.newow-reference__presets button[aria-pressed="true"] { background:#fff1e8; border-color:#ff6b2c; color:#c2410c; }
+.newow-reference__presets button { min-height:32px; border-radius:8px; font-size:12px; }.newow-reference__presets button[aria-pressed="true"] { background:#fff1e8; border-color:#ff6b2c; color:#c2410c; }
 .newow-reference__window label { display: grid; gap: 4px; }
 .newow-reference button, .newow-reference input, .newow-reference select { min-height: 44px; padding: 0 var(--gy-space-2); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); }
 .newow-reference__summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--gy-space-2); }
@@ -243,16 +298,31 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__card { padding:12px 16px; border:1px solid var(--gy-border); border-radius:7px; background:var(--gy-bg-panel); min-width:0; }
 .newow-reference__card[data-reference-category="open"] { background:#fff8f2; border-left:4px solid #ff6b2c; }
 .newow-reference__waiting { background:#f1f7ff; border-left:4px solid #397bd1; }
-.newow-reference__card[data-selected="true"] { outline:2px solid var(--gy-border-focus); }
+.newow-reference__cards.is-compact-list .newow-reference__card { padding:8px 12px; border-radius:4px; }
+.newow-reference__cards.is-compact-list .newow-reference__facts div { padding:2px 6px; background:transparent; }
+.newow-reference__cards.is-compact-list .newow-reference__card-body { gap:6px; }
+.newow-reference__card[data-reference-category="interrupted"] { border-left:4px solid #98a2b3; }
+.newow-reference__card[data-curve-selected="true"], .newow-reference__card[data-selected="true"] { outline:2px solid var(--gy-border-focus); }
 .newow-reference__card header,.newow-reference__card-body { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .newow-reference__card header { margin-bottom:6px; }
 .newow-reference__card header strong { font-size:12px; padding:4px 10px; border-radius:7px; background:var(--gy-bg-elevated); }
 .newow-reference__card-body > p:first-child { flex:1; }
 .newow-reference__facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--gy-space-2); flex:1; min-width:min(100%, 360px); }
-.newow-reference__facts div { min-width:0; padding:var(--gy-space-2); border-radius:var(--gy-radius-sm); background:var(--gy-bg-elevated); }
+.newow-reference__facts div { min-width:0; padding:var(--gy-space-2); border-radius:var(--gy-radius-sm); background:#f8f9fb; }
 .newow-reference__facts dt { color:var(--gy-text-muted); font-size:var(--gy-font-size-xs); }.newow-reference__facts dd { margin:4px 0 0; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .newow-reference__return { font-variant-numeric:tabular-nums; }
 .newow-reference__details { margin-top:12px; color:var(--gy-text-secondary); overflow-wrap:anywhere; }
 .newow-reference__state { color: var(--gy-status-warning); }
 @media (max-width: 720px) { .newow-reference__header { flex-direction: column; } .newow-reference__card-body > p:first-child { flex-basis:100%; } }
+.newow-reference__curve { padding:16px; border:1px solid #ebedf0; border-radius:8px; background:#fff; }
+.newow-reference__curve header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.newow-reference__curve header span,.newow-reference__separate { color:#98a2b3; font-size:12px; }
+.newow-reference__curve header b { margin-left:auto; color:#ff6b2c; font-size:20px; font-variant-numeric:tabular-nums; }
+.newow-reference__curve svg { display:block; width:100%; min-height:170px; margin:12px 0; overflow:visible; }
+.newow-reference__curve svg text { fill:#98a2b3; font-size:10px; }
+.newow-reference__curve circle { cursor:pointer; }.newow-reference__curve circle:focus { stroke:#365af5; stroke-width:3; outline:none; }
+.newow-reference__curve-detail { font-size:12px; }.newow-reference__curve-detail button { min-height:30px; margin-left:8px; color:#ff6b2c; }
+.newow-reference__separate { display:flex; flex-wrap:wrap; gap:12px; padding-top:12px; margin-top:12px; border-top:1px solid #f2f4f7; }
+.newow-reference__summary dd { font-size:20px; }.newow-reference__summary dl div { background:#f8f9fb; border-radius:4px; }
+.newow-reference__card[data-reference-category="closed"] header strong { background:#fff1e8; color:#ff6b2c; }
 </style>

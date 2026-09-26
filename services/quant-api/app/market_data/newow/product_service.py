@@ -102,6 +102,7 @@ class AuxiliaryComponent(StrEnum):
     MACD = "macd"
     MAIN_FORCE_CONTROL = "main_force_control"
     UP_DOWN_ENERGY = "up_down_energy"
+    TREND_REVERSAL = "trend_reversal"
     ZHAOYAO_MIRROR = "zhaoyao_mirror"
     CUP_HANDLE = "cup_handle"
 
@@ -1088,7 +1089,9 @@ class NewowProductService:
         return (
             delivery.delivery == "delivered"
             and delivery.status is not None
-            and delivery.status.status is FeatureRuntimeStatus.READY
+            and delivery.value is not None
+            and delivery.status.status
+            in {FeatureRuntimeStatus.READY, FeatureRuntimeStatus.WARMING}
         )
 
     def _calculate(

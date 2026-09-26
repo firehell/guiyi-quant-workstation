@@ -16,18 +16,18 @@ REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v3"
 FUTURES_ADAPTATION_VERSION = "newow_futures_quality_segment_v3"
 WEEKLY_FUTURES_ADAPTATION_VERSION = "newow_futures_weekly_quality_segment_v1"
 WEEKLY_FUTURES_ADAPTATION_VERSION_V2 = "newow_futures_weekly_quality_segment_v2"
-DAILY_FUTURES_ADAPTATION_VERSION_V2 = "newow_futures_daily_quality_segment_v2"
 FUTURES_INPUT_POLICY_VERSION = "newow_futures_quality_observation_v2"
+DAILY_FUTURES_ADAPTATION_VERSION_V2 = "newow_futures_daily_quality_segment_v4"
+DAILY_INPUT_POLICY_VERSION_V2 = "newow_futures_daily_quality_observation_v3"
 WEEKLY_INPUT_POLICY_VERSION_V2 = "newow_futures_weekly_quality_observation_v2"
-DAILY_INPUT_POLICY_VERSION_V2 = "newow_futures_daily_quality_observation_v2"
 WEEKLY_SOURCE_CLASSIFICATION_VERSION = "weekly-d1-quality-v1"
 WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2 = "weekly-d1-quality-v2"
 
 
 class InputQualityPolicy(StrEnum):
     V1 = "newow_input_quality_v1"
-    WEEKLY_V2 = "newow_weekly_input_quality_v2"
     DAILY_V2 = "newow_daily_input_quality_v2"
+    WEEKLY_V2 = "newow_weekly_input_quality_v2"
 
 
 def input_quality_policy(

@@ -47,9 +47,8 @@ def _newow(product: str, strategy: ProductStrategy, frequency: str, *, forward: 
     )
     return StreamIdentity(
         f"newow_{strategy.value}", identity.formula_versions, identity.profile_id,
-        NEWOW_MODEL_VERSION, futures_adaptation_version(
-            frequency, identity.input_quality_policy,
-        ), product,
+        NEWOW_MODEL_VERSION,
+        futures_adaptation_version(frequency, identity.input_quality_policy), product,
         frequency, "actual_dominant",
         RecordingMode.FORWARD_OBSERVATION if forward else RecordingMode.HISTORICAL_REPLAY,
         "completed_canonical_v1" if forward else None,

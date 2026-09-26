@@ -6,6 +6,7 @@ defineProps<{
   symbol: string
   displayContract: string | null
   historyLabel?: string
+  hideBack?: boolean
   actions: {
     canOpenHistory: boolean
     canManageAlert: boolean
@@ -21,8 +22,8 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <header class="detail-topbar" data-detail-section="topbar">
-    <button class="detail-topbar__back" type="button" aria-label="返回市场" @click="emit('back')">
+  <header class="detail-topbar" :class="{ 'detail-topbar--without-back': hideBack }" data-detail-section="topbar">
+    <button v-if="!hideBack" class="detail-topbar__back" type="button" aria-label="返回市场" @click="emit('back')">
       <MarketDetailIcon name="back" />
       <span>返回市场</span>
     </button>
@@ -69,6 +70,7 @@ const emit = defineEmits<{
   border-bottom: 1px solid var(--gy-border-subtle);
   background: var(--gy-bg-header);
 }
+.detail-topbar--without-back { grid-template-columns: minmax(0, 1fr) auto; }
 .detail-topbar button { color: var(--gy-text-primary); font: inherit; }
 .detail-topbar__back,
 .detail-topbar__action,

@@ -48,3 +48,18 @@
 .unified-detail-light .newow-return-badge { display:inline-block; padding:3px 9px; border-radius:7px; font-variant-numeric:tabular-nums; color:#667085; background:#f3f4f6; }
 .unified-detail-light .newow-return-badge[data-direction="up"] { color:#ff403a; background:#fff0ef; }
 .unified-detail-light .newow-return-badge[data-direction="down"] { color:#22b95d; background:#eaf8ef; }
+
+/* Newow quote facts follow the price, matching the compact two-row reference layout. */
+.unified-detail-light .quote-header--newow .quote-header__meta { flex-direction:column; align-items:flex-start; gap:8px; margin-top:12px; }
+.unified-detail-light .quote-header--newow .quote-header__facts-row { order:0; justify-content:flex-start; width:100%; }
+.unified-detail-light .quote-header--newow .quote-header__asof { order:1; margin-top:2px; }
+.unified-detail-light .quote-header--newow .quote-header__newow-facts { display:grid; gap:8px; max-width:100%; }
+.unified-detail-light .quote-header--newow .quote-header__facts { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:10px 24px; min-width:0; }
+.unified-detail-light .quote-header--newow .quote-header__facts div { display:flex; align-items:baseline; gap:7px; padding:0; border-radius:0; background:none; }
+.unified-detail-light .quote-header--newow .quote-header__facts dt { font-size:15px; color:#777; }
+.unified-detail-light .quote-header--newow .quote-header__facts dd { margin:0; font-family:inherit; font-size:16px; font-weight:600; color:#333; }
+@media(max-width:640px) {
+  .unified-detail-light .quote-header--newow .quote-header__facts { gap:8px 16px; }
+  .unified-detail-light .quote-header--newow .quote-header__facts dt { font-size:13px; }
+  .unified-detail-light .quote-header--newow .quote-header__facts dd { font-size:14px; }
+}

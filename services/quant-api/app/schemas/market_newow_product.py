@@ -23,13 +23,12 @@ MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
 ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v3"]
 FuturesAdaptationVersionValue = Literal[
     "newow_futures_quality_segment_v3",
+    "newow_futures_daily_quality_segment_v4",
     "newow_futures_weekly_quality_segment_v1",
     "newow_futures_weekly_quality_segment_v2",
-    "newow_futures_daily_quality_segment_v2",
 ]
 InputQualityPolicyValue = Literal[
-    "newow_input_quality_v1", "newow_weekly_input_quality_v2",
-    "newow_daily_input_quality_v2",
+    "newow_input_quality_v1", "newow_daily_input_quality_v2", "newow_weekly_input_quality_v2"
 ]
 
 
@@ -331,6 +330,20 @@ class UpDownEnergyDataOut(_Out):
     formula_version: str
 
 
+class TrendReversalDataOut(_Out):
+    wr1: list[float]
+    wr2: list[float]
+    bias: list[float]
+    rebound: list[float]
+    adjust: list[float]
+    ma120: list[float]
+    hhv: list[float]
+    llv: list[float]
+    enough: bool
+    bar_count: int
+    formula_version: str
+
+
 class CupPivotValueOut(_Out):
     kind: str
     price: str
@@ -364,6 +377,7 @@ AuxiliaryDataOut = (
     MainForceControlDataOut
     | ZhaoyaoMirrorDataOut
     | UpDownEnergyDataOut
+    | TrendReversalDataOut
     | list[CupWitnessOut]
 )
 
@@ -378,7 +392,7 @@ class AuxiliarySegmentOut(_Out):
 
 class AuxiliaryValueOut(_Out):
     component: Literal[
-        "main_force_control", "up_down_energy", "zhaoyao_mirror", "cup_handle"
+        "main_force_control", "up_down_energy", "trend_reversal", "zhaoyao_mirror", "cup_handle"
     ]
     formula_version: str
     segments: list[AuxiliarySegmentOut]

@@ -1,0 +1,81 @@
+{
+  "status": "BLOCKED_SOURCE_RESPONSE_IDENTITY",
+  "data_applied": false,
+  "runtime_promoted": false,
+  "code_commit": "8316813f4023539b7786ff33b6df5fef926d667a",
+  "audit_reports": [
+    {
+      "path": "outputs/newow-weekly-60-closeout-20260925/newow-weekly-post-map-v1-20260925.json",
+      "sha256": "f97cd74b788e4e90c14f3b52edd7c4d3f0fbcbbc7233fc3fef680776d9ff99f3"
+    },
+    {
+      "path": "outputs/newow-weekly-60-closeout-20260925/newow-weekly-post-map-v2-20260925.json",
+      "sha256": "c7bd1165988215c081e339ef2e88652d24fc51836f478490b6cf359c9e9a4f11"
+    }
+  ],
+  "api_readback": {
+    "path": "outputs/newow-weekly-60-closeout-20260925/newow-weekly-post-map-api-180.json",
+    "cases": 180,
+    "http_409": 180
+  },
+  "plans": [
+    {
+      "group": "v1",
+      "path": "/private/tmp/newow-weekly-20260925-campaign/formal-w1-v1-20260924-lockfree.prepare.json",
+      "sha256": "acef72eb6dc0997e3c4d2d743dfa46729a5ebfa9672f68d0fa1c373f4d86db38",
+      "units": 41,
+      "targets": 160,
+      "expected_bars": 1807,
+      "batches": 3,
+      "all_child_lock_available": true
+    },
+    {
+      "group": "v2",
+      "path": "/private/tmp/newow-weekly-20260925-campaign/formal-w1-v2-20260924-lockfree.prepare.json",
+      "sha256": "6d87245795936a17f36377b859fa8808851b66c44d7e1f41104aa2ab1e515fc7",
+      "units": 19,
+      "targets": 78,
+      "expected_bars": 855,
+      "batches": 1,
+      "all_child_lock_available": true
+    }
+  ],
+  "review": {
+    "method": "external Codex review authorized by owner",
+    "commit": "8316813f4023539b7786ff33b6df5fef926d667a",
+    "result": "no findings"
+  },
+  "develop_merge_commit": "f83c3d401a90521ca83973f1ac97233474304aef",
+  "pr": "https://github.com/firehell/guiyi-quant-workstation/pull/397",
+  "v1_attempt": {
+    "status": "failed",
+    "first_unit": "a/A2611",
+    "error_code": "SOURCE_RESPONSE_IDENTITY_INVALID",
+    "expected_dates": [
+      "2026-09-21",
+      "2026-09-22",
+      "2026-09-23",
+      "2026-09-24"
+    ],
+    "response_dates": [
+      "2026-09-21",
+      "2026-09-22",
+      "2026-09-23"
+    ],
+    "success_units": 0,
+    "failed_units": 1,
+    "unattempted_units": 40,
+    "applied_targets": 0,
+    "provider_requests_started": 1,
+    "response_saved": 1,
+    "retry_allowed": false,
+    "evidence_path": "outputs/newow-weekly-60-closeout-20260925/formal-w1-v1-20260924-attempt-001",
+    "source_response_sha256": "1e75dfe808ab9681536c59c588e766761b57028ee76167c6fa52d04446f29691"
+  },
+  "v2_attempt": null,
+  "readback": {
+    "a_A2611_plan_unchanged": true,
+    "plan_sha256": "c383a114f627df2750c9102fa43aafb4ffa4516a2e11b57f3313406363d55a0a",
+    "applied": 0
+  }
+}

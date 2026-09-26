@@ -473,16 +473,20 @@ def _strict_old_pointer_readback(
             value for value in MarketCatalog(session, active_root).all_partitions(key)
             if value.year == year and value.month == month
         )
-        if partition.source_coverage_start is None or partition.source_coverage_end is None:
+        # Legacy partitions may predate source coverage. Verify their exact
+        # Catalog-pinned file and row/coverage contract without inventing it.
+        CanonicalMonthlyStore(active_root).read_catalog_partition_quality(partition)
+        if partition.source_coverage_start is not None and partition.source_coverage_end is not None:
+            market.read_physical_daily_quality_union(SeriesQuery(
+                SeriesKind.CONTRACT,
+                key.symbol,
+                BarFrequency.D1,
+                partition.source_coverage_start,
+                partition.source_coverage_end,
+                contract=key.series_or_contract,
+            ))
+        elif partition.source_coverage_start is not None or partition.source_coverage_end is not None:
             raise QualityCandidateApplyError("ROLLBACK_COVERAGE_INVALID")
-        market.read_physical_daily_quality_union(SeriesQuery(
-            SeriesKind.CONTRACT,
-            key.symbol,
-            BarFrequency.D1,
-            partition.source_coverage_start,
-            partition.source_coverage_end,
-            contract=key.series_or_contract,
-        ))
         if _file_sha256(partition.file_path) != target.get("old_file_sha256"):
             raise QualityCandidateApplyError("ROLLBACK_FILE_HASH_INVALID")
 

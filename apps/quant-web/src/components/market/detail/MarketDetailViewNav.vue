@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   restore: MarketDetailViewRestore
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
+  newowFrequencyInChart?: boolean
   newowFrequencies: readonly MarketFrequency[]
 }>(), {
   seriesKinds: () => ['actual_dominant', 'continuous', 'contract'],
@@ -43,7 +44,7 @@ const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'new
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
 const seriesLabels: Record<SeriesKind, string> = { actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' }
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
-const showFrequencyControls = computed(() => props.identity.view === 'newow' || props.identity.view === 'subing' || showSeriesControls.value)
+const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInChart) || props.identity.view === 'subing' || showSeriesControls.value)
 const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : props.identity.view === 'subing' ? ['15m', '30m', '60m', '1d'] as MarketFrequency[] : props.frequencies)
 const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind) => kind !== 'contract'))
 const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
@@ -123,7 +124,7 @@ function periodLabel(value: MarketFrequency) {
       >{{ view.label }}</button>
     </div>
 
-    <div class="detail-view-nav__controls">
+    <div v-if="showSeriesControls || showFrequencyControls" class="detail-view-nav__controls">
       <div v-if="showSeriesControls" class="detail-view-nav__group" role="group" aria-label="序列">
         <button
           v-for="kind in availableSeriesKinds"

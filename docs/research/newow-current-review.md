@@ -1,5 +1,7 @@
 # 牛哇新版功能差异与后续任务
 
+> 当前入口已更新到[2026-09-26功能与差异](newow-v3.2.82/AUDIT_20260926.md)及[公开公式附册](newow-v3.2.82/FORMULA_CATALOG_20260926.md)。下方是各日期冻结研究，不代表最新能力或开发状态。
+
 ## 2026-09-19 算法与显示一致性实施冻结
 
 本轮从 `v3.3.46` 公共页面/脚本哈希出发，将图表、价格卡、震荡图表同根语义、趋势转折、CDV2、页面统计和六组合推荐的最小 source witness 固定在
@@ -7,9 +9,9 @@
 
 已冻结的来源是详情 `4c44ae93…df0f`、策略计算 `bb9e630a…536fbd`、CDV2 `68c634c0…5fbb`、趋势转折 `85a72b64…f80`。Futures `ProductReader` 到 `target_daily/weekly`、`cost_daily/weekly`、`cross_weekly_buy` 和同物理昨收的精确适配仍为 **EVIDENCE_REQUIRED**；Task 4 必须以 typed source facts 关闭，不能凭字段名称猜测。
 
-此次 active 震荡图表及其 ReferenceTrade projection 采用“CLEAR 当根禁止 BUILD”的新版本；普通统计保留原 `runOscBacktest` 先清后建，ideal 保留独立顺序。三种 surface/model 身份分离，期末 statistics forceClose 绝不生成 CLEAR Marker。
+当时来源冻结区分“原站图表CLEAR当根禁止BUILD”、普通 `runOscBacktest` 先清后建及ideal独立顺序。2026-09-26实际代码与active canonical仍保留归一震荡同Bar `CLEAR → BUILD`；本段旧“active已切换”说法不成立，不能用fixture冻结冒充实施完成。期末statistics forceClose也不生成CLEAR Marker。
 
-## 最新入口（2026-09-18）
+## 历史入口（2026-09-18）
 
 最新实查已更新到[算法与 AI 分析审计](newow-v3.2.82/CURRENT_AUDIT.md)：内部浏览器首页v3.3.25、详情v3.3.46。
 新增核实顶部六组合AI推荐是确定性历史回测排名；它不同于五窗口参数比较器、AI诊股模板和综合决策。

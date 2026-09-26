@@ -1,0 +1,2 @@
+{"request":{"contract":"SM2311","end":"2023-09-01","expected_dates":["2023-08-28","2023-08-29","2023-08-30","2023-08-31","2023-09-01"],"method":"futures.get_exchange_daily","start":"2023-08-28"},"schema_version":1,"sequence":1,"state":"started"}
+{"payload_file":"source-response-0001.json","payload_sha256":"e076a50b8733563864ed5af8d188494579426cd0a83bee3b040cfe5876550af4","row_count":5,"schema_version":1,"sequence":1,"state":"response_saved"}

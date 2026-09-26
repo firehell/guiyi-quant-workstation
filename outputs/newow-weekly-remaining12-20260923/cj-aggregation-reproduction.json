@@ -1,0 +1,38 @@
+[
+  {
+    "contract": "CJ2305",
+    "week_end": "2022-05-20",
+    "current_aggregation_reproduced": true,
+    "current_OHLC": {
+      "open": "0E-18",
+      "high": "13780.000000000000000000",
+      "low": "0E-18",
+      "close": "13510.000000000000000000"
+    },
+    "proposed_OHLC": {
+      "open": "13720.000000000000000000",
+      "high": "13780.000000000000000000",
+      "low": "13320.000000000000000000",
+      "close": "13510.000000000000000000"
+    },
+    "note": "offline design calculation only; no Canonical change or strategy acceptance"
+  },
+  {
+    "contract": "CJ2309",
+    "week_end": "2022-09-30",
+    "current_aggregation_reproduced": true,
+    "current_OHLC": {
+      "open": "12515.000000000000000000",
+      "high": "12680.000000000000000000",
+      "low": "0E-18",
+      "close": "12400.000000000000000000"
+    },
+    "proposed_OHLC": {
+      "open": "12515.000000000000000000",
+      "high": "12680.000000000000000000",
+      "low": "12340.000000000000000000",
+      "close": "12400.000000000000000000"
+    },
+    "note": "offline design calculation only; no Canonical change or strategy acceptance"
+  }
+]

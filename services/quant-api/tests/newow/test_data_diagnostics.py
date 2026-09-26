@@ -220,23 +220,6 @@ def test_weekly_source_bar_conflict_is_a_safe_nonrecoverable_integrity_error():
     assert _failure(error)["status"] == "INTEGRITY_ERROR"
 
 
-def test_unsupported_quality_classification_is_a_data_diagnostic():
-    from app.market_data.newow.public_errors import public_product_error
-
-    status, detail = public_product_error(
-        MarketDataError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
-    )
-    assert status == 409
-    assert detail == {
-        "code": "NEWOW_DATA_UNAVAILABLE",
-        "diagnostic": {
-            "reason": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
-            "context": {},
-            "historical_candidate_recoverable": False,
-        },
-    }
-
-
 def test_product_pairing_conflict_is_public_integrity_error_not_internal():
     from app.market_data.newow.public_errors import public_product_error
     from app.market_data.newow.readiness import _failure

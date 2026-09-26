@@ -1,0 +1,2 @@
+{"request":{"contract":"PK2611","end":"2026-08-14","expected_dates":["2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14"],"method":"futures.get_exchange_daily","start":"2026-08-10"},"schema_version":1,"sequence":1,"state":"started"}
+{"payload_file":"source-response-0001.json","payload_sha256":"cad99a27a287049b710507392b2ac5ffe3637eae7aaeeecbae570156c8512848","row_count":5,"schema_version":1,"sequence":1,"state":"response_saved"}

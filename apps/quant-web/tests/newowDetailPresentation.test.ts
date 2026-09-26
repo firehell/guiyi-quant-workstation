@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildNewowFixtureEnvelopeForTest } from '../e2e/newow-product.helpers.mjs'
-import { projectNewowDetail, priceDirection } from '../src/utils/newowDetailPresentation.ts'
+import { projectNewowDetail, priceDirection, projectNewowAuxiliaryReadiness, newowQuoteFreshness } from '../src/utils/newowDetailPresentation.ts'
 const response = (section) => { const raw = buildNewowFixtureEnvelopeForTest(section); return { meta: raw.meta, section, ...raw[section] } }
 const chart = () => response('chart')
 test('state is the eligible last frame with its actual date, never inferred from an action', () => {
@@ -132,4 +132,42 @@ test('reference dates preserve night-session clock, daily density and cross-year
   assert.equal(referenceTimeDisplay('2025-12-31T14:00:00Z', '60m', ['2026-01-02T07:00:00Z']), '2025-12-31 22:00')
   assert.equal(referenceTimeDisplay('2026-01-02T07:00:00Z', '60m', ['2025-12-31T14:00:00Z']), '2026-01-02 15:00')
   assert.equal(referenceTimeDisplay(null, '60m', []), '—')
+})
+
+
+test('latest auxiliary readiness stays independent of historical warming for all six indicators', () => {
+  const latestBar = { bar_end: '2026-09-24T07:00:00Z', physical_contract: 'JM2701', calculation_segment_id: 'current-calculation' }
+  for (const component of ['macd', 'main_force_control', 'up_down_energy', 'trend_reversal', 'zhaoyao_mirror', 'cup_handle']) {
+    const value = { component, segments: [
+      { segment_id: 'previous-calculation', physical_contract: 'JM2609', bar_ends: ['2026-08-20T07:00:00Z'], status: { status: 'warming' }, data: null },
+      { segment_id: 'current-calculation', physical_contract: 'JM2701', bar_ends: [latestBar.bar_end], status: { status: 'ready' }, data: null },
+    ] }
+    const model = projectNewowAuxiliaryReadiness(value, latestBar)
+    assert.equal(model.currentStatus, 'ready', component)
+    assert.equal(model.historicalWarming, 1, component)
+    assert.match(model.message, /当前可计算；历史部分仍在预热/)
+    value.segments[1].status.status = 'warming'
+    assert.match(projectNewowAuxiliaryReadiness(value, latestBar).message, /当前数据不足，待每日增量积累/)
+    assert.equal(projectNewowAuxiliaryReadiness(value, { ...latestBar, physical_contract: 'JM2801' }), null)
+    assert.equal(projectNewowAuxiliaryReadiness(value, { ...latestBar, bar_end: '2026-09-25T07:00:00Z' }), null)
+  }
+})
+
+test('pending daily update keeps a successfully fetched historical quote unavailable', () => {
+  assert.equal(newowQuoteFreshness(true, true), 'unavailable')
+  assert.equal(newowQuoteFreshness(true, false), 'fresh')
+  assert.equal(newowQuoteFreshness(false, false), 'unavailable')
+  assert.equal(newowQuoteFreshness(false, true), 'unavailable')
+})
+
+
+test('same-contract repeated prefix dates cannot supply another calculation segment readiness', () => {
+  const bar = { bar_end: '2026-09-24T07:00:00Z', physical_contract: 'JM2701', calculation_segment_id: 'new-owner|price-gap:2026-09-23' }
+  const value = { component: 'macd', segments: [
+    { segment_id: 'previous-owner', physical_contract: bar.physical_contract, bar_ends: [bar.bar_end], status: { status: 'ready' }, data: null },
+    { segment_id: bar.calculation_segment_id, physical_contract: bar.physical_contract, bar_ends: [bar.bar_end], status: { status: 'warming' }, data: null },
+  ] }
+  assert.equal(projectNewowAuxiliaryReadiness(value, bar).currentStatus, 'warming')
+  assert.match(projectNewowAuxiliaryReadiness(value, bar).message, /当前数据不足/)
+  assert.equal(projectNewowAuxiliaryReadiness(value, { ...bar, calculation_segment_id: 'not-present' }), null)
 })

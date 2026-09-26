@@ -1,0 +1,31 @@
+{
+  "0048_columns_already_present": [],
+  "batch_kind_check": [
+    {
+      "definition": "CHECK (((((kind)::text = 'diagnostic'::text) AND (seq IS NULL)) OR (((kind)::text = 'seed_chunk'::text) AND (seq IS NULL)) OR (((kind)::text = ANY ((ARRAY['seed_seal'::character varying, 'calculation'::character varying])::text[])) AND (seq IS NOT NULL))))",
+      "name": "ck_reference_batches_kind_seq"
+    }
+  ],
+  "code_sha": "16e2883637d74eea011b3299effa289b157e484d",
+  "counts": {
+    "reference_actions": 2861,
+    "reference_batches": 485,
+    "reference_marks": 38700,
+    "reference_revisions": 10,
+    "reference_streams": 10,
+    "reference_trades": 1514
+  },
+  "database": "guiyi_quant",
+  "enabled_forward_count": 0,
+  "readonly": true,
+  "recorded_at": "2026-09-24T18:59:40.993786+00:00",
+  "schema": "20260919_0047",
+  "stream_groups": [
+    {
+      "count": 10,
+      "enabled": false,
+      "health": "READY",
+      "recording_mode": "historical_replay"
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+### Page
+- Page URL: http://127.0.0.1:5174/market/chart?view=newow&symbol=pf&strategy=trend&series_kind=actual_dominant&frequency=1w
+- Page Title: 归一量化工作站
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- generic [ref=e3]:
+  - complementary [ref=e4]: 本地候选只读预览 · 非实时 · 身份已核对 代码 04ee806ff041d9ff7f1f8053fd4a90831fac7577 · K线 / 牛哇截止上限 2026-09-18T07:00:00.000001Z 候选查询来源 127.0.0.1:8010；首页投影与主力元数据使用各自时间戳。 受监督正式状态来源 127.0.0.1:8000，仅 Runtime health / 当前事件，保留各自时间戳。 仅首页、牛哇与苏冰历史参考可预览；其他接口明确返回 PREVIEW_ROUTE_FORBIDDEN。
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - button "归一量化市场首页" [ref=e13] [cursor=pointer]: 归一量化
+      - tablist "全局导航" [ref=e14]:
+        - tab "市场" [ref=e15] [cursor=pointer]
+        - tab "消息" [ref=e16] [cursor=pointer]
+      - generic [ref=e19]:
+        - generic [ref=e20]: 搜索60品种
+        - combobox "搜索60品种" [ref=e21]
+    - generic [ref=e22]:
+      - button "返回市场" [ref=e23] [cursor=pointer]
+      - button "切换品种或合约" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: 短纤
+        - generic [ref=e29]: PF
+      - group "详情页操作" [ref=e32]:
+        - button "参考记录" [ref=e33] [cursor=pointer]
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - strong [ref=e42]: —
+          - generic [ref=e43]: 日涨跌（较前一日收盘） —
+          - generic [ref=e44]: 比例 —
+        - generic [ref=e45]: 报价不可用
+      - generic [ref=e48]:
+        - paragraph [ref=e49]: 最近日线收盘 · 非实时 · 截至 —
+        - generic [ref=e50]:
+          - paragraph [ref=e51]: OHLCV · 最近日线收盘
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - term [ref=e54]: 开
+              - definition [ref=e55]: —
+            - generic [ref=e56]:
+              - term [ref=e57]: 高
+              - definition [ref=e58]: —
+            - generic [ref=e59]:
+              - term [ref=e60]: 低
+              - definition [ref=e61]: —
+            - generic [ref=e62]:
+              - term [ref=e63]: 成交量
+              - definition [ref=e64]: —
+            - generic [ref=e65]:
+              - term [ref=e66]: 持仓量
+              - definition [ref=e67]: —
+    - navigation "分析视角" [ref=e68]:
+      - tablist "分析选项" [ref=e69]:
+        - tab "震荡策略" [ref=e70] [cursor=pointer]
+        - tab "趋势策略" [selected] [ref=e71] [cursor=pointer]
+        - tab "主升浪" [ref=e72] [cursor=pointer]
+        - tab "火天大有" [ref=e73] [cursor=pointer]
+        - tab "苏冰预警" [ref=e74] [cursor=pointer]
+        - tab "自由看盘" [ref=e75] [cursor=pointer]
+      - group "周期" [ref=e77]:
+        - button "1d" [ref=e78] [cursor=pointer]
+        - button "1w" [pressed] [ref=e79] [cursor=pointer]
+    - generic [ref=e81]:
+      - region "策略概览" [ref=e82]:
+        - generic [ref=e83]:
+          - strong [ref=e84]: 策略概览
+          - generic [ref=e85]:
+            - generic [ref=e86]: "?"
+            - text: 状态不可用
+          - generic [ref=e87]: 物理合约不可用 · 截至 —
+          - generic [ref=e88]: 目标参考 — · 未开放
+          - generic [ref=e89]: 吸筹参考 — · 未开放
+          - button "查看依据" [ref=e90] [cursor=pointer]
+        - generic [ref=e91]:
+          - generic [ref=e92]: 已读取窗口最近主动作 —
+          - generic [ref=e93]: 当前参考交易 参考交易尚未读取
+          - generic [ref=e94]:
+            - text: 参考浮动
+            - generic [ref=e95]: —
+            - text: · —
+          - generic [ref=e96]: 已读取状态截至 —
+      - generic [ref=e98]:
+        - generic [ref=e99]:
+          - generic "Newow 主图图例" [ref=e100]:
+            - button "趋势带ⓘ" [ref=e101] [cursor=pointer]
+          - button "图表全屏" [ref=e103] [cursor=pointer]: 全屏
+        - table [ref=e106]:
+          - row [ref=e107]:
+            - cell
+            - cell [ref=e108]
+            - cell [ref=e112]
+          - row [ref=e116]:
+            - cell [ref=e117]
+          - row [ref=e118]:
+            - cell
+            - cell [ref=e119]
+            - cell [ref=e123]
+          - row [ref=e127]:
+            - cell [ref=e128]
+          - row [ref=e129]:
+            - cell
+            - cell [ref=e130]:
+              - link "Charting by TradingView" [ref=e134] [cursor=pointer]:
+                - /url: https://www.tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=127.0.0.1/market/chart
+            - cell [ref=e139]
+          - row [ref=e143]:
+            - cell
+            - cell [ref=e144]
+            - cell [ref=e148]
+        - generic: 成交量
+        - region "Newow 辅助图层" [ref=e152]:
+          - generic [ref=e153]:
+            - button "MACD" [pressed] [ref=e154] [cursor=pointer]
+            - button "照妖镜" [ref=e155] [cursor=pointer]
+            - button "涨跌动能" [ref=e156] [cursor=pointer]
+            - button "主力控盘" [ref=e157] [cursor=pointer]
+            - generic [ref=e158]: DIF / DEA
+            - button "指标解读" [ref=e159] [cursor=pointer]: ⓘ
+            - button "杯柄说明" [ref=e160] [cursor=pointer]
+      - generic [ref=e161]:
+        - status [ref=e162]: 正在确认最近完整周线…
+        - button "查看最近可用历史快照" [ref=e163] [cursor=pointer]
+        - button "刷新当前" [ref=e164] [cursor=pointer]
+      - region "Newow 参考与解释" [ref=e165]:
+        - button "页面比较说明" [ref=e166] [cursor=pointer]
+        - region [ref=e167]:
+          - generic [ref=e168]:
+            - generic [ref=e169]:
+              - heading "参考交易" [level=3] [ref=e170]
+              - paragraph [ref=e171]: 页面参考 · 零手续费 / 零滑点 · 非账户成交
+              - group [ref=e172]:
+                - generic "参考口径说明" [ref=e173]
+            - generic [ref=e174]:
+              - generic "参考统计快捷窗口" [ref=e175]:
+                - button "近3月" [disabled] [ref=e176] [cursor=pointer]
+                - button "近1年" [disabled] [ref=e177] [cursor=pointer]
+                - button "今年" [disabled] [ref=e178] [cursor=pointer]
+                - button "完整窗口" [disabled] [ref=e179] [cursor=pointer]
+              - generic [ref=e180]:
+                - text: 统计起点
+                - textbox "统计起点" [ref=e181]
+              - generic [ref=e182]:
+                - text: 统计终点
+                - textbox "统计终点" [ref=e183]
+              - button "应用统计窗口" [ref=e184] [cursor=pointer]
+          - status [ref=e185]: 尚未请求。
+          - button "读取参考交易" [ref=e186] [cursor=pointer]
+        - region "统一参考交易" [ref=e187]:
+          - generic [ref=e188]:
+            - heading "参考交易" [level=2] [ref=e189]
+            - navigation "参考记录模式" [ref=e190]:
+              - button "历史参考" [ref=e191] [cursor=pointer]
+              - button "盘中观察参考" [pressed] [ref=e192] [cursor=pointer]
+          - paragraph [ref=e193]: 零费用、零滑点的页面参考记录；不代表账户成交。
+          - status [ref=e194]: 已保存的历史参考暂不可用，请稍后重试。
+```
+### Events
+- New console entries: .playwright-cli/console-2026-09-24T02-13-06-257Z.log#L1-L4

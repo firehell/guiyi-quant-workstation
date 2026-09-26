@@ -1,0 +1,416 @@
+{
+  "calendar_rows": [
+    {
+      "date": "2026-09-28",
+      "exchange": "DCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 26,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-09-29",
+      "exchange": "DCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 26,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-09-30",
+      "exchange": "DCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 26,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-01",
+      "exchange": "DCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-02",
+      "exchange": "DCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-03",
+      "exchange": "DCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-04",
+      "exchange": "DCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-09-28",
+      "exchange": "SHFE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 20,
+      "universe_count": 20
+    },
+    {
+      "date": "2026-09-29",
+      "exchange": "SHFE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 20,
+      "universe_count": 20
+    },
+    {
+      "date": "2026-09-30",
+      "exchange": "SHFE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 20,
+      "universe_count": 20
+    },
+    {
+      "date": "2026-10-01",
+      "exchange": "SHFE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 20
+    },
+    {
+      "date": "2026-10-02",
+      "exchange": "SHFE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 20
+    },
+    {
+      "date": "2026-10-03",
+      "exchange": "SHFE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 20
+    },
+    {
+      "date": "2026-10-04",
+      "exchange": "SHFE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 20
+    },
+    {
+      "date": "2026-09-28",
+      "exchange": "CZCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 26,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-09-29",
+      "exchange": "CZCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 26,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-09-30",
+      "exchange": "CZCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 26,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-01",
+      "exchange": "CZCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-02",
+      "exchange": "CZCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-03",
+      "exchange": "CZCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-10-04",
+      "exchange": "CZCE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 26
+    },
+    {
+      "date": "2026-09-28",
+      "exchange": "INE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 5,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-09-29",
+      "exchange": "INE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 5,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-09-30",
+      "exchange": "INE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": true,
+      "session_product_count": 5,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-01",
+      "exchange": "INE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-02",
+      "exchange": "INE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-03",
+      "exchange": "INE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-04",
+      "exchange": "INE",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-09-28",
+      "exchange": "GFEX",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 5,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-09-29",
+      "exchange": "GFEX",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 5,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-09-30",
+      "exchange": "GFEX",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": true,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 5,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-01",
+      "exchange": "GFEX",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-02",
+      "exchange": "GFEX",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-03",
+      "exchange": "GFEX",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    },
+    {
+      "date": "2026-10-04",
+      "exchange": "GFEX",
+      "existing": false,
+      "existing_conflict": false,
+      "is_trading_day": false,
+      "missing_products": [],
+      "night_fact": false,
+      "session_product_count": 0,
+      "universe_count": 5
+    }
+  ],
+  "candidate_commit": "71b348f0bdbb86bc668b21a01002964c2718a12e",
+  "capture_candidate_commit": "f53cf4db5e7ab7bfdc1cac81e69a2f578b084f16",
+  "capture_sha256": "f6aded42b7e2c5ac986ba702cec854d20f54cc183a7d05b6263f48229faf0832",
+  "existing": {
+    "calendar_rows": 0,
+    "rank1_rows_on_current_day": 0,
+    "session_products_on_formal_dates": 0
+  },
+  "prepared": {
+    "calendar_context_products": 82,
+    "calendar_rows": 35,
+    "formal_session_dates": [
+      "2026-09-28",
+      "2026-09-29"
+    ],
+    "formal_session_products": 60,
+    "formal_session_rows": 405,
+    "rank1_dates": [
+      "2026-09-28"
+    ],
+    "rank1_rows": 60
+  },
+  "production_writes": 0,
+  "provider_requests": 0,
+  "replayed_at": "2026-09-24T14:20:03.738495+00:00",
+  "schema_version": 1,
+  "source_period_rows": 258
+}

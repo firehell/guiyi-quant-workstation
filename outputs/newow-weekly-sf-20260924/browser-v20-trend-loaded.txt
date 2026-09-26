@@ -1,0 +1,642 @@
+### Page
+- Page URL: http://127.0.0.1:5174/market/chart?view=newow&symbol=sf&strategy=trend&series_kind=actual_dominant&frequency=1w
+- Page Title: 归一量化工作站
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- generic [ref=e3]:
+  - complementary [ref=e4]: 本地候选只读预览 · 非实时 · 身份已核对 代码 4010c0a847f95360f72301fada6856ecd6308a69 · K线 / 牛哇截止上限 2026-09-18T07:00:00.000001Z 候选查询来源 127.0.0.1:8010；首页投影与主力元数据使用各自时间戳。 受监督正式状态来源 127.0.0.1:8000，仅 Runtime health / 当前事件，保留各自时间戳。 仅首页、牛哇与苏冰历史参考可预览；其他接口明确返回 PREVIEW_ROUTE_FORBIDDEN。
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - button "归一量化市场首页" [ref=e13] [cursor=pointer]: 归一量化
+      - tablist "全局导航" [ref=e14]:
+        - tab "市场" [ref=e15] [cursor=pointer]
+        - tab "消息" [ref=e16] [cursor=pointer]
+      - generic [ref=e19]:
+        - generic [ref=e20]: 搜索60品种
+        - combobox "搜索60品种" [ref=e21]
+    - generic [ref=e22]:
+      - button "返回市场" [ref=e23] [cursor=pointer]
+      - button "切换品种或合约" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: 硅铁
+        - generic [ref=e29]: SF
+      - group "详情页操作" [ref=e32]:
+        - button "参考记录" [ref=e33] [cursor=pointer]
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - strong [ref=e42]: —
+          - generic [ref=e43]: 日涨跌（较前一日收盘） —
+          - generic [ref=e44]: 比例 —
+        - generic [ref=e45]: 报价不可用
+      - generic [ref=e48]:
+        - paragraph [ref=e49]: 最近日线收盘 · 非实时 · 截至 —
+        - generic [ref=e50]:
+          - paragraph [ref=e51]: OHLCV · 最近日线收盘
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - term [ref=e54]: 开
+              - definition [ref=e55]: —
+            - generic [ref=e56]:
+              - term [ref=e57]: 高
+              - definition [ref=e58]: —
+            - generic [ref=e59]:
+              - term [ref=e60]: 低
+              - definition [ref=e61]: —
+            - generic [ref=e62]:
+              - term [ref=e63]: 成交量
+              - definition [ref=e64]: —
+            - generic [ref=e65]:
+              - term [ref=e66]: 持仓量
+              - definition [ref=e67]: —
+    - navigation "分析视角" [ref=e68]:
+      - tablist "分析选项" [ref=e69]:
+        - tab "震荡策略" [ref=e70] [cursor=pointer]
+        - tab "趋势策略" [selected] [ref=e71] [cursor=pointer]
+        - tab "主升浪" [ref=e72] [cursor=pointer]
+        - tab "火天大有" [ref=e73] [cursor=pointer]
+        - tab "苏冰预警" [ref=e74] [cursor=pointer]
+        - tab "自由看盘" [ref=e75] [cursor=pointer]
+      - group "周期" [ref=e77]:
+        - button "1d" [ref=e78] [cursor=pointer]
+        - button "1w" [pressed] [ref=e79] [cursor=pointer]
+    - generic [ref=e81]:
+      - region "策略概览" [ref=e82]:
+        - generic [ref=e83]:
+          - strong [ref=e84]: 策略概览
+          - generic [ref=e85]:
+            - generic [ref=e86]: ✓
+            - text: 策略持有
+          - generic [ref=e87]: SF2611 · 截至 09-18 15:00
+          - generic [ref=e88]: 目标参考 — · 未开放
+          - generic [ref=e89]: 吸筹参考 — · 未开放
+          - button "查看依据" [ref=e90] [cursor=pointer]
+        - generic [ref=e91]:
+          - generic "2026-09-18T07:00:00Z" [ref=e92]:
+            - text: 已读取窗口最近主动作
+            - button "参考建仓 · 5814.8 · 08-07 15:00" [ref=e93] [cursor=pointer]
+          - generic [ref=e94]: 当前参考交易 未清仓页面参考交易
+          - generic [ref=e95]:
+            - text: 参考浮动
+            - generic [ref=e96]: +3.49%
+            - text: · 09-18 15:00
+          - generic "2026-09-18T07:00:00Z" [ref=e97]: 已读取状态截至 09-18 15:00
+      - generic [ref=e99]:
+        - generic [ref=e100]:
+          - generic "Newow 主图图例" [ref=e101]:
+            - button "趋势带 B A ⓘ" [ref=e102] [cursor=pointer]:
+              - text: 趋势带
+              - generic [ref=e103]: B
+              - generic [ref=e104]: A
+              - text: ⓘ
+            - group [ref=e105]:
+              - generic "过程提示" [ref=e106] [cursor=pointer]
+          - button "图表全屏" [ref=e108] [cursor=pointer]: 全屏
+        - table [ref=e111]:
+          - row [ref=e112]:
+            - cell
+            - cell [ref=e113]
+            - cell [ref=e117]
+          - row [ref=e121]:
+            - cell [ref=e122]
+          - row [ref=e123]:
+            - cell
+            - cell [ref=e124]
+            - cell [ref=e128]
+          - row [ref=e132]:
+            - cell [ref=e133]
+          - row [ref=e134]:
+            - cell
+            - cell [ref=e135]:
+              - link "Charting by TradingView" [ref=e139] [cursor=pointer]:
+                - /url: https://www.tradingview.com/?utm_medium=lwc-link&utm_campaign=lwc-chart&utm_source=127.0.0.1/market/chart
+            - cell [ref=e144]
+          - row [ref=e148]:
+            - cell
+            - cell [ref=e149]
+            - cell [ref=e153]
+        - generic "策略参考动作":
+          - generic "清仓，参考价 8285，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8285
+          - generic "建仓，参考价 8328，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8328
+          - generic "清仓，参考价 8346，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8346
+          - generic "建仓，参考价 8080，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 8080
+          - generic "清仓，参考价 8033，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 8033
+          - generic "建仓，参考价 7254，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7254
+          - generic "清仓，参考价 7202，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 7202
+          - generic "建仓，参考价 6982，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6982
+          - generic "清仓，参考价 6922，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6922
+          - generic "建仓，参考价 6933，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6933
+          - generic "清仓，参考价 6962，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6962
+          - generic "建仓，参考价 6964，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6964
+          - generic "清仓，参考价 7269，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 7269
+          - generic "建仓，参考价 7101，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 7101
+          - generic "清仓，参考价 7087，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 7087
+          - generic "建仓，参考价 6543，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6543
+          - generic "清仓，参考价 7149，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 7149
+          - generic "建仓，参考价 6453，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6453
+          - generic "清仓，参考价 6426，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6426
+          - generic "建仓，参考价 6365，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6365
+          - generic "清仓，参考价 6362，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6362
+          - generic "建仓，参考价 6364，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 6364
+          - generic "清仓，参考价 6322，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 6322
+          - generic "建仓，参考价 5352，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5352
+          - generic "清仓，参考价 5707，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 5707
+          - generic "建仓，参考价 5545，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5545
+          - generic "清仓，参考价 5575，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 5575
+          - generic "建仓，参考价 5578，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5578
+          - generic "清仓，参考价 5592，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 5592
+          - generic "建仓，参考价 5615，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5615
+          - generic "清仓，参考价 5874，策略参考动作":
+            - strong: 清仓
+            - generic: 参考价 5874
+          - generic "建仓，参考价 5826，策略参考动作":
+            - strong: 建仓
+            - generic: 参考价 5826
+          - generic "清仓，参考价 5777，策略参考动作": ▽
+          - generic "建仓，参考价 5772，策略参考动作": △
+          - generic "清仓，参考价 5790，策略参考动作": ▽
+          - generic "建仓，参考价 5815，策略参考动作": △
+        - generic: 成交量
+        - region "Newow 辅助图层" [ref=e157]:
+          - generic [ref=e158]:
+            - button "MACD" [pressed] [ref=e159] [cursor=pointer]
+            - button "照妖镜" [ref=e160] [cursor=pointer]
+            - button "涨跌动能" [ref=e161] [cursor=pointer]
+            - button "主力控盘" [ref=e162] [cursor=pointer]
+            - generic [ref=e163]: DIF / DEA
+            - button "指标解读" [ref=e164] [cursor=pointer]: ⓘ
+            - button "杯柄说明" [ref=e165] [cursor=pointer]
+      - generic [ref=e166]:
+        - generic "2026-09-18T07:00:00.000001Z" [ref=e167]: 周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定
+        - button "查看最近可用历史快照" [ref=e168] [cursor=pointer]
+        - button "刷新当前" [ref=e169] [cursor=pointer]
+      - region "Newow 参考与解释" [ref=e170]:
+        - button "页面比较说明" [ref=e171] [cursor=pointer]
+        - region [ref=e172]:
+          - generic [ref=e173]:
+            - generic [ref=e174]:
+              - heading "参考交易" [level=3] [ref=e175]
+              - paragraph [ref=e176]: 页面参考 · 零手续费 / 零滑点 · 非账户成交
+              - group [ref=e177]:
+                - generic "参考口径说明" [ref=e178]
+            - generic [ref=e179]:
+              - generic "参考统计快捷窗口" [ref=e180]:
+                - button "近3月" [ref=e181] [cursor=pointer]
+                - button "近1年" [ref=e182] [cursor=pointer]
+                - button "今年" [ref=e183] [cursor=pointer]
+                - button "完整窗口" [disabled] [ref=e184] [cursor=pointer]
+              - generic [ref=e185]:
+                - text: 统计起点
+                - textbox "统计起点" [ref=e186]: 2023-01-01
+              - generic [ref=e187]:
+                - text: 统计终点
+                - textbox "统计终点" [ref=e188]: 2026-09-18
+              - button "应用统计窗口" [ref=e189] [cursor=pointer]
+          - region "参考交易统计摘要" [ref=e190]:
+            - status [ref=e191]: 所选统计区间已按权威截止完成计算。
+            - generic [ref=e192]:
+              - generic [ref=e193]:
+                - term [ref=e194]: 已完成
+                - definition [ref=e195]: "10"
+              - generic [ref=e196]:
+                - term [ref=e197]: 胜率
+                - definition [ref=e198]: 40%
+              - generic [ref=e199]:
+                - term [ref=e200]: 平均单笔
+                - definition [ref=e201]: "-0.13%"
+              - generic [ref=e202]:
+                - term [ref=e203]: 收益合计
+                - definition [ref=e204]: "-1.3 百分点（简单相加）"
+              - generic [ref=e205]:
+                - term [ref=e206]: 未清仓
+                - definition [ref=e207]: "1"
+              - generic [ref=e208]:
+                - term [ref=e209]: 换月中断
+                - definition [ref=e210]: "7"
+              - generic [ref=e211]:
+                - term [ref=e212]: 数据中断
+                - definition [ref=e213]: "0"
+              - generic [ref=e214]:
+                - term [ref=e215]: 期初已有
+                - definition [ref=e216]: "0"
+            - group [ref=e217]:
+              - generic "统计时间与来源" [ref=e218]
+          - generic [ref=e219]:
+            - generic [ref=e220]:
+              - text: 记录筛选
+              - combobox "筛选参考历史" [ref=e221]:
+                - option "全部" [selected]
+                - option "已清仓"
+                - option "未清仓"
+                - option "中断记录"
+                - option "期初已有"
+            - generic [ref=e222]: 筛选仅改变记录，不改变服务端统计或 Performance window。
+          - generic [ref=e223]:
+            - article [ref=e224]:
+              - generic "2026-08-07T07:00:00Z → 2026-09-18T07:00:00Z" [ref=e225]:
+                - strong [ref=e226]: 未清仓
+                - generic [ref=e227]: SF2611 · 2026-08-07 → 至估值日
+              - generic [ref=e228]:
+                - generic [ref=e229]:
+                  - generic [ref=e230]:
+                    - term [ref=e231]: 参考建仓
+                    - definition [ref=e232]: ▲ 5814.8 · 2026-08-07
+                  - generic [ref=e233]:
+                    - term [ref=e234]: 参考估值
+                    - definition [ref=e235]: 6018 · 2026-09-18
+                - paragraph [ref=e236]:
+                  - text: 参考浮动
+                  - generic [ref=e237]: +3.49%
+                - button "定位参考记录 df97a17382570427257605594584fb267bb3c460253dc0100a7024ce455c0c27 的建仓信号" [ref=e238] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 df97a17382570427257605594584fb267bb3c460253dc0100a7024ce455c0c27" [ref=e239] [cursor=pointer]: 查看详情
+            - article [ref=e240]:
+              - generic "2026-07-03T07:00:00Z → 2026-07-31T07:00:00Z" [ref=e241]:
+                - strong [ref=e242]: 已清仓
+                - generic [ref=e243]: SF2609 · 2026-07-03 → 2026-07-31
+              - generic [ref=e244]:
+                - generic [ref=e245]:
+                  - generic [ref=e246]:
+                    - term [ref=e247]: 参考建仓
+                    - definition [ref=e248]: ▲ 5771.8 · 2026-07-03
+                  - generic [ref=e249]:
+                    - term [ref=e250]: 参考清仓
+                    - definition [ref=e251]: ▼ 5789.7333 · 2026-07-31
+                - paragraph [ref=e252]:
+                  - text: 已清仓收益
+                  - generic [ref=e253]: +0.31%
+                - button "定位参考记录 238e7f2f3dc46e0bfcf6da034b98d0731535c4d45b861049f42e5ccc74f83fce 的建仓信号" [ref=e254] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 238e7f2f3dc46e0bfcf6da034b98d0731535c4d45b861049f42e5ccc74f83fce 的清仓信号" [ref=e255] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 238e7f2f3dc46e0bfcf6da034b98d0731535c4d45b861049f42e5ccc74f83fce" [ref=e256] [cursor=pointer]: 查看详情
+            - article [ref=e257]:
+              - generic "2026-06-05T07:00:00Z → 2026-06-05T07:00:00Z" [ref=e258]:
+                - strong [ref=e259]: 换月中断
+                - generic [ref=e260]: SF2607 · 2026-06-05 → 2026-06-12
+              - generic [ref=e261]:
+                - generic [ref=e262]:
+                  - generic [ref=e263]:
+                    - term [ref=e264]: 参考建仓
+                    - definition [ref=e265]: ▲ 5826 · 2026-06-05
+                  - generic [ref=e266]:
+                    - term [ref=e267]: 参考估值
+                    - definition [ref=e268]: 5870 · 2026-06-05
+                  - generic [ref=e269]:
+                    - term [ref=e270]: 中断说明
+                    - definition [ref=e271]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=e272]:
+                  - text: 中断浮动
+                  - generic [ref=e273]: +0.76%
+                - button "定位参考记录 4dd9e697e3d8003cc2aa3ef03c814bcc6671077be91edf679c85ebde5a742c07 的建仓信号" [ref=e274] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 4dd9e697e3d8003cc2aa3ef03c814bcc6671077be91edf679c85ebde5a742c07" [ref=e275] [cursor=pointer]: 查看详情
+            - article [ref=e276]:
+              - generic "2026-02-27T07:00:00Z → 2026-04-03T07:00:00Z" [ref=e277]:
+                - strong [ref=e278]: 换月中断
+                - generic [ref=e279]: SF2605 · 2026-02-27 → 2026-04-08
+              - generic [ref=e280]:
+                - generic [ref=e281]:
+                  - generic [ref=e282]:
+                    - term [ref=e283]: 参考建仓
+                    - definition [ref=e284]: ▲ 5614.8667 · 2026-02-27
+                  - generic [ref=e285]:
+                    - term [ref=e286]: 参考估值
+                    - definition [ref=e287]: 5824 · 2026-04-03
+                  - generic [ref=e288]:
+                    - term [ref=e289]: 中断说明
+                    - definition [ref=e290]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=e291]:
+                  - text: 中断浮动
+                  - generic [ref=e292]: +3.72%
+                - button "定位参考记录 4944b3d9a80a2312b31a1e615663b10843da4e13147ee12e099a4a513f8fc433 的建仓信号" [ref=e293] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 4944b3d9a80a2312b31a1e615663b10843da4e13147ee12e099a4a513f8fc433" [ref=e294] [cursor=pointer]: 查看详情
+            - article [ref=e295]:
+              - generic "2026-01-23T07:00:00Z → 2026-01-30T07:00:00Z" [ref=e296]:
+                - strong [ref=e297]: 换月中断
+                - generic [ref=e298]: SF2603 · 2026-01-23 → 2026-02-06
+              - generic [ref=e299]:
+                - generic [ref=e300]:
+                  - generic [ref=e301]:
+                    - term [ref=e302]: 参考建仓
+                    - definition [ref=e303]: ▲ 5578 · 2026-01-23
+                  - generic [ref=e304]:
+                    - term [ref=e305]: 参考估值
+                    - definition [ref=e306]: 5660 · 2026-01-30
+                  - generic [ref=e307]:
+                    - term [ref=e308]: 中断说明
+                    - definition [ref=e309]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=e310]:
+                  - text: 中断浮动
+                  - generic [ref=e311]: +1.47%
+                - button "定位参考记录 31d046aeb52fb647a11c9dbe2b1da2bf476b59c4db8435d39a02c1d84f3b4520 的建仓信号" [ref=e312] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 31d046aeb52fb647a11c9dbe2b1da2bf476b59c4db8435d39a02c1d84f3b4520" [ref=e313] [cursor=pointer]: 查看详情
+            - article [ref=e314]:
+              - generic "2025-12-19T07:00:00Z → 2026-01-16T07:00:00Z" [ref=e315]:
+                - strong [ref=e316]: 已清仓
+                - generic [ref=e317]: SF2603 · 2025-12-19 → 2026-01-16
+              - generic [ref=e318]:
+                - generic [ref=e319]:
+                  - generic [ref=e320]:
+                    - term [ref=e321]: 参考建仓
+                    - definition [ref=e322]: ▲ 5544.6667 · 2025-12-19
+                  - generic [ref=e323]:
+                    - term [ref=e324]: 参考清仓
+                    - definition [ref=e325]: ▼ 5575.2 · 2026-01-16
+                - paragraph [ref=e326]:
+                  - text: 已清仓收益
+                  - generic [ref=e327]: +0.55%
+                - button "定位参考记录 7cc27a8fdfd00bd31b9bf4d51bbe188983c87fc258a2523735a133779d208659 的建仓信号" [ref=e328] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 7cc27a8fdfd00bd31b9bf4d51bbe188983c87fc258a2523735a133779d208659 的清仓信号" [ref=e329] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 7cc27a8fdfd00bd31b9bf4d51bbe188983c87fc258a2523735a133779d208659" [ref=e330] [cursor=pointer]: 查看详情
+            - article [ref=e331]:
+              - generic "2025-07-11T07:00:00Z → 2025-08-08T07:00:00Z" [ref=e332]:
+                - strong [ref=e333]: 换月中断
+                - generic [ref=e334]: SF2509 · 2025-07-11 → 2025-08-14
+              - generic [ref=e335]:
+                - generic [ref=e336]:
+                  - generic [ref=e337]:
+                    - term [ref=e338]: 参考建仓
+                    - definition [ref=e339]: ▲ 5352 · 2025-07-11
+                  - generic [ref=e340]:
+                    - term [ref=e341]: 参考估值
+                    - definition [ref=e342]: 5772 · 2025-08-08
+                  - generic [ref=e343]:
+                    - term [ref=e344]: 中断说明
+                    - definition [ref=e345]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=e346]:
+                  - text: 中断浮动
+                  - generic [ref=e347]: +7.85%
+                - button "定位参考记录 9be99f52461fe2b1391888c6bb22ba2904e2af190a7102e8650fc717e2041b48 的建仓信号" [ref=e348] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 9be99f52461fe2b1391888c6bb22ba2904e2af190a7102e8650fc717e2041b48" [ref=e349] [cursor=pointer]: 查看详情
+            - article [ref=e350]:
+              - generic "2025-01-27T07:00:00Z → 2025-01-27T07:00:00Z" [ref=e351]:
+                - strong [ref=e352]: 换月中断
+                - generic [ref=e353]: SF2503 · 2025-01-27 → 2025-02-07
+              - generic [ref=e354]:
+                - generic [ref=e355]:
+                  - generic [ref=e356]:
+                    - term [ref=e357]: 参考建仓
+                    - definition [ref=e358]: ▲ 6364.4 · 2025-01-27
+                  - generic [ref=e359]:
+                    - term [ref=e360]: 参考估值
+                    - definition [ref=e361]: 6438 · 2025-01-27
+                  - generic [ref=e362]:
+                    - term [ref=e363]: 中断说明
+                    - definition [ref=e364]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=e365]:
+                  - text: 中断浮动
+                  - generic [ref=e366]: +1.16%
+                - button "定位参考记录 0837c1b27574ae4b65e9e1ea906c01ad264f4372bea32a064f163e99b2b5effa 的建仓信号" [ref=e367] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 0837c1b27574ae4b65e9e1ea906c01ad264f4372bea32a064f163e99b2b5effa" [ref=e368] [cursor=pointer]: 查看详情
+            - article [ref=e369]:
+              - generic "2025-01-10T07:00:00Z → 2025-01-24T07:00:00Z" [ref=e370]:
+                - strong [ref=e371]: 已清仓
+                - generic [ref=e372]: SF2503 · 2025-01-10 → 2025-01-24
+              - generic [ref=e373]:
+                - generic [ref=e374]:
+                  - generic [ref=e375]:
+                    - term [ref=e376]: 参考建仓
+                    - definition [ref=e377]: ▲ 6364.8667 · 2025-01-10
+                  - generic [ref=e378]:
+                    - term [ref=e379]: 参考清仓
+                    - definition [ref=e380]: ▼ 6362.2 · 2025-01-24
+                - paragraph [ref=e381]:
+                  - text: 已清仓收益
+                  - generic [ref=e382]: "-0.04%"
+                - button "定位参考记录 03bb1b766fd3f02261f33e93fe6674433c49c9047977a55930ebcc39c66f61e6 的建仓信号" [ref=e383] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 03bb1b766fd3f02261f33e93fe6674433c49c9047977a55930ebcc39c66f61e6 的清仓信号" [ref=e384] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 03bb1b766fd3f02261f33e93fe6674433c49c9047977a55930ebcc39c66f61e6" [ref=e385] [cursor=pointer]: 查看详情
+            - article [ref=e386]:
+              - generic "2024-09-30T07:00:00Z → 2024-11-08T07:00:00Z" [ref=e387]:
+                - strong [ref=e388]: 已清仓
+                - generic [ref=e389]: SF2501 · 2024-09-30 → 2024-11-08
+              - generic [ref=e390]:
+                - generic [ref=e391]:
+                  - generic [ref=e392]:
+                    - term [ref=e393]: 参考建仓
+                    - definition [ref=e394]: ▲ 6452.8667 · 2024-09-30
+                  - generic [ref=e395]:
+                    - term [ref=e396]: 参考清仓
+                    - definition [ref=e397]: ▼ 6426.2 · 2024-11-08
+                - paragraph [ref=e398]:
+                  - text: 已清仓收益
+                  - generic [ref=e399]: "-0.41%"
+                - button "定位参考记录 64057e30a588dea91d33663a814471c509b31073b0eb2018b68b08f3366db378 的建仓信号" [ref=e400] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 64057e30a588dea91d33663a814471c509b31073b0eb2018b68b08f3366db378 的清仓信号" [ref=e401] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 64057e30a588dea91d33663a814471c509b31073b0eb2018b68b08f3366db378" [ref=e402] [cursor=pointer]: 查看详情
+            - article [ref=e403]:
+              - generic "2024-04-12T07:00:00Z → 2024-04-12T07:00:00Z" [ref=e404]:
+                - strong [ref=e405]: 换月中断
+                - generic [ref=e406]: SF2405 · 2024-04-12 → 2024-04-17
+              - generic [ref=e407]:
+                - generic [ref=e408]:
+                  - generic [ref=e409]:
+                    - term [ref=e410]: 参考建仓
+                    - definition [ref=e411]: ▲ 6543.4667 · 2024-04-12
+                  - generic [ref=e412]:
+                    - term [ref=e413]: 参考估值
+                    - definition [ref=e414]: 6590 · 2024-04-12
+                  - generic [ref=e415]:
+                    - term [ref=e416]: 中断说明
+                    - definition [ref=e417]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=e418]:
+                  - text: 中断浮动
+                  - generic [ref=e419]: +0.71%
+                - button "定位参考记录 0d4e062ef1ba02e4f40407fb92d32d5ecdbaf123412eeeb11479ae007c59e4de 的建仓信号" [ref=e420] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 0d4e062ef1ba02e4f40407fb92d32d5ecdbaf123412eeeb11479ae007c59e4de" [ref=e421] [cursor=pointer]: 查看详情
+            - article [ref=e422]:
+              - generic "2023-11-10T07:00:00Z → 2023-11-24T07:00:00Z" [ref=e423]:
+                - strong [ref=e424]: 已清仓
+                - generic [ref=e425]: SF2402 · 2023-11-10 → 2023-11-24
+              - generic [ref=e426]:
+                - generic [ref=e427]:
+                  - generic [ref=e428]:
+                    - term [ref=e429]: 参考建仓
+                    - definition [ref=e430]: ▲ 7101.3333 · 2023-11-10
+                  - generic [ref=e431]:
+                    - term [ref=e432]: 参考清仓
+                    - definition [ref=e433]: ▼ 7087.4 · 2023-11-24
+                - paragraph [ref=e434]:
+                  - text: 已清仓收益
+                  - generic [ref=e435]: "-0.2%"
+                - button "定位参考记录 4a755f76ef942ec140d0904ededf169fdc7054402d1bcbe58820424e411f2a01 的建仓信号" [ref=e436] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 4a755f76ef942ec140d0904ededf169fdc7054402d1bcbe58820424e411f2a01 的清仓信号" [ref=e437] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 4a755f76ef942ec140d0904ededf169fdc7054402d1bcbe58820424e411f2a01" [ref=e438] [cursor=pointer]: 查看详情
+            - article [ref=e439]:
+              - generic "2023-08-25T07:00:00Z → 2023-09-01T07:00:00Z" [ref=e440]:
+                - strong [ref=e441]: 换月中断
+                - generic [ref=e442]: SF2310 · 2023-08-25 → 2023-09-04
+              - generic [ref=e443]:
+                - generic [ref=e444]:
+                  - generic [ref=e445]:
+                    - term [ref=e446]: 参考建仓
+                    - definition [ref=e447]: ▲ 6963.8 · 2023-08-25
+                  - generic [ref=e448]:
+                    - term [ref=e449]: 参考估值
+                    - definition [ref=e450]: 7096 · 2023-09-01
+                  - generic [ref=e451]:
+                    - term [ref=e452]: 中断说明
+                    - definition [ref=e453]: 换月中断 · 物理合约区段结束
+                - paragraph [ref=e454]:
+                  - text: 中断浮动
+                  - generic [ref=e455]: +1.9%
+                - button "定位参考记录 1bbcbda546d0f6070f34f3ffd62335ef192eebfe7ce0ac5f0242ff49f4702b08 的建仓信号" [ref=e456] [cursor=pointer]: 定位建仓
+                - button "展开参考记录 1bbcbda546d0f6070f34f3ffd62335ef192eebfe7ce0ac5f0242ff49f4702b08" [ref=e457] [cursor=pointer]: 查看详情
+            - article [ref=e458]:
+              - generic "2023-08-04T07:00:00Z → 2023-08-18T07:00:00Z" [ref=e459]:
+                - strong [ref=e460]: 已清仓
+                - generic [ref=e461]: SF2310 · 2023-08-04 → 2023-08-18
+              - generic [ref=e462]:
+                - generic [ref=e463]:
+                  - generic [ref=e464]:
+                    - term [ref=e465]: 参考建仓
+                    - definition [ref=e466]: ▲ 6932.6 · 2023-08-04
+                  - generic [ref=e467]:
+                    - term [ref=e468]: 参考清仓
+                    - definition [ref=e469]: ▼ 6961.6 · 2023-08-18
+                - paragraph [ref=e470]:
+                  - text: 已清仓收益
+                  - generic [ref=e471]: +0.42%
+                - button "定位参考记录 f415f95a324c5592dee39721416694e0f513e51b2c7703a4acfc4e0390c4d66f 的建仓信号" [ref=e472] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 f415f95a324c5592dee39721416694e0f513e51b2c7703a4acfc4e0390c4d66f 的清仓信号" [ref=e473] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 f415f95a324c5592dee39721416694e0f513e51b2c7703a4acfc4e0390c4d66f" [ref=e474] [cursor=pointer]: 查看详情
+            - article [ref=e475]:
+              - generic "2023-07-14T07:00:00Z → 2023-07-28T07:00:00Z" [ref=e476]:
+                - strong [ref=e477]: 已清仓
+                - generic [ref=e478]: SF2310 · 2023-07-14 → 2023-07-28
+              - generic [ref=e479]:
+                - generic [ref=e480]:
+                  - generic [ref=e481]:
+                    - term [ref=e482]: 参考建仓
+                    - definition [ref=e483]: ▲ 6981.5333 · 2023-07-14
+                  - generic [ref=e484]:
+                    - term [ref=e485]: 参考清仓
+                    - definition [ref=e486]: ▼ 6922.1333 · 2023-07-28
+                - paragraph [ref=e487]:
+                  - text: 已清仓收益
+                  - generic [ref=e488]: "-0.85%"
+                - button "定位参考记录 9f0cd9772a9546a1474807b55a69d91a5c3ec1f6b5234c55c6c2eb6d06ffd1e4 的建仓信号" [ref=e489] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 9f0cd9772a9546a1474807b55a69d91a5c3ec1f6b5234c55c6c2eb6d06ffd1e4 的清仓信号" [ref=e490] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 9f0cd9772a9546a1474807b55a69d91a5c3ec1f6b5234c55c6c2eb6d06ffd1e4" [ref=e491] [cursor=pointer]: 查看详情
+            - article [ref=e492]:
+              - generic "2023-06-21T07:00:00Z → 2023-06-30T07:00:00Z" [ref=e493]:
+                - strong [ref=e494]: 已清仓
+                - generic [ref=e495]: SF2309 · 2023-06-21 → 2023-06-30
+              - generic [ref=e496]:
+                - generic [ref=e497]:
+                  - generic [ref=e498]:
+                    - term [ref=e499]: 参考建仓
+                    - definition [ref=e500]: ▲ 7254.1333 · 2023-06-21
+                  - generic [ref=e501]:
+                    - term [ref=e502]: 参考清仓
+                    - definition [ref=e503]: ▼ 7202.4667 · 2023-06-30
+                - paragraph [ref=e504]:
+                  - text: 已清仓收益
+                  - generic [ref=e505]: "-0.71%"
+                - button "定位参考记录 fc15ff87e82fd1b34c15d8d7ffdc356df873869f464dc304dc8661301d730ac2 的建仓信号" [ref=e506] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 fc15ff87e82fd1b34c15d8d7ffdc356df873869f464dc304dc8661301d730ac2 的清仓信号" [ref=e507] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 fc15ff87e82fd1b34c15d8d7ffdc356df873869f464dc304dc8661301d730ac2" [ref=e508] [cursor=pointer]: 查看详情
+            - article [ref=e509]:
+              - generic "2023-03-24T07:00:00Z → 2023-03-31T07:00:00Z" [ref=e510]:
+                - strong [ref=e511]: 已清仓
+                - generic [ref=e512]: SF2305 · 2023-03-24 → 2023-03-31
+              - generic [ref=e513]:
+                - generic [ref=e514]:
+                  - generic [ref=e515]:
+                    - term [ref=e516]: 参考建仓
+                    - definition [ref=e517]: ▲ 8079.6 · 2023-03-24
+                  - generic [ref=e518]:
+                    - term [ref=e519]: 参考清仓
+                    - definition [ref=e520]: ▼ 8033.1333 · 2023-03-31
+                - paragraph [ref=e521]:
+                  - text: 已清仓收益
+                  - generic [ref=e522]: "-0.58%"
+                - button "定位参考记录 f9b08bc325d4db6bfddaa774495cbc9a871a6968e0ae4bd577b05d5c68f3720e 的建仓信号" [ref=e523] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 f9b08bc325d4db6bfddaa774495cbc9a871a6968e0ae4bd577b05d5c68f3720e 的清仓信号" [ref=e524] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 f9b08bc325d4db6bfddaa774495cbc9a871a6968e0ae4bd577b05d5c68f3720e" [ref=e525] [cursor=pointer]: 查看详情
+            - article [ref=e526]:
+              - generic "2023-01-13T07:00:00Z → 2023-02-03T07:00:00Z" [ref=e527]:
+                - strong [ref=e528]: 已清仓
+                - generic [ref=e529]: SF2303 · 2023-01-13 → 2023-02-03
+              - generic [ref=e530]:
+                - generic [ref=e531]:
+                  - generic [ref=e532]:
+                    - term [ref=e533]: 参考建仓
+                    - definition [ref=e534]: ▲ 8328.0667 · 2023-01-13
+                  - generic [ref=e535]:
+                    - term [ref=e536]: 参考清仓
+                    - definition [ref=e537]: ▼ 8345.6 · 2023-02-03
+                - paragraph [ref=e538]:
+                  - text: 已清仓收益
+                  - generic [ref=e539]: +0.21%
+                - button "定位参考记录 f6f4854c6a142d0aa0c23b51b292f426049571654040f3c5795fffaa3e9d9b2a 的建仓信号" [ref=e540] [cursor=pointer]: 定位建仓
+                - button "定位参考记录 f6f4854c6a142d0aa0c23b51b292f426049571654040f3c5795fffaa3e9d9b2a 的清仓信号" [ref=e541] [cursor=pointer]: 定位清仓
+                - button "展开参考记录 f6f4854c6a142d0aa0c23b51b292f426049571654040f3c5795fffaa3e9d9b2a" [ref=e542] [cursor=pointer]: 查看详情
+        - region "统一参考交易" [ref=e543]:
+          - generic [ref=e544]:
+            - heading "参考交易" [level=2] [ref=e545]
+            - navigation "参考记录模式" [ref=e546]:
+              - button "历史参考" [ref=e547] [cursor=pointer]
+              - button "盘中观察参考" [pressed] [ref=e548] [cursor=pointer]
+          - paragraph [ref=e549]: 零费用、零滑点的页面参考记录；不代表账户成交。
+          - status [ref=e550]: 已保存的历史参考暂不可用，请稍后重试。
+```
+### Events
+- New console entries: .playwright-cli/console-2026-09-24T02-56-46-955Z.log#L1-L8

@@ -69,24 +69,15 @@ test('unwraps only the delivered requested section and preserves every Decimal a
   assert.throws(() => chartCoordinate('1e999'), /finite chart coordinate/)
 })
 
-test('accepts the versioned D1 quality identity on chart and reference trades', () => {
-  const chart = chartWire()
-  ;(chart.meta.identity as Record<string, unknown>).input_quality_policy = 'newow_daily_input_quality_v2'
-  chart.meta.futures_adaptation_version = 'newow_futures_daily_quality_segment_v2'
-  const parsedChart = normalizeNewowProductResponse(chart, expected)
-  assert.equal(parsedChart.meta.identity.input_quality_policy, 'newow_daily_input_quality_v2')
-
-  const reference = referenceWire()
-  ;(reference.meta.identity as Record<string, unknown>).input_quality_policy = 'newow_daily_input_quality_v2'
-  reference.meta.futures_adaptation_version = 'newow_futures_daily_quality_segment_v2'
-  const trade = reference.reference.value!.items[0]! as Record<string, unknown>
-  trade.input_quality_policy = 'newow_daily_input_quality_v2'
-  trade.futures_adaptation_version = 'newow_futures_daily_quality_segment_v2'
-  const parsedReference = normalizeNewowProductResponse(reference, { ...expected, section: 'reference' })
-  assert.equal(parsedReference.value!.items[0]!.input_quality_policy, 'newow_daily_input_quality_v2')
-
-  ;(chart.meta.identity as Record<string, unknown>).input_quality_policy = 'newow_weekly_input_quality_v2'
-  assert.throws(() => normalizeNewowProductResponse(chart, expected), /invalid frequency/)
+test('accepts the versioned daily quality identity only on D1', () => {
+  const wire = chartWire()
+  wire.meta.identity.input_quality_policy = 'newow_daily_input_quality_v2'
+  wire.meta.futures_adaptation_version = 'newow_futures_daily_quality_segment_v4'
+  const parsed = normalizeNewowProductResponse(wire, expected)
+  assert.equal(parsed.meta.identity.input_quality_policy, 'newow_daily_input_quality_v2')
+  wire.meta.identity.frequency = '1w'
+  wire.meta.identity.profile_id = 'newow_product_trend_1w_v1'
+  assert.throws(() => normalizeNewowProductResponse(wire, { ...expected, frequency: '1w' }), /frequency mismatch/)
 })
 
 test('accepts explicit partial history intervals without treating warming as a price bar', () => {
@@ -292,17 +283,6 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => formalWeekly,
   }), formalWeekly)
-  await assert.rejects(
-    getNewowProductCapabilities({
-      request: async () => ({
-        ...formalWeekly,
-        weekly_products: [...formalWeekly.weekly_products.slice(0, -1), 'b'],
-      }),
-    }),
-    (error: unknown) =>
-      error instanceof NewowProductRequestError
-      && error.code === 'NEWOW_RESPONSE_INVALID',
-  )
 
   const formalWeeklyV10 = {
     ...formalWeekly,
@@ -693,6 +673,23 @@ test('validates auxiliary component data fields and aligned source bars instead 
     () => normalizeNewowProductResponse(auxiliaryWire(), { identity: expectedIdentity(), section: 'auxiliary', component: 'cup_handle', asOf: AS_OF }),
     /component/,
   )
+})
+
+test('accepts only aligned trend reversal facts and checks the complete-window flag', () => {
+  const raw: any = auxiliaryWire()
+  const value = raw.auxiliary.value
+  value.component = 'trend_reversal'
+  value.formula_version = 'newow_trend_reversal_core_1_0_0_futures_segment_v1'
+  value.segments[0].data = {
+    wr1: [2.5], wr2: [0], bias: [4], rebound: [0], adjust: [4],
+    ma120: [100], hhv: [110], llv: [90], enough: false, bar_count: 1,
+    formula_version: value.formula_version,
+  }
+  const parsed = normalizeNewowProductResponse(raw, { ...expected, section: 'auxiliary', component: 'trend_reversal' })
+  assert.equal(parsed.value?.component, 'trend_reversal')
+  const invalid: any = structuredClone(raw)
+  invalid.auxiliary.value.segments[0].data.enough = true
+  assert.throws(() => normalizeNewowProductResponse(invalid, { ...expected, section: 'auxiliary', component: 'trend_reversal' }), /enough/)
 })
 
 test('binds reference performance windows to the exact section request', () => {

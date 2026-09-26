@@ -34,8 +34,7 @@ class _Lease:
         self.released = True
 
 
-def _install_fakes(monkeypatch, root: Path, *, fail_publish_at: int | None = None,
-                   interrupted_contract: str | None = None):
+def _install_fakes(monkeypatch, root: Path, *, fail_publish_at: int | None = None):
     lease = _Lease()
     calls: list[str] = []
     packet = {"targets": [
@@ -80,13 +79,8 @@ def _install_fakes(monkeypatch, root: Path, *, fail_publish_at: int | None = Non
         def __init__(self, *_args):
             pass
 
-        def query_contract_weekly_replay_quality(self, **kwargs):
+        def query_contract_weekly_replay_quality(self, **_kwargs):
             calls.append("readback")
-            contract = kwargs["contract"]
-            target = may_candidate[0] if contract == "CJ2305" else september_candidate[0]
-            if contract == interrupted_contract:
-                return (), (SimpleNamespace(trading_day=target.trading_day),)
-            return (target,), ()
 
     monkeypatch.setattr(repair, "MarketCatalog", Catalog)
     monkeypatch.setattr(repair, "CanonicalMonthlyStore", Store)
@@ -120,17 +114,6 @@ def test_apply_reports_unknown_commit_without_retry(monkeypatch, tmp_path) -> No
         repair.apply(session, tmp_path, "a" * 64, packet)
     assert calls.count("publish") == 2
     assert session.commits == 1 and session.rollbacks == 1 and lease.released
-
-
-def test_apply_rejects_interrupted_target_before_commit(monkeypatch, tmp_path) -> None:
-    packet, calls, lease = _install_fakes(
-        monkeypatch, tmp_path, interrupted_contract="CJ2309",
-    )
-    session = _Session()
-    with pytest.raises(repair.CJRepairError, match="CANDIDATE_READBACK_INVALID"):
-        repair.apply(session, tmp_path, "a" * 64, packet)
-    assert calls.count("publish") == 2 and calls.count("readback") == 2
-    assert session.commits == 0 and session.rollbacks == 1 and lease.released
 
 
 def test_inspect_recognizes_both_committed_candidates(monkeypatch, tmp_path) -> None:

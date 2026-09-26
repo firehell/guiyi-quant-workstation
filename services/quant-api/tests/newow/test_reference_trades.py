@@ -17,7 +17,9 @@ from guiyi_quant.newow.product_contracts import (
     StrategyHint,
     TradeEligibility,
 )
-from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
+from guiyi_quant.newow.reference_trades import (
+    ReferenceTradeProjector, ReferenceTradeStatus, _attach_hints,
+)
 from guiyi_quant.newow.product_identity import (
     InputQualityPolicy,
     futures_adaptation_version,
@@ -86,6 +88,34 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.interruption_reason is None
     assert trade.statistics_membership is None
     assert trade.hint_ids == ()
+
+
+def test_data_interruption_keeps_later_hint_off_old_trade(product_cases):
+    case = product_cases.closed(entry="100", exit="110")
+    trade = ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of,
+    ).trades[0]
+    interrupted = replace(
+        trade, status=ReferenceTradeStatus.DATA_INTERRUPTED,
+        exit_signal_id=None, exit_bar_end=None, exit_trading_day=None,
+        exit_reference_price=None, reference_return_pct=None,
+        interrupted_at=case.exit.bar_end, interruption_reason="PRICE_UNAVAILABLE",
+    )
+    later = case.exit.bar_end + timedelta(days=1)
+    hint = StrategyHint(
+        identity=case.identity, physical_contract=trade.physical_contract,
+        segment_id=trade.segment_id, calculation_segment_id="new-calculation",
+        bar_end=later, trading_day=later.date(), known_at=later,
+        kind="D1", sequence=1,
+    )
+    same_segment_hint = replace(
+        hint, calculation_segment_id=trade.calculation_segment_id,
+    )
+    trades, _, unassigned = _attach_hints(
+        [interrupted], case.replay.actions, (hint, same_segment_hint), later,
+    )
+    assert trades[0].hint_ids == ()
+    assert unassigned == (hint, same_segment_hint)
 
 
 def test_public_projector_return_is_independent_of_caller_decimal_rounding(product_cases):

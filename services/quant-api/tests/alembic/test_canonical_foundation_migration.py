@@ -53,10 +53,10 @@ RETIRED_TABLES = {
 }
 
 
-def test_reference_forward_revision_is_the_schema_head() -> None:
+def test_price_unavailable_revision_is_the_schema_head() -> None:
     config = Config()
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
-    assert ScriptDirectory.from_config(config).get_current_head() == "20260923_0048"
+    assert ScriptDirectory.from_config(config).get_current_head() == "20260916_0046"
 
 
 def test_price_unavailable_model_uses_postgresql_jsonb() -> None:

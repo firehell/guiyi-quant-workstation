@@ -1,0 +1,68 @@
+{
+  "aggregation_source_sha256": "7841fd5fa7245b7c97cab196ea057b981c3b4092dee5243e4fc93957007222ce",
+  "aggregation_version": "exchange-daily-no-trade-v2",
+  "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+  "catalog_revision": "ab1953f8b183e89c681ca5de7568f0e8ed3a667363d941318387ad402a9587b2",
+  "catalog_writes": 0,
+  "provider_requests": 0,
+  "repair_source_sha256": "45663503127a32735666ed2f2ee1eee7d41a8a1dceeaea2325f1d2057f9217ec",
+  "schema_version": "sr_weekly_no_trade_prepare_v1",
+  "targets": [
+    {
+      "candidate_w1_partition_sha256": "bfea4244281706b53333d6e170997a5eedf581090e0ce2f4f657961c3c073ac8",
+      "candidate_w1_partition_uri": "kind=contract/symbol=sr/series=SR2303/frequency=1w/year=2022/month=03/part.bfea4244281706b53333d6e170997a5eedf581090e0ce2f4f657961c3c073ac8.parquet",
+      "changed_rows": 1,
+      "contract": "SR2303",
+      "d1_preimages": [
+        {
+          "file_uri": "kind=contract/symbol=sr/series=SR2303/frequency=1d/year=2022/month=03/part.c8c5bb6fe34eaa2438358098fea656ec80c520b0d72a9a3c777b18417398653b.parquet",
+          "month": 3,
+          "sha256": "c8c5bb6fe34eaa2438358098fea656ec80c520b0d72a9a3c777b18417398653b",
+          "source_quality_sha256": null,
+          "year": 2022
+        }
+      ],
+      "expected_d1_endpoints": [
+        [
+          "2022-03-15T07:00:00+00:00",
+          "2022-03-15"
+        ],
+        [
+          "2022-03-16T07:00:00+00:00",
+          "2022-03-16"
+        ],
+        [
+          "2022-03-17T07:00:00+00:00",
+          "2022-03-17"
+        ],
+        [
+          "2022-03-18T07:00:00+00:00",
+          "2022-03-18"
+        ]
+      ],
+      "month_row_count": 2,
+      "new_ohlc": {
+        "close": "6011.000000000000000000",
+        "high": "6053.000000000000000000",
+        "low": "5954.000000000000000000",
+        "open": "6053.000000000000000000"
+      },
+      "old_ohlc": {
+        "close": "6011.000000000000000000",
+        "high": "6053.000000000000000000",
+        "low": "0E-18",
+        "open": "0E-18"
+      },
+      "old_w1_partition_sha256": "73f9d1a81dd1d8eaedfbb82668702892055fe4299986d11332fb1979f7fdedda",
+      "old_w1_partition_uri": "kind=contract/symbol=sr/series=SR2303/frequency=1w/year=2022/month=03/part.73f9d1a81dd1d8eaedfbb82668702892055fe4299986d11332fb1979f7fdedda.parquet",
+      "unchanged_weekly_fields": [
+        "bar_end",
+        "trading_day",
+        "volume",
+        "turnover",
+        "open_interest"
+      ],
+      "week_end": "2022-03-18"
+    }
+  ]
+}

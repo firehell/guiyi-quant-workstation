@@ -163,6 +163,27 @@ def test_readiness_service_reuses_identical_read_inputs_across_sections(product_
     assert len(reader.loads) == 1
 
 
+def test_weekly_warming_auxiliary_keeps_chart_snapshot(product_cases):
+    case = product_cases.primitive_input("trend", "1w")
+    bars = case.bars[:2]
+    now = bars[-1].bar.bar_end
+    reader = _Reader(bars, now, now)
+    service = NewowProductService(
+        lambda _context, _cancelled: reader, now=lambda: now,
+    )
+    request = ProductServiceQuery("rb", "trend", "1w", as_of=now)
+    chart = service.query(request)
+    auxiliary = service.query(replace(
+        request, section="auxiliary", component="macd",
+        snapshot_token=chart.meta.snapshot_token,
+    ))
+    assert auxiliary.auxiliary.status.status is FeatureRuntimeStatus.WARMING
+    assert auxiliary.auxiliary.value is not None
+    assert chart.meta.snapshot_token is not None
+    assert auxiliary.meta.snapshot_token == chart.meta.snapshot_token
+    assert auxiliary.meta.as_of == chart.meta.as_of
+
+
 def test_weekly_v1_v2_services_do_not_share_cache_token_or_inflight_identity(
     product_cases,
 ):
@@ -759,7 +780,7 @@ def test_reference_cursor_from_v1_contract_is_rejected_after_v2_upgrade(
         service.query(replace(request, history_before=v1_cursor))
 
 
-def test_incomplete_requested_reference_window_is_warming_and_not_cached(
+def test_incomplete_requested_reference_window_keeps_warming_with_snapshot(
     product_cases,
 ):
     service, reader, build, clear = _service(product_cases)
@@ -786,7 +807,8 @@ def test_incomplete_requested_reference_window_is_warming_and_not_cached(
 
     assert result.reference.status.status == "warming"
     assert result.reference.status.reason_code == "NEWOW_REFERENCE_WINDOW_PARTIAL"
-    assert result.meta.snapshot_token is None
+    assert result.reference.value is not None
+    assert result.meta.snapshot_token is not None
 
 
 def test_weekly_reference_uses_last_completed_w1_bar_not_midweek_session(

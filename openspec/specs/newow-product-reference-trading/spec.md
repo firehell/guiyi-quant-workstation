@@ -134,6 +134,24 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 | 五窗口页面比较器 | `oscillation × 1w/1d/60m`，独立 comparator | `newow_hhv_llv_window_optimizer_page_v1` | `RESEARCH_EVIDENCE_ONLY` | 独立页面 as-of/样本假设；期末理论平仓不进入 ReferenceTrade |
 | 页面诊断 token / 六组合评分映射 | 三策略共享解释层候选 | `UNFROZEN` | `EVIDENCE_REQUIRED` | 缺稳定机器合同时 unavailable；不得以“无信号”、0 分或通用知识填补 |
 
+### Requirement: Daily historical display remains usable while an update is pending
+
+默认日线看盘 MUST 在最新日线尚未发布时展示最近可验证的历史快照。沿用现有权威交易日候选与
+统一行情入口，在 30 秒预算内最多核对 20 个 completed 交易日；每个候选 MUST 以自己的精确
+`as_of` 验证完整图表输入。只允许已分类的行情缺失继续核对旧候选；身份冲突、物理损坏、
+Session/Calendar 缺失和未知错误 MUST 明确失败。映射缺失只有该候选日的 owner 也缺失时可跳过，
+不得掩盖已存在 owner 的内部映射缺口。这是显式历史展示，不是给最新输入补 Bar 或跨频回退。
+
+返回的 `expected_trading_day` 与 `available_trading_day` MUST 分别保留预期日及实际可读日；
+历史图表、辅助面板和参考交易共用返回的精确 `as_of`。旧快照 MUST 标 `pending_update`，显示
+实际截止日期；顶部最新报价标不可用，即使该旧快照的报价读取成功也不得称最新报价可用。
+日线更新后重新解析快照，够用的指标独立计算，不足的显示正常待积累，不降低预热阈值。
+
+辅助面板 MUST 从服务端已有逐段状态分别表达覆盖最新展示 Bar 的计算段状态和历史部分状态。
+当前段 READY 时可显示“当前可计算”；WARMING 时显示“数据不足，待积累”。历史未预热段的
+数量与状态单列，不能用整体历史 WARMING 抹去当前段已经可读的指标，也不能把历史短段改为 READY。
+不新增指标算法，不跨物理合约或价格中断继承状态，杯柄仍仅适用于 `trend × 1d`。
+
 #### Scenario: SuBing has not produced a natural Event
 
 - **GIVEN** SuBing Task 11–13 尚待自然市场证据
@@ -531,11 +549,10 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 该规则对 owner 前同物理合约 warm-up 和 owner 内有效观察一致适用。
 
 部分零价、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST 继续 fail-closed；
-D1 v1 输入的唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
-仅本规范下文明确列出的十个 D1 v2 品种可另行消费已验证的 `NonpositiveCloseFact`。
+例外仅为来源质量合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`，以及日线质量策略 v2 显式接受的 `NONPOSITIVE_CLOSE`。
 它是来源质量中断，不是 `NO_TRADE` 或行情 Bar。reader/readiness SHALL 公开 raw、effective、
 `NO_TRADE` 与价格不可用数量，并把 `newow_futures_quality_observation_v2` 纳入输入证明；
-日版产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`；隔离候选 W1 使用
+旧日版产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`；日线质量策略 v2 使用 `newow_futures_daily_quality_segment_v4` 与 `newow_futures_daily_quality_observation_v3`，旧身份不改写；隔离候选 W1 使用
 `newow_futures_weekly_quality_segment_v1`，不改写既有 D1 Trade ID。不得笼统声明证券页面原样 parity。
 
 #### Scenario: A zero-activity futures day appears in warm-up
@@ -548,13 +565,16 @@ D1 v1 输入的唯一例外是 Canonical 市场存储合同严格定义且完整
 
 - **GIVEN** 非正价格 Bar 的 `volume`、`turnover` 或其他严格条件不满足
 - **WHEN** reader 构造策略输入
-- **THEN** 除上述已证明且由当前输入版本支持的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
+- **THEN** 除上述已证明的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
 
 ### Requirement: D1 price-unavailable days split calculation and reference history
 
-同一物理合约的 D1 `PRICE_UNAVAILABLE` 日 MUST 在该合约有效前缀切断计算，即使当时尚未成为
+同一物理合约的 D1 `PRICE_UNAVAILABLE` 日，以及日线质量策略 v2 所接受的已验证 `NONPOSITIVE_CLOSE` 日，MUST 在该合约有效前缀切断计算，即使当时尚未成为
 rank1。物理合约及 owner segment 身份保持原样，计算区段 MUST 有独立版本化身份；后续有效
 completed Bar 从新段重新预热所有依赖指标和策略状态，不得跨断点继承递推状态或配对见证。
+按 owner 排列的物理生命周期前缀不保证全局时间递增。每根 Bar 的断点归属 MUST 仅取同一
+`physical_contract + owner segment` 中 `effective_at <= bar_end` 的最近中断；不得因前一 owner
+已推进到较晚日期而提前应用后一 owner 的中断。完整窗口与独立 owner 前缀的标记及重放 MUST 一致。
 其他 owner 的异常不得传染当前完好 owner。只有满足各自真实预热条件的当前状态可标 READY；
 最新已完成日恰为缺价或仍在预热时，不得以断点前旧 Frame 冒充当前 READY。
 
@@ -859,18 +879,8 @@ chart/auxiliary/reference/comparator；语法合法但不在品种范围内的 `
 `daily_weekly_candidate` 声明 `1d/1w` 的
 chart/auxiliary/reference/comparator；候选响应同时携带唯一的 `weekly_products`。v9 候选覆盖全部 60 品种，
 候选 v9 的固定品种次序保持不变。
-v1.10.31 对 oi、pf、pk、pl、pr、px、rs、sf、sh、sm 的 D1 输入显式采用
-`newow_daily_input_quality_v2`，其输入证明与参考交易分别使用
-`newow_futures_daily_quality_observation_v2` 和 `newow_futures_daily_quality_segment_v2`。
-其余 50 个 D1 品种保留 v1 身份。v2 仅把已验证的 `PriceUnavailableFact` 和
-`NonpositiveCloseFact` 当作计算中断；中断不能成为价格 Bar 或交易参考价，之后必须重新 warm-up。
-物理合约前缀与 rank-1 拼接必须逐端点匹配同一质量事实，不能缩短历史窗口或从别的合约补价。
-旧 D1 v1 查询仍拒绝新分类，不能因 v2 开放而隐式改变旧版本结果。
-发布页面矩阵先核对 180 项主图首载状态。`READY` 项要求参考摘要自动出现；
-`WARMING` 项允许先显示“读取参考交易”，用户显式点击后必须展示与策略状态一致的摘要。
-首次自动摘要断言的历史失败记录须保留，修正验收断言不改变策略结果。
-正式 v22 合同只有在独立 Release 与 Runtime promotion 完成后才成为现场事实。v13–v21 是本次候选链中的中间 capability 版本，
-分别声明 51–59 个周线品种，未分别发布；v12、v11、v10 与 v8 则分别声明此前正式开放的 50、49、48 与 41 个品种。
+正式 v22 合同只有在独立 Release 与 Runtime promotion 完成后才成为现场事实。历史 v21、v20、v19、v18、v17、v16、v15、v14、v13、v12、v11、v10 与 v8
+分别表示先前的 59、58、57、56、55、54、53、52、51、50、49、48 与 41 品种正式周线。
 候选的 `60m` 和 explanation 仍关闭；Web 必须逐版本严格校验成对的 schema/stage/open/deferred 集合。
 AU 单品种周期预览及 PD/PT/AP 的 60m 预览保持原 envelope 和品种限制，不复用正式周线品种字段。
 

@@ -1,0 +1,3 @@
+{"request":{"contract":"A2611","end":"2026-09-24","expected_dates":["2026-09-21","2026-09-22","2026-09-23","2026-09-24"],"method":"futures.get_exchange_daily","start":"2026-09-21"},"schema_version":1,"sequence":1,"state":"started"}
+{"payload_file":"source-response-0001.json","payload_sha256":"1e75dfe808ab9681536c59c588e766761b57028ee76167c6fa52d04446f29691","row_count":3,"schema_version":1,"sequence":1,"state":"response_saved"}
+{"error_code":"SOURCE_RESPONSE_IDENTITY_INVALID","schema_version":1,"sequence":1,"state":"failed"}

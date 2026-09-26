@@ -1,6 +1,6 @@
 # 个人开发与本地验证
 
-本文提供日常开发导航、任务收敛与版本交付规则。工程授权与外部操作规则见 `AGENTS.md`；当前状态见
+本文提供日常开发导航、任务收敛与版本交付规则。任务边界与外部操作规则见 `AGENTS.md`；当前状态见
 `STATUS.md`；产品和数据边界见 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep
 canonical；可执行命令见 `TESTING.md`。
 
@@ -8,15 +8,15 @@ canonical；可执行命令见 `TESTING.md`。
 
 - “先讨论”“比较方案”“只读审计”或 Plan-only 只产出分析或计划，不提前修改。
 - 明确要求实现且目标、边界、验收已确定时，Codex 连续完成范围内的编辑、修复、相关测试、Review、
-  commit/push 和已授权的 develop 集成，不把进度更新变成新的批准 Gate。
+  commit/push、develop 集成及交办目标所需的后续交付，不把进度更新变成新的批准 Gate。
 - 局部命名、组织方式、必要重构、开发测试配置和测试选择由实现者按现有模式与风险决定；发现本任务引入的失败时继续修复和重测。
-- 数据、策略、Alert、Runtime、发布等设计与真实 mutation 是两层边界：设计获批后可连续编码，但代码完成或
-  develop 集成不授予生产写入、main/tag/release 或 Runtime promotion。
+- 交办任务时不要求 owner 预先给出实施后才可确定的 hash、版本或每条命令。Codex 在执行前生成精确对象并核验；
+  仅讨论或仅编码的任务不自行扩展成真实 mutation、发布或 Runtime promotion。
 
 ## Codex 模型调度
 
-项目级新线程默认是 **GPT-6 Sol Medium**。模型路由只优化质量、吞吐与 Codex 用量，不改变任务授权、
-测试标准、独立 Review 或任何生产 Gate；明确的单次任务选择优先于项目默认。
+项目级新线程默认是 **GPT-6 Sol Medium**。模型路由只优化质量、吞吐与 Codex 用量，不改变任务边界、
+测试标准或必要 Review；明确的单次任务选择优先于项目默认。
 
 | 任务类型 | 默认模型 / 推理强度 | 使用边界 |
 |---|---|---|
@@ -28,9 +28,9 @@ canonical；可执行命令见 `TESTING.md`。
 
 量化研究单独收紧：机械数据整理/测试可用 Luna；正常策略、指标与回测实现至少使用 Sol Medium；
 OOS、Walk-forward、未来函数、数据泄漏、重绘、参数稳定性、候选晋升/淘汰使用 Sol High；
-研究方法论或跨系统架构存在争议时再升 Astra High。Lane 3 类型的真实写入、可信口径、策略公式、
-撮合/成本/成交时序、migration、release 与 Runtime promotion，代码实施至少使用 Sol High，
-设计或独立 Review 使用 Astra High，并继续保留 owner Gate。
+研究方法论或跨系统架构存在争议时再升 Astra High。真实写入、可信口径、策略公式、
+撮合/成本/成交时序、migration、release 与 Runtime promotion，按任务风险选择较强模型与独立 Review，
+不因模型等级增设 owner 审批。
 
 可将一次交付拆成“Sol 实现主体 → Luna 做机械测试/文档/收尾 → Sol High/Astra 做必要语义 Review”，
 但不要为了省用量把共享合同、高风险逻辑或根因未知问题降到 Luna。GPT-5.6 Sol/Terra 仅用于历史会话续接、
@@ -45,7 +45,7 @@ develop
 -> 只修改当前任务范围
 -> 按影响运行本地验证
 -> 自审；高风险改动或任务要求时独立 Review
--> 提交并按任务授权集成 develop
+-> 提交并按交办目标集成 develop
 ```
 
 普通源码、测试、文档和仓库内普通删除可按上述流程执行。删除前先关闭 active
@@ -97,14 +97,14 @@ Web 正确性随对应功能版本完成，不能延后到视觉优化；体验�
 
 ### 发布与运行验收分开
 
-工程验证、develop 集成、main/tag/release、Runtime promotion、自然运行验收分别记录，
-release 与 Runtime promotion 是独立授权项，可在同一次批准中明确覆盖，均不能由任务集成推导。
+工程验证、develop 集成、main/tag/release、Runtime promotion、自然运行验收分别记录。
+交办目标包含发布或上线时，Codex 在各阶段校验通过后连续完成；单纯 develop 集成不证明后续阶段已发生。
 旧事故收尾不等于数据维护完成；日常成功不等于全历史完整；数据就绪不等于策略/页面已开放。
 
 发布前确认候选与所有消费者的兼容性及可用恢复路径；生产已产生 hash URI 时，
 不得将只支持固定 URI 的旧版本作为通用回退。切换后才采集对应 exact 版本的自然业务证据；
-尚未发生或未验证的场景如实保持待验收。受控写入、失败后的重试与跨会话继续遵守 `AGENTS.md` 的
-任务授权和范围校验；只读查询自主完成，本规划本身不授予生产操作权限。
+尚未发生或未验证的场景如实保持待验收。真实写入、失败后的重试与跨会话继续遵守 `AGENTS.md` 的
+任务目标和范围校验；只读查询自主完成，规划文档本身不扩展交办目标。
 
 ## 修改前检查
 
@@ -122,8 +122,8 @@ release 与 Runtime promotion 是独立授权项，可在同一次批准中明�
   PostgreSQL 只按 `TESTING.md` 使用专用可销毁数据库。
 - 任何必要检查失败时只报告失败，不声明完成。
 
-测试、fake runner、route intercept、render-only、dry-run 和只读 health 都不授权真实
-RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作。
+测试、fake runner、route intercept、render-only、dry-run 和只读 health 只证明各自范围；
+真实 RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作仍须属于交办目标并通过现场校验。
 
 ## 按任务定位
 
@@ -136,7 +136,7 @@ RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作。
   并读取 `deploy/README.md`；发布和 Runtime promotion 始终分开。
 - 测试命令从 `TESTING.md` 选择，先定向、后按影响扩展；不为无关改动机械运行全仓库验证。
 
-受控操作和持续授权的精确判断只看 `AGENTS.md` 及其指向的领域 canonical；当前状态只看
+任务内真实操作与持续运行的精确判断只看 `AGENTS.md` 及其指向的领域 canonical；当前状态只看
 `STATUS.md`。本页不复制权限清单或业务合同。
 
 ## 相关入口

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-const props = defineProps<{ open: boolean; title: string; identityKey: string; wide?: boolean }>()
+const props = defineProps<{ open: boolean; title: string; identityKey: string; wide?: boolean; variant?: 'niuwa-indicator' }>()
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 let opener: HTMLElement | null = null
@@ -57,8 +57,8 @@ function backdrop(event: MouseEvent) {
 onBeforeUnmount(() => { ++generation; closing = true; dialog.value?.close(); unlockScroll(); opener = null })
 </script>
 <template>
-  <dialog ref="dialog" class="newow-detail-dialog" :class="{ 'newow-detail-dialog--wide': wide }" aria-labelledby="newow-dialog-title" @cancel.prevent="close" @close="!closing && open && close()" @click="backdrop" @keydown="trapTab">
-    <header><h2 id="newow-dialog-title">{{ title }}</h2><button type="button" aria-label="关闭解释" autofocus @click="close">×</button></header>
+  <dialog ref="dialog" class="newow-detail-dialog" :class="{ 'newow-detail-dialog--wide': wide, 'newow-detail-dialog--niuwa-indicator': variant === 'niuwa-indicator' }" aria-labelledby="newow-dialog-title" @cancel.prevent="close" @close="!closing && open && close()" @click="backdrop" @keydown="trapTab">
+    <header><h2 id="newow-dialog-title">{{ title }}</h2><button v-if="variant !== 'niuwa-indicator'" type="button" aria-label="关闭解释" autofocus @click="close">×</button></header>
     <div class="newow-detail-dialog__body"><slot /></div>
     <footer><button type="button" @click="close">知道了</button></footer>
   </dialog>
@@ -73,4 +73,10 @@ h2 { margin:0; font-size:18px; }
 .newow-detail-dialog__body { padding:0 20px; min-height:0; overflow:auto; overflow-wrap:anywhere; }
 button { min-height:44px; min-width:44px; border:0; border-radius:7px; background:#f3f4f6; color:#667085; cursor:pointer; }
 footer { justify-content:center; } footer button { width:100%; background:#365af5; color:#fff; }
+.newow-detail-dialog--niuwa-indicator { width:min(360px, calc(100vw - 24px)); max-height:calc(100dvh - 24px); border:0; border-radius:22px; color:#373b42; }
+.newow-detail-dialog--niuwa-indicator header { justify-content:center; padding:24px 24px 14px; }
+.newow-detail-dialog--niuwa-indicator h2 { font-size:17px; font-weight:750; line-height:1.35; text-align:center; }
+.newow-detail-dialog--niuwa-indicator .newow-detail-dialog__body { padding:0 24px; }
+.newow-detail-dialog--niuwa-indicator footer { padding:16px 24px 24px; }
+.newow-detail-dialog--niuwa-indicator footer button { width:108px; min-height:38px; border-radius:999px; background:#0878f9; font-size:14px; font-weight:650; }
 </style>

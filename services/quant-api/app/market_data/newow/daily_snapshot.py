@@ -11,9 +11,17 @@ from typing import Literal
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.diagnostics import data_reason
+from app.market_data.errors import InfrastructureError
 
-from .product_reader import NewowProductReadCancelled, NewowProductReader
-from .product_service import NewowProductService, ProductSection, ProductServiceQuery
+from .product_reader import NewowProductReadCancelled, NewowProductReadError, NewowProductReader
+from .product_service import NewowProductService, NewowProductServiceError, ProductSection, ProductServiceQuery
+
+
+_MISSING_DATA = frozenset({
+    "REPLAY_PREFIX_MISSING", "REPLAY_ENDPOINTS_MISSING",
+    "DATASET_OR_PARTITION_MISSING", "COMPLETE_PERIOD_MISSING",
+})
 
 
 class DailySnapshotError(RuntimeError):
@@ -66,13 +74,13 @@ class NewowDailySnapshotResolver:
         if stopped():
             raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
         candidates = self._reader.historical_snapshot_candidates(
-            product, as_of=requested_at, limit=2, cancelled=stopped
+            product, as_of=requested_at, limit=20, cancelled=stopped
         )
         if not candidates:
             raise DailySnapshotError("NEWOW_DAILY_SNAPSHOT_UNAVAILABLE")
         expected = candidates[0][0]
         service = self._service_factory(stopped)
-        for index, (day, cutoff) in enumerate(candidates):
+        for day, cutoff in candidates:
             if stopped():
                 raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
             try:
@@ -80,10 +88,10 @@ class NewowDailySnapshotResolver:
                     product, strategy, frequency, section=ProductSection.CHART,
                     as_of=cutoff,
                 ))
-            except MarketDataError as exc:
-                # Only the newest unpublished owner may defer the complete D1
-                # snapshot. Other missing inputs may be internal corruption.
-                if index == 0 and exc.code == "MAIN_CONTRACT_MAP_MISSING":
+            except (MarketDataError, InfrastructureError, NewowProductReadError, NewowProductServiceError) as exc:
+                # A historical display is a separately validated earlier cutoff,
+                # never a replacement Bar or a repair of the current snapshot.
+                if exc.code == "MAIN_CONTRACT_MAP_MISSING":
                     try:
                         self._reader.dependency_owners(product, day, day)
                     except MarketDataError as owner_exc:
@@ -91,14 +99,18 @@ class NewowDailySnapshotResolver:
                             continue
                         raise
                     raise
-                if index == 1 and exc.code == "MAIN_CONTRACT_MAP_MISSING":
-                    break
+                reason = getattr(exc, "reason", None) or data_reason(exc.code) or exc.code
+                if reason in _MISSING_DATA or exc.code == "NEWOW_COMPLETE_TRADING_DAY_MISSING":
+                    continue
                 raise
+            if stopped():
+                raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
             if (
                 result.section is not ProductSection.CHART
                 or result.meta.as_of != cutoff
                 or result.chart.delivery != "delivered"
                 or result.chart.status is None
+                or result.chart.status.status.value not in {"ready", "warming"}
             ):
                 raise DailySnapshotError("NEWOW_DAILY_SNAPSHOT_INVALID")
             if result.chart.value is None:

@@ -1,0 +1,806 @@
+{
+  "audit_identity": {
+    "code_sha": "6423d85131e1f0ae3855bd7096c911d795461556",
+    "products": [
+      "cj",
+      "oi",
+      "pf",
+      "pk",
+      "pl",
+      "pr",
+      "px",
+      "rs",
+      "sf",
+      "sh",
+      "sm",
+      "sr"
+    ],
+    "started_at": "2026-09-23T01:01:29.815977+00:00",
+    "readonly": true,
+    "provider_requests": 0,
+    "writes": 0,
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+    "complete_week": {
+      "cj": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "oi": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pf": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pk": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pl": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "pr": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "px": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "rs": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sf": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sh": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sm": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ],
+      "sr": [
+        "2026-09-18",
+        "2026-09-18 07:00:00.000001+00:00"
+      ]
+    },
+    "as_of": "2026-09-18T07:00:00.000001+00:00",
+    "catalog_revision_before": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+    "catalog_revision_after": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+    "catalog_revision_stable": true,
+    "catalog_revision_fresh_after": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+    "fresh_revision_unchanged": true,
+    "finished_at": "2026-09-23T01:13:26.490795+00:00"
+  },
+  "native_status": "incomplete",
+  "native_complete": false,
+  "budget_exhausted": false,
+  "work_used": 822,
+  "denominator": 36,
+  "main_statuses": {
+    "SOURCE_EXCEPTION": 6,
+    "DATA_UNAVAILABLE": 30
+  },
+  "dependency_count": 436,
+  "dependency_statuses": {
+    "SOURCE_EXCEPTION": 80,
+    "DATA_READY": 154,
+    "UNKNOWN": 60,
+    "DATA_UNAVAILABLE": 124,
+    "NOT_APPLICABLE": 18
+  },
+  "repair_count": 62,
+  "repair_statuses": {
+    "REVIEW_REQUIRED": 62
+  },
+  "metadata_proposal_count": 0,
+  "provider_requests": 0,
+  "writes": 0,
+  "products": [
+    {
+      "product": "CJ",
+      "main_statuses": {
+        "SOURCE_EXCEPTION": 3
+      },
+      "main_reasons": [
+        "SOURCE_NONPOSITIVE_PRICE"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "CJ2305",
+          "trading_day": "2022-05-20",
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "CJ2305",
+          "trading_day": "2022-05-20",
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "CJ2305",
+          "trading_day": "2022-05-20",
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      ],
+      "dependency_statuses": {
+        "SOURCE_EXCEPTION": 4,
+        "DATA_READY": 20
+      },
+      "blocked_contracts": [
+        "CJ2305",
+        "CJ2309"
+      ],
+      "repair_statuses": {},
+      "repair_contracts": []
+    },
+    {
+      "product": "OI",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "OI2611",
+          "trading_day": "2025-11-28",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "OI2611",
+          "trading_day": "2025-11-28",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "OI2611",
+          "trading_day": "2025-11-28",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "DATA_READY": 24,
+        "UNKNOWN": 2
+      },
+      "blocked_contracts": [
+        "OI2611"
+      ],
+      "repair_statuses": {},
+      "repair_contracts": []
+    },
+    {
+      "product": "PF",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "PF2304",
+          "trading_day": "2022-04-22",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "PF2304",
+          "trading_day": "2022-04-22",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "PF2304",
+          "trading_day": "2022-04-22",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "SOURCE_EXCEPTION": 22,
+        "DATA_UNAVAILABLE": 46,
+        "UNKNOWN": 12
+      },
+      "blocked_contracts": [
+        "PF2302",
+        "PF2303",
+        "PF2304",
+        "PF2305",
+        "PF2306",
+        "PF2307",
+        "PF2308",
+        "PF2310",
+        "PF2311",
+        "PF2312",
+        "PF2402",
+        "PF2403",
+        "PF2405",
+        "PF2406",
+        "PF2407",
+        "PF2408",
+        "PF2409",
+        "PF2410",
+        "PF2411",
+        "PF2412",
+        "PF2502",
+        "PF2503",
+        "PF2504",
+        "PF2505",
+        "PF2506",
+        "PF2507",
+        "PF2508",
+        "PF2509",
+        "PF2510",
+        "PF2511",
+        "PF2512",
+        "PF2602",
+        "PF2603",
+        "PF2604",
+        "PF2606",
+        "PF2607",
+        "PF2608",
+        "PF2609",
+        "PF2610",
+        "PF2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 23
+      },
+      "repair_contracts": [
+        "PF2304",
+        "PF2305",
+        "PF2306",
+        "PF2307",
+        "PF2310",
+        "PF2312",
+        "PF2402",
+        "PF2403",
+        "PF2407",
+        "PF2408",
+        "PF2410",
+        "PF2411",
+        "PF2412",
+        "PF2502",
+        "PF2503",
+        "PF2505",
+        "PF2506",
+        "PF2507",
+        "PF2509",
+        "PF2510",
+        "PF2511",
+        "PF2602",
+        "PF2604"
+      ]
+    },
+    {
+      "product": "PK",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "PK2411",
+          "trading_day": "2023-11-17",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "PK2411",
+          "trading_day": "2023-11-17",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "PK2411",
+          "trading_day": "2023-11-17",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "DATA_READY": 28,
+        "DATA_UNAVAILABLE": 6,
+        "UNKNOWN": 2
+      },
+      "blocked_contracts": [
+        "PK2411",
+        "PK2511",
+        "PK2603",
+        "PK2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 3
+      },
+      "repair_contracts": [
+        "PK2411",
+        "PK2511",
+        "PK2603"
+      ]
+    },
+    {
+      "product": "PL",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "PL2603",
+          "trading_day": "2025-07-25",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "PL2603",
+          "trading_day": "2025-07-25",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "PL2603",
+          "trading_day": "2025-07-25",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "DATA_READY": 2,
+        "DATA_UNAVAILABLE": 2,
+        "NOT_APPLICABLE": 2,
+        "UNKNOWN": 8
+      },
+      "blocked_contracts": [
+        "PL2603",
+        "PL2605",
+        "PL2607",
+        "PL2609",
+        "PL2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 1
+      },
+      "repair_contracts": [
+        "PL2603"
+      ]
+    },
+    {
+      "product": "PR",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "PR2506",
+          "trading_day": "2024-08-30",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "PR2506",
+          "trading_day": "2024-08-30",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "PR2506",
+          "trading_day": "2024-08-30",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "DATA_READY": 4,
+        "DATA_UNAVAILABLE": 14,
+        "SOURCE_EXCEPTION": 2,
+        "UNKNOWN": 12
+      },
+      "blocked_contracts": [
+        "PR2506",
+        "PR2507",
+        "PR2509",
+        "PR2510",
+        "PR2511",
+        "PR2512",
+        "PR2601",
+        "PR2603",
+        "PR2605",
+        "PR2606",
+        "PR2607",
+        "PR2609",
+        "PR2610",
+        "PR2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 7
+      },
+      "repair_contracts": [
+        "PR2506",
+        "PR2507",
+        "PR2509",
+        "PR2511",
+        "PR2512",
+        "PR2601",
+        "PR2603"
+      ]
+    },
+    {
+      "product": "PX",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "PX2505",
+          "trading_day": "2024-05-24",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "PX2505",
+          "trading_day": "2024-05-24",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "PX2505",
+          "trading_day": "2024-05-24",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "DATA_READY": 8,
+        "SOURCE_EXCEPTION": 2,
+        "DATA_UNAVAILABLE": 8,
+        "UNKNOWN": 6,
+        "NOT_APPLICABLE": 2
+      },
+      "blocked_contracts": [
+        "PX2501",
+        "PX2505",
+        "PX2509",
+        "PX2511",
+        "PX2603",
+        "PX2607",
+        "PX2609",
+        "PX2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 4
+      },
+      "repair_contracts": [
+        "PX2505",
+        "PX2509",
+        "PX2511",
+        "PX2603"
+      ]
+    },
+    {
+      "product": "RS",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "RS2609",
+          "trading_day": "2025-09-30",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "RS2609",
+          "trading_day": "2025-09-30",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "RS2609",
+          "trading_day": "2025-09-30",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "SOURCE_EXCEPTION": 34,
+        "NOT_APPLICABLE": 14,
+        "UNKNOWN": 4,
+        "DATA_READY": 2
+      },
+      "blocked_contracts": [
+        "RS2309",
+        "RS2311",
+        "RS2407",
+        "RS2409",
+        "RS2411",
+        "RS2507",
+        "RS2509",
+        "RS2511",
+        "RS2607",
+        "RS2608",
+        "RS2609"
+      ],
+      "repair_statuses": {},
+      "repair_contracts": []
+    },
+    {
+      "product": "SF",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "SF2306",
+          "trading_day": "2022-06-17",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "SF2306",
+          "trading_day": "2022-06-17",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "SF2306",
+          "trading_day": "2022-06-17",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "SOURCE_EXCEPTION": 8,
+        "DATA_READY": 10,
+        "DATA_UNAVAILABLE": 32,
+        "UNKNOWN": 6
+      },
+      "blocked_contracts": [
+        "SF2303",
+        "SF2306",
+        "SF2307",
+        "SF2309",
+        "SF2310",
+        "SF2311",
+        "SF2312",
+        "SF2402",
+        "SF2403",
+        "SF2405",
+        "SF2410",
+        "SF2501",
+        "SF2502",
+        "SF2503",
+        "SF2506",
+        "SF2507",
+        "SF2509",
+        "SF2511",
+        "SF2601",
+        "SF2603",
+        "SF2605",
+        "SF2607",
+        "SF2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 16
+      },
+      "repair_contracts": [
+        "SF2306",
+        "SF2307",
+        "SF2309",
+        "SF2310",
+        "SF2312",
+        "SF2402",
+        "SF2403",
+        "SF2410",
+        "SF2501",
+        "SF2502",
+        "SF2503",
+        "SF2506",
+        "SF2509",
+        "SF2511",
+        "SF2601",
+        "SF2603"
+      ]
+    },
+    {
+      "product": "SH",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "SH2501",
+          "trading_day": "2024-01-19",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "SH2501",
+          "trading_day": "2024-01-19",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "SH2501",
+          "trading_day": "2024-01-19",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "DATA_READY": 12,
+        "DATA_UNAVAILABLE": 6,
+        "UNKNOWN": 4
+      },
+      "blocked_contracts": [
+        "SH2501",
+        "SH2505",
+        "SH2509",
+        "SH2607",
+        "SH2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 3
+      },
+      "repair_contracts": [
+        "SH2501",
+        "SH2505",
+        "SH2509"
+      ]
+    },
+    {
+      "product": "SM",
+      "main_statuses": {
+        "DATA_UNAVAILABLE": 3
+      },
+      "main_reasons": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "SM2310",
+          "trading_day": "2022-10-28",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "SM2310",
+          "trading_day": "2022-10-28",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "SM2310",
+          "trading_day": "2022-10-28",
+          "reason": "REPLAY_ENDPOINTS_MISSING"
+        }
+      ],
+      "dependency_statuses": {
+        "SOURCE_EXCEPTION": 6,
+        "DATA_READY": 18,
+        "DATA_UNAVAILABLE": 10,
+        "UNKNOWN": 4
+      },
+      "blocked_contracts": [
+        "SM2305",
+        "SM2306",
+        "SM2310",
+        "SM2311",
+        "SM2312",
+        "SM2402",
+        "SM2403",
+        "SM2603",
+        "SM2607",
+        "SM2611"
+      ],
+      "repair_statuses": {
+        "REVIEW_REQUIRED": 5
+      },
+      "repair_contracts": [
+        "SM2310",
+        "SM2311",
+        "SM2312",
+        "SM2403",
+        "SM2603"
+      ]
+    },
+    {
+      "product": "SR",
+      "main_statuses": {
+        "SOURCE_EXCEPTION": 3
+      },
+      "main_reasons": [
+        "SOURCE_NONPOSITIVE_PRICE"
+      ],
+      "first_blockers": [
+        {
+          "strategy": "trend",
+          "contract": "SR2303",
+          "trading_day": "2022-03-18",
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        {
+          "strategy": "oscillation",
+          "contract": "SR2303",
+          "trading_day": "2022-03-18",
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        },
+        {
+          "strategy": "main_rise",
+          "contract": "SR2303",
+          "trading_day": "2022-03-18",
+          "reason": "SOURCE_NONPOSITIVE_PRICE"
+        }
+      ],
+      "dependency_statuses": {
+        "SOURCE_EXCEPTION": 2,
+        "DATA_READY": 26
+      },
+      "blocked_contracts": [
+        "SR2303"
+      ],
+      "repair_statuses": {},
+      "repair_contracts": []
+    }
+  ],
+  "supplemental_diagnosis": {
+    "original_unknown_records": 60,
+    "deduplicated_unknown_units": 30,
+    "explicit_v2_checked_units": 132,
+    "supplemental_plan_count": 28,
+    "all_plan_count": 90,
+    "all_plan_statuses": {
+      "REVIEW_REQUIRED": 82,
+      "PROPOSED": 7,
+      "PLANNER_BLOCKED": 1
+    },
+    "proposed_contracts": [
+      "OI2611",
+      "PF2606",
+      "PF2607",
+      "PF2609",
+      "PR2611",
+      "SH2611",
+      "SM2611"
+    ],
+    "proposed_request_estimate": 126,
+    "proposed_expected_bars": 1388,
+    "standalone_conflict": {
+      "contract": "PF2611",
+      "date": "2025-11-21"
+    },
+    "planner_blocked_contract": "RS2609",
+    "revision_stable": true
+  }
+}

@@ -1,0 +1,5808 @@
+{
+  "schema_version": 1,
+  "command": "data.newow-readiness",
+  "readonly": true,
+  "status": "audited",
+  "complete": true,
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "release_stage": "daily_weekly",
+  "matrix": true,
+  "frequency_scope": [
+    "1w"
+  ],
+  "product_count": 41,
+  "main_case_count": 123,
+  "main_ready_count": 123,
+  "budget_exhausted": false,
+  "work_used": 861,
+  "enumerations": [],
+  "dependencies": [],
+  "repair_targets": [],
+  "metadata_proposals": [],
+  "cases": [
+    {
+      "symbol": "a",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "a",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "a",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ag",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ag",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ag",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "al",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "al",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "al",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ao",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ao",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ao",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ap",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ap",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ap",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "au",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "au",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "au",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "bu",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "bu",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "bu",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "c",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "c",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "c",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cf",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cf",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cf",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cu",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cu",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cu",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ec",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ec",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ec",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "fg",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "fg",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "fg",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "fu",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "fu",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "fu",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "hc",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "hc",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "hc",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "i",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "i",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "i",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "jd",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "jd",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "jd",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "jm",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "jm",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "jm",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "l",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "l",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "l",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "lc",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "lc",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "lc",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "lh",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "lh",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "lh",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "m",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "m",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "m",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ma",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ma",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ma",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ni",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ni",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ni",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "p",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "p",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "p",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pb",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pb",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pb",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pd",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pd",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pd",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pp",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pp",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pp",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ps",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ps",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ps",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pt",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pt",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "pt",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "rb",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "rb",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "rb",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "rm",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "rm",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "rm",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ru",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ru",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ru",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sa",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sa",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sa",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sc",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sc",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sc",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sn",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sn",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "sn",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ss",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ss",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ss",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ta",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ta",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ta",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ur",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ur",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "ur",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "v",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "v",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "v",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "y",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "y",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "y",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "zn",
+      "strategy": "trend",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "zn",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "zn",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    }
+  ],
+  "provider_requests": 0,
+  "writes": 0,
+  "code_sha": "b46fdfd8f8177f530049f920a4aae3853d92ecbd"
+}

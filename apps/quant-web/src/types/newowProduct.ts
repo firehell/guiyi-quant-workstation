@@ -70,7 +70,7 @@ export interface NewowWeeklySnapshot {
 
 export const NEWOW_PRODUCT_SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
 export type NewowProductSection = (typeof NEWOW_PRODUCT_SECTIONS)[number]
-export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'zhaoyao_mirror' | 'cup_handle'
+export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'trend_reversal' | 'zhaoyao_mirror' | 'cup_handle'
 
 export interface NewowProductIdentity {
   readonly product: string
@@ -79,7 +79,7 @@ export interface NewowProductIdentity {
   readonly seriesKind: 'actual_dominant'
 }
 
-export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_weekly_input_quality_v2' | 'newow_daily_input_quality_v2'
+export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_daily_input_quality_v2' | 'newow_weekly_input_quality_v2'
 
 export interface NewowProductWireIdentity {
   readonly product: string
@@ -111,9 +111,9 @@ export interface NewowProductMeta {
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
+    | 'newow_futures_daily_quality_segment_v4'
     | 'newow_futures_weekly_quality_segment_v1'
     | 'newow_futures_weekly_quality_segment_v2'
-    | 'newow_futures_daily_quality_segment_v2'
 }
 
 export interface NewowProductBar {
@@ -242,9 +242,9 @@ export interface NewowReferenceTrade {
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
+    | 'newow_futures_daily_quality_segment_v4'
     | 'newow_futures_weekly_quality_segment_v1'
     | 'newow_futures_weekly_quality_segment_v2'
-    | 'newow_futures_daily_quality_segment_v2'
   readonly input_quality_policy?: NewowInputQualityPolicy
   readonly entry_signal_id: string
   readonly entry_sequence: number
@@ -353,7 +353,21 @@ export interface NewowCupWitness {
   readonly formula_version: string
 }
 
-export type NewowAuxiliaryData = NewowMainForceControlData | NewowZhaoyaoMirrorData | NewowUpDownEnergyData | readonly NewowCupWitness[]
+export interface NewowTrendReversalData {
+  readonly wr1: readonly number[]
+  readonly wr2: readonly number[]
+  readonly bias: readonly number[]
+  readonly rebound: readonly number[]
+  readonly adjust: readonly number[]
+  readonly ma120: readonly number[]
+  readonly hhv: readonly number[]
+  readonly llv: readonly number[]
+  readonly enough: boolean
+  readonly bar_count: number
+  readonly formula_version: string
+}
+
+export type NewowAuxiliaryData = NewowMainForceControlData | NewowZhaoyaoMirrorData | NewowUpDownEnergyData | NewowTrendReversalData | readonly NewowCupWitness[]
 
 export interface NewowAuxiliarySegment {
   readonly physical_contract: string

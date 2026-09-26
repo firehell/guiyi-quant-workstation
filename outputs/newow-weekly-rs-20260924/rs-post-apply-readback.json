@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "packet_sha256": "c1acf23ba52b0ad9551425f6878874ce9fcaaceb49c5c952d685769e8907e7de",
+  "catalog_revision": "6835f891a47bd9d813d25d29170d2f39707007145947b04ec6f1b6b10e9af2ae",
+  "candidate_months": 64,
+  "changed_weeks": 133,
+  "retained_week_rows": 118,
+  "contracts": [
+    "RS2309",
+    "RS2311",
+    "RS2407",
+    "RS2409",
+    "RS2411",
+    "RS2507",
+    "RS2509",
+    "RS2511",
+    "RS2607",
+    "RS2608"
+  ],
+  "old_files_retained": true,
+  "d1_active_preimages_unchanged": true,
+  "mds_quality_readback": "passed",
+  "provider_requests": 0,
+  "writes": 0
+}

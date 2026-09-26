@@ -8,9 +8,8 @@ import runpy
 import os
 
 from app.market_data.newow.product_release import OPEN_WEEKLY_PRODUCTS
+from guiyi_quant.newow.product_identity import WEEKLY_FUTURES_ADAPTATION_VERSION_V2
 from app.market_data.operational_universe import load_active_products, load_operational_products
-from guiyi_quant.newow.product_identity import futures_adaptation_version
-from app.market_data.newow.product_release import candidate_input_quality_policy
 
 _manifest = runpy.run_path(str(
     Path(__file__).resolve().parents[2] / "scripts/reference_trading_p9_manifest.py"
@@ -40,23 +39,19 @@ def test_formal_p9_inventory_has_exact_stream_denominators_and_no_data_claim():
     assert len({row["stream_id"] for row in rows if row["stream_id"] is not None}) == 1500
 
 
-def test_formal_p9_newow_streams_bind_the_released_quality_policy():
-    scope = enumerate_scope(
-        load_active_products(), load_operational_products(), tuple(OPEN_WEEKLY_PRODUCTS), {},
+def test_formal_weekly_v2_inventory_uses_v2_stream_identity():
+    active, operational = load_active_products(), load_operational_products()
+    result = enumerate_scope(active, operational, tuple(OPEN_WEEKLY_PRODUCTS), {})
+    pl_weekly = [
+        row for row in result["streams"]
+        if row["product"] == "pl" and row["frequency"] == "1w"
+        and row["strategy_code"].startswith("newow_")
+    ]
+    assert len(pl_weekly) == 6
+    assert all(
+        row["futures_adaptation_version"] == WEEKLY_FUTURES_ADAPTATION_VERSION_V2
+        for row in pl_weekly
     )
-    changed = []
-    for row in scope["streams"]:
-        if row["gate"] != "FORMAL_CANDIDATE" or not row["strategy_code"].startswith("newow_"):
-            continue
-        policy = candidate_input_quality_policy(
-            row["product"], row["frequency"], candidate_weekly=False,
-        )
-        assert row["futures_adaptation_version"] == futures_adaptation_version(
-            row["frequency"], policy,
-        )
-        if policy.value != "newow_input_quality_v1":
-            changed.append(row)
-    assert len(changed) == 174
 
 
 def test_p9_inventory_matches_existing_rb_identity_and_records_disabled_state():

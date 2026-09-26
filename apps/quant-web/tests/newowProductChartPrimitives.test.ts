@@ -12,7 +12,7 @@ import {
   buildNewowActionCallouts,
   resolveNewowAuxiliaryRenderState,
 } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
-import { formatMarketDecimal } from '../src/utils/marketDisplay.ts'
+import { formatDecimalText } from '../src/utils/marketDisplay.ts'
 import type {
   NewowAuxiliaryValue,
   NewowProductFrequency,
@@ -110,7 +110,7 @@ test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separ
     ['109.25', 109.25], ['91.75', 91.75],
   ])
   assert.deepEqual(buildNewowActionCallouts(model).map(callout => callout.detail), [
-    '参考价 109.25', '参考价 91.75',
+    '参考价 109', '参考价 92',
   ])
   assert.deepEqual(model.hints.map(({ anchorPrice, value, confirmedAt, sourceIdentity, formulaVersions, physicalContract, segmentId }) => ({
     anchorPrice, value, confirmedAt, sourceIdentity, formulaVersions, physicalContract, segmentId,
@@ -441,7 +441,7 @@ test('projects action labels from exact server reference prices without deriving
     physicalContract: action.physicalContract,
     price: action.referencePrice,
     title: action.kind === 'BUILD' ? '建仓' : '清仓',
-    detail: `参考价 ${formatMarketDecimal(action.referencePrice)}`,
+    detail: `参考价 ${formatDecimalText(action.referencePrice, { maximumFractionDigits: 0 })}`,
     tone: action.kind === 'BUILD' ? 'gain' : 'loss',
     above: action.kind === 'CLEAR',
   })))
@@ -539,4 +539,15 @@ test('trend channel primitive paints unconnected price-coordinate dots with fixe
   primitive.detached()
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(arcs.length, 4)
+})
+
+test('a warming resource preserves current calculable data and discloses only older warmup', () => {
+  const message = '当前可计算；历史部分仍在预热（2 个区段）'
+  assert.deepEqual(resolveNewowAuxiliaryRenderState('warming', true, null, message), {
+    mode: 'warming', showRetainedValue: true, message,
+  })
+  assert.deepEqual(resolveNewowAuxiliaryRenderState('ready', true, null, '当前可计算'), {
+    mode: 'ready', showRetainedValue: true, message: '当前可计算',
+  })
+  assert.match(resolveNewowAuxiliaryRenderState('loading', true, null, message).message!, /正在刷新/)
 })

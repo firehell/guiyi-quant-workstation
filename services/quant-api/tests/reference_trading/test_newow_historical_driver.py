@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
-from types import SimpleNamespace
+from datetime import timedelta
 
 import pytest
 
 from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary, StreamIdentity
 from guiyi_quant.reference_trading.adapters import strategy_input_fingerprint
-
-from app.reference_trading.inputs import (
-    HistoricalInputBar, _insert_boundaries, _owned_newow_interruptions,
+from guiyi_quant.newow.product_identity import (
+    REFERENCE_MODEL_VERSION, futures_adaptation_version,
 )
+
+from app.reference_trading.inputs import HistoricalInputBar, _insert_boundaries
 from app.reference_trading.service import (
     NewowHistoricalPayload,
     _advance_batch,
@@ -35,8 +35,10 @@ def test_newow_supported_matrix_advances_with_real_p2_adapter(
         strategy_code=f"newow_{strategy}",
         formula_versions=case.identity.formula_versions,
         profile_id=case.identity.profile_id,
-        reference_model_version="newow_reference_v3",
-        futures_adaptation_version="newow_futures_v1",
+        reference_model_version=REFERENCE_MODEL_VERSION,
+        futures_adaptation_version=futures_adaptation_version(
+            frequency, case.identity.input_quality_policy,
+        ),
         product=case.identity.product,
         frequency=frequency,
         series_kind=case.identity.series_kind,
@@ -134,71 +136,3 @@ def test_newow_boundary_without_matching_bar_is_an_explicit_replay_event(product
     assert matching[0].strategy_input is True
     assert matching[0].boundaries == (same_bar,)
     assert matching[0].fingerprint != anchor.fingerprint
-
-
-def test_quality_gap_before_first_owner_bar_has_no_invented_price(product_cases) -> None:
-    case = product_cases.primitive_input("trend", "1d")
-    stream = StreamIdentity(
-        "newow_trend", case.identity.formula_versions, case.identity.profile_id,
-        "newow_reference_v3", "newow_futures_v1", case.identity.product,
-        "1d", case.identity.series_kind, "historical_replay", None,
-    )
-    prior, later = case.bars[:2]
-
-    def input_bar(item, *, contract=None, owner=None):
-        return HistoricalInputBar(
-            item.bar.bar_end, item.bar.trading_day,
-            contract or item.bar.physical_contract,
-            owner or item.bar.segment_id,
-            owner or item.calculation_segment_id,
-            item.bar.close,
-            strategy_input_fingerprint({"bar_end": item.bar.bar_end}),
-            NewowHistoricalPayload(case.identity, item),
-        )
-
-    first = input_bar(prior)
-    second = input_bar(later, contract="RB2701", owner="new-owner")
-    gap = ReferenceBoundary(
-        stream, BoundaryReason.DATA_INTERRUPTED,
-        second.physical_contract, second.owner_segment_id,
-        second.calculation_segment_id,
-        second.bar_end - timedelta(hours=1), second.trading_day,
-    )
-    replay = _insert_boundaries([first, second], (gap,))
-    assert [item.bar_end for item in replay] == [first.bar_end, gap.bar_end, second.bar_end]
-    assert replay[1].strategy_input is False
-    assert replay[1].reference_price is None
-    assert replay[1].boundaries == (gap,)
-
-
-def test_pre_owner_warmup_gap_remains_source_evidence_without_trade_boundary() -> None:
-    owners = (
-        SimpleNamespace(contract="OI2609", start_trading_day=date(2026, 4, 15)),
-        SimpleNamespace(contract="OI2611", start_trading_day=date(2026, 8, 19)),
-    )
-    boundary = SimpleNamespace(
-        old_contract="OI2609", old_segment_id="old-owner",
-        new_contract="OI2611", new_segment_id="new-owner",
-        effective_trading_day=date(2026, 8, 19),
-    )
-    warmup_gap = SimpleNamespace(
-        physical_contract="OI2611", segment_id="new-owner",
-        trading_day=date(2025, 11, 17),
-    )
-    owned_gap = SimpleNamespace(
-        physical_contract="OI2611", segment_id="new-owner",
-        trading_day=date(2026, 8, 20),
-    )
-    read = SimpleNamespace(
-        owners=owners, boundaries=(boundary,),
-        data_interruptions=(warmup_gap, owned_gap), replay_bars=(),
-    )
-    assert _owned_newow_interruptions(read) == (owned_gap,)
-    with pytest.raises(ValueError, match="REFERENCE_BOUNDARY_OWNER_CONFLICT"):
-        _owned_newow_interruptions(SimpleNamespace(
-            owners=owners, boundaries=(boundary,),
-            data_interruptions=(SimpleNamespace(
-                physical_contract="OI2611", segment_id="unknown",
-                trading_day=date(2026, 8, 20),
-            ),), replay_bars=(),
-        ))

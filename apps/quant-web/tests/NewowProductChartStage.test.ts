@@ -217,7 +217,7 @@ test('connects action labels to the exact server reference price coordinate', as
   assert.ok(label)
   assert.equal(label.props['data-reference-price'], '90')
   assert.equal(label.props['data-anchor-y'], 180)
-  assert.match(textContent(label), /建仓.*参考价 90/)
+  assert.match(textContent(label), /建仓.*建仓价:90/)
   const line = findNode(root, node => node.type === 'line')
   assert.equal(line?.props.y1, 180)
   app.unmount()
@@ -379,8 +379,8 @@ test('creates three native panes with volume zero/color and releases resources',
   assert.equal(paneCount, 3)
   const volume = records.find(record => record.pane === 1 && record.definition.type === 'Histogram')!
   assert.equal(volume.data[0]!.value, 0)
-  assert.equal(volume.data[0]!.color, '#FF8383')
-  assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, '#FF8383'], [9, '#80DCA1']])
+  assert.equal(volume.data[0]!.color, 'rgba(255,59,48,0.6)')
+  assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, 'rgba(255,59,48,0.6)'], [9, 'rgba(52,199,89,0.6)']])
   assert.equal(records.filter(record => record.pane === 2).length > 0, true, 'keep empty auxiliary pane without manufacturing an indicator zero')
   assert.equal(resizeCalls.at(-1)?.[2], true, 'pane labels require completed native layout before reading pane heights')
   app.unmount()
@@ -455,7 +455,7 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   const chart = ref<NewowProductSectionResponse<'chart'> | null>(prependBar(chartResponse()))
   const times = chart.value!.value!.bars.map(bar => bar.bar_end)
   const points = times.map((bar_end, index) => ({ bar_end, value: index === 0 ? -2 : 3, ready: true, valid: true, reason: null }))
-  const auxiliary = ref({ section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, data: { dif: points, dea: points, histogram: points } }] } })
+  const auxiliary = ref({ section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: { dif: points, dea: points, histogram: points } }] } })
   const fakeChart = {
     addSeries(definition: { type: string }, _options: unknown, pane = 0) {
       const record = { definition, pane, data: [] as Array<{ value?: number; color?: string; time: unknown }>, removed: false }; records.push(record)
@@ -520,11 +520,71 @@ test('zhaoyao mirror uses one dedicated primitive and no generic value series', 
   app.unmount()
 })
 
+test('same chart instance restores identity-specific layers and viewport across dual A -> loading -> B -> A', async () => {
+  const Stage = await loadComponent()
+  let range: { from: number; to: number } | null = { from: 0, to: 1 }
+  const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+  const partner = ref<MutableChartResponse | null>(strategyResponse('oscillation'))
+  const fakeChart = { addSeries: () => ({ setData(data: unknown[]) { if (data.length === 0) range = null } }), removeSeries() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange(value: typeof range) { range = value }, getVisibleLogicalRange: () => range,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: response.value?.meta.identity.strategy ?? 'trend', comparisonResponse: partner.value, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root'); app.mount(root); await nextTick()
+  const actions = () => findNode(root, node => node.type === 'button' && textContent(node) === '建仓 / 清仓')!
+  range = { from: 10, to: 20 }
+  ;(actions().props.onClick as () => void)(); await nextTick()
+  assert.equal(actions().props['aria-pressed'], false)
+  response.value = null; partner.value = null; await nextTick(); await nextTick()
+  response.value = strategyResponse('oscillation'); await nextTick(); await nextTick()
+  range = { from: 30, to: 40 }
+  response.value = strategyResponse('trend'); await nextTick(); await nextTick()
+  assert.deepEqual(range, { from: 10, to: 20 })
+  assert.equal(actions().props['aria-pressed'], false)
+  app.unmount()
+})
+
+
+test('reference price lines use supplied values and remove stale levels on replacement or invalidation', async () => {
+  const Stage = await loadComponent()
+  const active = new Set<{ price: number; title?: string; lineStyle?: number; axisLabelVisible?: boolean }>()
+  const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+  const target = ref<string | null>('3143')
+  const absorb = ref<string | null>('3088')
+  const fakeChart = { addSeries: () => ({ setData() {},
+    createPriceLine(options: { price: number; title?: string }) { const line = { ...options, applyOptions() {} }; active.add(line); return line },
+    removePriceLine(line: { price: number }) { active.delete(line) },
+  }), removeSeries() {}, timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+    scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: 'trend', selectedSignalId: null, targetPrice: target.value, absorbPrice: absorb.value,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  const prices = () => [...active].filter(line => line.title === '目标价' || line.title === '吸筹价')
+  assert.deepEqual(prices().map(line => [line.title, line.price, line.lineStyle, line.axisLabelVisible]), [['目标价', 3143, 1, true], ['吸筹价', 3088, 1, true]])
+  target.value = null; absorb.value = '3090'; await nextTick()
+  assert.deepEqual(prices().map(line => [line.title, line.price]), [['吸筹价', 3090]])
+  absorb.value = 'NaN'; await nextTick()
+  assert.equal(prices().length, 0)
+  target.value = '3143'; await nextTick()
+  response.value = null; await nextTick()
+  assert.equal(prices().length, 0)
+  app.unmount()
+})
+
 function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {
   return {
-    createChart: () => {
+    createChart: (_container, options) => {
+      assert.equal(options.crosshair?.mode, 0, 'crosshair follows pointer prices without candle magnet snapping')
       const chart = fakeChart as { addSeries: (...args: unknown[]) => object; panes?: () => unknown[]; addPane?: () => unknown }
       const add = chart.addSeries.bind(chart)
       chart.addSeries = (...args) => ({ attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, ...add(...args) })
@@ -601,7 +661,7 @@ function channelFor(bars: NonNullable<MutableChartResponse['value']>['bars'], up
 }
 
 function bar(barEnd: string, tradingDay: string) {
-  return { bar_end: barEnd, trading_day: tradingDay, open: '100', high: '110', low: '90', close: '101', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1', source_identity: 'canonical:jm:JM2601:60m', observation_eligible: true, completed: true as const }
+  return { bar_end: barEnd, trading_day: tradingDay, open: '100', high: '110', low: '90', close: '101', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1', calculation_segment_id: 'segment-1', source_identity: 'canonical:jm:JM2601:60m', observation_eligible: true, completed: true as const }
 }
 
 function ready() { return { status: 'ready' as const, evidence_status: 'ACTIVE_CODE_VERIFIED' as const, reason_code: null } }

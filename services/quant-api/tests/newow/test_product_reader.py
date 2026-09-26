@@ -3,7 +3,6 @@
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from types import SimpleNamespace
 
 import pytest
 
@@ -48,100 +47,6 @@ def test_reader_source_digest_changes_when_only_turnover_changes(product_cases):
     )
     assert first.bar == second.bar
     assert first.source_bar_sha256 != second.source_bar_sha256
-
-
-def test_daily_v2_preserves_nonpositive_close_as_a_replay_break(product_cases):
-    _reader, query, fake = product_cases.paged_reader(
-        prefix_bars=12, page_size=20, frequency="1d",
-    )
-    removed = fake.physical[("RB2605", BarFrequency.D1)][5]
-    kept = tuple(
-        bar for bar in fake.physical[("RB2605", BarFrequency.D1)]
-        if bar != removed
-    )
-    fake.physical[("RB2605", BarFrequency.D1)] = kept
-    fake.actual[BarFrequency.D1] = tuple(
-        bar for bar in fake.actual[BarFrequency.D1] if bar != removed
-    )
-    fact = NonpositiveCloseFact(
-        removed.bar_end, removed.trading_day,
-        removed.open, removed.high, removed.low, Decimal("0"),
-        removed.volume, removed.turnover or Decimal(0), removed.open_interest,
-        "a" * 64, "b" * 64, fake.as_of,
-    )
-    seen = []
-
-    def ranked_quality(request, *, daily_quality_union=False):
-        seen.append(("ranked", daily_quality_union))
-        return fake.query_actual_dominant_trading_days(request), (("RB2605", fact),)
-
-    def prefix_quality(**kwargs):
-        seen.append(("prefix", True))
-        return (
-            tuple(bar for bar in kept if bar.bar_end <= kwargs["cutoff"]),
-            (fact,) if fact.bar_end <= kwargs["cutoff"] else (),
-        )
-
-    fake.query_actual_dominant_trading_days_quality = ranked_quality
-    fake.query_contract_replay_quality = lambda **kwargs: (_ for _ in ()).throw(
-        MarketDataError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
-    )
-    fake.query_contract_replay_quality_union = prefix_quality
-    reader = NewowProductReader(
-        fake, coverage=fake.coverage, active_products=("rb",),
-        now=lambda: fake.as_of,
-        input_quality_policy=InputQualityPolicy.DAILY_V2,
-    )
-
-    read = reader.load(query, fake.as_of)
-    assert seen == [("ranked", True), ("prefix", True)]
-    assert removed.bar_end not in {item.bar.bar_end for item in read.replay_bars}
-    assert len(read.data_interruptions) == 1
-    assert read.data_interruptions[0].effective_at == removed.bar_end
-    assert "nonpositive_close" in read.data_interruptions[0].source_identity
-    assert read.sources[ProductFrequency.DAILY].input_policy_version == (
-        "newow_futures_daily_quality_observation_v2"
-    )
-    dependency = reader.check_dependency(
-        "rb", ProductFrequency.DAILY, fake.segments[0], fake.as_of,
-    )
-    assert dependency["source_quality"] == "DAILY_INTERRUPTED"
-    assert dependency["price_unavailable_count"] == 1
-
-
-def test_daily_v2_incremental_read_uses_daily_quality_union(product_cases):
-    _reader, query, fake = product_cases.paged_reader(
-        prefix_bars=12, page_size=20, frequency="1d",
-    )
-    observed = []
-
-    def ranked_quality(request, *, daily_quality_union=False):
-        observed.append(daily_quality_union)
-        return fake.query_actual_dominant_trading_days(request), ()
-
-    fake.query_actual_dominant_trading_days_quality = ranked_quality
-    fake.dominant_segment_for_day = lambda product, _day: SimpleNamespace(
-        symbol=product, contract=fake.segments[0].contract,
-        start_trading_day=fake.segments[0].start_trading_day,
-    )
-    reader = NewowProductReader(
-        fake, coverage=fake.coverage, active_products=("rb",),
-        now=lambda: fake.as_of,
-        input_quality_policy=InputQualityPolicy.DAILY_V2,
-    )
-    full = reader.load(query, fake.as_of)
-    prior, expected = full.replay_bars[-2:]
-    observed.clear()
-
-    incremental = reader.forward_incremental_bar(
-        product="rb", frequency=ProductFrequency.DAILY,
-        after=prior.bar.bar_end, as_of=fake.as_of,
-        prior_owner_segment_id=prior.bar.segment_id,
-        prior_calculation_segment_id=prior.calculation_segment_id,
-    )
-
-    assert observed == [True]
-    assert incremental == (expected, InputQualityPolicy.DAILY_V2)
 
 
 @pytest.mark.parametrize("gap_index", [5, 11])
@@ -361,6 +266,72 @@ def test_d1_reader_carries_proven_physical_gap_into_reset_without_claiming_full_
     assert read.data_interruptions[0].effective_at == gap.bar_end
     assert read.data_interruptions[0].physical_contract == owner.contract
     assert read.lifecycle_evidence == ()
+
+
+def test_d1_v2_reader_treats_proven_nonpositive_close_as_a_versioned_break(
+    product_cases, monkeypatch,
+):
+    _reader, query, fake = product_cases.paged_reader(prefix_bars=50, frequency="1d")
+    owner = fake.segments[0]
+    original = fake.physical[(owner.contract, BarFrequency.D1)]
+    missing = original[20]
+    reduced = (*original[:20], *original[21:])
+    fake.physical[(owner.contract, BarFrequency.D1)] = reduced
+    fake.actual[BarFrequency.D1] = reduced
+    gap = NonpositiveCloseFact(
+        missing.bar_end, missing.trading_day, Decimal(0), Decimal(0), Decimal(0),
+        Decimal(0), Decimal(0), Decimal(0), Decimal(10),
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+    monkeypatch.setattr(
+        fake, "query_actual_dominant_trading_days_quality_union",
+        lambda request: (fake.query_actual_dominant_trading_days(request), ((owner.contract, gap),)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fake, "query_actual_dominant_trading_days_quality",
+        lambda request: (fake.query_actual_dominant_trading_days(request), ()),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fake, "query_contract_replay_quality_union",
+        lambda **kwargs: (tuple(bar for bar in reduced if bar.bar_end <= kwargs["cutoff"]), (gap,)),
+        raising=False,
+    )
+    reader = NewowProductReader(
+        fake, coverage=fake.coverage, active_products=("rb",), now=lambda: fake.as_of,
+        input_quality_policy="newow_daily_input_quality_v2",
+    )
+
+    read = reader.load(query, fake.as_of)
+    assert len(read.replay_bars) == 49
+    assert read.data_interruptions[0].effective_at == gap.bar_end
+    assert "nonpositive_close" in read.data_interruptions[0].source_identity
+    assert read.sources[ProductFrequency.DAILY].input_policy_version == (
+        "newow_futures_daily_quality_observation_v3"
+    )
+    dependency = reader.check_dependency(
+        "rb", ProductFrequency.DAILY, owner, fake.as_of,
+    )
+    assert dependency["status"] == "DATA_READY"
+    assert dependency["source_quality"] == "DAILY_INTERRUPTED"
+    assert dependency["price_unavailable_count"] == 0
+    assert dependency["nonpositive_close_count"] == 1
+
+
+def test_daily_quality_version_is_scoped_to_daily_products():
+    from guiyi_quant.newow.product_identity import (
+        futures_adaptation_version, input_policy_version, input_quality_policy,
+    )
+    from app.market_data.newow.product_release import candidate_input_quality_policy
+
+    policy = candidate_input_quality_policy("rb", ProductFrequency.DAILY, candidate_weekly=False)
+    assert policy is InputQualityPolicy.DAILY_V2
+    assert futures_adaptation_version("1d", policy) == "newow_futures_daily_quality_segment_v4"
+    assert input_policy_version("1d", policy) == "newow_futures_daily_quality_observation_v3"
+    assert candidate_input_quality_policy("rb", ProductFrequency.HOURLY, candidate_weekly=False) is InputQualityPolicy.V1
+    with pytest.raises(ValueError, match="NEWOW_PRODUCT_INPUT_QUALITY_SCOPE_INVALID"):
+        input_quality_policy("1w", policy)
 
 
 @pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])

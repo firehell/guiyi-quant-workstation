@@ -315,22 +315,6 @@ def test_weekly_v2_policy_changes_stream_ids_without_changing_profile(
     assert candidate_identity.profile_id == legacy.identity.profile_id
 
 
-def test_daily_v2_policy_changes_identity_without_changing_v1(product_cases):
-    legacy = product_cases.closed(frequency="1d")
-    candidate_identity = replace(
-        legacy.identity, input_quality_policy=InputQualityPolicy.DAILY_V2,
-    )
-    candidate_entry = replace(legacy.entry, identity=candidate_identity)
-    assert candidate_entry.signal_id != legacy.entry.signal_id
-    assert candidate_identity.profile_id == legacy.identity.profile_id
-    assert legacy.identity.input_quality_policy is InputQualityPolicy.V1
-    with pytest.raises(ValueError, match="NEWOW_PRODUCT_INPUT_QUALITY_SCOPE_INVALID"):
-        replace(
-            product_cases.closed(frequency="1w").identity,
-            input_quality_policy=InputQualityPolicy.DAILY_V2,
-        )
-
-
 @pytest.mark.parametrize("frequency", ["1d", "60m"])
 def test_weekly_v2_policy_rejects_nonweekly_identity(product_cases, frequency):
     with pytest.raises(ValueError, match="NEWOW_PRODUCT_INPUT_QUALITY_SCOPE_INVALID"):

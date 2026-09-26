@@ -64,12 +64,11 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
         try:
             strategy = ProductStrategy(normalized.removeprefix("newow_"))
             frequency = ProductFrequency(identity.frequency)
-            policy = candidate_input_quality_policy(
-                identity.product, frequency, candidate_weekly=False,
-            )
             expected = build_product_identity(
                 identity.product, strategy, frequency,
-                input_quality_policy=policy,
+                input_quality_policy=candidate_input_quality_policy(
+                    identity.product, frequency, candidate_weekly=False,
+                ),
             )
         except ValueError:
             return False
@@ -78,7 +77,7 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
             and identity.profile_id == expected.profile_id
             and identity.reference_model_version == REFERENCE_MODEL_VERSION
             and identity.futures_adaptation_version
-            == futures_adaptation_version(frequency.value, policy)
+            == futures_adaptation_version(frequency.value, expected.input_quality_policy)
             and identity.observation_policy_version is None
         )
     return False

@@ -192,9 +192,6 @@ def _subing_step(
             (),
             transition,
         )
-    reference_price = item.reference_price
-    if reference_price is None:
-        raise ValueError("REFERENCE_INPUT_PRICE_MISSING")
     payload = item.payload
     if not isinstance(payload, SubingHistoricalPayload):
         raise ValueError("REFERENCE_INPUT_PAYLOAD_INVALID")
@@ -244,7 +241,7 @@ def _subing_step(
                 trading_day=item.trading_day,
                 sequence=0,
                 kind=ActionKind.CLOSE,
-                reference_price=reference_price,
+                reference_price=item.reference_price,
                 entry_action_id=prior_reference.open_trade.entry_action_id,
                 reference_price_type="subing_signal_close",
             ))
@@ -264,7 +261,7 @@ def _subing_step(
                     ActionKind.OPEN_LONG
                     if signal.action.endswith("LONG") else ActionKind.OPEN_SHORT
                 ),
-                reference_price=reference_price,
+                reference_price=item.reference_price,
                 reference_price_type="subing_signal_close",
             ))
     in_owner_window = (
@@ -282,7 +279,7 @@ def _subing_step(
                 item.calculation_segment_id,
                 item.bar_end,
                 item.trading_day,
-                reference_price,
+                item.reference_price,
             )
             if in_owner_window else None
         ),
@@ -353,9 +350,6 @@ def _newow_step(
             (),
             transition,
         )
-    reference_price = item.reference_price
-    if reference_price is None:
-        raise ValueError("REFERENCE_INPUT_PRICE_MISSING")
     payload = item.payload
     if (
         not isinstance(payload, NewowHistoricalPayload)
@@ -364,6 +358,10 @@ def _newow_step(
     ):
         raise ValueError("REFERENCE_INPUT_PAYLOAD_INVALID")
     identity = payload.identity
+    from guiyi_quant.newow.product_identity import (
+        REFERENCE_MODEL_VERSION as NEWOW_REFERENCE_MODEL_VERSION,
+        futures_adaptation_version,
+    )
     if (
         stream.strategy_code.replace("-", "_")
         != f"newow_{identity.strategy.value}"
@@ -371,6 +369,11 @@ def _newow_step(
         or stream.frequency != identity.frequency.value
         or stream.series_kind != identity.series_kind
         or stream.formula_versions != identity.formula_versions
+        or stream.profile_id != identity.profile_id
+        or stream.reference_model_version != NEWOW_REFERENCE_MODEL_VERSION
+        or stream.futures_adaptation_version != futures_adaptation_version(
+            identity.frequency.value, identity.input_quality_policy,
+        )
     ):
         raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
     next_state, frame, diagnostics = replay_step(
@@ -507,7 +510,7 @@ def _newow_step(
             item.calculation_segment_id,
             item.bar_end,
             item.trading_day,
-            reference_price,
+            item.reference_price,
         )
     transition = reduce_reference(
         prior_reference,
@@ -1114,7 +1117,7 @@ class HistoricalReferenceService:
                 stream.stream_id, state.revision_id,
             )
             chunk = tail[index:index + plan.batch_size]
-            presentation: list[dict[str, object]] = []
+            presentation = []
             next_checkpoint, sources, transitions, schema = _advance_batch(
                 stream, checkpoint, chunk, presentation,
             )

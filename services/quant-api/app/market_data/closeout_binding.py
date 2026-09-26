@@ -310,9 +310,10 @@ class RuntimeDataBinding:
         *,
         home: Path | None = None,
         allow_failed_terminal: bool = False,
+        allow_skipped_terminal: bool = False,
         allow_calendar_metadata_failure: bool = False,
     ):
-        self._recovery_errors = allow_failed_terminal
+        self._recovery_errors = allow_failed_terminal or allow_skipped_terminal
         if any(key.startswith("PG") for key in os.environ):
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         self.root, self.commit = root, commit
@@ -328,6 +329,7 @@ class RuntimeDataBinding:
             parsed, started, interruption = self._validate_status(
                 status,
                 allow_failed_terminal=allow_failed_terminal,
+                allow_skipped_terminal=allow_skipped_terminal,
                 allow_calendar_metadata_failure=allow_calendar_metadata_failure,
             )
         except ValueError:
@@ -352,6 +354,13 @@ class RuntimeDataBinding:
             and parsed["last_run"].get("status") == "failed"
             else "running"
         )
+        if (
+            allow_skipped_terminal
+            and parsed.get("current_run") is None
+            and isinstance(last_run, dict)
+            and last_run.get("status") == "skipped"
+        ):
+            self.recovery_terminal = "skipped"
         self._verify_runtime_identity_bounded()
         self.started_ns = int(started.timestamp() * 1_000_000_000)
         self.runtime_dir = self.home / "Library/Application Support/GuiyiQuant"
@@ -394,7 +403,7 @@ class RuntimeDataBinding:
         except ValueError:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         if (
-            (interruption is not None or self.recovery_terminal == "failed")
+            (interruption is not None or self.recovery_terminal in {"failed", "skipped"})
             and tuple(parsed["last_run"]["products"]) != self.products
         ):
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
@@ -409,6 +418,7 @@ class RuntimeDataBinding:
         status: bytes,
         *,
         allow_failed_terminal: bool = False,
+        allow_skipped_terminal: bool = False,
         allow_calendar_metadata_failure: bool = False,
     ):
         try:
@@ -423,6 +433,40 @@ class RuntimeDataBinding:
                 if started.utcoffset() is None:
                     raise ValueError
                 return parsed, started, None
+            if parsed.get("schema_version") == 3 and allow_skipped_terminal:
+                public = public_after_market_status(parsed)
+                last_run = public.get("last_run")
+                if isinstance(last_run, dict) and last_run.get("status") == "skipped":
+                    last_failure = public.get("last_failure")
+                    if (
+                        public.get("schema_version") != 3
+                        or public.get("current_run") is not None
+                        or type(last_run.get("attempts")) is not int
+                        or last_run["attempts"] != 0
+                        or last_run.get("error_code") != "NON_TRADING_DAY"
+                        or last_run.get("failure_notification") is not None
+                        or (
+                            last_failure is not None
+                            and last_failure["trading_day"] > last_run["trading_day"]
+                        )
+                    ):
+                        raise ValueError
+                    started = datetime.fromisoformat(last_run["started_at"])
+                    finished = datetime.fromisoformat(last_run["finished_at"])
+                    if started.utcoffset() is None or finished.utcoffset() is None:
+                        raise ValueError
+                    scheduled_day = started.astimezone(_SHANGHAI).date().isoformat()
+                    last_success = public.get("last_successful_trading_day")
+                    if (
+                        finished < started
+                        or finished.astimezone(UTC) > _now_utc()
+                        or scheduled_day <= last_run["trading_day"]
+                        or finished.astimezone(_SHANGHAI).date().isoformat()
+                        != scheduled_day
+                        or (last_success is not None and last_success > last_run["trading_day"])
+                    ):
+                        raise ValueError
+                    return public, started, None
             if parsed.get("schema_version") == 3 and allow_failed_terminal:
                 public = public_after_market_status(parsed)
                 last_run = public.get("last_run")

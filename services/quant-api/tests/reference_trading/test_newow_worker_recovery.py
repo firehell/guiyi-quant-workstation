@@ -1020,8 +1020,7 @@ def test_newow_canonical_capture_uses_existing_mds_reader(frequency):
     )
     stream = StreamIdentity(
         "newow_trend", product_identity.formula_versions,
-        product_identity.profile_id, "newow_reference_v3",
-        futures_adaptation_version(frequency, read.input_quality_policy),
+        product_identity.profile_id, "newow_reference_v3", "newow_futures_v1",
         "rb", frequency, "actual_dominant",
         RecordingMode.FORWARD_OBSERVATION, "completed_canonical_v1",
     )

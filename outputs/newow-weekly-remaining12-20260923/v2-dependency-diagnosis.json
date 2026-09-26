@@ -1,0 +1,3095 @@
+{
+  "code_sha": "6423d85131e1f0ae3855bd7096c911d795461556",
+  "catalog_revision": "d2c65b1e44b34d588b6ee1b86fdfc4165cb3cc4c92241af9e6d2cd137bb753eb",
+  "catalog_revision_stable": true,
+  "classification_version": "weekly-d1-quality-v2",
+  "rows": [
+    {
+      "symbol": "cj",
+      "contract": "CJ2305",
+      "through": "2023-04-17",
+      "owner": {
+        "since": "2023-01-03",
+        "through": "2023-04-17"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 46,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2309",
+      "through": "2023-08-07",
+      "owner": {
+        "since": "2023-04-18",
+        "through": "2023-08-07"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2611",
+      "through": "2026-09-08",
+      "owner": {
+        "since": "2026-08-19",
+        "through": "2026-09-08"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "OI2611",
+              "trading_day": "2025-11-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2302",
+      "through": "2023-01-06",
+      "owner": {
+        "since": "2023-01-03",
+        "through": "2023-01-06"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2303",
+      "through": "2023-02-07",
+      "owner": {
+        "since": "2023-01-09",
+        "through": "2023-02-07"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2304",
+      "through": "2023-03-09",
+      "owner": {
+        "since": "2023-02-08",
+        "through": "2023-03-09"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2304",
+              "trading_day": "2022-04-22"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2305",
+      "through": "2023-03-28",
+      "owner": {
+        "since": "2023-03-10",
+        "through": "2023-03-28"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2305",
+              "trading_day": "2022-05-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2306",
+      "through": "2023-05-10",
+      "owner": {
+        "since": "2023-03-29",
+        "through": "2023-05-10"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2306",
+              "trading_day": "2022-06-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2307",
+      "through": "2023-06-02",
+      "owner": {
+        "since": "2023-05-11",
+        "through": "2023-06-02"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2307",
+              "trading_day": "2022-07-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2308",
+      "through": "2023-07-04",
+      "owner": {
+        "since": "2023-06-05",
+        "through": "2023-07-04"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 44,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2310",
+      "through": "2023-09-01",
+      "owner": {
+        "since": "2023-07-05",
+        "through": "2023-09-01"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2310",
+              "trading_day": "2022-10-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2311",
+      "through": "2023-10-09",
+      "owner": {
+        "since": "2023-09-04",
+        "through": "2023-10-09"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2312",
+      "through": "2023-11-06",
+      "owner": {
+        "since": "2023-10-10",
+        "through": "2023-11-06"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2312",
+              "trading_day": "2022-12-16"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2402",
+      "through": "2024-01-04",
+      "owner": {
+        "since": "2023-11-07",
+        "through": "2024-01-04"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2402",
+              "trading_day": "2023-02-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2403",
+      "through": "2024-02-08",
+      "owner": {
+        "since": "2024-01-05",
+        "through": "2024-02-08"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2403",
+              "trading_day": "2023-03-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2405",
+      "through": "2024-04-03",
+      "owner": {
+        "since": "2024-02-19",
+        "through": "2024-04-03"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2406",
+      "through": "2024-05-08",
+      "owner": {
+        "since": "2024-04-08",
+        "through": "2024-05-08"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2407",
+      "through": "2024-06-05",
+      "owner": {
+        "since": "2024-05-09",
+        "through": "2024-06-05"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2407",
+              "trading_day": "2023-07-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2408",
+      "through": "2024-07-05",
+      "owner": {
+        "since": "2024-06-06",
+        "through": "2024-07-05"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2408",
+              "trading_day": "2023-08-18"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2409",
+      "through": "2024-07-17",
+      "owner": {
+        "since": "2024-07-08",
+        "through": "2024-07-17"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 42,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2410",
+      "through": "2024-09-03",
+      "owner": {
+        "since": "2024-07-18",
+        "through": "2024-09-03"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2410",
+              "trading_day": "2023-10-27"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2411",
+      "through": "2024-10-10",
+      "owner": {
+        "since": "2024-09-04",
+        "through": "2024-10-10"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2411",
+              "trading_day": "2023-11-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2412",
+      "through": "2024-11-07",
+      "owner": {
+        "since": "2024-10-11",
+        "through": "2024-11-07"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2412",
+              "trading_day": "2023-12-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2502",
+      "through": "2025-01-07",
+      "owner": {
+        "since": "2024-11-08",
+        "through": "2025-01-07"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2502",
+              "trading_day": "2024-02-23"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2503",
+      "through": "2025-02-07",
+      "owner": {
+        "since": "2025-01-08",
+        "through": "2025-02-07"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2503",
+              "trading_day": "2024-03-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2504",
+      "through": "2025-03-06",
+      "owner": {
+        "since": "2025-02-10",
+        "through": "2025-03-06"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 46,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2505",
+      "through": "2025-04-07",
+      "owner": {
+        "since": "2025-03-07",
+        "through": "2025-04-07"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2505",
+              "trading_day": "2024-05-24"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2506",
+      "through": "2025-05-13",
+      "owner": {
+        "since": "2025-04-08",
+        "through": "2025-05-13"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2506",
+              "trading_day": "2024-06-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2507",
+      "through": "2025-06-13",
+      "owner": {
+        "since": "2025-05-14",
+        "through": "2025-06-13"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2507",
+              "trading_day": "2024-07-19"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2508",
+      "through": "2025-07-14",
+      "owner": {
+        "since": "2025-06-16",
+        "through": "2025-07-14"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 48,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2509",
+      "through": "2025-08-05",
+      "owner": {
+        "since": "2025-07-15",
+        "through": "2025-08-05"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2509",
+              "trading_day": "2024-09-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2510",
+      "through": "2025-09-01",
+      "owner": {
+        "since": "2025-08-06",
+        "through": "2025-09-01"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2510",
+              "trading_day": "2024-10-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2511",
+      "through": "2025-10-10",
+      "owner": {
+        "since": "2025-09-02",
+        "through": "2025-10-10"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2511",
+              "trading_day": "2024-11-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2512",
+      "through": "2025-11-11",
+      "owner": {
+        "since": "2025-10-13",
+        "through": "2025-11-11"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 47,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2602",
+      "through": "2026-01-09",
+      "owner": {
+        "since": "2025-11-12",
+        "through": "2026-01-09"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2602",
+              "trading_day": "2025-02-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2603",
+      "through": "2026-02-04",
+      "owner": {
+        "since": "2026-01-12",
+        "through": "2026-02-04"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 46,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2604",
+      "through": "2026-03-13",
+      "owner": {
+        "since": "2026-02-05",
+        "through": "2026-03-13"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2604",
+              "trading_day": "2025-04-18"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2606",
+      "through": "2026-04-30",
+      "owner": {
+        "since": "2026-03-16",
+        "through": "2026-04-30"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2606",
+              "trading_day": "2025-08-29"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-05-06",
+        "through": "2026-06-03"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2607",
+              "trading_day": "2025-08-29"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2608",
+      "through": "2026-07-03",
+      "owner": {
+        "since": "2026-06-04",
+        "through": "2026-07-03"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2608",
+              "trading_day": "2025-09-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2609",
+      "through": "2026-08-04",
+      "owner": {
+        "since": "2026-07-06",
+        "through": "2026-08-04"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2609",
+              "trading_day": "2025-09-26"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2610",
+      "through": "2026-09-03",
+      "owner": {
+        "since": "2026-08-05",
+        "through": "2026-09-03"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PF2610",
+              "trading_day": "2025-12-26"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-09-04",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "WEEKLY_SOURCE_BAR_CONFLICT",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "DATA_INTEGRITY_INVALID",
+            "context": {
+              "contract": "PF2611",
+              "trading_day": "2025-11-21"
+            },
+            "historical_candidate_recoverable": false
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2411",
+      "through": "2024-10-08",
+      "owner": {
+        "since": "2024-09-06",
+        "through": "2024-10-08"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PK2411",
+              "trading_day": "2023-11-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2511",
+      "through": "2025-10-13",
+      "owner": {
+        "since": "2025-08-14",
+        "through": "2025-10-13"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PK2511",
+              "trading_day": "2024-11-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2603",
+      "through": "2026-02-10",
+      "owner": {
+        "since": "2025-12-03",
+        "through": "2026-02-10"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PK2603",
+              "trading_day": "2025-03-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-07-17",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PK2611",
+              "trading_day": "2025-11-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2603",
+      "through": "2026-02-02",
+      "owner": {
+        "since": "2025-11-04",
+        "through": "2026-02-02"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2603",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2605",
+      "through": "2026-04-13",
+      "owner": {
+        "since": "2026-02-04",
+        "through": "2026-04-13"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2605",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2607",
+      "through": "2026-06-01",
+      "owner": {
+        "since": "2026-04-14",
+        "through": "2026-06-01"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2607",
+              "trading_day": "2025-10-10"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2609",
+      "through": "2026-08-03",
+      "owner": {
+        "since": "2026-06-02",
+        "through": "2026-08-03"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2609",
+              "trading_day": "2026-03-13"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-04",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PL2611",
+              "trading_day": "2026-05-29"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2506",
+      "through": "2025-05-08",
+      "owner": {
+        "since": "2025-04-09",
+        "through": "2025-05-08"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2506",
+              "trading_day": "2024-08-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2507",
+      "through": "2025-06-09",
+      "owner": {
+        "since": "2025-05-09",
+        "through": "2025-06-09"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2507",
+              "trading_day": "2024-08-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2509",
+      "through": "2025-08-01",
+      "owner": {
+        "since": "2025-06-10",
+        "through": "2025-08-01"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2509",
+              "trading_day": "2024-09-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2510",
+      "through": "2025-08-13",
+      "owner": {
+        "since": "2025-08-04",
+        "through": "2025-08-13"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 42,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2511",
+      "through": "2025-10-09",
+      "owner": {
+        "since": "2025-08-14",
+        "through": "2025-10-09"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2511",
+              "trading_day": "2024-11-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2512",
+      "through": "2025-10-15",
+      "owner": {
+        "since": "2025-10-10",
+        "through": "2025-10-15"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2512",
+              "trading_day": "2024-12-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2601",
+      "through": "2025-12-04",
+      "owner": {
+        "since": "2025-10-16",
+        "through": "2025-12-04"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2601",
+              "trading_day": "2025-01-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2603",
+      "through": "2026-02-03",
+      "owner": {
+        "since": "2025-12-05",
+        "through": "2026-02-03"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2603",
+              "trading_day": "2025-03-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2605",
+      "through": "2026-04-09",
+      "owner": {
+        "since": "2026-02-04",
+        "through": "2026-04-09"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2605",
+              "trading_day": "2025-06-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2606",
+      "through": "2026-04-29",
+      "owner": {
+        "since": "2026-04-10",
+        "through": "2026-04-29"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2606",
+              "trading_day": "2025-09-05"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-04-30",
+        "through": "2026-06-03"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2607",
+              "trading_day": "2025-10-10"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2609",
+      "through": "2026-08-05",
+      "owner": {
+        "since": "2026-06-04",
+        "through": "2026-08-05"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2609",
+              "trading_day": "2025-12-26"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2610",
+      "through": "2026-08-20",
+      "owner": {
+        "since": "2026-08-06",
+        "through": "2026-08-20"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2610",
+              "trading_day": "2026-01-23"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-21",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PR2611",
+              "trading_day": "2026-01-23"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2501",
+      "through": "2024-12-19",
+      "owner": {
+        "since": "2024-08-19",
+        "through": "2024-12-19"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 47,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2505",
+      "through": "2025-04-15",
+      "owner": {
+        "since": "2024-12-20",
+        "through": "2025-04-15"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2505",
+              "trading_day": "2024-05-24"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2509",
+      "through": "2025-08-12",
+      "owner": {
+        "since": "2025-04-16",
+        "through": "2025-08-12"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2509",
+              "trading_day": "2024-09-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2511",
+      "through": "2025-10-13",
+      "owner": {
+        "since": "2025-08-13",
+        "through": "2025-10-13"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2511",
+              "trading_day": "2024-11-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2603",
+      "through": "2026-01-30",
+      "owner": {
+        "since": "2025-12-04",
+        "through": "2026-01-30"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2603",
+              "trading_day": "2025-03-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-04-21",
+        "through": "2026-06-03"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2607",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2609",
+      "through": "2026-08-06",
+      "owner": {
+        "since": "2026-06-05",
+        "through": "2026-08-06"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2609",
+              "trading_day": "2025-09-19"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-07",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "PX2611",
+              "trading_day": "2025-11-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2311",
+      "through": "2023-06-14",
+      "owner": {
+        "since": "2023-01-03",
+        "through": "2023-06-14"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 29,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2309",
+      "through": "2023-06-28",
+      "owner": {
+        "since": "2023-06-15",
+        "through": "2023-06-28"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 39,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2311",
+      "through": "2023-11-01",
+      "owner": {
+        "since": "2023-06-29",
+        "through": "2023-11-01"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 48,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2407",
+      "through": "2023-11-27",
+      "owner": {
+        "since": "2023-11-02",
+        "through": "2023-11-27"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 18,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2407",
+      "through": "2023-12-22",
+      "owner": {
+        "since": "2023-11-30",
+        "through": "2023-12-22"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 22,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2409",
+      "through": "2023-12-29",
+      "owner": {
+        "since": "2023-12-25",
+        "through": "2023-12-29"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 15,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2409",
+      "through": "2024-01-30",
+      "owner": {
+        "since": "2024-01-03",
+        "through": "2024-01-30"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 19,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2409",
+      "through": "2024-02-20",
+      "owner": {
+        "since": "2024-02-02",
+        "through": "2024-02-20"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 21,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2407",
+      "through": "2024-02-23",
+      "owner": {
+        "since": "2024-02-21",
+        "through": "2024-02-23"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 30,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2411",
+      "through": "2024-11-04",
+      "owner": {
+        "since": "2024-03-01",
+        "through": "2024-11-04"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 50,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2507",
+      "through": "2025-07-01",
+      "owner": {
+        "since": "2024-11-05",
+        "through": "2025-07-01"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 50,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2509",
+      "through": "2025-09-02",
+      "owner": {
+        "since": "2025-07-02",
+        "through": "2025-09-02"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 50,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2511",
+      "through": "2025-11-13",
+      "owner": {
+        "since": "2025-09-04",
+        "through": "2025-11-13"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 52,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2608",
+      "through": "2025-11-17",
+      "owner": {
+        "since": "2025-11-14",
+        "through": "2025-11-17"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 14,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2607",
+      "through": "2025-11-21",
+      "owner": {
+        "since": "2025-11-18",
+        "through": "2025-11-21"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 19,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "through": "2025-12-04",
+      "owner": {
+        "since": "2025-11-24",
+        "through": "2025-12-04"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "RS2609",
+              "trading_day": "2025-09-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2607",
+      "through": "2025-12-31",
+      "owner": {
+        "since": "2025-12-05",
+        "through": "2025-12-31"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 25,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2607",
+      "through": "2026-01-29",
+      "owner": {
+        "since": "2026-01-09",
+        "through": "2026-01-29"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 28,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "through": "2026-09-11",
+      "owner": {
+        "since": "2026-01-30",
+        "through": "2026-09-11"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "RS2609",
+              "trading_day": "2025-09-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2303",
+      "through": "2023-02-03",
+      "owner": {
+        "since": "2023-01-03",
+        "through": "2023-02-03"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2306",
+      "through": "2023-05-10",
+      "owner": {
+        "since": "2023-04-18",
+        "through": "2023-05-10"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2306",
+              "trading_day": "2022-06-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2307",
+      "through": "2023-06-05",
+      "owner": {
+        "since": "2023-05-11",
+        "through": "2023-06-05"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2307",
+              "trading_day": "2022-07-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2309",
+      "through": "2023-07-13",
+      "owner": {
+        "since": "2023-06-06",
+        "through": "2023-07-13"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2309",
+              "trading_day": "2022-09-16"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2310",
+      "through": "2023-09-01",
+      "owner": {
+        "since": "2023-07-14",
+        "through": "2023-09-01"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2310",
+              "trading_day": "2022-10-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2311",
+      "through": "2023-10-10",
+      "owner": {
+        "since": "2023-09-04",
+        "through": "2023-10-10"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2312",
+      "through": "2023-11-06",
+      "owner": {
+        "since": "2023-10-11",
+        "through": "2023-11-06"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2312",
+              "trading_day": "2022-12-16"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2402",
+      "through": "2024-01-02",
+      "owner": {
+        "since": "2023-11-07",
+        "through": "2024-01-02"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2402",
+              "trading_day": "2023-02-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2403",
+      "through": "2024-02-02",
+      "owner": {
+        "since": "2024-01-03",
+        "through": "2024-02-02"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2403",
+              "trading_day": "2023-03-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2405",
+      "through": "2024-04-16",
+      "owner": {
+        "since": "2024-02-05",
+        "through": "2024-04-16"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 46,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2410",
+      "through": "2024-09-11",
+      "owner": {
+        "since": "2024-08-20",
+        "through": "2024-09-11"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2410",
+              "trading_day": "2023-10-27"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2501",
+      "through": "2024-12-04",
+      "owner": {
+        "since": "2024-09-12",
+        "through": "2024-12-04"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2501",
+              "trading_day": "2024-01-19"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2502",
+      "through": "2025-01-07",
+      "owner": {
+        "since": "2024-12-05",
+        "through": "2025-01-07"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2502",
+              "trading_day": "2024-02-23"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2503",
+      "through": "2025-02-06",
+      "owner": {
+        "since": "2025-01-08",
+        "through": "2025-02-06"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2503",
+              "trading_day": "2024-03-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2506",
+      "through": "2025-05-09",
+      "owner": {
+        "since": "2025-04-08",
+        "through": "2025-05-09"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2506",
+              "trading_day": "2024-06-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2507",
+      "through": "2025-06-05",
+      "owner": {
+        "since": "2025-05-12",
+        "through": "2025-06-05"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 46,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2509",
+      "through": "2025-08-13",
+      "owner": {
+        "since": "2025-06-06",
+        "through": "2025-08-13"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2509",
+              "trading_day": "2024-09-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2511",
+      "through": "2025-10-15",
+      "owner": {
+        "since": "2025-08-14",
+        "through": "2025-10-15"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2511",
+              "trading_day": "2024-11-15"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2601",
+      "through": "2025-11-19",
+      "owner": {
+        "since": "2025-10-16",
+        "through": "2025-11-19"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2601",
+              "trading_day": "2025-01-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2603",
+      "through": "2026-02-05",
+      "owner": {
+        "since": "2025-11-20",
+        "through": "2026-02-05"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2603",
+              "trading_day": "2025-03-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2605",
+      "through": "2026-04-07",
+      "owner": {
+        "since": "2026-02-06",
+        "through": "2026-04-07"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2605",
+              "trading_day": "2025-05-30"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2607",
+      "through": "2026-06-11",
+      "owner": {
+        "since": "2026-04-08",
+        "through": "2026-06-11"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2607",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-04",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SF2611",
+              "trading_day": "2025-12-05"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2501",
+      "through": "2024-12-17",
+      "owner": {
+        "since": "2024-08-29",
+        "through": "2024-12-17"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2501",
+              "trading_day": "2024-01-19"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2505",
+      "through": "2025-04-22",
+      "owner": {
+        "since": "2024-12-18",
+        "through": "2025-04-22"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2505",
+              "trading_day": "2024-05-24"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2509",
+      "through": "2025-08-18",
+      "owner": {
+        "since": "2025-04-23",
+        "through": "2025-08-18"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2509",
+              "trading_day": "2024-09-20"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2607",
+      "through": "2026-06-16",
+      "owner": {
+        "since": "2026-04-16",
+        "through": "2026-06-16"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2607",
+              "trading_day": "2025-07-25"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-14",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SH2611",
+              "trading_day": "2025-12-05"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2305",
+      "through": "2023-04-14",
+      "owner": {
+        "since": "2023-01-03",
+        "through": "2023-04-14"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 46,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2306",
+      "through": "2023-05-15",
+      "owner": {
+        "since": "2023-04-17",
+        "through": "2023-05-15"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 46,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2310",
+      "through": "2023-08-31",
+      "owner": {
+        "since": "2023-07-19",
+        "through": "2023-08-31"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2310",
+              "trading_day": "2022-10-28"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2311",
+      "through": "2023-10-10",
+      "owner": {
+        "since": "2023-09-01",
+        "through": "2023-10-10"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2311",
+              "trading_day": "2022-11-18"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2312",
+      "through": "2023-11-03",
+      "owner": {
+        "since": "2023-10-11",
+        "through": "2023-11-03"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2312",
+              "trading_day": "2022-12-16"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2402",
+      "through": "2024-01-02",
+      "owner": {
+        "since": "2023-11-06",
+        "through": "2024-01-02"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 45,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2403",
+      "through": "2024-02-01",
+      "owner": {
+        "since": "2024-01-03",
+        "through": "2024-02-01"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2403",
+              "trading_day": "2023-03-17"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2603",
+      "through": "2026-01-20",
+      "owner": {
+        "since": "2025-12-04",
+        "through": "2026-01-20"
+      },
+      "original_status": "DATA_UNAVAILABLE",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2603",
+              "trading_day": "2025-03-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2607",
+      "through": "2026-06-03",
+      "owner": {
+        "since": "2026-04-16",
+        "through": "2026-06-03"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2607",
+              "trading_day": "2025-08-01"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2611",
+      "through": "2026-09-18",
+      "owner": {
+        "since": "2026-08-10",
+        "through": "2026-09-18"
+      },
+      "original_status": "UNKNOWN",
+      "status": "BLOCKED",
+      "error_type": "MarketDataError",
+      "error_code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "public_error": [
+        409,
+        {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "contract": "SM2611",
+              "trading_day": "2025-12-26"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "sr",
+      "contract": "SR2303",
+      "through": "2023-02-01",
+      "owner": {
+        "since": "2023-01-03",
+        "through": "2023-02-01"
+      },
+      "original_status": "SOURCE_EXCEPTION",
+      "status": "V2_QUALITY_COVERED",
+      "bar_count": 44,
+      "quality_gap_count": 0,
+      "quality_gap_week_ends": [],
+      "missing_week_ends": []
+    }
+  ],
+  "readonly": true,
+  "provider_requests": 0,
+  "writes": 0
+}

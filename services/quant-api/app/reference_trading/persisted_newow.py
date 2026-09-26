@@ -125,6 +125,10 @@ class PersistedNewowReference:
             for trade in trades:
                 if key[:2] != (trade["physical_contract"], trade["owner_segment_id"]):
                     continue
+                if hint.get("calculation_segment_id", hint["segment_id"]) != trade.get(
+                    "calculation_segment_id", trade["owner_segment_id"],
+                ):
+                    continue
                 at = datetime.fromisoformat(hint["bar_end"])
                 entry = datetime.fromisoformat(trade["entry_bar_end"])
                 if sequence is None:
@@ -139,7 +143,7 @@ class PersistedNewowReference:
                             continue
                     elif (at, sequence) >= (exit_at, trade["exit_sequence"]):
                         continue
-                elif trade["status"] == "ROLLOVER_INTERRUPTED":
+                elif trade["status"] in {"ROLLOVER_INTERRUPTED", "DATA_INTERRUPTED"}:
                     interrupted = datetime.fromisoformat(trade["interrupted_at"])
                     if at > interrupted:
                         continue

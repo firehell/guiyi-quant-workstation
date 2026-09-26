@@ -146,6 +146,104 @@ def _candidate_v2(
     return value
 
 
+def _candidate_p9(inventory_sha256: str) -> dict[str, object]:
+    value = _candidate_v2()
+    value["schema"] = "subing-d1-reference-p9-source-candidate-v1"
+    contract = value["execution_contract"]
+    assert isinstance(contract, dict)
+    contract["output_root"] = "outputs/reference-p9-d1-source-20260925"
+    contract["source_inventory_file_sha256"] = inventory_sha256
+    value["plan_sha256"] = hashlib.sha256(
+        _canonical({key: item for key, item in value.items() if key != "plan_sha256"}).encode()
+    ).hexdigest()
+    return value
+
+
+def _p9_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, Path, dict[str, object], SimpleNamespace]:
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(json.dumps({
+        "readonly": True, "row_count": 2, "owned_count": 1,
+        "rows": [
+            {"product": "rs", "contract": "RS2609", "trading_day": "2026-09-02",
+             "bar_end": "2026-09-02T07:00:00+00:00", "owned": True},
+            {"product": "rs", "contract": "RS2609", "trading_day": "2026-09-04",
+             "bar_end": "2026-09-04T07:00:00+00:00", "owned": False},
+        ],
+    }))
+    output = tmp_path / "outputs/reference-p9-d1-source-20260925"
+    output.mkdir(parents=True)
+    candidate = _candidate_p9(hashlib.sha256(inventory.read_bytes()).hexdigest())
+    monkeypatch.setattr(source_verify, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(source_verify, "_P9_SOURCE_INVENTORY", inventory, raising=False)
+    return inventory, output, candidate, SimpleNamespace(
+        output_root=str(output), attempt_id="attempt-001",
+    )
+
+
+def test_p9_source_preflight_binds_exact_zero_dates_and_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _inventory, output, candidate, args = _p9_scope(tmp_path, monkeypatch)
+    batch = source_verify.validate_candidate(candidate, str(candidate["plan_sha256"]))
+    assert source_verify._validate_p9_cli_scope(args, batch) == output
+
+
+def test_p9_source_preflight_rejects_inventory_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory, _output, candidate, args = _p9_scope(tmp_path, monkeypatch)
+    batch = source_verify.validate_candidate(candidate, str(candidate["plan_sha256"]))
+    inventory.write_text(inventory.read_text() + "\n")
+    with pytest.raises(native.RecoveryError, match="SOURCE_P9_INVENTORY_INVALID"):
+        source_verify._validate_p9_cli_scope(args, batch)
+
+
+def test_p9_source_preflight_rejects_target_date_omission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _inventory, _output, candidate, args = _p9_scope(tmp_path, monkeypatch)
+    request = candidate["requests"][0]  # type: ignore[index]
+    request["target_dates"] = ["2026-09-02"]
+    digest_body = {
+        key: request[key] for key in (
+            "contract", "start", "end", "target_dates",
+            "allowed_response_dates", "calendar_authority",
+        )
+    }
+    request["request_sha256"] = hashlib.sha256(_canonical(digest_body).encode()).hexdigest()
+    candidate["budget"]["expected_date_identities"] = 1  # type: ignore[index]
+    candidate["budget"]["allowed_response_context_dates"] = 2  # type: ignore[index]
+    candidate["plan_sha256"] = hashlib.sha256(
+        _canonical({key: item for key, item in candidate.items() if key != "plan_sha256"}).encode()
+    ).hexdigest()
+    batch = source_verify.validate_candidate(candidate, str(candidate["plan_sha256"]))
+    with pytest.raises(native.RecoveryError, match="SOURCE_P9_SCOPE_MISMATCH"):
+        source_verify._validate_p9_cli_scope(args, batch)
+
+
+def test_p9_source_preflight_rejects_wider_provider_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _inventory, _output, candidate, args = _p9_scope(tmp_path, monkeypatch)
+    request = candidate["requests"][0]  # type: ignore[index]
+    request["start"] = "2026-09-01"
+    digest_body = {
+        key: request[key] for key in (
+            "contract", "start", "end", "target_dates",
+            "allowed_response_dates", "calendar_authority",
+        )
+    }
+    request["request_sha256"] = hashlib.sha256(_canonical(digest_body).encode()).hexdigest()
+    candidate["plan_sha256"] = hashlib.sha256(
+        _canonical({key: item for key, item in candidate.items() if key != "plan_sha256"}).encode()
+    ).hexdigest()
+    batch = source_verify.validate_candidate(candidate, str(candidate["plan_sha256"]))
+    with pytest.raises(native.RecoveryError, match="SOURCE_P9_SCOPE_MISMATCH"):
+        source_verify._validate_p9_cli_scope(args, batch)
+
+
 def _row(day: date, *, contract: str = "RS2609") -> dict[str, object]:
     return {
         "order_book_id": contract,

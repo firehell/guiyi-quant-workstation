@@ -1,0 +1,243 @@
+{
+  "schema_version": "newow_weekly_conflict_diagnosis_v2",
+  "status": "diagnosed",
+  "catalog_revision_stable": true,
+  "catalog_revision_before": "a03ac32d7b62cca27a3c5b5b9aa5c55e42024a9a1e1e59e867f939fa2590598e",
+  "catalog_revision_after": "a03ac32d7b62cca27a3c5b5b9aa5c55e42024a9a1e1e59e867f939fa2590598e",
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "code_sha": "a3009d6e1e70be1f5d674d84c5e2ae66bb9a0046",
+  "input_sha256": "bbe7b4276812d98d5703ee59f43caac912fd780ddca823216de7c720e4956e5a",
+  "contracts": [
+    {
+      "symbol": "sm",
+      "contract": "SM2311",
+      "requested_through": "2023-10-10",
+      "first_conflict_week": {
+        "iso_year": 2023,
+        "iso_week": 35,
+        "week_end": "2023-09-01T07:00:00+00:00",
+        "trading_day": "2023-09-01",
+        "first_daily_endpoint": "2023-08-28T07:00:00+00:00",
+        "last_daily_endpoint": "2023-09-01T07:00:00+00:00",
+        "daily_trading_days": [
+          "2023-08-28",
+          "2023-08-29",
+          "2023-08-30",
+          "2023-08-31",
+          "2023-09-01"
+        ],
+        "cross_month": true
+      },
+      "conflict_week_count": 1,
+      "conflict_weeks": [
+        {
+          "iso_year": 2023,
+          "iso_week": 35,
+          "week_end": "2023-09-01T07:00:00+00:00",
+          "trading_day": "2023-09-01",
+          "first_daily_endpoint": "2023-08-28T07:00:00+00:00",
+          "last_daily_endpoint": "2023-09-01T07:00:00+00:00",
+          "daily_trading_days": [
+            "2023-08-28",
+            "2023-08-29",
+            "2023-08-30",
+            "2023-08-31",
+            "2023-09-01"
+          ],
+          "cross_month": true,
+          "identity": {
+            "stored_weekly_bar_end": "2023-09-01T07:00:00+00:00",
+            "stored_weekly_trading_day": "2023-09-01",
+            "d1_aggregate_bar_end": "2023-09-01T07:00:00+00:00",
+            "d1_aggregate_trading_day": "2023-09-01",
+            "contract_owner_equal": true,
+            "session_endpoint_equal": true
+          },
+          "fields": {
+            "open": {
+              "stored": "6846.000000000000000000",
+              "d1_aggregate": "6846.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "high": {
+              "stored": "7006.000000000000000000",
+              "d1_aggregate": "7006.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "low": {
+              "stored": "6718.000000000000000000",
+              "d1_aggregate": "6718.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "close": {
+              "stored": "6990.000000000000000000",
+              "d1_aggregate": "6990.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "volume": {
+              "stored": "726207.000000000000000000",
+              "d1_aggregate": "726207.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            },
+            "turnover": {
+              "stored": "24933788650.000000000000000000",
+              "d1_aggregate": "24932153280.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": false,
+              "precision_equal": true
+            },
+            "open_interest": {
+              "stored": "474169.000000000000000000",
+              "d1_aggregate": "474169.000000000000000000",
+              "stored_exponent": -18,
+              "d1_aggregate_exponent": -18,
+              "numeric_equal": true,
+              "precision_equal": true
+            }
+          },
+          "numeric_conflict_fields": [
+            "turnover"
+          ],
+          "precision_only_fields": [],
+          "stored_w1_partition": {
+            "year": 2023,
+            "month": 9,
+            "file_name": "part.parquet",
+            "row_count": 5,
+            "source_quality_sha256": null
+          },
+          "d1_partitions": [
+            {
+              "year": 2023,
+              "month": 8,
+              "file_name": "part.e8ac82e6fe6a923512290e5aa8f112129d123cbe3396d2bba4dd0c9d338ab4d6.parquet",
+              "row_count": 23,
+              "source_quality_sha256": null
+            },
+            {
+              "year": 2023,
+              "month": 9,
+              "file_name": "part.parquet",
+              "row_count": 20,
+              "source_quality_sha256": null
+            }
+          ],
+          "d1_revision_sha256": "f2ad188f32a6b9e824c82796d25a20f4cb45568bb591774feb0cd1bd7ac3fc61"
+        }
+      ],
+      "identity": {
+        "stored_weekly_bar_end": "2023-09-01T07:00:00+00:00",
+        "stored_weekly_trading_day": "2023-09-01",
+        "d1_aggregate_bar_end": "2023-09-01T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2023-09-01",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "6846.000000000000000000",
+          "d1_aggregate": "6846.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "7006.000000000000000000",
+          "d1_aggregate": "7006.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "6718.000000000000000000",
+          "d1_aggregate": "6718.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "6990.000000000000000000",
+          "d1_aggregate": "6990.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "726207.000000000000000000",
+          "d1_aggregate": "726207.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "24933788650.000000000000000000",
+          "d1_aggregate": "24932153280.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "474169.000000000000000000",
+          "d1_aggregate": "474169.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 9,
+        "file_name": "part.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 8,
+          "file_name": "part.e8ac82e6fe6a923512290e5aa8f112129d123cbe3396d2bba4dd0c9d338ab4d6.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        },
+        {
+          "year": 2023,
+          "month": 9,
+          "file_name": "part.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "f2ad188f32a6b9e824c82796d25a20f4cb45568bb591774feb0cd1bd7ac3fc61",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    }
+  ]
+}

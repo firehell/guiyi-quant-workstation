@@ -2,7 +2,11 @@ from copy import deepcopy
 
 import pytest
 
-from app.market_data.subing_d1_quality_plan import build_plan, validate_apply_binding
+from app.market_data.subing_d1_quality_plan import (
+    build_p9_quality_plan,
+    build_plan,
+    validate_apply_binding,
+)
 
 
 def inputs():
@@ -72,3 +76,73 @@ def test_plan_rejects_stale_scope_duplicates_and_hashes():
     plan = build_plan(impact, evidence, source, excluded_target_count=40)
     with pytest.raises(ValueError, match="HASH_MISMATCH"):
         validate_apply_binding(plan, "0" * 64)
+
+
+def p9_inputs():
+    inventory = {
+        "schema": "reference_p9_d1_quality_inventory_v1",
+        "readonly": True,
+        "source_inventory_sha256": "a" * 64,
+        "summary": {
+            "targets": 1,
+            "affected_dates": 2,
+            "states": {"TARGETS_PRESENT": 1},
+            "zero_bar_targets": 2,
+            "quality_fact_targets": 0,
+            "missing_dates": 0,
+        },
+        "targets": [{
+            "product": "al",
+            "contract": "AL2302",
+            "month": "2022-02",
+            "state": "TARGETS_PRESENT",
+            "partition_id": 12,
+            "old_file_uri": "kind=contract/symbol=al/series=AL2302/frequency=1d/year=2022/month=02/part.parquet",
+            "old_file_sha256": "b" * 64,
+            "old_source_quality_sha256": None,
+            "affected_dates": ["2022-02-16", "2022-02-17"],
+            "affected_count": 2,
+            "target_zero_bars": 2,
+            "target_quality_facts": 0,
+            "target_missing": 0,
+        }],
+    }
+    source = {
+        "status": "SOURCE_ZERO_CLOSE_CONFIRMED",
+        "inventory_file_sha256": "a" * 64,
+        "candidate_plan_sha256": "c" * 64,
+        "candidate_file_sha256": "d" * 64,
+        "journal_sha256": "e" * 64,
+        "result_sha256": "f" * 64,
+        "target_date_identities": 2,
+        "target_rows_zero_close": 2,
+        "requests_started": 1,
+        "responses_saved": 1,
+        "canonical_writes": 0,
+        "database_writes": 0,
+    }
+    return inventory, source
+
+
+def test_p9_plan_freezes_existing_partition_and_source_evidence():
+    inventory, source = p9_inputs()
+    first = build_p9_quality_plan(inventory, source, "1" * 64, "2" * 64)
+    second = build_p9_quality_plan(inventory, source, "1" * 64, "2" * 64)
+    assert first == second
+    assert first["mode"] == "PREPARE_ONLY"
+    assert first["target_partition_count"] == 1
+    assert first["provider_request_budget"] == first["production_writes"] == 0
+    assert first["targets"][0]["affected_dates"] == ["2022-02-16", "2022-02-17"]
+    assert first["targets"][0]["old_file_sha256"] == "b" * 64
+    validate_apply_binding(first, first["plan_sha256"])
+
+
+def test_p9_plan_rejects_unproven_or_missing_source_dates():
+    inventory, source = p9_inputs()
+    source["target_rows_zero_close"] = 1
+    with pytest.raises(ValueError, match="P9_SOURCE_SCOPE_INVALID"):
+        build_p9_quality_plan(inventory, source, "1" * 64, "2" * 64)
+    inventory, source = p9_inputs()
+    inventory["targets"][0]["target_missing"] = 1
+    with pytest.raises(ValueError, match="P9_QUALITY_TARGET_INVALID"):
+        build_p9_quality_plan(inventory, source, "1" * 64, "2" * 64)

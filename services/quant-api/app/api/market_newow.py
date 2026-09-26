@@ -387,14 +387,9 @@ def _build_historical_resolver(
 
 
 def _build_daily_resolver(
-    session: Session,
-    cancelled: Callable[[], bool],
-    now: Callable[[], datetime],
-    quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
+    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
 ) -> NewowDailySnapshotResolver:
-    reader, service_factory = _build_snapshot_inputs(
-        session, cancelled, now, quality_policy,
-    )
+    reader, service_factory = _build_snapshot_inputs(session, cancelled, now)
     return NewowDailySnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 
 
@@ -496,13 +491,7 @@ def newow_daily_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         require_open_frequency(ProductFrequency(frequency))
-        policy = _input_quality_policy(request, product, frequency)
-        resolver = (
-            _build_daily_resolver(session, cancelled, lambda: now)
-            if policy is InputQualityPolicy.V1
-            else _build_daily_resolver(session, cancelled, lambda: now, policy)
-        )
-        result = resolver.resolve(
+        result = _build_daily_resolver(session, cancelled, lambda: now).resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)
         )
         return NewowDailySnapshotResponse(
@@ -592,7 +581,7 @@ def newow_strategy_detail(
     chart_before: str | None = Query(None, min_length=1, max_length=2048),
     chart_older_window: str | None = Query(None, min_length=1, max_length=256),
     component: Literal[
-        "macd", "main_force_control", "up_down_energy", "zhaoyao_mirror", "cup_handle"
+        "macd", "main_force_control", "up_down_energy", "trend_reversal", "zhaoyao_mirror", "cup_handle"
     ]
     | None = Query(None),
     history_limit: int = Query(50, ge=1, le=200),

@@ -36,7 +36,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
     }
     expect(productRequests(fixture, 'chart')).toHaveLength(1)
     expect(productRequests(fixture, 'explanation')).toHaveLength(0)
-    await stage.getByText('过程提示', { exact: true }).click()
+    await stage.locator('.newow-product-chart-stage__legend summary').filter({ hasText: /^过程提示$/ }).click()
     const hint = stage.locator('[data-hint-id]').first()
     const id = await hint.getAttribute('data-hint-id')
     await hint.click()
@@ -52,7 +52,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
       await expect.poll(() => stage.evaluate(element => document.fullscreenElement === element)).toBe(true)
       await page.getByRole('button', { name: '退出图表全屏', exact: true }).click()
       await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true)
-      await stage.getByText('过程提示', { exact: true }).click()
+      await stage.locator('.newow-product-chart-stage__legend summary').filter({ hasText: /^过程提示$/ }).click()
       await stage.screenshot({ path: '/private/tmp/newow-task3-chart.png' })
     }
     expect(errors).toEqual([])
