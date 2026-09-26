@@ -23,6 +23,9 @@ test('closed-only cumulative uses exact decimal sums and chronological stable id
   assert.deepEqual(newowReferenceCurve(independent).points, result.points, 'complete curve is independent of list pagination')
   assert.equal(newowReferenceCurve({ ...independent, curve_trades: independent.curve_trades.slice(0, 1) }).points.length, 0)
   assert.equal(newowReferenceCurve({ ...input, summary: { ...input.summary, sum_return_percentage_points: '99' } }).points.length, 0)
+  const rounded = { ...input, items: items.filter(t => t.status === 'CLOSED').map(t => ({ ...t, reference_return_pct: '1.123456789012345678901234567' })), summary: { ...input.summary, sum_return_percentage_points: '2.246913578024691357802469134' } }
+  assert.equal(newowReferenceCurve(rounded).message, null)
+  assert.equal(newowReferenceCurve({ ...rounded, summary: { ...rounded.summary, sum_return_percentage_points: '2.24691357802469135780246914' } }).points.length, 0)
 })
 test('empty, initial and missing returns never synthesize zero returns', () => {
   const v = value()

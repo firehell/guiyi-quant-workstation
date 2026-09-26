@@ -27,7 +27,14 @@ export function newowReferenceCurve(value: NewowReferenceValue) {
     sum += numbers[index]!.units * 10n ** BigInt(scale - numbers[index]!.scale)
     return { trade, cumulative: text(sum, scale), value: Number(text(sum, scale)) }
   })
-  if (sum !== total.units * 10n ** BigInt(scale - total.scale) || points.some(p => !Number.isFinite(p.value))) {
+  // The authoritative summary adds in Decimal(precision=28, HALF_EVEN).
+  // Bound the cumulative rounding error in integer units; never compare floats.
+  const magnitudeDigits = Math.max(1, ...points.map(p => (p.cumulative.replace('-', '').split('.')[0] ?? '').length),
+    ...trades.map(t => (t.reference_return_pct!.replace('-', '').split('.')[0] ?? '').length))
+  const roundingUnit = scale + magnitudeDigits > 28 ? 10n ** BigInt(scale + magnitudeDigits - 28) : 0n
+  const expected = total.units * 10n ** BigInt(scale - total.scale)
+  const difference = sum > expected ? sum - expected : expected - sum
+  if (difference > roundingUnit * BigInt(trades.length) || points.some(p => !Number.isFinite(p.value))) {
     return { points: [], message: '逐笔累计与服务端摘要不一致，暂不绘制曲线。' }
   }
   return { points, message: null }
