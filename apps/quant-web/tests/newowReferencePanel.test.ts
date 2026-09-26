@@ -213,7 +213,7 @@ test('simple sum keeps percentage points separate and never appends a percent un
   assert.equal(model.summary.sumText.includes('%'), false)
 })
 
-test('reference panel keeps the server summary while native controls filter, expand and emit exact locate facts', async () => {
+test('reference panel keeps the server summary while native controls filter passive reference records', async () => {
   const Panel = await loadComponent()
   const located: Array<{ reference_trade_id: string; entry_signal_id: string; entry_bar_end: string }> = []
   const Host = defineComponent({ setup: () => () => h(Panel, {
@@ -237,24 +237,18 @@ test('reference panel keeps the server summary while native controls filter, exp
   assert.match(fullText, /双策略融合参考/)
   assert.match(fullText, /同根先清仓，再建仓/)
   assert.ok(findNode(root, node => node.type === 'button' && nodeText(node) === '查看三组结果'))
-  for (const label of ['已清仓', '未清仓', '换月中断', '期初已有', '定位建仓', '查看详情']) assert.match(fullText, new RegExp(label))
+  for (const label of ['清仓', '未清仓', '换月中断', '期初已有', '参考操盘提醒', '参考买入', '参考卖出']) assert.match(fullText, new RegExp(label))
   assert.match(readFileSync(componentUrl, 'utf8'), /<option value="all">全部<\/option>/)
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
-  const expand = findNode(root, (node) => node.props['aria-label'] === '展开参考记录 open')!
-  assert.equal(expand.type, 'button')
-  assert.equal(expand.props['aria-expanded'], false)
-  ;(expand.props.onClick as () => void)()
-  await nextTick()
-  assert.match(nodeText(root), /D4 · 2026-08-14T07:00:00Z · 关联 Hint（不推断与主动作的同 Bar 顺序）/)
-  assert.match(nodeText(root), /不能按邻近日期或当前上下文推断/)
-
-  const locate = findNode(root, (node) => node.props['aria-label'] === '定位参考记录 open 的建仓信号')!
-  assert.equal(locate.type, 'button')
-  assert.equal(nodeText(locate), '定位建仓')
-  ;(locate.props.onClick as () => void)()
-  assert.deepEqual(located.map(({ reference_trade_id, entry_signal_id, entry_bar_end }) => ({ reference_trade_id, entry_signal_id, entry_bar_end })), [
-    { reference_trade_id: 'open', entry_signal_id: 'entry-open', entry_bar_end: '2026-08-14T07:00:00Z' },
-  ])
+  const cards = findNodes(root, node => node.type === 'article' && !!node.props['data-reference-category'])
+  assert.equal(cards.length, 4)
+  for (const card of cards) {
+    assert.equal(findNode(card, node => node.type === 'button' || node.type === 'details'), undefined)
+    assert.equal(card.props.onClick, undefined)
+    assert.equal(card.props.tabindex, undefined)
+  }
+  assert.doesNotMatch(fullText, /定位建仓|定位清仓|查看详情|查看曲线/)
+  assert.deepEqual(located, [])
 
   const filter = findNode(root, (node) => node.props['aria-label'] === '筛选参考历史')!
   ;(filter.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'interrupted' } })
@@ -277,10 +271,10 @@ test('reference records present entry, exit, valuation and interruption as separ
   app.mount(root)
   await nextTick()
   const fullText = nodeText(root)
-  assert.match(fullText, /参考建仓/)
-  assert.match(fullText, /参考清仓/)
+  assert.match(fullText, /参考买入/)
+  assert.match(fullText, /参考卖出/)
   assert.match(fullText, /参考估值/)
-  assert.match(fullText, /中断说明/)
+  assert.match(fullText, /中断浮动不计入已完成收益/)
   app.unmount()
 })
 

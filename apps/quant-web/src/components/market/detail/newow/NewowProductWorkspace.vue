@@ -537,7 +537,7 @@ onBeforeUnmount(() => {
   </section>
 </template>
 <style scoped>
-.newow-product-workspace { display:grid; min-width:0; gap:3px; }
+.newow-product-workspace { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; gap:3px; }
 .newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:#667085; }
 .newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:#fff; color:#667085; min-height:32px; padding:0 12px; cursor:pointer; }
 .newow-product-workspace__comparison-controls button[aria-pressed="true"] { color:#c2410c; border-color:#ff6b2c; background:#fff4ee; }
@@ -551,6 +551,7 @@ onBeforeUnmount(() => {
 .newow-status { font-size:16px; font-weight:650; }
 .newow-summary__identity { color:#667085; font-size:12px; }
 .newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:4px 8px; line-height:1.5; border-radius:8px; background:#f8fafc; }
+.newow-product-workspace__research { min-width:0; }
 .newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:#fff; color:inherit; padding:4px 12px; }
 .newow-status { display:flex; align-items:center; gap:8px; }
 .newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:#f3f4f6; }
