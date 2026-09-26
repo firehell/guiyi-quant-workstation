@@ -1,11 +1,15 @@
-## 2026-09-26 Newow v1.10.37 已发布
+## 2026-09-26 Newow v1.10.37 已发布并切换本机 Runtime
 
 已整理 v1.10.36 后全部已提交 Newow UI、融合参考、CDV2 与独立理论值改动，版本事实源统一 1.10.37。
 定向 572 passed（另有两项 v1.10.36 既有工程断言失败），前端 726 passed / 1 skipped、build通过；
 Newow spec 校验、新增核心模块 Ruff 和独立Review通过。完整披露见 docs/tasks/newow-release-v1.10.37-20260926.md。
 正式身份 `v1.10.37@07cdb4b7b72c1fa003d25bf2b47b3c3de127c8a4`，PR #402 已合并，annotated tag 和 GitHub Release 已读回。
 Release：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.37
-本次只发布；正式 Runtime 仍为 v1.10.36，未切换，未声明新版本自然 Runtime 验收。
+正式 Runtime 已切换到独立 detached/clean 根 `runtime-v1.10.37`，API/Web/Live/Alert root 与 commit 一致；
+四组安装完成、非交易时段预检 passed、8000/5173 HTTP200、只读健康 ok。周审计已装载但尚无新根结果，
+reference worker 保持关闭，旧根保留可回退；不声明新版本自然 RUNTIME_READY。
+正式 JM 主图/MACD/普通累计183.66已回读；理论API74笔累计371.60正确，但本次浏览器点击理论值仍保留普通曲线，
+该交互未通过验收，需后续修正。旧根盘后missed、23条周审计finding与告警历史未因切换认定解决。
 
 ## 2026-09-26 牛哇日周 v1.10.36 已发布并切换本机 Runtime
 
