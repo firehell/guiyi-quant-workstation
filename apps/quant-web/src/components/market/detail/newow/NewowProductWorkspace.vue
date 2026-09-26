@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
+import { newowUiStateLabel } from '@/utils/newowUiState'
+import { useNewowComparison } from '@/composables/useNewowComparison'
 import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowProductAction, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
@@ -10,13 +13,14 @@ import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import NewowProductChartStage from './NewowProductChartStage.vue'
-import { NEWOW_ZHAOYAO_MIRROR_STYLE } from './newowZhaoyaoMirrorPrimitive'
+import { NEWOW_ZHAOYAO_MIRROR_LEGEND } from './newowZhaoyaoMirrorPrimitive'
 import { NEWOW_UP_DOWN_ENERGY_STYLE } from './newowUpDownEnergyPrimitive'
 import { NEWOW_MAIN_FORCE_STYLE } from './newowMainForceControlPrimitive'
 import { NEWOW_TREND_REVERSAL_STYLE } from './newowTrendReversalPrimitive'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
 import NewowReferencePanel from './NewowReferencePanel.vue'
 import ReferenceTradePanel from '@/components/market/detail/ReferenceTradePanel.vue'
+import NewowFormulaHelp from './NewowFormulaHelp.vue'
 import NewowDetailDialog from './NewowDetailDialog.vue'
 import NewowCupFactsPanel from './NewowCupFactsPanel.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
@@ -26,10 +30,12 @@ const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const selectedStrategy = computed(() => props.identity.strategy as NewowProductStrategy)
 const loader = useNewowProduct({ identity })
+const comparisonEnabled = ref(false)
+const comparisonSelection = shallowRef<{ strategy: 'trend' | 'oscillation'; signalId: string } | null>(null)
 const selectedSignalId = ref<string | null>(null)
 const selectedHintId = ref<string | null>(null)
-const selectedAuxiliary = ref<NewowAuxiliaryComponent>('macd')
-const dialogKind = ref<'explanation' | 'action' | 'hint' | 'indicator' | 'comparator' | 'cup_handle' | null>(null)
+const selectedAuxiliary = ref<NewowAuxiliaryComponent>(readNewowUiPreferences(identityKey.value).auxiliary ?? 'macd')
+const dialogKind = ref<'explanation' | 'action' | 'hint' | 'indicator' | 'comparator' | 'cup_handle' | 'formula' | null>(null)
 const locateMessage = ref<string | null>(null)
 const locateRequest = ref(0)
 const chartFocusRequestId = ref(0)
@@ -44,9 +50,17 @@ const chartResponse = computed(() => (
     ? loader.sections.chart.data.value as NewowProductSectionResponse<'chart'>
     : null
 ))
+const comparison = useNewowComparison(chartResponse, comparisonEnabled)
 const chartModel = computed(() => chartResponse.value === null ? null : buildNewowProductChartModel(chartResponse.value))
 const selectedHint = computed(() => chartModel.value?.hints.find(hint => hint.id === selectedHintId.value) ?? null)
-const selectedAction = computed(() => chartModel.value?.actions.find((action) => action.id === selectedSignalId.value) ?? null)
+const selectedAction = computed(() => {
+  const selection = comparisonSelection.value
+  if (selection) {
+    const response = selection.strategy === chartResponse.value?.meta.identity.strategy ? chartResponse.value : comparison.response.value
+    return response ? buildNewowProductChartModel(response).actions.find(action => action.id === selection.signalId) ?? null : null
+  }
+  return chartModel.value?.actions.find(action => action.id === selectedSignalId.value) ?? null
+})
 const selectedActionDescription = computed(() => selectedAction.value === null ? null : describeNewowProductAction(selectedAction.value))
 const summaryActionLabel = (action: NewowProductAction) => newowInitialClearLabel(action.trade_eligibility) ?? newowDisplayLabel(action.kind)
 const referenceResponse = computed(() => (
@@ -109,14 +123,7 @@ const summary = computed(() => projectNewowDetail(chartResponse.value, loader.se
 const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(currentAuxiliaryResponse.value?.value, chartResponse.value?.value?.bars.at(-1)))
 const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }, { id: 'trend_reversal', label: '趋势转折' }] as const
-const zhaoyaoMirrorLegend = [
-  { label: '进场', color: NEWOW_ZHAOYAO_MIRROR_STYLE.entry },
-  { label: '洗盘', color: NEWOW_ZHAOYAO_MIRROR_STYLE.wash },
-  { label: '拉高', color: NEWOW_ZHAOYAO_MIRROR_STYLE.distribution },
-  { label: '出货', color: NEWOW_ZHAOYAO_MIRROR_STYLE.markup },
-  { label: '退场', color: NEWOW_ZHAOYAO_MIRROR_STYLE.exit },
-  { label: '诱多', color: NEWOW_ZHAOYAO_MIRROR_STYLE.inducement },
-] as const
+const zhaoyaoMirrorLegend = NEWOW_ZHAOYAO_MIRROR_LEGEND
 const upDownEnergyLegend = [
   { label: '上涨', color: NEWOW_UP_DOWN_ENERGY_STYLE.up, marker: 'square' },
   { label: '下跌', color: NEWOW_UP_DOWN_ENERGY_STYLE.down, marker: 'square' },
@@ -161,7 +168,7 @@ const niuwaIndicatorTitles: Partial<Record<NewowAuxiliaryComponent, string>> = {
   zhaoyao_mirror: '主力动态', up_down_energy: '涨跌动能', main_force_control: '主力控盘', trend_reversal: '趋势转折',
 }
 const isNiuwaIndicatorDialog = computed(() => dialogKind.value === 'indicator' && selectedAuxiliary.value in niuwaIndicatorTitles)
-const dialogTitle = computed(() => isNiuwaIndicatorDialog.value ? `${niuwaIndicatorTitles[selectedAuxiliary.value]} · 指标解读` : ({ explanation: '策略解释', action: '历史主动作事实', hint: '历史过程提示', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明' }[dialogKind.value ?? 'explanation']))
+const dialogTitle = computed(() => isNiuwaIndicatorDialog.value ? `${niuwaIndicatorTitles[selectedAuxiliary.value]} · 指标解读` : ({ explanation: '策略解释', action: '历史主动作事实', hint: '历史过程提示', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明', formula: '公式速查' }[dialogKind.value ?? 'explanation']))
 const summaryContract = computed(() => chartResponse.value?.value?.bars.at(-1)?.physical_contract ?? '物理合约不可用')
 const summaryAsOf = computed(() => shortNewowTime(chartResponse.value?.meta.as_of))
 const openReferenceText = computed(() => summary.value.openReference ? '未清仓页面参考交易' : loader.sections.reference.state.value === 'ready' ? '当前无未清仓页面参考交易' : loader.sections.reference.state.value === 'not_requested' ? '参考交易尚未读取' : '参考交易当前不可用')
@@ -185,7 +192,15 @@ function closeDialog() {
   if (wasCup) void loadAuxiliaryForChart()
   retainedPane.value = null
 }
+function selectComparisonSignal(strategy: 'trend' | 'oscillation', signalId: string) {
+  const response = strategy === chartResponse.value?.meta.identity.strategy ? chartResponse.value : comparison.response.value
+  if (!response?.value?.actions.some(action => action.signal_id === signalId)) return
+  comparisonSelection.value = { strategy, signalId }
+  void openDialog('action')
+}
+watch([comparison.response, chartResponse, comparisonEnabled], () => { comparisonSelection.value = null })
 function selectSignal(signalId: string) {
+  comparisonSelection.value = null
   if (!chartModel.value?.actions.some(action => action.id === signalId)) return
   selectedSignalId.value = signalId
   void openDialog('action')
@@ -272,12 +287,15 @@ async function returnToReferenceTrade(): Promise<void> {
 function refreshCurrent(): void { loader.refreshCurrent(); emit('refresh-current') }
 
 
-watch(identityKey, async () => {
-  ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; dialogKind.value = null; locateMessage.value = null
+watch(selectedAuxiliary, value => rememberNewowUiPreferences(identityKey.value, { auxiliary: value }))
+watch(identityKey, async (_key, previous) => {
+  if (previous) rememberNewowUiPreferences(previous, { auxiliary: selectedAuxiliary.value, scrollTop: scrollOwner()?.scrollTop ?? 0 })
+  restoredScroll = false
+  comparisonSelection.value = null; ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = readNewowUiPreferences(identityKey.value).auxiliary ?? 'macd'; dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(loader.historicalSnapshot, async () => {
   emit('snapshot-mode', loader.historicalSnapshot.value?.as_of ?? null)
-  ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
+  comparisonSelection.value = null; ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(loader.dailySnapshot, snapshot => {
@@ -311,14 +329,34 @@ watch([chartModel, () => props.identity.focusBarEnd], ([model, focusBarEnd]) => 
   selectedSignalId.value = model.actions.find(action => action.barEnd === focusBarEnd)?.id ?? null
 }, { immediate: true })
 defineExpose({ openHistory })
-onBeforeUnmount(() => loader.dispose())
+function scrollOwner(): HTMLElement | null {
+  let element = chartRegion.value?.parentElement ?? null
+  while (element) {
+    if (/(auto|scroll)/.test(getComputedStyle(element).overflowY)) return element
+    element = element.parentElement
+  }
+  return document.scrollingElement as HTMLElement | null
+}
+let restoredScroll = false
+watch(chartResponse, async value => {
+  if (!value?.value || restoredScroll) return
+  restoredScroll = true
+  const key = identityKey.value
+  const top = readNewowUiPreferences(key).scrollTop
+  await nextTick()
+  if (key === identityKey.value && top !== undefined) scrollOwner()?.scrollTo({ top })
+}, { flush: 'post' })
+onBeforeUnmount(() => {
+  rememberNewowUiPreferences(identityKey.value, { auxiliary: selectedAuxiliary.value, scrollTop: scrollOwner()?.scrollTop ?? 0 })
+  comparison.dispose(); loader.dispose()
+})
 </script>
 
 <template>
   <section class="newow-product-workspace" data-detail-workspace="newow" :data-strategy="identity.strategy" :data-frequency="identity.frequency" :data-chart-state="loader.sections.chart.state.value" :data-auxiliary-state="loader.sections.auxiliary.state.value">
     <section class="newow-summary" aria-label="策略概览">
       <div class="newow-summary__main">
-        <strong>策略概览</strong>
+        <strong>策略概览 <small class="newow-summary__scope">页面参考</small></strong>
         <span class="newow-status" :data-state="summary.status.state"><span>{{ ({ BUILD: '▲', HOLD: '✓', CLEAR: '▼', FLAT: '×', UNAVAILABLE: '?' })[summary.status.state] }}</span>{{ summary.status.label }}</span>
         <span class="newow-summary__identity">{{ summaryContract }} · 截至 {{ summaryAsOf }}</span>
         <span class="newow-price newow-price--target" :title="summary.target?.bar_end">目标参考 {{ formatMarketDecimal(summary.target?.display_value) }}<small v-if="summary.target"> · {{ shortNewowTime(summary.target.bar_end) }}</small><small v-else> · {{ !sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足' }}</small></span>
@@ -332,15 +370,18 @@ onBeforeUnmount(() => loader.dispose())
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
       </div>
     </section>
-    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新日线" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
-    <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
+
+
+    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新日线" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
+    <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :comparison-response="comparisonEnabled ? comparison.response.value : null" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
+    <template #main-controls><div class="newow-product-workspace__comparison-controls"><button type="button" :disabled="selectedStrategy === 'main_rise'" :title="selectedStrategy === 'main_rise' ? '双轨对照由趋势与震荡组成，请切换到其中一个策略' : '读取相同时间与物理合约的另一策略，不合并收益'" :aria-pressed="comparisonEnabled && selectedStrategy !== 'main_rise'" @click="comparisonEnabled = !comparisonEnabled">双策略对照</button><span v-if="comparisonEnabled && selectedStrategy !== 'main_rise'" role="status">{{ newowUiStateLabel(comparison.state.value) }} · 趋势上轨 / 震荡下轨 · 参考统计仍属于 {{ newowDisplayLabel(selectedStrategy) }}</span><span v-if="comparison.error.value" role="status">{{ comparison.error.value }} <button @click="comparison.reload">重试对照</button></span></div></template>
     <template #auxiliary-controls>
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">
       <div class="newow-product-workspace__auxiliary-controls">
         <div class="newow-product-workspace__auxiliary-tabs">
           <button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" @click="toggleAuxiliary(option.id)">{{ option.label }}</button>
           <span v-if="selectedAuxiliary === 'macd'" class="newow-macd-legend"><span>DIF</span> / <span>DEA</span></span>
-          <button v-if="identity.strategy === 'trend' && identity.frequency === '1d'" @click="openDialog('cup_handle')">杯柄说明</button>
+          <button v-if="identity.strategy === 'trend' && identity.frequency === '1d'" @click="openDialog('cup_handle')">杯柄说明</button><button @click="openDialog('formula')">公式速查</button>
         </div>
         <button class="newow-product-workspace__indicator-help" type="button" @click="openDialog('indicator')">指标解读</button>
       </div>
@@ -361,7 +402,7 @@ onBeforeUnmount(() => loader.dispose())
         <div><span>最新偏离 {{ trendReversalLatest ?? '—' }}</span><span class="newow-trend-reversal-legend__keys"><span v-for="item in trendReversalLegend" :key="item.label" class="newow-mirror-legend__item"><i aria-hidden="true" :class="{ 'newow-trend-reversal-legend__bias': item.label === '偏离' }" :style="item.label === '偏离' ? {} : { backgroundColor: item.color }" />{{ item.label }}</span></span></div>
         <p v-if="trendReversalWarmup !== null" role="status">当前合约计算段仅 {{ trendReversalWarmup }} 根 Bar，未满 120 根；图形为预热参考。</p>
       </div>
-      <p v-if="currentAuxiliaryError" role="status">{{ currentAuxiliaryError }} · 辅助图层不可用 <button @click="loadAuxiliaryForChart()">重试指标</button></p>
+      <p v-if="currentAuxiliaryError" role="status">{{ newowErrorDisplay(currentAuxiliaryError) }} · 辅助图层不可用 <button @click="loadAuxiliaryForChart()">重试指标</button></p>
     </section>
     </template>
     </NewowProductChartStage><button v-if="locatedTradeId !== null" type="button" class="newow-product-workspace__return" @click="returnToReferenceTrade">返回原记录</button></div>
@@ -378,19 +419,22 @@ onBeforeUnmount(() => loader.dispose())
         <span v-if="loader.dailyLoading.value" role="status">正在确认最近完整{{ identity.frequency === '1w' ? '周线' : '日线' }}…</span>
         <span v-if="loader.dailyError.value" role="status">{{ newowErrorDisplay(loader.dailyError.value) }}</span>
         <button :disabled="loader.historicalLoading.value" @click="loader.switchToHistorical">查看最近可用历史快照</button>
-        <button @click="refreshCurrent">刷新当前</button>
+        <button :disabled="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" @click="refreshCurrent">{{ loader.dailyLoading.value || loader.sections.chart.state.value === 'loading' ? '读取中…' : '刷新当前' }}</button>
         <span v-if="loader.historicalError.value" role="status">{{ newowErrorDisplay(loader.historicalError.value) }}</span>
       </template>
     </div>
+    <div class="newow-product-workspace__read-state" aria-live="polite"><span>主图 · {{ loader.dailyLoading.value ? '正在确认完整周期' : newowUiStateLabel(loader.sections.chart.state.value) }}</span><span>副图 · {{ newowUiStateLabel(currentAuxiliaryLifecycle) }}</span><span>参考 · {{ newowUiStateLabel(loader.sections.reference.state.value) }}</span></div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
+      <button @click="openDialog('formula')">公式速查</button>
       <button @click="openDialog('comparator')">页面比较说明</button>
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
       <NewowReferencePanel :key="identityKey" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
       <ReferenceTradePanel :strategy="`newow-${selectedStrategy.replace('_', '-')}`" :product="identity.symbol.toLowerCase()" :frequency="identity.frequency" :through="chartResponse?.value?.bars.at(-1)?.trading_day" />
     </section>
-    <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle'" :variant="isNiuwaIndicatorDialog ? 'niuwa-indicator' : undefined" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
-      <p v-if="!isNiuwaIndicatorDialog">{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : dialogKind === 'hint' ? selectedHint?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
-      <template v-if="dialogKind === 'hint'">
+    <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle' || dialogKind === 'formula'" :variant="isNiuwaIndicatorDialog ? 'niuwa-indicator' : undefined" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
+      <p v-if="!isNiuwaIndicatorDialog">{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(comparisonSelection?.strategy ?? identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : dialogKind === 'hint' ? selectedHint?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
+      <NewowFormulaHelp v-if="dialogKind === 'formula'" :topic="selectedStrategy" :formula-versions="chartResponse?.meta.identity.formula_versions" :as-of="chartResponse?.meta.as_of" />
+      <template v-else-if="dialogKind === 'hint'">
         <p v-if="selectedHint">{{ newowDisplayLabel(selectedHint.kind) }} · {{ formatMarketDecimal(selectedHint.anchorPrice) }} · {{ shortNewowTime(selectedHint.barEnd) }}</p>
         <p>仅为所选历史过程提示，不代表主动作或账户成交。</p>
         <details v-if="selectedHint"><summary>来源与原始事实</summary><p>{{ selectedHint.id }} · {{ selectedHint.barEnd }}</p><p>known_at {{ selectedHint.confirmedAt }} · sequence {{ selectedHint.sequence ?? '—' }}</p><p>owner {{ selectedHint.physicalContract }} · {{ selectedHint.segmentId }}</p><p>来源 {{ selectedHint.sourceIdentity ?? '—' }} · 响应公式 {{ selectedHint.formulaVersions.join(' / ') }}</p><p>anchor_price {{ selectedHint.anchorPrice ?? '—' }}</p></details>
@@ -398,17 +442,17 @@ onBeforeUnmount(() => loader.dispose())
       <template v-else-if="dialogKind === 'action'">
         <p v-if="selectedAction">历史主动作 {{ selectedActionDescription?.label }} · {{ formatMarketDecimal(selectedAction.referencePrice) }} · {{ shortNewowTime(selectedAction.barEnd) }}</p>
         <p>{{ selectedActionDescription?.explanation ?? '仅为所选历史主动作事实，不代表账户成交。' }}</p>
-        <details><summary>来源与关联 Hint</summary><p>{{ selectedSignalId }} · {{ selectedAction?.barEnd }}</p><p v-for="hint in chartResponse?.value?.hints.filter(hint => chartResponse?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
+        <details><summary>来源与关联 Hint</summary><p>{{ comparisonSelection?.signalId ?? selectedSignalId }} · {{ selectedAction?.barEnd }}</p><p v-for="hint in (comparisonSelection && comparisonSelection.strategy !== selectedStrategy ? comparison.response.value : chartResponse)?.value?.hints.filter(hint => (comparisonSelection && comparisonSelection.strategy !== selectedStrategy ? comparison.response.value : chartResponse)?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
       </template>
-      <template v-else-if="dialogKind === 'indicator'"><h3 v-if="!isNiuwaIndicatorDialog">{{ auxiliaryDisclosure.title }}</h3>
+      <template v-else-if="dialogKind === 'indicator'"><details class="newow-help-formulas"><summary>公式、阈值与边界速查</summary><NewowFormulaHelp :topic="selectedAuxiliary === 'cup_handle' ? selectedStrategy : selectedAuxiliary" :formula-versions="currentAuxiliaryResponse?.value ? [currentAuxiliaryResponse.value.formula_version] : []" :as-of="currentAuxiliaryResponse?.meta.as_of" /></details><h3 v-if="!isNiuwaIndicatorDialog">{{ auxiliaryDisclosure.title }}</h3>
         <template v-if="selectedAuxiliary === 'zhaoyao_mirror'">
           <div class="newow-niuwa-explanation newow-niuwa-explanation--mirror">
-            <div class="newow-niuwa-explanation__card newow-niuwa-explanation__card--mirror"><strong>看图口诀：</strong><p><b class="newow-niuwa-explanation__red">零轴之上</b>看<b class="newow-niuwa-explanation__red">红</b><b class="newow-niuwa-explanation__green">绿</b>（进/洗），</p><p><b class="newow-niuwa-explanation__blue">零轴之下</b>看<b class="newow-niuwa-explanation__blue">蓝</b><b class="newow-niuwa-explanation__yellow">黄</b>（拉/出），</p><p><b class="newow-niuwa-explanation__blue">虚线</b>出现要警惕（退/诱）</p></div>
+            <div class="newow-niuwa-explanation__card newow-niuwa-explanation__card--mirror"><strong>看图口诀：</strong><p><b class="newow-niuwa-explanation__red">零轴之上</b>看<b class="newow-niuwa-explanation__red">红</b><b class="newow-niuwa-explanation__green">绿</b>（进/洗），</p><p><b class="newow-niuwa-explanation__blue">零轴之下</b>看<b class="newow-niuwa-explanation__yellow">黄</b><b class="newow-niuwa-explanation__blue">蓝</b>（拉/出），</p><p><b class="newow-niuwa-explanation__blue">虚线</b>出现要警惕（退/诱）</p></div>
             <div class="newow-niuwa-explanation__rows">
               <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#ff403a"></i><p><strong>进场（红）</strong>：零轴上方红色宽柱，主力吸筹开始</p></div>
               <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#30b458"></i><p><strong>洗盘（绿）</strong>：零轴上方绿色窄柱，清洗浮筹假摔</p></div>
-              <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#0878f9"></i><p><strong>拉高（蓝）</strong>：零轴下方蓝色宽柱，快速拉升脱离成本</p></div>
-              <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#ffcc00"></i><p><strong>出货（黄）</strong>：零轴下方黄色窄柱，高位派发筹码松动</p></div>
+              <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#ffcc00"></i><p><strong>拉高（黄）</strong>：零轴下方黄色宽柱，快速拉升脱离成本</p></div>
+              <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#007aff"></i><p><strong>出货（蓝）</strong>：零轴下方蓝色窄柱，高位派发筹码松动</p></div>
               <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#0860b7"></i><p><strong>退场（深蓝虚线）</strong>：控盘走弱，主力离场</p></div>
               <div class="newow-niuwa-explanation__row"><i class="newow-niuwa-explanation__dot" style="--dot:#ff8800"></i><p><strong>诱多（橙色虚线）</strong>：假突破吸引跟风后砸盘</p></div>
             </div>
@@ -420,30 +464,30 @@ onBeforeUnmount(() => loader.dispose())
             <div class="newow-niuwa-explanation__card newow-niuwa-explanation__card--energy">
               <p><b class="newow-niuwa-explanation__red">上涨动能（红）</b>　压力系数　<b class="newow-niuwa-explanation__green">下跌动能（绿）</b>　支撑系数</p>
               <p class="newow-niuwa-explanation__blue">上楼梯走平 → 遇压力卖出｜下楼梯走平 → 遇支撑买入</p>
-              <small>动能高度决定次日涨跌幅度｜≥90% 强压力位减仓</small>
+              <small>动能高度表示当前区间位置，不预测下一根的涨跌幅度</small>
             </div>
             <div class="newow-niuwa-explanation__energy-rows">
-              <div><strong>红色曲线（压力系数）</strong><p>股价上涨中的压力，越接近 100 压力越大，见波段高点。<br>95 横线 = 压力警戒线。曲线越宽压力越强。</p></div>
-              <div><strong>绿色曲线（支撑系数）</strong><p>股价下跌中的支撑，越接近 0 支撑越大，见波段低点。<br>5 横线 = 支撑警戒线。曲线越宽支撑越强。</p></div>
+              <div><strong>红色曲线（压力系数）</strong><p>价格上涨中的区间位置参考，越接近 100 压力越大，见波段高点。<br>95 横线 = 压力警戒线。曲线越宽压力越强。</p></div>
+              <div><strong>绿色曲线（支撑系数）</strong><p>价格下跌中的区间位置参考，越接近 0 支撑越大，见波段低点。<br>5 横线 = 支撑警戒线。曲线越宽支撑越强。</p></div>
             </div>
             <div class="newow-niuwa-explanation__signal-rows">
-              <div><i class="newow-niuwa-explanation__dot" style="--dot:#ff403a"></i><strong class="newow-niuwa-explanation__red">波段进场（红三角▲）</strong><p>上升趋势中个股调整低点的买入时机 = 波段底部<br>意味着波段走完将重新上升形成新波段行情。</p></div>
-              <div><i class="newow-niuwa-explanation__dot" style="--dot:#ff9500"></i><strong class="newow-niuwa-explanation__orange">反弹进场（橙三角▲）</strong><p>下跌趋势中的反弹买入时机，见好就收<br>一旦出现此信号可进场操作但股价反弹就出局。</p></div>
-              <div><i class="newow-niuwa-explanation__dot" style="--dot:#d935ee"></i><strong class="newow-niuwa-explanation__purple">超跌进场（紫三角▲）</strong><p>疯狂下跌后的超跌警示信号 = 大底区域<br>安全且买入获利率极大，后续反弹会更猛烈。</p></div>
+              <div><i class="newow-niuwa-explanation__dot" style="--dot:#ff403a"></i><strong class="newow-niuwa-explanation__red">波段进场（红三角▲）</strong><p>上升区间中的调整低点提示<br>是否继续上行需要后续事实验证。</p></div>
+              <div><i class="newow-niuwa-explanation__dot" style="--dot:#ff9500"></i><strong class="newow-niuwa-explanation__orange">反弹进场（橙三角▲）</strong><p>下跌趋势中的反弹买入时机，见好就收<br>该标记仅表达公式满足条件，不触发账户操作。</p></div>
+              <div><i class="newow-niuwa-explanation__dot" style="--dot:#d935ee"></i><strong class="newow-niuwa-explanation__purple">超跌进场（紫三角▲）</strong><p>疯狂下跌后的超跌警示信号 = 大底区域<br>不代表安全、获利概率或反弹强度。</p></div>
             </div>
-            <div class="newow-niuwa-explanation__practical"><i class="newow-niuwa-explanation__dot" style="--dot:#0878f9"></i><strong class="newow-niuwa-explanation__blue">实战口诀</strong><p>红带变绿 = 上楼梯走平或变绿 → 卖出<br>绿带变红 = 下楼梯走平或变红 → 买入<br>90%以上 = 强压减仓｜蓝黄变色 = 反弹开始买</p></div>
+            <div class="newow-niuwa-explanation__practical"><i class="newow-niuwa-explanation__dot" style="--dot:#0878f9"></i><strong class="newow-niuwa-explanation__blue">实战口诀</strong><p>红带变绿 = 区间位置改变，查看主策略状态<br>绿带变红 = 区间位置改变，查看主策略状态<br>阈值满足仅产生过程提示，不替代主策略动作</p></div>
             <p class="newow-niuwa-explanation__note">以上为牛哇页面解读口径，不代表可执行交易或收益预测。</p>
           </div>
         </template>
         <template v-else-if="selectedAuxiliary === 'main_force_control'">
           <div class="newow-niuwa-explanation newow-niuwa-explanation--control">
             <div class="newow-niuwa-explanation__cycle"><small>一个完整的控盘周期</small><p><b class="newow-niuwa-explanation__purple">▲开始</b><span>→</span><b class="newow-niuwa-explanation__red">■庄控</b><span>→</span><b class="newow-niuwa-explanation__magenta">■高控</b><span>→</span><b class="newow-niuwa-explanation__lime">■出货</b><span>→</span><b class="newow-niuwa-explanation__gold">■无庄</b></p></div>
-            <div class="newow-niuwa-explanation__verse"><strong>📌 看图口诀</strong><p><b class="newow-niuwa-explanation__purple">紫三角▲出现</b> → 控盘启动，<em>可以关注</em><br><b class="newow-niuwa-explanation__red">红柱连续上升</b> → 有庄建仓，<em>持股待涨</em><br><b class="newow-niuwa-explanation__magenta">洋红柱出现</b> → 高度控盘，<em>强势持有</em><br><b class="newow-niuwa-explanation__lime">绿柱开始出现</b> → 主力出货，<em class="newow-niuwa-explanation__red">考虑减仓</em><br><b class="newow-niuwa-explanation__gold">金黄柱子</b> → 无庄控盘，<em class="newow-niuwa-explanation__muted">观望为主</em></p></div>
-            <div class="newow-niuwa-explanation__core"><strong>⚡ 核心要点</strong><p>• 紫三角▲是最关键的信号——代表主力从“不关注”变成“开始控盘”<br>• 一般<span class="newow-niuwa-explanation__lime">绿色下跌浪</span>来临前，主力都会先拉高再出货<br>• 看到<span class="newow-niuwa-explanation__lime">绿柱（出货）</span>就可以减仓了，不要等金黄无庄才反应</p></div>
+            <div class="newow-niuwa-explanation__verse"><strong>📌 看图口诀</strong><p><b class="newow-niuwa-explanation__purple">紫三角▲出现</b> → 控盘启动，<em>可以关注</em><br><b class="newow-niuwa-explanation__red">红柱连续上升</b> → 有庄建仓，<em>趋势持有参考</em><br><b class="newow-niuwa-explanation__magenta">洋红柱出现</b> → 高度控盘，<em>强势持有</em><br><b class="newow-niuwa-explanation__lime">绿柱开始出现</b> → 主力出货，<em class="newow-niuwa-explanation__red">考虑减仓</em><br><b class="newow-niuwa-explanation__gold">金黄柱子</b> → 无庄控盘，<em class="newow-niuwa-explanation__muted">观望为主</em></p></div>
+            <div class="newow-niuwa-explanation__core"><strong>⚡ 核心要点</strong><p>• 紫三角▲是最关键的信号——代表主力从“不关注”变成“开始控盘”<br>• 一般<span class="newow-niuwa-explanation__lime">绿色下跌浪</span>来临前，主力都会先拉高再出货<br>• <span class="newow-niuwa-explanation__lime">绿柱（出货）</span>只表示公式状态变化，与正式减仓决策相互独立</p></div>
             <div class="newow-niuwa-explanation__control-rows">
               <div><i class="newow-niuwa-explanation__dot" style="--dot:#9933ff"></i><p><strong>▲开始控盘</strong> — 主力刚入场，关注信号</p></div>
               <div><i class="newow-niuwa-explanation__dot" style="--dot:#ff0000"></i><p><strong>■有庄控盘</strong> — 主力在加仓，趋势向上</p></div>
-              <div><i class="newow-niuwa-explanation__dot" style="--dot:#ff00ff"></i><p><strong>■高度控盘</strong> — 强势阶段，股价在均线上方</p></div>
+              <div><i class="newow-niuwa-explanation__dot" style="--dot:#ff00ff"></i><p><strong>■高度控盘</strong> — 强势阶段，价格在均线上方</p></div>
               <div><i class="newow-niuwa-explanation__dot" style="--dot:#00e638"></i><p><strong>■主力出货</strong> — 高位派发筹码，注意风险</p></div>
               <div><i class="newow-niuwa-explanation__dot" style="--dot:#ffcc66"></i><p><strong>■无庄控盘</strong> — 零轴下方，暂无主力关注</p></div>
               <div><i class="newow-niuwa-explanation__dot newow-niuwa-explanation__dot--stack"></i><p><strong>■叠加柱</strong> — 边拉高边出货，洋红+绿双色</p></div>
@@ -490,11 +534,19 @@ onBeforeUnmount(() => loader.dispose())
 </template>
 <style scoped>
 .newow-product-workspace { display:grid; min-width:0; gap:3px; }
-.newow-summary { display:grid; gap:8px; padding:8px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
-.newow-product-workspace__snapshot-controls { display:flex; align-items:center; gap:12px; color:#667085; font-size:12px; }
+.newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:#667085; }
+.newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:#fff; color:#667085; min-height:32px; padding:0 12px; cursor:pointer; }
+.newow-product-workspace__comparison-controls button[aria-pressed="true"] { color:#c2410c; border-color:#ff6b2c; background:#fff4ee; }
+.newow-product-workspace__read-state { display:flex; flex-wrap:wrap; gap:4px 16px; color:#667085; font-size:11px; min-height:20px; align-items:center; padding:0 8px; }
+.newow-product-workspace__unavailable-chart { min-height:clamp(580px,70vh,920px); box-sizing:border-box; }
+.newow-summary { display:grid; gap:8px; padding:8px 12px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
+.newow-product-workspace__snapshot-controls { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:#667085; font-size:12px; }
 .newow-summary__main,.newow-summary__facts { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; }
+.newow-summary__scope { font-size:10px; font-weight:400; color:#667085; margin-left:6px; }
+.newow-summary__main > strong { font-size:14px; }
+.newow-status { font-size:16px; font-weight:650; }
 .newow-summary__identity { color:#667085; font-size:12px; }
-.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:4px 8px; border-radius:8px; background:#f8fafc; }
+.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:4px 8px; line-height:1.5; border-radius:8px; background:#f8fafc; }
 .newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:#fff; color:inherit; padding:4px 12px; }
 .newow-status { display:flex; align-items:center; gap:8px; }
 .newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:#f3f4f6; }

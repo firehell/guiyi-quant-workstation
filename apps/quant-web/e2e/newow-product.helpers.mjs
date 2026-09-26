@@ -122,6 +122,13 @@ export async function installNewowProductFixtures(page, options = {}) {
     state.requests.push({ url, method: request.method(), startedAt })
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
 
+    // Persisted observation panel is a separate read-only product; this fixture has no streams.
+    if (url.pathname === '/api/v1/reference-trading/streams') {
+      if (url.searchParams.get('product') !== 'rb' || !NEWOW_STRATEGIES.some(strategy => `newow-${strategy.replace('_', '-')}` === url.searchParams.get('strategy'))
+        || !NEWOW_FREQUENCIES.includes(url.searchParams.get('frequency')) || !['forward_observation', 'historical_replay'].includes(url.searchParams.get('mode'))) return unexpected(route, state, `invalid reference stream identity ${url.href}`)
+      return route.fulfill({ json: { items: [] } })
+    }
+
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
       return route.fulfill({ json: options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
     }
@@ -584,6 +591,7 @@ function chartValue(url, strategy, frequency, options) {
       return { ...bar, low: build?.reference_price ?? bar.low, high: clear?.reference_price ?? bar.high }
     })
   }
+  if (options.dualMarket && strategy === 'trend') bars = chartValue(url, 'oscillation', frequency, { ...options, dualMarket: false }).bars
   const hintBar = bars.at(-2) ?? bars.at(-1)
   const hints = options.noAction || before || locateFrom !== null ? [] : [{ hint_id: id(strategy, frequency, 'hint-d4'), kind: 'D4', bar_end: hintBar.bar_end, known_at: hintBar.bar_end, anchor_price: '104.5000', physical_contract: CONTRACT, segment_id: SEGMENT, calculation_segment_id: SEGMENT, retrospective: false, quantity_effect: 'none', sequence: null }]
   return {

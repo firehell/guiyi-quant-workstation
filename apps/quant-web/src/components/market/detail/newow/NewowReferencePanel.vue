@@ -35,6 +35,7 @@ const emit = defineEmits<{
   locate: [trade: NewowReferenceTrade, endpoint: 'entry' | 'exit']
 }>()
 
+const compactList = ref(false)
 const filter = ref<'all' | NewowReferenceCategory | 'initial'>('all')
 const expanded = ref<readonly string[]>([])
 const performanceSince = ref('')
@@ -127,7 +128,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 </script>
 
 <template>
-  <section class="newow-reference" aria-labelledby="newow-reference-title">
+  <section class="newow-reference" :aria-busy="loadingPage" aria-labelledby="newow-reference-title">
     <header class="newow-reference__header">
       <div>
         <h3 id="newow-reference-title">参考交易</h3>
@@ -137,18 +138,18 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
           <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
-          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :aria-pressed="acceptedPreset === 'complete'" :data-pending="pendingPreset?.kind === 'complete'" @click="useCompleteWindow">{{ pendingPreset?.kind === 'complete' ? '读取中…' : '完整窗口' }}</button>
+          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :title="loadingPage ? '正在读取统计窗口' : !model?.completeWindowAction ? '当前统计窗口已完整，或尚无经确认的完整截止' : '使用服务端确认的完整截止'" :aria-pressed="acceptedPreset === 'complete'" :data-pending="pendingPreset?.kind === 'complete'" @click="useCompleteWindow">{{ pendingPreset?.kind === 'complete' ? '读取中…' : '完整窗口' }}</button>
         </div>
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
         <label>统计终点 <input :value="performanceThrough" type="date" @input="updateThrough" /></label>
-        <button type="submit" :disabled="loadingPage || invalidWindow">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
+        <button type="submit" :disabled="loadingPage || invalidWindow || !performanceSince || !performanceThrough">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
       </form>
     </header>
     <p v-if="invalidWindow" class="newow-reference__state" role="alert">统计起点不能晚于统计终点。</p>
 
     <p v-if="presentation.message" class="newow-reference__state" role="status">
       {{ presentation.message }}
-      <span v-if="presentation.staleAt">stale 读取时间 {{ presentation.staleAt }}</span>
+      <span v-if="presentation.staleAt">上次已验证读取时间 {{ presentation.staleAt }}</span>
     </p>
 
     <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
@@ -191,11 +192,12 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
             <option value="initial">期初已有</option>
           </select>
         </label>
-        <span>筛选仅改变记录，不改变服务端统计或 Performance window。</span>
+        <button type="button" :aria-pressed="compactList" @click="compactList = !compactList">{{ compactList ? '卡片视图' : '紧凑列表' }}</button>
+        <span>筛选仅改变记录，不改变服务端统计或统计窗口。</span>
       </div>
 
-      <div class="newow-reference__cards">
-        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id" tabindex="-1">
+      <div class="newow-reference__cards" :class="{ 'is-compact-list': compactList }">
+        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId !== null && (selectedSignalId === row.trade.entry_signal_id || selectedSignalId === row.trade.exit_signal_id)" tabindex="-1">
           <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? rowTime(row.trade, row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
           <div class="newow-reference__card-body">
             <dl class="newow-reference__facts">
@@ -243,6 +245,10 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__card { padding:12px 16px; border:1px solid var(--gy-border); border-radius:7px; background:var(--gy-bg-panel); min-width:0; }
 .newow-reference__card[data-reference-category="open"] { background:#fff8f2; border-left:4px solid #ff6b2c; }
 .newow-reference__waiting { background:#f1f7ff; border-left:4px solid #397bd1; }
+.newow-reference__cards.is-compact-list .newow-reference__card { padding:8px 12px; border-radius:4px; }
+.newow-reference__cards.is-compact-list .newow-reference__facts div { padding:2px 6px; background:transparent; }
+.newow-reference__cards.is-compact-list .newow-reference__card-body { gap:6px; }
+.newow-reference__card[data-reference-category="interrupted"] { border-left:4px solid #98a2b3; }
 .newow-reference__card[data-selected="true"] { outline:2px solid var(--gy-border-focus); }
 .newow-reference__card header,.newow-reference__card-body { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .newow-reference__card header { margin-bottom:6px; }
