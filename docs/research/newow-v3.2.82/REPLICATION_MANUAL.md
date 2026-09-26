@@ -751,3 +751,15 @@ NEWOW_SCREENSHOT_POLICY = RETAIN
 ```
 
 该决定仅覆盖 `docs/research/newow-v3.2.82/screenshots/**` 的冻结 inventory；不构成法律意见，也不扩大对第三方内容的权利声明。它不覆盖原始 HTML、JavaScript、接口响应、逐 Bar 股票数据、RQData / Canonical 原始材料、原始第三方 PDF或其他未获批准材料。
+
+### 成交量黄色柱（2026-09-26 补充）
+
+公开 `https://www.v8848.cn/stock_detail.html` 的 `drawSignalAnnotations`（当前源码 17978–17997 行）确认：仅震荡策略 `xichou-lagao` 将 `score >= 4` 的建仓／清仓信号对应成交量柱改为 `rgba(255,215,0,0.7)`，并非成交量超过某个倍数就单独变黄，也不是黄色成交量均线。普通柱收盘价 ≥ 开盘价为红色，否则绿色。
+
+评分来自公开 `position_kernel.js` 的 `_scoreBar`，三个分项相加：
+
+- 量比 = 当前成交量 / 包含当前 Bar 的最近 10 根成交量均值：≥1.5 为 2 分，≥1 为 1 分，其余 0 分。
+- 实体占比 = abs(Close − Open) / max(High − Low, 0.001)：>0.6 为 2 分，>0.3 为 1 分，其余 0 分。
+- 穿透率 = abs(Close − 边界) / 边界：>3% 为 2 分，>1% 为 1 分，其余 0 分；建仓边界为 LLV10，清仓边界为 HHV10，均包含当前 Bar。
+
+合计 ≥4 分即黄色；确认项在此页面评分中固定 0 分。归一仅为已有有效震荡动作增加此页面着色，不新增动作、不改变 ReferenceTrade 或研究结果。窗口不足 10 根、跨物理合约／质量计算段时保留普通红绿，不推测缺少的历史评分。此实现身份为 `newow_volume_breakout_color_page_v1`，用途仅为 page-parity 展示，executable=false。

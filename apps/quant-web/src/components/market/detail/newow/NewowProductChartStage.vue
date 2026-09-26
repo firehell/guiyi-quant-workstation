@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newowVolumeColors } from '@/utils/newowVolumeDisplay'
 import { newowActionReturnDisplay } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
@@ -308,7 +309,8 @@ function renderModel(value: NewowProductChartModel | null): void {
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
   })))
   const theme = resolveChartTheme(container.value ?? document.documentElement)
-  volume?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown })))
+  const volumeColors = newowVolumeColors(value, 'rgba(255,59,48,0.6)', 'rgba(52,199,89,0.6)')
+  volume?.setData(value.bars.map((bar, index) => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: volumeColors[index] })))
   auxiliaryAnchor?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })))
   const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')
   band.setData(showStructure.value && (!comparisonActive.value || comparisonBackground.value) ? comparisonActive.value ? trendModel?.bandAreas ?? [] : value.bandAreas : [])
