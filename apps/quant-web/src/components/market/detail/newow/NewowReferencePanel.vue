@@ -312,14 +312,15 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 .newow-reference__curve-detail { color:#98a2b3; font-size:11px; }
 .newow-reference__curve-detail button { min-height:24px; font-size:11px; }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
-.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:10px 0; margin:8px 0; border:1px solid #ebedf0; border-radius:12px; }
-.newow-reference__summary .newow-reference__metrics > div { display:flex; flex-direction:column; align-items:center; gap:3px; padding:0 8px; border-radius:0; background:transparent; border-right:1px solid #f0f1f4; }
+.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:6.5px 0; margin:8px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
+.newow-reference__summary .newow-reference__metrics > div { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:0 8px; border-radius:0; background:transparent; border:0; }
+.newow-reference__summary .newow-reference__metrics > div:not(:last-child)::after { content:''; position:absolute; right:0; top:50%; transform:translateY(-50%); height:24px; width:1px; background:#ebedf0; }
 .newow-reference__metrics > div:last-child { border-right:0 !important; }
-.newow-reference__metrics dd { order:-1; font-size:18px; font-weight:700; color:#242424; margin:0; }
+.newow-reference__metrics dd { order:-1; font-size:18px; line-height:22px; font-weight:700; color:#242424; margin:0; }
 .newow-reference__metrics dd[data-direction="up"] { color:#ff403a; }
 .newow-reference__metrics dd[data-direction="down"] { color:#2ac758; }
 .newow-reference__metrics dd small { font-size:10px; font-weight:400; }
-.newow-reference__metrics dt { font-size:12px; color:#999; }
+.newow-reference__metrics dt { font-size:11px; line-height:16px; color:#999; }
 .newow-reference__availability,.newow-reference__counts,.newow-reference__summary details { color:#98a2b3; font-size:11px; line-height:20px; }
 .newow-reference__counts span { margin-left:10px; }
 .newow-reference__separate { margin-top:6px; padding-top:6px; gap:8px 18px; align-items:baseline; }
