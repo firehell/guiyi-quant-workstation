@@ -1089,7 +1089,9 @@ class NewowProductService:
         return (
             delivery.delivery == "delivered"
             and delivery.status is not None
-            and delivery.status.status is FeatureRuntimeStatus.READY
+            and delivery.value is not None
+            and delivery.status.status
+            in {FeatureRuntimeStatus.READY, FeatureRuntimeStatus.WARMING}
         )
 
     def _calculate(
