@@ -88,6 +88,8 @@ def test_four_socket_connections_keep_navigation_and_history_bound_to_snapshot()
         assert reference["summary"]["closed_count"] >= 2
         assert reference["executable"] is reference["auto_order"] is False
         assert reference["next_before"]
+        assert len(reference["curve_trades"]) == reference["summary"]["closed_count"]
+        assert sum(Decimal(item["reference_return_pct"]) for item in reference["curve_trades"]) == Decimal(reference["summary"]["sum_return_percentage_points"])
         trade = reference["items"][0]
         assert trade["entry_signal_id"] and trade["reference_trade_id"]
         assert trade["physical_contract"] == "RB2605"

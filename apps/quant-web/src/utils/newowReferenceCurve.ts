@@ -11,9 +11,10 @@ function text(units: bigint, scale: number): string {
   return `${units < 0n ? '-' : ''}${scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits}`
 }
 export function newowReferenceCurve(value: NewowReferenceValue) {
-  const trades = value.items.filter(t => t.status === 'CLOSED' && t.statistics_membership === value.summary.membership_policy)
+  const source = value.curve_trades ?? value.items
+  const trades = source.filter(t => t.status === 'CLOSED' && t.statistics_membership === value.summary.membership_policy)
     .sort((a, b) => (a.exit_bar_end ?? '').localeCompare(b.exit_bar_end ?? '') || a.reference_trade_id.localeCompare(b.reference_trade_id))
-  const pending = value.next_before !== null || trades.length !== value.summary.closed_count
+  const pending = (value.curve_trades === undefined && value.next_before !== null) || trades.length !== value.summary.closed_count
   if (pending) return { points: [], message: '参考历史尚未完整加载；加载更多后显示完整累计曲线。' }
   if (!trades.length) return { points: [], message: '暂无已完成参考交易；未清仓与中断结果不计入曲线。' }
   const numbers = trades.map(t => t.reference_return_pct === null ? null : decimal(t.reference_return_pct))

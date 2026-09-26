@@ -55,9 +55,21 @@ const curvePoints = computed(() => {
 const selectedCurvePoint = computed(() => curve.value?.points.find(p => p.trade.reference_trade_id === selectedTradeId.value) ?? curve.value?.points.at(-1))
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
+  if (!recordElements.has(trade.reference_trade_id) && props.response?.value?.next_before) {
+    emit('load-more')
+    await nextTick()
+    return
+  }
   await nextTick()
   recordElements.get(trade.reference_trade_id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
+watch(() => props.response?.value?.items, async () => {
+  if (!selectedTradeId.value) return
+  await nextTick()
+  const record = recordElements.get(selectedTradeId.value)
+  if (record) record.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  else if (props.response?.value?.next_before) emit('load-more')
+})
 watch(() => props.selectedSignalId, id => {
   const trade = props.response?.value?.items.find(t => t.entry_signal_id === id || t.exit_signal_id === id)
   if (trade) selectedTradeId.value = trade.reference_trade_id

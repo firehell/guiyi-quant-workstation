@@ -286,6 +286,7 @@ export interface NewowReferenceValue {
   }[]
   readonly summary: NewowReferenceSummary
   readonly items: readonly NewowReferenceTrade[]
+  readonly curve_trades?: readonly NewowReferenceTrade[]
   readonly next_before: string | null
   readonly storage_mode?: 'persisted'
   readonly executable: false

@@ -523,7 +523,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     const priorValue = existing?.section === 'reference' ? existing.value : null
     if (priorValue !== null && referenceFingerprint === fingerprint) {
-      if (duplicateReferenceConflict(priorValue.items, value.items) || JSON.stringify(priorValue.summary) !== JSON.stringify(value.summary)) {
+      if (duplicateReferenceConflict(priorValue.items, value.items) || JSON.stringify(priorValue.summary) !== JSON.stringify(value.summary)
+        || JSON.stringify(priorValue.curve_trades) !== JSON.stringify(value.curve_trades)) {
         failConflict('reference', 'NEWOW_REFERENCE_INPUT_CONFLICT')
         return null
       }

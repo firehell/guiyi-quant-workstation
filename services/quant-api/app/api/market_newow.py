@@ -927,6 +927,10 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
                 for item in value.items
             ],
+            "curve_trades": sorted([
+                _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
+                for item in value.summary.closed_trades
+            ], key=lambda item: (item["entry_bar_end"], item["entry_sequence"], item["reference_trade_id"]), reverse=True),
             **({"fusion_comparison": value.fusion_comparison} if value.fusion_comparison is not None else {}),
             "next_before": value.next_before,
             "executable": False,

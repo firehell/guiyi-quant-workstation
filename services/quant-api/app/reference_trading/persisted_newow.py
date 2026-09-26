@@ -211,6 +211,21 @@ class PersistedNewowReference:
             stream_id, since=since, through=through, cutoff=cutoff,
             snapshot_token=snapshot,
         )
+        # Curve facts use the same saved snapshot, independently of record pagination.
+        curve_items = []
+        curve_cursor = None
+        while True:
+            curve_page = self._query.trades(
+                stream_id, since=since, through=through, cutoff=cutoff,
+                snapshot_token=snapshot, cursor=curve_cursor, limit=200,
+            )
+            curve_items.extend(curve_page["items"])
+            if len(curve_items) > 10_000:
+                raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
+            curve_cursor = curve_page["next_cursor"]
+            if curve_cursor is None:
+                break
+        page_ids = {item["reference_trade_id"] for item in page["items"]}
         availability = self._points(stream_id, "availability", since, resolved.actual_through, cutoff, snapshot)
         boundaries = self._points(stream_id, "boundary", since, resolved.actual_through, cutoff, snapshot)
         hints = self._points(stream_id, "hint", date.fromisoformat(storage_start), resolved.actual_through, cutoff, snapshot)
@@ -219,15 +234,15 @@ class PersistedNewowReference:
             (item["value"]["physical_contract"], item["value"]["owner_segment_id"]): item
             for item in boundaries
         }
-        for item in page["items"]:
+        for item in curve_items:
             if item["status"] not in ("OPEN", "CLOSED") and item.get("interrupted_at") is None:
                 boundary = boundary_by_owner.get((item["physical_contract"], item["owner_segment_id"]))
                 if boundary is None:
                     raise QueryConflict("PRESENTATION_CORRUPT")
                 item["interrupted_at"] = boundary["value"]["bar_end"]
-        hint_ids = self._hint_ids(page["items"], actions, hints, cutoff)
+        hint_ids = self._hint_ids(curve_items, actions, hints, cutoff)
         output_items = []
-        for item in page["items"]:
+        for item in curve_items:
             status = item["status"]
             has_prior_mark = item.get("prior_mark_bar_end") is not None
             reason = None
@@ -286,7 +301,12 @@ class PersistedNewowReference:
                 "open_count", "interrupted_count", "rollover_interrupted_count",
                 "data_interrupted_count", "initial_count",
             )}, "membership_policy": "entry_in_window_v1"},
-            "items": output_items, "next_before": page["next_cursor"],
+            "items": [item for item, raw in zip(output_items, curve_items)
+                      if raw["reference_trade_id"] in page_ids],
+            "curve_trades": [item for item in output_items
+                             if item["status"] == "CLOSED"
+                             and item["statistics_membership"] == "entry_in_window_v1"],
+            "next_before": page["next_cursor"],
             "executable": False, "auto_order": False,
             "storage_mode": "persisted",
             "allowed_uses": ["page_parity_reference", "research_display"],

@@ -323,6 +323,7 @@ class ReferenceValueOut(_Out):
     summary: ReferenceSummaryOut
     items: list[ReferenceTradeOut]
     next_before: str | None
+    curve_trades: list[ReferenceTradeOut] | None = Field(default=None, exclude_if=lambda value: value is None)
     storage_mode: Literal["persisted"] | None = Field(
         default=None,
         exclude_if=lambda value: value is None,

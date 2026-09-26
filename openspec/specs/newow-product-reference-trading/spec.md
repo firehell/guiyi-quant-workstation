@@ -410,6 +410,10 @@ unavailable。
 独立的统计窗口。分页、缩放或拖动不得改变 ReferenceTrade identity 或统计。数据不完整时不得静默缩短后
 仍称“全部历史”。
 
+收益曲线使用同一统计窗口、截止与输入身份下的完整 `curve_trades`（仅计入统计的 CLOSED）；
+交易列表 `items / next_before` 独立分页，不得因列表只读取首页而隐藏完整曲线。
+前端必须校验交易身份唯一、已完成笔数和逐笔 Decimal 累计与服务端摘要一致；不一致时明确提示。
+
 默认 membership 使用 `entry_in_window_v1`：BUILD 在统计窗口内才进入样本，且只有截止时点内已 CLEAR 的
 CLOSED 交易进入胜率、均值与 `sum(single_trade_return_pct)` 简单百分比点合计。OPEN、
 ROLLOVER_INTERRUPTED 与期初已有记录 MUST 分列。零笔 CLOSED 时胜率、均值和收益合计显示“— / 暂无已完成

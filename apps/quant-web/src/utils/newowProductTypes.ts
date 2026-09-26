@@ -473,6 +473,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     'performance_since', 'performance_through', 'actual_available_through', 'reference_cutoff', 'reference_input_sha256',
     'history_coverage', 'unavailable_days', 'coverage_intervals',
     'summary', 'items', 'next_before', 'executable', 'auto_order', 'allowed_uses',
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'curve_trades') ? ['curve_trades'] : []),
     ...(hasStorageMode ? ['storage_mode'] : []),
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'fusion_comparison') ? ['fusion_comparison'] : []),
   ])
@@ -518,6 +519,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     history_coverage: historyCoverage, unavailable_days: unavailableDays, coverage_intervals: coverageIntervals,
     ...(value.fusion_comparison === undefined ? {} : { fusion_comparison: normalizeFusion(value.fusion_comparison, performanceSince, performanceThrough, value.reference_input_sha256, value.reference_cutoff) }),
     summary, items, next_before: nullableText(value.next_before, 'reference.next_before'), executable: false, auto_order: false,
+    ...(value.curve_trades === undefined ? {} : { curve_trades: array(value.curve_trades, 'reference.curve_trades').map((item, index) => normalizeTrade(item, index, meta, referenceCutoff)) }),
     ...(hasStorageMode ? { storage_mode: 'persisted' as const } : {}),
     allowed_uses: exactStringArray(value.allowed_uses, ['page_parity_reference', 'research_display'] as const, 'reference.allowed_uses'),
   }
