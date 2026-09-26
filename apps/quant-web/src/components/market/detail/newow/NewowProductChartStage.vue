@@ -36,7 +36,7 @@ import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowComparisonCompatible } from '@/utils/newowComparison'
-import { initialChartLogicalRange } from '@/utils/chartViewport'
+import { initialNewowChartLogicalRange } from '@/utils/chartViewport'
 import { layoutReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import {
   buildNewowProductChartModel,
@@ -180,7 +180,7 @@ onMounted(async () => {
     height: container.value.clientHeight,
     layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: '#EBEDF0' } },
     grid: { vertLines: { color: theme.grid }, horzLines: { color: theme.grid } },
-    rightPriceScale: { borderColor: theme.axis, scaleMargins: { top: 0.24, bottom: 0.1 } },
+    rightPriceScale: { borderColor: theme.axis, scaleMargins: { top: 0.07, bottom: 0.06 } },
     crosshair: { mode: CrosshairMode.Normal },
     localization: { timeFormatter: formatChartTimeInShanghai },
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
@@ -346,14 +346,14 @@ function renderModel(value: NewowProductChartModel | null): void {
   renderAuxiliary()
   syncMainLines(comparisonActive.value ? { ...value, mainLines: trackModels.value.flatMap(item => item.mainLines) } : value)
   renderMarkers(value)
-  if (initialPreferences?.range && initialPreferences.axis === axisKey(value.bars)) {
+  if (renderedIdentity !== null && initialPreferences?.range && initialPreferences.axis === axisKey(value.bars)) {
     followLatest.value = false
     setRange(initialPreferences.range)
   } else if (resetViewport || previousModel === null || renderedBars.length === 0) {
     followLatest.value = true
     resolvedSignalKey = null
     resolvedFocusRequestKey = null
-    const range = initialPreferences?.axis === axisKey(value.bars) ? initialPreferences.range ?? initialChartLogicalRange(value.bars.length) : initialChartLogicalRange(value.bars.length)
+    const range = initialNewowChartLogicalRange(value.bars.length, container.value?.clientWidth ?? 1000)
     if (range === null) chart.timeScale().fitContent()
     else setRange(range)
   } else if (prepended > 0 && previousRange !== null) {
