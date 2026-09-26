@@ -4,7 +4,7 @@ import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowProductAction, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
-import { describeNewowState, projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
+import { describeNewowState, projectNewowAuxiliaryReadiness, projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
 import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, describeNewowProductAction, newowChartSnapshotKey, newowInitialClearLabel } from './newowProductChartPrimitives'
 import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
@@ -21,7 +21,7 @@ import NewowDetailDialog from './NewowDetailDialog.vue'
 import NewowCupFactsPanel from './NewowCupFactsPanel.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities }>()
-const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': [] }>()
+const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': [] }>()
 const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const selectedStrategy = computed(() => props.identity.strategy as NewowProductStrategy)
@@ -106,7 +106,8 @@ const summary = computed(() => projectNewowDetail(chartResponse.value, loader.se
   explanationResponse.value, loader.sections.explanation.state.value, loader.explanationChartCompatible.value,
   referenceResponse.value, loader.sections.reference.state.value, loader.referenceChartCompatible.value,
   loader.currentChartWindow.value, loader.historicalChartWindow.value))
-const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', currentAuxiliaryLifecycle.value))
+const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(currentAuxiliaryResponse.value?.value, chartResponse.value?.value?.bars.at(-1)))
+const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }, { id: 'trend_reversal', label: '趋势转折' }] as const
 const zhaoyaoMirrorLegend = [
   { label: '进场', color: NEWOW_ZHAOYAO_MIRROR_STYLE.entry },
@@ -176,7 +177,7 @@ async function openDialog(kind: NonNullable<typeof dialogKind.value>) {
   dialogKind.value = kind
   if (kind === 'explanation') await loadExplanation()
   if (kind === 'comparator' && sectionOpen('comparator') && loader.sections.comparator.state.value === 'not_requested') await loader.loadComparator()
-  if (kind === 'cup_handle' && props.identity.frequency === '1d') await loadAuxiliaryForChart('cup_handle')
+  if (kind === 'cup_handle' && props.identity.frequency === '1d' && props.identity.strategy === 'trend') await loadAuxiliaryForChart('cup_handle')
 }
 function closeDialog() {
   const wasCup = dialogKind.value === 'cup_handle'
@@ -279,7 +280,10 @@ watch(loader.historicalSnapshot, async () => {
   ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
-watch(loader.dailySnapshot, snapshot => emit('daily-snapshot-as-of', snapshot?.as_of ?? null), { immediate: true, flush: 'sync' })
+watch(loader.dailySnapshot, snapshot => {
+  emit('daily-snapshot-pending', snapshot?.freshness === 'pending_update')
+  emit('daily-snapshot-as-of', snapshot?.as_of ?? null)
+}, { immediate: true, flush: 'sync' })
 watch(loader.weeklySnapshot, snapshot => emit('weekly-quote-context', {
   asOf: snapshot?.current_context.status === 'known' ? snapshot.requested_at : null,
   physicalContract: snapshot?.current_context.status === 'known' ? snapshot.current_context.physical_contract : null,
@@ -336,7 +340,7 @@ onBeforeUnmount(() => loader.dispose())
         <div class="newow-product-workspace__auxiliary-tabs">
           <button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" @click="toggleAuxiliary(option.id)">{{ option.label }}</button>
           <span v-if="selectedAuxiliary === 'macd'" class="newow-macd-legend"><span>DIF</span> / <span>DEA</span></span>
-          <button @click="openDialog('cup_handle')">杯柄说明</button>
+          <button v-if="identity.strategy === 'trend' && identity.frequency === '1d'" @click="openDialog('cup_handle')">杯柄说明</button>
         </div>
         <button class="newow-product-workspace__indicator-help" type="button" @click="openDialog('indicator')">指标解读</button>
       </div>
@@ -466,8 +470,8 @@ onBeforeUnmount(() => loader.dispose())
           </div>
         </template>
         <template v-else><p>当前读数：{{ currentAuxiliaryResponse?.value?.component ?? '尚未取得' }}</p><p>含义与边界：{{ auxiliaryDisclosure.disclosure }}</p></template>
-        <p v-if="currentAuxiliaryLifecycle !== 'ready'" role="status">{{ featureStateText('auxiliary') }}</p><details v-if="!isNiuwaIndicatorDialog"><summary>来源与原始事实</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '暂无经确认的解释' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p><p v-if="currentAuxiliaryError">技术原因 {{ newowErrorDisplay(currentAuxiliaryError) }}</p></details><button v-if="currentAuxiliaryError" @click="loadAuxiliaryForChart()">重试指标</button></template>
-      <template v-else-if="dialogKind === 'cup_handle'"><p v-if="identity.frequency !== '1d'">杯柄仅适用于 1d。</p><p v-else-if="currentAuxiliaryError" role="status">杯柄事实读取失败：{{ newowErrorDisplay(currentAuxiliaryError) }}</p><template v-else-if="currentAuxiliaryResponse?.value?.component === 'cup_handle'"><template v-for="segment in currentAuxiliaryResponse.value.segments" :key="segment.segment_id"><NewowCupFactsPanel v-if="segment.status.status === 'ready'" :witnesses="Array.isArray(segment.data) ? segment.data : []" :physical-contract="segment.physical_contract" :segment-id="segment.segment_id" /><p v-else role="status">{{ segment.physical_contract }} · {{ segment.status.reason_code ?? '该区段杯柄事实暂不可用' }}</p></template></template><p v-else role="status">正在读取已确认杯柄事实…</p><button v-if="currentAuxiliaryError" @click="loadAuxiliaryForChart('cup_handle')">重试杯柄事实</button></template>
+        <p v-if="auxiliaryReadiness" role="status">{{ auxiliaryReadiness.message }}</p><p v-else-if="currentAuxiliaryLifecycle !== 'ready'" role="status">{{ featureStateText('auxiliary') }}</p><details v-if="!isNiuwaIndicatorDialog"><summary>来源与原始事实</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '暂无经确认的解释' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p><p v-if="currentAuxiliaryError">技术原因 {{ newowErrorDisplay(currentAuxiliaryError) }}</p></details><button v-if="currentAuxiliaryError" @click="loadAuxiliaryForChart()">重试指标</button></template>
+      <template v-else-if="dialogKind === 'cup_handle'"><p v-if="identity.frequency !== '1d' || identity.strategy !== 'trend'">杯柄仅适用于趋势日线。</p><p v-else-if="currentAuxiliaryError" role="status">杯柄事实读取失败：{{ newowErrorDisplay(currentAuxiliaryError) }}</p><template v-else-if="currentAuxiliaryResponse?.value?.component === 'cup_handle'"><p v-if="auxiliaryReadiness" role="status">{{ auxiliaryReadiness.message }}</p><template v-for="segment in currentAuxiliaryResponse.value.segments" :key="segment.segment_id"><NewowCupFactsPanel v-if="segment.status.status === 'ready'" :witnesses="Array.isArray(segment.data) ? segment.data : []" :physical-contract="segment.physical_contract" :segment-id="segment.segment_id" /><p v-else role="status">{{ segment.physical_contract }} · {{ segment.status.reason_code ?? '该区段杯柄事实暂不可用' }}</p></template></template><p v-else role="status">正在读取已确认杯柄事实…</p><button v-if="currentAuxiliaryError" @click="loadAuxiliaryForChart('cup_handle')">重试杯柄事实</button></template>
       <template v-else-if="dialogKind === 'explanation' && !sectionOpen('explanation')">
         <section class="newow-window-state" data-testid="newow-window-state" :aria-label="summary.status.historical ? '所示历史窗口状态' : '所示图表状态'">
           <h3>{{ summary.status.historical ? '所示历史窗口状态' : '所示图表状态' }}</h3>

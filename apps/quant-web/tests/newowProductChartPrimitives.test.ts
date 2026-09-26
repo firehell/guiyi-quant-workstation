@@ -540,3 +540,14 @@ test('trend channel primitive paints unconnected price-coordinate dots with fixe
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(arcs.length, 4)
 })
+
+test('a warming resource preserves current calculable data and discloses only older warmup', () => {
+  const message = '当前可计算；历史部分仍在预热（2 个区段）'
+  assert.deepEqual(resolveNewowAuxiliaryRenderState('warming', true, null, message), {
+    mode: 'warming', showRetainedValue: true, message,
+  })
+  assert.deepEqual(resolveNewowAuxiliaryRenderState('ready', true, null, '当前可计算'), {
+    mode: 'ready', showRetainedValue: true, message: '当前可计算',
+  })
+  assert.match(resolveNewowAuxiliaryRenderState('loading', true, null, message).message!, /正在刷新/)
+})

@@ -455,7 +455,7 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   const chart = ref<NewowProductSectionResponse<'chart'> | null>(prependBar(chartResponse()))
   const times = chart.value!.value!.bars.map(bar => bar.bar_end)
   const points = times.map((bar_end, index) => ({ bar_end, value: index === 0 ? -2 : 3, ready: true, valid: true, reason: null }))
-  const auxiliary = ref({ section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, data: { dif: points, dea: points, histogram: points } }] } })
+  const auxiliary = ref({ section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: { dif: points, dea: points, histogram: points } }] } })
   const fakeChart = {
     addSeries(definition: { type: string }, _options: unknown, pane = 0) {
       const record = { definition, pane, data: [] as Array<{ value?: number; color?: string; time: unknown }>, removed: false }; records.push(record)
@@ -601,7 +601,7 @@ function channelFor(bars: NonNullable<MutableChartResponse['value']>['bars'], up
 }
 
 function bar(barEnd: string, tradingDay: string) {
-  return { bar_end: barEnd, trading_day: tradingDay, open: '100', high: '110', low: '90', close: '101', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1', source_identity: 'canonical:jm:JM2601:60m', observation_eligible: true, completed: true as const }
+  return { bar_end: barEnd, trading_day: tradingDay, open: '100', high: '110', low: '90', close: '101', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1', calculation_segment_id: 'segment-1', source_identity: 'canonical:jm:JM2601:60m', observation_eligible: true, completed: true as const }
 }
 
 function ready() { return { status: 'ready' as const, evidence_status: 'ACTIVE_CODE_VERIFIED' as const, reason_code: null } }

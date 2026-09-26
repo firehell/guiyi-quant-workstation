@@ -134,6 +134,24 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 | 五窗口页面比较器 | `oscillation × 1w/1d/60m`，独立 comparator | `newow_hhv_llv_window_optimizer_page_v1` | `RESEARCH_EVIDENCE_ONLY` | 独立页面 as-of/样本假设；期末理论平仓不进入 ReferenceTrade |
 | 页面诊断 token / 六组合评分映射 | 三策略共享解释层候选 | `UNFROZEN` | `EVIDENCE_REQUIRED` | 缺稳定机器合同时 unavailable；不得以“无信号”、0 分或通用知识填补 |
 
+### Requirement: Daily historical display remains usable while an update is pending
+
+默认日线看盘 MUST 在最新日线尚未发布时展示最近可验证的历史快照。沿用现有权威交易日候选与
+统一行情入口，在 30 秒预算内最多核对 20 个 completed 交易日；每个候选 MUST 以自己的精确
+`as_of` 验证完整图表输入。只允许已分类的行情缺失继续核对旧候选；身份冲突、物理损坏、
+Session/Calendar 缺失和未知错误 MUST 明确失败。映射缺失只有该候选日的 owner 也缺失时可跳过，
+不得掩盖已存在 owner 的内部映射缺口。这是显式历史展示，不是给最新输入补 Bar 或跨频回退。
+
+返回的 `expected_trading_day` 与 `available_trading_day` MUST 分别保留预期日及实际可读日；
+历史图表、辅助面板和参考交易共用返回的精确 `as_of`。旧快照 MUST 标 `pending_update`，显示
+实际截止日期；顶部最新报价标不可用，即使该旧快照的报价读取成功也不得称最新报价可用。
+日线更新后重新解析快照，够用的指标独立计算，不足的显示正常待积累，不降低预热阈值。
+
+辅助面板 MUST 从服务端已有逐段状态分别表达覆盖最新展示 Bar 的计算段状态和历史部分状态。
+当前段 READY 时可显示“当前可计算”；WARMING 时显示“数据不足，待积累”。历史未预热段的
+数量与状态单列，不能用整体历史 WARMING 抹去当前段已经可读的指标，也不能把历史短段改为 READY。
+不新增指标算法，不跨物理合约或价格中断继承状态，杯柄仍仅适用于 `trend × 1d`。
+
 #### Scenario: SuBing has not produced a natural Event
 
 - **GIVEN** SuBing Task 11–13 尚待自然市场证据

@@ -388,6 +388,7 @@ export function resolveNewowAuxiliaryRenderState(
   lifecycle: NewowResourceLifecycle,
   hasRetainedValue: boolean,
   error: string | null,
+  readinessMessage: string | null = null,
 ): NewowAuxiliaryRenderState {
   if (lifecycle === 'loading') return {
     mode: 'loading', showRetainedValue: hasRetainedValue,
@@ -397,10 +398,10 @@ export function resolveNewowAuxiliaryRenderState(
     mode: 'stale', showRetainedValue: hasRetainedValue,
     message: `刷新失败${error === null ? '' : `（${error}）`}；以下为上次成功的 stale 预览。`,
   }
-  if (lifecycle === 'ready') return { mode: 'ready', showRetainedValue: hasRetainedValue, message: null }
+  if (lifecycle === 'ready') return { mode: 'ready', showRetainedValue: hasRetainedValue, message: readinessMessage }
   if (lifecycle === 'warming') return {
     mode: 'warming', showRetainedValue: hasRetainedValue,
-    message: hasRetainedValue ? '辅助资源仍在 warming；显示已验证的部分序列。' : '辅助资源仍在 warming。',
+    message: readinessMessage ?? (hasRetainedValue ? '辅助资源仍在预热；显示已验证的部分序列。' : '辅助资源仍在预热。'),
   }
   if (lifecycle === 'not_requested') return { mode: 'idle', showRetainedValue: false, message: null }
   return {

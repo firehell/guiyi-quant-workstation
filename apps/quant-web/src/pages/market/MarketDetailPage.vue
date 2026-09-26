@@ -13,6 +13,7 @@ import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorks
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
 import '@/styles/marketDetailUnified.css'
+import { newowQuoteFreshness } from '@/utils/newowDetailPresentation'
 import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
 import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
@@ -40,6 +41,7 @@ const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].in
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
 const newowDailyAsOf = ref<string | null>(null)
+const newowDailyPending = ref(false)
 const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
 const newowCapabilities = useNewowCapabilities()
 const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
@@ -70,7 +72,7 @@ const header = computed(() => {
   const base = controller.state.value.header
   if (!base || !isNewowView.value) return base
   const quote = dailyQuote.quote.value
-  return { ...base, ...(quote ?? {}), displayContract: quote ? quoteContract.value : null, freshness: quote ? 'fresh' as const : 'unavailable' as const }
+  return { ...base, ...(quote ?? {}), displayContract: quote ? quoteContract.value : null, freshness: newowQuoteFreshness(quote !== null, explicitIdentity.value?.frequency === '1d' && newowDailyPending.value) }
 })
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -93,6 +95,7 @@ async function activateRoute() {
   const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
   newowDailyAsOf.value = null
+  newowDailyPending.value = false
   newowWeeklyQuoteContext.value = { asOf: null, physicalContract: null }
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
@@ -269,6 +272,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
+            @daily-snapshot-pending="newowDailyPending = $event"
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
             @refresh-current="dailyQuote.refresh"
           />
