@@ -608,6 +608,7 @@ defineExpose({ revealSignal, scrollToLatest })
     <div class="newow-product-chart-stage__reference-prices" aria-label="主图参考价格">
       <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ formatMarketDecimal(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
       <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ formatMarketDecimal(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
+      <div class="newow-product-chart-stage__reference-controls"><slot name="reference-controls" /></div>
     </div>
     <div class="newow-product-chart-stage__toolbar">
     <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button><details v-if="showHints && model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details></div>
@@ -670,7 +671,8 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
-.newow-product-chart-stage__reference-prices { display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 12px; border-bottom:1px solid #eef0f3; background:#fafafa; font-size:12px; font-weight:600; }
+.newow-product-chart-stage__reference-prices { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; padding:5px 12px; border-bottom:1px solid #eef0f3; background:#fafafa; font-size:11px; font-weight:600; }
+.newow-product-chart-stage__reference-controls { margin-left:auto; }
 .newow-product-chart-stage__reference-prices .is-target { color:#ff6935; }
 .newow-product-chart-stage__reference-prices .is-absorb { color:#34c759; }
 .newow-product-chart-stage__reference-prices small { font-weight:400; }

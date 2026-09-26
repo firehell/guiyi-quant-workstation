@@ -75,3 +75,18 @@ test('incompatible companion fails closed while single-strategy facts remain rea
   await expect(stage.locator('[data-action-id]').first()).toBeVisible()
   assertNoUnexpectedRequests(fixture)
 })
+
+test('chart price row owns the only period selector and preserves daily-weekly navigation', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { weeklyCandidate: true })
+  await page.goto(newowRoute())
+  const row = page.getByLabel('主图参考价格', { exact: true })
+  await expect(row.getByRole('group', { name: '周期', exact: true })).toBeVisible()
+  await expect(page.locator('.detail-view-nav').getByRole('group', { name: '周期', exact: true })).toHaveCount(0)
+  await expect(row.getByRole('button', { name: '1d', exact: true })).toHaveText('日K')
+  await row.getByRole('button', { name: '1w', exact: true }).click()
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-frequency', '1w')
+  await expect(row.getByRole('button', { name: '1w', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await row.getByRole('button', { name: '1d', exact: true }).click()
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-frequency', '1d')
+  assertNoUnexpectedRequests(fixture)
+})
