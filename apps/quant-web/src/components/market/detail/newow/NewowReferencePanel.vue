@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import NewowFusionPanel from './NewowFusionPanel.vue'
 import { newowReferenceCurve } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
@@ -13,9 +12,7 @@ import type {
 } from '@/types/newowProduct'
 import {
   buildNewowReferencePanelViewModel,
-  filterNewowReferenceRows,
   resolveNewowPanelRenderState,
-  type NewowReferenceCategory,
 } from '@/utils/newowProductViewModel'
 
 const props = defineProps<{
@@ -36,7 +33,6 @@ const emit = defineEmits<{
   'load-more': []
   }>()
 
-const filter = ref<'all' | NewowReferenceCategory | 'initial'>('all')
 const performanceSince = ref('')
 const performanceThrough = ref('')
 const invalidWindow = computed(() => !!performanceSince.value && !!performanceThrough.value && performanceSince.value > performanceThrough.value)
@@ -46,7 +42,6 @@ const model = computed(() => (
     ? buildNewowReferencePanelViewModel(props.response, props.chartResponse, props.crossSectionCompatible)
     : null
 ))
-const visibleModel = computed(() => model.value === null ? null : filterNewowReferenceRows(model.value, filter.value))
 const curve = computed(() => props.response?.value ? newowReferenceCurve(props.response.value) : null)
 const selectedTradeId = ref<string | null>(null)
 const recordElements = new Map<string, HTMLElement>()
@@ -60,7 +55,6 @@ const curvePoints = computed(() => {
 const selectedCurvePoint = computed(() => curve.value?.points.find(p => p.trade.reference_trade_id === selectedTradeId.value) ?? curve.value?.points.at(-1))
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
-  filter.value = 'all'
   await nextTick()
   recordElements.get(trade.reference_trade_id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
@@ -141,17 +135,11 @@ function usePreset(preset: NewowReferencePreset): void {
 
 function updateSince(event: Event): void { performanceSince.value = (event.target as HTMLInputElement).value; pendingPreset.value = null; acceptedPreset.value = null }
 function updateThrough(event: Event): void { performanceThrough.value = (event.target as HTMLInputElement).value; pendingPreset.value = null; acceptedPreset.value = null }
-function updateFilter(event: Event): void { filter.value = (event.target as HTMLSelectElement).value as typeof filter.value }
 </script>
 
 <template>
   <section class="newow-reference" :aria-busy="loadingPage" aria-labelledby="newow-reference-title">
-    <header class="newow-reference__header">
-      <div>
-        <h3 id="newow-reference-title">参考交易</h3>
-        <p>{{ response?.value?.storage_mode === 'persisted' ? '历史参考·已保存' : '页面参考' }} · 零手续费 / 零滑点 · 非账户成交</p>
-        <details><summary>参考口径说明</summary><p>只表达 long/flat；使用趋势 B、震荡 Low/High、主升浪 MA45 的 API reference_price；不计资金占用与真实成交限制，不推断手数、不推断空单、不推断账户净值、不推断真实收益。Reference 非因果回测、非模拟账户、非真实成交，不使用同 Bar Close；同 Bar Close 仅属于独立 comparator。</p></details>
-      </div>
+    <header class="newow-reference__returns-heading"><strong id="newow-reference-title">参考收益走势</strong><span>累计百分点 · 已完成交易 · 零成本页面参考</span></header>
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
           <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
@@ -163,7 +151,6 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
         <button type="submit" :disabled="loadingPage || invalidWindow || !performanceSince || !performanceThrough">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
         </div></details>
       </form>
-    </header>
     <p v-if="invalidWindow" class="newow-reference__state" role="alert">统计起点不能晚于统计终点。</p>
 
     <p v-if="presentation.message" class="newow-reference__state" role="status">
@@ -174,7 +161,6 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
     <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
     <template v-if="model">
       <section class="newow-reference__curve" aria-label="已完成参考交易累计收益曲线">
-        <header><strong>参考收益走势</strong><span>累计百分点 · 已完成交易 · 零成本页面参考</span></header>
         <p v-if="curve?.message" role="status">{{ curve.message }}</p>
         <template v-else>
           <svg viewBox="0 0 780 192" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
@@ -217,29 +203,14 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
         </div>
       </section>
 
-      <NewowFusionPanel v-if="model && response && response.meta.identity.strategy !== 'main_rise'" :response="response" />
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
         <header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header>
         <p :title="waiting.bar_end">状态时间 {{ referenceTimeDisplay(waiting.bar_end, chartResponse!.meta.identity.frequency, [chartResponse!.meta.as_of]) }} · 截至所示已完成 Bar，仅作页面参考。</p>
       </article>
 
-      <div class="newow-reference__tools">
-        <label>
-          记录筛选
-          <select :value="filter" aria-label="筛选参考历史" @change="updateFilter">
-            <option value="all">全部</option>
-            <option value="closed">已清仓</option>
-            <option value="open">未清仓</option>
-            <option value="interrupted">中断记录</option>
-            <option value="initial">期初已有</option>
-          </select>
-        </label>
-        <span>筛选仅改变记录，不改变服务端统计或统计窗口。</span>
-      </div>
-
       <header class="newow-reference__records-heading"><h3>参考操盘提醒</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <div class="newow-reference__cards">
-        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial">
+        <article v-for="row in model.rows" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial">
           <header class="newow-reference__record-top">
             <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.category === 'open', 'is-interrupted': row.category === 'interrupted' }">{{ row.category === 'open' ? '持仓参考中' : row.category === 'interrupted' ? (row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断') : row.trade.frequency === '1w' ? '周K' : row.trade.frequency === '1d' ? '日K' : '60分' }}</strong><span>{{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.exit_bar_end ?? row.trade.interrupted_at) }}</span><span>{{ row.trade.physical_contract }}</span><span v-if="row.initial">期初已有</span></div>
             <strong class="newow-reference__record-return" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ row.category === 'closed' ? '盈亏' : row.category === 'open' ? '参考浮动' : '中断浮动' }} {{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</strong>
@@ -251,7 +222,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
           <p v-else-if="row.category === 'open'" class="newow-reference__interruption">未清仓 · 浮动不计入已完成收益</p>
         </article>
       </div>
-      <p v-if="visibleModel?.rows.length === 0" class="newow-reference__state">当前筛选没有记录。</p>
+      <p v-if="model.rows.length === 0" class="newow-reference__state">暂无参考交易记录。</p>
       <p v-if="locateMessage" class="newow-reference__state" role="status">{{ locateMessage }}</p>
       <button v-if="model.nextBefore" type="button" :disabled="loadingPage" @click="emit('load-more')">加载更多参考历史</button>
     </template>
@@ -315,7 +286,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__header h3 { font-size:16px; }
 .newow-reference__header p,.newow-reference__header details { font-size:11px; color:#98a2b3; }
 .newow-reference__header details[open] { flex-basis:100%; }
-.newow-reference__window { justify-content:center; align-items:center; gap:10px; }
+.newow-reference__window { margin:14px 0 10px; justify-content:center; align-items:center; gap:10px; }
 .newow-reference__presets { align-items:center; gap:8px; }
 .newow-reference__presets button { min-height:30px; padding:0 18px; border-radius:18px; font-size:13px; }
 .newow-reference__presets button[aria-pressed="true"] { background:#222; border-color:#222; color:white; }
@@ -329,10 +300,10 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__curve-detail { color:#98a2b3; font-size:11px; }
 .newow-reference__curve-detail button { min-height:24px; font-size:11px; }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
-.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:16px 0; margin:10px 0; border:1px solid #ebedf0; border-radius:12px; }
-.newow-reference__summary .newow-reference__metrics > div { display:flex; flex-direction:column; align-items:center; gap:5px; padding:0 10px; border-radius:0; background:transparent; border-right:1px solid #f0f1f4; }
+.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:10px 0; margin:8px 0; border:1px solid #ebedf0; border-radius:12px; }
+.newow-reference__summary .newow-reference__metrics > div { display:flex; flex-direction:column; align-items:center; gap:3px; padding:0 8px; border-radius:0; background:transparent; border-right:1px solid #f0f1f4; }
 .newow-reference__metrics > div:last-child { border-right:0 !important; }
-.newow-reference__metrics dd { order:-1; font-size:20px; font-weight:700; color:#242424; margin:0; }
+.newow-reference__metrics dd { order:-1; font-size:18px; font-weight:700; color:#242424; margin:0; }
 .newow-reference__metrics dd[data-direction="up"] { color:#ff403a; }
 .newow-reference__metrics dd[data-direction="down"] { color:#2ac758; }
 .newow-reference__metrics dd small { font-size:10px; font-weight:400; }
@@ -348,4 +319,5 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference :deep(.fusion-panel header p) { margin:3px 0 0; font-size:11px; }
 .newow-reference :deep(.fusion-panel button) { min-height:28px; padding:4px 10px; font-size:12px; }
 @media(max-width:600px) { .newow-reference__curve svg { height:170px; }.newow-reference__metrics dd { font-size:16px; }.newow-reference__metrics dt { font-size:11px; }.newow-reference__presets button { padding:0 12px; } }
+.newow-reference__returns-heading { display:flex; align-items:baseline; gap:10px; padding-top:10px; font-size:14px; }.newow-reference__returns-heading span { color:#98a2b3; font-size:11px; }
 </style>

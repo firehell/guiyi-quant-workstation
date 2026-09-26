@@ -213,7 +213,7 @@ test('simple sum keeps percentage points separate and never appends a percent un
   assert.equal(model.summary.sumText.includes('%'), false)
 })
 
-test('reference panel keeps the server summary while native controls filter passive reference records', async () => {
+test('reference panel keeps the server summary and all passive reference records without removed controls', async () => {
   const Panel = await loadComponent()
   const located: Array<{ reference_trade_id: string; entry_signal_id: string; entry_bar_end: string }> = []
   const Host = defineComponent({ setup: () => () => h(Panel, {
@@ -235,15 +235,9 @@ test('reference panel keeps the server summary while native controls filter pass
   assert.doesNotMatch(nodeText(returns), /年化|最大回撤/)
 
   const fullText = nodeText(root)
-  for (const phrase of ['long/flat', '趋势 B', '震荡 Low/High', '主升浪 MA45', 'API reference_price', '零手续费', '零滑点', '不计资金占用与真实成交限制', '不推断手数', '不推断空单', '不推断账户净值', '不推断真实收益', '非因果回测', '非模拟账户', '非真实成交']) {
-    assert.match(fullText, new RegExp(phrase))
-  }
-  assert.match(fullText, /同 Bar Close 仅属于独立 comparator/)
-  assert.match(fullText, /双策略融合参考/)
-  assert.match(fullText, /同根先清仓，再建仓/)
-  assert.ok(findNode(root, node => node.type === 'button' && nodeText(node) === '查看三组结果'))
+  assert.match(fullText, /零成本页面参考/)
+  assert.doesNotMatch(fullText, /双策略融合参考|参考口径说明|筛选参考历史/)
   for (const label of ['清仓', '未清仓', '换月中断', '期初已有', '参考操盘提醒', '买入', '卖出']) assert.match(fullText, new RegExp(label))
-  assert.match(readFileSync(componentUrl, 'utf8'), /<option value="all">全部<\/option>/)
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
   const cards = findNodes(root, node => node.type === 'article' && !!node.props['data-reference-category'])
   assert.equal(cards.length, 4)
@@ -255,13 +249,7 @@ test('reference panel keeps the server summary while native controls filter pass
   assert.doesNotMatch(fullText, /定位建仓|定位清仓|查看详情|查看曲线/)
   assert.deepEqual(located, [])
 
-  const filter = findNode(root, (node) => node.props['aria-label'] === '筛选参考历史')!
-  ;(filter.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'interrupted' } })
-  await nextTick()
-  assert.doesNotMatch(nodeText(root), /entry-open/)
-  assert.ok(findNode(root, node => node.type === 'article' && node.props['data-reference-category'] === 'interrupted'))
-  assert.equal(findNode(root, node => node.type === 'table'), undefined)
-  assert.match(nodeText(summary), /胜率\s*—/, 'filter must not change the server-owned summary')
+  assert.equal(cards.length, 4, 'all loaded records remain visible')
   app.unmount()
 })
 
@@ -346,7 +334,7 @@ test('reference date drafts clear when a new identity has no retained response',
   app.unmount()
 })
 
-test('waiting card requires current ready compatible FLAT evidence and is independent of history filtering', async () => {
+test('waiting card requires current ready compatible FLAT evidence', async () => {
   const Panel = await loadComponent()
   const response = referenceResponse()
   response.value.items = []
@@ -364,10 +352,6 @@ test('waiting card requires current ready compatible FLAT evidence and is indepe
   assert.ok(waiting())
   assert.match(nodeText(waiting()!), /空仓等待中/)
   assert.doesNotMatch(nodeText(waiting()!), /%|收益|参考建仓/)
-  const filter = findNode(root, node => node.props['aria-label'] === '筛选参考历史')!
-  ;(filter.props.onChange as Function)({ target: { value: 'closed' } })
-  await nextTick()
-  assert.ok(waiting(), 'history filter does not invent or hide current strategy state')
   for (const patch of [{ chartLifecycle: 'stale' }, { lifecycle: 'stale' }, { currentChartWindow: false }, { crossSectionCompatible: false }]) {
     const before = inputs.value
     inputs.value = { ...before, ...patch }
