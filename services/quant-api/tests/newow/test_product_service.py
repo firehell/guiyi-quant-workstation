@@ -473,6 +473,26 @@ def test_trend_chart_delivers_independent_channel_without_changing_strategy_iden
     )
 
 
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+@pytest.mark.parametrize("frequency,policy", [("1d", InputQualityPolicy.DAILY_V2), ("1w", InputQualityPolicy.WEEKLY_V2)])
+def test_chart_prices_use_replay_calculation_identity(product_cases, strategy, frequency, policy):
+    case = product_cases.primitive_input(strategy, frequency)
+    now = case.bars[-1].bar.bar_end
+    reader = _Reader(case.bars, now, now)
+    original_load = reader.load
+    reader.load = lambda query, as_of: replace(original_load(query, as_of), input_quality_policy=policy)
+    service = NewowProductService(lambda _context, _cancelled: reader, quality_policy=policy, now=lambda: now)
+    full = service.query(ProductServiceQuery("rb", strategy, frequency, as_of=now))
+    page = service.query(ProductServiceQuery("rb", strategy, frequency, as_of=now, chart_limit=2))
+    price = page.chart.value.price_reference
+    assert price == full.chart.value.price_reference
+    assert price.target.status.status is FeatureRuntimeStatus.READY
+    assert price.absorb.status.status is FeatureRuntimeStatus.READY
+    assert price.calculation_segment_id == page.chart.value.bars[-1].calculation_segment_id
+    assert price.target.raw == max(item.bar.high for item in case.bars[-10:])
+    assert price.absorb.raw == min(item.bar.low for item in case.bars[-10:])
+
+
 def test_non_trend_chart_has_no_trend_channel_layer(product_cases):
     case = product_cases.primitive_input("oscillation", "1d")
     reader = _Reader(case.bars, case.bars[0].bar.bar_end, case.bars[-1].bar.bar_end)
