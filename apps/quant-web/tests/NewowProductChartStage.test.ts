@@ -520,6 +520,34 @@ test('zhaoyao mirror uses one dedicated primitive and no generic value series', 
   app.unmount()
 })
 
+test('same chart instance restores identity-specific layers and viewport across dual A -> loading -> B -> A', async () => {
+  const Stage = await loadComponent()
+  let range: { from: number; to: number } | null = { from: 0, to: 1 }
+  const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+  const partner = ref<MutableChartResponse | null>(strategyResponse('oscillation'))
+  const fakeChart = { addSeries: () => ({ setData(data: unknown[]) { if (data.length === 0) range = null } }), removeSeries() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange(value: typeof range) { range = value }, getVisibleLogicalRange: () => range,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: response.value?.meta.identity.strategy ?? 'trend', comparisonResponse: partner.value, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root'); app.mount(root); await nextTick()
+  const actions = () => findNode(root, node => node.type === 'button' && textContent(node) === '建仓 / 清仓')!
+  range = { from: 10, to: 20 }
+  ;(actions().props.onClick as () => void)(); await nextTick()
+  assert.equal(actions().props['aria-pressed'], false)
+  response.value = null; partner.value = null; await nextTick(); await nextTick()
+  response.value = strategyResponse('oscillation'); await nextTick(); await nextTick()
+  range = { from: 30, to: 40 }
+  response.value = strategyResponse('trend'); await nextTick(); await nextTick()
+  assert.deepEqual(range, { from: 10, to: 20 })
+  assert.equal(actions().props['aria-pressed'], false)
+  app.unmount()
+})
+
 function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {
