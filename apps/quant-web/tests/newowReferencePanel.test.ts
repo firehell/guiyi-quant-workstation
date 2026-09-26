@@ -271,26 +271,28 @@ test('reference records present entry, exit, valuation and interruption as separ
   app.unmount()
 })
 
-test('reference date application blocks an invalid range with visible feedback', async () => {
+test('range tabs include three years and clamp all to the initial server history floor', async () => {
   const Panel = await loadComponent()
-  let reloads = 0
+  const reloads: Array<{ performanceSince: string; performanceThrough: string }> = []
   const Host = defineComponent({ setup: () => () => h(Panel, {
     response: referenceResponse(), chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
-    selectedSignalId: null, locateMessage: null, loadingPage: false, onReload: () => { reloads += 1 },
+    selectedSignalId: null, locateMessage: null, loadingPage: false,
+    onReload: (window: { performanceSince: string; performanceThrough: string }) => reloads.push(window),
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
   app.mount(root)
   await nextTick()
-  const inputs = findNodes(root, (node) => node.type === 'input')
-  ;(inputs[0]!.props.onInput as (event: { target: { value: string } }) => void)({ target: { value: '2026-09-01' } })
-  ;(inputs[1]!.props.onInput as (event: { target: { value: string } }) => void)({ target: { value: '2026-08-01' } })
-  await nextTick()
-  assert.match(nodeText(root), /统计起点不能晚于统计终点/)
-  const submit = findNode(root, (node) => node.type === 'button' && nodeText(node) === '应用统计窗口')!
-  assert.equal(submit.props.disabled, true)
+  for (const label of ['近1年', '近3年', '全部']) {
+    const button = findNode(root, node => node.type === 'button' && nodeText(node) === label)!
+    assert.ok(button)
+    ;(button.props.onClick as () => void)()
+  }
+  assert.equal(reloads.length, 3)
+  assert.deepEqual(reloads[0], reloads[1])
+  assert.deepEqual(reloads[1], reloads[2])
+  assert.equal(reloads[0]!.performanceSince, '2026-01-01')
   app.unmount()
-  assert.equal(reloads, 0)
 })
 
 test('recent complete window action submits the exact server boundary', async () => {
@@ -314,7 +316,7 @@ test('recent complete window action submits the exact server boundary', async ()
   app.unmount()
 })
 
-test('reference date drafts clear when a new identity has no retained response', async () => {
+test('range tabs cannot load when the current identity has no response', async () => {
   const Panel = await loadComponent()
   const response = ref<NewowProductSectionResponse<'reference'> | null>(referenceResponse())
   const Host = defineComponent({ setup: () => () => h(Panel, {
@@ -325,11 +327,11 @@ test('reference date drafts clear when a new identity has no retained response',
   const app = createRenderer(nodeOperations()).createApp(Host)
   app.mount(root)
   await nextTick()
-  assert.deepEqual(findNodes(root, (node) => node.type === 'input').map((node) => node.props.value), ['2026-01-01', '2026-08-15'])
+  assert.ok(findNode(root, node => node.type === 'button' && nodeText(node) === '近3年'))
 
   response.value = null
   await nextTick()
-  assert.deepEqual(findNodes(root, (node) => node.type === 'input').map((node) => node.props.value), ['', ''])
+  assert.equal(findNode(root, node => node.type === 'button' && nodeText(node) === '近3年')!.props.disabled, true)
   assert.doesNotMatch(nodeText(root), /stale/)
   app.unmount()
 })
@@ -545,3 +547,27 @@ function nodeOperations() {
     parentNode(node: TestNode) { return node.parent }, nextSibling(node: TestNode) { if (node.parent === null) return null; const index = node.parent.children.indexOf(node); return node.parent.children[index + 1] ?? null }, querySelector() { return null }, setScopeId() {}, insertStaticContent() { return [element('#static'), element('#static')] as const },
   }
 }
+
+test('theoretical selection survives a same-window history page response', async () => {
+  const Panel = await loadComponent()
+  const response = ref(referenceResponse())
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: response.value, chartResponse: null, crossSectionCompatible: false, lifecycle: 'ready', error: null,
+    selectedSignalId: null, locateMessage: null, loadingPage: false,
+    onReload: (window: { performanceSince: string; performanceThrough: string }) => {
+      response.value = { ...response.value, value: { ...response.value.value, performance_since: window.performanceSince, performance_through: window.performanceThrough } }
+    },
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const ideal = () => findNode(root, node => node.type === 'button' && nodeText(node) === '理论值')!
+  ;(ideal().props.onClick as () => void)()
+  await nextTick()
+  assert.equal(ideal().props['aria-pressed'], true)
+  response.value = { ...response.value, value: { ...response.value.value, items: [...response.value.value.items] } }
+  await nextTick()
+  assert.equal(ideal().props['aria-pressed'], true)
+  app.unmount()
+})

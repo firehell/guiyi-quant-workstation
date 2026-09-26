@@ -53,3 +53,13 @@ export function newowReferenceAnnualized(value: NewowReferenceValue): number | n
   const annual = (Math.pow(ratio, 365 / days) - 1) * 100
   return Number.isFinite(annual) ? annual : null
 }
+
+export function newowTheoreticalDisplay(value: NewowReferenceValue): NewowReferenceValue | null {
+  const theory = value.theoretical
+  const source = value.curve_trades ?? value.items
+  const closed = source.filter(trade => trade.status === 'CLOSED' && trade.statistics_membership === value.summary.membership_policy)
+  if (!theory || theory.model_version !== 'newow_hindsight_peak_reference_v1' || theory.hindsight !== true || theory.executable !== false || closed.length !== value.summary.closed_count) return null
+  const returns = new Map(theory.returns.map(item => [item.reference_trade_id, item.return_pct]))
+  if (returns.size !== closed.length || theory.returns.length !== closed.length || closed.some(trade => !returns.has(trade.reference_trade_id))) return null
+  return { ...value, curve_trades: closed.map(trade => ({ ...trade, reference_return_pct: returns.get(trade.reference_trade_id)! })), summary: { ...value.summary, sum_return_percentage_points: theory.sum_return_percentage_points, win_rate_pct: theory.win_rate_pct, mean_return_pct: theory.mean_return_pct } }
+}

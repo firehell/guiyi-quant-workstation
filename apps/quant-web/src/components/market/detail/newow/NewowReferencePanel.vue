@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { newowReferenceCurve, newowReferenceAnnualized } from '@/utils/newowReferenceCurve'
+import { newowReferenceCurve, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
@@ -42,8 +42,10 @@ const model = computed(() => (
     ? buildNewowReferencePanelViewModel(props.response, props.chartResponse, props.crossSectionCompatible)
     : null
 ))
-const curve = computed(() => props.response?.value ? newowReferenceCurve(props.response.value) : null)
-const annualized = computed(() => props.response?.value && model.value ? newowReferenceAnnualized(props.response.value) : null)
+const displayValue = computed(() => props.response?.value ? acceptedPreset.value === 'ideal' ? newowTheoreticalDisplay(props.response.value) : props.response.value : null)
+const displaySummary = computed(() => displayValue.value && props.response ? buildNewowReferencePanelViewModel({ ...props.response, value: displayValue.value }, props.chartResponse, props.crossSectionCompatible).summary : null)
+const curve = computed(() => displayValue.value ? newowReferenceCurve(displayValue.value) : { points: [], message: '理论值所需的完整持仓区段暂不可用。' })
+const annualized = computed(() => displayValue.value && model.value ? newowReferenceAnnualized(displayValue.value) : null)
 const selectedTradeId = ref<string | null>(null)
 const recordElements = new Map<string, HTMLElement>()
 const curvePoints = computed(() => {
@@ -88,6 +90,8 @@ watch(() => props.selectedSignalId, id => {
 watch(() => props.response?.value, value => {
   if (!value?.items.some(t => t.reference_trade_id === selectedTradeId.value)) selectedTradeId.value = null
 })
+// The initial request is the server-resolved full history; preserve its authoritative floor across range switches.
+const availableSince = ref<string | null>(null)
 const pendingPreset = ref<{ kind: NewowReferencePreset | 'complete'; since: string; through: string } | null>(null)
 const acceptedPreset = ref<NewowReferencePreset | 'complete' | null>(null)
 const acceptedAnchor = computed(() => model.value?.actualAvailableThrough ?? null)
@@ -119,10 +123,12 @@ watch(() => props.response?.value, (value) => {
     performanceThrough.value = ''
     return
   }
+  const sameWindow = performanceSince.value === value.performance_since && performanceThrough.value === value.performance_through
+  if (availableSince.value === null) availableSince.value = value.performance_since
   performanceSince.value = value.performance_since
   performanceThrough.value = value.performance_through
   const pending = pendingPreset.value
-  acceptedPreset.value = acceptedNewowReferencePreset(pending, { performanceSince: value.performance_since, performanceThrough: value.performance_through })
+  acceptedPreset.value = pending ? acceptedNewowReferencePreset(pending, { performanceSince: value.performance_since, performanceThrough: value.performance_through }) : sameWindow ? acceptedPreset.value : null
   pendingPreset.value = null
 }, { immediate: true })
 
@@ -150,14 +156,12 @@ function useCompleteWindow(): void {
 function usePreset(preset: NewowReferencePreset): void {
   if (!acceptedAnchor.value || props.loadingPage) return
   try {
-    const target = newowReferenceWindow(acceptedAnchor.value, preset)
+    const target = newowReferenceWindow(acceptedAnchor.value, preset, availableSince.value ?? undefined)
     pendingPreset.value = { kind: preset, since: target.performanceSince, through: target.performanceThrough }
     emit('reload', target)
   } catch { pendingPreset.value = null }
 }
 
-function updateSince(event: Event): void { performanceSince.value = (event.target as HTMLInputElement).value; pendingPreset.value = null; acceptedPreset.value = null }
-function updateThrough(event: Event): void { performanceThrough.value = (event.target as HTMLInputElement).value; pendingPreset.value = null; acceptedPreset.value = null }
 </script>
 
 <template>
@@ -165,15 +169,12 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
     <header class="newow-reference__returns-heading"><strong id="newow-reference-title">策略收益率走势</strong><span class="newow-reference__annualized" title="页面参考年化：按所选统计区间的实际天数，将 1 + 累计参考收益 / 100 折算一年；零费用、零滑点，不代表账户收益。">年化{{ annualized === null ? ' —' : `${annualized.toFixed(1)}%` }}</span></header>
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
-          <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
-          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :title="loadingPage ? '正在读取统计窗口' : !model?.completeWindowAction ? '当前统计窗口已完整，或尚无经确认的完整截止' : '使用服务端确认的完整截止'" :aria-pressed="acceptedPreset === 'complete'" :data-pending="pendingPreset?.kind === 'complete'" @click="useCompleteWindow">{{ pendingPreset?.kind === 'complete' ? '读取中…' : '完整窗口' }}</button>
+          <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['three_years', '近3年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
+          <button type="button" class="newow-reference__ideal" :disabled="loadingPage || !acceptedAnchor || !availableSince" :aria-pressed="acceptedPreset === 'ideal'" title="全历史回看最优卖出价；不代表可执行收益" @click="usePreset('ideal')">理论值</button>
+          <button type="button" :disabled="loadingPage || !acceptedAnchor || !availableSince" :aria-pressed="acceptedPreset === 'all' || (acceptedPreset === null && performanceSince === availableSince)" @click="usePreset('all')">全部</button>
         </div>
-        <details class="newow-reference__custom-window"><summary>自定义区间</summary><div>
-        <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
-        <label>统计终点 <input :value="performanceThrough" type="date" @input="updateThrough" /></label>
-        <button type="submit" :disabled="loadingPage || invalidWindow || !performanceSince || !performanceThrough">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
-        </div></details>
       </form>
+    <p v-if="acceptedPreset === 'ideal'" class="newow-reference__state" role="status">理论值 · 趋势／主升浪回看持仓期间最高收盘价，震荡回看最高价；零费用、零滑点；仅计已完成交易，不代表可执行收益。下方操盘记录仍显示原始建仓／清仓参考价。</p>
     <p v-if="invalidWindow" class="newow-reference__state" role="alert">统计起点不能晚于统计终点。</p>
 
     <p v-if="presentation.message" class="newow-reference__state" role="status">
@@ -205,9 +206,9 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
           <ul><li v-for="interval in response.value.coverage_intervals" :key="`${interval.segment_id}:${interval.since}:${interval.status}`">{{ interval.since }} → {{ interval.through }} · {{ interval.physical_contract }} · {{ interval.status === 'VALID' ? '有效计算区段' : interval.status === 'PRICE_UNAVAILABLE' ? '来源价格不可用' : '重新预热中' }}</li></ul>
         </div>
         <dl class="newow-reference__metrics">
-          <div><dt>累计参考收益</dt><dd :data-direction="referencePercentDisplay(response?.value?.summary.sum_return_percentage_points).direction">{{ model.summary.sumText }} <small>百分点</small></dd></div>
-          <div><dt>胜率</dt><dd>{{ model.summary.winRateText }}</dd></div>
-          <div><dt>平均单笔</dt><dd>{{ model.summary.meanText }}</dd></div>
+          <div><dt>累计参考收益</dt><dd :data-direction="referencePercentDisplay(displayValue?.summary.sum_return_percentage_points).direction">{{ displaySummary?.sumText ?? '—' }} <small>百分点</small></dd></div>
+          <div><dt>胜率</dt><dd>{{ displaySummary?.winRateText ?? '—' }}</dd></div>
+          <div><dt>平均单笔</dt><dd>{{ displaySummary?.meanText ?? '—' }}</dd></div>
           <div><dt>已完成交易</dt><dd>{{ model.summary.closedCount }}</dd></div>
         </dl>
         <p v-if="response?.status.reason_code" class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>
@@ -302,6 +303,7 @@ function updateThrough(event: Event): void { performanceThrough.value = (event.t
 .newow-reference__presets { align-items:center; gap:8px; }
 .newow-reference__presets button { min-height:30px; padding:0 18px; border-radius:18px; font-size:13px; }
 .newow-reference__presets button[aria-pressed="true"] { background:#222; border-color:#222; color:white; }
+.newow-reference__presets .newow-reference__ideal { color:#ff9000; }
 .newow-reference__custom-window { color:#98a2b3; font-size:12px; }
 .newow-reference__custom-window > summary { cursor:pointer; padding:6px 8px; }
 .newow-reference__custom-window > div { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0; }

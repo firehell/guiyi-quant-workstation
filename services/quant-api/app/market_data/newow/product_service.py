@@ -233,6 +233,7 @@ class ReferenceSectionValue:
     unavailable_days: tuple[date, ...] = ()
     coverage_intervals: tuple[ReferenceCoverageInterval, ...] = ()
     fusion_comparison: dict[str, object] | None = None
+    theoretical: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1373,6 +1374,8 @@ class NewowProductService:
                 PerformanceWindow(resolved.requested_since, resolved.requested_through, resolved.cutoff),
             )
             fusion["reference_input_sha256"] = fact_key
+        from guiyi_quant.newow.theoretical_reference import theoretical_reference
+        theoretical = theoretical_reference(summary.closed_trades, tuple(frame.bar for frame in replay.frames))
         value = ReferenceSectionValue(
             projection,
             summary,
@@ -1389,6 +1392,7 @@ class NewowProductService:
             unavailable_days,
             coverage_intervals,
             fusion,
+            theoretical,
         )
         status = (
             _ready()

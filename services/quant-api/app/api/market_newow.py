@@ -894,6 +894,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "reference_cutoff": value.reference_cutoff,
             "reference_input_sha256": value.reference_input_sha256,
             "history_coverage": value.history_coverage,
+            "theoretical": value.theoretical,
             "unavailable_days": list(value.unavailable_days),
             "coverage_intervals": [
                 {

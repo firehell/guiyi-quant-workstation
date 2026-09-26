@@ -310,7 +310,24 @@ class FusionComparisonOut(_Out):
     records_truncated: bool
 
 
+class TheoreticalReturnOut(_Out):
+    reference_trade_id: str
+    return_pct: str
+    ideal_exit_price: str
+
+
+class TheoreticalReferenceOut(_Out):
+    model_version: Literal["newow_hindsight_peak_reference_v1"]
+    hindsight: Literal[True]
+    executable: Literal[False]
+    returns: list[TheoreticalReturnOut]
+    sum_return_percentage_points: str
+    win_rate_pct: str | None
+    mean_return_pct: str | None
+
+
 class ReferenceValueOut(_Out):
+    theoretical: TheoreticalReferenceOut | None = Field(default=None, exclude_if=lambda value: value is None)
     performance_since: date
     performance_through: date
     actual_available_through: date

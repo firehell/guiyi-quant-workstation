@@ -268,6 +268,7 @@ export interface NewowReferenceTrade {
 }
 
 export interface NewowReferenceValue {
+  readonly theoretical?: { readonly model_version: 'newow_hindsight_peak_reference_v1'; readonly hindsight: true; readonly executable: false; readonly returns: readonly { readonly reference_trade_id: string; readonly return_pct: string; readonly ideal_exit_price: string }[]; readonly sum_return_percentage_points: string; readonly win_rate_pct: string | null; readonly mean_return_pct: string | null } | null
   readonly fusion_comparison?: import('../api/newowFusion').FusionComparison
   readonly performance_since: string
   readonly performance_through: string

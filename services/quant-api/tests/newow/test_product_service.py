@@ -306,6 +306,8 @@ def test_reference_cutoff_keeps_later_clear_open_until_user_extends_window(
     assert first.meta.as_of == clear.bar_end
     assert extended.reference.value.summary.open_count == 0
     assert extended.reference.value.summary.closed_count == 1
+    assert extended.reference.value.theoretical is not None
+    assert len(extended.reference.value.theoretical["returns"]) == 1
     assert extended.reference.value.reference_cutoff == clear.bar_end
 
 

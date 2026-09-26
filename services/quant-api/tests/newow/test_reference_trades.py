@@ -1251,3 +1251,19 @@ def test_no_eligible_entry_value_cannot_be_used_on_a_build(product_cases):
 
     with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
         ReferenceTradeProjector().project(replay, (), case.as_of)
+
+
+def test_theoretical_reference_is_hindsight_and_rejects_missing_or_other_owner_bars(product_cases):
+    from guiyi_quant.newow.theoretical_reference import theoretical_reference
+    case = product_cases.closed()
+    trade = ReferenceTradeProjector().project(case.replay, case.boundaries, case.as_of).trades[0]
+    result = theoretical_reference((trade,), case.bars)
+    assert result is not None
+    assert result["executable"] is False and result["hindsight"] is True
+    assert result["returns"][0]["ideal_exit_price"] == "110"
+    assert Decimal(result["returns"][0]["return_pct"]) == Decimal("10")
+    assert theoretical_reference((trade,), case.bars[:1]) is None
+    other = replace(case.bars[-1], calculation_segment_id="other")
+    assert theoretical_reference((trade,), (case.bars[0], other)) is None
+    open_trade = replace(trade, status=ReferenceTradeStatus.OPEN, exit_signal_id=None, exit_bar_end=None, exit_trading_day=None, exit_reference_price=None, reference_return_pct=None, mark_bar_end=trade.exit_bar_end, mark_reference_price=trade.exit_reference_price, mark_change_pct=trade.reference_return_pct)
+    assert theoretical_reference((open_trade,), case.bars) is None

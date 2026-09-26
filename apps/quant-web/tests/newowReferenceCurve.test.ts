@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { newowReferenceCurve, newowReferenceAnnualized } from '../src/utils/newowReferenceCurve.ts'
+import { newowReferenceCurve, newowReferenceAnnualized, newowTheoreticalDisplay } from '../src/utils/newowReferenceCurve.ts'
 import { buildNewowFixtureEnvelopeForTest } from '../e2e/newow-product.helpers.mjs'
 import type { NewowReferenceValue } from '../src/types/newowProduct.ts'
 function value(): NewowReferenceValue { return buildNewowFixtureEnvelopeForTest('reference').reference.value }
@@ -45,4 +45,23 @@ test('page reference annualization uses the accepted window and excludes incompl
   assert.equal(newowReferenceAnnualized({ ...input, curve_trades: [] }), null)
   const loss = { ...input, curve_trades: [{ ...trade, reference_return_pct: '-100' }], summary: { ...input.summary, sum_return_percentage_points: '-100' } }
   assert.equal(newowReferenceAnnualized(loss), null)
+})
+
+ test('theoretical display changes only curve and statistics, with exact closed identities', () => {
+  const v = value()
+  const closed = (v.curve_trades ?? v.items).filter(t => t.status === 'CLOSED' && t.statistics_membership === v.summary.membership_policy)
+  const original = JSON.stringify(v)
+  const input = { ...v, summary: { ...v.summary, closed_count: closed.length }, theoretical: {
+    model_version: 'newow_hindsight_peak_reference_v1', hindsight: true as const, executable: false as const,
+    returns: closed.map(t => ({ reference_trade_id: t.reference_trade_id, return_pct: '10', ideal_exit_price: '110' })),
+    sum_return_percentage_points: String(closed.length * 10), win_rate_pct: '100', mean_return_pct: '10',
+  } }
+  const result = newowTheoreticalDisplay(input)!
+  assert.ok(result)
+  assert.equal(result.items, input.items)
+  assert.equal(result.summary.mean_return_pct, '10')
+  assert.ok(result.curve_trades!.every(t => t.reference_return_pct === '10'))
+  assert.equal(JSON.stringify(v), original)
+  assert.equal(newowTheoreticalDisplay({ ...input, theoretical: { ...input.theoretical, returns: [] } }), null)
+  assert.equal(newowTheoreticalDisplay({ ...input, theoretical: { ...input.theoretical, model_version: 'unknown' } }), null)
 })
