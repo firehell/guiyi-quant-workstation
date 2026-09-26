@@ -1515,3 +1515,19 @@ def test_cdv2_tail_rollover_does_not_reuse_old_contract(product_cases, frequency
     result = build_decision_v2({ProductFrequency(frequency): replay}, {}, None, read, case.identity)
     assert result['prices'] is None
     assert len(result['cdv2']['missing_roles']) == 6
+
+
+def test_cdv2_excludes_foreign_owner_warmup_from_volatility_and_price_prefix(product_cases):
+    from app.market_data.newow.decision_v2 import build_decision_v2
+    case = product_cases.primitive_input('trend', '1d')
+    replay = replay_strategy(case.identity, case.bars)
+    last = replay.frames[-1]
+    read = SimpleNamespace(as_of=last.bar.bar.bar_end, boundaries=(), data_interruptions_by_frequency={})
+    baseline = build_decision_v2({ProductFrequency.DAILY: replay}, {}, None, read, case.identity)
+    first = replay.frames[0]
+    foreign = replace(first, bar=replace(first.bar,
+        calculation_segment_id=last.bar.calculation_segment_id,
+        bar=replace(first.bar.bar, segment_id='foreign-owner-warmup')))
+    mixed = replace(replay, frames=(foreign, *replay.frames))
+    actual = build_decision_v2({ProductFrequency.DAILY: mixed}, {}, None, read, case.identity)
+    assert actual == baseline

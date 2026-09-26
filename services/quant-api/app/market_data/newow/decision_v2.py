@@ -86,6 +86,8 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
                     f
                     for f in replay.frames
                     if f.bar.calculation_segment_id == frame.bar.calculation_segment_id
+                    and f.bar.bar.observation_eligible
+                    and (f.bar.bar.physical_contract, f.bar.bar.segment_id) == owner
                     and f.bar.bar.bar_end <= frame.bar.bar.bar_end
                 ]
                 if ready
