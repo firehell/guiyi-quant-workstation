@@ -9,7 +9,13 @@
   display:flex; flex-direction:column; min-width:0;
 }
 .market-detail-page.unified-detail-light.unified-detail-light > .market-navigation { margin-inline:-24px; }
-.unified-detail-light .detail-view-nav__views button.is-active { border:0; border-bottom:3px solid #ff6b2c; border-radius:0; background:#fff; color:#ff6b2c; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views { gap:8px; padding-block:2px; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views button {
+  flex-shrink:0; min-height:36px; padding:0 16px; border:0; border-radius:8px;
+  background:#f2f2f7; color:#999; font-size:16px; line-height:22px; font-weight:700;
+}
+.unified-detail-light .detail-view-nav .detail-view-nav__views button:hover { background:#eaeaf0; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views button.is-active { background:#ff6b2c; color:#fff; }
 .unified-detail-light select { min-height:44px; max-width:200px; padding:0 12px; background:#fff; color:#20242b; border:1px solid #ebedf0; border-radius:7px; }
 .unified-detail-light .quote-header--unified { display:grid; gap:8px; padding:8px 0; }
 .unified-detail-light .quote-header__primary { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:16px; }
@@ -34,7 +40,7 @@
 .unified-detail-light .quote-header__price--neutral strong { color:#20242b; }
 
 @media(min-width: 641px) {
-  .unified-detail-light .detail-view-nav { padding:4px 0; }
+  .unified-detail-light .detail-view-nav { padding:12px 0; }
   .unified-detail-light .quote-header--unified { gap:10px; padding:8px 0; }
   .unified-detail-light .quote-header__price { gap:8px; }
   .unified-detail-light .quote-header__price strong { font-size:28px; }
@@ -59,6 +65,7 @@
 .unified-detail-light .quote-header--newow .quote-header__facts dt { font-size:15px; color:#777; }
 .unified-detail-light .quote-header--newow .quote-header__facts dd { margin:0; font-family:inherit; font-size:16px; font-weight:600; color:#333; }
 @media(max-width:640px) {
+  .unified-detail-light .detail-view-nav .detail-view-nav__views button { min-height:44px; padding-inline:14px; font-size:15px; }
   .unified-detail-light .quote-header--newow .quote-header__facts { gap:8px 16px; }
   .unified-detail-light .quote-header--newow .quote-header__facts dt { font-size:13px; }
   .unified-detail-light .quote-header--newow .quote-header__facts dd { font-size:14px; }
