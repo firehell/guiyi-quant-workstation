@@ -57,3 +57,10 @@
 - 本次变更范围 secret scan：0 findings；`git diff --check` 通过。
 - 全仓 secret scan 的既有失败位于 `services/quant-api/tests/reference_trading/test_revision_rebuild.py:249`，该文件与任务基线字节一致，未在此 UI 任务中修改。
 - 独立复审：允许集成 develop。期间 develop 的并发更新只涉及后端 owner clock 修复、canonical 与状态记录，与此 UI 文件无重叠；集成前保留其更新。
+
+
+本地交付回读：已集成 develop，owner 选择仅保留本地，不推送远端。原 5173 页面保持；单一任务 worktree 的只读预览在 http://127.0.0.1:5186/market/chart?view=newow&symbol=rb&strategy=trend&series_kind=actual_dominant&frequency=1d 。真实 RB 日线主图、副图、参考均已读取，双轨输入对齐后成功显示。该回读只证明此品种窗口，不替代全部品种/周期验收。
+
+真实读图发现简洁双轨文字收起后标签框未立即重排；桌面与手机新增宽度断言分别捕获 108px 大于简洁 70px。修复 display mode watcher 触发重排；不修改信号或标签时间/参考价。该回归通过后完成本地补充集成。
+
+补充修复验证：九项桌面/手机与不兼容拒绝 E2E 3/3 通过；全 Web 698 通过 / 1 跳过、build 与 diff 检查通过，独立复审允许本地集成。真实 RB 简洁双轨 67 个可见标签，最大宽度 70px，现场已核对。

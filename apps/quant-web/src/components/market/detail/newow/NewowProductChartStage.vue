@@ -203,6 +203,7 @@ onUnmounted(createNewowProductChartDisposer({
 watch(model, (value) => renderModel(value))
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => renderMarkers(model.value))
+watch(detailLabels, scheduleActionProjection, { flush: 'post' })
 watch([partnerModel, trendTrack, oscillationTrack, comparisonBackground], () => renderModel(model.value))
 watch([auxiliaryModel, auxiliaryPresentation], renderAuxiliary, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
