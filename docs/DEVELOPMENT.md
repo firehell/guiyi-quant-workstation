@@ -13,6 +13,10 @@ canonical；可执行命令见 `TESTING.md`。
 - 交办任务时不要求 owner 预先给出实施后才可确定的 hash、版本或每条命令。Codex 在执行前生成精确对象并核验；
   仅讨论或仅编码的任务不自行扩展成真实 mutation、发布或 Runtime promotion。
 
+owner 将 GPT 中已确定的方案交办实施后，按 [GPT 与 Codex 交接规则](../AGENTS.md#gpt-讨论与-codex-交接)
+直接推进；不重复批准相同设计、计划或选择执行方式。阶段校验与实际执行边界见
+[任务授权与验证 Gate](../AGENTS.md#任务授权与验证-gate)，本页不另设人工审批。
+
 ## Codex 模型调度
 
 项目级新线程默认是 **GPT-6 Sol Medium**。模型路由只优化质量、吞吐与 Codex 用量，不改变任务边界、
