@@ -304,18 +304,19 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   const allowedShapes = {
     chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
     auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
-    reference: ['', 'snapshot_token', 'performance_since,performance_through', 'performance_since,performance_through,snapshot_token', 'history_limit,performance_since,performance_through', 'history_before,history_limit,performance_since,performance_through,snapshot_token'],
+    reference: ['', 'snapshot_token', 'performance_since,performance_through', 'performance_since,performance_through,snapshot_token', 'history_limit,performance_since,performance_through', 'history_limit,performance_since,performance_through,snapshot_token', 'history_before,history_limit,performance_since,performance_through,snapshot_token'],
     explanation: ['', 'snapshot_token'],
     comparator: ['', 'snapshot_token'],
   }
   if (!allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
   if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
-  if (url.searchParams.has('history_limit') && url.searchParams.get('history_limit') !== '50') return `invalid reference limit ${url.search}`
+  const fixedRecordWindow = url.searchParams.get('history_limit') === '200'
+  if (url.searchParams.has('history_limit') && !['50', '200'].includes(url.searchParams.get('history_limit'))) return `invalid reference limit ${url.search}`
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
   if (url.searchParams.has('history_before') && url.searchParams.get('history_before') !== 'reference-page-2') return `invalid reference cursor ${url.search}`
   if (url.searchParams.has('snapshot_token') && url.searchParams.get('snapshot_token') !== `snapshot:${strategy}:${frequency}:fixture-revision-1`) return `invalid snapshot token ${url.search}`
-  if (url.searchParams.has('performance_since') && url.searchParams.get('performance_since') !== '2026-01-01') return `invalid performance start ${url.search}`
+  if (url.searchParams.has('performance_since') && url.searchParams.get('performance_since') !== (fixedRecordWindow ? '2026-06-03' : '2026-01-01')) return `invalid performance start ${url.search}`
   if (url.searchParams.has('performance_through') && url.searchParams.get('performance_through') !== '2026-09-03') return `invalid performance end ${url.search}`
   const fixtureDates = ['2025-01-01', '2025-12-15', '2025-12-31', '2026-01-01', '2026-01-05', '2026-01-06', '2026-09-03']
   if (url.searchParams.has('from') && !fixtureDates.includes(url.searchParams.get('from'))) return `invalid chart start ${url.search}`
@@ -366,7 +367,7 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
       : url?.searchParams.has('history_before')
       ? [facts.interrupted.trade, facts.initial.trade]
       : [facts.open.trade, ...(payload.reference.value.summary.closed_count === 0 ? [] : [facts.closed.trade])]
-    if (JSON.stringify(payload.reference.value.items.map(tradeRelation)) !== JSON.stringify(expected.map(tradeRelation))) throw new Error('fixture ReferenceTrade/Action relation drift')
+    if (JSON.stringify(payload.reference.value.items.map(tradeRelation)) !== JSON.stringify(expected.filter(item => url?.searchParams.get('history_limit') !== '200' || (item.entry_trading_day >= payload.reference.value.performance_since && item.entry_trading_day <= payload.reference.value.performance_through)).map(tradeRelation))) throw new Error('fixture ReferenceTrade/Action relation drift')
     if (new Set(payload.reference.value.items.map((item) => item.entry_signal_id)).size !== payload.reference.value.items.length) throw new Error('fixture reference identity drift')
     if (payload.reference.value.summary.closed_count > 0 && (payload.reference.value.summary.mean_return_pct !== facts.closed.trade.reference_return_pct || payload.reference.value.summary.sum_return_percentage_points !== facts.closed.trade.reference_return_pct)) throw new Error('fixture reference summary drift')
   }
@@ -635,14 +636,19 @@ function referenceValue(url, strategy, frequency, options) {
   const zero = options.zeroClosed === true
   const facts = scenarioFacts(strategy, frequency, options.longHistory === `${strategy}:${frequency}`)
   const initialClear = options.initialClear === true && strategy === 'main_rise' && frequency === '1d'
+  const since = url.searchParams.get('performance_since') || '2026-01-01'
+  const fixedRecords = url.searchParams.get('history_limit') === '200'
+  const inWindow = item => item.entry_trading_day >= since && item.entry_trading_day <= '2026-09-03'
+  const hasClosed = !zero && !initialClear && (!fixedRecords || inWindow(facts.closed.trade))
+  const items = initialClear ? [] : page ? [facts.interrupted.trade, facts.initial.trade] : [facts.open.trade, ...(zero ? [] : [facts.closed.trade])]
   const summary = {
-    membership_policy: 'entry_in_window_v1', closed_count: zero || initialClear ? 0 : 1, win_count: zero || initialClear ? 0 : 1, loss_count: 0, flat_count: 0,
-    win_rate_pct: zero || initialClear ? null : '100', mean_return_pct: zero || initialClear ? null : facts.closed.trade.reference_return_pct, sum_return_percentage_points: zero || initialClear ? null : facts.closed.trade.reference_return_pct,
-    open_count: initialClear ? 0 : 1, interrupted_count: initialClear ? 0 : 1, rollover_interrupted_count: initialClear ? 0 : 1, data_interrupted_count: 0, initial_count: initialClear ? 0 : 1,
+    membership_policy: 'entry_in_window_v1', closed_count: hasClosed ? 1 : 0, win_count: hasClosed ? 1 : 0, loss_count: 0, flat_count: 0,
+    win_rate_pct: hasClosed ? '100' : null, mean_return_pct: hasClosed ? facts.closed.trade.reference_return_pct : null, sum_return_percentage_points: hasClosed ? facts.closed.trade.reference_return_pct : null,
+    open_count: initialClear || (fixedRecords && !inWindow(facts.open.trade)) ? 0 : 1, interrupted_count: initialClear || fixedRecords ? 0 : 1, rollover_interrupted_count: initialClear || fixedRecords ? 0 : 1, data_interrupted_count: 0, initial_count: initialClear || fixedRecords ? 0 : 1,
   }
   return {
-    performance_since: '2026-01-01', performance_through: '2026-09-03', actual_available_through: '2026-09-03', reference_cutoff: url.searchParams.get('as_of') || NEWOW_AS_OF,
-    reference_input_sha256: HASH.reference, history_coverage: 'FULL', unavailable_days: [], coverage_intervals: [{ since: '2026-01-01', through: '2026-09-03', status: 'VALID', physical_contract: CONTRACT, segment_id: SEGMENT, calculation_segment_id: SEGMENT }], summary, items: initialClear ? [] : page ? [facts.interrupted.trade, facts.initial.trade] : [facts.open.trade, ...(zero ? [] : [facts.closed.trade])], next_before: initialClear || page ? null : 'reference-page-2',
+    performance_since: since, performance_through: '2026-09-03', actual_available_through: '2026-09-03', reference_cutoff: url.searchParams.get('as_of') || NEWOW_AS_OF,
+    reference_input_sha256: HASH.reference, history_coverage: 'FULL', unavailable_days: [], coverage_intervals: [{ since, through: '2026-09-03', status: 'VALID', physical_contract: CONTRACT, segment_id: SEGMENT, calculation_segment_id: SEGMENT }], summary, items: fixedRecords ? items.filter(inWindow) : items, next_before: initialClear || fixedRecords || page ? null : 'reference-page-2',
     executable: false, auto_order: false, allowed_uses: ['page_parity_reference', 'research_display'],
   }
 }

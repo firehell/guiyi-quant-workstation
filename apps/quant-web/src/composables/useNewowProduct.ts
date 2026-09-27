@@ -94,6 +94,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   let chartFingerprint: string | null = null
   let acceptedChartGenerationSignature: string | null = null
   let chartPageLimit: number | null = null
+  // Main-chart labels retain their accepted reference snapshot independently of performance tabs.
+  const chartReference = shallowRef<NewowProductSectionResponse<'reference'> | null>(null)
   let referenceWindow: { since: string; through: string } | null = null
   let referenceFingerprint: string | null = null
   const referencePages = createReferencePageState<NewowReferenceValue['items'][number]>(item => item.reference_trade_id, MAX_ACCUMULATED_REFERENCE_TRADES, true)
@@ -411,6 +413,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       const accepted = acceptReference(response, request)
       if (accepted === null) return
       resource.data.value = accepted
+      if (chartReference.value === null) chartReference.value = accepted
     } else {
       resource.data.value = response
     }
@@ -512,7 +515,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
   }
 
-  function acceptReference(response: NewowProductSectionResponse<'reference'>, request: NewowProductRequest): NewowProductSectionResponse | null {
+  function acceptReference(response: NewowProductSectionResponse<'reference'>, request: NewowProductRequest): NewowProductSectionResponse<'reference'> | null {
     const value = response.value!
     const fingerprint = referenceIdentity(response.meta, value)
     const existing = resources.reference.data.value
@@ -601,6 +604,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function invalidateChartDependents(): void {
+    chartReference.value = null
     invalidateAuxiliaryCache()
     for (const section of ['auxiliary', 'reference', 'explanation', 'comparator'] as const) invalidateSection(section)
   }
@@ -627,6 +631,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   function resetPagination(section: 'chart' | 'reference'): void {
     if (section === 'chart') {
+      chartReference.value = null
       acceptedCurrentChartWindow.value = false
       acceptedHistoricalChartWindow.value = false
       chartWindow = null
@@ -681,6 +686,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     && resources.chart.data.value?.section === 'chart' && resources.chart.data.value.value !== null)
 
   return {
+    chartReference: readonly(chartReference),
     acceptedAuxiliaryWindow: readonly(acceptedAuxiliaryWindow),
     currentChartWindow: readonly(currentChartWindow),
     historicalChartWindow: readonly(historicalChartWindow),

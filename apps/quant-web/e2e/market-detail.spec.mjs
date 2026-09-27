@@ -1,20 +1,17 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  assertNewowCupFixtureLifecycle,
   detailBar,
   htdyEvent,
   installDetailFakeWebSocket,
   mockMarketDetail,
   navigateClient,
-  newowTrendDetailFixture,
   trendGenericBars,
   subingEvent,
   subingRule,
 } from './market-detail.helpers.mjs'
 
 const freeJm = '/market/chart?symbol=jm&view=free&series_kind=actual_dominant&frequency=15m'
-const trendJm = '/market/chart?symbol=jm&view=trend'
 
 function freeHistory(total) {
   return Array.from({ length: total }, (_, index) => detailBar('jm', index, 100 + index))
@@ -37,7 +34,7 @@ async function mockPagedFreeHistory(page, total = 540) {
   })
 }
 
-async function mockReadyTrend(page, options = {}) {
+async function mockDetailDailyQuote(page, options = {}) {
   return mockMarketDetail(page, {
     barsPage({ url, symbol }) {
       if (url.searchParams.get('frequency') !== '1d') return undefined
@@ -51,11 +48,6 @@ async function mockReadyTrend(page, options = {}) {
         ],
       }
     },
-    newowTrendDetail: ({ url, product }) => newowTrendDetailFixture({
-      product,
-      from: url.searchParams.get('from'),
-      through: url.searchParams.get('through'),
-    }),
     ...options,
   })
 }
@@ -79,7 +71,7 @@ async function unifiedShellVisual(page) {
       navigationLeft: navigationBox.left,
       navigationRight: navigationBox.right,
       quoteDisplay: quoteStyle.display,
-      quoteClass: quote.className,
+      quoteUnified: quote.classList.contains('quote-header--unified'),
     }
   })
 }
@@ -148,14 +140,14 @@ test('Free mounts its generic workspace without the legacy sidebar or strategy m
 })
 
 test('Newow HTDY and Free share one visual shell while preserving quote semantics', async ({ page }) => {
-  await mockReadyTrend(page)
+  await mockDetailDailyQuote(page)
   await page.goto('/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
 
   const quote = page.locator('.quote-header')
   await expect(quote).toContainText('最近日线收盘')
   await expect(quote).toContainText('非实时')
   const newowVisual = await unifiedShellVisual(page)
-  expect(newowVisual.quoteClass).toContain('quote-header--unified')
+  expect(newowVisual.quoteUnified).toBe(true)
   expect(newowVisual.navigationMarginLeft).toBe('-24px')
   expect(newowVisual.navigationMarginRight).toBe('-24px')
   expect(newowVisual.navigationLeft).toBe(0)
@@ -474,7 +466,7 @@ test('legacy Trend route migrates once into the unified Newow trend identity', a
 })
 
 test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', async ({ page }) => {
-  const requests = await mockReadyTrend(page, {
+  const requests = await mockDetailDailyQuote(page, {
     alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
     alertRules: [subingRule()],
   })
@@ -503,7 +495,7 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
 
 test('SuBing projects Rule-specific runtime warm-up and failure states', async ({ page }) => {
   let errorType = 'evaluation_warming_up'
-  await mockReadyTrend(page, {
+  await mockDetailDailyQuote(page, {
     alertRules: [subingRule()],
     subingRuntimeRuleStatus: () => ({ error_type: errorType }),
   })
@@ -519,7 +511,7 @@ test('SuBing projects Rule-specific runtime warm-up and failure states', async (
 
 test('SuBing has stable desktop and narrow viewport visuals with selectable history', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await mockReadyTrend(page, {
+  await mockDetailDailyQuote(page, {
     barsPage: ({ url, symbol }) => url.searchParams.get('frequency') === '15m'
       ? { bars: Array.from({ length: 40 }, (_, index) => detailBar(symbol, index, 100 + index)) }
       : undefined,
@@ -545,7 +537,7 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
 })
 
 test('SuBing history opens the matching immutable AlertEvent detail while chart markers remain passive', async ({ page }) => {
-  await mockReadyTrend(page, {
+  await mockDetailDailyQuote(page, {
     alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
     alertRules: [subingRule()],
   })
@@ -557,7 +549,7 @@ test('SuBing history opens the matching immutable AlertEvent detail while chart 
 })
 
 test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
-  await mockReadyTrend(page, {
+  await mockDetailDailyQuote(page, {
     alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
     alertRules: [subingRule()],
   })
@@ -569,7 +561,7 @@ test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
 })
 
 test('SuBing focus remains visible after viewport readiness settles', async ({ page }) => {
-  await mockReadyTrend(page, {
+  await mockDetailDailyQuote(page, {
     barsPage: ({ url, symbol }) => url.searchParams.get('frequency') === '15m'
       ? { bars: Array.from({ length: 600 }, (_, index) => detailBar(symbol, index, 100 + index)) }
       : undefined,

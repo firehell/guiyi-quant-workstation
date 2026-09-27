@@ -22,7 +22,7 @@ test('home and detail share one global market navigation and one product selecto
 test('detail analysis navigation uses one flat six-choice order on every view', () => {
   const source = read('../src/components/market/detail/MarketDetailViewNav.vue')
   const page = read('../src/pages/market/MarketDetailPage.vue')
-  const labels = ['震荡策略', '趋势策略', '主升浪', '火天大有', '苏冰预警', '自由看盘']
+  const labels = ['震荡策略', '趋势策略', '双策略', '火天大有', '苏冰预警', '自由看盘']
   let previous = -1
   for (const label of labels) {
     const next = source.indexOf(`label: '${label}'`)

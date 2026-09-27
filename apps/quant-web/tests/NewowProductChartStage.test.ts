@@ -301,6 +301,7 @@ test('same product and frequency strategy switches keep viewport while replacing
   const ranges: Array<typeof range> = []
   const bandCalls: unknown[][] = []
   const channelCalls: unknown[][] = []
+  const candleCalls: unknown[][] = []
   const { NewowProductBandPrimitive } = await import('../src/components/market/detail/newow/newowProductBandPrimitive.ts')
   const { NewowTrendChannelPrimitive } = await import('../src/components/market/detail/newow/newowTrendChannelPrimitive.ts')
   const originalBand = NewowProductBandPrimitive.prototype.setData
@@ -310,8 +311,9 @@ test('same product and frequency strategy switches keep viewport while replacing
   try {
     const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
     const strategy = ref<'trend' | 'oscillation' | 'main_rise'>('trend')
+    const switching = ref(false)
     const fakeChart = {
-      addSeries: () => ({ setData() {}, createPriceLine() {} }), removeSeries() {},
+      addSeries: (definition: { type: string }) => ({ setData(items: unknown[]) { if (definition.type === 'Candlestick') candleCalls.push([...items]) }, createPriceLine() {} }), removeSeries() {},
       timeScale: () => ({
         fitContent() {},
         setVisibleLogicalRange(value: typeof range) { range = value; ranges.push(value) },
@@ -321,16 +323,18 @@ test('same product and frequency strategy switches keep viewport while replacing
       subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
     }
     const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
-      response: response.value, strategy: strategy.value, selectedSignalId: null,
+      response: response.value, strategy: strategy.value, strategySwitching: switching.value, selectedSignalId: null,
     }) }))
     app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
     app.mount(element('root')); await nextTick()
     range = { from: 12, to: 42 }
 
-    response.value = null; strategy.value = 'oscillation'; await nextTick()
+    const acceptedCandles = candleCalls.at(-1)
+    switching.value = true; response.value = null; strategy.value = 'oscillation'; await nextTick()
+    assert.deepEqual(candleCalls.at(-1), acceptedCandles, 'strategy loading preserves market candles while revoking strategy overlays')
     assert.deepEqual(bandCalls.at(-1), [])
     assert.deepEqual(channelCalls.at(-1), [])
-    response.value = strategyResponse('oscillation'); await nextTick()
+    switching.value = false; response.value = strategyResponse('oscillation'); await nextTick()
     assert.deepEqual(range, { from: 12, to: 42 })
     assert.deepEqual(bandCalls.at(-1), [])
     assert.equal(channelCalls.at(-1)?.length, 1)
@@ -339,6 +343,11 @@ test('same product and frequency strategy switches keep viewport while replacing
     assert.deepEqual(range, { from: 12, to: 42 })
     assert.equal(bandCalls.at(-1)?.length, 1)
     assert.deepEqual(channelCalls.at(-1), [])
+
+    switching.value = true; response.value = null; await nextTick()
+    switching.value = false; await nextTick()
+    assert.deepEqual(candleCalls.at(-1), [], 'failed strategy transition revokes retained price display')
+    response.value = strategyResponse('main_rise'); await nextTick()
 
     const incompatible = strategyResponse('trend')
     incompatible.value!.bars[0]!.bar_end = '2026-08-15T06:00:00Z'
@@ -552,6 +561,42 @@ test('same chart instance restores identity-specific layers and viewport across 
   app.unmount()
 })
 
+test('dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit', async () => {
+  const Stage = await loadComponent()
+  const response = strategyResponse('trend')
+  const partner = ref<MutableChartResponse | null>(strategyResponse('oscillation'))
+  const attached: Array<{ setData(data: unknown[]): void; constructor: { name: string } }> = []
+  const fakeChart = { addSeries: () => ({ setData() {}, createPriceLine() {},
+    attachPrimitive(value: typeof attached[number]) { attached.push(value) }, detachPrimitive() {}, priceToCoordinate: (price: number) => price * 2 }),
+    removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
+    timeScale: () => ({ width: () => 600, timeToCoordinate: () => 210, fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: 'trend', comparisonResponse: partner.value, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root'); app.mount(root); await nextTick(); await nextTick()
+  assert.ok(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'))
+  const actions = findNode(root, n => n.type === 'button' && textContent(n) === '建仓 / 清仓')!
+  if (actions.props['aria-pressed'] === false) {
+    ;(actions.props.onClick as () => void)(); await nextTick(); await nextTick()
+  }
+  for (const origin of ['trend', 'oscillation']) {
+    const label = findNode(root, n => n.props['data-origin-strategy'] === origin)
+    assert.ok(label)
+    assert.equal(label.props['data-anchor-y'], 180)
+    assert.match(String(label.props.class), new RegExp(`origin-${origin}`))
+  }
+  const background = attached.find(p => p.constructor.name === 'NewowDualBackgroundPrimitive')!
+  assert.ok(background)
+  partner.value = null; await nextTick(); await nextTick()
+  assert.equal(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'), undefined)
+  assert.equal(findNode(root, n => n.props['data-origin-strategy'] === 'oscillation'), undefined)
+  app.unmount()
+})
+
 
 test('reference price lines use supplied values and remove stale levels on replacement or invalidation', async () => {
   const Stage = await loadComponent()
@@ -580,6 +625,51 @@ test('reference price lines use supplied values and remove stale levels on repla
   target.value = '3143'; await nextTick()
   response.value = null; await nextTick()
   assert.equal(prices().length, 0)
+  app.unmount()
+})
+
+test('oscillation breakout is an orange native price line and is revoked on strategy switch or loading', async () => {
+  const Stage = await loadComponent()
+  const payload = chartResponse()
+  const bars = Array.from({ length: 12 }, (_, i) => bar(`2026-08-15T${String(i + 1).padStart(2, '0')}:00:00Z`, '2026-08-15'))
+  bars[9] = { ...bars[9]!, open: '110', close: '95', high: '112', volume: 20 }
+  payload.value!.bars = bars
+  payload.value!.frames = bars.map(item => ({ bar_end: item.bar_end, main_state: 'FLAT', main_values: { upper: '112', lower: '90' }, status: ready(), action_ids: [], hint_ids: [] }))
+  payload.value!.actions = []; payload.value!.hints = []
+  const response = ref<MutableChartResponse | null>(payload)
+  const loading = ref(false)
+  const selectedStrategy = ref('oscillation')
+  const active = new Set<Record<string, unknown>>()
+  const fakeChart = { addSeries: () => ({ setData() {},
+    createPriceLine(options: Record<string, unknown>) { const line = { ...options, applyOptions() {} }; active.add(line); return line },
+    removePriceLine(line: Record<string, unknown>) { active.delete(line) },
+  }), removeSeries() {}, timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+    scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: selectedStrategy.value, loading: loading.value, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  const breakout = () => [...active].filter(line => String(line.title).startsWith('突破'))
+  assert.deepEqual(breakout().map(line => [line.title, line.price, line.color, line.lineStyle, line.axisLabelVisible]), [['突破 6/7', 95, '#FF9800', 2, true]])
+  loading.value = true; await nextTick()
+  assert.equal(breakout().length, 0, 'refresh loading revokes the old line even when a ready response is retained')
+  loading.value = false; await nextTick()
+  assert.equal(breakout().length, 1)
+  selectedStrategy.value = 'trend'; await nextTick()
+  assert.equal(breakout().length, 0, 'new strategy cannot briefly expose the old oscillation overlay')
+  selectedStrategy.value = 'oscillation'; await nextTick()
+  assert.equal(breakout().length, 1)
+  response.value = { ...payload, status: { ...ready(), status: 'warming' } }; await nextTick()
+  assert.equal(breakout().length, 0)
+  response.value = payload; await nextTick()
+  assert.equal(breakout().length, 1)
+  response.value = strategyResponse('trend'); await nextTick()
+  assert.equal(breakout().length, 0)
+  response.value = null; await nextTick()
+  assert.equal(breakout().length, 0)
   app.unmount()
 })
 

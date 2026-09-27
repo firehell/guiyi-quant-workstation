@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { newowReferenceCurve, newowReferenceAnnualized, newowTheoreticalDisplay } from '../src/utils/newowReferenceCurve.ts'
+import { newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '../src/utils/newowReferenceCurve.ts'
 import { buildNewowFixtureEnvelopeForTest } from '../e2e/newow-product.helpers.mjs'
 import type { NewowReferenceValue } from '../src/types/newowProduct.ts'
 function value(): NewowReferenceValue { return buildNewowFixtureEnvelopeForTest('reference').reference.value }
@@ -64,4 +64,15 @@ test('page reference annualization uses the accepted window and excludes incompl
   assert.equal(JSON.stringify(v), original)
   assert.equal(newowTheoreticalDisplay({ ...input, theoretical: { ...input.theoretical, returns: [] } }), null)
   assert.equal(newowTheoreticalDisplay({ ...input, theoretical: { ...input.theoretical, model_version: 'unknown' } }), null)
+})
+
+test('drawdown uses normalized additive curve peaks, including the initial baseline', () => {
+  const v = value()
+  const trade = v.items.find(t => t.status === 'CLOSED')!
+  const make = (returns: string[], sum: string) => ({ ...v, history_coverage: 'FULL' as const, curve_trades: returns.map((r, i) => ({ ...trade, reference_trade_id: String(i), exit_bar_end: `2026-09-0${i + 1}T07:00:00Z`, reference_return_pct: r })), summary: { ...v.summary, closed_count: returns.length, sum_return_percentage_points: sum } })
+  assert.equal(newowReferenceDrawdown(make(['20', '-30', '5'], '-5')), '25.00')
+  assert.equal(newowReferenceDrawdown(make(['-10', '20'], '10')), '10.00')
+  assert.equal(newowReferenceDrawdown(make(['1', '2'], '3')), '0.00')
+  assert.equal(newowReferenceDrawdown({ ...make(['1'], '1'), history_coverage: 'PARTIAL' }), null)
+  assert.equal(newowReferenceDrawdown(make([], '0')), null)
 })

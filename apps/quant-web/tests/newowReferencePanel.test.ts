@@ -213,6 +213,66 @@ test('simple sum keeps percentage points separate and never appends a percent un
   assert.equal(model.summary.sumText.includes('%'), false)
 })
 
+test('curve axes use true extrema, unscaled labels and the full accepted statistics window', async () => {
+  for (const result of ['10', '-10', '0']) {
+    const Panel = await loadComponent()
+    const response = referenceResponse()
+    response.value!.performance_since = '2025-09-24'
+    response.value!.items = [trade('closed', { status: 'CLOSED', reference_return_pct: result, statistics_membership: 'entry_in_window_v1', exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15' })]
+    response.value!.next_before = null
+    response.value!.summary.closed_count = 1
+    response.value!.summary.sum_return_percentage_points = result
+    response.value!.performance_through = '2026-09-24'
+    response.value!.actual_available_through = '2026-09-24'
+    const root = element('root')
+    const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
+      response, chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
+      selectedSignalId: null, locateMessage: null, loadingPage: false,
+    }) }))
+    app.mount(root)
+    await nextTick()
+    const ticks = findNodes(root, node => node.props.class === 'newow-reference__value-tick')
+    assert.equal(ticks.length, 5)
+    assert.ok(ticks.every(node => node.type === 'span' && /-?\d+\.\d%/.test(nodeText(node))))
+    assert.equal(nodeText(ticks[0]!), result === '10' ? '11.0%' : result === '-10' ? '0.0%' : '1.0%')
+    assert.equal(nodeText(ticks.at(-1)!), result === '-10' ? '-11.0%' : '0.0%')
+    const dates = findNodes(root, node => node.props.class === 'newow-reference__date-tick')
+    assert.equal(dates.length, 7)
+    assert.ok(dates.every(node => /^\d{2}-\d{2}$/.test(nodeText(node))))
+    assert.equal(nodeText(dates[0]!), '09-24')
+    assert.equal(dates.at(-1)!.props.title, '2026-09-24')
+    assert.equal(nodeText(dates.at(-1)!), '09-24')
+    app.unmount()
+  }
+})
+
+test('performance loading and tab responses do not replace recent record cards', async () => {
+  const Panel = await loadComponent()
+  const performance = ref<NewowProductSectionResponse<'reference'> | null>(referenceResponse())
+  const recent = referenceResponse()
+  const busy = ref(false)
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: performance.value, recordsResponse: recent, chartResponse: chartResponse(), crossSectionCompatible: true,
+    lifecycle: busy.value ? 'loading' : 'ready', error: null, selectedSignalId: null, locateMessage: null, loadingPage: busy.value,
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const cards = () => findNodes(root, node => node.props['data-reference-category'] !== undefined).map(nodeText)
+  const before = cards()
+  assert.ok(before.length)
+  busy.value = true
+  performance.value = null
+  await nextTick()
+  assert.deepEqual(cards(), before)
+  busy.value = false
+  performance.value = { ...referenceResponse(), value: { ...referenceResponse().value!, items: [] } }
+  await nextTick()
+  assert.deepEqual(cards(), before)
+  app.unmount()
+})
+
 test('reference panel keeps the server summary and all passive reference records without removed controls', async () => {
   const Panel = await loadComponent()
   const located: Array<{ reference_trade_id: string; entry_signal_id: string; entry_bar_end: string }> = []
@@ -229,10 +289,10 @@ test('reference panel keeps the server summary and all passive reference records
   const summary = findNode(root, (node) => node.props['data-testid'] === 'newow-reference-summary')!
   assert.match(nodeText(summary), /胜率\s*—/)
   assert.doesNotMatch(nodeText(summary), /统计时间与来源|所选统计区间已按权威截止完成计算|收益为百分点（简单相加）/)
-  assert.deepEqual(findNodes(summary, node => node.type === 'dt').map(nodeText), ['累计参考收益', '胜率', '平均单笔', '已完成交易'])
+  assert.deepEqual(findNodes(summary, node => node.type === 'dt').map(nodeText), ['累计收益', '胜率', '最大回撤', '交易次数'])
   const returns = findNode(root, node => node.props['aria-label'] === '已完成参考交易累计收益曲线')!
   assert.ok(findNode(returns, node => node.props['data-testid'] === 'newow-reference-summary'))
-  assert.doesNotMatch(nodeText(returns), /年化|最大回撤|未清仓浮动|中断结果|查看交易/)
+  assert.doesNotMatch(nodeText(returns), /年化|未清仓浮动|中断结果|查看交易/)
 
   const fullText = nodeText(root)
   assert.doesNotMatch(fullText, /累计百分点 · 已完成交易 · 零成本页面参考/)
@@ -540,7 +600,7 @@ function nodeText(node: TestNode): string { return [node.text, ...node.children.
 function nodeOperations() {
   return {
     patchProp(node: TestNode, key: string, _previous: unknown, next: unknown) { node.props[key] = next },
-    insert(child: TestNode, parent: TestNode, anchor: TestNode | null = null) { child.parent = parent; const index = anchor === null ? -1 : parent.children.indexOf(anchor); if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child) },
+    insert(child: TestNode, parent: TestNode, anchor: TestNode | null = null) { if (child.parent) child.parent.children = child.parent.children.filter(node => node !== child); child.parent = parent; const index = anchor === null ? -1 : parent.children.indexOf(anchor); if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child) },
     remove(child: TestNode) { if (child.parent === null) return; child.parent.children = child.parent.children.filter((item) => item !== child); child.parent = null },
     createElement: (type: string) => element(type), createText(text: string) { const node = element('#text'); node.text = text; return node }, createComment(text: string) { const node = element('#comment'); node.text = text; return node },
     setText(node: TestNode, text: string) { node.text = text }, setElementText(node: TestNode, text: string) { node.text = text; node.children = [] },

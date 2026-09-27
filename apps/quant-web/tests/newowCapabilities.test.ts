@@ -400,3 +400,36 @@ test('PD/PT hourly preview remains scoped to PD and PT', async () => {
   assert.deepEqual(state.openFrequenciesFor('ap'), ['1d'])
   assert.equal(state.isFrequencyOpen('60m', 'au'), false)
 })
+
+test('capability validation rejects unknown versions and mismatched wire fields without fallback', async () => {
+  const valid = {
+    schema_version: 'newow_product_capabilities_v22', release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'], weekly_products: [...candidateWeeklyProducts].sort(),
+    deferred_frequencies: [{ frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' }],
+    open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+  }
+  const invalid = [
+    { schema_version: 'newow_product_capabilities_v23' },
+    { schema_version: 'toString' },
+    { schema_version: null },
+    { release_stage: 'daily_weekly_candidate' },
+    { open_frequencies: ['1w', '1d'] },
+    { open_frequencies: ['1d', '1w', '60m'] },
+    { weekly_products: valid.weekly_products.slice(1) },
+    { weekly_products: [...valid.weekly_products, 'au'] },
+    { weekly_products: candidateWeeklyProducts },
+    { deferred_frequencies: [] },
+    { deferred_frequencies: [{ frequency: '60m', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' }] },
+    { deferred_sections: [] },
+    { unexpected: true },
+  ]
+  for (const patch of invalid) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...valid, ...patch }) }),
+      (error: unknown) => error instanceof Error && 'code' in error && error.code === 'NEWOW_RESPONSE_INVALID')
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => structuredClone(valid) })
+  assert.ok(Object.isFrozen(accepted))
+  assert.ok(Object.isFrozen(accepted.weekly_products))
+  assert.ok(Object.isFrozen(accepted.deferred_frequencies[0]))
+})

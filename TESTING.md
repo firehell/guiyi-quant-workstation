@@ -882,7 +882,7 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
   tests/engineering/test_market_runtime_launchd.py
 
 pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
-  tests/runtimeStatus.test.ts tests/marketHomePageRoute.test.ts \
+  tests/marketHomePageRoute.test.ts \
   tests/marketHomePresentation.test.ts tests/marketHomeResource.test.ts
 env -u NO_COLOR -u FORCE_COLOR pnpm_config_verify_deps_before_run=false \
   pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \

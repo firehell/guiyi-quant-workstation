@@ -724,11 +724,19 @@ test('a changed reference fingerprint clears old pages and fixes the first actua
   const first = state.loadReference()
   pending[1]!.resolve(normalizedReference(pending[1]!.request, { performanceSince: '2025-02-01', nextBefore: 'cursor' }))
   await first
+  const chartReference = state.chartReference.value
+  assert.ok(chartReference?.value)
+  const chart = state.sections.chart.data.value
   const changed = state.loadReference({ performanceSince: '2025-03-01', performanceThrough: '2026-08-15' })
   assert.equal(state.sections.reference.data.value, null)
+  assert.equal(state.chartReference.value, chartReference)
+  assert.equal(state.sections.chart.data.value, chart)
   pending[2]!.resolve(normalizedReference(pending[2]!.request, { performanceSince: '2025-03-01', referenceHash: 'f'.repeat(64), items: [referenceItem('trade-3', '3.000')] }))
   await changed
   assert.deepEqual(state.sections.reference.data.value!.value.items.map((item) => item.reference_trade_id), ['trade-3'])
+  assert.equal(state.chartReference.value, chartReference)
+  assert.equal(state.sections.chart.data.value, chart)
+  assert.equal(pending.filter(item => item.request.section === 'chart').length, 1)
   state.dispose()
 })
 

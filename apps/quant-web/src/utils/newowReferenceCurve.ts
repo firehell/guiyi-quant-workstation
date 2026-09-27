@@ -63,3 +63,25 @@ export function newowTheoreticalDisplay(value: NewowReferenceValue): NewowRefere
   if (returns.size !== closed.length || theory.returns.length !== closed.length || closed.some(trade => !returns.has(trade.reference_trade_id))) return null
   return { ...value, curve_trades: closed.map(trade => ({ ...trade, reference_return_pct: returns.get(trade.reference_trade_id)! })), summary: { ...value.summary, sum_return_percentage_points: theory.sum_return_percentage_points, win_rate_pct: theory.win_rate_pct, mean_return_pct: theory.mean_return_pct } }
 }
+
+/** Page curve only: peak-to-trough loss of 100 + additive return, including starting capital 100. */
+export function newowReferenceDrawdown(value: NewowReferenceValue): string | null {
+  const curve = newowReferenceCurve(value)
+  if (value.history_coverage !== 'FULL' || curve.message !== null || !curve.points.length) return null
+  const values = curve.points.map(point => decimal(point.cumulative)!)
+  const scale = Math.max(...values.map(item => item.scale))
+  const baseline = 100n * 10n ** BigInt(scale)
+  let peak = baseline
+  let numerator = 0n
+  let denominator = baseline
+  for (const item of values) {
+    const equity = baseline + item.units * 10n ** BigInt(scale - item.scale)
+    if (equity > peak) peak = equity
+    const loss = peak - equity
+    if (loss * denominator > numerator * peak) { numerator = loss; denominator = peak }
+  }
+  // Round percentage to two decimal places without binary floating-point arithmetic.
+  const scaled = numerator * 10000n
+  const rounded = scaled / denominator + (scaled % denominator * 2n >= denominator ? 1n : 0n)
+  return text(rounded, 2)
+}

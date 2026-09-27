@@ -24,6 +24,7 @@ export interface FusionTrade {
 }
 export interface FusionComparison {
   reference_model_version: string
+  reference_input_sha256: string
   groups: FusionGroup[]
   items: FusionTrade[]
   records_truncated: boolean

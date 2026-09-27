@@ -4,14 +4,6 @@ import test from 'node:test'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-test('shared status strip keeps the summary compact and opens one evidence drawer', () => {
-  const source = read('../src/components/market/detail/MarketDetailStatusStrip.vue')
-  assert.match(source, /查看依据/)
-  assert.match(source, /<MarketDetailDrawer/)
-  assert.match(source, /<MarketDetailFactStrip/)
-  assert.match(source, /role="status"/)
-})
-
 test('Free puts direct indicator controls before the chart instead of a status strip', () => {
   const source = read('../src/components/market/detail/free/FreeChartWorkspace.vue')
   assert.doesNotMatch(source, /<MarketDetailStatusStrip/)

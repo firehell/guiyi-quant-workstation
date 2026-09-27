@@ -1241,7 +1241,11 @@ class NewowProductService:
                 EvidenceStatus.ACTIVE_CODE_VERIFIED,
                 "NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING",
             )
-        channel = build_trend_channel_layer(read.replay_bars, tuple(frame.bar for frame in selected))
+        # Replay labels quality-policy and price-gap calculation segments. The
+        # channel prefix and its visible anchors must share those exact labels.
+        channel = build_trend_channel_layer(
+            tuple(frame.bar for frame in replay.frames), tuple(frame.bar for frame in selected)
+        )
         price_reference = project_chart_price_reference(
             channel, selected[-1].bar, as_of=read.replay_bars[-1].bar.bar_end,
             input_sha256=lifecycle_input_sha256(read.replay_bars),
