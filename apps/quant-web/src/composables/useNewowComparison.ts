@@ -9,6 +9,8 @@ type Chart = NewowProductSectionResponse<'chart'>
 type FetchChart = (request: NewowProductRequest, signal: AbortSignal) => Promise<NewowProductSectionResponse>
 export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: Readonly<Ref<boolean>>, fetch: FetchChart = (request, signal) => getNewowProductSection(request, { signal })) {
   const response = shallowRef<Chart | null>(null)
+  const reference = shallowRef<NewowProductSectionResponse<'reference'> | null>(null)
+  const referenceError = shallowRef<string | null>(null)
   const state = shallowRef<NewowResourceLifecycle>('not_requested')
   const error = shallowRef<string | null>(null)
   let controller: AbortController | null = null
@@ -16,7 +18,7 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
   let disposed = false
   async function reload() {
     const current = ++generation
-    controller?.abort(); controller = null; response.value = null; error.value = null
+    controller?.abort(); controller = null; response.value = null; reference.value = null; referenceError.value = null; error.value = null
     const accepted = base.value
     if (disposed || !enabled.value || !accepted?.value || !newowChartSnapshotKey(accepted) || accepted.status.status !== 'ready'
       || !['trend', 'oscillation'].includes(accepted.meta.identity.strategy)) { state.value = 'not_requested'; return }
@@ -45,6 +47,18 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
         state.value = 'input_conflict'; error.value = '两策略的窗口、时间或物理合约事实无法对齐，已停止叠加。'; return
       }
       response.value = result; state.value = 'ready'
+      // Partner reference records keep their own accepted snapshot identity.
+      try {
+        const records = await fetch({ identity: request.identity, section: 'reference', asOf: request.asOf,
+          snapshotToken: result.meta.snapshot_token ?? undefined, historyLimit: 200 }, active.signal)
+        if (active.signal.aborted || current !== generation || disposed || base.value !== accepted) return
+        if (records.section !== 'reference' || records.status.status !== 'ready' || records.meta.snapshot_token !== result.meta.snapshot_token
+          || records.meta.identity.strategy !== result.meta.identity.strategy || records.meta.identity.product !== result.meta.identity.product
+          || records.meta.identity.frequency !== result.meta.identity.frequency || records.meta.as_of !== result.meta.as_of) throw new Error('reference conflict')
+        reference.value = records
+      } catch {
+        if (!active.signal.aborted && current === generation && !disposed) referenceError.value = '另一策略参考收益暂不可用，未计算缺失样本。'
+      }
     } catch {
       if (active.signal.aborted || current !== generation || disposed) return
       state.value = 'unavailable'; error.value = '双策略对照读取失败；单策略结果保持独立，可手动重试。'
@@ -52,5 +66,5 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
   }
   const stop = watch(() => [enabled.value, base.value], () => { void reload() }, { immediate: true, flush: 'sync' })
   function dispose() { disposed = true; ++generation; controller?.abort(); stop() }
-  return { response, state, error, reload, dispose }
+  return { response, reference, referenceError, state, error, reload, dispose }
 }
