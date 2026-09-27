@@ -1,3 +1,14 @@
+## 2026-09-27 Newow v1.10.38 已发布，Runtime 未切换
+
+汇总v1.10.37后已提交页面交互、日周CDV2依据、独立双策略入口及图形、收益与近三个月记录分离、震荡突破线和维护收敛。
+正式身份 `v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3`，PR #403已合并；annotated tag与非草稿GitHub Release已读回，候选源码树与main一致。
+Release：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.38
+最终前端691 passed/1 skipped、后端定向171 passed、隔离浏览器6 passed；build、Ruff、Newow spec和独立Review通过。
+工程检查22 passed/1既有截图批准库存失败，旧分页E2E漂移与全模块测试中断如实披露，未声明全量通过。
+本轮仅发布。只读服务状态overall=passed，API/Web HTTP200，实际运行根仍为v1.10.37/07cdb4b7；weekly保留23 finding，reference worker关闭。
+未改数据、迁移、Scope、通知、auto_order或分钟开放范围；新版本Runtime promotion、页面读回及自然验收未完成。
+详情见 `docs/tasks/newow-release-v1.10.38-20260927.md`。用户既有outputs和worktree保留。
+
 ## 2026-09-26 Newow v1.10.37 已发布并切换本机 Runtime
 
 已整理 v1.10.36 后全部已提交 Newow UI、融合参考、CDV2 与独立理论值改动，版本事实源统一 1.10.37。

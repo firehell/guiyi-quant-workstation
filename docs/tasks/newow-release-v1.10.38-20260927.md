@@ -4,7 +4,7 @@
 
 发布基线：`v1.10.37@07cdb4b7b72c1fa003d25bf2b47b3c3de127c8a4`。
 本轮开始 develop：`779551f310edd67d5eb4e25120bb0599cbf5698e`。
-状态：已完成候选验证与独立 Review，main/tag/GitHub Release 待执行。
+状态：`RELEASED`。发布PR #403已合并，正式annotated tag与非草稿、非预发布GitHub Release已读回。
 本轮交办为发布版本，不执行 Runtime promotion；正式运行身份保持独立记录。
 
 ## 修改汇总
@@ -51,3 +51,18 @@ env -u VITE_API_BASE_URL -u VITE_MARKET_WS_URL REAL_BACKEND=0 PLAYWRIGHT_PORT=51
 旧P9持久化面板及周审计finding仍独立未完成。
 
 源码可按Git记录恢复；正式Runtime未切换，无本轮运行状态需要回退。未清理用户outputs或既有worktree。
+
+## 正式发布身份与运行读回
+
+- 候选：`dfcb8796b1b6a9f26f033bbbce6fc633c3eb84d8`。
+- PR：[403](https://github.com/firehell/guiyi-quant-workstation/pull/403)，2026-09-27T04:23:42Z合并。
+- 正式：`v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3`。main合并源码树与候选完全一致。
+- Annotated tag object：`4bf676c5207dead50054da62802e5be38a03bd5a`；远端peeled commit为上述正式commit。
+- [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.38)：isDraft=false、isPrerelease=false、targetCommitish等于正式commit；publishedAt=2026-09-27T04:24:21Z。
+- develop已快进包含main发布commit，发布后的文档记录另提交，不移动正式tag。
+
+只读 `./scripts/ops/macos/local-services-status.sh`：overall=passed，API/Web HTTP200、Runtime health ok/readonly。
+实际API/Web/Live/Alert以及schedule-only服务仍指向独立`runtime-v1.10.37`和`07cdb4b7`；本次未执行任何installer或服务切换。
+weekly已读到旧根23项finding，截至9/24，reference worker关闭；没有将这些问题记为本版本解决。
+
+下一步：按新版本独立执行Runtime promotion和页面读回；在该目标被交办前保持当前运行根。自然业务验收仍单独记录。
