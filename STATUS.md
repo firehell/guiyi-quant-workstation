@@ -15,24 +15,24 @@ PR #404、annotated tag 与非草稿/非预发布
 旧 Newow fixture 扩展套件有合同漂移，本轮尝试保留失败输出并中断，不声明全套 E2E 通过。
 本机原始日志仅保留于 `outputs/release-v1.10.39-20260927/`，未纳入本轮发布提交。
 
-**现役 Runtime 仍为 v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3**，本轮未切换服务。
-发布时只读现场 API/Web HTTP200；runtime health=degraded，盘后 missed、Alert coverage 未验证，
-weekly missed 保持待验收，不声明 RUNTIME_READY。新发布树保留，旧现役树仍有服务引用，不清理。
+**现役 Runtime 已切换为 v1.10.39@653e736f5952146a2ea401634d32a605e7b9a0d5**。
+源码根为 linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.10.39`，detached/clean。
+冻结依赖和 build、render-only、Market preflight（non_trading_interval，60品种）通过；
+Market/base/Alert/weekly安装完成，六服务 root/commit、API版本1.10.39、HTTP200连续读回通过。
+运维状态脚本 overall=passed，runtime health=ok/readonly=true；新根盘后 pending，
+休市 Live/Alert coverage仍unverified、Alert组件degraded、weekly missed独立披露。
+health=ok只证明当前运维检查，不证明首次自然业务、全部Alert覆盖或RUNTIME_READY。
 
-现役源码根为 linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.10.38`，
-迁移时 detached/clean；六项服务 root/commit、HTTP200 和 readonly health 已读回。
-发布树统一位于扩展盘，切换读回后只保留最新版本；旧 runtime-v1.10.34～38 和旧 linked release-v1.10.36 已移除。
-问题在最新发布树向前修复并发布补丁，不覆盖旧 tag。必要历史盘后/周检 JSON 在
-`outputs/newow-release-v1.10.38-20260927/retired-runtime-evidence/`。
+旧v1.10.38根clean且配置/loaded服务/进程引用均为零；盘后JSON逐字节保留后，以非force Git worktree remove退休。
+现在仅保留最新发布树，不删除tag、数据、安全配置或用户outputs。历史23项weekly finding和P9阻断未解决。
+本轮不重跑盘后/周检、不清除健康错误、不回放Event或补发通知；operational/Rule/Scope/audience及auto_order=false不变。
+本机切换与退休证据位于 `outputs/release-v1.10.39-20260927/`，不提交原始运行日志。
 
-v1.10.38 当时切换及即时读回通过；该根第一根自然 completed Bar、自然盘后增量/MDS 与新根 weekly
-验收仍待完成，**不声明 RUNTIME_READY**。9/24 周检的 23 条 finding 保留；新根 missed/无结果不能替代历史结论。
-详见 [发布与切换记录](docs/tasks/newow-release-v1.10.38-20260927.md) 和
-`outputs/newow-release-v1.10.38-20260927/`。
+首根自然completed Bar、盘后增量/MDS与weekly结果仍待验收，**不声明RUNTIME_READY**。
 
 ## 当前产品与验证范围
 
-- Newow 日周三策略以及日周 CDV2 解释、独立双策略入口已随 v1.10.38 交付；主图、辅助、参考曲线和近三个月记录分层。
+- Newow 日周三策略以及日周 CDV2 解释、独立双策略入口已随 v1.10.38 交付；主图、辅助、参考曲线分层；v1.10.39参考记录已扩展为近一年。
   Newow 60m 未开放，日周解释不构成 StrategyDecision、模型账户或真实交易。
 - 正式 60 品种 D1/W1 默认快照、质量断点与预热披露已完成本轮数据/页面验收；不是每个组合均 READY 或盈利的声明。
   来源不足、WARMING、报价不可用及数据中断仍按合同表达。
