@@ -44,6 +44,7 @@ from app.market_data.newow.weekly_snapshot import (
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
     AU_PERIOD_PREVIEW_FREQUENCIES,
+    INTRADAY_BATCH_PREVIEW_SYMBOLS,
     AU_PERIOD_PREVIEW_SCHEMA_VERSION,
     AU_PERIOD_PREVIEW_STAGE,
     CAPABILITY_SCHEMA_VERSION,
@@ -237,9 +238,9 @@ def _input_quality_policy(
 
 def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:
     selected = ProductFrequency(frequency)
-    intraday = getattr(request.state, "intraday_preview_product", None)
+    intraday = getattr(request.state, "intraday_preview_products", None)
     if intraday is not None:
-        if product != intraday or intraday != "rb":
+        if product not in (intraday & INTRADAY_BATCH_PREVIEW_SYMBOLS):
             raise HTTPException(status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"})
         return
     hourly = _hourly_preview_products(request)
@@ -271,9 +272,15 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
 )
 def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse:
     """Return the single public scope used by clients for this staged release."""
-    if getattr(request.state, "intraday_preview_product", None) == "rb":
+    if getattr(request.state, "intraday_preview_products", None) is not None:
+        batch = getattr(request.state, "intraday_preview_batch", False)
         return NewowProductCapabilitiesResponse(
-            schema_version="newow_product_capabilities_v23", release_stage="rb_intraday_candidate",
+            schema_version=("newow_product_capabilities_v24" if batch
+                            else "newow_product_capabilities_v23"),
+            release_stage=("black_steel_intraday_candidate" if batch
+                           else "rb_intraday_candidate"),
+            intraday_products=(sorted(request.state.intraday_preview_products)
+                               if batch else None),
             open_frequencies=["1m", "15m", "30m", "60m", "1d", "1w"],
             open_sections=list(OPEN_SECTIONS), deferred_frequencies=[],
             deferred_sections=[DeferredSectionOut(section=section, reason_code=reason)
@@ -511,7 +518,7 @@ def newow_historical_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if (getattr(request.state, "intraday_preview_product", None) is not None
+        if (getattr(request.state, "intraday_preview_products", None) is not None
             and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
             raise ValueError("NEWOW_INVALID_QUERY")
         policy = _input_quality_policy(request, product, frequency)
@@ -611,7 +618,7 @@ def newow_weekly_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if (getattr(request.state, "intraday_preview_product", None) is not None
+        if (getattr(request.state, "intraday_preview_products", None) is not None
             and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
             raise ValueError("NEWOW_INVALID_QUERY")
         policy = _input_quality_policy(request, product, frequency)
@@ -686,7 +693,7 @@ def newow_strategy_detail(
     product = _normalize_public_product(product)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if (getattr(request.state, "intraday_preview_product", None) is not None
+        if (getattr(request.state, "intraday_preview_products", None) is not None
             and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
             raise ValueError("NEWOW_INVALID_QUERY")
         if not (decision_v2 and section == "explanation"):

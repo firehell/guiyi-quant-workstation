@@ -942,6 +942,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v21",
         "newow_product_capabilities_v22",
         "newow_product_capabilities_v23",
+        "newow_product_capabilities_v24",
     ]
     release_stage: Literal[
         "daily",
@@ -951,9 +952,11 @@ class NewowProductCapabilitiesResponse(_Out):
         "ap_hourly_candidate",
         "daily_weekly",
         "rb_intraday_candidate",
+        "black_steel_intraday_candidate",
     ]
     open_frequencies: list[ProductFrequencyValue]
     weekly_products: list[str] | None = None
+    intraday_products: list[str] | None = None
     deferred_frequencies: list[DeferredFrequencyOut]
     open_sections: list[
         Literal["chart", "auxiliary", "reference", "explanation", "comparator"]

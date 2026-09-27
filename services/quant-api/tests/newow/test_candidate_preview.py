@@ -586,3 +586,44 @@ def test_rb_minute_candidate_rejects_main_rise_before_kernel(preview, monkeypatc
     })
     assert response.status_code == 422
     assert response.json()['detail']['code'] == 'NEWOW_INVALID_QUERY'
+
+
+@pytest.mark.parametrize("raw", ("", "rb,au", "rb,rb", "rb,", "../../rb"))
+def test_intraday_batch_scope_rejects_invalid_configuration(monkeypatch, raw):
+    from app.preview import _intraday_preview_products
+    monkeypatch.delenv("GUIYI_INTRADAY_PREVIEW_PRODUCT", raising=False)
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS", raw)
+    with pytest.raises(ValueError, match="PREVIEW_SCOPE_INVALID"):
+        _intraday_preview_products()
+
+
+def test_intraday_batch_capability_and_exact_scope(preview, monkeypatch):
+    from types import SimpleNamespace
+    from app.api.market_newow import _enforce_product_frequency
+    monkeypatch.delenv("GUIYI_INTRADAY_PREVIEW_PRODUCT", raising=False)
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS", "rb,hc,ss,i,j,jm,sf,sm")
+    client = TestClient(preview[0])
+    value = client.get("/api/v1/market/newow/product-capabilities").json()
+    assert value["schema_version"] == "newow_product_capabilities_v24"
+    assert value["release_stage"] == "black_steel_intraday_candidate"
+    assert value["intraday_products"] == ["hc", "i", "j", "jm", "rb", "sf", "sm", "ss"]
+    request = SimpleNamespace(state=SimpleNamespace(intraday_preview_products=frozenset(value["intraday_products"])))
+    for product in value["intraday_products"]:
+        for frequency in value["open_frequencies"]:
+            _enforce_product_frequency(request, product, frequency)
+    for path in ("strategy-detail", "historical-snapshot", "daily-snapshot", "weekly-snapshot"):
+        response = client.get(f"/api/v1/market/newow/{path}", params={"product": "au"})
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+
+
+@pytest.mark.parametrize("params", (
+    {"symbol": "au", "series_kind": "actual_dominant"},
+    {"symbol": "rb", "series_kind": "physical_contract", "contract": "RB2701"},
+    {"symbol": "rb", "series_kind": "actual_dominant", "contract": "RB2701"},
+))
+def test_intraday_batch_raw_bars_cannot_bypass_scope(preview, monkeypatch, params):
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS", "rb,jm")
+    response = TestClient(preview[0]).get("/api/v1/market/bars/page", params={**params, "frequency": "1m"})
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"

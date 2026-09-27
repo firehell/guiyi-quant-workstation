@@ -70,6 +70,7 @@ const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
   ['newow_product_capabilities_v19', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V19 }],
   ['newow_product_capabilities_v20', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V20 }],
   ['newow_product_capabilities_v21', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V21 }],
+  ['newow_product_capabilities_v24', { stage: 'black_steel_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v23', { stage: 'rb_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v22', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
 ])
@@ -116,10 +117,18 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(profile.weeklyProducts ? ['weekly_products'] : []),
+    ...(value.schema_version === 'newow_product_capabilities_v24' ? ['intraday_products'] : []),
   ]
-  if (Object.keys(value).sort().join(',') !== expectedKeys.join(',')) return false
+  if (Object.keys(value).sort().join(',') !== expectedKeys.sort().join(',')) return false
   if (!sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])) return false
   if (profile.weeklyProducts && !sameLiteralArray(value.weekly_products, profile.weeklyProducts)) return false
+  if (value.schema_version === 'newow_product_capabilities_v24') {
+    const products = value.intraday_products
+    const allowed = ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
+    if (!Array.isArray(products) || products.length === 0
+      || !products.every(item => typeof item === 'string' && allowed.includes(item))
+      || !sameLiteralArray(products, [...new Set(products)].sort())) return false
+  }
   const openFrequencies: readonly string[] = profile.frequencies
   const deferred = (['1w', '60m'] as const).filter(frequency => !openFrequencies.includes(frequency))
   const deferredFrequencies = value.deferred_frequencies
@@ -155,6 +164,7 @@ function freezeProductCapabilities(
   for (const item of value.deferred_sections) Object.freeze(item)
   Object.freeze(value.open_frequencies)
   if (value.weekly_products) Object.freeze(value.weekly_products)
+  if (value.intraday_products) Object.freeze(value.intraday_products)
   Object.freeze(value.deferred_frequencies)
   Object.freeze(value.open_sections)
   Object.freeze(value.deferred_sections)

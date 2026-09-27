@@ -8,6 +8,8 @@ from guiyi_quant.newow.product_contracts import ProductFrequency
 from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 
+INTRADAY_BATCH_PREVIEW_SYMBOLS = frozenset({"rb", "hc", "ss", "i", "j", "jm", "sf", "sm"})
+
 ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
