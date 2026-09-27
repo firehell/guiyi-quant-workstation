@@ -96,3 +96,17 @@ HEAD=`07cdb4b7b72c1fa003d25bf2b47b3c3de127c8a4`，保留回退。两个tag之间
 
 Linked Worktrees显示的是本仓库`git worktree list`，不是Release历史。这次发布使用分支+PR403，没有新建linked release worktree；
 Runtime位于Application Support的独立clone，所以不在该列表。现有validation-closeout和release-v1.10.36 worktree均未清理。
+
+
+## owner更新发布树存储与清理约定
+
+2026-09-27 owner明确要求更新记忆/发布子代理，发布工作树放扩展盘按版本命名，只保留最新，不留回滚树。
+现役root改为`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.10.38`，源码仍是同一18b29c985 exact tag。
+新树冻结依赖/build、render/preflight、四组安装通过；安装使用既有`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`，没有更改宿主权限。
+初次状态failed仅因新建分支非detached，六服务/HTTP/health已正常；切到同commit detached后overall passed。正式运行要求detached/clean，修复时可在此树建立分支，完成新版本验证后重新冻结。
+删除前对旧release-v1.10.36和Application Support runtime-v1.10.34～38执行精确路径/HEAD/clean及配置/loaded服务/进程引用dry-run；均通过。
+运行JSON先按原版本目录复制并逐字节验证到`outputs/newow-release-v1.10.38-20260927/retired-runtime-evidence/`，随后普通Git worktree remove及精确独立clone清理，无force或宽泛glob删除。
+清理后仅保留最新发布树，develop与validation-closeout不属于发布树，保留。历史tag、Release、安全配置及用户outputs不删。
+规则修改：`.agents/skills/release-agent/SKILL.md`、`deploy/README.md`；记忆extension：`2026-09-27-release-worktree-storage.md`。
+读回日志：`/private/tmp/guiyi-external-v1.10.38-status.log`、`/private/tmp/guiyi-external-v1.10.38-post-cleanup.log`；清理工具为本轮精确清单`/private/tmp/guiyi-clean-old-release-roots.py`。
+本次只迁移同版本运行根和清理源码副本，不新增数据/通知/Scope，不声明自然RUNTIME_READY。

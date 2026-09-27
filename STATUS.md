@@ -1,3 +1,13 @@
+## 2026-09-27 发布树统一扩展盘，只保留最新版本
+
+按owner新约定，现役源码根统一为linked worktree
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.10.38`，detached/clean，exact tag/commit仍为v1.10.38/18b29c985。
+冻结依赖/build、render-only、non_trading_interval预检和四组安装完成；实际外接卷服务访问、六项root/commit、HTTP200与readonly health通过。
+删除预检确认6个旧副本干净且无配置/loaded服务/进程引用后，移除旧linked release-v1.10.36及Application Support中的runtime-v1.10.34～38。
+必要盘后/周审计JSON归档到 `outputs/newow-release-v1.10.38-20260927/retired-runtime-evidence/`；不常驻保留回滚树，问题在最新发布树向前修复并发布新补丁版本。
+发布子代理技能和deploy约定已更新；owner记忆已写入专用extension笔记。develop、validation-closeout、用户outputs、Git tags和安全配置均保留。
+新根自然业务验收仍待完成；迁移与清理不消除历史weekly finding或P9问题。
+
 ## 2026-09-27 v1.10.38 本机 Runtime 切换及页面读回完成
 
 正式 Runtime 已切到 `v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3`，独立 detached/clean 根
