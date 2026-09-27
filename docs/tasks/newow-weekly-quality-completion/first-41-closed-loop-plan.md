@@ -18,8 +18,9 @@
 - 2026-09-18 新只读检查：当前时间 60×3 个依赖入口均 MAIN_CONTRACT_MAP_MISSING；这是依赖枚举，不是浏览器测试。
 - 同日读取现存数据、冻结 2026-09-17 收盘后，41 品种 W1 消费窗口依赖通过；这不证明 D1 来源全量对账、
   周质量中断链、三策略矩阵、页面、最新周发布或下一周接续已经通过。
-- 原始对照：[历史依赖汇总](../../../outputs/newow-weekly-historical-inputs-20260918/summary.json)；
-  当前时间检查：[部署可用性盘点](../../../outputs/newow-weekly-deploy-readiness-20260918-r2/inventory.md)。
+- 原始对照：`outputs/newow-weekly-historical-inputs-20260918/summary.json`；
+  当前时间检查：`outputs/newow-weekly-deploy-readiness-20260918-r2/inventory.md`。
+  上述两份历史产物在当前工作区不存在，路径只保留追溯身份，不作为当前可用 evidence；重做相关操作前须重新取证。
 - 主工作区存在其他任务修改；实施使用独立工作树，复用已合入 D1 修复，不能覆盖其他工作树代码或复制旧 reader。
 
 固定 41 品种：

@@ -150,7 +150,7 @@ hash，不使用 settlement 填 OHLC，也不放宽 Newow 正价策略。
 
 ## 来源核验结果（COMPLETED）
 
-已将完整只读 provider 计划固定为 [source-verification-plan.json](source-verification-plan.json)：语义 plan
+已将完整只读 provider 计划固定为 `source-verification-plan.json`（历史记录引用；当前工作区缺少该文件，不能据此执行或认定已验证）：语义 plan
 SHA-256 `ab15a71dac6fbed376d77b58cfdf4f544b634bc1f68bd37e44e3754bdf60afb4`，持久文件 SHA-256
 `6c35272a8bf5f16f5532f30c6bf7106052b9070895635e023a895744407a85a5`。计划只使用
 `futures.get_exchange_daily`，覆盖 PF2611 与九个 RS，共 41 个精确日期窗口、146 个预期源行、41 个目标

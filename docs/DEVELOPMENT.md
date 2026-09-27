@@ -51,6 +51,15 @@ develop
 普通源码、测试、文档和仓库内普通删除可按上述流程执行。删除前先关闭 active
 references；历史恢复使用 Git，不建立 archive、backup 或 legacy-copy。
 
+## 文档与版本的唯一入口
+
+- [文档导航](../README.md#工程入口)只索引现役文档；任务边界在 `AGENTS.md`，当前发布、Runtime、待验收与下一步在 `STATUS.md`。
+- 稳定产品面在 `PROJECT_SOURCE.md`，依赖在 `docs/ARCHITECTURE.md`，领域语义在 accepted OpenSpec/deep canonical，验证入口在 `TESTING.md`。其他文档引用这些入口，不复制完成状态或规则。
+- 已完成且被现役合同取代的执行计划可删除，先检查引用；旧过程从 Git 查找。来源材料、公式审计、数据 journal、失败恢复及发布 evidence 不能仅因任务完成而删除。
+- **应用发布版本只改 `services/quant-api/app/version.py` 的 `APP_VERSION`**。API/OpenAPI/health 直接读取；Hatch 从同一文件生成 Python 包版本；Vite 从同一文件注入 `import.meta.env.VITE_APP_VERSION`。私有前端 package.json 不保存另一份发布版本。
+- `services/quant-api/uv.lock` 的 editable API 采用动态元数据，不再固化发布版本。修改版本后运行 `uv lock --check --offline --project services/quant-api`、版本一致性测试与前端 build；重新构建、安装和启动后消费者才使用新版本，已运行进程不会被修改源码自动升级。
+- 核心库版本、公式/profile/schema/capability 版本各有独立语义；已发布 tag、receipt 与历史 evidence 绑定当时身份，不能随应用版本替换。当前实际发布与 Runtime 身份仍以 `STATUS.md` 为准。
+
 ## 任务收敛与版本冻结
 
 阶段顺序和当前出口统一看 [STATUS.md](../STATUS.md) 的“已接受的后续交付规划”，

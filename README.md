@@ -14,10 +14,12 @@ EMA21 斜率只保留通用 10K 计算：10 个 EMA21 值、9 个间隔、输出
 
 ## 工程入口
 
+- [执行规则](AGENTS.md)
+- [开发与版本维护](docs/DEVELOPMENT.md)
 - [当前状态](STATUS.md)
 - [稳定产品边界](PROJECT_SOURCE.md)
 - [架构决策](DECISIONS.md)
 - [Active Architecture](docs/ARCHITECTURE.md)
 - [测试命令](TESTING.md)
 
-真实数据、生产 DB、Runtime、Scope、通知、main、release/tag 均受独立明确授权约束。所有研究观察 `auto_order=false`。
+任务授权与真实操作边界统一见 [AGENTS.md](AGENTS.md)。所有研究观察 `auto_order=false`。
