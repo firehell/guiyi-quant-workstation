@@ -18,9 +18,9 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13' | 'newow_product_capabilities_v14' | 'newow_product_capabilities_v15' | 'newow_product_capabilities_v16' | 'newow_product_capabilities_v17' | 'newow_product_capabilities_v18' | 'newow_product_capabilities_v19' | 'newow_product_capabilities_v20' | 'newow_product_capabilities_v21' | 'newow_product_capabilities_v22'
-  readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate' | 'daily_weekly'
-  readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m']
+  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13' | 'newow_product_capabilities_v14' | 'newow_product_capabilities_v15' | 'newow_product_capabilities_v16' | 'newow_product_capabilities_v17' | 'newow_product_capabilities_v18' | 'newow_product_capabilities_v19' | 'newow_product_capabilities_v20' | 'newow_product_capabilities_v21' | 'newow_product_capabilities_v22' | 'newow_product_capabilities_v23'
+  readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate' | 'daily_weekly' | 'rb_intraday_candidate'
+  readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m'] | readonly ['1m', '15m', '30m', '60m', '1d', '1w']
   readonly weekly_products?: readonly string[]
   readonly deferred_frequencies:
     | readonly [NewowDeferredFrequency, NewowDeferredFrequency]
@@ -693,7 +693,7 @@ interface NewowRequestCommon {
 export type NewowProductRequest =
   | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
-  | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
+  | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly fusionBefore?: string; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
   | (NewowRequestCommon & { readonly section: 'explanation'; readonly decisionV2?: boolean })
   | (NewowRequestCommon & { readonly section: 'comparator' })
 

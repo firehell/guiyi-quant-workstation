@@ -993,15 +993,28 @@ function normalizeFusion(payload: unknown, since: string, through: string, hash:
   requireExact(value.reference_cutoff, cutoff, 'fusion.cutoff')
   instant(value.reference_cutoff, 'fusion.cutoff')
   if (!Array.isArray(value.groups) || value.groups.length !== 3 || !Array.isArray(value.items) || typeof value.records_truncated !== 'boolean') throw new Error('invalid fusion')
-  const decimal = (v: unknown, nullable = true) => v === null && nullable || typeof v === 'string' && /^-?\d+(?:\.\d+)?$/.test(v)
+  const isDecimal = (v: unknown, nullable = true) => {
+    try { if (nullable) nullableDecimal(v, 'fusion.number'); else decimal(v, 'fusion.number'); return true } catch { return false }
+  }
   const source = (v: unknown) => v === 'trend' || v === 'oscillation'
   value.groups.forEach((raw, i) => {
     const g = record(raw, 'fusion.group')
     requireExact(g.model, ['trend', 'oscillation', 'fusion'][i], 'fusion.model')
-    if (![g.closed_count, g.open_count, g.interrupted_count].every(v => Number.isSafeInteger(v) && Number(v) >= 0) || !decimal(g.sum_return_percentage_points)) throw new Error('invalid fusion group')
+    if (![g.closed_count, g.open_count, g.interrupted_count].every(v => Number.isSafeInteger(v) && Number(v) >= 0) || !isDecimal(g.sum_return_percentage_points)) throw new Error('invalid fusion group')
   })
   const ids = new Set()
-  value.items.forEach(raw => {
+  if (value.snapshot_schema !== undefined) {
+    requireExact(value.snapshot_schema, 'newow_fusion_reference_snapshot_v2', 'fusion.snapshot_schema')
+    text(value.reference_revision, 'fusion.reference_revision')
+    if (value.next_cursor !== undefined && value.next_cursor !== null) text(value.next_cursor, 'fusion.next_cursor')
+    if (value.record_since !== undefined) day(value.record_since, 'fusion.record_since')
+    if (value.record_through !== undefined) day(value.record_through, 'fusion.record_through')
+    if (!Array.isArray(value.curve)) throw new Error('invalid fusion curve')
+  }
+  const itemCount = value.items.length
+  const trades = [...value.items, ...(Array.isArray(value.curve) ? value.curve : [])]
+  trades.forEach((raw, index) => {
+    if (index === itemCount) ids.clear()
     const r = record(raw, 'fusion.trade')
     if (typeof r.reference_trade_id !== 'string' || ids.has(r.reference_trade_id) || !source(r.entry_source) || !(r.exit_source === null || source(r.exit_source)) || typeof r.physical_contract !== 'string') throw new Error('invalid fusion trade')
     ids.add(r.reference_trade_id)
@@ -1011,7 +1024,7 @@ function normalizeFusion(payload: unknown, since: string, through: string, hash:
       instant(r.exit_bar_end, 'fusion.exit')
       if (Date.parse(String(r.exit_bar_end)) > Date.parse(String(cutoff)) || Date.parse(String(r.exit_bar_end)) < Date.parse(String(r.entry_bar_end))) throw new Error('invalid fusion chronology')
     }
-    if (!decimal(r.entry_reference_price, false) || Number(r.entry_reference_price) <= 0 || !decimal(r.exit_reference_price) || !decimal(r.reference_return_pct) || !decimal(r.mark_change_pct)) throw new Error('invalid fusion price')
+    if (!isDecimal(r.entry_reference_price, false) || Number(r.entry_reference_price) <= 0 || !isDecimal(r.exit_reference_price) || !isDecimal(r.reference_return_pct) || !isDecimal(r.mark_change_pct)) throw new Error('invalid fusion price')
     if (!['CLOSED', 'OPEN', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'].includes(String(r.status)) || !['entry_in_window_v1', 'initial_before_window'].includes(String(r.statistics_membership))) throw new Error('invalid fusion status')
     if ((r.status === 'CLOSED') !== (r.exit_source !== null && r.exit_reference_price !== null && r.reference_return_pct !== null)) throw new Error('invalid fusion close')
   })

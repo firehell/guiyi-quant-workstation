@@ -278,3 +278,18 @@ def test_presentation_facts_bind_snapshot_but_allow_required_initial_prefix(monk
     assert facts["availability"] == [dict(point, value={**point["value"],"last_status":"ready"})]
     with pytest.raises(QueryConflict, match="SNAPSHOT_CONFLICT"):
         query.presentation_facts(stream.stream_id, snapshot_token=page["snapshot"], since=date(2026,9,19), through=date(2026,9,22), cutoff=None, kinds=("availability",))
+
+
+def test_record_window_filter_does_not_change_initial_holding_projection(monkeypatch):
+    repository, factory, stream, revision, manifest, seed = _seed_repository()
+    repository.commit_batch(seed, _open_batch(stream,revision,manifest,seed,evidence={"presentation_v1":envelope([presentation_point(kind="trade_identity",trading_day=date(2026,9,19),formula_versions=("v1",),value={"source_action_id":"build-1","public_trade_id":"public-initial"})])}))
+    token,_=repository.load_checkpoint(stream.stream_id,revision)
+    repository.publish_revision(stream.stream_id,revision,token.row_version,_digest(manifest))
+    monkeypatch.setattr(HistoricalReferenceQuery,"_registered",staticmethod(lambda _row:True))
+    query=HistoricalReferenceQuery(factory)
+    params=dict(since=date(2026,9,20),through=date(2026,9,21),cutoff=None)
+    full=query.trades(stream.stream_id,**params)
+    records=query.trades(stream.stream_id,**params,entry_since_only=True,snapshot_token=full["snapshot"])
+    assert len(full["items"])==1
+    assert records["items"]==[]
+    assert records["snapshot"]==full["snapshot"]

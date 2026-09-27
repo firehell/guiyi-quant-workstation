@@ -126,8 +126,12 @@ def _source_guard(reader: object, request: object, source_token: str):
 
 
 def _seed_checkpoint(stream: StreamIdentity) -> tuple[AdapterCheckpoint[object], str]:
-    if stream.strategy_code.replace("-", "_") == "subing_reference":
-        state: object = seed_subing_replay_state()
+    if stream.strategy_code.replace("-", "_") == "newow_dual_fusion":
+        from guiyi_quant.newow.fusion_reference import FusionReferenceReplayState
+        state: object = FusionReferenceReplayState()
+        schema = "newow_dual_fusion_reference_v1"
+    elif stream.strategy_code.replace("-", "_") == "subing_reference":
+        state = seed_subing_replay_state()
         schema = "subing_replay_v1"
     else:
         from guiyi_quant.newow.product_adapters import seed_replay_state
@@ -563,7 +567,11 @@ def _advance_batch(
                     trading_day=boundary.trading_day,
                     formula_versions=stream.formula_versions,
                 ))
-        if stream.strategy_code.replace("-", "_") == "subing_reference":
+        if stream.strategy_code.replace("-", "_") == "newow_dual_fusion":
+            from app.reference_trading.newow_fusion import advance_fusion_step
+            current, found_sources, transition = advance_fusion_step(stream,current,item,presentation)
+            schema = "newow_dual_fusion_reference_v1"
+        elif stream.strategy_code.replace("-", "_") == "subing_reference":
             current, found_sources, transition = _subing_step(stream, current, item, presentation)
             schema = "subing_replay_v1"
         elif stream.strategy_code.replace("-", "_").startswith("newow_"):

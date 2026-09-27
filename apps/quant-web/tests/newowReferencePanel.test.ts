@@ -631,3 +631,27 @@ test('theoretical selection survives a same-window history page response', async
   assert.equal(ideal().props['aria-pressed'], true)
   app.unmount()
 })
+
+test('curve selection outside recent records keeps original return under theoretical display', async () => {
+  const Panel = await loadComponent()
+  const response = referenceResponse()
+  const old = trade('older-focused', { status: 'CLOSED', entry_bar_end: '2024-01-02T07:00:00Z', entry_trading_day: '2024-01-02', exit_bar_end: '2024-01-03T07:00:00Z', exit_trading_day: '2024-01-03', reference_return_pct: '5', statistics_membership: 'entry_in_window_v1' })
+  response.value.performance_since = '2024-01-01'
+  response.value.summary.closed_count = 1
+  response.value.summary.sum_return_percentage_points = '5'
+  response.value.curve_trades = [old]
+  response.value.theoretical = { model_version: 'newow_hindsight_peak_reference_v1', hindsight: true, executable: false, returns: [{ reference_trade_id: old.reference_trade_id, return_pct: '50' }], sum_return_percentage_points: '50', win_rate_pct: '100', mean_return_pct: '50' } as typeof response.value.theoretical
+  const Host = defineComponent({ setup: () => () => h(Panel, { response, lifecycle: 'ready', crossSectionCompatible: false, chartResponse: null, recordsResponse: referenceResponse(), error: null, onReload: () => {} }) })
+  const operations = nodeOperations()
+  const app = createRenderer({ ...operations, createElement: (type: string) => Object.assign(element(type), { scrollIntoView() {} }) }).createApp(Host)
+  const root = element('root'); app.mount(root); await nextTick()
+  const ideal = findNode(root, node => node.type === 'button' && nodeText(node) === '理论值')!
+  ;(ideal.props.onClick as () => void)(); await nextTick()
+  const point = findNode(root, node => node.type === 'circle' && node.props.role === 'button')!
+  ;(point.props.onClick as (event: { stopPropagation(): void }) => void)({ stopPropagation() {} }); await nextTick()
+  const card = findNode(root, node => node.props.id === 'reference-trade-older-focused')!
+  assert.ok(card, 'complete curve fact is locatable without changing recent pagination')
+  assert.match(nodeText(card), /5%/)
+  assert.doesNotMatch(nodeText(card), /50%/)
+  app.unmount()
+})

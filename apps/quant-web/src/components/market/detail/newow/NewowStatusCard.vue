@@ -4,7 +4,7 @@ import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { buildStatusCard } from '@/utils/newowStatusCardPresentation'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import { decisionFactAge } from '@/utils/newowDecisionV2Presentation'
-const props=defineProps<{ decision:NewowDecisionV2|null; strategy:string; loading:boolean; error:string }>()
+const props=defineProps<{ decision:NewowDecisionV2|null; strategy:string; loading:boolean; error:string; background?:boolean }>()
 const emit=defineEmits<{retry:[]}>()
 const bodyId=useId(), explanationId=useId()
 function preference() { try { return typeof localStorage!=='undefined'&&localStorage.getItem('guiyi_newow_status_card_collapsed')==='1' } catch { return false } }
@@ -17,6 +17,7 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
 <template>
  <section class="newow-status-card" aria-label="日周状态摘要" :data-risk="card.risk" :style="{ '--status-color':color }">
   <button type="button" class="newow-status-card__header" :aria-expanded="!collapsed" :aria-controls="bodyId" :aria-label="collapsed?'展开状态摘要':'收起状态摘要'" @click="toggle">
+   <span v-if="background">日周背景</span>
    <strong>{{ loading?'状态读取中':card.name }}</strong>
    <span class="newow-status-card__tag" :data-state="card.week.state">周:{{ card.week.label }}</span>
    <span class="newow-status-card__tag" :data-state="card.day.state">日:{{ card.day.label }}</span>
@@ -46,7 +47,7 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
       <div v-for="item in [{name:'周线',tag:card.week,fact:card.weekFact},{name:'日线',tag:card.day,fact:card.dayFact}]" :key="item.name" class="newow-status-card__period"><strong>{{ item.name }}</strong><b :data-state="item.tag.state">{{ item.tag.label }}</b><span>{{ decisionFactAge(item.fact) }}</span><span>{{ item.fact?.bar_end?formatBeijingInstant(item.fact.bar_end):'状态未就绪' }} · {{ item.fact?.physical_contract??'—' }}</span></div>
       <p>{{ card.explanation }}</p>
      </template>
-     <p>仅使用已完成日周数据，60分钟未参与；这是信号机械解释，不代表真实持仓或交易建议。</p>
+     <p>仅使用已完成日周数据，分钟周期未参与；这是信号机械解释，不代表真实持仓或交易建议。</p>
      <p v-if="decision">截至 {{ formatBeijingInstant(decision.cdv2.as_of) }} · 价格来自同合约 Canonical 通道；主力状态及未证实的探底试盘分支不作推断。</p>
     </div>
    </template>

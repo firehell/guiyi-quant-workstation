@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
+import { closestReferenceCurvePoint, referenceCurveAnchors, newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
@@ -47,7 +47,14 @@ const model = computed(() => (
     : null
 ))
 const records = computed(() => props.recordsResponse === undefined ? props.response : props.recordsResponse)
-const recordsModel = computed(() => records.value?.value ? buildNewowReferencePanelViewModel(records.value, props.chartResponse, props.crossSectionCompatible) : null)
+const recordsModel = computed(() => {
+  const response = records.value
+  if (!response?.value) return null
+  const focused = (props.response?.value?.curve_trades ?? props.response?.value?.items ?? []).find(trade => trade.reference_trade_id === selectedTradeId.value)
+  const items = focused && !response.value.items.some(trade => trade.reference_trade_id === focused.reference_trade_id)
+    ? [focused, ...response.value.items] : response.value.items
+  return buildNewowReferencePanelViewModel({ ...response, value: { ...response.value, items } }, props.chartResponse, props.crossSectionCompatible)
+})
 const displayValue = computed(() => props.response?.value ? acceptedPreset.value === 'ideal' ? newowTheoreticalDisplay(props.response.value) : props.response.value : null)
 const displaySummary = computed(() => displayValue.value && props.response ? buildNewowReferencePanelViewModel({ ...props.response, value: displayValue.value }, props.chartResponse, props.crossSectionCompatible).summary : null)
 const curve = computed(() => displayValue.value ? newowReferenceCurve(displayValue.value) : { points: [], message: '理论值所需的完整持仓区段暂不可用。' })
@@ -83,11 +90,6 @@ const curvePoints = computed(() => {
 })
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
-  if (!recordElements.has(trade.reference_trade_id) && records.value?.value?.next_before) {
-    emit('load-more')
-    await nextTick()
-    return
-  }
   await nextTick()
   recordElements.get(trade.reference_trade_id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
@@ -96,15 +98,13 @@ watch(() => records.value?.value?.items, async () => {
   await nextTick()
   const record = recordElements.get(selectedTradeId.value)
   if (record) record.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  else if (records.value?.value?.next_before) emit('load-more')
+
 })
 watch(() => props.selectedSignalId, id => {
   const trade = records.value?.value?.items.find(t => t.entry_signal_id === id || t.exit_signal_id === id)
   if (trade) selectedTradeId.value = trade.reference_trade_id
 })
-watch(() => records.value?.value, value => {
-  if (!value?.items.some(t => t.reference_trade_id === selectedTradeId.value)) selectedTradeId.value = null
-})
+watch(() => props.response?.value?.reference_input_sha256, () => { selectedTradeId.value = null })
 // The initial request is the server-resolved full history; preserve its authoritative floor across range switches.
 const availableSince = ref<string | null>(null)
 const pendingPreset = ref<{ kind: NewowReferencePreset | 'complete'; since: string; through: string } | null>(null)
@@ -178,6 +178,13 @@ function usePreset(preset: NewowReferencePreset): void {
   } catch { pendingPreset.value = null }
 }
 
+
+function locateCurvePoint(event: MouseEvent) {
+  const bounds = (event.currentTarget as SVGElement).getBoundingClientRect()
+  if (bounds.width <= 0 || bounds.height <= 0) return
+  const point = closestReferenceCurvePoint(curvePoints.value.points, (event.clientX - bounds.left) / bounds.width * 712, (event.clientY - bounds.top) / bounds.height * 140)
+  if (point) selectCurveTrade(point.trade)
+}
 </script>
 
 <template>
@@ -206,13 +213,13 @@ function usePreset(preset: NewowReferencePreset): void {
         <template v-else>
           <div class="newow-reference__plot">
             <div class="newow-reference__plot-area">
-              <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
+              <svg @click="locateCurvePoint" viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
                 <defs><linearGradient id="newow-reference-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.16" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
                 <line v-for="level in curvePoints.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
                 <polygon :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero} 712,${curvePoints.zero}`" fill="url(#newow-reference-area)" />
                 <line x1="0" x2="712" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
                 <polyline :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero}`" fill="none" stroke="#ff403a" stroke-width="1.8" />
-                <circle v-for="point in curvePoints.points" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
+                <circle v-for="point in referenceCurveAnchors(curvePoints.points)" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click.stop="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
               </svg>
             <span v-for="level in curvePoints.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
             <span v-for="tick in curvePoints.ticks" :key="tick.x" class="newow-reference__date-tick" :title="tick.day" :data-anchor="tick.anchor" :style="{ left: `${tick.x / 712 * 100}%` }">{{ tick.label }}</span>
@@ -248,7 +255,7 @@ function usePreset(preset: NewowReferencePreset): void {
       <div class="newow-reference__cards">
         <article v-for="row in recordsModel.rows" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial">
           <header class="newow-reference__record-top">
-            <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.category === 'open', 'is-interrupted': row.category === 'interrupted' }">{{ row.category === 'open' ? '持仓参考中' : row.category === 'interrupted' ? (row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断') : row.trade.frequency === '1w' ? '周K' : row.trade.frequency === '1d' ? '日K' : '60分' }}</strong><span>{{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.exit_bar_end ?? row.trade.interrupted_at) }}</span><span>{{ row.trade.physical_contract }}</span><span v-if="row.initial">期初已有</span></div>
+            <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.category === 'open', 'is-interrupted': row.category === 'interrupted' }">{{ row.category === 'open' ? '持仓参考中' : row.category === 'interrupted' ? (row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断') : row.trade.frequency === '1w' ? '周K' : row.trade.frequency === '1d' ? '日K' : `${row.trade.frequency.replace('m', '')}分` }}</strong><span>{{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.exit_bar_end ?? row.trade.interrupted_at) }}</span><span>{{ row.trade.physical_contract }}</span><span v-if="row.initial">期初已有</span></div>
             <strong class="newow-reference__record-return" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ row.category === 'closed' ? '盈亏' : row.category === 'open' ? '参考浮动' : '中断浮动' }} {{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</strong>
           </header>
           <div class="newow-reference__record-line"><span><b class="newow-reference__entry">建仓</b> <span>买入</span> <strong>{{ formatMarketDecimal(row.trade.entry_reference_price) }}</strong></span><time :datetime="row.trade.entry_bar_end">{{ rowTime(row.trade, row.trade.entry_bar_end) }}</time></div>

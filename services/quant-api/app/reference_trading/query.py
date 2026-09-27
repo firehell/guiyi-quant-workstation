@@ -112,6 +112,8 @@ class HistoricalReferenceQuery:
                 row.frequency in _CAPABILITIES.get(row.strategy_code, ())
                 and _canonical_identity(identity)
             )
+        if row.strategy_code == "newow_dual_fusion":
+            return False
         if row.recording_mode != "forward_observation" or not identity.observation_policy_version:
             return False
         if row.strategy_code == "htdy":
@@ -321,9 +323,14 @@ class HistoricalReferenceQuery:
         self, stream_id: str, *, since: date, through: date,
         cutoff: datetime | None = None, limit: int = 50,
         snapshot_token: str | None = None, cursor: str | None = None,
+        entry_since_only: bool = False,
+        _complete_budget: int | None = None,
     ) -> dict[str, object]:
         self._window(since, through, cutoff)
-        if type(limit) is not int or not 1 <= limit <= 200:
+        if type(entry_since_only) is not bool:
+            raise QueryConflict("QUERY_INVALID")
+        cursor_kind = "record_trades" if entry_since_only else "trades"
+        if type(limit) is not int or not 1 <= limit <= (_complete_budget or 200):
             raise QueryConflict("QUERY_INVALID")
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
             row = self._resolve(session, stream_id)
@@ -332,9 +339,15 @@ class HistoricalReferenceQuery:
                 encoded=snapshot_token,
             )
             self._assert_presentations(session, snapshot)
+            if _complete_budget is not None and (
+                type(_complete_budget) is not int or not 1 <= _complete_budget <= 100_000
+                or limit != _complete_budget or cursor is not None or not entry_since_only
+                or row.recording_mode != "historical_replay"
+            ):
+                raise QueryConflict("QUERY_INVALID")
             after = None
             if cursor is not None:
-                value = _decode(cursor, kind="trades")
+                value = _decode(cursor, kind=cursor_kind)
                 if set(value) != {"kind", "snapshot", "bar_end", "trade_id"} or value["snapshot"] != token:
                     raise QueryConflict("CURSOR_CONFLICT")
                 instant = _instant(value["bar_end"])
@@ -344,10 +357,10 @@ class HistoricalReferenceQuery:
             if row.recording_mode == "forward_observation":
                 page = self._repository.query_historical_trades(
                     session, snapshot, since=since, through=through,
-                    cutoff=cutoff, limit=limit, after_key=after, forward=True,
+                    cutoff=cutoff, limit=limit, after_key=after, forward=True, entry_since_only=entry_since_only,
                 )
                 next_cursor = None if page.next_key is None else _encode({
-                    "kind": "trades", "snapshot": token,
+                    "kind": cursor_kind, "snapshot": token,
                     "bar_end": page.next_key[0].isoformat(),
                     "trade_id": page.next_key[1],
                 })
@@ -373,10 +386,11 @@ class HistoricalReferenceQuery:
             page = self._repository.query_historical_trades(
                 session, snapshot, since=since, through=through,
                 cutoff=cutoff, limit=limit, after_key=after,
-                initial_interruptions=interruption_keys,
+                initial_interruptions=interruption_keys, entry_since_only=entry_since_only,
+                complete_budget=_complete_budget,
             )
             next_cursor = None if page.next_key is None else _encode({
-                "kind": "trades", "snapshot": token,
+                "kind": cursor_kind, "snapshot": token,
                 "bar_end": page.next_key[0].isoformat(),
                 "trade_id": page.next_key[1],
             })
@@ -404,6 +418,13 @@ class HistoricalReferenceQuery:
                 "status": row.health,
                 "expected_through": None, "freshness": "unknown",
             }
+
+    def complete_trades(self, stream_id, *, since, through, cutoff, snapshot_token, budget=100_000):
+        page = self.trades(stream_id, since=since, through=through, cutoff=cutoff,
+            snapshot_token=snapshot_token, limit=budget, entry_since_only=True, _complete_budget=budget)
+        if page["next_cursor"] is not None:
+            raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
+        return page["items"]
 
     @staticmethod
     def _boundary_keys(
@@ -447,11 +468,14 @@ class HistoricalReferenceQuery:
             return {}
         requested = {item.entry_action_id for item in trades}
         exits = {item.exit_action_id for item in trades if item.exit_action_id is not None}
-        actions = session.execute(select(ReferenceActionRow).where(
-            ReferenceActionRow.stream_id == snapshot.stream_id,
-            ReferenceActionRow.origin_revision_id == snapshot.revision_id,
-            ReferenceActionRow.source_action_id.in_(requested | exits),
-        )).scalars().all()
+        actions = []
+        keys = sorted(requested | exits)
+        for start in range(0, len(keys), 1000):
+            actions.extend(session.execute(select(ReferenceActionRow).where(
+                ReferenceActionRow.stream_id == snapshot.stream_id,
+                ReferenceActionRow.origin_revision_id == snapshot.revision_id,
+                ReferenceActionRow.source_action_id.in_(keys[start:start + 1000]),
+            )).scalars().all())
         if {action.source_action_id for action in actions} != requested | exits:
             raise QueryConflict("TRADE_ACTION_CORRUPT")
         batches = session.execute(select(ReferenceBatch).where(
@@ -563,6 +587,7 @@ class HistoricalReferenceQuery:
     def presentation_facts(
         self, stream_id: str, *, snapshot_token: str, since: date, through: date,
         cutoff: datetime | None, kinds: tuple[str, ...], max_points: int = 100_000,
+        check_cancelled=None,
     ) -> dict[str, list[dict[str, object]]]:
         """One bounded scan of saved facts, with daily availability aggregation.
 
@@ -597,6 +622,8 @@ class HistoricalReferenceQuery:
                 ReferenceBatch.source_evidence["presentation_v1"]["first_day"].as_string() <= through.isoformat(),
             ).order_by(ReferenceBatch.seq).execution_options(yield_per=32)).scalars()
             for evidence in batches:
+                if check_cancelled is not None:
+                    check_cancelled()
                 for point in require_envelope(evidence.get("presentation_v1")):
                     kind = point.get("kind")
                     if kind not in result:

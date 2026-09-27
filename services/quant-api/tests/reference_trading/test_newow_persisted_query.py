@@ -175,3 +175,17 @@ def test_newow_goldens_keep_public_trade_ids_and_decimal_statistics() -> None:
             *expected_initial.interrupted_trades, *expected_initial.initial_trades,
         )
     }
+
+
+def test_hint_interval_index_preserves_ambiguity_and_nested_older_interval():
+    base = {
+        'physical_contract': 'RB2610', 'owner_segment_id': 'owner-1',
+        'entry_bar_end': '2026-09-01T08:00:00+00:00', 'entry_sequence': 0,
+        'exit_bar_end': '2026-09-20T08:00:00+00:00', 'exit_sequence': 2,
+        'status': 'CLOSED',
+    }
+    trades = [dict(base, reference_trade_id='long'), dict(base, reference_trade_id='short', entry_bar_end='2026-09-02T08:00:00+00:00', exit_bar_end='2026-09-03T08:00:00+00:00')]
+    def hint(day):
+        at = f'2026-09-{day:02d}T09:00:00+00:00'
+        return {'value': {'hint_id': f'h{day}', 'kind': 'process', 'retrospective': False, 'physical_contract': 'RB2610', 'segment_id': 'owner-1', 'bar_end': at, 'known_at': at, 'sequence': 1}}
+    assert PersistedNewowReference._hint_ids(trades, [], [hint(2), hint(4)], datetime.fromisoformat(base['exit_bar_end'])) == {'long': ['h4'], 'short': []}

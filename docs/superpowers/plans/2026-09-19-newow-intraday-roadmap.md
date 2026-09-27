@@ -1,3 +1,5 @@
+> 执行状态（2026-09-27）：本轮已进入 P0–P6 连续实现。当前事实以 `docs/tasks/newow-intraday-pilot-20260927.md` 的实时证据为准；下文历史“当前缺口”描述是基线清单，已实现能力不得重复开发。RB 四周期8基础保存流及4融合流均已完成构建和独立读回，P6 浏览器/边界/修复后独立复审尚未齐全，未集成 develop、未发布、未切换 Runtime。
+
 # 牛哇四周期开发计划（Implementation Plan）
 
 > **For agentic workers:** 使用 `superpowers:executing-plans` 按任务实施。共享 reader、planner、quality、capability 默认由一个执行者串行修改；高风险部分独立 Review。流程与任务授权统一遵守 [AGENTS.md](../../../AGENTS.md)，不重复设置审批步骤。

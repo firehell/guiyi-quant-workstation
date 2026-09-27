@@ -42,7 +42,7 @@ test('daily/weekly card exposes states, ages and two-period R4 scope; refresh an
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: response.value }) }))
   app.mount(root)
-  assert.match(nodeText(root), /60分钟未参与/)
+  assert.match(nodeText(root), /分钟周期未参与/)
   assert.equal(mock.calls.length, 1)
   const button = () => findNode(root, n => n.props['aria-label'] === '刷新综合决策')!
   assert.equal(mock.calls[0].request.snapshotToken, 'jm-snapshot')
@@ -140,7 +140,7 @@ test('status card has independent folding, preference restore, explanatory expan
   assert.match(nodeText(root),/多周期感知.*日周策略状态/)
   const periodRows=findNodes(root,n=>n.props.class==='newow-status-card__period')
   assert.equal(periodRows.length,2)
-  assert.match(nodeText(root),/60分钟未参与/)
+  assert.match(nodeText(root),/分钟周期未参与/)
   ;(header().props.onClick as Function)(); await nextTick(); app.unmount()
   const second=element('root'), app2=renderer.createApp(defineComponent({setup:()=>()=>h(Card,{decision:null,strategy:'trend',loading:false,error:'读取失败'})}))
   app2.mount(second)

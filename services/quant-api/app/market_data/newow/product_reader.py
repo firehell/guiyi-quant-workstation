@@ -158,6 +158,7 @@ class ProductReadSet:
         ProductFrequency, tuple[DataInterruption, ...]
     ] = field(default_factory=lambda: MappingProxyType({}))
     input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
+    reference_source_evidence_sha256: str | None = None
     input_quality_policies_by_frequency: Mapping[ProductFrequency, InputQualityPolicy] = field(default_factory=dict)
 
     @property
@@ -935,6 +936,50 @@ class NewowProductReader:
             input_quality_policy=policy,
             input_quality_policies_by_frequency=MappingProxyType(quality_policies),
         )
+
+    def reference_owned_points(self, product, points, owners):
+        """Exclude saved physical warmup facts outside their authoritative rank1 owner."""
+        ranges = {}
+        for owner in owners:
+            sessions = self._market_data.session_windows(symbol=product, trading_day=owner.start_trading_day)
+            if not sessions:
+                raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
+            segment_id = build_segment_id(product, owner.contract, min(window.start for window in sessions))
+            ranges[(owner.contract, segment_id)] = (owner.start_trading_day, owner.end_trading_day)
+        output = []
+        for point in points:
+            value = point["value"]
+            span = ranges.get((value["physical_contract"], value["segment_id"]))
+            day = date.fromisoformat(point["trading_day"])
+            if span is not None and span[0] <= day <= span[1]:
+                output.append(point)
+        return output
+
+    def load_reference_scope(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
+        """Read saved-projection provenance; never decode a strategy warmup prefix."""
+        from hashlib import sha256
+        import json
+        from guiyi_quant.newow.product_contracts import INTRADAY_PRODUCT_FREQUENCIES
+        if query.frequency not in INTRADAY_PRODUCT_FREQUENCIES:
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        cutoff = utc_timestamp(query.as_of if query.as_of is not None else as_of)
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+        owners = self.dependency_owners(query.product, query.since, query.through)
+        evidence = self.historical_source_evidence(product=query.product,
+            frequency=query.frequency.value, since=query.since, through=query.through, as_of=cutoff)
+        digest = sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+        policy = input_quality_policy(query.frequency.value, self._input_quality_policy)
+        windows = self._market_data.session_windows(symbol=query.product, trading_day=query.through)
+        ends = [window.end for window in windows if window.end <= cutoff]
+        if not ends:
+            raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        source = ProductReadSource(query.frequency, _CANONICAL_SOURCE, max(ends), cutoff,
+            input_policy_version(query.frequency.value, policy), 0, 0, 0)
+        return ProductReadSet(query.frequency, MappingProxyType({query.frequency: ()}), owners, (),
+            ProductReadWindow(query.since, query.through), ProductReadWindow(query.since, query.through),
+            MappingProxyType({query.frequency: source}), cutoff, input_quality_policy=policy,
+            reference_source_evidence_sha256=digest)
 
     def dependency_owners(
         self, product: str, since: date, through: date,

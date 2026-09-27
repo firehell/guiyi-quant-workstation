@@ -298,6 +298,10 @@ class FusionTradeOut(_Out):
 
 
 class FusionComparisonOut(_Out):
+    fusion_input_sha256: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    next_cursor: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    record_since: date | None = Field(default=None, exclude_if=lambda value: value is None)
+    record_through: date | None = Field(default=None, exclude_if=lambda value: value is None)
     snapshot_schema: Literal["newow_fusion_reference_snapshot_v2"] | None = Field(default=None, exclude_if=lambda value: value is None)
     reference_revision: str | None = Field(default=None, exclude_if=lambda value: value is None)
     summary: FusionGroupOut | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -937,6 +941,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v20",
         "newow_product_capabilities_v21",
         "newow_product_capabilities_v22",
+        "newow_product_capabilities_v23",
     ]
     release_stage: Literal[
         "daily",
@@ -945,6 +950,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "pd_pt_hourly_candidate",
         "ap_hourly_candidate",
         "daily_weekly",
+        "rb_intraday_candidate",
     ]
     open_frequencies: list[ProductFrequencyValue]
     weekly_products: list[str] | None = None

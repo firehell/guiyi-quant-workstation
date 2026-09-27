@@ -135,6 +135,9 @@ _CUP_MARKERS = frozenset(
 )
 _PRODUCT_CACHE = SnapshotCache()
 _PRODUCT_GATE = HeavyResourceGate()
+# Saved minute history has independent bounded admission; it must not starve
+# current chart comparisons and D1/W1 background calculations.
+_PERSISTED_REFERENCE_GATE = HeavyResourceGate(max_running=1, max_waiting=2, wait_timeout=50)
 _PRODUCT_INFLIGHT = InFlightCoordinator()
 _PRODUCT_QUERY_FIELDS = frozenset(
     {
@@ -156,6 +159,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "history_before",
         "snapshot_token",
         "include_fusion",
+        "fusion_before",
         "decision_v2",
     }
 )
@@ -233,6 +237,11 @@ def _input_quality_policy(
 
 def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:
     selected = ProductFrequency(frequency)
+    intraday = getattr(request.state, "intraday_preview_product", None)
+    if intraday is not None:
+        if product != intraday or intraday != "rb":
+            raise HTTPException(status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"})
+        return
     hourly = _hourly_preview_products(request)
     if (
         hourly is not None
@@ -262,6 +271,14 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
 )
 def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse:
     """Return the single public scope used by clients for this staged release."""
+    if getattr(request.state, "intraday_preview_product", None) == "rb":
+        return NewowProductCapabilitiesResponse(
+            schema_version="newow_product_capabilities_v23", release_stage="rb_intraday_candidate",
+            open_frequencies=["1m", "15m", "30m", "60m", "1d", "1w"],
+            open_sections=list(OPEN_SECTIONS), deferred_frequencies=[],
+            deferred_sections=[DeferredSectionOut(section=section, reason_code=reason)
+                               for section, reason in DEFERRED_SECTIONS],
+        )
     candidate = getattr(request.state, "candidate_preview_as_of", None) is not None
     au_preview = candidate and getattr(request.state, "au_period_preview", False)
     hourly_products = _hourly_preview_products(request) if candidate and not au_preview else None
@@ -372,6 +389,7 @@ def _build_product_service(
         reader_factory,
         cache=_PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,
+        persisted_reference_gate=_PERSISTED_REFERENCE_GATE,
         inflight=_PRODUCT_INFLIGHT,
         cancelled=cancelled,
         quality_policy=quality_policy,
@@ -471,7 +489,7 @@ def newow_historical_snapshot(
     request: Request,
     product: str = Query(...),
     strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
-    frequency: Literal["1w", "1d", "60m"] = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "15m", "30m"] = Query(...),
     session: Session = Depends(get_db),
 ) -> NewowHistoricalSnapshotResponse:
     unknown = set(request.query_params) - _HISTORICAL_QUERY_FIELDS
@@ -493,6 +511,9 @@ def newow_historical_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
+        if (getattr(request.state, "intraday_preview_product", None) is not None
+            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
+            raise ValueError("NEWOW_INVALID_QUERY")
         policy = _input_quality_policy(request, product, frequency)
         resolver = (
             _build_historical_resolver(session, cancelled, lambda: now)
@@ -590,6 +611,9 @@ def newow_weekly_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
+        if (getattr(request.state, "intraday_preview_product", None) is not None
+            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
+            raise ValueError("NEWOW_INVALID_QUERY")
         policy = _input_quality_policy(request, product, frequency)
         resolver = (
             _build_weekly_resolver(session, cancelled, lambda: now)
@@ -621,7 +645,7 @@ def newow_strategy_detail(
     request: Request,
     product: str = Query(...),
     strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
-    frequency: Literal["1w", "1d", "60m"] = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "15m", "30m"] = Query(...),
     series_kind: Literal["actual_dominant"] = Query("actual_dominant"),
     section: Literal[
         "chart", "auxiliary", "reference", "explanation", "comparator"
@@ -642,6 +666,7 @@ def newow_strategy_detail(
     history_before: str | None = Query(None, min_length=1, max_length=2048),
     snapshot_token: str | None = Query(None, min_length=1, max_length=256),
     include_fusion: bool = Query(False),
+    fusion_before: str | None = Query(None, min_length=1, max_length=2048),
     decision_v2: bool = Query(False),
     session: Session = Depends(get_db),
 ) -> NewowProductResponse:
@@ -661,6 +686,9 @@ def newow_strategy_detail(
     product = _normalize_public_product(product)
     try:
         _enforce_product_frequency(request, product, frequency)
+        if (getattr(request.state, "intraday_preview_product", None) is not None
+            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
+            raise ValueError("NEWOW_INVALID_QUERY")
         if not (decision_v2 and section == "explanation"):
             require_open_section(section)
 
@@ -689,6 +717,7 @@ def newow_strategy_detail(
             history_before=history_before,
             snapshot_token=snapshot_token,
             include_fusion=include_fusion,
+            fusion_before=fusion_before,
             decision_v2=decision_v2,
         )
         policy = _input_quality_policy(request, product, frequency)

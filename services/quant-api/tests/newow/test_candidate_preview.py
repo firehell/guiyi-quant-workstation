@@ -549,3 +549,40 @@ def test_invalid_cutoff_query_is_rejected_before_database(preview, query):
     assert response.status_code == 422
     assert response.json() == {"detail": {"code": "PREVIEW_QUERY_INVALID"}}
     assert sessions == []
+
+
+def test_rb_intraday_preview_scope_and_wire_are_explicit(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCT", "rb")
+    client = TestClient(preview[0])
+    response = client.get("/api/v1/market/newow/product-capabilities")
+    assert response.status_code == 200
+    value = response.json()
+    assert value["schema_version"] == "newow_product_capabilities_v23"
+    assert value["open_frequencies"] == ["1m", "15m", "30m", "60m", "1d", "1w"]
+    for frequency in ("1m", "15m", "30m", "60m"):
+        response = client.get("/api/v1/market/newow/strategy-detail", params={
+            "product": "au", "strategy": "trend", "frequency": frequency, "section": "chart",
+        })
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+
+
+def test_intraday_candidate_does_not_implicitly_expand_formal_scope():
+    from types import SimpleNamespace
+    from app.api.market_newow import _enforce_product_frequency
+    request = SimpleNamespace(state=SimpleNamespace())
+    for frequency in ("1m", "15m", "30m", "60m"):
+        with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
+            _enforce_product_frequency(request, "rb", frequency)
+
+
+@pytest.mark.parametrize('frequency', ('1m','15m','30m','60m'))
+def test_rb_minute_candidate_rejects_main_rise_before_kernel(preview, monkeypatch, frequency):
+    from app.api import market_newow
+    monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', 'rb')
+    monkeypatch.setattr(market_newow, '_build_product_service', lambda *_a, **_k: pytest.fail('out-of-scope kernel called'))
+    response = TestClient(preview[0]).get('/api/v1/market/newow/strategy-detail', params={
+        'product': 'rb', 'strategy': 'main_rise', 'frequency': frequency, 'section': 'chart',
+    })
+    assert response.status_code == 422
+    assert response.json()['detail']['code'] == 'NEWOW_INVALID_QUERY'

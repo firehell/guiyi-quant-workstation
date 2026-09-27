@@ -9,6 +9,44 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ## Requirements
 
+### Requirement: RB historical intraday candidate preserves independent period and model identities
+
+The default-off RB candidate SHALL recognize `1m / 15m / 30m / 60m` for trend and oscillation,
+and an independent persisted dual-fusion reference model. Formal daily/weekly capability and
+its deferred 60m gate SHALL remain unchanged. Minute main-rise SHALL be rejected before kernel
+execution; candidate recognition SHALL NOT enable Runtime, observation, notification or orders.
+
+Each derived period SHALL aggregate independently from trusted physical-contract Canonical 1m
+through the existing MarketDataService and Session authority using `(start,end]`. Short Session
+tails SHALL remain explicit; breaks, physical owners and quality segments SHALL NOT be bridged.
+Full owner lifecycle prefixes SHALL be used for warming, while actual-owner intervals alone
+are eligible for displayed reference trades. Unconfirmed Bars SHALL NOT enter historical assets.
+
+#### Scenario: Saved minute history is reused without changing source or generation
+- **WHEN** an RB minute reference or fusion query reads a saved historical revision
+- **THEN** it verifies fresh Catalog-resolved immutable Canonical bytes, quality digest,
+  rank1 owner/calendar/Session proof and exact saved source generations
+- **AND** a changed proof, manifest, revision or sequence rejects reuse rather than silently appending.
+
+The two base kernels SHALL retain their existing formulas. Fusion SHALL use oscillation priority,
+sell-before-buy ordering and one long/flat reference position, preserve stable source and trade IDs,
+and never force-close an OPEN or interrupted trade to manufacture completed return.
+Complete maintained-history statistics and curve SHALL be independent of snapshot-bound near-year
+record pages. Scientific Decimal notation SHALL preserve exact numeric facts. Display anchors may
+be bounded, but sums, the curve and selected trade facts SHALL retain all completed entries.
+Theory-mode curve selection SHALL NOT replace ordinary reference-card returns with theoretical returns.
+
+#### Scenario: Minute current state and background explanations remain separate
+- **WHEN** a minute strategy page displays the current completed state
+- **THEN** its D1/W1 decision is explicitly background-only with an independent daily identity
+- **AND** the minute period is excluded from composite scoring and existing four-combination AI ranking.
+
+Persisted minute reference reads SHALL have bounded admission separate from current calculations,
+retain fail-closed cancellation between scan batches, and bind cache reuse to exact saved generations.
+The RB candidate may use a measured bounded cache adequate for complete base/fusion snapshots;
+this SHALL NOT expand the formal default cache or truncate history to satisfy memory limits.
+
+
 ### Requirement: Local candidate preview is explicitly enabled and read-only
 
 Candidate preview SHALL be default-off, local API `127.0.0.1:8010` and development Web

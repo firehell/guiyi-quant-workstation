@@ -2,9 +2,14 @@ import type { NewowReferenceValue, NewowReferenceTrade } from '../types/newowPro
 
 // Decimal addition remains exact; Number is used only for SVG coordinates.
 function decimal(value: string): { units: bigint; scale: number } | null {
-  if (!/^-?\d+(\.\d+)?$/.test(value)) return null
-  const [whole, fraction = ''] = value.split('.')
-  return { units: BigInt(whole! + fraction), scale: fraction.length }
+  const match = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/.exec(value)
+  if (!match) return null
+  const exponent = Number(match[3] ?? 0)
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 10000) return null
+  const [whole, fraction = ''] = match[2]!.split('.')
+  const units = BigInt(`${match[1] === '-' ? '-' : ''}${whole || '0'}${fraction}`)
+  const scale = fraction.length - exponent
+  return scale >= 0 ? { units, scale } : { units: units * 10n ** BigInt(-scale), scale: 0 }
 }
 function text(units: bigint, scale: number): string {
   const digits = (units < 0n ? -units : units).toString().padStart(scale + 1, '0')
@@ -39,7 +44,7 @@ export function closedReferenceCurve<T extends ClosedCurveTrade>(source: readonl
   // The authoritative summary adds in Decimal(precision=28, HALF_EVEN).
   // Bound the cumulative rounding error in integer units; never compare floats.
   const magnitudeDigits = Math.max(1, ...points.map(p => (p.cumulative.replace('-', '').split('.')[0] ?? '').length),
-    ...trades.map(t => (t.reference_return_pct!.replace('-', '').split('.')[0] ?? '').length))
+    ...numbers.map(n => text(n!.units, n!.scale).replace('-', '').split('.')[0]!.length))
   const roundingUnit = scale + magnitudeDigits > 28 ? 10n ** BigInt(scale + magnitudeDigits - 28) : 0n
   const expected = total.units * 10n ** BigInt(scale - total.scale)
   const difference = sum > expected ? sum - expected : expected - sum
@@ -96,4 +101,22 @@ export function referenceCurveDrawdown(curve: { message: string | null; points: 
   const scaled = numerator * 10000n
   const rounded = scaled / denominator + (scaled % denominator * 2n >= denominator ? 1n : 0n)
   return text(rounded, 2)
+}
+
+// Rendering anchors are a bounded view; complete points still own all sums,
+// statistics, line geometry and record identities.
+export function referenceCurveAnchors<T>(points: readonly T[], limit = 256): readonly T[] {
+  if (!Number.isInteger(limit) || limit < 2 || limit > 1000) throw new Error('CURVE_ANCHOR_LIMIT_INVALID')
+  if (points.length <= limit) return points
+  return Array.from({ length: limit }, (_, index) => points[Math.round(index * (points.length - 1) / (limit - 1))]!)
+}
+
+export function closestReferenceCurvePoint<T extends { x: number; y: number }>(points: readonly T[], x: number, y: number): T | null {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  let nearest: T | null = null, distance = Infinity
+  for (const point of points) {
+    const candidate = (point.x - x) ** 2 + (point.y - y) ** 2
+    if (candidate < distance) { nearest = point; distance = candidate }
+  }
+  return nearest
 }

@@ -313,3 +313,17 @@ def test_intraday_pilot_does_not_expand_main_rise(frequency):
             ),
         )
     assert reader.calls == []
+
+
+@pytest.mark.parametrize("frequency", ("1m", "15m", "30m", "60m"))
+def test_independent_fusion_stream_plan_requires_own_model_and_profile(frequency):
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    stream = replace(_stream(), identity=build_fusion_stream_identity("rb", frequency))
+    reader = Reader()
+    plan = HistoricalReferencePlanner(reader, now=lambda:NOW).plan(
+        HistoricalReferenceRequest("build",(stream,),_budget()),
+    )
+    assert plan.streams[0].request.identity.reference_model_version == "newow_dual_fusion_reference_zero_cost_v1"
+    for identity in (replace(stream.identity, profile_id="wrong"), replace(stream.identity, reference_model_version=REFERENCE_MODEL_VERSION)):
+        with pytest.raises(ValueError, match="REFERENCE_IDENTITY_VERSION_UNSUPPORTED"):
+            HistoricalReferencePlanner(Reader(), now=lambda:NOW).plan(HistoricalReferenceRequest("build",(replace(stream,identity=identity),),_budget()))

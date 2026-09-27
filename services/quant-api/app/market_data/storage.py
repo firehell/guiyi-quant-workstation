@@ -240,8 +240,16 @@ class CanonicalMonthlyStore:
             return stream.read()
 
     def verified_partition_fingerprint(self, partition: CatalogPartitionLike) -> str:
-        """Verify immutable Canonical bytes without decoding all Bar objects."""
+        """Verify immutable Canonical bytes and Catalog quality without decoding Bars."""
+        directory = self._month_directory(partition.dataset, partition.year, partition.month)
         path = partition.file_path
+        if path.parent != directory or not re.fullmatch(r"part(?:\.[0-9a-f]{64})?\.parquet", path.name):
+            raise StorageError("PARTITION_CATALOG_MISMATCH")
+        exceptions = tuple(partition.source_quality)
+        if partition.source_quality_sha256 != (_quality_sha256(exceptions) if exceptions else None):
+            raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
+        if exceptions and partition.dataset.frequency is not BarFrequency.D1:
+            raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
         try:
             fd = self._directory_fd(path.parent)
             try:

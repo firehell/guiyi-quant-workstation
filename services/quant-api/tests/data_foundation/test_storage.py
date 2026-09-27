@@ -352,3 +352,34 @@ def test_verified_partition_fingerprint_checks_bytes_without_decoding(tmp_path, 
     published.parquet_path.write_bytes(b"changed")
     with pytest.raises(StorageError, match="PARTITION_CONTENT_HASH_MISMATCH"):
         store.verified_partition_fingerprint(_partition(published))
+
+
+def test_compact_fingerprint_rejects_unverified_quality_and_wrong_partition_scope(tmp_path):
+    from dataclasses import replace
+    store = CanonicalMonthlyStore(tmp_path)
+    partition = _partition(store.publish(_request((_bar(1),))))
+    with pytest.raises(StorageError, match='SOURCE_QUALITY_EVIDENCE_INVALID'):
+        store.verified_partition_fingerprint(replace(partition, source_quality_sha256='a' * 64))
+    with pytest.raises(StorageError, match='PARTITION_CATALOG_MISMATCH'):
+        store.verified_partition_fingerprint(replace(partition, month=2))
+
+
+@pytest.mark.parametrize("digest_mode", ("missing", "tampered", "valid"))
+def test_compact_fingerprint_rejects_minute_source_quality_facts(tmp_path, digest_mode):
+    from dataclasses import replace
+    from app.market_data.source_quality import PriceUnavailableFact
+    from app.market_data.storage import _quality_sha256
+    store = CanonicalMonthlyStore(tmp_path)
+    partition = _partition(store.publish(_request((_bar(1),))))
+    at = _bar(1).bar_end
+    fact = PriceUnavailableFact(
+        at, _bar(1).trading_day, Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(1), Decimal(10), Decimal(20),
+        "a" * 64, "b" * 64, at,
+    )
+    digest = _quality_sha256((fact,)) if digest_mode == "valid" else "c" * 64 if digest_mode == "tampered" else None
+    expected = "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED" if digest_mode == "valid" else "SOURCE_QUALITY_EVIDENCE_INVALID"
+    with pytest.raises(StorageError, match=expected):
+        store.verified_partition_fingerprint(
+            replace(partition, source_quality=(fact,), source_quality_sha256=digest)
+        )

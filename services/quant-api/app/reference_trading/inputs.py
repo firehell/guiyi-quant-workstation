@@ -311,7 +311,9 @@ class MarketDataHistoricalInputReader:
         read_guard: Callable[[], AbstractContextManager[object]] = nullcontext,
         pin_verified_inputs: bool = False,
         compact_intraday_inputs: bool = False,
+        fusion_sources: object | None = None,
     ) -> None:
+        self._fusion_sources = fusion_sources
         self._newow = newow_reader
         self._subing = subing_service
         self._read_guard = read_guard
@@ -436,11 +438,33 @@ class MarketDataHistoricalInputReader:
         if not isinstance(request, HistoricalStreamRequest):
             raise TypeError("request must be HistoricalStreamRequest")
         normalized = request.identity.strategy_code.replace("-", "_")
+        if normalized == "newow_dual_fusion":
+            return self._read_fusion(request)
         if normalized == "subing_reference":
             return self._read_subing(request)
         if normalized.startswith("newow_"):
             return self._read_newow(request)
         raise ValueError("REFERENCE_CAPABILITY_UNSUPPORTED")
+
+    def _read_fusion(self, request):
+        from guiyi_quant.newow.product_adapters import build_product_identity
+        from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+        from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
+        from app.reference_trading.newow_fusion import FusionHistoricalPayload
+        if not callable(self._fusion_sources) or not self._compact_intraday_inputs:
+            raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
+        product = build_product_identity(request.identity.product,ProductStrategy.TREND,ProductFrequency(request.identity.frequency))
+        shadow_identity = replace(request.identity,strategy_code="newow_trend",formula_versions=product.formula_versions,profile_id=product.profile_id,reference_model_version=REFERENCE_MODEL_VERSION,futures_adaptation_version=futures_adaptation_version(request.identity.frequency))
+        shadow = self._read_newow(replace(request,identity=shadow_identity))
+        actions, dependencies = self._fusion_sources(request,shadow.dependency_manifest)
+        bars=[]
+        for item in shadow.bars:
+            source_actions=tuple(actions.get((item.bar_end,item.physical_contract,item.owner_segment_id,item.calculation_segment_id),())) if item.strategy_input else ()
+            payload=FusionHistoricalPayload(item.payload.bar,source_actions) if item.strategy_input else item.payload
+            fingerprint=sha256(_canonical([item.fingerprint,[(action.signal_id,str(action.reference_price),action.trade_eligibility.value) for action in source_actions]]).encode()).hexdigest()
+            bars.append(replace(item,payload=payload,fingerprint=fingerprint,boundaries=tuple(replace(boundary,stream=request.identity) for boundary in item.boundaries)))
+        manifest={**shadow.dependency_manifest,"reader":"newow_fusion_saved_sources_v1","source_dependencies":dependencies,"formula_versions":list(request.identity.formula_versions),"reference_model_version":request.identity.reference_model_version,"input_sha256":sha256(_canonical([bar.fingerprint for bar in bars]).encode()).hexdigest()}
+        return HistoricalInputSnapshot(request.identity,shadow.storage_start,shadow.completed_through,tuple(bars),manifest,sha256(_canonical(manifest).encode()).hexdigest(),len(_canonical(manifest).encode())+len(bars)*256)
 
     def _read_subing(self, request):
         from app.market_data.domain import BarFrequency

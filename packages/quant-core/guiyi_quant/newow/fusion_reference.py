@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal, localcontext
 from hashlib import sha256
 import json
@@ -19,6 +20,40 @@ from .product_identity import REFERENCE_MODEL_VERSION
 from .reference_statistics import PerformanceWindow, summarize_reference
 
 MODEL_VERSION = "newow_dual_fusion_reference_zero_cost_v1"
+
+
+@dataclass(frozen=True, slots=True)
+class FusionReferenceReplayState:
+    model_version: str = MODEL_VERSION
+
+
+def build_fusion_stream_identity(product: str, frequency: str):
+    """Independent reference projection identity; never a third base kernel."""
+    from .product_adapters import build_product_identity
+    from .product_contracts import ProductFrequency, INTRADAY_PRODUCT_FREQUENCIES
+    from .product_identity import futures_adaptation_version
+    from ..reference_trading import StreamIdentity
+    selected = ProductFrequency(frequency)
+    if selected not in INTRADAY_PRODUCT_FREQUENCIES:
+        raise ValueError("NEWOW_FUSION_FREQUENCY_UNSUPPORTED")
+    trend = build_product_identity(product, ProductStrategy.TREND, selected)
+    oscillation = build_product_identity(product, ProductStrategy.OSCILLATION, selected)
+    return StreamIdentity(
+        strategy_code="newow_dual_fusion",
+        formula_versions=trend.formula_versions + oscillation.formula_versions,
+        profile_id=f"newow_dual_fusion_{selected.value}_v1",
+        reference_model_version=MODEL_VERSION,
+        futures_adaptation_version=futures_adaptation_version(selected.value),
+        product=product, frequency=selected.value, series_kind="actual_dominant",
+        recording_mode="historical_replay", observation_policy_version=None,
+    )
+
+
+def fusion_trade_id(trend_identity, oscillation_identity, entry_signal_id: str) -> str:
+    identity = (trend_identity.product, trend_identity.frequency.value,
+                trend_identity.formula_versions, oscillation_identity.formula_versions,
+                MODEL_VERSION)
+    return sha256(json.dumps([identity, entry_signal_id], sort_keys=True).encode()).hexdigest()
 
 
 def _return(entry: Decimal, exit_: Decimal) -> Decimal:
@@ -87,9 +122,7 @@ def fusion_reference_comparison(
         nonlocal holding, mark, bars_held
         if holding is None:
             return
-        digest = sha256(
-            json.dumps([identity, holding.signal_id], sort_keys=True).encode()
-        ).hexdigest()
+        digest = fusion_trade_id(trend.identity, oscillation.identity, holding.signal_id)
         rows.append(
             {
                 "reference_trade_id": digest,

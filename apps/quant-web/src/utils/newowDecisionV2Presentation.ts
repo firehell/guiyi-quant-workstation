@@ -111,3 +111,8 @@ export function decisionDisplay(cd: Cdv2) {
     resonance: { name: r.name, color: r.color, dots: '●'.repeat(r.count) + '○'.repeat(5 - r.count), description: decisionResonanceReason(cd) },
     mismatch: mm ? { ...mm, ageLabel, detail: cross ? `趋势日线 ${crossTime}${cd.mismatch === 'MM3' ? '下穿' : '上穿'} MA10。${decisionMismatchReason(cd)}` : decisionMismatchReason(cd) } : null }
 }
+
+export function decisionContextIdentity(identity: { product: string; strategy: import('../types/newowProduct').NewowProductStrategy; frequency: import('../types/newowProduct').NewowProductFrequency }) {
+  const background = ['1m', '15m', '30m', '60m'].includes(identity.frequency)
+  return { background, identity: { product: identity.product, strategy: identity.strategy, frequency: background ? '1d' as const : identity.frequency, seriesKind: 'actual_dominant' as const } }
+}

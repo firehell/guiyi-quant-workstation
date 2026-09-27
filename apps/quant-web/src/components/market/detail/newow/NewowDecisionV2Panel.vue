@@ -5,9 +5,10 @@ import { NewowProductRequestError, getNewowProductSection } from '@/api/newowPro
 import type { NewowProductSectionResponse } from '@/types/newowProduct'
 import type { NewowDecisionV2, DecisionPriceSource } from '@/types/newowDecisionV2'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
-import { decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
+import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
 const props = defineProps<{ response: NewowProductSectionResponse<'chart'> }>()
+const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
 function preference() {
   try { return typeof localStorage === 'undefined' || localStorage.getItem('guiyi_newow_composite_collapsed') !== '0' } catch { return true }
@@ -27,9 +28,8 @@ onBeforeUnmount(() => { generation++; controller?.abort() })
 async function load() {
   const token = ++generation
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
-  const identity = props.response.meta.identity
   try {
-    const next = await getNewowProductSection({ identity: { product: identity.product, strategy: identity.strategy, frequency: identity.frequency, seriesKind: 'actual_dominant' }, section: 'explanation', decisionV2: true, asOf: props.response.meta.as_of, ...(props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal })
+    const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, asOf: props.response.meta.as_of, ...(!context.value.background && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal, ...(context.value.background ? { timeout: 60000 } : {}) })
     if (next.section !== 'explanation' || !next.value?.decision_v2) throw new Error('missing decision')
     if (token === generation) result.value = next.value.decision_v2
   } catch (failure) {
@@ -58,7 +58,7 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
   <section class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
-        <strong>综合决策 <small>日周</small></strong>
+        <strong>综合决策 <small>{{ context.background ? "日周背景" : "日周" }}</small></strong>
         <template v-if="cd && view">
           <span class="decision-v2__score-wrap"><span class="decision-v2__score-track" role="progressbar" aria-label="综合决策确定性评分" :aria-valuenow="cd.total" :aria-valuemin="0" :aria-valuemax="100"><i :style="{ width: cd.total + '%' }" /></span><b>{{ cd.total }} 分</b></span>
           <span class="decision-v2__badge">{{ view.tier.label }}</span>
@@ -128,9 +128,9 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
         <p class="decision-v2__compliance">本结论基于策略信号的机械判定，仅供参考，不构成投资建议。</p>
       </template>
     </div>
-    <p class="decision-v2__scope">60分钟未参与 · 仅使用已完成日线／周线；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
+    <p class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周仅作背景` : "分钟周期未参与" }} · 仅使用已完成日线／周线；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
-  <NewowStatusCard :decision="result" :strategy="response.meta.identity.strategy" :loading="loading" :error="error" @retry="load" />
+  <NewowStatusCard :background="context.background" :decision="result" :strategy="response.meta.identity.strategy" :loading="loading" :error="error" @retry="load" />
 </template>
 
 <style scoped>

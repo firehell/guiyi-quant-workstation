@@ -1079,6 +1079,10 @@ test('fusion reference validates independent version and parent snapshot', () =>
   }
   const value = { ...raw, reference: { ...raw.reference, value: { ...parent, fusion_comparison: fusion } } }
   assert.equal(normalizeNewowProductResponse(value, { ...expected, section: 'reference' }).value!.fusion_comparison!.groups.length, 3)
+  for (const amount of ['0E-28', '1E-2', '-1E-14']) {
+    const scientific = { ...value, reference: { ...value.reference, value: { ...value.reference.value, fusion_comparison: { ...fusion, groups: fusion.groups.map(group => ({ ...group, sum_return_percentage_points: amount })) } } } }
+    assert.equal(normalizeNewowProductResponse(scientific, { ...expected, section: 'reference' }).value!.fusion_comparison!.groups[0]!.sum_return_percentage_points, amount)
+  }
   for (const bad of [{ reference_input_sha256: 'different' }, { reference_cutoff: '2026-09-01T07:00:00Z' }, { executable: true }]) {
     const invalid = { ...value, reference: { ...value.reference, value: { ...value.reference.value, fusion_comparison: { ...fusion, ...bad } } } }
     assert.throws(() => normalizeNewowProductResponse(invalid, { ...expected, section: 'reference' }), /fusion/)

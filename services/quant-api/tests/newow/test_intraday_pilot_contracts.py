@@ -175,3 +175,34 @@ def test_reference_coverage_accepts_multiple_completed_bars_in_one_trading_day(
     assert all(
         item.physical_contract == bars[0].bar.physical_contract for item in intervals
     )
+
+
+def test_saved_availability_excludes_physical_prefix_of_future_owner():
+    from types import SimpleNamespace
+    from app.market_data.domain import ResolvedContractSegment
+    from app.market_data.newow.product_reader import NewowProductReader
+    from guiyi_quant.newow.product_identity import build_segment_id
+    from app.market_data.aggregation import SessionWindow
+    from datetime import time, date
+
+    owners = (ResolvedContractSegment("RB2701", date(2026, 9, 1), date(2026, 9, 3)),
+              ResolvedContractSegment("RB2701", date(2026, 9, 8), date(2026, 9, 10)))
+    def sessions(*, symbol, trading_day):
+        return (SessionWindow(datetime.combine(trading_day, time(1), UTC),
+                              datetime.combine(trading_day, time(7), UTC)),)
+    reader = object.__new__(NewowProductReader)
+    reader._market_data = SimpleNamespace(session_windows=sessions)
+    points = [{"trading_day": "2026-09-02", "value": {
+        "physical_contract": owner.contract,
+        "segment_id": build_segment_id("rb", owner.contract, sessions(symbol="rb", trading_day=owner.start_trading_day)[0].start),
+    }} for owner in owners]
+    assert reader.reference_owned_points("rb", points, owners) == points[:1]
+
+
+def test_snapshot_requires_shared_verified_market_source_or_bar():
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    market = {'canonical-source|1m|cutoff': 'a' * 64}
+    assert SnapshotCache._proofs_compatible(market, dict(market))
+    assert not SnapshotCache._proofs_compatible(market, {'canonical-source|1m|cutoff': 'b' * 64})
+    assert not SnapshotCache._proofs_compatible(market, {'canonical-source|15m|cutoff': 'a' * 64})
+    assert not SnapshotCache._proofs_compatible({'owner|x': 'a'}, {'owner|x': 'a'})

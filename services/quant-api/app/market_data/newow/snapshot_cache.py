@@ -194,7 +194,7 @@ class SnapshotCache:
         if not left and not right:
             return True
         shared = left.keys() & right.keys()
-        shared_bars = tuple(key for key in shared if key.startswith("bar|"))
+        shared_bars = tuple(key for key in shared if key.startswith(("bar|", "canonical-source|")))
         return bool(shared_bars) and all(left[key] == right[key] for key in shared)
 
 

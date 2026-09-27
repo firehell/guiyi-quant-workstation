@@ -14,6 +14,7 @@ from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from ..indicators.models import EmaState, MacdState
 from ..indicators.subing_ths import SubingThs15mState
+from ..newow.fusion_reference import FusionReferenceReplayState
 from ..newow.escape_d123 import EscapeState
 from ..newow.magic11 import Magic11State
 from ..newow.main_rise import MainRiseState
@@ -54,7 +55,7 @@ _DATACLASSES = {
         OscillationState, MainRiseState, Magic11State, ProductIdentity, StrategyAction,
         StrategyHint, NewowReferenceReplayState, NewowReferenceTrade,
         StreamIdentity, ReferenceState, ReferenceTrade, HtdyBarFact, HtdyForwardState,
-        SubingForwardState,
+        SubingForwardState, FusionReferenceReplayState,
     )
 }
 _DATACLASS_TAGS = {cls: tag for tag, cls in _DATACLASSES.items()}
@@ -71,6 +72,7 @@ _ENUM_TAGS = {cls: tag for tag, cls in _ENUMS.items()}
 _STRATEGY_STATE_TYPES = {
     "subing_replay_v1": SubingReplayState,
     "newow_product_replay_v1": ProductReplayState,
+    "newow_dual_fusion_reference_v1": FusionReferenceReplayState,
     "newow_reference_replay_v1": NewowReferenceReplayState,
     "htdy_first_seen_v1": HtdyForwardState,
     "subing_forward_v1": SubingForwardState,
@@ -329,6 +331,9 @@ def _validate_strategy_state(
     expected_type = _STRATEGY_STATE_TYPES.get(strategy_schema)
     if expected_type is None or type(state) is not expected_type:
         raise ValueError("strategy checkpoint strategy state type is invalid")
+    if isinstance(state, FusionReferenceReplayState):
+        if state.model_version != reference_state.stream.reference_model_version:
+            raise ValueError("strategy checkpoint fusion identity is inconsistent")
     if isinstance(state, SubingReplayState):
         _validate_subing_state(state, reference_state)
     if isinstance(state, HtdyForwardState):

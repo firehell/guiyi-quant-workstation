@@ -34,7 +34,11 @@ test('legacy Trend redirects semantically to the unified fixed D1 Newow trend id
 
 test('Newow accepts only its three strategies and independent completed periods', () => {
   for (const strategy of ['trend', 'oscillation', 'main_rise'] as const) {
-    for (const frequency of ['1w', '1d', '60m'] as const) {
+    for (const frequency of ['1w', '1d', '1m', '15m', '30m', '60m'] as const) {
+      if (strategy === 'main_rise' && ['1m', '15m', '30m'].includes(frequency)) {
+        assert.equal(parseMarketDetailRoute({ symbol: 'rb', view: 'newow', strategy, frequency }).kind, 'invalid')
+        continue
+      }
       assert.deepEqual(parseMarketDetailRoute({
         symbol: 'rb', view: 'newow', strategy, series_kind: 'actual_dominant', frequency,
       }), {
@@ -49,7 +53,7 @@ test('Newow accepts only its three strategies and independent completed periods'
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'continuous', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'contract', contract: 'RB2610', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', contract: ['RB2610'], frequency: '1d' },
-    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '15m' },
+    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '5m' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 
   assert.equal(parseMarketDetailRoute({
