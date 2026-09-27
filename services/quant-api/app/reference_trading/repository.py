@@ -13,7 +13,7 @@ from uuid import uuid4
 from dataclasses import fields, is_dataclass, replace
 
 from sqlalchemy import and_, func, or_, select, tuple_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from guiyi_quant.reference_trading import (
     ActionKind,
@@ -987,48 +987,43 @@ class ReferenceRepository:
         if stream.recording_mode != expected_mode:
             raise RepositoryConflict("MODE_NOT_AVAILABLE")
         row = ReferenceTradeRow
-        eligible = [
-            row.stream_id == snapshot.stream_id,
-            row.revision_id == snapshot.revision_id,
-            row.valid_from_seq <= snapshot.seq,
-        ]
-        if cutoff is not None:
-            eligible.extend((
-                row.entry_bar_end <= cutoff,
-                row.effective_bar_end <= cutoff,
-                or_(row.exit_bar_end.is_(None), row.exit_bar_end <= cutoff),
-            ))
-            if forward:
-                eligible.extend((
-                    select(ReferenceActionRow.action_pk).where(
-                        ReferenceActionRow.action_pk == row.entry_action_pk,
-                        ReferenceActionRow.observed_at <= cutoff,
-                    ).exists(),
-                    select(ReferenceBatch.batch_id).where(
-                        ReferenceBatch.stream_id == row.stream_id,
-                        ReferenceBatch.revision_id == row.revision_id,
-                        ReferenceBatch.seq == row.valid_from_seq,
-                        ReferenceBatch.observed_at <= cutoff,
-                    ).exists(),
+        def eligible(candidate):
+            clauses = [
+                candidate.stream_id == snapshot.stream_id,
+                candidate.revision_id == snapshot.revision_id,
+                candidate.valid_from_seq <= snapshot.seq,
+            ]
+            if cutoff is not None:
+                clauses.extend((
+                    candidate.entry_bar_end <= cutoff,
+                    candidate.effective_bar_end <= cutoff,
+                    or_(candidate.exit_bar_end.is_(None), candidate.exit_bar_end <= cutoff),
                 ))
-        ranked = select(
-            row.trade_id.label("trade_id"),
-            row.valid_from_seq.label("valid_from_seq"),
-            func.row_number().over(
-                partition_by=row.trade_id,
-                order_by=row.valid_from_seq.desc(),
-            ).label("rank"),
-        ).where(*eligible).subquery()
-        statement = select(row).join(
-            ranked,
-            and_(
-                ranked.c.trade_id == row.trade_id,
-                ranked.c.valid_from_seq == row.valid_from_seq,
-                ranked.c.rank == 1,
-            ),
-        ).where(
-            row.stream_id == snapshot.stream_id,
-            row.revision_id == snapshot.revision_id,
+                if forward:
+                    clauses.extend((
+                        select(ReferenceActionRow.action_pk).where(
+                            ReferenceActionRow.action_pk == candidate.entry_action_pk,
+                            ReferenceActionRow.observed_at <= cutoff,
+                        ).exists(),
+                        select(ReferenceBatch.batch_id).where(
+                            ReferenceBatch.stream_id == candidate.stream_id,
+                            ReferenceBatch.revision_id == candidate.revision_id,
+                            ReferenceBatch.seq == candidate.valid_from_seq,
+                            ReferenceBatch.observed_at <= cutoff,
+                        ).exists(),
+                    ))
+            return clauses
+
+        newer = aliased(ReferenceTradeRow)
+        latest_seq = select(newer.valid_from_seq).where(
+            *eligible(newer),
+            newer.stream_id == row.stream_id,
+            newer.revision_id == row.revision_id,
+            newer.trade_id == row.trade_id,
+        ).order_by(newer.valid_from_seq.desc()).limit(1).correlate(row).scalar_subquery()
+        statement = select(row).where(
+            *eligible(row),
+            row.valid_from_seq == latest_seq,
             row.entry_trading_day <= through,
         )
         if type(entry_since_only) is not bool:

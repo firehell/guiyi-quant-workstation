@@ -528,27 +528,27 @@ class HistoricalReferenceQuery:
         if not ids:
             return {}
         row = ReferenceTradeRow
-        conditions = [
-            row.stream_id == snapshot.stream_id,
-            row.revision_id == snapshot.revision_id,
+        def eligible(candidate):
+            conditions = [
+                candidate.stream_id == snapshot.stream_id,
+                candidate.revision_id == snapshot.revision_id,
+                candidate.valid_from_seq <= snapshot.seq,
+            ]
+            if cutoff is not None:
+                conditions.append(candidate.effective_bar_end <= cutoff)
+            return conditions
+
+        newer = aliased(ReferenceTradeRow)
+        latest_seq = select(newer.valid_from_seq).where(
+            *eligible(newer),
+            newer.stream_id == row.stream_id,
+            newer.revision_id == row.revision_id,
+            newer.trade_id == row.trade_id,
+        ).order_by(newer.valid_from_seq.desc()).limit(1).correlate(row).scalar_subquery()
+        versions = session.execute(select(row).where(
+            *eligible(row),
             row.trade_id.in_(ids),
-            row.valid_from_seq <= snapshot.seq,
-        ]
-        if cutoff is not None:
-            conditions.append(row.effective_bar_end <= cutoff)
-        ranked = select(
-            row.trade_id.label("trade_id"), row.valid_from_seq.label("valid_from_seq"),
-            func.row_number().over(
-                partition_by=row.trade_id, order_by=row.valid_from_seq.desc(),
-            ).label("rank"),
-        ).where(*conditions).subquery()
-        versions = session.execute(select(row).join(ranked, and_(
-            ranked.c.trade_id == row.trade_id,
-            ranked.c.valid_from_seq == row.valid_from_seq,
-            ranked.c.rank == 1,
-        )).where(
-            row.stream_id == snapshot.stream_id,
-            row.revision_id == snapshot.revision_id,
+            row.valid_from_seq == latest_seq,
         )).scalars().all()
         details = {
             item.trade_id: {"interrupted_at": item.effective_bar_end.isoformat()}
@@ -566,21 +566,15 @@ class HistoricalReferenceQuery:
         if cutoff is not None:
             eligible.append(mark.bar_end <= cutoff)
         latest = select(
-            mark.trade_id.label("trade_id"), mark.batch_seq.label("batch_seq"),
-            mark.bar_end.label("bar_end"),
+            mark,
             func.row_number().over(
                 partition_by=mark.trade_id,
                 order_by=(mark.bar_end.desc(), mark.batch_seq.desc()),
             ).label("rank"),
         ).where(*eligible).subquery()
-        marks = session.execute(select(mark).join(latest, and_(
-            latest.c.trade_id == mark.trade_id,
-            latest.c.batch_seq == mark.batch_seq,
-            latest.c.bar_end == mark.bar_end,
+        latest_mark = aliased(ReferenceMarkRow, latest)
+        marks = session.execute(select(latest_mark).where(
             latest.c.rank == 1,
-        )).where(
-            mark.stream_id == snapshot.stream_id,
-            mark.revision_id == snapshot.revision_id,
         )).scalars().all()
         for item in marks:
             if item.trade_id in details:
