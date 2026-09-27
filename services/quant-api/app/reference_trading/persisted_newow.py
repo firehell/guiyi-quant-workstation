@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
@@ -145,6 +146,39 @@ class PersistedNewowReference:
             if len(matches) == 1:
                 attached[matches[0]].append(hint["hint_id"])
         return attached
+
+    def _reference_facts(self, stream_id, snapshot, since, storage_start, through,
+                         cutoff, manifest, minute, check_cancelled):
+        facts = self._query.presentation_facts(
+            stream_id, snapshot_token=snapshot,
+            since=since if minute else storage_start, through=through, cutoff=cutoff,
+            kinds=("availability", "boundary", "hint") if minute else
+                  ("availability", "boundary", "hint", "action"),
+            max_points=200_000 if minute else 100_000,
+            check_cancelled=check_cancelled,
+        )
+        if not minute:
+            return facts
+        # Actions only suppress hints at the same physical owner/bar. Preserve all
+        # sequences at that bar, including suppression of an unsequenced hint.
+        facts["action"] = []
+        if not facts["hint"]:
+            return facts
+        hint_bars = {
+            (point["value"]["physical_contract"], point["value"]["segment_id"],
+             point["value"]["bar_end"])
+            for point in facts["hint"]
+        }
+        with closing(self._query.historical_actions(
+            stream_id, snapshot_token=snapshot, since=since, through=through,
+            cutoff=cutoff, input_count=manifest.get("input_count"),
+            check_cancelled=check_cancelled,
+        )) as actions:
+            for point in actions:
+                value = point["value"]
+                if (value["physical_contract"], value["segment_id"], value["bar_end"]) in hint_bars:
+                    facts["action"].append(point)
+        return facts
 
     def validate_cached_generation(self, delivery):
         from app.reference_trading.contracts import manifest_sha256
@@ -298,12 +332,10 @@ class PersistedNewowReference:
                 if curve_cursor is None:
                     break
         page_ids = {item["reference_trade_id"] for item in page["items"]}
-        facts = self._query.presentation_facts(
-            stream_id, snapshot_token=snapshot, since=since if minute else date.fromisoformat(storage_start),
-            through=resolved.actual_through, cutoff=cutoff,
-            kinds=("availability", "boundary", "hint", "action"),
-            max_points=200_000 if minute else 100_000,
-            check_cancelled=getattr(reader, "_check_cancelled", None),
+        facts = self._reference_facts(
+            stream_id, snapshot, since, date.fromisoformat(storage_start),
+            resolved.actual_through, cutoff, manifest, minute,
+            getattr(reader, "_check_cancelled", None),
         )
         availability = [point for point in facts["availability"] if point["trading_day"] >= since.isoformat()]
         if minute:
