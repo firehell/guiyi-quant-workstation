@@ -1,0 +1,31 @@
+{
+  "code_sha": "10d40faa05badc04c86cefb65c53525a11dba4fb",
+  "cutoff": "2026-09-24T07:00:00.000001+00:00",
+  "status": "PASS",
+  "rows": [
+    {
+      "stage": "base",
+      "status": "PASS",
+      "seconds": 33.148,
+      "snapshot": "rKnuDg0HyxYCW9SxCAEt7iVj6WRYEUEo",
+      "curve_count": 33169,
+      "has_fusion": false
+    },
+    {
+      "stage": "fusion",
+      "status": "PASS",
+      "seconds": 20.745,
+      "snapshot": "rKnuDg0HyxYCW9SxCAEt7iVj6WRYEUEo",
+      "curve_count": 33169,
+      "has_fusion": true
+    },
+    {
+      "stage": "fusion_page",
+      "status": "PASS",
+      "seconds": 17.54,
+      "snapshot": "rKnuDg0HyxYCW9SxCAEt7iVj6WRYEUEo",
+      "curve_count": 33169,
+      "has_fusion": true
+    }
+  ]
+}

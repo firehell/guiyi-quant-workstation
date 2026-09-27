@@ -1,0 +1,8 @@
+{
+  "plan_hash": "d4b94cd41312c82c0e4c76d58adb82714ad688d9d6c18baba9cc5610783e7c6f",
+  "stream_id": "reference-stream:01ff9ee9945cc2e675070e80c29342d5efbeb285983f81d6e3c552668203f5f6",
+  "revision_id": "04d910adc6244a608f5bbd5e0f3c668b",
+  "next_input_index": 17706,
+  "source_token": "c5ced4903d256397f3a1c6b9e57044096ece1b907d812cdfbc3a9c3209838733",
+  "last_batch_key": "calculation:7fc5be7f322a50b1ca4af5ab39b296d9737c5569708b1ceea3e3220c306e5156"
+}

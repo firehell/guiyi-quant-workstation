@@ -1,0 +1,122 @@
+{
+  "schema": "intraday_reference_build_capacity_v1",
+  "frequency": "1m",
+  "config_identity": {
+    "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab"
+  },
+  "isolated_schema": "newow_intraday_pilot_20260927",
+  "plan_hash": "8599f5939d8022c37589d074d3cddb9c42366240da15b9728b7d02a839b85070",
+  "plan_seconds": 232.664,
+  "build_seconds": 844.004,
+  "peak_rss_bytes": 3232792576,
+  "report": {
+    "status": "completed",
+    "streams": [
+      {
+        "stream_id": "reference-stream:6c479d989a33fb5f86d70a56e9dbf9e46f230c327e7d946af1bc966618293943",
+        "status": "completed",
+        "reason": null,
+        "completed_bars": 870836,
+        "candidate_revision_id": "e357d6ef19794816b5ea2c6611aadd1d",
+        "active_revision_id": "e357d6ef19794816b5ea2c6611aadd1d",
+        "last_batch_key": "calculation:8f2f071f69bd221b2f3326fdea52b6d5549f83ad28cc778700fb1735191f3e35",
+        "resume_token": null,
+        "snapshot": {
+          "stream_id": "reference-stream:6c479d989a33fb5f86d70a56e9dbf9e46f230c327e7d946af1bc966618293943",
+          "revision_id": "e357d6ef19794816b5ea2c6611aadd1d",
+          "seq": 3403
+        }
+      },
+      {
+        "stream_id": "reference-stream:857639a8ef32d4d14c0e4d652f8c322f4f56f6a7fc164f4d272cf6f98a478c99",
+        "status": "completed",
+        "reason": null,
+        "completed_bars": 870836,
+        "candidate_revision_id": "30dc7865dbb2484ea4668b0695cbc7d4",
+        "active_revision_id": "30dc7865dbb2484ea4668b0695cbc7d4",
+        "last_batch_key": "calculation:e8c03ff6190c8b9b1cefb83d23d49c620d4d426f498ac679df41624ca998812a",
+        "resume_token": null,
+        "snapshot": {
+          "stream_id": "reference-stream:857639a8ef32d4d14c0e4d652f8c322f4f56f6a7fc164f4d272cf6f98a478c99",
+          "revision_id": "30dc7865dbb2484ea4668b0695cbc7d4",
+          "seq": 3403
+        }
+      }
+    ]
+  },
+  "queries": [
+    {
+      "stream_id": "reference-stream:6c479d989a33fb5f86d70a56e9dbf9e46f230c327e7d946af1bc966618293943",
+      "page_seconds": 0.545,
+      "summary_seconds": 0.409,
+      "page_items": 200,
+      "has_more": true,
+      "summary": {
+        "closed_count": 9642,
+        "win_count": 5411,
+        "loss_count": 3674,
+        "flat_count": 557,
+        "open_count": 1,
+        "interrupted_count": 1,
+        "rollover_interrupted_count": 1,
+        "data_interrupted_count": 0,
+        "initial_count": 23531,
+        "win_rate_pct": "56.11906243517942335615017631",
+        "mean_return_pct": "0.02553446446897633268110446031",
+        "sum_return_percentage_points": "246.2033064098697997112092063000",
+        "statistics_policy": "entry_in_window_v1",
+        "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJmMDg1MTI4NWEyMzU5NDI5YmYyOWVhOGRiNjViYjYyYjdkOWY2MTQ5ZmRkZmQyMGM5NjA3OWY4MGZjNzA2NTNkIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiJlMzU3ZDZlZjE5Nzk0ODE2YjVlYTJjNjYxMWFhZGQxZCIsInNlcSI6MzQwMywic2luY2UiOiIyMDI1LTA5LTI1Iiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTo2YzQ3OWQ5ODlhMzNmYjVmODZkNzBhNTZlOWRiZjllNDZmMjMwYzMyN2U3ZDk0NmFmMWJjOTY2NjE4MjkzOTQzIiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+        "revision_id": "e357d6ef19794816b5ea2c6611aadd1d",
+        "seq": 3403,
+        "window": {
+          "since": "2025-09-25",
+          "through": "2026-09-24"
+        },
+        "coverage": {
+          "first_computed_through": "2023-01-03T06:46:00+00:00",
+          "computed_through": "2026-09-24T07:00:00+00:00",
+          "observation_boundary_at": null,
+          "complete_window_proven": false
+        },
+        "status": "READY"
+      }
+    },
+    {
+      "stream_id": "reference-stream:857639a8ef32d4d14c0e4d652f8c322f4f56f6a7fc164f4d272cf6f98a478c99",
+      "page_seconds": 0.261,
+      "summary_seconds": 0.157,
+      "page_items": 200,
+      "has_more": true,
+      "summary": {
+        "closed_count": 6391,
+        "win_count": 5538,
+        "loss_count": 608,
+        "flat_count": 245,
+        "open_count": 0,
+        "interrupted_count": 2,
+        "rollover_interrupted_count": 2,
+        "data_interrupted_count": 0,
+        "initial_count": 10703,
+        "win_rate_pct": "86.65310593021436394930370834",
+        "mean_return_pct": "0.06164754105104629288779514735",
+        "sum_return_percentage_points": "393.9894348572368578458987866900",
+        "statistics_policy": "entry_in_window_v1",
+        "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiI4MDY3ODk5YTZkZmZhNWFjMmEyMjZkYmEyYWFlMDllZDYxY2FlNWY1ODNmODhhNjBlZjhhZDc5OWViOGM1MTVhIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiIzMGRjNzg2NWRiYjI0ODRlYTQ2NjhiMDY5NWNiYzdkNCIsInNlcSI6MzQwMywic2luY2UiOiIyMDI1LTA5LTI1Iiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTo4NTc2MzlhOGVmMzJkNGQxNGMwZTRkNjUyZjhjMzIyZjRmNTZmNmE3ZmMxNjRmNGQyNzJjZjZmOThhNDc4Yzk5IiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+        "revision_id": "30dc7865dbb2484ea4668b0695cbc7d4",
+        "seq": 3403,
+        "window": {
+          "since": "2025-09-25",
+          "through": "2026-09-24"
+        },
+        "coverage": {
+          "first_computed_through": "2023-01-03T06:46:00+00:00",
+          "computed_through": "2026-09-24T07:00:00+00:00",
+          "observation_boundary_at": null,
+          "complete_window_proven": false
+        },
+        "status": "READY"
+      }
+    }
+  ]
+}

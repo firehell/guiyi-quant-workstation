@@ -44,6 +44,20 @@ owner 确认 #146 PT2610 14:00 对应微信收件。该完成事实不重开，�
 
 来源版本与公式复刻边界见 [当前研究复核](docs/research/newow-current-review.md)；历史原站证据不等于当前期货 OOS。
 
+## 分钟 Newow 首品种历史候选
+
+P0–P6 首轮工程与隔离验收已完成，允许集成 develop。RB `1m/15m/30m/60m × 趋势/震荡/独立融合` 的
+4输入、8基础保存流、4融合流与12页面模式都有证据；36期货边界样本、48辅助、上市预热、同日分页、
+容量/取消、真实Chrome及高风险独立Review已完成。精确实现候选为 `10d40faa05badc04c86cefb65c53525a11dba4fb`，
+本节不把后续文档提交当另一轮业务实现。
+
+候选默认关闭、只在隔离preview对RB开放；资产只写隔离schema `newow_intraday_pilot_20260927`。
+复用已有Canonical，实际缺口为零，provider/Canonical/Market Catalog mutation均为零。
+正式日周开关、worker、Scope、Runtime与 `auto_order=false` 未变。P7全量、发布/切换、观察启用、通知、
+订单及因果/OOS研究未执行。SQL/hydrate取消有界但非即时；旧7项fixture漂移与既有reference-trading
+OpenSpec结构失败单列，没有声明全套通过。详见 [首轮执行与验收](docs/tasks/newow-intraday-pilot-20260927.md)；
+下一轮从 [P7精确盘点](docs/superpowers/plans/2026-09-19-newow-intraday-roadmap.md#p760-品种扩大与维护接续) 开始。
+
 ## 统一参考交易与数据恢复未完成项
 
 P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow 页面参考投影验收不等于持久化统一参考交易验收。

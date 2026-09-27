@@ -13,7 +13,7 @@ develop b48ffe0e504ee3d0850a2e75c2820dca26f9aefe；用户计划修改已复制�
 ## 进度与裁定
 
 - P0–P5c 已实现并进入最终回归；P2 最终 source/generation 读回通过。
-- P6 仍进行中：1m 最终页面及队列/取消验收、冻结独立复审和 develop 集成尚未完成。
+- P6 代码/数据/容量/浏览器/独立 Review 已完成；最后 develop 集成读回进行中。
 - Pre-flight：P1 周期集合影响默认枚举，须显式保持日周/60m 既有默认；P3 端点与 P5a 实际 warmup 决定 P2 最终结果；P5b 完整快照是 P5b-F 前提；P5c 后端修改等上述交接。
 - Ruling：执行 inline，最终高风险 fresh-context Review；现有用户授权覆盖必要数据修复与 develop 集成，不重复审批。
 
@@ -62,3 +62,45 @@ develop b48ffe0e504ee3d0850a2e75c2820dca26f9aefe；用户计划修改已复制�
 - Independent Review found UI curve selection outside near-year pages and scientific Decimal card display; repaired. Focused card uses original full reference facts under theory-mode; one-year pagination remains unchanged. Reviewer 2000 seeded old/new Hint matching differential cases all equivalent.
 - Real 1m UI capacity failures required repair: full Hint×trade scan40–44s→indexed interval lookup26.751s; separate bounded persisted minute admission avoids background starvation. Whole reference wire graph measured80537441bytes, above old32MiB cache entry budget; default-off RB candidate cache capped256MiB/entry and512MiB total. Fusion reuses exact base saved generation and fresh source proof, no public schema widening. Final browser acceptance remains pending, not inferred from repairs.
 - Actual running cancellation PASS: presentation scan cancels after8batches/0.207s; readonly rollback and saved generation unchanged (`running-cancel-readback.json`). Pre-read cancellation0.000064s. No official service/Scope/Runtime changed.
+
+## 最终冻结验证与 P6 出口
+
+实现冻结6264c24df1063514acce150ccb4468134e82ee7d；候选fixture修正635bbea4a；合并最新develop@afde169a4后的代码候选10d40faa05badc04c86cefb65c53525a11dba4fb。独立Astra Review两次给出“无未解决Confirmed Issue，允许集成develop”，补审确认6264到10d未改变分钟业务源码。发布版本仍1.10.38，正式开关日周未变，RB四分钟候选默认关闭。最终证据提交只更新文档/验收输出，不改业务源码。
+
+### 实际测试（重叠组不相加）
+
+- `PYTHONPATH=.:packages/quant-core:services/quant-api services/quant-api/.venv/bin/pytest -q services/quant-api/tests/newow services/quant-api/tests/reference_trading`：2478PASS/46SKIP，365.89s（728冻结；6264补丁针对16PASS，独立Review在6264定向481PASS、历史/checkpoint/storage124PASS/1SKIP）。
+- 合并候选 `PYTHONPATH=.:packages/quant-core:services/quant-api services/quant-api/.venv/bin/pytest -q services/quant-api/tests/reference_trading/test_newow_fusion_historical.py services/quant-api/tests/newow/test_product_snapshot_cache.py services/quant-api/tests/newow/test_market_newow_product_api.py tests/engineering/test_canonical_consistency.py`：98PASS，3.90s。
+- 合并候选 `cd apps/quant-web && pnpm test`：719PASS/1SKIP，7318ms；`pnpm build`含vue-tsc/topology通过，562ms构建。现有无效dynamic-import警告单列。
+- `PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm test:e2e e2e/candidate-preview.spec.mjs`：3PASS，3.9s；已退役banner断言改为当前App身份gate，仍验证错身份不请求、固定截点、无live订阅和管理路径拒绝。
+- `pnpm test:e2e e2e/newow-product.spec.mjs --grep 'late old chart response|shared-bar conflict|429 is bounded|auxiliary cache, applicability|curve window changes|tokenless chart|deferred explanation stays'`：候选7FAIL；相同命令在未修改develop@afde169a4逐项同样7FAIL（CDV2请求、记录窗口、旧截图与OPEN记录断言漂移），不声明此旧套件通过，下一轮测试维护处理。
+- 实际SQLite Canonical/Catalog/MDS历史集成1PASS/1专用PostgreSQL环境SKIP；真实PostgreSQL12资产构建与独立读回另外有证据。缺隔离migration环境的46项skip没有连接生产绕过。
+- 变更Python Ruff、tracked和全部候选outputs secret scan均通过，0secret finding；diff check通过。本轮Newow OpenSpec有效；全spec9PASS/1FAIL，reference-trading两个Requirement在Requirements段外，已在未修改develop复现，未改该spec。
+
+### 数据身份与操作范围
+
+Canonical根 `/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical`；private配置仅程序安全加载，config hash c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746。冻结as_of=`2026-09-24T07:00:00.000001+00:00`，维护窗口2023-01-01..2026-09-24。四source proof、所有physical prefix以及12个stream/revision/seq精确身份见 `outputs/newow-intraday-pilot-20260927/p2-final-pilot-readback.json` 与构建plan；合并候选再次独立读回4/12PASS，gap=0。没有provider调用、Canonical或Market Catalog写入，不扩大60品种。保存资产仅使用隔离PostgreSQL schema `newow_intraday_pilot_20260927`；没有迁移或生产Reference指针切换。
+
+### 实际验收与容量
+
+Chrome12模式逐项主图、完整曲线、近一年记录PASS，观察SHA逐项保留于 `browser-12-mode-acceptance.json`，不会将6264现场证据改写成10d现场SHA。10d补验15m融合/60m趋势/60m震荡，独立Review确认分钟实现未变；10d的1m HTTP冷读/融合/第二页另外绑定最终SHA。页面年化展示仅用于验收口径，不是因果收益、模型账户收益或盈利结论。
+
+| 周期 | 趋势 | 震荡 | 独立融合 |
+|---|---|---|---|
+|1m|106.6%|98.5%|129.7%|
+|15m|54.1%|33.3%|59.2%|
+|30m|43.8%|27.8%|49.1%|
+|60m|36.3%|20.7%|41.6%|
+
+48辅助HTTP读取PASS，分钟杯柄NOT_APPLICABLE；36实际Session/OHLCV独立聚合边界PASS（RB/AP/AU/SC/PD，年界/假日/周五夜盘/首维护日），PD上市8策略读回PASS，趋势首Bar按原合同ready、震荡真实warming且短30/60m不虚报ready。metadata缺失、缺分钟、短尾、owner重入、来源修订等反例由定向离线测试和独立Review覆盖，无人为改Canonical制造反例。
+
+同日chart50×2=100无重，同snapshot/严格cursor；1m融合真实第二页继续到09-22、年化129.7%不受列表长度改变。分钟1m→15m→60m切换清除旧事实，最终显示60m；后台D1/W1独立角色显示，分钟不参与评分。冷/热API正常容量及表格读取完整历史，不缩prefix/统计。超队列实际429，显式重试恢复60m融合41.6%，未自动无限重试。
+
+全1m构建844.004s/RSS3232792576B；融合构建324.37s/RSS约2.358GB。正常2请求并发9.635/4.455s，API采样RSS1043185664B；实测HTTP断开0.304s，后续保存读取47.111s。逐批presentation取消0.207s、generation不变；SQL/hydrate不保证即时取消，不能将这项证据表述为全链即时取消。明确保留60s客户端请求/50s等待与1running+2waiting预算，首品种可验收，不外推60品种容量。
+
+### 第二轮与回滚
+
+P7全品种精确盘点/维护/资产构建及240输入/480基础/240融合逐项验收；必要冷读与并发容量继续验证，完善旧fixture。P8发布/Runtime、P9启用观察、R1/R2因果执行/OOS另行交办。当前没有通知、订单、策略晋升或正式consumer切换。默认关闭候选可直接停用；源码回滚采用revert，不删除Canonical或修改正式指针；隔离schema保留审计，清理需精确对象与后续任务授权。
+
+- 最终合并候选数据回归：`PYTHONPATH=.:packages/quant-core:services/quant-api services/quant-api/.venv/bin/pytest -q services/quant-api/tests/data_foundation/test_aggregation.py services/quant-api/tests/data_foundation/test_historical_session_window.py services/quant-api/tests/data_foundation/test_session_anchor_repair.py services/quant-api/tests/data_foundation/test_historical_data_manager.py services/quant-api/tests/data_foundation/test_daily_maintenance.py services/quant-api/tests/data_foundation/test_newow_readiness_cli.py services/quant-api/tests/data_foundation/test_storage.py`：352PASS，25.23s。
+- 10d最终1m HTTP：冷基础33.148s、融合20.745s、第二页17.540s，同一snapshot，完整基础曲线33169；没有把旧6264耗时改成10d结果。

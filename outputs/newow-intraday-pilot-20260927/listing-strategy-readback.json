@@ -1,0 +1,80 @@
+{
+  "status": "PASS",
+  "first_maintained_product_day": "2025-11-27",
+  "provider_calls": 0,
+  "writes": 0,
+  "rows": [
+    {
+      "frequency": "1m",
+      "strategy": "trend",
+      "status": "PASS",
+      "first_state": "ready",
+      "last_state": "ready",
+      "frames": 225,
+      "physical_contract": "PD2606"
+    },
+    {
+      "frequency": "1m",
+      "strategy": "oscillation",
+      "status": "PASS",
+      "first_state": "warming",
+      "last_state": "ready",
+      "frames": 225,
+      "physical_contract": "PD2606"
+    },
+    {
+      "frequency": "15m",
+      "strategy": "trend",
+      "status": "PASS",
+      "first_state": "ready",
+      "last_state": "ready",
+      "frames": 15,
+      "physical_contract": "PD2606"
+    },
+    {
+      "frequency": "15m",
+      "strategy": "oscillation",
+      "status": "PASS",
+      "first_state": "warming",
+      "last_state": "ready",
+      "frames": 15,
+      "physical_contract": "PD2606"
+    },
+    {
+      "frequency": "30m",
+      "strategy": "trend",
+      "status": "PASS",
+      "first_state": "ready",
+      "last_state": "ready",
+      "frames": 8,
+      "physical_contract": "PD2606"
+    },
+    {
+      "frequency": "30m",
+      "strategy": "oscillation",
+      "status": "PASS",
+      "first_state": "warming",
+      "last_state": "warming",
+      "frames": 8,
+      "physical_contract": "PD2606"
+    },
+    {
+      "frequency": "60m",
+      "strategy": "trend",
+      "status": "PASS",
+      "first_state": "ready",
+      "last_state": "ready",
+      "frames": 5,
+      "physical_contract": "PD2606"
+    },
+    {
+      "frequency": "60m",
+      "strategy": "oscillation",
+      "status": "PASS",
+      "first_state": "warming",
+      "last_state": "warming",
+      "frames": 5,
+      "physical_contract": "PD2606"
+    }
+  ]
+}

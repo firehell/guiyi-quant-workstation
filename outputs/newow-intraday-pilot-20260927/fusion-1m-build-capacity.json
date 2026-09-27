@@ -1,0 +1,71 @@
+{
+  "schema": "intraday_reference_build_capacity_v1",
+  "frequency": "1m",
+  "config_identity": {
+    "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab"
+  },
+  "isolated_schema": "newow_intraday_pilot_20260927",
+  "plan_hash": "8fdfdc23e6743ff5245c1f982e145c8284d323c52dc1bad09f34da614817f1a5",
+  "plan_seconds": 127.228,
+  "build_seconds": 324.37,
+  "peak_rss_bytes": 2357837824,
+  "report": {
+    "status": "completed",
+    "streams": [
+      {
+        "stream_id": "reference-stream:b1050f999655fee631eda76211d21df834fc0a5a2d6b24bea0e329f3bfac7554",
+        "status": "completed",
+        "reason": null,
+        "completed_bars": 870836,
+        "candidate_revision_id": "4d91127735c34acdae6df50419d8a458",
+        "active_revision_id": "4d91127735c34acdae6df50419d8a458",
+        "last_batch_key": "calculation:46a0a12a1a5d0066efba281a04cc3ef6fd91436163da8584b1f8105360f47879",
+        "resume_token": null,
+        "snapshot": {
+          "stream_id": "reference-stream:b1050f999655fee631eda76211d21df834fc0a5a2d6b24bea0e329f3bfac7554",
+          "revision_id": "4d91127735c34acdae6df50419d8a458",
+          "seq": 3403
+        }
+      }
+    ]
+  },
+  "queries": [
+    {
+      "stream_id": "reference-stream:b1050f999655fee631eda76211d21df834fc0a5a2d6b24bea0e329f3bfac7554",
+      "page_seconds": 0.383,
+      "summary_seconds": 0.253,
+      "page_items": 200,
+      "has_more": true,
+      "summary": {
+        "closed_count": 11954,
+        "win_count": 9529,
+        "loss_count": 2053,
+        "flat_count": 372,
+        "open_count": 0,
+        "interrupted_count": 2,
+        "rollover_interrupted_count": 2,
+        "data_interrupted_count": 0,
+        "initial_count": 25307,
+        "win_rate_pct": "79.71390329596787686130165635",
+        "mean_return_pct": "0.04597901322330109373420120663",
+        "sum_return_percentage_points": "549.6331240713412744986412240900",
+        "statistics_policy": "entry_in_window_v1",
+        "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiIzN2JkMTg4ZWYwZmU4YTcwODhhY2MwZGJiNDRkMzhiZmJkYWJjMjM1MDUwNjQxMjBkMmIyNDY5NjhlOWI5ZWE1Iiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiI0ZDkxMTI3NzM1YzM0YWNkYWU2ZGY1MDQxOWQ4YTQ1OCIsInNlcSI6MzQwMywic2luY2UiOiIyMDI1LTA5LTI1Iiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTpiMTA1MGY5OTk2NTVmZWU2MzFlZGE3NjIxMWQyMWRmODM0ZmMwYTVhMmQ2YjI0YmVhMGUzMjlmM2JmYWM3NTU0IiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+        "revision_id": "4d91127735c34acdae6df50419d8a458",
+        "seq": 3403,
+        "window": {
+          "since": "2025-09-25",
+          "through": "2026-09-24"
+        },
+        "coverage": {
+          "first_computed_through": "2023-01-03T06:46:00+00:00",
+          "computed_through": "2026-09-24T07:00:00+00:00",
+          "observation_boundary_at": null,
+          "complete_window_proven": false
+        },
+        "status": "READY"
+      }
+    }
+  ]
+}

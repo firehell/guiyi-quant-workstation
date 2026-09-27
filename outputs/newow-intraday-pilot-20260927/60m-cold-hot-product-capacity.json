@@ -1,0 +1,26 @@
+[
+  {
+    "section": "chart",
+    "temperature": "cold",
+    "seconds": 1.567,
+    "status": "PASS"
+  },
+  {
+    "section": "chart",
+    "temperature": "hot",
+    "seconds": 0.897,
+    "status": "PASS"
+  },
+  {
+    "section": "reference",
+    "temperature": "cold",
+    "seconds": 3.08,
+    "status": "PASS"
+  },
+  {
+    "section": "reference",
+    "temperature": "hot",
+    "seconds": 2.525,
+    "status": "PASS"
+  }
+]

@@ -1,0 +1,128 @@
+{
+  "schema_version": "historical_reference_plan_v1",
+  "operation": "build",
+  "streams": [
+    {
+      "request": {
+        "identity": {
+          "strategy_code": "newow_dual_fusion",
+          "formula_versions": [
+            "newow_escape_d123_page_v2",
+            "newow_trend_band_page_v2",
+            "newow_hhv_llv_channel_page_v1",
+            "newow_oscillation_hhv_llv10_page_v1"
+          ],
+          "profile_id": "newow_dual_fusion_1m_v1",
+          "reference_model_version": "newow_dual_fusion_reference_zero_cost_v1",
+          "futures_adaptation_version": "newow_futures_quality_segment_v3",
+          "product": "rb",
+          "frequency": "1m",
+          "series_kind": "actual_dominant",
+          "recording_mode": "historical_replay",
+          "observation_policy_version": null
+        },
+        "since": "2023-01-01",
+        "through": "2026-09-24",
+        "as_of": "2026-09-24T07:00:00.000001+00:00"
+      },
+      "storage_start": "2022-05-17",
+      "target_completed_through": "2026-09-24T07:00:00+00:00",
+      "input_count": 870836,
+      "input_bytes": 222936746,
+      "input_manifest": {
+        "formula_versions": [
+          "newow_escape_d123_page_v2",
+          "newow_trend_band_page_v2",
+          "newow_hhv_llv_channel_page_v1",
+          "newow_oscillation_hhv_llv10_page_v1"
+        ],
+        "input_count": 870836,
+        "input_sha256": "8aaa98f17bc05bf18e439188900824cbc0e9d872fad33c21d9e2631e1639ec42",
+        "lifecycle_owners": [
+          [
+            "RB2305",
+            "rb:RB2305:2023-01-03T01:00:00+00:00"
+          ],
+          [
+            "RB2310",
+            "rb:RB2310:2023-04-06T01:00:00+00:00"
+          ],
+          [
+            "RB2401",
+            "rb:RB2401:2023-09-04T13:00:00+00:00"
+          ],
+          [
+            "RB2405",
+            "rb:RB2405:2023-12-06T13:00:00+00:00"
+          ],
+          [
+            "RB2410",
+            "rb:RB2410:2024-04-02T13:00:00+00:00"
+          ],
+          [
+            "RB2501",
+            "rb:RB2501:2024-09-02T13:00:00+00:00"
+          ],
+          [
+            "RB2505",
+            "rb:RB2505:2024-12-05T13:00:00+00:00"
+          ],
+          [
+            "RB2510",
+            "rb:RB2510:2025-04-07T13:00:00+00:00"
+          ],
+          [
+            "RB2601",
+            "rb:RB2601:2025-08-29T13:00:00+00:00"
+          ],
+          [
+            "RB2605",
+            "rb:RB2605:2025-12-02T13:00:00+00:00"
+          ],
+          [
+            "RB2610",
+            "rb:RB2610:2026-04-07T13:00:00+00:00"
+          ],
+          [
+            "RB2701",
+            "rb:RB2701:2026-09-01T13:00:00+00:00"
+          ]
+        ],
+        "quality_policy": "newow_input_quality_v1",
+        "query_as_of": "2026-09-24T07:00:00.000001+00:00",
+        "query_since": "2023-01-01",
+        "query_through": "2026-09-24",
+        "reader": "newow_fusion_saved_sources_v1",
+        "reference_model_version": "newow_dual_fusion_reference_zero_cost_v1",
+        "source_dependencies": [
+          {
+            "dependency_digest": "f0851285a2359429bf29ea8db65bb62b7d9f6149fddfd20c96079f80fc70653d",
+            "revision_id": "e357d6ef19794816b5ea2c6611aadd1d",
+            "seq": 3403,
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJmMDg1MTI4NWEyMzU5NDI5YmYyOWVhOGRiNjViYjYyYjdkOWY2MTQ5ZmRkZmQyMGM5NjA3OWY4MGZjNzA2NTNkIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiJlMzU3ZDZlZjE5Nzk0ODE2YjVlYTJjNjYxMWFhZGQxZCIsInNlcSI6MzQwMywic2luY2UiOiIyMDIzLTAxLTAxIiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTo2YzQ3OWQ5ODlhMzNmYjVmODZkNzBhNTZlOWRiZjllNDZmMjMwYzMyN2U3ZDk0NmFmMWJjOTY2NjE4MjkzOTQzIiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+            "stream_id": "reference-stream:6c479d989a33fb5f86d70a56e9dbf9e46f230c327e7d946af1bc966618293943"
+          },
+          {
+            "dependency_digest": "8067899a6dffa5ac2a226dba2aae09ed61cae5f583f88a60ef8ad799eb8c515a",
+            "revision_id": "30dc7865dbb2484ea4668b0695cbc7d4",
+            "seq": 3403,
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiI4MDY3ODk5YTZkZmZhNWFjMmEyMjZkYmEyYWFlMDllZDYxY2FlNWY1ODNmODhhNjBlZjhhZDc5OWViOGM1MTVhIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiIzMGRjNzg2NWRiYjI0ODRlYTQ2NjhiMDY5NWNiYzdkNCIsInNlcSI6MzQwMywic2luY2UiOiIyMDIzLTAxLTAxIiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTo4NTc2MzlhOGVmMzJkNGQxNGMwZTRkNjUyZjhjMzIyZjRmNTZmNmE3ZmMxNjRmNGQyNzJjZjZmOThhNDc4Yzk5IiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+            "stream_id": "reference-stream:857639a8ef32d4d14c0e4d652f8c322f4f56f6a7fc164f4d272cf6f98a478c99"
+          }
+        ],
+        "source_evidence_sha256": "75c49322c74220e685f5dd51789e24cce1e8cca72ca03e594347947b63d864ea"
+      },
+      "input_manifest_sha256": "37bd188ef0fe8a7088acc0dbb44d38bfbdabc23505064120d2b246968e9b9ea5",
+      "dependency_digest": "37bd188ef0fe8a7088acc0dbb44d38bfbdabc23505064120d2b246968e9b9ea5",
+      "source_token": "37bd188ef0fe8a7088acc0dbb44d38bfbdabc23505064120d2b246968e9b9ea5"
+    }
+  ],
+  "budget": {
+    "max_streams": 2,
+    "max_input_bars": 4000000,
+    "max_elapsed_seconds": 900,
+    "max_input_bytes": 16000000000
+  },
+  "batch_size": 256,
+  "plan_hash": "8fdfdc23e6743ff5245c1f982e145c8284d323c52dc1bad09f34da614817f1a5"
+}

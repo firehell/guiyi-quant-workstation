@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "code_sha": "6264c24df1063514acce150ccb4468134e82ee7d",
+  "disconnect_after_seconds": 0.304,
+  "following_saved_read_seconds": 47.111,
+  "following_curve_count": 527,
+  "writes": 0,
+  "limitation": "Does not prove SQL/hydrate immediate cancellation; presentation callbacks and bounded gate release only."
+}

@@ -1,0 +1,202 @@
+{
+  "schema_version": "historical_reference_plan_v1",
+  "operation": "build",
+  "streams": [
+    {
+      "request": {
+        "identity": {
+          "strategy_code": "newow_trend",
+          "formula_versions": [
+            "newow_escape_d123_page_v2",
+            "newow_trend_band_page_v2"
+          ],
+          "profile_id": "newow_product_trend_30m_v1",
+          "reference_model_version": "newow_marker_reference_zero_cost_v3",
+          "futures_adaptation_version": "newow_futures_quality_segment_v3",
+          "product": "rb",
+          "frequency": "30m",
+          "series_kind": "actual_dominant",
+          "recording_mode": "historical_replay",
+          "observation_policy_version": null
+        },
+        "since": "2023-01-01",
+        "through": "2026-09-24",
+        "as_of": "2026-09-24T07:00:00.000001+00:00"
+      },
+      "storage_start": "2022-05-17",
+      "target_completed_through": "2026-09-24T07:00:00+00:00",
+      "input_count": 30311,
+      "input_bytes": 7760751,
+      "input_manifest": {
+        "formula_versions": [
+          "newow_escape_d123_page_v2",
+          "newow_trend_band_page_v2"
+        ],
+        "input_count": 30311,
+        "input_sha256": "27165b1b5992ebc26efed2f42976546a271d7300d7c9e2156b83eaa9af9c2dd8",
+        "lifecycle_owners": [
+          [
+            "RB2305",
+            "rb:RB2305:2023-01-03T01:00:00+00:00"
+          ],
+          [
+            "RB2310",
+            "rb:RB2310:2023-04-06T01:00:00+00:00"
+          ],
+          [
+            "RB2401",
+            "rb:RB2401:2023-09-04T13:00:00+00:00"
+          ],
+          [
+            "RB2405",
+            "rb:RB2405:2023-12-06T13:00:00+00:00"
+          ],
+          [
+            "RB2410",
+            "rb:RB2410:2024-04-02T13:00:00+00:00"
+          ],
+          [
+            "RB2501",
+            "rb:RB2501:2024-09-02T13:00:00+00:00"
+          ],
+          [
+            "RB2505",
+            "rb:RB2505:2024-12-05T13:00:00+00:00"
+          ],
+          [
+            "RB2510",
+            "rb:RB2510:2025-04-07T13:00:00+00:00"
+          ],
+          [
+            "RB2601",
+            "rb:RB2601:2025-08-29T13:00:00+00:00"
+          ],
+          [
+            "RB2605",
+            "rb:RB2605:2025-12-02T13:00:00+00:00"
+          ],
+          [
+            "RB2610",
+            "rb:RB2610:2026-04-07T13:00:00+00:00"
+          ],
+          [
+            "RB2701",
+            "rb:RB2701:2026-09-01T13:00:00+00:00"
+          ]
+        ],
+        "quality_policy": "newow_input_quality_v1",
+        "query_as_of": "2026-09-24T07:00:00.000001+00:00",
+        "query_since": "2023-01-01",
+        "query_through": "2026-09-24",
+        "reader": "newow_product_reader_intraday_v3",
+        "reference_model_version": "newow_marker_reference_zero_cost_v3",
+        "source_evidence_sha256": "c0eb7e951b872b4e981d7e5cd300bf2fd25429392c227360dd2cb80b0220353e"
+      },
+      "input_manifest_sha256": "4c3e6314f35f89a00db7e62491ea0d84eba96d30b2f32bb86f8c880e9341490b",
+      "dependency_digest": "4c3e6314f35f89a00db7e62491ea0d84eba96d30b2f32bb86f8c880e9341490b",
+      "source_token": "4c3e6314f35f89a00db7e62491ea0d84eba96d30b2f32bb86f8c880e9341490b"
+    },
+    {
+      "request": {
+        "identity": {
+          "strategy_code": "newow_oscillation",
+          "formula_versions": [
+            "newow_hhv_llv_channel_page_v1",
+            "newow_oscillation_hhv_llv10_page_v1"
+          ],
+          "profile_id": "newow_product_oscillation_30m_v1",
+          "reference_model_version": "newow_marker_reference_zero_cost_v3",
+          "futures_adaptation_version": "newow_futures_quality_segment_v3",
+          "product": "rb",
+          "frequency": "30m",
+          "series_kind": "actual_dominant",
+          "recording_mode": "historical_replay",
+          "observation_policy_version": null
+        },
+        "since": "2023-01-01",
+        "through": "2026-09-24",
+        "as_of": "2026-09-24T07:00:00.000001+00:00"
+      },
+      "storage_start": "2022-05-17",
+      "target_completed_through": "2026-09-24T07:00:00+00:00",
+      "input_count": 30311,
+      "input_bytes": 7760766,
+      "input_manifest": {
+        "formula_versions": [
+          "newow_hhv_llv_channel_page_v1",
+          "newow_oscillation_hhv_llv10_page_v1"
+        ],
+        "input_count": 30311,
+        "input_sha256": "d1ef3c80f07154c1ef40fffbbdc41410c299d0224e0fd2dc826257ad79a756e3",
+        "lifecycle_owners": [
+          [
+            "RB2305",
+            "rb:RB2305:2023-01-03T01:00:00+00:00"
+          ],
+          [
+            "RB2310",
+            "rb:RB2310:2023-04-06T01:00:00+00:00"
+          ],
+          [
+            "RB2401",
+            "rb:RB2401:2023-09-04T13:00:00+00:00"
+          ],
+          [
+            "RB2405",
+            "rb:RB2405:2023-12-06T13:00:00+00:00"
+          ],
+          [
+            "RB2410",
+            "rb:RB2410:2024-04-02T13:00:00+00:00"
+          ],
+          [
+            "RB2501",
+            "rb:RB2501:2024-09-02T13:00:00+00:00"
+          ],
+          [
+            "RB2505",
+            "rb:RB2505:2024-12-05T13:00:00+00:00"
+          ],
+          [
+            "RB2510",
+            "rb:RB2510:2025-04-07T13:00:00+00:00"
+          ],
+          [
+            "RB2601",
+            "rb:RB2601:2025-08-29T13:00:00+00:00"
+          ],
+          [
+            "RB2605",
+            "rb:RB2605:2025-12-02T13:00:00+00:00"
+          ],
+          [
+            "RB2610",
+            "rb:RB2610:2026-04-07T13:00:00+00:00"
+          ],
+          [
+            "RB2701",
+            "rb:RB2701:2026-09-01T13:00:00+00:00"
+          ]
+        ],
+        "quality_policy": "newow_input_quality_v1",
+        "query_as_of": "2026-09-24T07:00:00.000001+00:00",
+        "query_since": "2023-01-01",
+        "query_through": "2026-09-24",
+        "reader": "newow_product_reader_intraday_v3",
+        "reference_model_version": "newow_marker_reference_zero_cost_v3",
+        "source_evidence_sha256": "c0eb7e951b872b4e981d7e5cd300bf2fd25429392c227360dd2cb80b0220353e"
+      },
+      "input_manifest_sha256": "c87650601a9645b431969bbf0cf0dd1db79f5c5502ae5eb4f26d1059263921c6",
+      "dependency_digest": "c87650601a9645b431969bbf0cf0dd1db79f5c5502ae5eb4f26d1059263921c6",
+      "source_token": "c87650601a9645b431969bbf0cf0dd1db79f5c5502ae5eb4f26d1059263921c6"
+    }
+  ],
+  "budget": {
+    "max_streams": 2,
+    "max_input_bars": 4000000,
+    "max_elapsed_seconds": 900,
+    "max_input_bytes": 16000000000
+  },
+  "batch_size": 256,
+  "plan_hash": "20f0732d09e5af1e81ae1a1275559caaa6856c6ac54f7a84e56cec1789c70dda"
+}
