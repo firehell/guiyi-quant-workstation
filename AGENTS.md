@@ -118,6 +118,7 @@ SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在
 ## 领域导航
 
 - 日常开发、任务定位和按影响验证：`docs/DEVELOPMENT.md`
+- 子代理职责、分派输入和统一交付格式：`docs/AGENT_ROLES.md`
 - 数据、Catalog、维护、Live 与盘后合同：`docs/DATA_CENTER.md` 及相关 data OpenSpec
 - HTDY 产品面与七周期入口：`PROJECT_SOURCE.md`、`DECISIONS.md`；共享 Alert Runtime、SuBing 身份、公式、
   Event、Scope、migration 和兼容 Gate：`openspec/specs/subing-ths-alert/spec.md`

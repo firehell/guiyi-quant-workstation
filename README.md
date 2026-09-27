@@ -16,6 +16,7 @@ EMA21 斜率只保留通用 10K 计算：10 个 EMA21 值、9 个间隔、输出
 
 - [执行规则](AGENTS.md)
 - [开发与版本维护](docs/DEVELOPMENT.md)
+- [子代理角色与交付](docs/AGENT_ROLES.md)
 - [当前状态](STATUS.md)
 - [稳定产品边界](PROJECT_SOURCE.md)
 - [架构决策](DECISIONS.md)
