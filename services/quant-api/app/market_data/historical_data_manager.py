@@ -470,8 +470,8 @@ def _contract_warmup_scope(
     except (TypeError, ValueError) as exc:
         raise ValueError("CONTRACT_WARMUP_FREQUENCY_INVALID") from exc
     planned: tuple[BarFrequency, ...]
-    if frequency is BarFrequency.D1:
-        planned = (BarFrequency.D1,)
+    if frequency in (BarFrequency.M1, BarFrequency.D1):
+        planned = (frequency,)
         dependencies: tuple[str, ...] = ()
     elif frequency is BarFrequency.W1:
         planned = (BarFrequency.D1, BarFrequency.W1)

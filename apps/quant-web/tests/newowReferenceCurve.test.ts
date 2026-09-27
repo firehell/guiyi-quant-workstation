@@ -76,3 +76,35 @@ test('drawdown uses normalized additive curve peaks, including the initial basel
   assert.equal(newowReferenceDrawdown({ ...make(['1'], '1'), history_coverage: 'PARTIAL' }), null)
   assert.equal(newowReferenceDrawdown(make([], '0')), null)
 })
+
+test('saved PostgreSQL Decimal zero and scientific notation preserve exact reference curves', () => {
+  const v = value()
+  const trade = v.items.find(t => t.status === 'CLOSED')!
+  const items = [
+    { ...trade, reference_trade_id: 'zero', reference_return_pct: '0E-28' },
+    { ...trade, reference_trade_id: 'small', reference_return_pct: '1E-2' },
+  ]
+  const result = newowReferenceCurve({ ...v, items, next_before: null,
+    summary: { ...v.summary, closed_count: 2, sum_return_percentage_points: '0.01' } })
+  assert.equal(result.message, null)
+  assert.equal(Number(result.points.at(-1)!.cumulative), 0.01)
+})
+
+test('curve interaction anchors are bounded while the complete curve remains intact', async () => {
+  const { referenceCurveAnchors } = await import('../src/utils/newowReferenceCurve.ts')
+  const points = Array.from({ length: 33169 }, (_, index) => ({ index }))
+  const anchors = referenceCurveAnchors(points)
+  assert.ok(anchors.length <= 1000)
+  assert.equal(anchors[0], points[0])
+  assert.equal(anchors.at(-1), points.at(-1))
+  assert.equal(points.length, 33169)
+  assert.deepEqual(referenceCurveAnchors(points.slice(0, 20)), points.slice(0, 20))
+})
+
+test('click location resolves an unsampled trade from the complete curve', async () => {
+  const { closestReferenceCurvePoint } = await import('../src/utils/newowReferenceCurve.ts')
+  const points = Array.from({ length: 5000 }, (_, index) => ({ x: index, y: index % 50 }))
+  assert.equal(closestReferenceCurvePoint(points, 1234, 34), points[1234])
+  assert.equal(closestReferenceCurvePoint([], 1, 1), null)
+  assert.equal(closestReferenceCurvePoint(points, NaN, 1), null)
+})

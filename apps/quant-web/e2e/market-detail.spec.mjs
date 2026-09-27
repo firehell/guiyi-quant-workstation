@@ -632,6 +632,7 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
 })
 
 test('HTDY keeps last successful immutable Event evidence when a later Event refresh fails', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-09-03T03:00:00.000Z') })
   let eventCalls = 0
   await mockMarketDetail(page, {
     alertEvents: () => (++eventCalls === 1 ? [htdyEvent('jm', '15m')] : 'error'),
@@ -639,7 +640,10 @@ test('HTDY keeps last successful immutable Event evidence when a later Event ref
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await expect(page.getByRole('tab', { name: '历史记录' })).toBeVisible()
-  await expect.poll(() => eventCalls, { timeout: 35_000 }).toBeGreaterThan(1)
+  expect(eventCalls).toBe(1)
+  await page.clock.runFor(30_000)
+  await expect.poll(() => eventCalls).toBe(2)
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await page.getByRole('tab', { name: '历史记录' }).click()
   await expect(page.locator('.detail-section-tabs__history')).toContainText('买入观察')
   await expect(page.getByText(/Bar 2026-09-03 10:45 北京时间/)).toBeVisible()

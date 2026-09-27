@@ -2,6 +2,7 @@
 
 from guiyi_quant.newow.composite_explanation import calculate_composite_volatility
 from guiyi_quant.newow.composite_decision_v2 import compute_cdv2
+from guiyi_quant.newow.composite_decision_presentation import describe_daily_weekly_cdv2
 from guiyi_quant.newow.cross_period_prices import (
     PriceSource,
     select_cross_period_prices,
@@ -188,6 +189,9 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             },
             "missing_roles": [f["role"] for f in facts if f["status"] != "ready"],
         }
+    )
+    cdv2["presentation"] = describe_daily_weekly_cdv2(
+        cdv2, states["trend"], states["oscillation"]
     )
     prices = None
     if anchor:

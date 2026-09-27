@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "code_sha": "6264c24df1063514acce150ccb4468134e82ee7d",
+  "snapshot": "Puqi4SVlA6yJt6nMKZmWDinMwIGE4Wx8",
+  "distinct_bars": 100,
+  "rows": [
+    {
+      "page": 1,
+      "count": 50,
+      "first_end": "2026-09-24T06:11:00Z",
+      "last_end": "2026-09-24T07:00:00Z",
+      "trading_day": "2026-09-24"
+    },
+    {
+      "page": 2,
+      "count": 50,
+      "first_end": "2026-09-24T03:21:00Z",
+      "last_end": "2026-09-24T06:10:00Z",
+      "trading_day": "2026-09-24"
+    }
+  ],
+  "writes": 0
+}

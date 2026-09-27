@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from datetime import datetime
 from hashlib import sha256
@@ -5,7 +6,8 @@ from hashlib import sha256
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_adapters import replay_strategy, build_product_identity, label_calculation_segments
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 from guiyi_quant.newow.product_identity import (
     REFERENCE_MODEL_VERSION, futures_adaptation_version,
 )
@@ -75,11 +77,16 @@ def test_newow_goldens_keep_public_trade_ids_and_decimal_statistics() -> None:
     from newow.product_fixtures import ProductCases
 
     case = ProductCases().primitive_input("trend", "1d")
+    case = replace(case, identity=build_product_identity(
+        case.identity.product, case.identity.strategy, case.identity.frequency,
+        input_quality_policy=InputQualityPolicy.DAILY_V2,
+    ))
+    case = replace(case, bars=label_calculation_segments(case.identity, case.bars, ()))
     stream = StreamIdentity(
         strategy_code="newow_trend", formula_versions=case.identity.formula_versions,
         profile_id=case.identity.profile_id,
         reference_model_version=REFERENCE_MODEL_VERSION,
-        futures_adaptation_version=futures_adaptation_version("1d"),
+        futures_adaptation_version=futures_adaptation_version("1d", case.identity.input_quality_policy),
         product=case.identity.product, frequency="1d",
         series_kind="actual_dominant", recording_mode="historical_replay",
         observation_policy_version=None,
@@ -168,3 +175,17 @@ def test_newow_goldens_keep_public_trade_ids_and_decimal_statistics() -> None:
             *expected_initial.interrupted_trades, *expected_initial.initial_trades,
         )
     }
+
+
+def test_hint_interval_index_preserves_ambiguity_and_nested_older_interval():
+    base = {
+        'physical_contract': 'RB2610', 'owner_segment_id': 'owner-1',
+        'entry_bar_end': '2026-09-01T08:00:00+00:00', 'entry_sequence': 0,
+        'exit_bar_end': '2026-09-20T08:00:00+00:00', 'exit_sequence': 2,
+        'status': 'CLOSED',
+    }
+    trades = [dict(base, reference_trade_id='long'), dict(base, reference_trade_id='short', entry_bar_end='2026-09-02T08:00:00+00:00', exit_bar_end='2026-09-03T08:00:00+00:00')]
+    def hint(day):
+        at = f'2026-09-{day:02d}T09:00:00+00:00'
+        return {'value': {'hint_id': f'h{day}', 'kind': 'process', 'retrospective': False, 'physical_contract': 'RB2610', 'segment_id': 'owner-1', 'bar_end': at, 'known_at': at, 'sequence': 1}}
+    assert PersistedNewowReference._hint_ids(trades, [], [hint(2), hint(4)], datetime.fromisoformat(base['exit_bar_end'])) == {'long': ['h4'], 'short': []}

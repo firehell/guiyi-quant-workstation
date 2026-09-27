@@ -1,0 +1,600 @@
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+........................................................................ [ 11%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 20%]
+........................................................................ [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 28%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+..........................s............................................. [ 37%]
+........................................................................ [ 40%]
+........................................................................ [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 49%]
+........................................................................ [ 51%]
+........................................................................ [ 54%]
+.......................F................................................ [ 57%]
+........................................................................ [ 60%]
+........................................................................ [ 63%]
+........................................................................ [ 66%]
+........................................................................ [ 69%]
+........................................................................ [ 72%]
+..................................................................F...FF [ 74%]
+FF.F.F.....................F............................................ [ 77%]
+........................................................................ [ 80%]
+........................................................................ [ 83%]
+........................................................................ [ 86%]
+........................................................................ [ 89%]
+........................................................................ [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 98%]
+.................................................                        [100%]
+=================================== FAILURES ===================================
+_______________ test_fusion_reference_is_opt_in_and_independent ________________
+
+product_cases = <newow.product_fixtures.ProductCases object at 0x1599271b0>
+
+    def test_fusion_reference_is_opt_in_and_independent(product_cases):
+        service, reader, build, clear = _service(product_cases)
+        query = ProductServiceQuery(
+            'rb', 'trend', '1d', section='reference',
+            performance_since=build.trading_day, performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+        )
+        normal = service.query(query)
+        fused = service.query(replace(query, include_fusion=True))
+        assert normal.reference.value.fusion_comparison is None
+        from app.api.market_newow import _product_response
+>       wire = _product_response(fused).model_dump(mode='json')
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/quant-api/tests/newow/test_product_service.py:1478: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+result = NewowProductResult(meta=ProductResultMeta(schema_version='newow_product_detail_v3', identity=ProductIdentity(product='...ot_requested', status=None, value=None), comparator=SectionDelivery(delivery='not_requested', status=None, value=None))
+
+    def _product_response(result: NewowProductResult) -> NewowProductResponse:
+        meta = result.meta
+        identity = meta.identity
+        chart = _delivery(
+            result.chart,
+            lambda value: {
+                "chart_from": value.actual_window.since,
+                "chart_through": value.actual_window.through,
+                "page_identity": value.page_identity,
+                "price_unavailable_days": [
+                    {
+                        "trading_day": day,
+                        "physical_contract": contract,
+                        "segment_id": segment_id,
+                    }
+                    for day, contract, segment_id in value.price_unavailable_days
+                ],
+                "bars": [_bar(item) for item in value.bars],
+                "frames": [
+                    {
+                        "bar_end": frame.bar.bar.bar_end,
+                        "main_state": frame.main_state.value,
+                        "main_values": {
+                            key: _decimal(item) for key, item in frame.main_values
+                        },
+                        "status": _status(frame.availability),
+                        "action_ids": [action.signal_id for action in frame.actions],
+                        "hint_ids": [hint.hint_id for hint in frame.hints],
+                    }
+                    for frame in value.replay.frames
+                ],
+                "trend_channel": None
+                if value.trend_channel is None
+                else {
+                    "kind": value.trend_channel.kind,
+                    "period": value.trend_channel.period,
+                    "formula_version": value.trend_channel.formula_version,
+                    "points": [
+                        {
+                            "bar_end": point.bar_end,
+                            "upper": _decimal(point.upper),
+                            "lower": _decimal(point.lower),
+                            "formula_version": point.formula_version,
+                            "status": _status(point.availability),
+                            "physical_contract": point.physical_contract,
+                            "segment_id": point.segment_id,
+                            "source_identity": point.source_identity,
+                            "calculation_segment_id": point.calculation_segment_id,
+                        }
+                        for point in value.trend_channel.points
+                    ],
+                },
+                "price_reference": None if value.price_reference is None else {
+                    "surface": value.price_reference.surface, "frequency": value.price_reference.frequency.value,
+                    "as_of": value.price_reference.as_of, "anchor_bar_end": value.price_reference.anchor_bar_end,
+                    "physical_contract": value.price_reference.physical_contract, "segment_id": value.price_reference.segment_id,
+                    "calculation_segment_id": value.price_reference.calculation_segment_id, "input_sha256": value.price_reference.input_sha256,
+                    "formula_version": value.price_reference.formula_version, "adapter_version": value.price_reference.adapter_version,
+                    "target": {"raw": _decimal(value.price_reference.target.raw), "display": value.price_reference.target.display, "status": _status(value.price_reference.target.status)},
+                    "absorb": {"raw": _decimal(value.price_reference.absorb.raw), "display": value.price_reference.absorb.display, "status": _status(value.price_reference.absorb.status)},
+                },
+                "actions": [
+                    {
+                        "signal_id": item.signal_id,
+                        "kind": item.kind.value,
+                        "bar_end": item.bar_end,
+                        "trading_day": item.trading_day,
+                        "reference_price": _decimal(item.reference_price),
+                        "physical_contract": item.physical_contract,
+                        "segment_id": item.segment_id,
+                        "calculation_segment_id": item.calculation_segment_id,
+                        "related_build_id": item.related_build_id,
+                        "trade_eligibility": item.trade_eligibility.value,
+                        "sequence": item.sequence,
+                    }
+                    for item in value.replay.actions
+                ],
+                "hints": [
+                    {
+                        "hint_id": item.hint_id,
+                        "kind": item.kind,
+                        "bar_end": item.bar_end,
+                        "known_at": item.known_at,
+                        "anchor_price": _decimal(item.anchor_price),
+                        "physical_contract": item.physical_contract,
+                        "segment_id": item.segment_id,
+                        "calculation_segment_id": item.calculation_segment_id,
+                        "retrospective": False,
+                        "quantity_effect": "none",
+                        "sequence": item.sequence,
+                    }
+                    for item in value.replay.hints
+                ],
+                "diagnostics": list(value.diagnostics),
+                "next_before": value.next_before,
+                "next_older_window": value.next_older_window,
+                "repainting": False,
+                "formal_signal_eligible": True,
+                "allowed_uses": ["product_chart", "reference_input"],
+            },
+        )
+        reference = _delivery(
+            result.reference,
+            lambda value: value.payload if isinstance(value, PersistedReferenceSectionValue) else {
+                "performance_since": value.requested_window.since,
+                "performance_through": value.requested_window.through,
+                "actual_available_through": value.actual_available_through,
+                "reference_cutoff": value.reference_cutoff,
+                "reference_input_sha256": value.reference_input_sha256,
+                "history_coverage": value.history_coverage,
+                "theoretical": value.theoretical,
+                "unavailable_days": list(value.unavailable_days),
+                "coverage_intervals": [
+                    {
+                        "since": interval.since,
+                        "through": interval.through,
+                        "status": interval.status,
+                        "physical_contract": interval.physical_contract,
+                        "segment_id": interval.segment_id,
+                        "calculation_segment_id": interval.calculation_segment_id,
+                    }
+                    for interval in value.coverage_intervals
+                ],
+                "summary": {
+                    "membership_policy": value.summary.membership_policy,
+                    "closed_count": value.summary.closed_count,
+                    "win_count": value.summary.win_count,
+                    "loss_count": value.summary.loss_count,
+                    "flat_count": value.summary.flat_count,
+                    "win_rate_pct": _decimal(value.summary.win_rate_pct),
+                    "mean_return_pct": _decimal(value.summary.mean_return_pct),
+                    "sum_return_percentage_points": _decimal(
+                        value.summary.sum_return_percentage_points
+                    ),
+                    "open_count": value.summary.open_count,
+                    "interrupted_count": value.summary.interrupted_count,
+                    "rollover_interrupted_count": value.summary.rollover_interrupted_count,
+                    "data_interrupted_count": value.summary.data_interrupted_count,
+                    "initial_count": value.summary.initial_count,
+                },
+                "items": [
+                    _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
+                    for item in value.items
+                ],
+                "curve_trades": sorted([
+                    _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
+                    for item in value.summary.closed_trades
+                ], key=lambda item: (item["entry_bar_end"], item["entry_sequence"], item["reference_trade_id"]), reverse=True),
+                **({"fusion_comparison": value.fusion_comparison} if value.fusion_comparison is not None else {}),
+                "next_before": value.next_before,
+                "executable": False,
+                "auto_order": False,
+                "allowed_uses": ["page_parity_reference", "research_display"],
+            },
+        )
+        auxiliary = _delivery(
+            result.auxiliary,
+            lambda value: {
+                "component": value.name,
+                **(
+                    {
+                        "display_adapter_version": value.display_adapter_version,
+                        "parameters": value.parameters,
+                        "parameters_hash": value.parameters_hash,
+                    }
+                    if value.name == "macd"
+                    else {}
+                ),
+                "formula_version": value.formula_version,
+                "segments": [
+                    {
+                        "physical_contract": segment.physical_contract,
+                        "segment_id": segment.segment_id,
+                        "bar_ends": list(segment.bar_ends),
+                        "status": _status(segment.status),
+                        "data": _json_value(segment.value),
+                    }
+                    for segment in value.segments
+                ],
+                "repainting": value.repainting,
+                "formal_signal_eligible": value.formal_signal_eligible,
+                "page_parity": value.page_parity,
+                "source_category": "guiyi_product_auxiliary_adapter",
+                "allowed_uses": ["research_display"]
+                if value.name == "macd"
+                else ["retrospective_display"]
+                if value.repainting
+                else ["product_display"],
+            },
+        )
+        explanation = _delivery(
+            result.explanation,
+            lambda value: {
+                **({"decision_v2": value.decision_v2} if value.decision_v2 is not None else {}),
+                "context": _context_value(value.context),
+                "composite": _json_value(value.composite),
+                "target_absorb": _json_value(value.target_absorb),
+                "sources": [_json_value(source) for source in value.sources],
+                "page_parity": False,
+                "allowed_uses": ["research_explanation", "product_display"],
+            },
+        )
+        comparator = _delivery(
+            result.comparator,
+            lambda value: {
+                "result": _json_value(value),
+                "executable": False,
+                "page_parity": False,
+                "synthetic_terminal_is_reference_exit": False,
+                "allowed_uses": ["in_sample_comparison"],
+            },
+        )
+        payload = {
+            "meta": {
+                "schema_version": meta.schema_version,
+                "identity": {
+                    "product": identity.product,
+                    "strategy": identity.strategy.value,
+                    "frequency": identity.frequency.value,
+                    "series_kind": identity.series_kind,
+                    "profile_id": identity.profile_id,
+                    "formula_versions": list(identity.formula_versions),
+                },
+                "as_of": meta.as_of,
+                "read_at": meta.read_at,
+                "input_content_sha256": meta.input_content_sha256,
+                "data_revision_identity": None,
+                "snapshot_token": meta.snapshot_token,
+                "reference_model_version": meta.reference_model_version,
+                "futures_adaptation_version": meta.futures_adaptation_version,
+            },
+            "section": result.section.value,
+            "chart": chart,
+            "auxiliary": auxiliary,
+            "reference": reference,
+            "explanation": explanation,
+            "comparator": comparator,
+        }
+        if identity.input_quality_policy.value != "newow_input_quality_v1":
+            payload["meta"]["identity"]["input_quality_policy"] = (
+                identity.input_quality_policy.value
+            )
+>       return NewowProductResponse.model_validate(payload)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 8 validation errors for NewowProductResponse
+E       reference.value.fusion_comparison.items.0.exit_trading_day
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='2026-01-30', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E       reference.value.fusion_comparison.snapshot_schema
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='newow_fusion_reference_snapshot_v2', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E       reference.value.fusion_comparison.reference_revision
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='22fc1bdba80d21ef6b0ae27d...bf8ce15a9e5490bcf498ffe', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E       reference.value.fusion_comparison.summary
+E         Extra inputs are not permitted [type=extra_forbidden, input_value={'model': 'fusion', 'refe... 'interrupted_count': 0}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E       reference.value.fusion_comparison.curve
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=[], input_type=list]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E       reference.value.fusion_comparison.source_profiles
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=['newow_product_trend_1d_...duct_oscillation_1d_v1'], input_type=list]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E       reference.value.fusion_comparison.product
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='rb', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E       reference.value.fusion_comparison.frequency
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='1d', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+services/quant-api/app/api/market_newow.py:1074: ValidationError
+_____ test_summary_recomputes_three_of_540_ready_but_keeps_audit_complete ______
+
+    def test_summary_recomputes_three_of_540_ready_but_keeps_audit_complete():
+        from scripts.newow_weekly_acceptance import summarize_readiness
+    
+        result = summarize_readiness(_report(), PRODUCTS, AS_OF)
+    
+>       assert result["valid"] is True
+E       assert False is True
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:567: AssertionError
+__ test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason ___
+
+    def test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason():
+        from scripts.newow_weekly_acceptance import summarize_readiness
+    
+        report = _report()
+        report["dependencies"][0].update(
+            status="UNKNOWN",
+            reason="HISTORICAL_SESSION_FACT_MISSING",
+            error={"diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}},
+        )
+        report.update(complete=False, status="incomplete")
+    
+        result = summarize_readiness(report, PRODUCTS, AS_OF)
+    
+>       assert result["valid"] is True
+E       assert False is True
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:649: AssertionError
+_ test_summary_accepts_native_unfinished_repair_without_planner_fields[UNSTARTED-None] _
+
+status = 'UNSTARTED', reason = None
+
+    @pytest.mark.parametrize(
+        "status,reason",
+        [("UNSTARTED", None), ("UNKNOWN", "PLANNER_UNAVAILABLE")],
+    )
+    def test_summary_accepts_native_unfinished_repair_without_planner_fields(
+        status, reason
+    ):
+        from scripts.newow_weekly_acceptance import summarize_readiness
+    
+        report = _report()
+        repair = report["repair_targets"][0]
+        report["repair_targets"] = [
+            {
+                key: repair[key]
+                for key in (
+                    "symbol",
+                    "contract",
+                    "frequency",
+                    "through",
+                    "consumers",
+                    "expected_bar_count",
+                    "provider_request_count",
+                    "plan_sha256",
+                )
+            }
+        ]
+        report["repair_targets"][0].update(
+            status=status,
+            reason=reason,
+            expected_bar_count=None,
+            provider_request_count=None,
+            plan_sha256=None,
+        )
+        report.update(complete=False, status="incomplete")
+    
+        result = summarize_readiness(report, PRODUCTS, AS_OF)
+    
+>       assert result["valid"] is True
+E       assert False is True
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:695: AssertionError
+_ test_summary_accepts_native_unfinished_repair_without_planner_fields[UNKNOWN-PLANNER_UNAVAILABLE] _
+
+status = 'UNKNOWN', reason = 'PLANNER_UNAVAILABLE'
+
+    @pytest.mark.parametrize(
+        "status,reason",
+        [("UNSTARTED", None), ("UNKNOWN", "PLANNER_UNAVAILABLE")],
+    )
+    def test_summary_accepts_native_unfinished_repair_without_planner_fields(
+        status, reason
+    ):
+        from scripts.newow_weekly_acceptance import summarize_readiness
+    
+        report = _report()
+        repair = report["repair_targets"][0]
+        report["repair_targets"] = [
+            {
+                key: repair[key]
+                for key in (
+                    "symbol",
+                    "contract",
+                    "frequency",
+                    "through",
+                    "consumers",
+                    "expected_bar_count",
+                    "provider_request_count",
+                    "plan_sha256",
+                )
+            }
+        ]
+        report["repair_targets"][0].update(
+            status=status,
+            reason=reason,
+            expected_bar_count=None,
+            provider_request_count=None,
+            plan_sha256=None,
+        )
+        report.update(complete=False, status="incomplete")
+    
+        result = summarize_readiness(report, PRODUCTS, AS_OF)
+    
+>       assert result["valid"] is True
+E       assert False is True
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:695: AssertionError
+__ test_summary_accepts_native_repair_metadata_failure_without_planner_fields __
+
+    def test_summary_accepts_native_repair_metadata_failure_without_planner_fields():
+        from scripts.newow_weekly_acceptance import summarize_readiness
+    
+        report = _report()
+        repair = report["repair_targets"][0]
+        report["repair_targets"] = [
+            {
+                key: repair[key]
+                for key in (
+                    "symbol",
+                    "contract",
+                    "frequency",
+                    "through",
+                    "consumers",
+                )
+            }
+        ]
+        report["repair_targets"][0].update(
+            status="UNKNOWN",
+            reason="HISTORICAL_SESSION_FACT_MISSING",
+            error={"diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}},
+            expected_bar_count=None,
+            provider_request_count=None,
+            plan_sha256=None,
+        )
+        report.update(complete=False, status="incomplete")
+    
+        result = summarize_readiness(report, PRODUCTS, AS_OF)
+    
+>       assert result["valid"] is True
+E       assert False is True
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:729: AssertionError
+__________ test_summary_accepts_native_enumeration_metadata_proposal ___________
+
+    def test_summary_accepts_native_enumeration_metadata_proposal():
+        from scripts.newow_weekly_acceptance import summarize_readiness
+    
+        report = _report()
+        report["metadata_proposals"] = [
+            {
+                "symbol": "ag",
+                "frequency": "1w",
+                "section": "chart",
+                "status": "UNKNOWN",
+                "as_of": AS_OF.isoformat(),
+                "reason": "HISTORICAL_SESSION_FACT_MISSING",
+                "error": {"diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}},
+                "expected_bar_count": None,
+                "provider_request_count": None,
+                "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+            }
+        ]
+        report.update(complete=False, status="incomplete")
+    
+        result = summarize_readiness(report, PRODUCTS, AS_OF)
+    
+>       assert result["valid"] is True
+E       assert False is True
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:786: AssertionError
+_ test_summary_aggregates_repair_and_metadata_rows_without_large_private_details _
+
+    def test_summary_aggregates_repair_and_metadata_rows_without_large_private_details():
+        from scripts.newow_weekly_acceptance import summarize_readiness
+    
+        report = _report()
+        report["repair_targets"][0].update(
+            targets=[{"large": "discard"}],
+            scope_diagnostics=[{"large": "discard"}],
+        )
+        report["metadata_proposals"] = [
+            {
+                "symbol": "ag",
+                "contract": "AG2701",
+                "frequency": "1w",
+                "through": "2026-09-11",
+                "as_of": AS_OF.isoformat(),
+                "status": "UNKNOWN",
+                "reason": "HISTORICAL_SESSION_FACT_MISSING",
+                "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+                "expected_bar_count": None,
+                "provider_request_count": None,
+                "owners": [{"since": "2026-01-01", "through": "2026-09-11"}],
+                "consumers": [{"strategy": "trend", "frequency": "1w", "section": "chart"}],
+                "error": {
+                    "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"},
+                    "private": "discard",
+                },
+            }
+        ]
+        report.update(complete=False, status="incomplete")
+    
+        result = summarize_readiness(report, PRODUCTS, AS_OF)
+    
+>       assert result["valid"] is True
+E       assert False is True
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:855: AssertionError
+_______________ test_summary_cli_never_opens_session_or_provider _______________
+
+tmp_path = PosixPath('/private/var/folders/5f/3h8_rqbd2nnf_yz0rg3zhhym0000gn/T/pytest-of-zhangzhao/pytest-710/test_summary_cli_never_opens_s0')
+
+    def test_summary_cli_never_opens_session_or_provider(tmp_path):
+        from scripts.newow_weekly_acceptance import main
+    
+        report_path = tmp_path / "full.json"
+        scope_path = tmp_path / "scope.txt"
+        report_path.write_text(__import__("json").dumps(_report()), encoding="utf-8")
+        scope_path.write_text("\n".join(PRODUCTS) + "\n", encoding="utf-8")
+        calls = []
+    
+        def forbidden():
+            calls.append(True)
+            raise AssertionError("summary opened a session/provider")
+    
+        output = io.StringIO()
+        code = main(
+            [
+                "summary",
+                "--report",
+                str(report_path),
+                "--scope",
+                str(scope_path),
+                "--expected-as-of",
+                AS_OF.isoformat(),
+            ],
+            stdout=output,
+            session_factory=forbidden,
+            service_factory=forbidden,
+        )
+    
+        payload = __import__("json").loads(output.getvalue())
+>       assert code == 0
+E       assert 1 == 0
+
+services/quant-api/tests/newow/test_weekly_acceptance.py:986: AssertionError
+=========================== short test summary info ============================
+FAILED services/quant-api/tests/newow/test_product_service.py::test_fusion_reference_is_opt_in_and_independent
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_recomputes_three_of_540_ready_but_keeps_audit_complete
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_accepts_native_unfinished_repair_without_planner_fields[UNSTARTED-None]
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_accepts_native_unfinished_repair_without_planner_fields[UNKNOWN-PLANNER_UNAVAILABLE]
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_accepts_native_repair_metadata_failure_without_planner_fields
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_accepts_native_enumeration_metadata_proposal
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_aggregates_repair_and_metadata_rows_without_large_private_details
+FAILED services/quant-api/tests/newow/test_weekly_acceptance.py::test_summary_cli_never_opens_session_or_provider
+9 failed, 2487 passed, 1 skipped in 328.60s (0:05:28)

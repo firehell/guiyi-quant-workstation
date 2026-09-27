@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { readReleaseVersion } from './scripts/readReleaseVersion.mjs'
 import { fileURLToPath, URL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { candidatePreviewPlugin, candidatePreviewProxy, candidatePreviewWebPort, resolveCandidateOrigin } from './previewProxy.ts'
@@ -30,6 +31,7 @@ export default defineConfig(({ mode, command }) => {
     envDir: fileURLToPath(new URL('../../', import.meta.url)),
     plugins: [vue(), ...(candidate ? [candidatePreviewPlugin(candidateOrigin)] : [])],
     define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(readReleaseVersion()),
       'import.meta.env.VITE_CANDIDATE_PREVIEW': JSON.stringify(candidate ? '1' : '0'),
       'import.meta.env.VITE_PREVIEW_AS_OF': JSON.stringify(candidate ? cutoff : ''),
       'import.meta.env.VITE_PREVIEW_DEFAULT_WEEKLY': JSON.stringify(defaultWeekly ? '1' : '0'),

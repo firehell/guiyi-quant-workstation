@@ -2236,7 +2236,7 @@ def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(
     assert len({plan.plan_sha256 for plan in plans.values()}) == len(plans)
 
 
-@pytest.mark.parametrize("frequency", ("1m", "5m", "invalid"))
+@pytest.mark.parametrize("frequency", ("5m", "invalid"))
 def test_contract_warmup_rejects_unsupported_frequency_scope_before_planning(
     session, tmp_path, frequency
 ) -> None:

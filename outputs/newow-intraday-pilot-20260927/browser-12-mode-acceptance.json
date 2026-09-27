@@ -1,0 +1,135 @@
+{
+  "status": "PASS",
+  "method": "Native Chrome via cua_repl, localhost isolated candidate only",
+  "as_of": "2026-09-24T07:00:00.000001+00:00",
+  "rows": [
+    {
+      "frequency": "1m",
+      "mode": "trend",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "106.6%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "1m",
+      "mode": "oscillation",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "98.5%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "1m",
+      "mode": "dual",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "129.7%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "15m",
+      "mode": "trend",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "54.1%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "15m",
+      "mode": "oscillation",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "33.3%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "15m",
+      "mode": "dual",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "59.2%",
+      "observed_code_sha": "10d40faa05badc04c86cefb65c53525a11dba4fb"
+    },
+    {
+      "frequency": "30m",
+      "mode": "trend",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "43.8%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "30m",
+      "mode": "oscillation",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "27.8%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "30m",
+      "mode": "dual",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "49.1%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    },
+    {
+      "frequency": "60m",
+      "mode": "trend",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "36.3%",
+      "observed_code_sha": "10d40faa05badc04c86cefb65c53525a11dba4fb"
+    },
+    {
+      "frequency": "60m",
+      "mode": "oscillation",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "20.7%",
+      "observed_code_sha": "10d40faa05badc04c86cefb65c53525a11dba4fb"
+    },
+    {
+      "frequency": "60m",
+      "mode": "dual",
+      "status": "PASS",
+      "observed_main_chart": true,
+      "observed_complete_curve": true,
+      "observed_near_year_records": true,
+      "annual_display": "41.6%",
+      "observed_code_sha": "6264c24df1063514acce150ccb4468134e82ee7d"
+    }
+  ],
+  "acceptance_notes": [
+    "1m fusion second page extends records into 09-22 while annual remains129.7%; authoritative HTTP cursor also verified.",
+    "1m→15m→60m discards prior identity and later shows selected60m.",
+    "Under overlapping pressure bounded failure is visible; explicit retry restored60m fusion41.6%.",
+    "D1/W1 background remains labelled, 1m is not included in composite score; completed background score72 observed.",
+    "Historical reference is zero-cost page display, not causal research/account PnL."
+  ],
+  "identity_note": "10d40faa merges develop metadata/docs and fixture checks only; independent Review verified no minute business-source changes since6264. Individual observations retain their exact SHA; not relabelled as a different SHA."
+}

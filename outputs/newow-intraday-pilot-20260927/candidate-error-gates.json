@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "code_sha": "10d40faa05badc04c86cefb65c53525a11dba4fb",
+  "rows": [
+    {
+      "frequency": "1m",
+      "http_status": 422,
+      "code": "NEWOW_INVALID_QUERY"
+    },
+    {
+      "frequency": "15m",
+      "http_status": 422,
+      "code": "NEWOW_INVALID_QUERY"
+    },
+    {
+      "frequency": "30m",
+      "http_status": 422,
+      "code": "NEWOW_INVALID_QUERY"
+    },
+    {
+      "frequency": "60m",
+      "http_status": 422,
+      "code": "NEWOW_INVALID_QUERY"
+    }
+  ]
+}

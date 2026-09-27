@@ -1,0 +1,209 @@
+{
+  "schema_version": 2,
+  "readonly": true,
+  "probe_scope": "bounded_trading_day_window",
+  "full_history_proven": false,
+  "database": "guiyi_quant",
+  "alembic": "20260919_0047",
+  "code_sha": "b48ffe0e504ee3d0850a2e75c2820dca26f9aefe",
+  "audit_script_sha256": "5e5c38fd6fed97b4f06d89ff350bdb1a28116e08bd2b3bdd818a8d5764deee30",
+  "operational_universe_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+  "audit_started_at_utc": "2026-09-27T09:02:49.065593+00:00",
+  "database_snapshot_at": "2026-09-27T09:02:49.088627+00:00",
+  "canonical_root": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical",
+  "window": {
+    "since": "2023-01-01",
+    "through": "2026-09-24"
+  },
+  "products": [
+    "rb"
+  ],
+  "denominator": {
+    "product_period": 4,
+    "base_strategy": 8,
+    "fusion": 4,
+    "product_mode": 12
+  },
+  "rows": [
+    {
+      "product": "rb",
+      "frequency": "1m",
+      "probe_window": [
+        "2023-01-01",
+        "2026-09-24"
+      ],
+      "status": "WINDOW_READABLE",
+      "bar_count": 309345,
+      "first_bar_end": "2023-01-03T01:01:00+00:00",
+      "last_bar_end": "2026-09-24T07:00:00+00:00",
+      "reason": null,
+      "source_1m_window_status": "WINDOW_READABLE",
+      "source_1m_window_reason": null,
+      "physical_contract_full_prefix_status": "NOT_EVALUATED",
+      "warmup_status": "NOT_EVALUATED",
+      "product_capability": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false,
+      "runtime_status": "NOT_EVALUATED"
+    },
+    {
+      "product": "rb",
+      "frequency": "15m",
+      "probe_window": [
+        "2023-01-01",
+        "2026-09-24"
+      ],
+      "status": "WINDOW_READABLE",
+      "bar_count": 20623,
+      "first_bar_end": "2023-01-03T01:15:00+00:00",
+      "last_bar_end": "2026-09-24T07:00:00+00:00",
+      "reason": null,
+      "source_1m_window_status": "WINDOW_READABLE",
+      "source_1m_window_reason": null,
+      "physical_contract_full_prefix_status": "NOT_EVALUATED",
+      "warmup_status": "NOT_EVALUATED",
+      "product_capability": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false,
+      "runtime_status": "NOT_EVALUATED"
+    },
+    {
+      "product": "rb",
+      "frequency": "30m",
+      "probe_window": [
+        "2023-01-01",
+        "2026-09-24"
+      ],
+      "status": "WINDOW_READABLE",
+      "bar_count": 10764,
+      "first_bar_end": "2023-01-03T01:30:00+00:00",
+      "last_bar_end": "2026-09-24T07:00:00+00:00",
+      "reason": null,
+      "source_1m_window_status": "WINDOW_READABLE",
+      "source_1m_window_reason": null,
+      "physical_contract_full_prefix_status": "NOT_EVALUATED",
+      "warmup_status": "NOT_EVALUATED",
+      "product_capability": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false,
+      "runtime_status": "NOT_EVALUATED"
+    },
+    {
+      "product": "rb",
+      "frequency": "60m",
+      "probe_window": [
+        "2023-01-01",
+        "2026-09-24"
+      ],
+      "status": "WINDOW_READABLE",
+      "bar_count": 6287,
+      "first_bar_end": "2023-01-03T02:00:00+00:00",
+      "last_bar_end": "2026-09-24T07:00:00+00:00",
+      "reason": null,
+      "source_1m_window_status": "WINDOW_READABLE",
+      "source_1m_window_reason": null,
+      "physical_contract_full_prefix_status": "NOT_EVALUATED",
+      "warmup_status": "NOT_EVALUATED",
+      "product_capability": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false,
+      "runtime_status": "NOT_EVALUATED"
+    }
+  ],
+  "strategy_rows": [
+    {
+      "product": "rb",
+      "frequency": "1m",
+      "strategy": "trend",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "1m",
+      "strategy": "oscillation",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "15m",
+      "strategy": "trend",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "15m",
+      "strategy": "oscillation",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "30m",
+      "strategy": "trend",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "30m",
+      "strategy": "oscillation",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "60m",
+      "strategy": "trend",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "60m",
+      "strategy": "oscillation",
+      "calculation": "NOT_EVALUATED",
+      "page": "UNSUPPORTED_OR_CLOSED",
+      "formal_open": false
+    }
+  ],
+  "fusion_rows": [
+    {
+      "product": "rb",
+      "frequency": "1m",
+      "model": "fusion",
+      "calculation": "NOT_EVALUATED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "15m",
+      "model": "fusion",
+      "calculation": "NOT_EVALUATED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "30m",
+      "model": "fusion",
+      "calculation": "NOT_EVALUATED",
+      "formal_open": false
+    },
+    {
+      "product": "rb",
+      "frequency": "60m",
+      "model": "fusion",
+      "calculation": "NOT_EVALUATED",
+      "formal_open": false
+    }
+  ],
+  "dependency_identity": {
+    "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab"
+  }
+}

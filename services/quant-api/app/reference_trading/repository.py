@@ -962,13 +962,21 @@ class ReferenceRepository:
         limit: int, after_key: tuple[datetime, str] | None = None,
         initial_interruptions: frozenset[tuple[str, str, str]] = frozenset(),
         forward: bool = False,
+        entry_since_only: bool = False,
+        complete_budget: int | None = None,
     ) -> StoredPage[ReferenceTrade]:
         """Select one eligible version per trade in SQL, then hydrate one page.
 
         The caller owns a single read-only repeatable-read transaction.  No
         batch, trade-version, action, or mark history is loaded into Python.
         """
-        self._validate_page(limit, cutoff)
+        if complete_budget is None:
+            self._validate_page(limit, cutoff)
+        elif (type(complete_budget) is not int or not 1 <= complete_budget <= 100_000
+              or limit != complete_budget or forward or after_key is not None):
+            raise ValueError("COMPLETE_QUERY_BUDGET_INVALID")
+        else:
+            self._validate_page(1, cutoff)
         if type(since) is not date or type(through) is not date or since > through:
             raise ValueError("TRADING_DAY_WINDOW_INVALID")
         stream, _revision = self._validate_snapshot(session, snapshot)
@@ -1023,6 +1031,10 @@ class ReferenceRepository:
             row.revision_id == snapshot.revision_id,
             row.entry_trading_day <= through,
         )
+        if type(entry_since_only) is not bool:
+            raise ValueError("RECORD_WINDOW_POLICY_INVALID")
+        if entry_since_only:
+            statement = statement.where(row.entry_trading_day >= since)
         if forward:
             statement = statement.where(or_(
                 row.entry_trading_day >= since,
@@ -1058,13 +1070,12 @@ class ReferenceRepository:
             pk for item in rows
             for pk in (item.entry_action_pk, item.exit_action_pk) if pk is not None
         }
-        actions = {
-            action.action_pk: action
-            for action in session.execute(select(ReferenceActionRow).where(
-                ReferenceActionRow.stream_id == snapshot.stream_id,
-                ReferenceActionRow.action_pk.in_(action_pks),
-            )).scalars()
-        }
+        actions = {}
+        keys = sorted(action_pks)
+        for start in range(0, len(keys), 1000):
+            actions.update({action.action_pk: action for action in session.execute(
+                select(ReferenceActionRow).where(ReferenceActionRow.stream_id == snapshot.stream_id,
+                    ReferenceActionRow.action_pk.in_(keys[start:start + 1000]))).scalars()})
         identity = _identity_from_row(stream)
         trades = [self._trade_domain(session, identity, item, actions) for item in rows]
         open_ids = [item.reference_trade_id for item in trades if item.status is TradeStatus.OPEN]

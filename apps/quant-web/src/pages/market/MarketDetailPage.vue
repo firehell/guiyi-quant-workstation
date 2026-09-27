@@ -12,6 +12,8 @@ import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspa
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
+import NewowAiAnalysisDialog from '@/components/market/detail/newow/NewowAiAnalysisDialog.vue'
+import type { AiCombo } from '@/api/newowAiAnalysis'
 import '@/styles/marketDetailUnified.css'
 import { newowQuoteFreshness } from '@/utils/newowDetailPresentation'
 import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
@@ -40,6 +42,15 @@ const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? rou
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
+const aiOpen = ref(false)
+const aiAsOf = ref<string | null>(null)
+function adoptAiRecommendation(combo: AiCombo) {
+  const identity = explicitIdentity.value
+  if (!identity || identity.view !== 'newow' || !newowOpenFrequencies.value.includes(combo.frequency)) return
+  aiOpen.value = false
+  selectIdentity({ view: 'newow', symbol: identity.symbol, strategy: combo.strategy,
+    frequency: combo.frequency, seriesKind: 'actual_dominant' })
+}
 const newowDailyAsOf = ref<string | null>(null)
 const newowDailyPending = ref(false)
 const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
@@ -205,7 +216,12 @@ function goHome(tab: 'market' | 'messages') {
   void router.push('/market')
 }
 
-watch(identityKey, () => { void activateRoute() }, { immediate: true })
+// Dual mode is a presentation change and retains the same chart input snapshot.
+watch(() => {
+  const i = explicitIdentity.value
+  return i ? [i.view, i.symbol, i.strategy, i.seriesKind, i.contract, i.frequency].join(':') : 'invalid'
+}, () => { aiAsOf.value = null }, { flush: 'sync' })
+watch(identityKey, () => { aiOpen.value = false; void activateRoute() }, { immediate: true })
 watch(isNewowView, (enabled) => { if (enabled) void newowCapabilities.load() }, { immediate: true })
 onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); controller.dispose() })
 </script>
@@ -256,7 +272,9 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
+        @ai-analysis="aiOpen = true"
       />
+      <NewowAiAnalysisDialog v-if="isNewowView" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
         <section
           class="market-detail-page__workspace"
@@ -283,6 +301,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @daily-snapshot-pending="newowDailyPending = $event"
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
             @refresh-current="dailyQuote.refresh"
+            @analysis-as-of="aiAsOf = $event"
           >
             <template #chart-frequency>
               <div class="newow-chart-frequency" role="group" aria-label="周期">

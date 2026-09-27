@@ -1,0 +1,43 @@
+{
+  "schema": "intraday_source_proof_capacity_v1",
+  "config_identity": {
+    "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab"
+  },
+  "cutoff": "2026-09-24T07:00:00.000001+00:00",
+  "rows": [
+    {
+      "frequency": "1m",
+      "elapsed_seconds": 0.196,
+      "source_evidence_sha256": "75c49322c74220e685f5dd51789e24cce1e8cca72ca03e594347947b63d864ea",
+      "source_bytes": 645029,
+      "physical_dependencies": 12,
+      "partitions": 140
+    },
+    {
+      "frequency": "15m",
+      "elapsed_seconds": 0.151,
+      "source_evidence_sha256": "4560aa85cb4c4ac7935646c50da7f577adf70035335ea83340364a6863fa229d",
+      "source_bytes": 691022,
+      "physical_dependencies": 24,
+      "partitions": 280
+    },
+    {
+      "frequency": "30m",
+      "elapsed_seconds": 0.195,
+      "source_evidence_sha256": "c0eb7e951b872b4e981d7e5cd300bf2fd25429392c227360dd2cb80b0220353e",
+      "source_bytes": 691388,
+      "physical_dependencies": 24,
+      "partitions": 280
+    },
+    {
+      "frequency": "60m",
+      "elapsed_seconds": 0.177,
+      "source_evidence_sha256": "65a07e34026c923d6a1f65008443b1b4ef02357a31cd4ad7be5b1c0618f7a233",
+      "source_bytes": 690268,
+      "physical_dependencies": 24,
+      "partitions": 280
+    }
+  ],
+  "peak_rss_bytes": 184795136
+}

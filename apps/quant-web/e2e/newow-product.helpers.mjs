@@ -47,7 +47,7 @@ export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
 export function buildNewowFixtureEnvelopeForTest(section = 'reference', strategy = 'trend', frequency = '1d', cursor = false, locateFrom = null, options = {}) {
   const url = fixtureValidationUrl(section, strategy, frequency, cursor, locateFrom)
   const payload = envelope(url, section, strategy, frequency, options)
-  validateFixtureEnvelope(payload, section, strategy, frequency, url)
+  validateFixtureEnvelope(payload, section, strategy, frequency, url, options)
   return payload
 }
 
@@ -82,6 +82,11 @@ function fixtureValidationUrl(section, strategy, frequency, cursor, locateFrom) 
 export async function installNewowProductFixtures(page, options = {}) {
   for (const strategy of NEWOW_STRATEGIES) {
     for (const frequency of NEWOW_FREQUENCIES) validateFixtureScenario(strategy, frequency, {})
+  }
+  if (options.recordsHistory === true) {
+    for (const strategy of NEWOW_STRATEGIES) {
+      for (const frequency of NEWOW_FREQUENCIES) validateFixtureScenario(strategy, frequency, { recordsHistory: true })
+    }
   }
   if (typeof options.longHistory === 'string') {
     const [strategy, frequency] = options.longHistory.split(':')
@@ -175,6 +180,7 @@ export async function installNewowProductFixtures(page, options = {}) {
         strategy,
         frequency,
         options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
+        options.dualMarket === true,
       )
       if (queryError !== null) return unexpected(route, state, queryError)
       const key = [strategy, frequency, section, url.searchParams.get('component') || '', url.searchParams.get('chart_before') || '', url.searchParams.get('history_before') || ''].join(':')
@@ -276,18 +282,18 @@ function validateFixtureScenario(strategy, frequency, options) {
     return { url, payload }
   }
   const charts = [make('chart'), make('chart', true)]
-  for (const locateFrom of ['2025-12-15', '2025-12-31', '2026-01-05', '2026-01-06', '2026-09-03']) charts.push(make('chart', false, locateFrom))
+  for (const locateFrom of (options.recordsHistory ? ['2026-06-15', '2026-06-30', '2026-06-05', '2026-06-06', '2026-09-03'] : ['2025-12-15', '2025-12-31', '2026-01-05', '2026-01-06', '2026-09-03'])) charts.push(make('chart', false, locateFrom))
   for (const cursor of [false, true]) {
     const reference = make('reference', cursor)
     validateFixtureEnvelope(reference.payload, 'reference', strategy, frequency, reference.url, options, { charts: charts.map((item) => item.payload) })
   }
 }
 
-function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF) {
+function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF, dualMarket = false) {
   const allowedBySection = {
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
-    reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token'],
+    reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token', 'include_fusion'],
     explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
     comparator: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
   }
@@ -300,7 +306,8 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   if (url.searchParams.get('as_of') !== expectedAsOf) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
-  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of'].includes(key)).sort().join(',')
+  if (url.searchParams.has('include_fusion') && (section !== 'reference' || strategy !== 'trend' || url.searchParams.get('include_fusion') !== 'true' || url.searchParams.has('history_limit') || !url.searchParams.has('snapshot_token') || !url.searchParams.has('performance_since') || !url.searchParams.has('performance_through'))) return `invalid fusion query ${url.search}`
+  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion'].includes(key)).sort().join(',')
   const allowedShapes = {
     chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
     auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
@@ -308,7 +315,8 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
     explanation: ['', 'snapshot_token'],
     comparator: ['', 'snapshot_token'],
   }
-  if (!allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
+  const partnerRecords = dualMarket && section === 'reference' && strategy === 'oscillation' && optionalShape === 'history_limit,snapshot_token' && url.searchParams.get('history_limit') === '200'
+  if (!partnerRecords && !allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
   if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
   const fixedRecordWindow = url.searchParams.get('history_limit') === '200'
@@ -316,9 +324,9 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
   if (url.searchParams.has('history_before') && url.searchParams.get('history_before') !== 'reference-page-2') return `invalid reference cursor ${url.search}`
   if (url.searchParams.has('snapshot_token') && url.searchParams.get('snapshot_token') !== `snapshot:${strategy}:${frequency}:fixture-revision-1`) return `invalid snapshot token ${url.search}`
-  if (url.searchParams.has('performance_since') && url.searchParams.get('performance_since') !== (fixedRecordWindow ? '2026-06-03' : '2026-01-01')) return `invalid performance start ${url.search}`
+  if (url.searchParams.has('performance_since') && !(fixedRecordWindow ? ['2026-06-03'] : ['2026-01-01', '2026-06-03']).includes(url.searchParams.get('performance_since'))) return `invalid performance start ${url.search}`
   if (url.searchParams.has('performance_through') && url.searchParams.get('performance_through') !== '2026-09-03') return `invalid performance end ${url.search}`
-  const fixtureDates = ['2025-01-01', '2025-12-15', '2025-12-31', '2026-01-01', '2026-01-05', '2026-01-06', '2026-09-03']
+  const fixtureDates = ['2025-01-01', '2025-12-15', '2025-12-31', '2026-01-01', '2026-01-05', '2026-01-06', '2026-06-05', '2026-06-06', '2026-06-15', '2026-06-30', '2026-09-03']
   if (url.searchParams.has('from') && !fixtureDates.includes(url.searchParams.get('from'))) return `invalid chart start ${url.search}`
   if (url.searchParams.has('through') && !fixtureDates.includes(url.searchParams.get('through'))) return `invalid chart end ${url.search}`
   if ((url.searchParams.has('performance_since') || url.searchParams.has('performance_through')) && section !== 'reference') return `performance query leaked into ${section}`
@@ -335,12 +343,12 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
   const delivered = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'].filter((candidate) => payload[candidate].delivery === 'delivered')
   if (delivered.length !== 1 || delivered[0] !== section) throw new Error('fixture envelope delivery drift')
   const long = options.longHistory === `${strategy}:${frequency}`
-  const facts = scenarioFacts(strategy, frequency, long)
+  const facts = scenarioFacts(strategy, frequency, long, options)
   const buildIds = [facts.closed.entry, facts.open.entry, facts.interrupted.entry, facts.initial.entry].map((item) => item.signal_id)
   if (new Set(buildIds).size !== buildIds.length) throw new Error('fixture BUILD identities are not unique')
   const allActionIds = [...facts.standardActions, facts.interrupted.entry, facts.initial.entry, facts.initial.exit].map((item) => item.signal_id)
   if (new Set(allActionIds).size !== allActionIds.length) throw new Error('fixture Action identities are not unique')
-  if (!(facts.initial.entry.trading_day < '2026-01-01') || !(facts.closed.entry.trading_day >= '2026-01-01')) throw new Error('fixture performance-window chronology drift')
+  if (!options.recordsHistory && (!(facts.initial.entry.trading_day < '2026-01-01') || !(facts.closed.entry.trading_day >= '2026-01-01'))) throw new Error('fixture performance-window chronology drift')
   if (section === 'chart' && payload.chart.value !== null) {
     validateChartWire(payload.chart.value, strategy)
     const actionIds = payload.chart.value.actions.map((item) => item.signal_id)
@@ -362,14 +370,15 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
   }
   if (section === 'reference' && payload.reference.value !== null) {
     validateReferenceWire(payload.reference.value, companions.charts ?? [])
-    const expected = options.initialClear === true && strategy === 'main_rise' && frequency === '1d'
+    let expected = options.initialClear === true && strategy === 'main_rise' && frequency === '1d'
       ? []
       : url?.searchParams.has('history_before')
       ? [facts.interrupted.trade, facts.initial.trade]
-      : [facts.open.trade, ...(payload.reference.value.summary.closed_count === 0 ? [] : [facts.closed.trade])]
+      : [facts.open.trade, ...(payload.reference.value.summary.closed_count === 0 ? [] : [facts.closed.trade]), ...(options.recordsHistory && !url?.searchParams.has('history_limit') ? [facts.interrupted.trade, facts.initial.trade] : [])]
+    if (options.recordsHistory) expected = expected.toSorted((a, b) => b.entry_bar_end.localeCompare(a.entry_bar_end))
     if (JSON.stringify(payload.reference.value.items.map(tradeRelation)) !== JSON.stringify(expected.filter(item => url?.searchParams.get('history_limit') !== '200' || (item.entry_trading_day >= payload.reference.value.performance_since && item.entry_trading_day <= payload.reference.value.performance_through)).map(tradeRelation))) throw new Error('fixture ReferenceTrade/Action relation drift')
     if (new Set(payload.reference.value.items.map((item) => item.entry_signal_id)).size !== payload.reference.value.items.length) throw new Error('fixture reference identity drift')
-    if (payload.reference.value.summary.closed_count > 0 && (payload.reference.value.summary.mean_return_pct !== facts.closed.trade.reference_return_pct || payload.reference.value.summary.sum_return_percentage_points !== facts.closed.trade.reference_return_pct)) throw new Error('fixture reference summary drift')
+    if (payload.reference.value.summary.closed_count > 0 && (payload.reference.value.summary.mean_return_pct !== facts.closed.trade.reference_return_pct || payload.reference.value.summary.sum_return_percentage_points !== (options.recordsHistory ? '10.2040' : facts.closed.trade.reference_return_pct))) throw new Error('fixture reference summary drift')
   }
 }
 
@@ -507,8 +516,15 @@ function formulas(strategy) {
   return ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
 }
 
-function scenarioFacts(strategy, frequency, long = false) {
-  const literal = STRATEGY_WIRE_FACTS[strategy]
+function scenarioFacts(strategy, frequency, long = false, options = {}) {
+  const base = STRATEGY_WIRE_FACTS[strategy]
+  // Two additional exact owners inside the current three-month records window.
+  // The older closed trade is an ordinary member, not an initial-before-window row.
+  const literal = options.recordsHistory ? {
+    ...base,
+    interrupted: { ...base.interrupted, barEnd: '2026-06-05T07:00:00.000Z', tradingDay: '2026-06-05', markBarEnd: '2026-06-06T07:00:00.000Z', markTradingDay: '2026-06-06' },
+    initial: { ...base.initial, entryBarEnd: '2026-06-15T07:00:00.000Z', entryTradingDay: '2026-06-15', exitBarEnd: '2026-06-30T07:00:00.000Z', exitTradingDay: '2026-06-30' },
+  } : base
   const longOffset = long ? 416 : 0
   const closedEntryOwner = productBar(frequency, literal.closed.entryIndex + longOffset, long)
   const closedExitOwner = productBar(frequency, literal.closed.exitIndex + longOffset, long)
@@ -529,7 +545,7 @@ function scenarioFacts(strategy, frequency, long = false) {
     closed: Object.freeze({ entry: closedEntry, exit: closedExit, trade: trade(id(strategy, frequency, 'closed'), strategy, frequency, closedEntryOwner, closedExitOwner, 'CLOSED', literal.closed.return, null, closedEntry.signal_id, closedEntry.sequence, literal.closed.entry, closedExit.signal_id, literal.closed.exit, null, null) }),
     open: Object.freeze({ entry: openEntry, mark: openMarkOwner, trade: trade(id(strategy, frequency, 'open'), strategy, frequency, openOwner, null, 'OPEN', null, literal.open.change, openEntry.signal_id, openEntry.sequence, literal.open.entry, null, null, openMarkOwner, literal.open.mark) }),
     interrupted: Object.freeze({ entry: interruptedEntry, mark: interruptedMarkOwner, trade: trade(id(strategy, frequency, 'interrupted'), strategy, frequency, interruptedOwner, null, 'ROLLOVER_INTERRUPTED', null, literal.interrupted.change, interruptedEntry.signal_id, interruptedEntry.sequence, literal.interrupted.entry, null, null, interruptedMarkOwner, literal.interrupted.mark) }),
-    initial: Object.freeze({ entry: initialEntry, exit: initialExit, trade: trade(id(strategy, frequency, 'initial'), strategy, frequency, initialEntryOwner, initialExitOwner, 'CLOSED', literal.initial.return, null, initialEntry.signal_id, initialEntry.sequence, literal.initial.entry, initialExit.signal_id, literal.initial.exit, null, null, 'initial_before_window') }),
+    initial: Object.freeze({ entry: initialEntry, exit: initialExit, trade: trade(id(strategy, frequency, 'initial'), strategy, frequency, initialEntryOwner, initialExitOwner, 'CLOSED', literal.initial.return, null, initialEntry.signal_id, initialEntry.sequence, literal.initial.entry, initialExit.signal_id, literal.initial.exit, null, null, options.recordsHistory ? 'entry_in_window_v1' : 'initial_before_window') }),
   })
 }
 
@@ -549,7 +565,11 @@ function chartValue(url, strategy, frequency, options) {
     const conflict = { ...productBar(frequency, long ? 0 : 40, long), close: '999.0000', high: '1000.0000' }
     bars = [...bars, conflict]
   }
-  const facts = scenarioFacts(strategy, frequency, long)
+  const facts = scenarioFacts(strategy, frequency, long, options)
+  if (options.recordsHistory) {
+    const owners = [actionOwnerBar(facts.interrupted.entry, strategy, frequency), facts.interrupted.mark]
+    bars = bars.map(bar => owners.find(owner => owner.bar_end === bar.bar_end && owner.physical_contract === bar.physical_contract && owner.segment_id === bar.segment_id) ?? bar)
+  }
   const locatedBars = [facts.interrupted.entry, facts.interrupted.mark, facts.initial.entry, facts.initial.exit, facts.open.mark]
     .filter((item) => item.trading_day === locateFrom)
     .map((item) => item.signal_id ? actionOwnerBar(item, strategy, frequency) : item)
@@ -634,21 +654,22 @@ function trendChannelValue(strategy, bars) {
 function referenceValue(url, strategy, frequency, options) {
   const page = Boolean(url.searchParams.get('history_before'))
   const zero = options.zeroClosed === true
-  const facts = scenarioFacts(strategy, frequency, options.longHistory === `${strategy}:${frequency}`)
+  const facts = scenarioFacts(strategy, frequency, options.longHistory === `${strategy}:${frequency}`, options)
   const initialClear = options.initialClear === true && strategy === 'main_rise' && frequency === '1d'
   const since = url.searchParams.get('performance_since') || '2026-01-01'
   const fixedRecords = url.searchParams.get('history_limit') === '200'
   const inWindow = item => item.entry_trading_day >= since && item.entry_trading_day <= '2026-09-03'
   const hasClosed = !zero && !initialClear && (!fixedRecords || inWindow(facts.closed.trade))
-  const items = initialClear ? [] : page ? [facts.interrupted.trade, facts.initial.trade] : [facts.open.trade, ...(zero ? [] : [facts.closed.trade])]
+  let items = initialClear ? [] : page ? [facts.interrupted.trade, facts.initial.trade] : [facts.open.trade, ...(zero ? [] : [facts.closed.trade]), ...(options.recordsHistory && !fixedRecords ? [facts.interrupted.trade, facts.initial.trade] : [])]
+  if (options.recordsHistory) items = items.toSorted((a, b) => b.entry_bar_end.localeCompare(a.entry_bar_end))
   const summary = {
-    membership_policy: 'entry_in_window_v1', closed_count: hasClosed ? 1 : 0, win_count: hasClosed ? 1 : 0, loss_count: 0, flat_count: 0,
-    win_rate_pct: hasClosed ? '100' : null, mean_return_pct: hasClosed ? facts.closed.trade.reference_return_pct : null, sum_return_percentage_points: hasClosed ? facts.closed.trade.reference_return_pct : null,
-    open_count: initialClear || (fixedRecords && !inWindow(facts.open.trade)) ? 0 : 1, interrupted_count: initialClear || fixedRecords ? 0 : 1, rollover_interrupted_count: initialClear || fixedRecords ? 0 : 1, data_interrupted_count: 0, initial_count: initialClear || fixedRecords ? 0 : 1,
+    membership_policy: 'entry_in_window_v1', closed_count: hasClosed ? (options.recordsHistory ? 2 : 1) : 0, win_count: hasClosed ? (options.recordsHistory ? 2 : 1) : 0, loss_count: 0, flat_count: 0,
+    win_rate_pct: hasClosed ? '100' : null, mean_return_pct: hasClosed ? facts.closed.trade.reference_return_pct : null, sum_return_percentage_points: hasClosed ? (options.recordsHistory ? '10.2040' : facts.closed.trade.reference_return_pct) : null,
+    open_count: initialClear || (fixedRecords && !inWindow(facts.open.trade)) ? 0 : 1, interrupted_count: initialClear || (fixedRecords && !options.recordsHistory) ? 0 : 1, rollover_interrupted_count: initialClear || (fixedRecords && !options.recordsHistory) ? 0 : 1, data_interrupted_count: 0, initial_count: initialClear || fixedRecords || options.recordsHistory ? 0 : 1,
   }
   return {
     performance_since: since, performance_through: '2026-09-03', actual_available_through: '2026-09-03', reference_cutoff: url.searchParams.get('as_of') || NEWOW_AS_OF,
-    reference_input_sha256: HASH.reference, history_coverage: 'FULL', unavailable_days: [], coverage_intervals: [{ since, through: '2026-09-03', status: 'VALID', physical_contract: CONTRACT, segment_id: SEGMENT, calculation_segment_id: SEGMENT }], summary, items: fixedRecords ? items.filter(inWindow) : items, next_before: initialClear || fixedRecords || page ? null : 'reference-page-2',
+    reference_input_sha256: HASH.reference, history_coverage: 'FULL', unavailable_days: [], coverage_intervals: [{ since, through: '2026-09-03', status: 'VALID', physical_contract: CONTRACT, segment_id: SEGMENT, calculation_segment_id: SEGMENT }], summary, items: fixedRecords ? items.filter(inWindow) : items, next_before: initialClear || (options.recordsHistory && !fixedRecords) || (fixedRecords && !options.recordsHistory) || page ? null : 'reference-page-2',
     executable: false, auto_order: false, allowed_uses: ['page_parity_reference', 'research_display'],
   }
 }
@@ -662,7 +683,7 @@ function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, 
     entry_signal_id: entrySignalId, entry_sequence: entrySequence, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: entryPrice,
     exit_signal_id: exit ? exitSignalId : null, exit_bar_end: exit?.bar_end || null, exit_trading_day: exit?.trading_day || null, exit_reference_price: exit ? exitPrice : null,
     status, holding_bars: 1, reference_return_pct: result, mark_bar_end: exit ? null : markOwner.bar_end, mark_reference_price: exit ? null : markPrice, mark_change_pct: mark,
-    interrupted_at: status === 'ROLLOVER_INTERRUPTED' ? '2026-01-07T00:00:00.000Z' : null, interruption_reason: status === 'ROLLOVER_INTERRUPTED' ? 'OWNER_BOUNDARY' : null,
+    interrupted_at: status === 'ROLLOVER_INTERRUPTED' ? new Date(Date.parse(markOwner.bar_end) + 86400000).toISOString().slice(0, 10) + 'T00:00:00.000Z' : null, interruption_reason: status === 'ROLLOVER_INTERRUPTED' ? 'OWNER_BOUNDARY' : null,
     statistics_membership: membership, hint_ids: status === 'OPEN' ? [id(strategy, frequency, 'hint-d4'), 'hint-not-loaded'] : [],
   }
 }

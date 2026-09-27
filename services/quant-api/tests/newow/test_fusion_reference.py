@@ -199,3 +199,34 @@ def test_pagination_and_window_do_not_repair_single_trade_returns(product_cases)
     )
     assert narrowed["groups"][2]["closed_count"] == 0
     assert narrowed["items"][0]["statistics_membership"] == "initial_before_window"
+
+
+@pytest.mark.parametrize("trade_count", (201, 1000))
+def test_complete_fusion_curve_is_independent_of_record_page_limit(product_cases, trade_count):
+    from datetime import timedelta
+    tcase = product_cases.closed()
+    ocase = product_cases.closed(strategy="oscillation")
+    bars = []
+    actions = []
+    for index in range(trade_count):
+        shift = timedelta(minutes=index * 2)
+        entry_at = tcase.entry.bar_end + shift
+        exit_at = entry_at + timedelta(minutes=1)
+        entry = replace(tcase.entry, bar_end=entry_at, trading_day=entry_at.date())
+        exit_ = replace(tcase.exit, bar_end=exit_at, trading_day=exit_at.date(), related_build_id=entry.signal_id)
+        actions.extend((entry, exit_))
+        for original, action in zip(tcase.bars, (entry, exit_), strict=True):
+            bars.append(replace(original, bar=replace(original.bar, bar_end=action.bar_end, trading_day=action.trading_day)))
+    t = product_cases.replay(tcase.identity, tuple(bars), tuple(actions), ("BUILD", "CLEAR") * trade_count)
+    o = product_cases.replay(ocase.identity, tuple(bars), (), ("FLAT", "FLAT") * trade_count)
+    result = project(t, o)
+    assert len(result["items"]) == 200
+    assert len(result["curve"]) == trade_count
+    assert result["summary"]["closed_count"] == trade_count
+    assert result["curve"][-1]["exit_trading_day"] == actions[-1].trading_day.isoformat()
+    full = fusion_reference_comparison(t, o, (), (), PerformanceWindow(
+        bars[0].bar.trading_day, bars[-1].bar.trading_day, bars[-1].bar.bar_end,
+    ), record_limit=None)
+    assert len(full["items"]) == trade_count
+    assert full["curve"] == result["curve"]
+    assert full["reference_revision"] == result["reference_revision"]

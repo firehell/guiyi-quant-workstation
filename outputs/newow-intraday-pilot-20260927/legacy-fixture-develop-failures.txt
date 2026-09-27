@@ -1,0 +1,230 @@
+$ playwright test -c playwright.config.mjs e2e/newow-product.spec.mjs --grep 'late old chart response|shared-bar conflict|429 is bounded|auxiliary cache, applicability|curve window changes|tokenless chart|deferred explanation stays'
+[WebServer] (node:95837) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ vite --host 127.0.0.1 --port 5182
+[WebServer] (node:95851) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:95857) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/newow-product.spec.mjs:458:1 › curve window changes leave records, chart and auxiliary windows unchanged (6.7s)
+(node:95921) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › e2e/newow-product.spec.mjs:493:1 › late old chart response cannot overwrite the switched identity (1.3s)
+(node:95939) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [chromium] › e2e/newow-product.spec.mjs:507:1 › shared-bar conflict and repeated 409 stay fail-closed and bounded (1.1s)
+(node:95952) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  4 [chromium] › e2e/newow-product.spec.mjs:592:1 › a tokenless chart never requests or exposes an unproven auxiliary (1.1s)
+(node:95966) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  5 [chromium] › e2e/newow-product.spec.mjs:705:1 › 429 is bounded and an identity mismatch clears stale facts (1.0s)
+(node:95980) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  6 [chromium] › e2e/newow-product.spec.mjs:741:1 › auxiliary cache, applicability and disclosures remain section-local (2.0s)
+(node:95998) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  7 [chromium] › e2e/newow-product.spec.mjs:787:1 › deferred explanation stays separate from chart, records and optional comparison transport (1.0m)
+
+
+  1) [chromium] › e2e/newow-product.spec.mjs:458:1 › curve window changes leave records, chart and auxiliary windows unchanged 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('article[data-reference-category]')
+    Expected: 2
+    Received: 0
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 5000ms
+      - waiting for locator('article[data-reference-category]')
+        14 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      460 |   await page.goto(newowRoute())
+      461 |   await showReference(page)
+    > 462 |   await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+          |                                                                  ^
+      463 |   const recordsBefore = productRequests(fixture, 'reference').filter(item => item.url.searchParams.has('history_limit')).length
+      464 |   const chartBefore = productRequests(fixture, 'chart').length
+      465 |   const auxiliaryBefore = productRequests(fixture, 'auxiliary').length
+        at /Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.spec.mjs:462:66
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/newow-product-curve-window-51a12-auxiliary-windows-unchanged-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/newow-product-curve-window-51a12-auxiliary-windows-unchanged-chromium/error-context.md
+
+  2) [chromium] › e2e/newow-product.spec.mjs:493:1 › late old chart response cannot overwrite the switched identity 
+
+    Error: unexpected requests: unexpected Newow query ?product=rb&strategy=oscillation&frequency=1d&series_kind=actual_dominant&section=explanation&as_of=2026-09-03T08:00:00.000Z&decision_v2=true&snapshot_token=snapshot:oscillation:1d:fixture-revision-1
+
+       at newow-product.helpers.mjs:817
+
+      815 |
+      816 | export function productRequests(state, section) { return state.productRequests.filter((item) => item.section === section) }
+    > 817 | export function assertNoUnexpectedRequests(state) { if (state.unexpected.length) throw new Error(`unexpected requests: ${state.unexpected.join(', ')}`) }
+          |                                                                                        ^
+      818 | export async function releaseDeferred(state, key) {
+      819 |   const release = state.deferred.get(key)
+      820 |   if (release === undefined) throw new Error(`missing deferred request ${key}`)
+        at assertNoUnexpectedRequests (/Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.helpers.mjs:817:88)
+        at /Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.spec.mjs:504:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/newow-product-late-old-cha-3faad-write-the-switched-identity-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/newow-product-late-old-cha-3faad-write-the-switched-identity-chromium/error-context.md
+
+  3) [chromium] › e2e/newow-product.spec.mjs:507:1 › shared-bar conflict and repeated 409 stay fail-closed and bounded 
+
+    Error: unexpected requests: unexpected Newow query ?product=rb&strategy=trend&frequency=1d&series_kind=actual_dominant&section=explanation&as_of=2026-09-03T08:00:00.000Z&decision_v2=true&snapshot_token=snapshot:trend:1d:fixture-revision-1, invalid performance start ?product=rb&strategy=trend&frequency=1d&series_kind=actual_dominant&section=reference&as_of=2026-09-03T08:00:00.000Z&performance_since=2026-01-01&performance_through=2026-09-03&history_limit=200&snapshot_token=snapshot:trend:1d:fixture-revision-1
+
+       at newow-product.helpers.mjs:817
+
+      815 |
+      816 | export function productRequests(state, section) { return state.productRequests.filter((item) => item.section === section) }
+    > 817 | export function assertNoUnexpectedRequests(state) { if (state.unexpected.length) throw new Error(`unexpected requests: ${state.unexpected.join(', ')}`) }
+          |                                                                                        ^
+      818 | export async function releaseDeferred(state, key) {
+      819 |   const release = state.deferred.get(key)
+      820 |   if (release === undefined) throw new Error(`missing deferred request ${key}`)
+        at assertNoUnexpectedRequests (/Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.helpers.mjs:817:88)
+        at /Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.spec.mjs:514:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/newow-product-shared-bar-c-a8456-tay-fail-closed-and-bounded-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/newow-product-shared-bar-c-a8456-tay-fail-closed-and-bounded-chromium/error-context.md
+
+  4) [chromium] › e2e/newow-product.spec.mjs:592:1 › a tokenless chart never requests or exposes an unproven auxiliary 
+
+    Error: unexpected requests: unexpected Newow query ?product=rb&strategy=trend&frequency=1d&series_kind=actual_dominant&section=explanation&as_of=2026-09-03T08:00:00.000Z&decision_v2=true
+
+       at newow-product.helpers.mjs:817
+
+      815 |
+      816 | export function productRequests(state, section) { return state.productRequests.filter((item) => item.section === section) }
+    > 817 | export function assertNoUnexpectedRequests(state) { if (state.unexpected.length) throw new Error(`unexpected requests: ${state.unexpected.join(', ')}`) }
+          |                                                                                        ^
+      818 | export async function releaseDeferred(state, key) {
+      819 |   const release = state.deferred.get(key)
+      820 |   if (release === undefined) throw new Error(`missing deferred request ${key}`)
+        at assertNoUnexpectedRequests (/Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.helpers.mjs:817:88)
+        at /Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.spec.mjs:602:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/newow-product-a-tokenless--d6980-poses-an-unproven-auxiliary-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/newow-product-a-tokenless--d6980-poses-an-unproven-auxiliary-chromium/error-context.md
+
+  5) [chromium] › e2e/newow-product.spec.mjs:705:1 › 429 is bounded and an identity mismatch clears stale facts 
+
+    Error: unexpected requests: unexpected Newow query ?product=rb&strategy=trend&frequency=1d&series_kind=actual_dominant&section=explanation&as_of=2026-09-03T08:00:00.000Z&decision_v2=true&snapshot_token=snapshot:trend:1d:fixture-revision-1
+
+       at newow-product.helpers.mjs:817
+
+      815 |
+      816 | export function productRequests(state, section) { return state.productRequests.filter((item) => item.section === section) }
+    > 817 | export function assertNoUnexpectedRequests(state) { if (state.unexpected.length) throw new Error(`unexpected requests: ${state.unexpected.join(', ')}`) }
+          |                                                                                        ^
+      818 | export async function releaseDeferred(state, key) {
+      819 |   const release = state.deferred.get(key)
+      820 |   if (release === undefined) throw new Error(`missing deferred request ${key}`)
+        at assertNoUnexpectedRequests (/Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.helpers.mjs:817:88)
+        at /Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.spec.mjs:713:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/newow-product-429-is-bound-287b8-mismatch-clears-stale-facts-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/newow-product-429-is-bound-287b8-mismatch-clears-stale-facts-chromium/error-context.md
+
+  6) [chromium] › e2e/newow-product.spec.mjs:741:1 › auxiliary cache, applicability and disclosures remain section-local 
+
+    Error: expect(page).toHaveScreenshot(expected) failed
+
+      3071 pixels (ratio 0.01 of all image pixels) are different.
+
+      Snapshot: newow-mirror-repaint-disclosure.png
+
+    Call log:
+      - Expect "toHaveScreenshot(newow-mirror-repaint-disclosure.png)" with timeout 5000ms
+        - verifying given screenshot expectation
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - 3071 pixels (ratio 0.01 of all image pixels) are different.
+      - waiting 100ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - captured a stable screenshot
+      - 3071 pixels (ratio 0.01 of all image pixels) are different.
+
+
+      754 |   await expect(page.getByRole('dialog')).toContainText('会重绘')
+      755 |   await expect(page.getByRole('dialog')).toBeInViewport()
+    > 756 |   await expect(page).toHaveScreenshot('newow-mirror-repaint-disclosure.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
+          |                      ^
+      757 |   await page.keyboard.press('Escape')
+      758 |   await page.getByRole('button', { name: '主力控盘', exact: true }).click()
+      759 |   expect(productRequests(fixture, 'auxiliary').filter((item) => item.url.searchParams.get('component') === 'main_force_control')).toHaveLength(1)
+        at /Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.spec.mjs:756:22
+
+    attachment #1: newow-mirror-repaint-disclosure (image/png) ─────────────────────────────────────
+    Expected: e2e/newow-product.spec.mjs-snapshots/newow-mirror-repaint-disclosure-chromium-darwin.png
+    Received: test-results/newow-product-auxiliary-ca-d83db-osures-remain-section-local-chromium/newow-mirror-repaint-disclosure-actual.png
+    Diff:     test-results/newow-product-auxiliary-ca-d83db-osures-remain-section-local-chromium/newow-mirror-repaint-disclosure-diff.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/newow-product-auxiliary-ca-d83db-osures-remain-section-local-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/newow-product-auxiliary-ca-d83db-osures-remain-section-local-chromium/error-context.md
+
+  7) [chromium] › e2e/newow-product.spec.mjs:787:1 › deferred explanation stays separate from chart, records and optional comparison transport 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.innerText: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('article[data-reference-category="open"]')
+
+
+      791 |   const chart = page.getByTestId('newow-product-chart-stage')
+      792 |   const actionIdsBefore = await chart.getAttribute('data-action-ids')
+    > 793 |   const openBefore = await page.locator('article[data-reference-category="open"]').innerText()
+          |                                                                                    ^
+      794 |   await page.getByRole('button', { name: '查看依据', exact: true }).click()
+      795 |   const dialog = page.getByRole('dialog')
+      796 |   await expect(dialog).toContainText('尚未开放跨周期综合解释')
+        at /Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web/e2e/newow-product.spec.mjs:793:84
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/newow-product-deferred-exp-16d53-tional-comparison-transport-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/newow-product-deferred-exp-16d53-tional-comparison-transport-chromium/error-context.md
+
+  7 failed
+    [chromium] › e2e/newow-product.spec.mjs:458:1 › curve window changes leave records, chart and auxiliary windows unchanged 
+    [chromium] › e2e/newow-product.spec.mjs:493:1 › late old chart response cannot overwrite the switched identity 
+    [chromium] › e2e/newow-product.spec.mjs:507:1 › shared-bar conflict and repeated 409 stay fail-closed and bounded 
+    [chromium] › e2e/newow-product.spec.mjs:592:1 › a tokenless chart never requests or exposes an unproven auxiliary 
+    [chromium] › e2e/newow-product.spec.mjs:705:1 › 429 is bounded and an identity mismatch clears stale facts 
+    [chromium] › e2e/newow-product.spec.mjs:741:1 › auxiliary cache, applicability and disclosures remain section-local 
+    [chromium] › e2e/newow-product.spec.mjs:787:1 › deferred explanation stays separate from chart, records and optional comparison transport 
+[ELIFECYCLE] Command failed with exit code 1.

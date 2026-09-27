@@ -1,0 +1,16 @@
+$ playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs
+[WebServer] (node:93823) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] $ vite --mode candidate-preview --host 127.0.0.1 --port 5182
+[WebServer] (node:93835) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:93860) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/candidate-preview.spec.mjs:7:1 › preview identifies both sources, fixes cutoff and never subscribes to live even with overrides (1.6s)
+  ✓  2 [chromium] › e2e/candidate-preview.spec.mjs:65:1 › identity mismatch blocks candidate page queries (394ms)
+  ✓  3 [chromium] › e2e/candidate-preview.spec.mjs:75:1 › fixture server rejects management and ambiguous paths before any upstream access (23ms)
+
+  3 passed (3.9s)

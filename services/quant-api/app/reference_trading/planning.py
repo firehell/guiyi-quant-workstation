@@ -18,12 +18,13 @@ from app.reference_trading.inputs import HistoricalInputReader
 
 Operation = Literal["build", "advance", "rebuild"]
 _CAPABILITIES = {
-    "newow-trend": frozenset({"1d", "1w", "60m"}),
-    "newow-oscillation": frozenset({"1d", "1w", "60m"}),
+    "newow_dual_fusion": frozenset({"1m", "15m", "30m", "60m"}),
+    "newow-trend": frozenset({"1d", "1w", "1m", "15m", "30m", "60m"}),
+    "newow-oscillation": frozenset({"1d", "1w", "1m", "15m", "30m", "60m"}),
     "newow-main-rise": frozenset({"1d", "1w", "60m"}),
     "subing-reference": frozenset({"15m", "30m", "60m", "1d"}),
-    "newow_trend": frozenset({"1d", "1w", "60m"}),
-    "newow_oscillation": frozenset({"1d", "1w", "60m"}),
+    "newow_trend": frozenset({"1d", "1w", "1m", "15m", "30m", "60m"}),
+    "newow_oscillation": frozenset({"1d", "1w", "1m", "15m", "30m", "60m"}),
     "newow_main_rise": frozenset({"1d", "1w", "60m"}),
     "subing_reference": frozenset({"15m", "30m", "60m", "1d"}),
 }
@@ -52,6 +53,12 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
             and identity.futures_adaptation_version == "subing_actual_dominant_v1"
             and identity.observation_policy_version is None
         )
+    if normalized == "newow_dual_fusion":
+        from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+        try:
+            return identity == build_fusion_stream_identity(identity.product, identity.frequency)
+        except ValueError:
+            return False
     if normalized.startswith("newow_"):
         from app.market_data.newow.product_release import candidate_input_quality_policy
         from guiyi_quant.newow.product_adapters import build_product_identity

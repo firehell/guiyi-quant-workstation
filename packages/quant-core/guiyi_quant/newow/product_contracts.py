@@ -30,6 +30,13 @@ class ProductFrequency(StrEnum):
     WEEKLY = "1w"
     DAILY = "1d"
     HOURLY = "60m"
+    MINUTE = "1m"
+    QUARTER_HOURLY = "15m"
+    HALF_HOURLY = "30m"
+
+
+LEGACY_PRODUCT_FREQUENCIES = (ProductFrequency.WEEKLY, ProductFrequency.DAILY, ProductFrequency.HOURLY)
+INTRADAY_PRODUCT_FREQUENCIES = (ProductFrequency.MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY, ProductFrequency.HOURLY)
 
 
 class ActionKind(StrEnum):

@@ -13,6 +13,10 @@ canonical；可执行命令见 `TESTING.md`。
 - 交办任务时不要求 owner 预先给出实施后才可确定的 hash、版本或每条命令。Codex 在执行前生成精确对象并核验；
   仅讨论或仅编码的任务不自行扩展成真实 mutation、发布或 Runtime promotion。
 
+owner 将 GPT 中已确定的方案交办实施后，按 [GPT 与 Codex 交接规则](../AGENTS.md#gpt-讨论与-codex-交接)
+直接推进；不重复批准相同设计、计划或选择执行方式。阶段校验与实际执行边界见
+[任务授权与验证 Gate](../AGENTS.md#任务授权与验证-gate)，本页不另设人工审批。
+
 ## Codex 模型调度
 
 项目级新线程默认是 **GPT-6 Sol Medium**。模型路由只优化质量、吞吐与 Codex 用量，不改变任务边界、
@@ -51,6 +55,15 @@ develop
 普通源码、测试、文档和仓库内普通删除可按上述流程执行。删除前先关闭 active
 references；历史恢复使用 Git，不建立 archive、backup 或 legacy-copy。
 
+## 文档与版本的唯一入口
+
+- [文档导航](../README.md#工程入口)只索引现役文档；任务边界在 `AGENTS.md`，当前发布、Runtime、待验收与下一步在 `STATUS.md`。
+- 稳定产品面在 `PROJECT_SOURCE.md`，依赖在 `docs/ARCHITECTURE.md`，领域语义在 accepted OpenSpec/deep canonical，验证入口在 `TESTING.md`。其他文档引用这些入口，不复制完成状态或规则。
+- 已完成且被现役合同取代的执行计划可删除，先检查引用；旧过程从 Git 查找。来源材料、公式审计、数据 journal、失败恢复及发布 evidence 不能仅因任务完成而删除。
+- **应用发布版本只改 `services/quant-api/app/version.py` 的 `APP_VERSION`**。API/OpenAPI/health 直接读取；Hatch 从同一文件生成 Python 包版本；Vite 从同一文件注入 `import.meta.env.VITE_APP_VERSION`。私有前端 package.json 不保存另一份发布版本。
+- `services/quant-api/uv.lock` 的 editable API 采用动态元数据，不再固化发布版本。修改版本后运行 `uv lock --check --offline --project services/quant-api`、版本一致性测试与前端 build；重新构建、安装和启动后消费者才使用新版本，已运行进程不会被修改源码自动升级。
+- 核心库版本、公式/profile/schema/capability 版本各有独立语义；已发布 tag、receipt 与历史 evidence 绑定当时身份，不能随应用版本替换。当前实际发布与 Runtime 身份仍以 `STATUS.md` 为准。
+
 ## 任务收敛与版本冻结
 
 阶段顺序和当前出口统一看 [STATUS.md](../STATUS.md) 的“已接受的后续交付规划”，
@@ -85,6 +98,9 @@ task branch/worktree，不按任务大小或 Lane 标签强制。保留用户已
 | 新版需求 | 独立任务、合同和验收；涉及语义变化先审计划 | 以显示修复、数据恢复或体验优化名义顺带改评分/公式/通知 |
 
 ### 并行与测试边界
+
+子代理的八类常用职责、分派输入与交付格式统一见 [项目角色清单](AGENT_ROLES.md)；
+按任务调用，小任务可直接完成。角色清单引用既有合同，不另存权限、模型表或阶段状态。
 
 不设固定任务数量上限；AI 按文件冲突、依赖、共享状态和机器资源安排独立源码工作并行；
 生产补数、旧事故收尾和 Runtime 切换串行，共享锁或数据依赖的现场操作不能并行推进。

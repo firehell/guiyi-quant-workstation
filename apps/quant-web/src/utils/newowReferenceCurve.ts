@@ -2,23 +2,37 @@ import type { NewowReferenceValue, NewowReferenceTrade } from '../types/newowPro
 
 // Decimal addition remains exact; Number is used only for SVG coordinates.
 function decimal(value: string): { units: bigint; scale: number } | null {
-  if (!/^-?\d+(\.\d+)?$/.test(value)) return null
-  const [whole, fraction = ''] = value.split('.')
-  return { units: BigInt(whole! + fraction), scale: fraction.length }
+  const match = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/.exec(value)
+  if (!match) return null
+  const exponent = Number(match[3] ?? 0)
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 10000) return null
+  const [whole, fraction = ''] = match[2]!.split('.')
+  const units = BigInt(`${match[1] === '-' ? '-' : ''}${whole || '0'}${fraction}`)
+  const scale = fraction.length - exponent
+  return scale >= 0 ? { units, scale } : { units: units * 10n ** BigInt(-scale), scale: 0 }
 }
 function text(units: bigint, scale: number): string {
   const digits = (units < 0n ? -units : units).toString().padStart(scale + 1, '0')
   return `${units < 0n ? '-' : ''}${scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits}`
 }
 export function newowReferenceCurve(value: NewowReferenceValue) {
-  const source = value.curve_trades ?? value.items
-  const trades = source.filter(t => t.status === 'CLOSED' && t.statistics_membership === value.summary.membership_policy)
+  return closedReferenceCurve(value.curve_trades ?? value.items, value.summary.closed_count, value.summary.sum_return_percentage_points, value.summary.membership_policy, value.curve_trades === undefined && value.next_before !== null)
+}
+
+type ClosedCurveTrade = Pick<NewowReferenceTrade, 'status' | 'statistics_membership' | 'exit_bar_end' | 'reference_trade_id' | 'reference_return_pct'>
+export function sumReferenceReturns(values: string[]): string | null {
+  const parts = values.map(decimal)
+  if (parts.some(part => part === null)) return null
+  const scale = Math.max(0, ...parts.map(part => part!.scale))
+  return text(parts.reduce((sum, part) => sum + part!.units * 10n ** BigInt(scale - part!.scale), 0n), scale)
+}
+export function closedReferenceCurve<T extends ClosedCurveTrade>(source: readonly T[], count: number, sumReturn: string | null, membership = 'entry_in_window_v1', incomplete = false) {
+  const trades = source.filter(t => t.status === 'CLOSED' && t.statistics_membership === membership)
     .sort((a, b) => (a.exit_bar_end ?? '').localeCompare(b.exit_bar_end ?? '') || a.reference_trade_id.localeCompare(b.reference_trade_id))
-  const pending = (value.curve_trades === undefined && value.next_before !== null) || trades.length !== value.summary.closed_count
-  if (pending) return { points: [], message: '参考历史尚未完整加载；加载更多后显示完整累计曲线。' }
+  if (incomplete || trades.length !== count) return { points: [], message: '参考历史尚未完整加载；暂不绘制完整累计曲线。' }
   if (!trades.length) return { points: [], message: '暂无已完成参考交易；未清仓与中断结果不计入曲线。' }
   const numbers = trades.map(t => t.reference_return_pct === null ? null : decimal(t.reference_return_pct))
-  const total = value.summary.sum_return_percentage_points === null ? null : decimal(value.summary.sum_return_percentage_points)
+  const total = sumReturn === null ? null : decimal(sumReturn)
   if (numbers.some(n => n === null) || total === null || trades.some(t => t.exit_bar_end === null)
     || new Set(trades.map(t => t.reference_trade_id)).size !== trades.length) return { points: [], message: '参考收益事实不完整，暂不绘制累计曲线。' }
   const scale = Math.max(total.scale, ...numbers.map(n => n!.scale))
@@ -30,7 +44,7 @@ export function newowReferenceCurve(value: NewowReferenceValue) {
   // The authoritative summary adds in Decimal(precision=28, HALF_EVEN).
   // Bound the cumulative rounding error in integer units; never compare floats.
   const magnitudeDigits = Math.max(1, ...points.map(p => (p.cumulative.replace('-', '').split('.')[0] ?? '').length),
-    ...trades.map(t => (t.reference_return_pct!.replace('-', '').split('.')[0] ?? '').length))
+    ...numbers.map(n => text(n!.units, n!.scale).replace('-', '').split('.')[0]!.length))
   const roundingUnit = scale + magnitudeDigits > 28 ? 10n ** BigInt(scale + magnitudeDigits - 28) : 0n
   const expected = total.units * 10n ** BigInt(scale - total.scale)
   const difference = sum > expected ? sum - expected : expected - sum
@@ -67,7 +81,10 @@ export function newowTheoreticalDisplay(value: NewowReferenceValue): NewowRefere
 /** Page curve only: peak-to-trough loss of 100 + additive return, including starting capital 100. */
 export function newowReferenceDrawdown(value: NewowReferenceValue): string | null {
   const curve = newowReferenceCurve(value)
-  if (value.history_coverage !== 'FULL' || curve.message !== null || !curve.points.length) return null
+  return referenceCurveDrawdown(curve, value.history_coverage === 'FULL')
+}
+export function referenceCurveDrawdown(curve: { message: string | null; points: { cumulative: string }[] }, full = true): string | null {
+  if (!full || curve.message !== null || !curve.points.length) return null
   const values = curve.points.map(point => decimal(point.cumulative)!)
   const scale = Math.max(...values.map(item => item.scale))
   const baseline = 100n * 10n ** BigInt(scale)
@@ -84,4 +101,22 @@ export function newowReferenceDrawdown(value: NewowReferenceValue): string | nul
   const scaled = numerator * 10000n
   const rounded = scaled / denominator + (scaled % denominator * 2n >= denominator ? 1n : 0n)
   return text(rounded, 2)
+}
+
+// Rendering anchors are a bounded view; complete points still own all sums,
+// statistics, line geometry and record identities.
+export function referenceCurveAnchors<T>(points: readonly T[], limit = 256): readonly T[] {
+  if (!Number.isInteger(limit) || limit < 2 || limit > 1000) throw new Error('CURVE_ANCHOR_LIMIT_INVALID')
+  if (points.length <= limit) return points
+  return Array.from({ length: limit }, (_, index) => points[Math.round(index * (points.length - 1) / (limit - 1))]!)
+}
+
+export function closestReferenceCurvePoint<T extends { x: number; y: number }>(points: readonly T[], x: number, y: number): T | null {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  let nearest: T | null = null, distance = Infinity
+  for (const point of points) {
+    const candidate = (point.x - x) ** 2 + (point.y - y) ** 2
+    if (candidate < distance) { nearest = point; distance = candidate }
+  }
+  return nearest
 }

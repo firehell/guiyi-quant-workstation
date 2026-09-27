@@ -27,6 +27,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   select: [identity: MarketDetailIdentity]
   'contract-cleared': [identity: MarketDetailIdentity]
+  'ai-analysis': []
 }>()
 
 type AnalysisChoice = NewowStrategy | 'dual' | Extract<MarketDetailView, 'htdy' | 'subing' | 'free'>
@@ -114,15 +115,14 @@ function periodLabel(value: MarketFrequency) {
 <template>
   <nav class="detail-view-nav" aria-label="分析视角" data-detail-section="view-nav">
     <div class="detail-view-nav__views" role="tablist" aria-label="分析选项">
-      <button
-        v-for="view in views"
-        :key="view.value"
+      <template v-for="view in views" :key="view.value"><button
         type="button"
         role="tab"
         :aria-selected="activeChoice === view.value"
         :class="{ 'is-active': activeChoice === view.value }"
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
+      <button v-if="view.value === 'dual' && identity.view === 'newow'" type="button" class="detail-view-nav__ai" @click="emit('ai-analysis')">✨AI分析</button></template>
     </div>
 
     <div v-if="showSeriesControls || showFrequencyControls" class="detail-view-nav__controls">

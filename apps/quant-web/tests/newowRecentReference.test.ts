@@ -5,7 +5,7 @@ import { useNewowRecentReference } from '../src/composables/useNewowRecentRefere
 import type { NewowProductRequest, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
 const anchor = (token = 'snapshot') => ({ section: 'reference', meta: { snapshot_token: token, as_of: '2026-09-24T07:00:00Z', identity: { product: 'jm', strategy: 'trend', frequency: '1d' } }, value: { performance_since: '2023-01-01', actual_available_through: '2026-09-24', items: [], next_before: null } }) as unknown as NewowProductSectionResponse<'reference'>
 const flush = async () => { await nextTick(); await Promise.resolve(); await nextTick() }
-test('recent records have an independent three-month window and cursor', async () => {
+test('recent records have an independent one-year window and cursor', async () => {
   const source = ref(anchor())
   const calls: NewowProductRequest[] = []
   const state = useNewowRecentReference(source, async request => {
@@ -15,7 +15,7 @@ test('recent records have an independent three-month window and cursor', async (
   await flush()
   assert.equal(calls.length, 1)
   assert.equal(calls[0].section, 'reference')
-  assert.equal(calls[0].performanceSince, '2026-06-24')
+  assert.equal(calls[0].performanceSince, '2025-09-24')
   assert.equal(calls[0].performanceThrough, '2026-09-24')
   // A changed performance window on the same snapshot is not a records reload.
   source.value = { ...source.value, value: { ...source.value.value!, performance_since: '2026-01-01' } }
@@ -23,7 +23,7 @@ test('recent records have an independent three-month window and cursor', async (
   assert.equal(calls.length, 1)
   await state.loadMore()
   assert.equal(calls[1].historyBefore, 'page2')
-  assert.equal(calls[1].performanceSince, '2026-06-24')
+  assert.equal(calls[1].performanceSince, '2025-09-24')
   await state.loadMore()
   assert.equal(calls.length, 2)
 })

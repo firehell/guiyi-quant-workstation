@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "code_sha": "6264c24df1063514acce150ccb4468134e82ee7d",
+  "concurrent_requests": 2,
+  "rows": [
+    {
+      "strategy": "trend",
+      "seconds": 9.635,
+      "snapshot": "_qfnn16br3vTxhKvlGP04ehK_58drRkt",
+      "base_curve_count": 33169,
+      "fusion_curve_count": 37260,
+      "status": "PASS"
+    },
+    {
+      "strategy": "oscillation",
+      "seconds": 4.455,
+      "snapshot": "DDZgHk5CT16sybGtH_sXXnkE9dDNJHR_",
+      "base_curve_count": 17092,
+      "fusion_curve_count": 37260,
+      "status": "PASS"
+    }
+  ],
+  "peak_sampled_api_rss_bytes": 1043185664,
+  "sample_interval_seconds": 0.2,
+  "writes": 0
+}

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-const props = defineProps<{ open: boolean; title: string; identityKey: string; wide?: boolean; variant?: 'niuwa-indicator' }>()
+import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+const props = defineProps<{ open: boolean; title: string; identityKey: string; wide?: boolean; variant?: 'niuwa-indicator' | 'ai-analysis' }>()
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
+const titleId = `newow-dialog-title-${useId()}`
 let opener: HTMLElement | null = null
 let generation = 0
 let closing = false
@@ -57,10 +58,10 @@ function backdrop(event: MouseEvent) {
 onBeforeUnmount(() => { ++generation; closing = true; dialog.value?.close(); unlockScroll(); opener = null })
 </script>
 <template>
-  <dialog ref="dialog" class="newow-detail-dialog" :class="{ 'newow-detail-dialog--wide': wide, 'newow-detail-dialog--niuwa-indicator': variant === 'niuwa-indicator' }" aria-labelledby="newow-dialog-title" @cancel.prevent="close" @close="!closing && open && close()" @click="backdrop" @keydown="trapTab">
-    <header><h2 id="newow-dialog-title">{{ title }}</h2><button v-if="variant !== 'niuwa-indicator'" type="button" aria-label="关闭解释" autofocus @click="close">×</button></header>
+  <dialog ref="dialog" class="newow-detail-dialog" :class="{ 'newow-detail-dialog--wide': wide, 'newow-detail-dialog--niuwa-indicator': variant === 'niuwa-indicator', 'newow-detail-dialog--ai-analysis': variant === 'ai-analysis' }" :aria-labelledby="titleId" @cancel.prevent="close" @close="!closing && open && close()" @click="backdrop" @keydown="trapTab">
+    <header><h2 :id="titleId">{{ title }}</h2><button v-if="!variant" type="button" aria-label="关闭解释" autofocus @click="close">×</button></header>
     <div class="newow-detail-dialog__body"><slot /></div>
-    <footer><button type="button" @click="close">知道了</button></footer>
+    <footer><slot name="footer"><button type="button" @click="close">知道了</button></slot></footer>
   </dialog>
 </template>
 <style scoped>
@@ -79,4 +80,10 @@ footer { justify-content:center; } footer button { width:100%; background:#365af
 .newow-detail-dialog--niuwa-indicator .newow-detail-dialog__body { padding:0 24px; }
 .newow-detail-dialog--niuwa-indicator footer { padding:16px 24px 24px; }
 .newow-detail-dialog--niuwa-indicator footer button { width:108px; min-height:38px; border-radius:999px; background:#0878f9; font-size:14px; font-weight:650; }
+.newow-detail-dialog--ai-analysis { width:min(408px, calc(100vw - 24px)); max-height:80dvh; border:0; border-radius:16px; color:#1c1c1e; box-shadow:0 8px 32px #0003; }
+.newow-detail-dialog--ai-analysis::backdrop { background:#0008; }
+.newow-detail-dialog--ai-analysis header { justify-content:center; padding:24px 24px 16px; }
+.newow-detail-dialog--ai-analysis h2 { font-size:16px; font-weight:600; text-align:center; }
+.newow-detail-dialog--ai-analysis .newow-detail-dialog__body { padding:0 24px; }
+.newow-detail-dialog--ai-analysis footer { padding:14px 24px 24px; }
 </style>

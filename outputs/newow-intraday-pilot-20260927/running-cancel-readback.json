@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "cancel_after_batches": 8,
+  "cancel_seconds": 0.207,
+  "saved_generation_unchanged": true,
+  "provider_calls": 0,
+  "writes": 0
+}

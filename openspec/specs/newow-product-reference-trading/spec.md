@@ -9,6 +9,44 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ## Requirements
 
+### Requirement: RB historical intraday candidate preserves independent period and model identities
+
+The default-off RB candidate SHALL recognize `1m / 15m / 30m / 60m` for trend and oscillation,
+and an independent persisted dual-fusion reference model. Formal daily/weekly capability and
+its deferred 60m gate SHALL remain unchanged. Minute main-rise SHALL be rejected before kernel
+execution; candidate recognition SHALL NOT enable Runtime, observation, notification or orders.
+
+Each derived period SHALL aggregate independently from trusted physical-contract Canonical 1m
+through the existing MarketDataService and Session authority using `(start,end]`. Short Session
+tails SHALL remain explicit; breaks, physical owners and quality segments SHALL NOT be bridged.
+Full owner lifecycle prefixes SHALL be used for warming, while actual-owner intervals alone
+are eligible for displayed reference trades. Unconfirmed Bars SHALL NOT enter historical assets.
+
+#### Scenario: Saved minute history is reused without changing source or generation
+- **WHEN** an RB minute reference or fusion query reads a saved historical revision
+- **THEN** it verifies fresh Catalog-resolved immutable Canonical bytes, quality digest,
+  rank1 owner/calendar/Session proof and exact saved source generations
+- **AND** a changed proof, manifest, revision or sequence rejects reuse rather than silently appending.
+
+The two base kernels SHALL retain their existing formulas. Fusion SHALL use oscillation priority,
+sell-before-buy ordering and one long/flat reference position, preserve stable source and trade IDs,
+and never force-close an OPEN or interrupted trade to manufacture completed return.
+Complete maintained-history statistics and curve SHALL be independent of snapshot-bound near-year
+record pages. Scientific Decimal notation SHALL preserve exact numeric facts. Display anchors may
+be bounded, but sums, the curve and selected trade facts SHALL retain all completed entries.
+Theory-mode curve selection SHALL NOT replace ordinary reference-card returns with theoretical returns.
+
+#### Scenario: Minute current state and background explanations remain separate
+- **WHEN** a minute strategy page displays the current completed state
+- **THEN** its D1/W1 decision is explicitly background-only with an independent daily identity
+- **AND** the minute period is excluded from composite scoring and existing four-combination AI ranking.
+
+Persisted minute reference reads SHALL have bounded admission separate from current calculations,
+retain fail-closed cancellation between scan batches, and bind cache reuse to exact saved generations.
+The RB candidate may use a measured bounded cache adequate for complete base/fusion snapshots;
+this SHALL NOT expand the formal default cache or truncate history to satisfy memory limits.
+
+
 ### Requirement: Local candidate preview is explicitly enabled and read-only
 
 Candidate preview SHALL be default-off, local API `127.0.0.1:8010` and development Web
@@ -1110,6 +1148,12 @@ The opt-in `explanation` request with `decision_v2=true` reads completed D1/W1 c
 
 The guard baseline is a prior completed, observation-eligible D1 Close from the same physical owner/calculation segment. Missing baseline remains unavailable; no settlement, previous-close alias, synthetic roll price or current Close substitution. Shared selection, status-card selection, previous Close and current Close keep distinct source identities. Context owner conflicts become unknown/missing, never mixed prices. All outputs are read-only explanations, not account, execution or causal profitability facts.
 
+`guiyi_cdv2_daily_weekly_presentation_v1` adds read-only advice and first-action copy to these facts. It reuses the existing first-action priority with omitted hourly idle, never inventing hourly confirmation. Incomplete daily/weekly states cannot establish a permissive first-action result; known bearish trend facts may retain their conservative warning. Stock-index and fixed stock-allocation copy is adapted to futures observation without changing the numerical CDV2 action, scores or exposure. Original weights and certainty thresholds remain unchanged: the daily/weekly maximum is 78, not rescaled to 100. The Web header remains visible while the body is collapsed, remembers the overall fold preference and offers a separate evidence fold. Snapshot/identity changes discard old results and close evidence. Missing volatility and state facts remain explicitly unavailable.
+
+#### Scenario: Presentation does not change strategy or reference results
+- **WHEN** daily/weekly CDV2 explanation is read or its UI folds are toggled
+- **THEN** first-action and advice remain presentation-only, the same reference trades are returned, and no missing hourly state is treated as confirmed
+
 
 #### Scenario: Missing cross-period facts stay unavailable
 - **WHEN** the optional display is requested
@@ -1124,3 +1168,36 @@ The theoretical tab requests all available maintained history. Other range tabs 
 #### Scenario: Theoretical returns preserve original records
 - **WHEN** the optional display is requested
 - **THEN** only complete CLOSED trades contribute hindsight returns while original entry and exit records remain unchanged
+
+### Independent AI page-analysis ranking v1
+
+`newow_ai_summary_ranking_page_v1` is a deterministic, read-only historical summary analysis, not an LLM, StrategyDecision, or ReferenceTrade projection. `/api/v1/market/newow/ai-analysis` accepts only product and an aware non-future `as_of`. It returns four trend/oscillation × D1/W1 combinations, no hourly fallback. All inputs MUST use the shared validated ProductReader, completed-only actual-dominant observations and frequency-specific active quality policy. The one request cutoff is common to all combinations; each combination exposes its window, actual endpoint and digest binding OHLC lifecycle facts, source digests, quality policy and calculation segment identities. Known missing-period/warm-up inputs remain unavailable; integrity and unexpected faults fail the whole request.
+
+The public single-segment kernel replicates `runOscBacktest`, `runTrendBacktest` and `scoreCombos` from detail v3.3.59 source SHA256 `b12da74d89a7ac304d7479999d11f13ab53ced834a8472f937d78a0c1bd03709`. Trend uses close versus MA10((close+high+low)/3), reference B-line transition prices and partial MA prefix means. Oscillation uses inclusive HHV/LLV10 and low/high touch prices, including same-bar CLEAR then BUILD. Both start at index 9 with minimum 11 input bars. Marked equity is the simple cumulative closed percentage points plus current floating return; drawdown is the peak-minus-current difference with initial peak zero. At the input terminal, an open reference estimate is valued at Close and included in this analysis's win/trade statistics. Public floating-point arithmetic and `toFixed` rounding are source-parity operations; delivered metrics use Decimal strings. This kernel is not causal execution evidence.
+
+`guiyi_newow_ai_segment_valuation_v1` independently runs each eligible physical-owner/calculation-quality segment; non-owned physical warm-up prefixes are excluded. Segments shorter than 11 bars are disclosed as warming. Positions MUST NOT cross a physical or calculation segment boundary. Terminal estimates at each boundary are explicitly counted; they MUST NOT create strategy CLEARs, reference-history exits, simulated fills or roll transactions. Simple returns and marked drawdown accumulate across these independently ended estimates. Accordingly the adapter declares `page_kernel_parity=true`, `page_parity=false`, `executable=false`. Public period windows are W1 from 2024-06-01 and D1 from 2025-09-01, bounded by validated completed facts and the selected snapshot, with no fabricated input replacement.
+
+Only combinations with at least three analysis trades enter scoring. Min-max normalized cumulative return, log1p(max(0, return/drawdown)) and rounded integer win rate have weights 0.40/0.35/0.25; a constant component normalizes to zero. Zero drawdown uses ratio 999 only for positive return, otherwise zero. Fewer than 10 trades multiply the score by 0.85; score rounds to four decimals. Best selection sorts by score then trade count, retaining original order on exact ties. Display ranking sorts stably by score only; four combinations re-normalize independently from the source six-combination screen. No valid samples means no recommendation. The UI MUST disclose dates, terminal estimates, history-only/non-executable semantics, and omitted 60m. Adopt only changes the visible product strategy and frequency; it neither promotes a strategy nor writes an account or Runtime decision.
+
+#### Scenario: Presentation-mode switch retains analysis cutoff
+- **WHEN** the user switches between loaded single-trend and dual mode without changing market input identity
+- **THEN** the analysis cutoff remains available, while an open analysis closes on route identity change
+
+#### Scenario: Segmentation changes invalidate analysis provenance
+- **WHEN** identical OHLC observations have a different calculation segmentation or quality policy
+- **THEN** the analysis input digest changes even if the shared lifecycle OHLC digest does not
+
+#### Scenario: Modal request lifecycle is bounded
+- **WHEN** the user closes, reruns, changes product/cutoff, or unmounts the modal
+- **THEN** previous requests are cancelled, late results cannot become visible or be adopted, and transport errors do not display private exception details
+
+
+## Intraday pilot contracts (P0–P6 candidate)
+
+The product identity and wire frequency recognize 1m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
+
+#### Frozen intraday reference input evidence
+
+Minute candidate builds may pin a verified input only while holding the authoritative Canonical maintenance lease; no input cache survives lease release or interruption. `newow_product_reader_intraday_v3` stores full input hash/count and an exact frozen source-evidence hash instead of repeating every Bar fingerprint in each batch. Source evidence is obtained through MDS and verifies Catalog-selected Canonical file bytes, quality/coverage metadata, physical contract lifecycle, rank1 ownership and Calendar/Session facts. A saved result is rejected when that evidence or frozen scope changes. Compact hashes do not constitute append-only proof; changed source/cutoff requires an explicit rebuild. Historical page queries validate the saved scope and may read necessary initial-holding facts before the record window, but cannot extend the snapshot cutoff or through day.
+
+Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading_day and a deterministic result revision independently of the limited record list. This changes delivery completeness only; fusion action order, source-price priority, pairing, terminal OPEN semantics and reference model remain unchanged. Page reference remains non-executable.

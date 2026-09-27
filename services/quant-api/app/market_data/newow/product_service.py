@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from guiyi_quant.newow.product_contracts import LEGACY_PRODUCT_FREQUENCIES, INTRADAY_PRODUCT_FREQUENCIES
+
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -127,16 +129,21 @@ class ProductServiceQuery:
     history_before: str | None = None
     snapshot_token: str | None = None
     include_fusion: bool = False
+    fusion_before: str | None = None
     decision_v2: bool = False
 
     def __post_init__(self) -> None:
         if self.decision_v2 and (self.section != "explanation" or self.frequency not in ("1d", "1w")):
+            raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
+        if self.fusion_before is not None and not self.include_fusion:
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.include_fusion and (self.section != "reference" or self.strategy not in ("trend", "oscillation") or self.history_before is not None):
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         object.__setattr__(self, "strategy", ProductStrategy(self.strategy))
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
         object.__setattr__(self, "section", ProductSection(self.section))
+        if self.strategy is ProductStrategy.MAIN_RISE and self.frequency.value in ("1m", "15m", "30m"):
+            raise ValueError("NEWOW_STRATEGY_NOT_OPEN")
         if self.component is not None:
             object.__setattr__(self, "component", AuxiliaryComponent(self.component))
         if self.series_kind != "actual_dominant":
@@ -241,6 +248,7 @@ class PersistedReferenceSectionValue:
     """Already serialized read-only projection; no strategy replay object."""
 
     payload: dict[str, object]
+    saved_generation: tuple[str, str, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,7 +395,7 @@ def _reference_coverage_intervals(
     for day, grouped in groupby(events, key=lambda item: item[0]):
         same_day = tuple(grouped)
         if len(same_day) > 1:
-            if read.frequency is not ProductFrequency.HOURLY or len({item[2:] for item in same_day}) != 1:
+            if read.frequency not in INTRADAY_PRODUCT_FREQUENCIES or len({item[2:] for item in same_day}) != 1:
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
             if any(item[1] == "PRICE_UNAVAILABLE" for item in same_day):
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
@@ -498,6 +506,8 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
     payload = json.dumps(
         {
             "identity": identity_fields,
+            **({"reference_source_evidence_sha256": read.reference_source_evidence_sha256}
+               if read.reference_source_evidence_sha256 is not None else {}),
             "as_of": read.as_of.isoformat(),
             "bars": bars,
             "owners": owners,
@@ -575,6 +585,8 @@ def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
 
 def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
     proof: dict[str, str] = {}
+    if read.reference_source_evidence_sha256 is not None:
+        proof[f"reference-source|{read.frequency.value}|{read.display_window.since}|{read.display_window.through}"] = read.reference_source_evidence_sha256
     physical_gaps: dict[str, str] = {}
     for frequency in sorted(read.bars_by_frequency, key=str):
         for item in read.bars_by_frequency[frequency]:
@@ -683,6 +695,8 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
         proof["|".join(("source-version", frequency.value))] = sha256(
             "|".join((source.source_identity, source.input_policy_version)).encode()
         ).hexdigest()
+        if read.reference_source_evidence_sha256 is not None:
+            continue
         key = "|".join(
             (
                 "source-window",
@@ -729,6 +743,7 @@ class NewowProductService:
         *,
         cache: SnapshotCache | None = None,
         heavy_gate: HeavyResourceGate | None = None,
+        persisted_reference_gate: HeavyResourceGate | None = None,
         inflight: InFlightCoordinator | None = None,
         now: Callable[[], datetime] | None = None,
         cancelled: Callable[[], bool] | None = None,
@@ -739,6 +754,7 @@ class NewowProductService:
         self._reader_factory = reader_factory
         self._cache = cache or SnapshotCache()
         self._gate = heavy_gate or HeavyResourceGate()
+        self._reference_gate = persisted_reference_gate or self._gate
         self._inflight = inflight or InFlightCoordinator()
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
@@ -776,7 +792,12 @@ class NewowProductService:
     ) -> NewowProductResult:
         self._check_cancelled(cancelled)
         if request.section in {ProductSection.REFERENCE, ProductSection.COMPARATOR}:
-            with self._gate.acquire(cancelled):
+            gate = self._reference_gate if (
+                request.section is ProductSection.REFERENCE
+                and request.frequency in INTRADAY_PRODUCT_FREQUENCIES
+                and self._persisted_reference is not None
+            ) else self._gate
+            with gate.acquire(cancelled):
                 return self._query_admitted(request, as_of, cancelled)
         return self._query_admitted(request, as_of, cancelled)
 
@@ -787,7 +808,7 @@ class NewowProductService:
         cancelled: Callable[[], bool],
     ) -> NewowProductResult:
         context = (
-            (ProductFrequency.DAILY, ProductFrequency.WEEKLY) if request.decision_v2 else tuple(ProductFrequency)
+            (ProductFrequency.DAILY, ProductFrequency.WEEKLY) if request.decision_v2 else LEGACY_PRODUCT_FREQUENCIES
             if request.section is ProductSection.EXPLANATION
             else ()
         )
@@ -888,7 +909,11 @@ class NewowProductService:
         read = self._cached_read_input(
             self._reads,
             self._market_read_key(low_query, read_as_of, policy),
-            lambda: reader.load(low_query, read_as_of),
+            lambda: reader.load_reference_scope(low_query, read_as_of)
+            if self._persisted_reference is not None and request.section is ProductSection.REFERENCE
+            and request.frequency in INTRADAY_PRODUCT_FREQUENCIES
+            and callable(getattr(reader, "load_reference_scope", None))
+            else reader.load(low_query, read_as_of),
         )
         if read.input_quality_policy is not policy:
             raise NewowProductServiceError("NEWOW_DATA_IDENTITY_INVALID")
@@ -916,6 +941,21 @@ class NewowProductService:
             )
         fact_key = _fingerprint(read, identity)
         proof = _dependency_proof(read)
+        if self._persisted_reference is not None and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(
+            getattr(reader, "historical_source_evidence", None)
+        ):
+            # Every section shares the same verified Canonical generation at
+            # this cutoff, even when reference reads contain no decoded Bars.
+            from zoneinfo import ZoneInfo
+            evidence = reader.historical_source_evidence(
+                product=request.product, frequency=request.frequency.value,
+                since=reader.historical_storage_start(request.product),
+                through=as_of.astimezone(ZoneInfo("Asia/Shanghai")).date(),
+                as_of=as_of,
+            )
+            proof[f"canonical-source|{request.frequency.value}|{as_of.isoformat()}"] = sha256(
+                json.dumps(evidence, sort_keys=True, separators=(",", ":"), default=str).encode()
+            ).hexdigest()
         if any(proof[key] != anchor_proof[key] for key in proof.keys() & anchor_proof.keys()):
             raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
         proof.update(anchor_proof)
@@ -939,20 +979,34 @@ class NewowProductService:
                 raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
         cached = self._cache.get(common_key, section_key)
         if isinstance(cached, NewowProductResult):
+            validator = getattr(getattr(self._persisted_reference, "__self__", None), "validate_cached_generation", None)
+            if request.section is ProductSection.REFERENCE and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(validator):
+                validator(cached.reference)
             return replace(
                 cached, meta=replace(cached.meta, read_at=utc_timestamp(self._now()))
             )
-        result = self._calculate(
-            request,
-            read,
-            identity,
-            fact_key,
-            page_identity,
-            resolved,
-            cancelled,
-            as_of,
-            reader,
-        )
+        base = None
+        attach_fusion = getattr(getattr(self._persisted_reference, "__self__", None), "attach_cached_fusion", None)
+        if request.include_fusion and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(attach_fusion):
+            base_key = self._section_key(replace(request, include_fusion=False, fusion_before=None), window, resolved, fact_key, page_identity) + (navigable,)
+            candidate = self._cache.get(common_key, base_key)
+            if isinstance(candidate, NewowProductResult) and isinstance(candidate.reference.value, PersistedReferenceSectionValue):
+                base = candidate
+        if base is not None:
+            self._check_cancelled(cancelled)
+            result = replace(base, reference=attach_fusion(request, base.reference, reader, fact_key, resolved))
+        else:
+            result = self._calculate(
+                request,
+                read,
+                identity,
+                fact_key,
+                page_identity,
+                resolved,
+                cancelled,
+                as_of,
+                reader,
+            )
         chart = result.chart.value
         if prior_navigation is not None and isinstance(chart, ChartSectionValue):
             if (chart.bars and prior_navigation.oldest_bar_end is not None
@@ -1063,6 +1117,7 @@ class NewowProductService:
             request.history_limit,
             request.history_before,
             request.include_fusion,
+            request.fusion_before,
             request.decision_v2,
         )
 
@@ -1143,7 +1198,7 @@ class NewowProductService:
             assert resolved is not None
             deliveries[request.section] = (
                 self._reference(request, read, identity, fact_key, page_identity, resolved)
-                if self._persisted_reference is None or request.include_fusion else
+                if self._persisted_reference is None or (request.include_fusion and request.frequency not in INTRADAY_PRODUCT_FREQUENCIES) else
                 self._persisted_reference(
                     request, read, identity, reader, fact_key, page_identity, resolved,
                 )
@@ -1474,7 +1529,7 @@ class NewowProductService:
             ) if main_bars else None
             addon = build_decision_v2(trend, oscillation, main, read, identity)
             for replays, strategy in ((trend, ProductStrategy.TREND), (oscillation, ProductStrategy.OSCILLATION)):
-                for frequency in ProductFrequency:
+                for frequency in LEGACY_PRODUCT_FREQUENCIES:
                     if frequency not in replays:
                         replays[frequency] = StrategyReplay(build_product_identity(identity.product, strategy, frequency), (), (), (), ())
         inputs = build_composite_inputs(trend, oscillation, read.as_of)

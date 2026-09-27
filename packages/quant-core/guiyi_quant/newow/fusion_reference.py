@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal, localcontext
 from hashlib import sha256
 import json
@@ -21,6 +22,40 @@ from .reference_statistics import PerformanceWindow, summarize_reference
 MODEL_VERSION = "newow_dual_fusion_reference_zero_cost_v1"
 
 
+@dataclass(frozen=True, slots=True)
+class FusionReferenceReplayState:
+    model_version: str = MODEL_VERSION
+
+
+def build_fusion_stream_identity(product: str, frequency: str):
+    """Independent reference projection identity; never a third base kernel."""
+    from .product_adapters import build_product_identity
+    from .product_contracts import ProductFrequency, INTRADAY_PRODUCT_FREQUENCIES
+    from .product_identity import futures_adaptation_version
+    from ..reference_trading import StreamIdentity
+    selected = ProductFrequency(frequency)
+    if selected not in INTRADAY_PRODUCT_FREQUENCIES:
+        raise ValueError("NEWOW_FUSION_FREQUENCY_UNSUPPORTED")
+    trend = build_product_identity(product, ProductStrategy.TREND, selected)
+    oscillation = build_product_identity(product, ProductStrategy.OSCILLATION, selected)
+    return StreamIdentity(
+        strategy_code="newow_dual_fusion",
+        formula_versions=trend.formula_versions + oscillation.formula_versions,
+        profile_id=f"newow_dual_fusion_{selected.value}_v1",
+        reference_model_version=MODEL_VERSION,
+        futures_adaptation_version=futures_adaptation_version(selected.value),
+        product=product, frequency=selected.value, series_kind="actual_dominant",
+        recording_mode="historical_replay", observation_policy_version=None,
+    )
+
+
+def fusion_trade_id(trend_identity, oscillation_identity, entry_signal_id: str) -> str:
+    identity = (trend_identity.product, trend_identity.frequency.value,
+                trend_identity.formula_versions, oscillation_identity.formula_versions,
+                MODEL_VERSION)
+    return sha256(json.dumps([identity, entry_signal_id], sort_keys=True).encode()).hexdigest()
+
+
 def _return(entry: Decimal, exit_: Decimal) -> Decimal:
     with localcontext() as context:
         context.prec = 28
@@ -33,12 +68,16 @@ def fusion_reference_comparison(
     boundaries: tuple[OwnerBoundary, ...],
     interruptions: tuple[DataInterruption, ...],
     window: PerformanceWindow,
+    *,
+    record_limit: int | None = 200,
 ) -> dict[str, object]:
     """Replay both accepted source strategies over identical complete inputs.
 
     SELL before BUY; oscillation before trend; clear-without-own-entry remains
     usable to close a fusion entry from the other strategy. No terminal force-close.
     """
+    if record_limit is not None and (type(record_limit) is not int or record_limit <= 0):
+        raise ValueError("NEWOW_FUSION_RECORD_LIMIT_INVALID")
     if (
         trend.identity.strategy is not ProductStrategy.TREND
         or oscillation.identity.strategy is not ProductStrategy.OSCILLATION
@@ -83,9 +122,7 @@ def fusion_reference_comparison(
         nonlocal holding, mark, bars_held
         if holding is None:
             return
-        digest = sha256(
-            json.dumps([identity, holding.signal_id], sort_keys=True).encode()
-        ).hexdigest()
+        digest = fusion_trade_id(trend.identity, oscillation.identity, holding.signal_id)
         rows.append(
             {
                 "reference_trade_id": digest,
@@ -105,6 +142,8 @@ def fusion_reference_comparison(
                 "exit_bar_end": exit_action.bar_end.isoformat()
                 if exit_action
                 else None,
+                "exit_trading_day": exit_action.trading_day.isoformat()
+                if exit_action else None,
                 "exit_reference_price": format(exit_action.reference_price, "f")
                 if exit_action
                 else None,
@@ -232,7 +271,27 @@ def fusion_reference_comparison(
             ),
         }
     )
+    revision = sha256(json.dumps({
+        "model": identity,
+        "profiles": [trend.identity.profile_id, oscillation.identity.profile_id],
+        "window": [window.since.isoformat(), window.through.isoformat(), window.cutoff.isoformat()],
+        "rows": rows,
+        "input": [
+            [frame.bar.source_bar_sha256, frame.bar.calculation_segment_id,
+             frame.bar.bar.bar_end.isoformat(), frame.bar.bar.physical_contract,
+             frame.bar.bar.segment_id, str(frame.bar.bar.close), frame.bar.bar.observation_eligible]
+            for frame in trend.frames if frame.bar.bar.bar_end <= window.cutoff
+        ],
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    records = list(reversed(rows))
     return {
+        "snapshot_schema": "newow_fusion_reference_snapshot_v2",
+        "reference_revision": revision,
+        "summary": groups[-1],
+        "curve": sorted(closed, key=lambda row: (row["exit_bar_end"], row["reference_trade_id"])),
+        "source_profiles": [trend.identity.profile_id, oscillation.identity.profile_id],
+        "product": trend.identity.product,
+        "frequency": trend.identity.frequency.value,
         "reference_model_version": MODEL_VERSION,
         "performance_since": window.since.isoformat(),
         "performance_through": window.through.isoformat(),
@@ -243,6 +302,6 @@ def fusion_reference_comparison(
             trend.identity.formula_versions + oscillation.identity.formula_versions
         ),
         "groups": groups,
-        "items": list(reversed(rows))[:200],
-        "records_truncated": len(rows) > 200,
+        "items": records if record_limit is None else records[:record_limit],
+        "records_truncated": record_limit is not None and len(rows) > record_limit,
     }

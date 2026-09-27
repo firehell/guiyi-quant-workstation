@@ -1,0 +1,53 @@
+{
+  "readonly": true,
+  "provider_calls": 0,
+  "identity": {
+    "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab"
+  },
+  "canonical_root": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical",
+  "product": "rb",
+  "day": "2026-09-24",
+  "rows": [
+    {
+      "frequency": "1m",
+      "status": "WINDOW_READABLE",
+      "bars": 345,
+      "first": "2026-09-23T13:01:00+00:00",
+      "last": "2026-09-24T07:00:00+00:00",
+      "contracts": [
+        "RB2701"
+      ]
+    },
+    {
+      "frequency": "15m",
+      "status": "WINDOW_READABLE",
+      "bars": 23,
+      "first": "2026-09-23T13:15:00+00:00",
+      "last": "2026-09-24T07:00:00+00:00",
+      "contracts": [
+        "RB2701"
+      ]
+    },
+    {
+      "frequency": "30m",
+      "status": "WINDOW_READABLE",
+      "bars": 12,
+      "first": "2026-09-23T13:30:00+00:00",
+      "last": "2026-09-24T07:00:00+00:00",
+      "contracts": [
+        "RB2701"
+      ]
+    },
+    {
+      "frequency": "60m",
+      "status": "WINDOW_READABLE",
+      "bars": 7,
+      "first": "2026-09-23T14:00:00+00:00",
+      "last": "2026-09-24T07:00:00+00:00",
+      "contracts": [
+        "RB2701"
+      ]
+    }
+  ]
+}

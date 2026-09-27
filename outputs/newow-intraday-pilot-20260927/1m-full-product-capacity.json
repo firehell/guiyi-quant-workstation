@@ -1,0 +1,12 @@
+[
+  {
+    "section": "chart",
+    "seconds": 18.937,
+    "status": "PASS"
+  },
+  {
+    "section": "reference",
+    "seconds": 26.751,
+    "status": "PASS"
+  }
+]

@@ -114,6 +114,13 @@ def create_preview_app(
     from app.api import market, market_newow, market_subing_reference
     from app.db.session import SessionLocal, get_db
 
+    if os.getenv("GUIYI_INTRADAY_PREVIEW_PRODUCT") == "rb":
+        from app.market_data.newow.snapshot_cache import SnapshotCache
+        # The RB 1m complete reference wire graph is about 77 MiB. Keep the
+        # candidate's complete base/fusion snapshot bounded without truncation.
+        market_newow._PRODUCT_CACHE = SnapshotCache(
+            max_bytes=512 * 1024 * 1024, max_entry_bytes=256 * 1024 * 1024,
+        )
     factory = session_factory or SessionLocal
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -137,6 +144,9 @@ def create_preview_app(
             if len({key for key, value in query}) != len(query):
                 raise ValueError
             values = dict(query)
+            intraday_product = os.getenv("GUIYI_INTRADAY_PREVIEW_PRODUCT")
+            if intraday_product is not None and intraday_product != "rb":
+                raise ValueError("PREVIEW_SCOPE_INVALID")
             hourly_products = _hourly_preview_products()
             au_period_preview = (
                 os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1" and hourly_products is None
@@ -164,6 +174,12 @@ def create_preview_app(
                         status_code=409,
                         content={"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}},
                     )
+            if intraday_product and raw_path in {
+                "/api/v1/market/newow/strategy-detail", "/api/v1/market/newow/historical-snapshot",
+                "/api/v1/market/newow/daily-snapshot", "/api/v1/market/newow/weekly-snapshot",
+            } and values.get("product", "").lower() != intraday_product:
+                return JSONResponse(status_code=403, content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}})
+            request.state.intraday_preview_product = intraday_product
             field = {
                 "/api/v1/market/bars/page": "before",
                 "/api/v1/market/newow/strategy-detail": "as_of",

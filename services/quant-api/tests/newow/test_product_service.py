@@ -1500,6 +1500,9 @@ def test_cdv2_explanation_uses_only_available_context_and_no_hidden_trade_gate(p
     from app.api.market_newow import _product_response
     wire=_product_response(result).model_dump(mode='json')['explanation']['value']['decision_v2']
     assert wire['cdv2']['executable'] is False
+    assert wire['cdv2']['presentation']['version'] == 'guiyi_cdv2_daily_weekly_presentation_v1'
+    assert wire['cdv2']['presentation']['scope'] == 'daily_weekly'
+    assert wire['cdv2']['presentation']['first_action']['rule_token']
     assert wire['cdv2']['trend_state']['m60']=='unknown'
     assert 'trend_m60' in wire['cdv2']['missing_roles']
     assert wire['prices']['source_family']=='canonical_channel'
@@ -1523,6 +1526,7 @@ def test_cdv2_tail_interruption_does_not_present_old_state_as_current(product_ca
     assert result['prices'] is None
     assert all(f['status'] == 'unavailable' for f in result['cdv2']['facts'])
     assert result['cdv2']['trend_state']['week' if frequency == '1w' else 'day'] == 'unknown'
+    assert result['cdv2']['presentation']['first_action']['level'] == 'unknown'
 
 
 @pytest.mark.parametrize('frequency', ['1d', '1w'])
@@ -1569,3 +1573,40 @@ def test_cdv2_channel_preserves_same_owner_physical_warmup(product_cases):
     layer = build_trend_channel_layer(tuple(f.bar for f in frames), (last.bar,))
     assert result['prices']['shared']['target']['raw'] == format(layer.points[-1].upper, 'f')
     assert result['prices']['shared']['absorb']['raw'] == format(layer.points[-1].lower, 'f')
+
+
+def test_compact_reference_does_not_claim_decoded_bar_counts(product_cases):
+    from dataclasses import replace
+    from app.market_data.newow.product_service import _dependency_proof
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    reader, query, fake = product_cases.paged_reader(prefix_bars=16, frequency='60m')
+    read = reader.load(query, fake.as_of)
+    compact = replace(read, bars_by_frequency={read.frequency: ()},
+                      reference_source_evidence_sha256='a' * 64,
+                      sources={frequency: replace(source, raw_bar_count=0, effective_bar_count=0,
+                                                  no_trade_bar_count=0)
+                               for frequency, source in read.sources.items()})
+    decoded_proof = {**_dependency_proof(read), 'canonical-source|60m|cutoff': 'b' * 64}
+    compact_proof = {**_dependency_proof(compact), 'canonical-source|60m|cutoff': 'b' * 64}
+    assert SnapshotCache._proofs_compatible(decoded_proof, compact_proof)
+
+
+def test_saved_minute_reference_admission_does_not_starve_current_calculation(monkeypatch):
+    from datetime import UTC, datetime
+    from app.market_data.newow.product_service import ProductServiceQuery
+    now = datetime(2026, 9, 24, 7, tzinfo=UTC)
+    calculation = HeavyResourceGate(max_running=1, max_waiting=0)
+    reference = HeavyResourceGate(max_running=1, max_waiting=0)
+    service = NewowProductService(lambda *_: None, heavy_gate=calculation,
+        persisted_reference_gate=reference, persisted_reference=lambda *_: None, now=lambda:now)
+    accepted = object()
+    monkeypatch.setattr(service, '_query_admitted', lambda *_: accepted)
+    with calculation.acquire():
+        assert service._query(ProductServiceQuery('rb','trend','1m',section='reference',as_of=now),now,lambda:False) is accepted
+        with pytest.raises(NewowResourceBusy):
+            service._query(ProductServiceQuery('rb','trend','1m',section='comparator',as_of=now),now,lambda:False)
+    with reference.acquire():
+        with pytest.raises(NewowResourceBusy):
+            service._query(ProductServiceQuery('rb','trend','1m',section='reference',as_of=now),now,lambda:False)
+        assert service._query(ProductServiceQuery('rb','trend','1m',section='comparator',as_of=now),now,lambda:False) is accepted
+    assert reference.running == calculation.running == 0

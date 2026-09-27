@@ -22,6 +22,7 @@ from guiyi_quant.newow.product_contracts import (
     EvidenceStatus,
     FeatureRuntimeStatus,
     ProductFrequency,
+    LEGACY_PRODUCT_FREQUENCIES,
     ProductStrategy,
     TradeEligibility,
 )
@@ -706,7 +707,7 @@ def summarize_readiness(
         (product, strategy, frequency.value)
         for product in products
         for strategy in _STRATEGIES
-        for frequency in ProductFrequency
+        for frequency in LEGACY_PRODUCT_FREQUENCIES
     }
 
     if not isinstance(report, dict):

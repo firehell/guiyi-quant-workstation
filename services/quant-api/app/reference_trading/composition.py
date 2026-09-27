@@ -180,6 +180,7 @@ def open_historical_reference_components(*, session_factory=None):
                 ),
             )
 
+        from app.reference_trading.newow_fusion import SavedFusionSources
         reader = MarketDataHistoricalInputReader(
             newow_reader=newow_for,
             subing_service=SubingReferenceService(
@@ -188,6 +189,9 @@ def open_historical_reference_components(*, session_factory=None):
                 active_products=products,
             ),
             read_guard=guard,
+            pin_verified_inputs=True,
+            compact_intraday_inputs=True,
+            fusion_sources=SavedFusionSources(factory),
         )
         repository = ReferenceRepository(factory)
         planner = HistoricalReferencePlanner(reader, repository=repository)

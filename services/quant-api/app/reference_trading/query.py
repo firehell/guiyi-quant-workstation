@@ -112,6 +112,8 @@ class HistoricalReferenceQuery:
                 row.frequency in _CAPABILITIES.get(row.strategy_code, ())
                 and _canonical_identity(identity)
             )
+        if row.strategy_code == "newow_dual_fusion":
+            return False
         if row.recording_mode != "forward_observation" or not identity.observation_policy_version:
             return False
         if row.strategy_code == "htdy":
@@ -321,9 +323,14 @@ class HistoricalReferenceQuery:
         self, stream_id: str, *, since: date, through: date,
         cutoff: datetime | None = None, limit: int = 50,
         snapshot_token: str | None = None, cursor: str | None = None,
+        entry_since_only: bool = False,
+        _complete_budget: int | None = None,
     ) -> dict[str, object]:
         self._window(since, through, cutoff)
-        if type(limit) is not int or not 1 <= limit <= 200:
+        if type(entry_since_only) is not bool:
+            raise QueryConflict("QUERY_INVALID")
+        cursor_kind = "record_trades" if entry_since_only else "trades"
+        if type(limit) is not int or not 1 <= limit <= (_complete_budget or 200):
             raise QueryConflict("QUERY_INVALID")
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
             row = self._resolve(session, stream_id)
@@ -332,9 +339,15 @@ class HistoricalReferenceQuery:
                 encoded=snapshot_token,
             )
             self._assert_presentations(session, snapshot)
+            if _complete_budget is not None and (
+                type(_complete_budget) is not int or not 1 <= _complete_budget <= 100_000
+                or limit != _complete_budget or cursor is not None or not entry_since_only
+                or row.recording_mode != "historical_replay"
+            ):
+                raise QueryConflict("QUERY_INVALID")
             after = None
             if cursor is not None:
-                value = _decode(cursor, kind="trades")
+                value = _decode(cursor, kind=cursor_kind)
                 if set(value) != {"kind", "snapshot", "bar_end", "trade_id"} or value["snapshot"] != token:
                     raise QueryConflict("CURSOR_CONFLICT")
                 instant = _instant(value["bar_end"])
@@ -344,10 +357,10 @@ class HistoricalReferenceQuery:
             if row.recording_mode == "forward_observation":
                 page = self._repository.query_historical_trades(
                     session, snapshot, since=since, through=through,
-                    cutoff=cutoff, limit=limit, after_key=after, forward=True,
+                    cutoff=cutoff, limit=limit, after_key=after, forward=True, entry_since_only=entry_since_only,
                 )
                 next_cursor = None if page.next_key is None else _encode({
-                    "kind": "trades", "snapshot": token,
+                    "kind": cursor_kind, "snapshot": token,
                     "bar_end": page.next_key[0].isoformat(),
                     "trade_id": page.next_key[1],
                 })
@@ -373,10 +386,11 @@ class HistoricalReferenceQuery:
             page = self._repository.query_historical_trades(
                 session, snapshot, since=since, through=through,
                 cutoff=cutoff, limit=limit, after_key=after,
-                initial_interruptions=interruption_keys,
+                initial_interruptions=interruption_keys, entry_since_only=entry_since_only,
+                complete_budget=_complete_budget,
             )
             next_cursor = None if page.next_key is None else _encode({
-                "kind": "trades", "snapshot": token,
+                "kind": cursor_kind, "snapshot": token,
                 "bar_end": page.next_key[0].isoformat(),
                 "trade_id": page.next_key[1],
             })
@@ -404,6 +418,13 @@ class HistoricalReferenceQuery:
                 "status": row.health,
                 "expected_through": None, "freshness": "unknown",
             }
+
+    def complete_trades(self, stream_id, *, since, through, cutoff, snapshot_token, budget=100_000):
+        page = self.trades(stream_id, since=since, through=through, cutoff=cutoff,
+            snapshot_token=snapshot_token, limit=budget, entry_since_only=True, _complete_budget=budget)
+        if page["next_cursor"] is not None:
+            raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
+        return page["items"]
 
     @staticmethod
     def _boundary_keys(
@@ -447,11 +468,14 @@ class HistoricalReferenceQuery:
             return {}
         requested = {item.entry_action_id for item in trades}
         exits = {item.exit_action_id for item in trades if item.exit_action_id is not None}
-        actions = session.execute(select(ReferenceActionRow).where(
-            ReferenceActionRow.stream_id == snapshot.stream_id,
-            ReferenceActionRow.origin_revision_id == snapshot.revision_id,
-            ReferenceActionRow.source_action_id.in_(requested | exits),
-        )).scalars().all()
+        actions = []
+        keys = sorted(requested | exits)
+        for start in range(0, len(keys), 1000):
+            actions.extend(session.execute(select(ReferenceActionRow).where(
+                ReferenceActionRow.stream_id == snapshot.stream_id,
+                ReferenceActionRow.origin_revision_id == snapshot.revision_id,
+                ReferenceActionRow.source_action_id.in_(keys[start:start + 1000]),
+            )).scalars().all())
         if {action.source_action_id for action in actions} != requested | exits:
             raise QueryConflict("TRADE_ACTION_CORRUPT")
         batches = session.execute(select(ReferenceBatch).where(
@@ -559,6 +583,81 @@ class HistoricalReferenceQuery:
                     "prior_mark_change_pct": str(item.reference_return),
                 })
         return details
+
+    def presentation_facts(
+        self, stream_id: str, *, snapshot_token: str, since: date, through: date,
+        cutoff: datetime | None, kinds: tuple[str, ...], max_points: int = 100_000,
+        check_cancelled=None,
+    ) -> dict[str, list[dict[str, object]]]:
+        """One bounded scan of saved facts, with daily availability aggregation.
+
+        Initial holdings may need facts before the record window. The snapshot
+        retains its original window identity; this scan never extends its cutoff
+        or through day and does not recalculate any strategy.
+        """
+        self._window(since, through, cutoff)
+        if not kinds or not set(kinds) <= {"availability", "boundary", "hint", "action"}:
+            raise QueryConflict("QUERY_INVALID")
+        if type(max_points) is not int or not 1 <= max_points <= 200_000:
+            raise QueryConflict("QUERY_INVALID")
+        saved = _decode(snapshot_token, kind="snapshot")
+        saved_since, saved_through = _day(saved.get("since")), _day(saved.get("through"))
+        if through > saved_through or cutoff != _instant(saved.get("cutoff")):
+            raise QueryConflict("SNAPSHOT_CONFLICT")
+        result = {kind: [] for kind in kinds}
+        daily = {}
+        count = 0
+        with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
+            row = self._resolve(session, stream_id)
+            snapshot, _, _ = self._snapshot(
+                session, row, since=saved_since, through=saved_through,
+                cutoff=cutoff, encoded=snapshot_token,
+            )
+            self._assert_presentations(session, snapshot)
+            batches = session.execute(select(ReferenceBatch.source_evidence).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == snapshot.revision_id,
+                ReferenceBatch.kind == "calculation", ReferenceBatch.seq <= snapshot.seq,
+                ReferenceBatch.source_evidence["presentation_v1"]["last_day"].as_string() >= since.isoformat(),
+                ReferenceBatch.source_evidence["presentation_v1"]["first_day"].as_string() <= through.isoformat(),
+            ).order_by(ReferenceBatch.seq).execution_options(yield_per=32)).scalars()
+            for evidence in batches:
+                if check_cancelled is not None:
+                    check_cancelled()
+                for point in require_envelope(evidence.get("presentation_v1")):
+                    kind = point.get("kind")
+                    if kind not in result:
+                        continue
+                    value = point.get("value")
+                    if not isinstance(value, dict):
+                        raise QueryConflict("PRESENTATION_CORRUPT")
+                    instant = _instant(value.get("bar_end"))
+                    if instant is None:
+                        raise QueryConflict("PRESENTATION_CORRUPT")
+                    day = _day(point.get("trading_day"))
+                    if not since <= day <= through or cutoff is not None and instant > cutoff:
+                        continue
+                    if kind == "hint":
+                        known = _instant(value.get("known_at"))
+                        if known is None:
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        if cutoff is not None and known > cutoff:
+                            continue
+                    if kind == "availability":
+                        key = (day, value.get("physical_contract"), value.get("segment_id"), value.get("calculation_segment_id"))
+                        if any(not isinstance(item, str) or not item for item in key[1:]):
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        prior = daily.get(key)
+                        status = value["status"] if prior is None or prior["value"]["status"] == "ready" else prior["value"]["status"]
+                        daily[key] = {**point, "value": {**value, "status": status, "last_status": value["status"]}}
+                    else:
+                        result[kind].append(point)
+                        count += 1
+                    if count + len(daily) > max_points:
+                        raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
+        if "availability" in result:
+            result["availability"] = sorted(daily.values(), key=lambda point: point["value"]["bar_end"])
+        return result
 
     def signals(
         self, stream_id: str, *, since: date, through: date,

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
+    InputQualityPolicy,
     REFERENCE_MODEL_VERSION as NEWOW_REFERENCE_MODEL_VERSION,
     futures_adaptation_version,
 )
@@ -105,13 +106,15 @@ def _publish_all(catalog, store, frequency: str, bars: tuple[CanonicalBar, ...])
 
 
 def _newow_stream(strategy: ProductStrategy, frequency: ProductFrequency) -> StreamIdentity:
-    identity = build_product_identity("rb", strategy, frequency)
+    identity = build_product_identity("rb", strategy, frequency, input_quality_policy=(
+        InputQualityPolicy.DAILY_V2 if frequency is ProductFrequency.DAILY else InputQualityPolicy.V1
+    ))
     return StreamIdentity(
         strategy_code=f"newow_{strategy.value}",
         formula_versions=identity.formula_versions,
         profile_id=identity.profile_id,
         reference_model_version=NEWOW_REFERENCE_MODEL_VERSION,
-        futures_adaptation_version=futures_adaptation_version(frequency.value),
+        futures_adaptation_version=futures_adaptation_version(frequency.value, identity.input_quality_policy),
         product="rb",
         frequency=frequency.value,
         series_kind="actual_dominant",
@@ -244,26 +247,42 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
         )
         newow_reader = NewowProductReader(
             market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
+            input_quality_policy=InputQualityPolicy.DAILY_V2,
         )
         reader = MarketDataHistoricalInputReader(
-            newow_reader=newow_reader,
+            newow_reader=lambda identity: NewowProductReader(
+                market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
+                input_quality_policy=(InputQualityPolicy.DAILY_V2
+                                      if identity.frequency == "1d"
+                                      else InputQualityPolicy.V1),
+            ),
             subing_service=subing_service,
         )
         for frequency in (ProductFrequency.DAILY, ProductFrequency.WEEKLY):
+            newow_reader = NewowProductReader(
+                market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
+                input_quality_policy=(InputQualityPolicy.DAILY_V2
+                                      if frequency is ProductFrequency.DAILY
+                                      else InputQualityPolicy.V1),
+            )
             full = newow_reader.load(NewowProductQuery(
                 "rb", ProductStrategy.TREND, frequency, first, last,
                 performance_since=first, performance_through=last, as_of=as_of,
             ), as_of)
             prior, expected = full.replay_bars[-2:]
+            physical_method = ("read_physical_daily_quality_union"
+                               if frequency is ProductFrequency.DAILY
+                               else "read_physical_daily_quality")
+            quality_method = "read_catalog_partition_quality"
             with patch.object(
-                market_data, "read_physical_daily_quality",
-                wraps=market_data.read_physical_daily_quality,
+                market_data, physical_method,
+                wraps=getattr(market_data, physical_method),
             ) as physical_read, patch.object(
                 store, "read_catalog_partition",
                 wraps=store.read_catalog_partition,
             ) as partition_read, patch.object(
-                store, "read_catalog_partition_quality",
-                wraps=store.read_catalog_partition_quality,
+                store, quality_method,
+                wraps=getattr(store, quality_method),
             ) as quality_partition_read:
                 incremental = newow_reader.forward_incremental_bar(
                     product="rb", frequency=frequency, after=prior.bar.bar_end,
@@ -479,6 +498,7 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
             return NewowProductReader(
                 market_data, coverage=coverage, active_products=("rb",),
                 context_frequencies=context, cancelled=cancelled, now=lambda: as_of,
+                input_quality_policy=InputQualityPolicy.DAILY_V2,
             )
 
         newow_query = ProductServiceQuery(
@@ -487,14 +507,14 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
             performance_since=first, performance_through=last, as_of=as_of,
         )
         legacy_newow = _product_response(NewowProductService(
-            newow_reader_factory, now=lambda: as_of,
+            newow_reader_factory, now=lambda: as_of, quality_policy=InputQualityPolicy.DAILY_V2,
         ).query(newow_query))
         persisted_newow = _product_response(NewowProductService(
-            newow_reader_factory, now=lambda: as_of,
+            newow_reader_factory, now=lambda: as_of, quality_policy=InputQualityPolicy.DAILY_V2,
             persisted_reference=PersistedNewowReference(factory).section,
         ).query(newow_query))
         bounded_newow = _product_response(NewowProductService(
-            newow_reader_factory, now=lambda: as_of,
+            newow_reader_factory, now=lambda: as_of, quality_policy=InputQualityPolicy.DAILY_V2,
             persisted_reference=PersistedNewowReference(factory).section,
         ).query(replace(
             newow_query, performance_through=prior_day, as_of=prior_as_of,

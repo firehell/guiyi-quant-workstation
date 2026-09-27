@@ -566,3 +566,15 @@ test('a warming resource preserves current calculable data and discloses only ol
   })
   assert.match(resolveNewowAuxiliaryRenderState('loading', true, null, message).message!, /正在刷新/)
 })
+
+ test('all four intraday periods preserve distinct UTC bar ends across futures night sessions', () => {
+  for (const frequency of ['1m', '15m', '30m', '60m'] as const) {
+    const first = chartMarkerTime('2026-09-24T13:01:00Z', frequency, '2026-09-25')
+    const second = chartMarkerTime('2026-09-24T13:02:00Z', frequency, '2026-09-25')
+    assert.equal(first, Date.parse('2026-09-24T13:01:00Z') / 1000)
+    assert.notEqual(first, second)
+  }
+  for (const frequency of ['1d', '1w'] as const) {
+    assert.deepEqual(chartMarkerTime('2026-09-24T13:01:00Z', frequency, '2026-09-25'), { year: 2026, month: 9, day: 25 })
+  }
+})

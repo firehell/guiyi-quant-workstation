@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-ProductFrequencyValue = Literal["1w", "1d", "60m"]
+ProductFrequencyValue = Literal["1w", "1d", "60m", "1m", "15m", "30m"]
 ProductStrategyValue = Literal["trend", "oscillation", "main_rise"]
 RuntimeStatusValue = Literal[
     "ready", "warming", "unavailable", "not_applicable", "evidence_required"
@@ -285,6 +285,7 @@ class FusionTradeOut(_Out):
     exit_source: Literal["trend", "oscillation"] | None
     exit_signal_id: str | None
     exit_bar_end: datetime | None
+    exit_trading_day: date | None = Field(default=None, exclude_if=lambda value: value is None)
     exit_reference_price: str | None
     status: Literal["OPEN", "CLOSED", "ROLLOVER_INTERRUPTED", "DATA_INTERRUPTED"]
     holding_bars: int
@@ -297,6 +298,17 @@ class FusionTradeOut(_Out):
 
 
 class FusionComparisonOut(_Out):
+    fusion_input_sha256: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    next_cursor: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    record_since: date | None = Field(default=None, exclude_if=lambda value: value is None)
+    record_through: date | None = Field(default=None, exclude_if=lambda value: value is None)
+    snapshot_schema: Literal["newow_fusion_reference_snapshot_v2"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    reference_revision: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    summary: FusionGroupOut | None = Field(default=None, exclude_if=lambda value: value is None)
+    curve: list[FusionTradeOut] | None = Field(default=None, exclude_if=lambda value: value is None)
+    source_profiles: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
+    product: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    frequency: ProductFrequencyValue | None = Field(default=None, exclude_if=lambda value: value is None)
     reference_model_version: str
     reference_input_sha256: str
     performance_since: date
@@ -929,6 +941,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v20",
         "newow_product_capabilities_v21",
         "newow_product_capabilities_v22",
+        "newow_product_capabilities_v23",
     ]
     release_stage: Literal[
         "daily",
@@ -937,6 +950,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "pd_pt_hourly_candidate",
         "ap_hourly_candidate",
         "daily_weekly",
+        "rb_intraday_candidate",
     ]
     open_frequencies: list[ProductFrequencyValue]
     weekly_products: list[str] | None = None

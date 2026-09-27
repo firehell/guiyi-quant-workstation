@@ -40,26 +40,19 @@ function expectExactQuery(request, expected) {
   expect(Object.fromEntries([...request.url.searchParams.entries()].sort())).toEqual(Object.fromEntries(Object.entries(expected).sort()))
 }
 
-async function clickLastBarMarker(page, expectedSignalId, verticalRatios) {
-  const chart = page.getByTestId('newow-product-chart-stage')
-  await chart.evaluate((element) => element.scrollIntoView({ block: 'center' }))
-  if (await page.getByRole('dialog').isVisible()) await page.keyboard.press('Escape')
-  const box = await chart.locator('tr').filter({ has: page.locator('td:nth-child(3)') }).first().boundingBox()
-  if (box === null) throw new Error('chart has no bounding box')
-  for (const x of [box.x + box.width * 0.476, box.x + box.width * 0.48, box.x + box.width * 0.485, box.x + box.width - 98, box.x + box.width - 94, box.x + box.width - 102]) {
-    for (const ratio of verticalRatios) {
-      await page.mouse.click(x, box.y + box.height * ratio)
-      if (await chart.getAttribute('data-selected-signal-id') === expectedSignalId) return
-    }
-  }
-  throw new Error(`marker ${expectedSignalId} was not clickable`)
+async function selectLatestAction(page, expectedSignalId) {
+  const trigger = page.locator('.newow-summary__facts').getByRole('button')
+  await expect(trigger).toHaveCount(1)
+  await trigger.click()
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', expectedSignalId)
+  await expect(page.getByRole('dialog')).toBeVisible()
 }
 
 test('main-rise initial clear stays action-only and explains that no entry exists', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, { initialClear: true })
   await page.goto(newowRoute('main_rise', '1d'))
 
-  await clickLastBarMarker(page, 'main_rise-1d-initial-clear-no-entry', [0.25, 0.30, 0.35, 0.40, 0.45])
+  await selectLatestAction(page, 'main_rise-1d-initial-clear-no-entry')
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('历史主动作 清仓（无入场）')
   await expect(page.locator('.newow-summary__facts')).toContainText('清仓（无入场）')
@@ -130,7 +123,7 @@ test('chart failure stays local while other views and the real Decimal quote wir
   }
 })
 
-test('main chart exposes same-as_of retry and explicit refresh-current without collateral clearing', async ({ page }) => {
+test('chart error recovery retries the same as_of while the reference error remains local', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, {
     busy: 'trend:1d:reference',
     genericSeries: 'failed-once',
@@ -143,7 +136,7 @@ test('main chart exposes same-as_of retry and explicit refresh-current without c
   await page.goto(newowRoute())
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'unavailable')
   await expect(page.locator('.quote-header__price strong')).toHaveText('—')
-  await page.getByRole('button', { name: '刷新日线', exact: true }).click()
+  await page.getByRole('button', { name: '刷新当前', exact: true }).click()
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   expect(productRequests(fixture, 'chart')).toHaveLength(2)
   expect(productRequests(fixture, 'chart').map(item => item.url.searchParams.get('as_of'))).toEqual([NEWOW_AS_OF, NEWOW_AS_OF])
@@ -151,18 +144,17 @@ test('main chart exposes same-as_of retry and explicit refresh-current without c
   await showReference(page)
   await expect(page.locator('.newow-reference')).toContainText('NEWOW_RESOURCE_BUSY')
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
-  await page.getByRole('button', { name: '刷新当前', exact: true }).click()
-  await expect.poll(() => productRequests(fixture, 'chart').length).toBe(3)
-  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  // Refresh-current is an error recovery control, not a permanent ready-page action.
+  await expect(page.getByRole('button', { name: '刷新当前', exact: true })).toHaveCount(0)
   await expect(page.locator('.quote-header__price strong')).toHaveText('106.3')
-  // Initial quote failure, the explicit daily retry, and refresh-current each
-  // preserve their own bounded quote request; no hidden polling is permitted.
-  expect(fixture.requests.filter(item => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(3)
+  expect(productRequests(fixture, 'chart')).toHaveLength(2)
+  expect(fixture.requests.filter(item => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(2)
+  expect(productRequests(fixture, 'reference').filter(item => !item.url.searchParams.has('history_limit'))).toHaveLength(1)
   expect(productRequests(fixture, 'chart').at(-1).url.searchParams.get('as_of')).toBe(NEWOW_AS_OF)
   assertNoUnexpectedRequests(fixture)
 })
 
-test('dense same-Bar hints use the disclosure and exact historical facts while native actions remain clickable', async ({ page }) => {
+test('dense same-Bar hints use the disclosure and exact historical facts while the latest action remains accessible through its summary', async ({ page }) => {
   await page.addInitScript(() => {
     window.__newowPaintedMarkerText = []
     const fillText = CanvasRenderingContext2D.prototype.fillText
@@ -189,7 +181,7 @@ test('dense same-Bar hints use the disclosure and exact historical facts while n
   await page.goto(newowRoute('oscillation', '1d'))
   const chart = page.getByTestId('newow-product-chart-stage')
   await expect(chart).toHaveAttribute('data-auxiliary-state', 'ready')
-  await expect(chart.locator('[data-action-id="oscillation-1d-build-open"]')).toHaveAttribute('title', /参考价/)
+  await expect(chart.locator('[data-action-id="oscillation-1d-build-open"]')).toHaveAttribute('data-reference-price', '104.3000')
   expect(await page.evaluate(() => window.__newowPaintedMarkerText.filter(text => /^D[1-6]$/.test(text)))).toEqual([])
   const entries = chart.locator('[data-hint-id]')
   await expect(entries).toHaveCount(24)
@@ -210,26 +202,25 @@ test('dense same-Bar hints use the disclosure and exact historical facts while n
   await page.keyboard.press('Escape')
   await expect(selected).toBeFocused()
   await chart.locator('.newow-product-chart-stage__legend summary').filter({ hasText: /^过程提示$/ }).click()
-  await clickLastBarMarker(page, 'oscillation-1d-clear-same', [0.30, 0.32, 0.34, 0.36])
-  await expect(dialog).toContainText('历史主动作 参考清仓')
-  await page.keyboard.press('Escape')
-  await clickLastBarMarker(page, 'oscillation-1d-build-open', [0.68, 0.70, 0.72, 0.74, 0.76])
+  await expect(chart.locator('[data-action-id="oscillation-1d-clear-same"]')).toHaveAttribute('data-reference-price', '109.5163')
+  await selectLatestAction(page, 'oscillation-1d-build-open')
   await expect(dialog).toContainText('历史主动作 参考建仓')
+  await expect(dialog).toContainText('104.3')
   expect(productRequests(fixture, 'explanation')).toHaveLength(0)
   assertNoUnexpectedRequests(fixture)
 })
 
-test('same-Bar CLEAR then BUILD actions remain separately locatable', async ({ page }) => {
+test('same-Bar CLEAR then BUILD identities and prices remain separate and latest BUILD is selectable', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute('oscillation', '1d'))
   const chart = page.getByTestId('newow-product-chart-stage')
   await expect(chart).toHaveAttribute('data-action-ids', /oscillation-1d-clear-same,oscillation-1d-build-open/)
-  await clickLastBarMarker(page, 'oscillation-1d-clear-same', [0.30, 0.32, 0.34, 0.36])
-  await expect(chart).toHaveAttribute('data-selected-signal-id', 'oscillation-1d-clear-same')
-  await expect(page.getByRole('dialog')).toContainText('历史主动作 参考清仓')
-  await page.keyboard.press('Escape')
-  await clickLastBarMarker(page, 'oscillation-1d-build-open', [0.68, 0.70, 0.72, 0.74, 0.76])
-  await expect(chart).toHaveAttribute('data-selected-signal-id', 'oscillation-1d-build-open')
+  const clear = chart.locator('[data-action-id="oscillation-1d-clear-same"]')
+  const build = chart.locator('[data-action-id="oscillation-1d-build-open"]')
+  await expect(clear).toHaveAttribute('data-reference-price', '109.5163')
+  await expect(build).toHaveAttribute('data-reference-price', '104.3000')
+  expect(await clear.getAttribute('data-reference-time')).toBe(await build.getAttribute('data-reference-time'))
+  await selectLatestAction(page, 'oscillation-1d-build-open')
   await expect(page.getByRole('dialog')).toContainText('历史主动作 参考建仓')
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).not.toBeVisible()
@@ -312,7 +303,8 @@ test('strategy controls clear prior selection while hourly stays deferred', asyn
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute())
   await showReference(page)
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-open/ }).click()
+  await selectLatestAction(page, 'trend-1d-build-open')
+  await page.keyboard.press('Escape')
   const chart = page.getByTestId('newow-product-chart-stage')
   await expect(chart).toHaveAttribute('data-selected-signal-id', 'trend-1d-build-open')
   await expect(chart).toHaveAttribute('data-channel-point-count', '24')
@@ -327,8 +319,12 @@ test('strategy controls clear prior selection while hourly stays deferred', asyn
   assertNoUnexpectedRequests(fixture)
 })
 
-test('six flat choices reuse the compatible Newow chart host and replace strategy overlays', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page)
+test('six flat choices reuse the chart host, show independent dual tracks and clear them on exit', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { dualMarket: true, onProductRequest: async ({ route, url }) => {
+    if (url.searchParams.get('include_fusion') !== 'true') return
+    await route.fulfill({ status: 503, json: { detail: { code: 'NEWOW_RESOURCE_BUSY' } } })
+    return 'handled'
+  } })
   await page.goto(newowRoute('trend', '1d'))
   const tabs = page.getByRole('tablist', { name: '分析选项' }).getByRole('tab')
   await expect(tabs).toHaveCount(6)
@@ -345,12 +341,24 @@ test('six flat choices reuse the compatible Newow chart host and replace strateg
   await expect(chart).toHaveAttribute('data-channel-point-count', '24')
   await expect(page.locator('.quote-header__price strong')).toHaveText(quote)
 
-  await page.getByRole('tab', { name: '主升浪', exact: true }).click()
-  await expect(chart).toHaveAttribute('data-strategy', 'main_rise')
+  await page.getByRole('tab', { name: '双策略', exact: true }).click()
+  await expect(chart).toHaveAttribute('data-strategy', 'trend')
   await expect(chart).toHaveAttribute('data-host-sentinel', 'same-host')
-  await expect(chart).toHaveAttribute('data-band-area-count', '24')
-  await expect(chart).toHaveAttribute('data-channel-point-count', '0')
+  await expect(chart).toHaveAttribute('data-comparison-active', 'true')
+  for (const origin of ['trend', 'oscillation']) {
+    await expect(chart.locator(`[data-origin-strategy="${origin}"]`).first()).toBeVisible()
+  }
+  await page.locator('.fusion-panel').scrollIntoViewIfNeeded()
+  await expect(page.locator('.fusion-panel [role="alert"]')).toHaveText('融合参考读取失败，请重试。')
+  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('include_fusion') === 'true')).toHaveLength(1)
+  expect(productRequests(fixture, 'chart').some(item => item.strategy === 'main_rise')).toBe(false)
 
+  await page.getByRole('tab', { name: '趋势策略', exact: true }).click()
+  await expect(chart).toHaveAttribute('data-host-sentinel', 'same-host')
+  await expect(chart).toHaveAttribute('data-comparison-active', 'false')
+  await expect(chart.locator('[data-origin-strategy]')).toHaveCount(0)
+  await expect(page.locator('.fusion-panel')).toHaveCount(0)
+  await expect(page.locator('.quote-header__price strong')).toHaveText(quote)
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(tabs).toHaveCount(6)
   expect(await page.getByRole('tablist', { name: '分析选项' }).evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
@@ -358,34 +366,27 @@ test('six flat choices reuse the compatible Newow chart host and replace strateg
   assertNoUnexpectedRequests(fixture)
 })
 
-test('reference pagination exposes OPEN, CLOSED, interrupted, negative and initial rows without inventing zero metrics', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page)
+test('reference pagination exposes OPEN, CLOSED, interrupted and negative rows within the fixed records window without inventing zero metrics', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { recordsHistory: true })
   await page.goto(newowRoute())
   await showReference(page)
   await expect(page.locator('article[data-reference-category="open"]')).toBeVisible()
   await expect(page.locator('article[data-reference-category="closed"]')).toBeVisible()
   await page.getByRole('button', { name: '加载更多参考历史' }).click()
   await expect(page.locator('article[data-reference-category="interrupted"]')).toBeVisible()
-  await expect(page.locator('article[data-reference-category="interrupted"] .newow-return-badge')).toHaveText('-10%')
-  await expect(page.locator('article[data-reference-initial="true"]')).toBeVisible()
+  await expect(page.locator('article[data-reference-category="interrupted"] .newow-reference__record-return')).toContainText('-10%')
+  await expect(page.locator('article[data-reference-initial="true"]')).toHaveCount(0)
   const openRow = page.locator('article[data-reference-category="open"]')
   await expect(openRow.locator('header')).toContainText('2026-08-03 → 至估值日')
-  await openRow.getByRole('button', { name: /展开参考记录/ }).click()
-  await expect(openRow).toContainText('trend-1d-build-open')
-  await expect(openRow).toContainText(/参考建仓\s*▲\s*106/)
-  await expect(openRow).toContainText('清仓 ID —')
+  await expect(openRow).toContainText(/建仓\s*买入\s*106/)
   await expect(openRow).toContainText('104.675')
-  const closedRow = page.locator('article[data-reference-category="closed"][data-reference-initial="false"]')
-  await closedRow.getByRole('button', { name: /展开参考记录/ }).click()
-  await expect(closedRow).toContainText('trend-1d-build-closed')
-  await expect(closedRow).toContainText(/参考建仓\s*▲\s*104/)
-  await expect(closedRow).toContainText('trend-1d-clear')
-  await expect(closedRow).toContainText(/参考清仓\s*▼\s*109\.3061/)
+  const closedRow = page.locator('#reference-trade-trend-1d-closed')
+  await expect(closedRow).toContainText(/建仓\s*买入\s*104/)
+  await expect(closedRow).toContainText(/清仓\s*卖出\s*109\.3061/)
   const interruptedRow = page.locator('article[data-reference-category="interrupted"]')
-  await interruptedRow.getByRole('button', { name: /展开参考记录/ }).click()
-  await expect(interruptedRow).toContainText('trend-1d-bi')
-  await expect(interruptedRow).toContainText(/参考建仓\s*▲\s*88/)
+  await expect(interruptedRow).toContainText(/建仓\s*买入\s*88/)
   await expect(interruptedRow).toContainText('79.2')
+  await expect(interruptedRow).toContainText('中断浮动不计入已完成收益')
   const summaryBeforeViewport = await page.getByTestId('newow-reference-summary').innerText()
   const stage = page.getByTestId('newow-product-chart-stage')
   const pricePane = stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') }).first().locator('td').nth(1)
@@ -413,67 +414,30 @@ test('reference pagination exposes OPEN, CLOSED, interrupted, negative and initi
   await page.evaluate(scrollY => window.scrollTo(0, scrollY), referenceScrollY)
   await page.getByTestId('newow-reference-summary').scrollIntoViewIfNeeded()
   await page.mouse.move(0, 0)
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
   await expect(page).toHaveScreenshot('newow-desktop-reference.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
   expect(productRequests(fixture, 'reference').at(-1).url.searchParams.get('history_before')).toBe('reference-page-2')
   assertNoUnexpectedRequests(fixture)
 })
 
-test('exact locate loads an unloaded window and never falls back to nearest marker', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page)
+test('curve selection loads its exact older record inside the fixed records window', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { recordsHistory: true })
   await page.goto(newowRoute())
   await showReference(page)
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
   const summaryBefore = await page.getByTestId('newow-reference-summary').innerText()
-  const rowCountBefore = await page.locator('article[data-reference-category]').count()
-  const referenceRequestsBefore = productRequests(fixture, 'reference').length
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-bi')
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-bi')
-  await expect(page.getByRole('button', { name: '返回原记录' })).toBeVisible()
-  await showReference(page)
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-bi')
-  const locate = productRequests(fixture, 'chart').at(-1).url.searchParams
-  expect(locate.get('from')).toBe('2026-01-05')
-  expect(locate.has('performance_since')).toBe(false)
-  await showReference(page)
+  const chartBefore = productRequests(fixture, 'chart').length
+  await page.getByRole('button', { name: /2026-06-30，累计 .*定位参考交易/ }).press('Enter')
+  await expect(page.locator('#reference-trade-trend-1d-initial')).toBeInViewport()
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
   expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
-  await expect(page.locator('article[data-reference-category]')).toHaveCount(rowCountBefore)
-  await page.getByLabel('筛选参考历史').selectOption('closed')
-  await page.getByRole('button', { name: '返回原记录' }).click()
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('原记录不在当前筛选或已加载页')
-  await expect(page.locator('.newow-product-workspace__research')).toBeFocused()
-  expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
-  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
-  expect(productRequests(fixture, 'reference')).toHaveLength(referenceRequestsBefore)
-  assertNoUnexpectedRequests(fixture)
-})
-
-test('rapid reference locates accept only the current request when chart windows resolve out of order', async ({ page }) => {
-  const delayed = []
-  const fixture = await installNewowProductFixtures(page, {
-    onProductRequest: async ({ route, url, section }) => {
-      if (section !== 'chart' || !url.searchParams.has('from')) return undefined
-      delayed.push({ route, from: url.searchParams.get('from') })
-      return 'handled'
-    },
-  })
-  await page.goto(newowRoute())
-  await showReference(page)
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await page.getByRole('button', { name: '定位参考记录 trend-1d-initial 的建仓信号' }).click()
-  await expect.poll(() => delayed.length).toBe(2)
-  expect(delayed.map(({ from }) => from)).toEqual(['2026-01-05', '2025-12-15'])
-
-  await delayed[1].route.fulfill({ json: buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, delayed[1].from) })
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-b0')
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-b0')
-
-  await delayed[0].route.fulfill({ json: buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, delayed[0].from) }).catch(() => {})
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-b0')
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-b0')
+  expect(productRequests(fixture, 'chart')).toHaveLength(chartBefore)
+  const records = productRequests(fixture, 'reference').filter(item => item.url.searchParams.has('history_limit'))
+  expect(records).toHaveLength(2)
+  for (const item of records) {
+    expect(item.url.searchParams.get('history_limit')).toBe('200')
+    expect(item.url.searchParams.get('performance_since')).toBe('2026-06-03')
+    expect(item.url.searchParams.get('performance_through')).toBe('2026-09-03')
+  }
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -491,41 +455,20 @@ test('default completed W1 window remains current on a weekend', async ({ browse
   }
 })
 
-test('auxiliary requests follow the accepted default, located owner, and returned current chart windows', async ({ page }) => {
+test('curve window changes leave records, chart and auxiliary windows unchanged', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute())
-  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(1)
-  let request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
-  expect(request.get('from')).toBe('2025-01-01')
-  expect(request.get('through')).toBe('2026-09-03')
-
   await showReference(page)
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(2)
-  request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
-  expect(request.get('from')).toBe('2026-01-05')
-  expect(request.get('through')).toBe('2026-01-05')
-
-  await page.getByRole('button', { name: '刷新当前', exact: true }).click()
-  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(3)
-  request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
-  expect(request.get('from')).toBe('2025-01-01')
-  expect(request.get('through')).toBe('2026-09-03')
-  assertNoUnexpectedRequests(fixture)
-})
-
-test('absent exact locate stays unavailable without selecting a neighbor or changing performance', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { noAction: true })
-  await page.goto(newowRoute())
-  await showReference(page)
-  const summary = page.getByTestId('newow-reference-summary')
-  const summaryBefore = await summary.innerText()
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByText(/无法按精确信号 trend-1d-bi.*没有跳转到邻近日期/)).toBeVisible()
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', '')
-  expect(await summary.innerText()).toBe(summaryBefore)
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+  const recordsBefore = productRequests(fixture, 'reference').filter(item => item.url.searchParams.has('history_limit')).length
+  const chartBefore = productRequests(fixture, 'chart').length
+  const auxiliaryBefore = productRequests(fixture, 'auxiliary').length
+  await page.getByRole('button', { name: '近3月', exact: true }).click()
+  await expect(page.getByRole('button', { name: '近3月', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.has('history_limit'))).toHaveLength(recordsBefore)
+  expect(productRequests(fixture, 'chart')).toHaveLength(chartBefore)
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(auxiliaryBefore)
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -539,7 +482,9 @@ test('generic series failure does not suppress chart-first Newow or its snapshot
   expect(fixture.requests.filter((item) => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(2)
   expect(productRequests(fixture, 'chart')).toHaveLength(1)
   await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(1)
-  await expect.poll(() => productRequests(fixture, 'reference').length).toBe(1)
+  await expect.poll(() => productRequests(fixture, 'reference').filter(item => !item.url.searchParams.has('history_limit')).length).toBe(1)
+  await expect.poll(() => productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('history_limit') === '200').length).toBe(1)
+  expect(productRequests(fixture, 'reference')).toHaveLength(2)
   expect(productRequests(fixture, 'explanation')).toHaveLength(0)
   expect(productRequests(fixture, 'comparator')).toHaveLength(0)
   assertNoUnexpectedRequests(fixture)
@@ -624,15 +569,23 @@ test('isolated weekly candidate opens three W1 strategies and keeps 60m closed',
   assertNoUnexpectedRequests(fixture)
 })
 
-test('reference cursor generation conflict rebuilds from an unbound first page once', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { cursorConflictOnce: 'trend:1d:reference' })
+test('record cursor conflict preserves accepted records and retries only on explicit request', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { recordsHistory: true, cursorConflictOnce: 'trend:1d:reference' })
   await page.goto(newowRoute())
   await showReference(page)
+  const summaryBefore = await page.getByTestId('newow-reference-summary').innerText()
   await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await expect(page.locator('article[data-reference-category="open"]')).toBeVisible()
-  await expect.poll(() => productRequests(fixture, 'reference').length).toBe(3)
-  expect(productRequests(fixture, 'reference')[2].url.searchParams.has('snapshot_token')).toBe(false)
-  expect(productRequests(fixture, 'reference')[2].url.searchParams.has('history_before')).toBe(false)
+  await expect(page.getByText('近三个月操盘记录暂不可用，请重试。')).toBeVisible()
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+  expect(productRequests(fixture, 'reference')).toHaveLength(3)
+  await page.getByRole('button', { name: '重试记录', exact: true }).click()
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
+  expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
+  expect(productRequests(fixture, 'reference')).toHaveLength(4)
+  const retry = productRequests(fixture, 'reference').at(-1).url.searchParams
+  expect(retry.get('snapshot_token')).toBe('snapshot:trend:1d:fixture-revision-1')
+  expect(retry.get('history_before')).toBe('reference-page-2')
+  expect(retry.get('history_limit')).toBe('200')
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -688,9 +641,10 @@ test('repeated auxiliary 409 stops after one chart rebuild', async ({ page }) =>
   assertNoUnexpectedRequests(fixture)
 })
 
-test('an auxiliary refresh failure cannot retain the prior chart window', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, section, count }) => {
-    if (section === 'auxiliary' && count === 2) {
+test('switching auxiliary after a prior success clears failed facts and explicit retry recovers', async ({ page }) => {
+  let auxiliaryCalls = 0
+  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, section }) => {
+    if (section === 'auxiliary' && ++auxiliaryCalls === 2) {
       await route.fulfill({ status: 429, json: { detail: { code: 'NEWOW_RESOURCE_BUSY' } } })
       return 'handled'
     }
@@ -698,25 +652,36 @@ test('an auxiliary refresh failure cannot retain the prior chart window', async 
   await page.goto(newowRoute())
   const chart = page.getByTestId('newow-product-chart-stage')
   await expect(chart).toHaveAttribute('data-auxiliary-component', 'macd')
-  await showReference(page)
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'stale')
-  await expect(chart).toHaveAttribute('data-auxiliary-state', 'stale')
+  await page.getByRole('button', { name: '主力控盘', exact: true }).click()
   await expect(chart).toHaveAttribute('data-auxiliary-component', '')
+  await expect(page.getByRole('button', { name: '重试指标', exact: true })).toBeVisible()
   expect(productRequests(fixture, 'auxiliary')).toHaveLength(2)
+  await page.getByRole('button', { name: '重试指标', exact: true }).click()
+  await expect(chart).toHaveAttribute('data-auxiliary-component', 'main_force_control')
+  await expect(chart).toHaveAttribute('data-auxiliary-state', 'ready')
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(3)
+  expect(productRequests(fixture, 'chart')).toHaveLength(1)
   assertNoUnexpectedRequests(fixture)
 })
 
 test('reference rebuild remains bounded without requesting the deferred explanation section', async ({ page }) => {
+  let performanceRequests = 0
   const fixture = await installNewowProductFixtures(page, {
-    conflictAt: { 'trend:1d:reference': 2 },
+    onProductRequest: async ({ route, url, section }) => {
+      if (section !== 'reference' || url.searchParams.has('history_limit')) return
+      if (++performanceRequests === 2) {
+        await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' } } })
+        return 'handled'
+      }
+    },
   })
   await page.goto(newowRoute())
   await showReference(page)
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
-  await page.getByRole('button', { name: '应用统计窗口' }).click()
-  await expect.poll(() => productRequests(fixture, 'reference').length).toBe(3)
+  await page.getByRole('button', { name: '近3月', exact: true }).click()
+  await expect.poll(() => performanceRequests).toBe(3)
+  const rebuilt = productRequests(fixture, 'reference').filter(item => !item.url.searchParams.has('history_limit')).at(-1)
+  expect(rebuilt.url.searchParams.has('snapshot_token')).toBe(false)
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'not_requested')
   expect(productRequests(fixture, 'explanation')).toHaveLength(0)
@@ -728,9 +693,12 @@ test('a snapshot conflict rebuilds once while busy and identity mismatch fail cl
   await page.goto(newowRoute())
   await showReference(page)
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
-  expect(productRequests(conflict, 'reference')).toHaveLength(2)
-  expect(productRequests(conflict, 'reference')[0].url.searchParams.get('snapshot_token')).toBeTruthy()
-  expect(productRequests(conflict, 'reference')[1].url.searchParams.has('snapshot_token')).toBe(false)
+  const performance = productRequests(conflict, 'reference').filter(item => !item.url.searchParams.has('history_limit'))
+  expect(performance).toHaveLength(2)
+  await expect.poll(() => productRequests(conflict, 'reference').filter(item => item.url.searchParams.get('history_limit') === '200').length).toBe(1)
+  expect(productRequests(conflict, 'reference')).toHaveLength(3)
+  expect(performance[0].url.searchParams.get('snapshot_token')).toBeTruthy()
+  expect(performance[1].url.searchParams.has('snapshot_token')).toBe(false)
   assertNoUnexpectedRequests(conflict)
 })
 
@@ -784,8 +752,7 @@ test('auxiliary cache, applicability and disclosures remain section-local', asyn
   await page.getByRole('button', { name: '照妖镜', exact: true }).click()
   await page.getByRole('button', { name: '指标解读', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('会重绘')
-  await resetPageScroll(page)
-  await expect(page.locator('.market-navigation__brand')).toBeInViewport()
+  await expect(page.getByRole('dialog')).toBeInViewport()
   await expect(page).toHaveScreenshot('newow-mirror-repaint-disclosure.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: '主力控盘', exact: true }).click()
@@ -817,32 +784,29 @@ test('auxiliary renders warming, unavailable, and daily cup-handle states', asyn
   await notApplicableContext.close()
 })
 
-test('deferred explanation and open comparator remain distinct daily sections', async ({ page }) => {
+test('deferred explanation stays separate from chart, records and optional comparison transport', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute('main_rise', '1d'))
   await showReference(page)
   const chart = page.getByTestId('newow-product-chart-stage')
   const actionIdsBefore = await chart.getAttribute('data-action-ids')
   const openBefore = await page.locator('article[data-reference-category="open"]').innerText()
-  const windowBefore = await page.locator('.newow-reference__window input').evaluateAll((inputs) => inputs.map((input) => input.value))
   await page.getByRole('button', { name: '查看依据', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('尚未开放跨周期综合解释')
-  await expect(page.getByRole('dialog')).toContainText('NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')
-  await expect(page.getByRole('dialog').getByTestId('newow-explanation-panel')).toHaveCount(0)
-  await expect(chart).toHaveAttribute('data-strategy', 'main_rise')
-  await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: '页面比较说明', exact: true }).click()
-  await expect(page.getByTestId('newow-comparator-panel')).toContainText('理论平仓')
-  await page.getByTestId('newow-comparator-panel').scrollIntoViewIfNeeded()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('尚未开放跨周期综合解释')
+  await expect(dialog).toContainText('NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')
+  await expect(dialog.getByTestId('newow-explanation-panel')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '页面比较说明', exact: true })).toHaveCount(0)
+  await expect(dialog).toBeInViewport()
   await expect(page).toHaveScreenshot('newow-main-rise-explanation-evidence.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
   expect(productRequests(fixture, 'explanation')).toHaveLength(0)
-  expect(productRequests(fixture, 'comparator')).toHaveLength(1)
-  expectExactQuery(productRequests(fixture, 'comparator')[0], { product: 'rb', strategy: 'main_rise', frequency: '1d', series_kind: 'actual_dominant', section: 'comparator', as_of: NEWOW_AS_OF, snapshot_token: 'snapshot:main_rise:1d:fixture-revision-1' })
+  expect(productRequests(fixture, 'comparator')).toHaveLength(0)
+  await page.keyboard.press('Escape')
   await showReference(page)
   expect(await page.locator('article[data-reference-category="open"]').innerText()).toBe(openBefore)
-  expect(await page.locator('.newow-reference__window input').evaluateAll((inputs) => inputs.map((input) => input.value))).toEqual(windowBefore)
   expect(await chart.getAttribute('data-action-ids')).toBe(actionIdsBefore)
-  expect(productRequests(fixture, 'reference')).toHaveLength(1)
+  expect(productRequests(fixture, 'reference').filter(item => !item.url.searchParams.has('history_limit'))).toHaveLength(1)
+  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('history_limit') === '200')).toHaveLength(1)
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -858,30 +822,39 @@ test('replacement disclosure controls support keyboard focus', async ({ page }) 
   assertNoUnexpectedRequests(fixture)
 })
 
-test('dense action nodes stay micro until selection expands the exact historical fact', async ({ page }) => {
+test('dense actions retain every identity while visible callouts stay bounded and collision free', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const fixture = await installNewowProductFixtures(page, { denseActions: 100 })
   await page.goto(newowRoute('trend', '1d'))
   const stage = page.getByTestId('newow-product-chart-stage')
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  const ids = (await stage.getAttribute('data-action-ids')).split(',')
+  expect(ids).toEqual(Array.from({ length: 100 }, (_, i) => `dense-${i % 2 ? 'clear' : 'build'}-${Math.floor(i / 2)}`))
   const labels = stage.locator('.newow-product-chart-stage__action-label')
-  await expect(labels).toHaveCount(100)
-  const micro = await labels.evaluateAll(nodes => {
-    const node = nodes.find(node => node.getBoundingClientRect().width <= 8.5)
-    if (!node) return null
-    const { width, height } = node.getBoundingClientRect()
-    return { id: node.getAttribute('data-action-id'), width, height }
-  })
-  expect(micro).not.toBeNull()
-  const target = stage.locator(`.newow-product-chart-stage__action-label[data-action-id="${micro.id}"]`)
-  expect(micro?.width).toBeLessThanOrEqual(8.5)
-  expect(micro?.height).toBeLessThanOrEqual(8.5)
-  await target.click({ force: true })
-  await expect.poll(async () => (await target.boundingBox())?.width ?? 0).toBeGreaterThan(8.5)
-  await expect(target).toHaveClass(/is-selected/)
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await expect(stage).toHaveAttribute('data-selected-signal-id', micro.id)
-  expect(await labels.count()).toBe(100)
+  const boxes = await labels.evaluateAll(nodes => nodes.map(node => {
+    const r = node.getBoundingClientRect()
+    const parent = node.parentElement.getBoundingClientRect()
+    return { id: node.dataset.actionId, price: node.dataset.referencePrice, contract: node.dataset.referenceContract,
+      x: r.x - parent.x, y: r.y - parent.y, width: r.width, height: r.height, containerWidth: parent.width, containerHeight: parent.height }
+  }))
+  expect(boxes.length).toBeGreaterThan(0)
+  expect(boxes.length).toBeLessThan(ids.length)
+  for (const box of boxes) {
+    expect(ids).toContain(box.id)
+    expect(box.price).toBe('100')
+    expect(box.contract).toBe('RB2605')
+    expect(box.x).toBeGreaterThanOrEqual(-0.5)
+    expect(box.y).toBeGreaterThanOrEqual(-0.5)
+    expect(box.x + box.width).toBeLessThanOrEqual(box.containerWidth + 0.5)
+    expect(box.y + box.height).toBeLessThanOrEqual(box.containerHeight + 0.5)
+  }
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j]
+    expect(a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5).toBe(true)
+  }
+  await selectLatestAction(page, 'dense-clear-49')
+  await expect(page.getByRole('dialog')).toContainText('dense-clear-49')
+  expect((await stage.getAttribute('data-action-ids')).split(',')).toEqual(ids)
   assertNoUnexpectedRequests(fixture)
 })
 

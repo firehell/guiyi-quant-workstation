@@ -1,0 +1,12 @@
+✓ spec/canonical-market-storage
+✓ spec/data-foundation-metadata
+✓ spec/historical-data-maintenance
+✓ spec/market-home-overview
+✓ spec/market-series-query
+✓ spec/newow-product-reference-trading
+✓ spec/product-retirement
+✓ spec/range-detector
+✗ spec/reference-trading
+✓ spec/subing-ths-alert
+Totals: 9 passed, 1 failed (10 items)
+Details: openspec validate reference-trading --type spec

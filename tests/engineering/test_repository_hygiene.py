@@ -6,7 +6,9 @@ import hashlib
 import json
 import subprocess
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 NEWOW_DOSSIER = ROOT / "docs/research/newow-v3.2.82"
@@ -168,15 +170,63 @@ def _assert_approved_screenshot_inventory(
     tracked_paths: tuple[str, ...],
     manifest_sha256_by_path: Mapping[str, str],
     actual_sha256_by_path: Mapping[str, str],
+    registered_observations: Mapping[str, str],
 ) -> None:
     assert len(APPROVED_SCREENSHOTS) == 29
-    assert set(tracked_paths) == set(APPROVED_SCREENSHOTS) | set(LATEST_AUDIT_SCREENSHOTS)
+    assert set(tracked_paths) == set(APPROVED_SCREENSHOTS) | set(LATEST_AUDIT_SCREENSHOTS) | set(registered_observations)
 
     for tracked_path, (manifest_path, approved_sha256) in APPROVED_SCREENSHOTS.items():
         assert manifest_sha256_by_path[manifest_path] == approved_sha256
         assert actual_sha256_by_path[tracked_path] == approved_sha256
-    for tracked_path, approved_sha256 in LATEST_AUDIT_SCREENSHOTS.items():
+    for tracked_path, approved_sha256 in (LATEST_AUDIT_SCREENSHOTS | dict(registered_observations)).items():
         assert actual_sha256_by_path[tracked_path] == approved_sha256
+
+
+def _registered_observations(observations: list[dict], root: Path) -> dict[str, str]:
+    registered = {}
+    for item in observations:
+        relative = PurePosixPath(item["file"])
+        assert not relative.is_absolute() and ".." not in relative.parts
+        assert relative.parent == PurePosixPath("screenshots/20260926")
+        assert (item["kind"], relative.suffix) in {
+            ("screenshot", ".png"), ("accessibility_observation", ".txt")
+        }
+        path = root / relative
+        assert not path.is_symlink() and path.is_file()
+        assert path.resolve().is_relative_to(root.resolve())
+        data = path.read_bytes()
+        assert len(data) == item["bytes"]
+        assert hashlib.sha256(data).hexdigest() == item["sha256"]
+        tracked = f"docs/research/newow-v3.2.82/{relative}"
+        assert tracked not in registered
+        registered[tracked] = item["sha256"]
+    return registered
+
+
+@pytest.mark.parametrize("mutation", ["escape", "kind", "size", "hash", "duplicate", "symlink"])
+def test_registered_observation_rejects_invalid_evidence(tmp_path: Path, mutation: str) -> None:
+    path = tmp_path / "screenshots/20260926/probe.txt"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"public observation")
+    item = {"file": "screenshots/20260926/probe.txt", "kind": "accessibility_observation",
+            "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    observations = [item]
+    if mutation == "escape":
+        item["file"] = "screenshots/20260926/../../probe.txt"
+    elif mutation == "kind":
+        item["kind"] = "raw_api"
+    elif mutation == "size":
+        item["bytes"] += 1
+    elif mutation == "hash":
+        item["sha256"] = "0" * 64
+    elif mutation == "duplicate":
+        observations.append(item.copy())
+    elif mutation == "symlink":
+        target = tmp_path / "outside.txt"
+        path.rename(target)
+        path.symlink_to(target)
+    with pytest.raises(AssertionError):
+        _registered_observations(observations, tmp_path)
 
 
 def test_local_browser_capture_directory_is_not_tracked_and_is_ignored() -> None:
@@ -225,10 +275,15 @@ def test_newow_screenshot_distribution_owner_decision_is_explicit() -> None:
         relative: hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
         for relative in screenshots
     }
+    # Later public observations are bound to their dated evidence manifest,
+    # independently of the frozen original owner-approved screenshots.
+    audit = json.loads((NEWOW_DOSSIER / "evidence/latest-audit-20260926.json").read_text(encoding="utf-8"))
+    registered = _registered_observations(audit["observations"], NEWOW_DOSSIER)
     _assert_approved_screenshot_inventory(
         screenshots,
         manifest_sha256_by_path,
         actual_sha256_by_path,
+        registered,
     )
 
 

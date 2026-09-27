@@ -25,8 +25,9 @@ def product_cases():
     return ProductCases()
 
 
-@pytest.mark.parametrize("strategy", ("trend", "oscillation", "main_rise"))
-@pytest.mark.parametrize("frequency", ("1d", "1w", "60m"))
+@pytest.mark.parametrize("strategy,frequency",
+    [(s,f) for s in ("trend","oscillation","main_rise") for f in ("1d","1w","60m")]
+    + [(s,f) for s in ("trend","oscillation") for f in ("1m","15m","30m")])
 def test_newow_supported_matrix_advances_with_real_p2_adapter(
     product_cases, strategy: str, frequency: str,
 ) -> None:
@@ -45,6 +46,10 @@ def test_newow_supported_matrix_advances_with_real_p2_adapter(
         recording_mode="historical_replay",
         observation_policy_version=None,
     )
+    from app.reference_trading.planning import HistoricalStreamRequest
+    request = HistoricalStreamRequest(stream, case.bars[0].bar.trading_day,
+        case.bars[-1].bar.trading_day, case.bars[-1].bar.bar_end)
+    assert request.identity == stream
     bars = tuple(
         HistoricalInputBar(
             item.bar.bar_end,

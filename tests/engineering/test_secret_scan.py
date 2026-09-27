@@ -60,6 +60,22 @@ def test_generated_api_documentation_cache_is_not_scanned(tmp_path: Path) -> Non
     assert json.loads(result.stdout)["findings"] == []
 
 
+def test_explicit_test_revision_does_not_hide_real_secret_assignment(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+    value = "real-assignment-probe-12345"
+    (repo / "probe.py").write_text(
+        'reader.token = "test-only-source-revised-tail-price"\n'
+        + f'token = "{value}"\n', encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "probe.py"], cwd=repo, check=True)
+    result = _run(repo, "--json")
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["findings"] == [
+        {"path": "probe.py", "line": 2, "family": "secret_assignment"}
+    ]
+    assert value not in result.stdout + result.stderr
+
+
 def test_path_escape_is_rejected(tmp_path: Path) -> None:
     repo = _git_repo(tmp_path)
 

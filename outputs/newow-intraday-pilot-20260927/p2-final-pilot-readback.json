@@ -1,0 +1,693 @@
+{
+  "schema": "newow_p2_final_pilot_v1",
+  "status": "PASS",
+  "product": "rb",
+  "as_of": "2026-09-24T07:00:00.000001+00:00",
+  "provider_calls": 0,
+  "canonical_writes": 0,
+  "catalog_writes": 0,
+  "data_gap_plan": [],
+  "matrix_denominators": {
+    "pilot_market_inputs": 4,
+    "pilot_base_strategies": 8,
+    "pilot_fusion_models": 4,
+    "pilot_history_modes": 12,
+    "full_expansion_not_executed": true
+  },
+  "rows": [
+    {
+      "frequency": "1m",
+      "status": "INPUT_AND_SAVED_GENERATION_VERIFIED",
+      "source_evidence_sha256": "75c49322c74220e685f5dd51789e24cce1e8cca72ca03e594347947b63d864ea",
+      "streams": [
+        {
+          "strategy": "trend",
+          "stream": {
+            "stream_id": "reference-stream:6c479d989a33fb5f86d70a56e9dbf9e46f230c327e7d946af1bc966618293943",
+            "strategy_code": "newow_trend",
+            "product": "rb",
+            "frequency": "1m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2"
+            ],
+            "profile_id": "newow_product_trend_1m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "e357d6ef19794816b5ea2c6611aadd1d",
+            "latest_seq": 3403,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 33169,
+            "win_count": 19360,
+            "loss_count": 12555,
+            "flat_count": 1254,
+            "open_count": 1,
+            "interrupted_count": 5,
+            "rollover_interrupted_count": 5,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "58.36775302240043414031173686",
+            "mean_return_pct": "0.04219576724548803791797016512",
+            "sum_return_percentage_points": "1399.5914037655927297011524070000",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJmMDg1MTI4NWEyMzU5NDI5YmYyOWVhOGRiNjViYjYyYjdkOWY2MTQ5ZmRkZmQyMGM5NjA3OWY4MGZjNzA2NTNkIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiJlMzU3ZDZlZjE5Nzk0ODE2YjVlYTJjNjYxMWFhZGQxZCIsInNlcSI6MzQwMywic2luY2UiOiIyMDIzLTAxLTAxIiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTo2YzQ3OWQ5ODlhMzNmYjVmODZkNzBhNTZlOWRiZjllNDZmMjMwYzMyN2U3ZDk0NmFmMWJjOTY2NjE4MjkzOTQzIiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+            "revision_id": "e357d6ef19794816b5ea2c6611aadd1d",
+            "seq": 3403,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-03T06:46:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "oscillation",
+          "stream": {
+            "stream_id": "reference-stream:857639a8ef32d4d14c0e4d652f8c322f4f56f6a7fc164f4d272cf6f98a478c99",
+            "strategy_code": "newow_oscillation",
+            "product": "rb",
+            "frequency": "1m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_product_oscillation_1m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "30dc7865dbb2484ea4668b0695cbc7d4",
+            "latest_seq": 3403,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 17092,
+            "win_count": 13868,
+            "loss_count": 2473,
+            "flat_count": 751,
+            "open_count": 0,
+            "interrupted_count": 4,
+            "rollover_interrupted_count": 4,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "81.13737421015679850222326234",
+            "mean_return_pct": "0.06977058213484786902383424838",
+            "sum_return_percentage_points": "1192.5187898488197773553749733100",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiI4MDY3ODk5YTZkZmZhNWFjMmEyMjZkYmEyYWFlMDllZDYxY2FlNWY1ODNmODhhNjBlZjhhZDc5OWViOGM1MTVhIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiIzMGRjNzg2NWRiYjI0ODRlYTQ2NjhiMDY5NWNiYzdkNCIsInNlcSI6MzQwMywic2luY2UiOiIyMDIzLTAxLTAxIiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTo4NTc2MzlhOGVmMzJkNGQxNGMwZTRkNjUyZjhjMzIyZjRmNTZmNmE3ZmMxNjRmNGQyNzJjZjZmOThhNDc4Yzk5IiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+            "revision_id": "30dc7865dbb2484ea4668b0695cbc7d4",
+            "seq": 3403,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-03T06:46:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "dual_fusion",
+          "stream": {
+            "stream_id": "reference-stream:b1050f999655fee631eda76211d21df834fc0a5a2d6b24bea0e329f3bfac7554",
+            "strategy_code": "newow_dual_fusion",
+            "product": "rb",
+            "frequency": "1m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2",
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_dual_fusion_1m_v1",
+            "reference_model_version": "newow_dual_fusion_reference_zero_cost_v1",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "4d91127735c34acdae6df50419d8a458",
+            "latest_seq": 3403,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 37260,
+            "win_count": 28600,
+            "loss_count": 7629,
+            "flat_count": 1031,
+            "open_count": 0,
+            "interrupted_count": 3,
+            "rollover_interrupted_count": 3,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "76.75791733762748255501878690",
+            "mean_return_pct": "0.05721402009967290023711615936",
+            "sum_return_percentage_points": "2131.7943889138122628349480976500",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiIzN2JkMTg4ZWYwZmU4YTcwODhhY2MwZGJiNDRkMzhiZmJkYWJjMjM1MDUwNjQxMjBkMmIyNDY5NjhlOWI5ZWE1Iiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiI0ZDkxMTI3NzM1YzM0YWNkYWU2ZGY1MDQxOWQ4YTQ1OCIsInNlcSI6MzQwMywic2luY2UiOiIyMDIzLTAxLTAxIiwic3RyZWFtIjoicmVmZXJlbmNlLXN0cmVhbTpiMTA1MGY5OTk2NTVmZWU2MzFlZGE3NjIxMWQyMWRmODM0ZmMwYTVhMmQ2YjI0YmVhMGUzMjlmM2JmYWM3NTU0IiwidGhyb3VnaCI6IjIwMjYtMDktMjQifQ",
+            "revision_id": "4d91127735c34acdae6df50419d8a458",
+            "seq": 3403,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-03T06:46:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        }
+      ]
+    },
+    {
+      "frequency": "15m",
+      "status": "INPUT_AND_SAVED_GENERATION_VERIFIED",
+      "source_evidence_sha256": "4560aa85cb4c4ac7935646c50da7f577adf70035335ea83340364a6863fa229d",
+      "streams": [
+        {
+          "strategy": "trend",
+          "stream": {
+            "stream_id": "reference-stream:ef33a34f5a7cfec9a80721ec624a2726028df7246bee8acd0eee6b28fb05195d",
+            "strategy_code": "newow_trend",
+            "product": "rb",
+            "frequency": "15m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2"
+            ],
+            "profile_id": "newow_product_trend_15m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "5214f6d1223b450ea1042f520ae11317",
+            "latest_seq": 228,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 1769,
+            "win_count": 1134,
+            "loss_count": 624,
+            "flat_count": 11,
+            "open_count": 1,
+            "interrupted_count": 3,
+            "rollover_interrupted_count": 3,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "64.10401356698699830412662521",
+            "mean_return_pct": "0.2273099110708983732915534817",
+            "sum_return_percentage_points": "402.1112326844192223527581090700",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJiODNhNTE2NDgyODg5Y2JjN2RlNzYzZGU4OTcwMzhjZmZlNDA0OWI1ZWMwY2MyNDcxNTRiYzdlOTQwYzAzYmI0Iiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiI1MjE0ZjZkMTIyM2I0NTBlYTEwNDJmNTIwYWUxMTMxNyIsInNlcSI6MjI4LCJzaW5jZSI6IjIwMjMtMDEtMDEiLCJzdHJlYW0iOiJyZWZlcmVuY2Utc3RyZWFtOmVmMzNhMzRmNWE3Y2ZlYzlhODA3MjFlYzYyNGEyNzI2MDI4ZGY3MjQ2YmVlOGFjZDBlZWU2YjI4ZmIwNTE5NWQiLCJ0aHJvdWdoIjoiMjAyNi0wOS0yNCJ9",
+            "revision_id": "5214f6d1223b450ea1042f520ae11317",
+            "seq": 228,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-17T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "oscillation",
+          "stream": {
+            "stream_id": "reference-stream:3acf2bd16e93357318ae0d1115d5f3d45f50a24b19bf18af058b2aabb9facc87",
+            "strategy_code": "newow_oscillation",
+            "product": "rb",
+            "frequency": "15m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_product_oscillation_15m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "5008a66909394042a3a3ccdb49830710",
+            "latest_seq": 228,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 750,
+            "win_count": 563,
+            "loss_count": 178,
+            "flat_count": 9,
+            "open_count": 0,
+            "interrupted_count": 7,
+            "rollover_interrupted_count": 7,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "75.06666666666666666666666667",
+            "mean_return_pct": "0.2562167853164897444555707201",
+            "sum_return_percentage_points": "192.1625889873673083416780401100",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiI1ZjA3NDU1NmQ0OGY2MGQyYjI3ZGMwOTc4MjM1ZWU5M2M1NGM2NjI0MTZiMWU2NDVkODg4YTI1NTIzNDA2M2ZlIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiI1MDA4YTY2OTA5Mzk0MDQyYTNhM2NjZGI0OTgzMDcxMCIsInNlcSI6MjI4LCJzaW5jZSI6IjIwMjMtMDEtMDEiLCJzdHJlYW0iOiJyZWZlcmVuY2Utc3RyZWFtOjNhY2YyYmQxNmU5MzM1NzMxOGFlMGQxMTE1ZDVmM2Q0NWY1MGEyNGIxOWJmMThhZjA1OGIyYWFiYjlmYWNjODciLCJ0aHJvdWdoIjoiMjAyNi0wOS0yNCJ9",
+            "revision_id": "5008a66909394042a3a3ccdb49830710",
+            "seq": 228,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-17T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "dual_fusion",
+          "stream": {
+            "stream_id": "reference-stream:ce19ac2f9a243b05401c03c457589c96a6d28af7cb1bf645398b16312a685034",
+            "strategy_code": "newow_dual_fusion",
+            "product": "rb",
+            "frequency": "15m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2",
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_dual_fusion_15m_v1",
+            "reference_model_version": "newow_dual_fusion_reference_zero_cost_v1",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "84e3bf967bf94796b578096d1709c0a4",
+            "latest_seq": 228,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 1880,
+            "win_count": 1400,
+            "loss_count": 470,
+            "flat_count": 10,
+            "open_count": 1,
+            "interrupted_count": 4,
+            "rollover_interrupted_count": 4,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "74.46808510638297872340425532",
+            "mean_return_pct": "0.2488326084525018260079262408",
+            "sum_return_percentage_points": "467.8053038907034328949013326200",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJiZTQ3MjQzMWRhZGJkMzg4MTE2ZjY4ZWZlMzY1NWY3NGQ2MjZkMTMxYjYyYTQ4MDU5ZTg5OTcxZGMzYjc3ZTgxIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiI4NGUzYmY5NjdiZjk0Nzk2YjU3ODA5NmQxNzA5YzBhNCIsInNlcSI6MjI4LCJzaW5jZSI6IjIwMjMtMDEtMDEiLCJzdHJlYW0iOiJyZWZlcmVuY2Utc3RyZWFtOmNlMTlhYzJmOWEyNDNiMDU0MDFjMDNjNDU3NTg5Yzk2YTZkMjhhZjdjYjFiZjY0NTM5OGIxNjMxMmE2ODUwMzQiLCJ0aHJvdWdoIjoiMjAyNi0wOS0yNCJ9",
+            "revision_id": "84e3bf967bf94796b578096d1709c0a4",
+            "seq": 228,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-17T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        }
+      ]
+    },
+    {
+      "frequency": "30m",
+      "status": "INPUT_AND_SAVED_GENERATION_VERIFIED",
+      "source_evidence_sha256": "c0eb7e951b872b4e981d7e5cd300bf2fd25429392c227360dd2cb80b0220353e",
+      "streams": [
+        {
+          "strategy": "trend",
+          "stream": {
+            "stream_id": "reference-stream:2fc692b4b8584096e07d3ff94e06cde9d6e197590333be5276283821c1136dce",
+            "strategy_code": "newow_trend",
+            "product": "rb",
+            "frequency": "30m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2"
+            ],
+            "profile_id": "newow_product_trend_30m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "62e8d47671e647ce8dda8236d60f6454",
+            "latest_seq": 120,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 917,
+            "win_count": 597,
+            "loss_count": 315,
+            "flat_count": 5,
+            "open_count": 1,
+            "interrupted_count": 3,
+            "rollover_interrupted_count": 3,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "65.10359869138495092693565976",
+            "mean_return_pct": "0.3135429877216442493608899330",
+            "sum_return_percentage_points": "287.5189197407477766639360685300",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiI0YzNlNjMxNGYzNWY4OWEwMGRiN2U2MjQ5MWVhMGQ4NGViYTk2ZDMwYjJmMzJiYjg2ZjhjODgwZTkzNDE0OTBiIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiI2MmU4ZDQ3NjcxZTY0N2NlOGRkYTgyMzZkNjBmNjQ1NCIsInNlcSI6MTIwLCJzaW5jZSI6IjIwMjMtMDEtMDEiLCJzdHJlYW0iOiJyZWZlcmVuY2Utc3RyZWFtOjJmYzY5MmI0Yjg1ODQwOTZlMDdkM2ZmOTRlMDZjZGU5ZDZlMTk3NTkwMzMzYmU1Mjc2MjgzODIxYzExMzZkY2UiLCJ0aHJvdWdoIjoiMjAyNi0wOS0yNCJ9",
+            "revision_id": "62e8d47671e647ce8dda8236d60f6454",
+            "seq": 120,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-30T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "oscillation",
+          "stream": {
+            "stream_id": "reference-stream:e87aedee6ba8cd15c0c6f8e6dbb26d1bada071f76ac4dbcf2b566d855a5782d8",
+            "strategy_code": "newow_oscillation",
+            "product": "rb",
+            "frequency": "30m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_product_oscillation_30m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "83c8c86234354774b123f5d9c464d9cb",
+            "latest_seq": 120,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 377,
+            "win_count": 286,
+            "loss_count": 88,
+            "flat_count": 3,
+            "open_count": 0,
+            "interrupted_count": 8,
+            "rollover_interrupted_count": 8,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "75.86206896551724137931034483",
+            "mean_return_pct": "0.3974167578645520190572210162",
+            "sum_return_percentage_points": "149.8261177149361111845723231200",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJjODc2NTA2MDFhOTY0NWI0MzE5NjliYmYwY2YwZGQxZGI3OWY1YzU1MDJhZTVlYjRmMjZkMTA1OTI2MzkyMWM2Iiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiI4M2M4Yzg2MjM0MzU0Nzc0YjEyM2Y1ZDljNDY0ZDljYiIsInNlcSI6MTIwLCJzaW5jZSI6IjIwMjMtMDEtMDEiLCJzdHJlYW0iOiJyZWZlcmVuY2Utc3RyZWFtOmU4N2FlZGVlNmJhOGNkMTVjMGM2ZjhlNmRiYjI2ZDFiYWRhMDcxZjc2YWM0ZGJjZjJiNTY2ZDg1NWE1NzgyZDgiLCJ0aHJvdWdoIjoiMjAyNi0wOS0yNCJ9",
+            "revision_id": "83c8c86234354774b123f5d9c464d9cb",
+            "seq": 120,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-30T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "dual_fusion",
+          "stream": {
+            "stream_id": "reference-stream:a71793105f223a3ae956ee2ef981d0a3ca3c0805e5d96bf474661215b8dfa9d1",
+            "strategy_code": "newow_dual_fusion",
+            "product": "rb",
+            "frequency": "30m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2",
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_dual_fusion_30m_v1",
+            "reference_model_version": "newow_dual_fusion_reference_zero_cost_v1",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "a111ba7bd26943758af0d593832445b2",
+            "latest_seq": 120,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 971,
+            "win_count": 744,
+            "loss_count": 224,
+            "flat_count": 3,
+            "open_count": 1,
+            "interrupted_count": 8,
+            "rollover_interrupted_count": 8,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "76.62203913491246138002059732",
+            "mean_return_pct": "0.3544361892627246878987671962",
+            "sum_return_percentage_points": "344.1575397741056719497029475400",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJhMGI0ZWE4NGZlZWZhZDJiYWJiODFmZjI3ZmNkYjZkMjc0YjJhM2Y4ZjA5OWZjMTFjYWZlZWE1OWYyNTYxYmZlIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiJhMTExYmE3YmQyNjk0Mzc1OGFmMGQ1OTM4MzI0NDViMiIsInNlcSI6MTIwLCJzaW5jZSI6IjIwMjMtMDEtMDEiLCJzdHJlYW0iOiJyZWZlcmVuY2Utc3RyZWFtOmE3MTc5MzEwNWYyMjNhM2FlOTU2ZWUyZWY5ODFkMGEzY2EzYzA4MDVlNWQ5NmJmNDc0NjYxMjE1YjhkZmE5ZDEiLCJ0aHJvdWdoIjoiMjAyNi0wOS0yNCJ9",
+            "revision_id": "a111ba7bd26943758af0d593832445b2",
+            "seq": 120,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-01-30T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        }
+      ]
+    },
+    {
+      "frequency": "60m",
+      "status": "INPUT_AND_SAVED_GENERATION_VERIFIED",
+      "source_evidence_sha256": "65a07e34026c923d6a1f65008443b1b4ef02357a31cd4ad7be5b1c0618f7a233",
+      "streams": [
+        {
+          "strategy": "trend",
+          "stream": {
+            "stream_id": "reference-stream:10ed0706dd0d50e0c4de61a9bb684219d3f02a76e534e1c927fab62a9b6b384a",
+            "strategy_code": "newow_trend",
+            "product": "rb",
+            "frequency": "60m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2"
+            ],
+            "profile_id": "newow_product_trend_60m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "d74513bafd8649088a787916f2ad310c",
+            "latest_seq": 71,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 527,
+            "win_count": 355,
+            "loss_count": 170,
+            "flat_count": 2,
+            "open_count": 1,
+            "interrupted_count": 2,
+            "rollover_interrupted_count": 2,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "67.36242884250474383301707780",
+            "mean_return_pct": "0.4136006915677955244415399272",
+            "sum_return_percentage_points": "217.9675644562282413806915416600",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJiZDViNzNmNzRhNTUxZjEzZjQzZjVjYTk0YjVjY2Y4YjgwMzljMzNkOTFhN2U5NDk3OWQ2ZDNlMmU5ZDYzMWUwIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiJkNzQ1MTNiYWZkODY0OTA4OGE3ODc5MTZmMmFkMzEwYyIsInNlcSI6NzEsInNpbmNlIjoiMjAyMy0wMS0wMSIsInN0cmVhbSI6InJlZmVyZW5jZS1zdHJlYW06MTBlZDA3MDZkZDBkNTBlMGM0ZGU2MWE5YmI2ODQyMTlkM2YwMmE3NmU1MzRlMWM5MjdmYWI2MmE5YjZiMzg0YSIsInRocm91Z2giOiIyMDI2LTA5LTI0In0",
+            "revision_id": "d74513bafd8649088a787916f2ad310c",
+            "seq": 71,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-02-15T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "oscillation",
+          "stream": {
+            "stream_id": "reference-stream:01ff9ee9945cc2e675070e80c29342d5efbeb285983f81d6e3c552668203f5f6",
+            "strategy_code": "newow_oscillation",
+            "product": "rb",
+            "frequency": "60m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_product_oscillation_60m_v1",
+            "reference_model_version": "newow_marker_reference_zero_cost_v3",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "04d910adc6244a608f5bbd5e0f3c668b",
+            "latest_seq": 71,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 204,
+            "win_count": 151,
+            "loss_count": 52,
+            "flat_count": 1,
+            "open_count": 1,
+            "interrupted_count": 8,
+            "rollover_interrupted_count": 8,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "74.01960784313725490196078431",
+            "mean_return_pct": "0.4985270629176335035771391290",
+            "sum_return_percentage_points": "101.6995208351972347297363823200",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiJjNWNlZDQ5MDNkMjU2Mzk3ZjNhMWM2YjllNTcwNDQwOTZlY2UxYjkwN2Q4MTJjZGZiYzNhOWMzMjA5ODM4NzMzIiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiIwNGQ5MTBhZGM2MjQ0YTYwOGY1YmJkNWUwZjNjNjY4YiIsInNlcSI6NzEsInNpbmNlIjoiMjAyMy0wMS0wMSIsInN0cmVhbSI6InJlZmVyZW5jZS1zdHJlYW06MDFmZjllZTk5NDVjYzJlNjc1MDcwZTgwYzI5MzQyZDVlZmJlYjI4NTk4M2Y4MWQ2ZTNjNTUyNjY4MjAzZjVmNiIsInRocm91Z2giOiIyMDI2LTA5LTI0In0",
+            "revision_id": "04d910adc6244a608f5bbd5e0f3c668b",
+            "seq": 71,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-02-15T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        },
+        {
+          "strategy": "dual_fusion",
+          "stream": {
+            "stream_id": "reference-stream:44b2401755807e36425d9f50f7a378608559745cbfc9b21d15b56a6cc4e07a50",
+            "strategy_code": "newow_dual_fusion",
+            "product": "rb",
+            "frequency": "60m",
+            "recording_mode": "historical_replay",
+            "formula_versions": [
+              "newow_escape_d123_page_v2",
+              "newow_trend_band_page_v2",
+              "newow_hhv_llv_channel_page_v1",
+              "newow_oscillation_hhv_llv10_page_v1"
+            ],
+            "profile_id": "newow_dual_fusion_60m_v1",
+            "reference_model_version": "newow_dual_fusion_reference_zero_cost_v1",
+            "futures_adaptation_version": "newow_futures_quality_segment_v3",
+            "active_revision_id": "2f4b8c5b76884f3e8a9228cb27720fe5",
+            "latest_seq": 71,
+            "health": "READY",
+            "enabled": false,
+            "activation_generation": 0,
+            "recording_start": null,
+            "readable": true
+          },
+          "summary": {
+            "closed_count": 559,
+            "win_count": 419,
+            "loss_count": 137,
+            "flat_count": 3,
+            "open_count": 1,
+            "interrupted_count": 5,
+            "rollover_interrupted_count": 5,
+            "data_interrupted_count": 0,
+            "initial_count": 0,
+            "win_rate_pct": "74.95527728085867620751341682",
+            "mean_return_pct": "0.4760761641205550225829024327",
+            "sum_return_percentage_points": "266.1265757433902576238424598900",
+            "statistics_policy": "entry_in_window_v1",
+            "snapshot": "eyJjdXRvZmYiOiIyMDI2LTA5LTI0VDA3OjAwOjAwLjAwMDAwMSswMDowMCIsImRlcGVuZGVuY3kiOiIyMjczZjc3ZmU1N2IxZjQzYTRhZGVjZjE1NDhiMzU2MGU4OGMxZGVjOGY1ZjQwOGY5ODczMWE0OThkYzQxZmY0Iiwia2luZCI6InNuYXBzaG90IiwicG9saWN5IjoiZW50cnlfaW5fd2luZG93X3YxIiwicmV2aXNpb24iOiIyZjRiOGM1Yjc2ODg0ZjNlOGE5MjI4Y2IyNzcyMGZlNSIsInNlcSI6NzEsInNpbmNlIjoiMjAyMy0wMS0wMSIsInN0cmVhbSI6InJlZmVyZW5jZS1zdHJlYW06NDRiMjQwMTc1NTgwN2UzNjQyNWQ5ZjUwZjdhMzc4NjA4NTU5NzQ1Y2JmYzliMjFkMTViNTZhNmNjNGUwN2E1MCIsInRocm91Z2giOiIyMDI2LTA5LTI0In0",
+            "revision_id": "2f4b8c5b76884f3e8a9228cb27720fe5",
+            "seq": 71,
+            "window": {
+              "since": "2023-01-01",
+              "through": "2026-09-24"
+            },
+            "coverage": {
+              "first_computed_through": "2023-02-15T15:00:00+00:00",
+              "computed_through": "2026-09-24T07:00:00+00:00",
+              "observation_boundary_at": null,
+              "complete_window_proven": false
+            },
+            "status": "READY"
+          }
+        }
+      ]
+    }
+  ],
+  "cancel_before_read_seconds": 4.9e-05,
+  "acceptance_scope": "P2 final input/session/prefix and saved-generation proof; P6 browser/review tracked separately"
+}

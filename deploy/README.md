@@ -35,6 +35,15 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 未认证公网检查预期 HTTP 401；提供 Basic Auth 后，页面/API 预期 200，
 `/api/v1/market/ws` WebSocket Upgrade 预期 101。
 
+## 发布工作树存储
+
+自2026-09-27起，发布与正式运行源码统一使用扩展盘的linked worktree：
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-vX.Y.Z`。目录按版本命名，发布后完成切换及现场读回，只保留最新发布树。
+不再常驻保留回滚工作树或Application Support下的旧Runtime clone；Git tag和必要运行证据继续保留。
+最新发布树可用于向前修复，修复通过验证后发布新的补丁版本，不覆盖旧tag或把dirty源码算成旧版本运行。
+安全配置、launcher与日志保持既有Git外位置。外接卷需真实launchd访问及服务读回，不能通过路径约定绕过宿主权限。
+清理必须核对无用户修改、无配置/loaded服务/进程引用，并先保留必要运行记录；失败恢复的原子性、preflight及身份校验不变。
+
 ## 配置与变更 Gate
 
 - [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market/Alert、默认未安装的 weekly audit/reference worker 与日志轮转模板；验证命令见

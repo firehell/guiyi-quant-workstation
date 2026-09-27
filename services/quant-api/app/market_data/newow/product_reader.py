@@ -20,6 +20,7 @@ from guiyi_quant.newow.product_contracts import (
     OwnerBoundary,
     ProductBar,
     ProductFrequency,
+    INTRADAY_PRODUCT_FREQUENCIES,
     lifecycle_input_sha256,
 )
 from guiyi_quant.newow.product_identity import (
@@ -37,7 +38,7 @@ from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSegmentLoader,
 )
-from app.market_data.aggregation import SessionWindow
+from app.market_data.aggregation import SessionWindow, expected_intraday_ends
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
@@ -157,6 +158,7 @@ class ProductReadSet:
         ProductFrequency, tuple[DataInterruption, ...]
     ] = field(default_factory=lambda: MappingProxyType({}))
     input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
+    reference_source_evidence_sha256: str | None = None
     input_quality_policies_by_frequency: Mapping[ProductFrequency, InputQualityPolicy] = field(default_factory=dict)
 
     @property
@@ -545,10 +547,19 @@ class NewowProductReader:
             days = tuple(day for day in days if day < before)
             if not days:
                 return None
-        bars_per_day = (
-            4 if ProductFrequency(frequency) is ProductFrequency.HOURLY else 1
-        )
-        day_count = (limit + bars_per_day - 1) // bars_per_day
+        if ProductFrequency(frequency) in INTRADAY_PRODUCT_FREQUENCIES:
+            count = 0
+            first = days[-1]
+            for day in reversed(days):
+                self._check_cancelled()
+                sessions = self._market_data.session_windows(symbol=product, trading_day=day)
+                ends = expected_intraday_ends(tuple(sessions), frequency.value)
+                count += sum(end <= cutoff for end in ends)
+                first = day
+                if count >= limit:
+                    break
+            return ProductReadWindow(first, days[-1])
+        day_count = limit
         if ProductFrequency(frequency) is ProductFrequency.WEEKLY:
             day_count *= 7
         return ProductReadWindow(days[max(0, len(days) - day_count)], days[-1])
@@ -926,6 +937,50 @@ class NewowProductReader:
             input_quality_policies_by_frequency=MappingProxyType(quality_policies),
         )
 
+    def reference_owned_points(self, product, points, owners):
+        """Exclude saved physical warmup facts outside their authoritative rank1 owner."""
+        ranges = {}
+        for owner in owners:
+            sessions = self._market_data.session_windows(symbol=product, trading_day=owner.start_trading_day)
+            if not sessions:
+                raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
+            segment_id = build_segment_id(product, owner.contract, min(window.start for window in sessions))
+            ranges[(owner.contract, segment_id)] = (owner.start_trading_day, owner.end_trading_day)
+        output = []
+        for point in points:
+            value = point["value"]
+            span = ranges.get((value["physical_contract"], value["segment_id"]))
+            day = date.fromisoformat(point["trading_day"])
+            if span is not None and span[0] <= day <= span[1]:
+                output.append(point)
+        return output
+
+    def load_reference_scope(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
+        """Read saved-projection provenance; never decode a strategy warmup prefix."""
+        from hashlib import sha256
+        import json
+        from guiyi_quant.newow.product_contracts import INTRADAY_PRODUCT_FREQUENCIES
+        if query.frequency not in INTRADAY_PRODUCT_FREQUENCIES:
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        cutoff = utc_timestamp(query.as_of if query.as_of is not None else as_of)
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+        owners = self.dependency_owners(query.product, query.since, query.through)
+        evidence = self.historical_source_evidence(product=query.product,
+            frequency=query.frequency.value, since=query.since, through=query.through, as_of=cutoff)
+        digest = sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+        policy = input_quality_policy(query.frequency.value, self._input_quality_policy)
+        windows = self._market_data.session_windows(symbol=query.product, trading_day=query.through)
+        ends = [window.end for window in windows if window.end <= cutoff]
+        if not ends:
+            raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        source = ProductReadSource(query.frequency, _CANONICAL_SOURCE, max(ends), cutoff,
+            input_policy_version(query.frequency.value, policy), 0, 0, 0)
+        return ProductReadSet(query.frequency, MappingProxyType({query.frequency: ()}), owners, (),
+            ProductReadWindow(query.since, query.through), ProductReadWindow(query.since, query.through),
+            MappingProxyType({query.frequency: source}), cutoff, input_quality_policy=policy,
+            reference_source_evidence_sha256=digest)
+
     def dependency_owners(
         self, product: str, since: date, through: date,
     ) -> tuple[ResolvedContractSegment, ...]:
@@ -1033,6 +1088,37 @@ class NewowProductReader:
         return self._market_data.historical_metadata_evidence(
             symbol=product, since=since, through=through,
         )
+
+    def historical_source_evidence(
+        self, *, product: str, frequency: str, since: date, through: date,
+        as_of: datetime,
+    ) -> dict[str, object]:
+        """Exact frozen input dependencies; no Bar replay and no file discovery."""
+        owners = self.dependency_owners(product, since, through)
+        if not owners:
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+        facts = []
+        start = since
+        for owner in owners:
+            for selected in dict.fromkeys((BarFrequency.M1, BarFrequency(frequency))):
+                evidence = self._market_data.contract_source_evidence(
+                    symbol=product, contract=owner.contract, frequency=selected,
+                    before=as_of,
+                )
+                start = min(start, date.fromisoformat(evidence["listed_date"]))
+                facts.append(evidence)
+        return {
+            "schema": "newow_intraday_source_evidence_v1",
+            "product": product, "frequency": frequency,
+            "since": since.isoformat(), "through": through.isoformat(),
+            "as_of": as_of.isoformat(),
+            "owners": [(owner.contract, owner.start_trading_day.isoformat(),
+                        owner.end_trading_day.isoformat()) for owner in owners],
+            "physical": facts,
+            "metadata": self.historical_metadata_evidence(
+                product=product, since=start, through=through,
+            ),
+        }
 
     def historical_storage_start(self, product: str) -> date:
         return self._coverage.product_start(product)

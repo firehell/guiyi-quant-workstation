@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "frequency": "15m",
+  "read_seconds": 0.695,
+  "curve_count": 1880,
+  "groups": [
+    {
+      "model": "trend",
+      "reference_model_version": "newow_marker_reference_zero_cost_v3",
+      "closed_count": 1769,
+      "sum_return_percentage_points": "402.1112326844192223527581090700",
+      "open_count": 1,
+      "interrupted_count": 3
+    },
+    {
+      "model": "oscillation",
+      "reference_model_version": "newow_marker_reference_zero_cost_v3",
+      "closed_count": 750,
+      "sum_return_percentage_points": "192.1625889873673083416780401100",
+      "open_count": 0,
+      "interrupted_count": 7
+    },
+    {
+      "model": "fusion",
+      "reference_model_version": "newow_dual_fusion_reference_zero_cost_v1",
+      "closed_count": 1880,
+      "sum_return_percentage_points": "467.8053038907034328949013326200",
+      "open_count": 1,
+      "interrupted_count": 4
+    }
+  ],
+  "record_count": 200,
+  "pages_verified": 2,
+  "has_more": true,
+  "reference_revision": "386f43898fea1d710410e1d86eaf7333ea352a448832cce2fbe5100d7d40cbf2",
+  "record_since": "2025-09-25",
+  "input_sha256": "76c77b01cccd53ce34e30888ae2d39258f6a143c9a8d81090a2467d8f81c1e8a"
+}

@@ -37,11 +37,8 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
     candidate_origin: 'http://127.0.0.1:8010', status_origin: 'http://127.0.0.1:8000',
   } }))
   await page.goto(newowRoute('trend', '1w'))
-  await expect(page.getByTestId('candidate-preview-banner')).toContainText('本地候选只读预览')
-  await expect(page.getByTestId('candidate-preview-banner')).toContainText('非实时')
-  await expect(page.getByTestId('candidate-preview-banner')).toContainText('8010')
-  await expect(page.getByTestId('candidate-preview-banner')).toContainText('8000')
-  await expect(page.getByTestId('candidate-preview-banner')).toContainText('首页投影与主力元数据使用各自时间戳')
+  // App gates RouterView on verified identity; the persistent banner was retired.
+  await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible()
   await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-auxiliary-state', 'ready')
   await page.getByRole('button', { name: '1d', exact: true }).click()
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
@@ -49,8 +46,8 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
   await expect(quote.locator('.quote-header__price strong')).toHaveText('953.12')
   await expect(quote.locator('.quote-header__price')).toContainText('+2.34')
   await expect(quote).toContainText('最近日线收盘 · 非实时')
-  expect(quoteRequests).toHaveLength(1)
-  expect(quoteRequests[0].searchParams.get('before')).toBe(NEWOW_AS_OF)
+  expect(quoteRequests).toHaveLength(2) // One quote read for each W1/D1 route identity.
+  expect(quoteRequests.every(url => url.searchParams.get('before') === NEWOW_AS_OF)).toBe(true)
   const strategy = requests.filter(url => url.includes('/newow/strategy-detail'))
   expect(strategy.length).toBeGreaterThan(0)
   expect(strategy.every(url => new URL(url).searchParams.get('as_of') === NEWOW_AS_OF)).toBe(true)
@@ -71,7 +68,7 @@ test('identity mismatch blocks candidate page queries', async ({ page }) => {
   await installNewowProductFixtures(page)
   await page.route('**/api/preview/identity', route => route.fulfill({ json: { code_sha: 'wrong' } }))
   await page.goto(newowRoute())
-  await expect(page.getByTestId('candidate-preview-banner')).toContainText('PREVIEW_IDENTITY_MISMATCH')
+  await expect(page.getByRole('status')).toContainText('PREVIEW_IDENTITY_MISMATCH')
   expect(requests.filter(url => url.includes('/api/v1/market/'))).toEqual([])
 })
 

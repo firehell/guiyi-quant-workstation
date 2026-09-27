@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
+import { closestReferenceCurvePoint, referenceCurveAnchors, newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
@@ -47,7 +47,14 @@ const model = computed(() => (
     : null
 ))
 const records = computed(() => props.recordsResponse === undefined ? props.response : props.recordsResponse)
-const recordsModel = computed(() => records.value?.value ? buildNewowReferencePanelViewModel(records.value, props.chartResponse, props.crossSectionCompatible) : null)
+const recordsModel = computed(() => {
+  const response = records.value
+  if (!response?.value) return null
+  const focused = (props.response?.value?.curve_trades ?? props.response?.value?.items ?? []).find(trade => trade.reference_trade_id === selectedTradeId.value)
+  const items = focused && !response.value.items.some(trade => trade.reference_trade_id === focused.reference_trade_id)
+    ? [focused, ...response.value.items] : response.value.items
+  return buildNewowReferencePanelViewModel({ ...response, value: { ...response.value, items } }, props.chartResponse, props.crossSectionCompatible)
+})
 const displayValue = computed(() => props.response?.value ? acceptedPreset.value === 'ideal' ? newowTheoreticalDisplay(props.response.value) : props.response.value : null)
 const displaySummary = computed(() => displayValue.value && props.response ? buildNewowReferencePanelViewModel({ ...props.response, value: displayValue.value }, props.chartResponse, props.crossSectionCompatible).summary : null)
 const curve = computed(() => displayValue.value ? newowReferenceCurve(displayValue.value) : { points: [], message: '理论值所需的完整持仓区段暂不可用。' })
@@ -83,11 +90,6 @@ const curvePoints = computed(() => {
 })
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
-  if (!recordElements.has(trade.reference_trade_id) && records.value?.value?.next_before) {
-    emit('load-more')
-    await nextTick()
-    return
-  }
   await nextTick()
   recordElements.get(trade.reference_trade_id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
@@ -96,15 +98,13 @@ watch(() => records.value?.value?.items, async () => {
   await nextTick()
   const record = recordElements.get(selectedTradeId.value)
   if (record) record.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  else if (records.value?.value?.next_before) emit('load-more')
+
 })
 watch(() => props.selectedSignalId, id => {
   const trade = records.value?.value?.items.find(t => t.entry_signal_id === id || t.exit_signal_id === id)
   if (trade) selectedTradeId.value = trade.reference_trade_id
 })
-watch(() => records.value?.value, value => {
-  if (!value?.items.some(t => t.reference_trade_id === selectedTradeId.value)) selectedTradeId.value = null
-})
+watch(() => props.response?.value?.reference_input_sha256, () => { selectedTradeId.value = null })
 // The initial request is the server-resolved full history; preserve its authoritative floor across range switches.
 const availableSince = ref<string | null>(null)
 const pendingPreset = ref<{ kind: NewowReferencePreset | 'complete'; since: string; through: string } | null>(null)
@@ -178,6 +178,13 @@ function usePreset(preset: NewowReferencePreset): void {
   } catch { pendingPreset.value = null }
 }
 
+
+function locateCurvePoint(event: MouseEvent) {
+  const bounds = (event.currentTarget as SVGElement).getBoundingClientRect()
+  if (bounds.width <= 0 || bounds.height <= 0) return
+  const point = closestReferenceCurvePoint(curvePoints.value.points, (event.clientX - bounds.left) / bounds.width * 712, (event.clientY - bounds.top) / bounds.height * 140)
+  if (point) selectCurveTrade(point.trade)
+}
 </script>
 
 <template>
@@ -206,13 +213,13 @@ function usePreset(preset: NewowReferencePreset): void {
         <template v-else>
           <div class="newow-reference__plot">
             <div class="newow-reference__plot-area">
-              <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
+              <svg @click="locateCurvePoint" viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
                 <defs><linearGradient id="newow-reference-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.16" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
                 <line v-for="level in curvePoints.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
                 <polygon :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero} 712,${curvePoints.zero}`" fill="url(#newow-reference-area)" />
                 <line x1="0" x2="712" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
                 <polyline :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero}`" fill="none" stroke="#ff403a" stroke-width="1.8" />
-                <circle v-for="point in curvePoints.points" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
+                <circle v-for="point in referenceCurveAnchors(curvePoints.points)" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click.stop="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
               </svg>
             <span v-for="level in curvePoints.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
             <span v-for="tick in curvePoints.ticks" :key="tick.x" class="newow-reference__date-tick" :title="tick.day" :data-anchor="tick.anchor" :style="{ left: `${tick.x / 712 * 100}%` }">{{ tick.label }}</span>
@@ -239,7 +246,7 @@ function usePreset(preset: NewowReferencePreset): void {
 
     </template>
     <template v-if="recordsModel">
-      <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
+      <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>近一年 · 历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
         <header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header>
         <p :title="waiting.bar_end">状态时间 {{ referenceTimeDisplay(waiting.bar_end, chartResponse!.meta.identity.frequency, [chartResponse!.meta.as_of]) }} · 截至所示已完成 Bar，仅作页面参考。</p>
@@ -248,7 +255,7 @@ function usePreset(preset: NewowReferencePreset): void {
       <div class="newow-reference__cards">
         <article v-for="row in recordsModel.rows" :key="row.id" :ref="element => { if (element) recordElements.set(row.id, element as HTMLElement); else recordElements.delete(row.id) }" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial">
           <header class="newow-reference__record-top">
-            <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.category === 'open', 'is-interrupted': row.category === 'interrupted' }">{{ row.category === 'open' ? '持仓参考中' : row.category === 'interrupted' ? (row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断') : row.trade.frequency === '1w' ? '周K' : row.trade.frequency === '1d' ? '日K' : '60分' }}</strong><span>{{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.exit_bar_end ?? row.trade.interrupted_at) }}</span><span>{{ row.trade.physical_contract }}</span><span v-if="row.initial">期初已有</span></div>
+            <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.category === 'open', 'is-interrupted': row.category === 'interrupted' }">{{ row.category === 'open' ? '持仓参考中' : row.category === 'interrupted' ? (row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断') : row.trade.frequency === '1w' ? '周K' : row.trade.frequency === '1d' ? '日K' : `${row.trade.frequency.replace('m', '')}分` }}</strong><span>{{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.exit_bar_end ?? row.trade.interrupted_at) }}</span><span>{{ row.trade.physical_contract }}</span><span v-if="row.initial">期初已有</span></div>
             <strong class="newow-reference__record-return" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ row.category === 'closed' ? '盈亏' : row.category === 'open' ? '参考浮动' : '中断浮动' }} {{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</strong>
           </header>
           <div class="newow-reference__record-line"><span><b class="newow-reference__entry">建仓</b> <span>买入</span> <strong>{{ formatMarketDecimal(row.trade.entry_reference_price) }}</strong></span><time :datetime="row.trade.entry_bar_end">{{ rowTime(row.trade, row.trade.entry_bar_end) }}</time></div>
@@ -262,104 +269,9 @@ function usePreset(preset: NewowReferencePreset): void {
       <p v-if="locateMessage" class="newow-reference__state" role="status">{{ locateMessage }}</p>
       <button v-if="recordsModel.nextBefore" type="button" :disabled="recordsLoading" @click="emit('load-more')">加载更多参考历史</button>
     </template>
-    <p v-if="recordsLoading" role="status">正在读取近三个月操盘记录…</p>
+    <p v-if="recordsLoading" role="status">正在读取近一年操盘记录…</p>
     <p v-if="recordsError" role="status">{{ recordsError }} <button @click="emit('load-more')">重试记录</button></p>
   </section>
 </template>
 
-<style scoped>
-.newow-reference { min-width:0; display: grid; gap: var(--gy-space-3); }
-.newow-reference__header, .newow-reference__summary, .newow-reference__state, .newow-reference__tools { padding: var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
-.newow-reference__header { display: flex; flex-wrap:wrap; justify-content: space-between; gap: var(--gy-space-3); }
-.newow-reference h3, .newow-reference p, .newow-reference dl { margin: 0; }
-.newow-reference__header p, .newow-reference__tools span, small { color: var(--gy-text-muted); }
-.newow-reference__window, .newow-reference__tools, .newow-reference__presets { display: flex; flex-wrap: wrap; align-items: end; gap: var(--gy-space-2); }
-.newow-reference__presets button { min-height:32px; border-radius:8px; font-size:12px; }.newow-reference__presets button[aria-pressed="true"] { background:#fff1e8; border-color:#ff6b2c; color:#c2410c; }
-.newow-reference__window label { display: grid; gap: 4px; }
-.newow-reference button, .newow-reference input, .newow-reference select { min-height: 44px; padding: 0 var(--gy-space-2); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); }
-.newow-reference__summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--gy-space-2); }
-.newow-reference__summary dl div { padding: var(--gy-space-2); background: var(--gy-bg-elevated); }
-.newow-reference__summary dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
-.newow-reference__summary dd { margin: 4px 0 0; font-variant-numeric: tabular-nums; }
-.newow-reference__records-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:4px 0; }
-.newow-reference__records-heading h3 { font-size:14px; font-weight:700; }
-.newow-reference__records-heading span { font-size:12px; color:#999; }
-.newow-reference__cards { display:grid; gap:8px; }
-.newow-reference__card { padding:10px 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; min-width:0; cursor:default; }
-.newow-reference__record-top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:4px; }
-.newow-reference__record-meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; line-height:20px; color:#999; }
-.newow-reference__period { padding:3px 7px; line-height:18px; border-radius:4px; background:#ff9500; color:#fff; font-size:12px; white-space:nowrap; }
-.newow-reference__period.is-open,.newow-reference__waiting header strong { background:#007aff; color:#fff; }
-.newow-reference__period.is-interrupted { background:#98a2b3; }
-.newow-reference__record-return { font-size:15px; font-weight:700; line-height:22px; white-space:nowrap; }
-.newow-reference__record-line { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-top:4px; font-size:15px; font-weight:600; line-height:22px; color:#292929; font-variant-numeric:tabular-nums; }
-.newow-reference__record-line > span { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px; }
-.newow-reference__record-line strong,.newow-reference__record-line b { font-weight:700; }
-.newow-reference__record-line time { color:#999; font-size:12px; font-weight:400; white-space:nowrap; }
-.newow-reference__entry,[data-direction="up"].newow-reference__record-return,[data-direction="up"].newow-reference__inline-return { color:#ff403a; }
-.newow-reference__exit,[data-direction="down"].newow-reference__record-return,[data-direction="down"].newow-reference__inline-return { color:#2ac758; }
-.newow-reference__valuation { color:#8992a4; }
-.newow-reference__record-return[data-direction="neutral"],.newow-reference__inline-return[data-direction="neutral"] { color:#999; }
-.newow-reference__interruption { margin-top:6px !important; font-size:11px; line-height:16px; color:#999; }
-.newow-reference__waiting header { display:flex; gap:12px; align-items:center; margin-bottom:8px; }
-.newow-reference__waiting header strong { padding:3px 7px; font-size:12px; line-height:18px; border-radius:4px; }
-@media(max-width:600px) { .newow-reference__records-heading { align-items:flex-start; flex-direction:column; }.newow-reference__record-top { align-items:flex-start; }.newow-reference__record-meta { gap:6px; font-size:12px; }.newow-reference__record-return { font-size:14px; }.newow-reference__record-line { font-size:14px; }.newow-reference__record-line time { font-size:12px; }.newow-reference__card { padding:10px 12px; } }
-.newow-reference__state { color: var(--gy-status-warning); }
-@media (max-width: 720px) { .newow-reference__header { flex-direction: column; } }
-.newow-reference__curve { padding:16px; border:1px solid #ebedf0; border-radius:8px; background:#fff; }
-.newow-reference__curve header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
-.newow-reference__curve header span { color:#98a2b3; font-size:12px; }
-.newow-reference__curve header b { margin-left:auto; color:#ff6b2c; font-size:20px; font-variant-numeric:tabular-nums; }
-.newow-reference__curve svg { display:block; width:100%; min-height:170px; margin:12px 0; overflow:visible; }
-.newow-reference__curve svg text { fill:#999; font-size:10px; font-family:Arial, sans-serif; }
-.newow-reference__curve circle { cursor:pointer; }.newow-reference__curve circle:focus { stroke:#365af5; stroke-width:3; outline:none; }
-.newow-reference__summary dd { font-size:20px; }.newow-reference__summary dl div { background:#f8f9fb; border-radius:4px; }
-
-/* A single compact returns surface: toolbar, plot, metrics and source facts. */
-.newow-reference { gap:10px; }
-.newow-reference__header { border:0; border-radius:0; padding:12px 0 0; display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
-.newow-reference__header > div { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px 14px; }
-.newow-reference__header h3 { font-size:16px; }
-.newow-reference__header p,.newow-reference__header details { font-size:11px; color:#98a2b3; }
-.newow-reference__header details[open] { flex-basis:100%; }
-.newow-reference__window { margin:14px 0 10px; justify-content:center; align-items:center; gap:10px; }
-.newow-reference__presets { align-items:center; gap:8px; }
-.newow-reference__presets button { min-height:26px; padding:4px 14px; border-radius:14px; font-size:12px; }
-.newow-reference__presets button[aria-pressed="true"] { background:#222; border-color:#222; color:white; }
-.newow-reference__presets .newow-reference__ideal { color:#ff9000; }
-.newow-reference__custom-window { color:#98a2b3; font-size:12px; }
-.newow-reference__custom-window > summary { cursor:pointer; padding:6px 8px; }
-.newow-reference__custom-window > div { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0; }
-.newow-reference__custom-window input,.newow-reference__custom-window button { min-height:32px; font-size:12px; }
-.newow-reference__curve { border:0; padding:8px 0; border-radius:0; }
-.newow-reference__curve header { gap:10px; font-size:14px; }
-.newow-reference__loading-curve { min-height:292px; }
-.newow-reference__plot { position:relative; height:180px; margin-top:0; }
-.newow-reference__plot-area { position:absolute; top:20px; bottom:20px; left:44px; right:30px; }
-.newow-reference__plot-area svg { width:100%; height:100%; min-height:0; margin:0; }
-.newow-reference__value-tick,.newow-reference__date-tick { position:absolute; color:#999; font:10px/12px Arial,sans-serif; white-space:nowrap; pointer-events:none; }
-.newow-reference__value-tick { right:calc(100% + 4px); transform:translateY(-50%); }
-.newow-reference__date-tick { top:calc(100% + 5px); transform:translateX(-50%); }
-.newow-reference__date-tick[data-anchor="start"] { transform:none; }
-.newow-reference__date-tick[data-anchor="end"] { transform:translateX(-100%); }
-.newow-reference__summary { padding:0; border:0; background:transparent; }
-.newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:12px 0; margin:2px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
-.newow-reference__summary .newow-reference__metrics > div { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:0 8px; border-radius:0; background:transparent; border:0; }
-.newow-reference__summary .newow-reference__metrics > div:not(:last-child)::after { content:''; position:absolute; right:0; top:50%; transform:translateY(-50%); height:70%; width:1px; background:#ebedf0; }
-.newow-reference__metrics > div:last-child { border-right:0 !important; }
-.newow-reference__metrics dd { order:-1; font-size:15px; line-height:18px; font-weight:700; color:#242424; margin:0; }
-.newow-reference__metrics dd[data-direction="up"] { color:#E53935; }
-.newow-reference__metrics dd[data-direction="down"] { color:#34c759; }
-.newow-reference__metrics dd.newow-reference__drawdown { color:#34c759; }
-.newow-reference__metrics dd small { font-size:10px; font-weight:400; }
-.newow-reference__metrics dt { font-size:10px; line-height:14px; color:#999; }
-.newow-reference__availability { color:#98a2b3; font-size:11px; line-height:20px; }
-.newow-reference__tools { padding:6px 0; border:0; border-top:1px solid #f2f4f7; border-radius:0; font-size:12px; align-items:center; }
-.newow-reference__tools select { min-height:28px; font-size:12px; margin-left:6px; }
-.newow-reference :deep(.fusion-panel) { margin:0; padding:10px 12px; font-size:12px; }
-.newow-reference :deep(.fusion-panel header) { align-items:center; }
-.newow-reference :deep(.fusion-panel header p) { margin:3px 0 0; font-size:11px; }
-.newow-reference :deep(.fusion-panel button) { min-height:28px; padding:4px 10px; font-size:12px; }
-@media(max-width:600px) { .newow-reference__metrics dd { font-size:15px; }.newow-reference__metrics dt { font-size:10px; }.newow-reference__presets button { padding:0 12px; } }
-.newow-reference__returns-heading { display:flex; align-items:baseline; gap:0; padding-top:10px; font-size:14px; }.newow-reference__returns-heading .newow-reference__annualized { color:#ff9000; font-size:14px; font-weight:700; }
-</style>
+<style scoped src="./newowReferencePanel.css"></style>

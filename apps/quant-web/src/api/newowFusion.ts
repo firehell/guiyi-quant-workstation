@@ -12,6 +12,8 @@ export interface FusionTrade {
   reference_trade_id: string
   entry_source: 'trend' | 'oscillation'
   exit_source: 'trend' | 'oscillation' | null
+  entry_trading_day?: string
+  exit_trading_day?: string | null
   entry_bar_end: string
   exit_bar_end: string | null
   physical_contract: string
@@ -23,6 +25,13 @@ export interface FusionTrade {
   statistics_membership: 'entry_in_window_v1' | 'initial_before_window'
 }
 export interface FusionComparison {
+  snapshot_schema?: 'newow_fusion_reference_snapshot_v2'
+  reference_revision?: string
+  fusion_input_sha256?: string
+  curve?: FusionTrade[]
+  next_cursor?: string | null
+  record_since?: string
+  record_through?: string
   reference_model_version: string
   reference_input_sha256: string
   groups: FusionGroup[]

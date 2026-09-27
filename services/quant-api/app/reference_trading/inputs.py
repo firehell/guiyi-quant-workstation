@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from hashlib import sha256
 import json
 from typing import Callable, Protocol
@@ -309,16 +309,48 @@ class MarketDataHistoricalInputReader:
         newow_reader: object,
         subing_service: object,
         read_guard: Callable[[], AbstractContextManager[object]] = nullcontext,
+        pin_verified_inputs: bool = False,
+        compact_intraday_inputs: bool = False,
+        fusion_sources: object | None = None,
     ) -> None:
+        self._fusion_sources = fusion_sources
         self._newow = newow_reader
         self._subing = subing_service
         self._read_guard = read_guard
+        self._compact_intraday_inputs = compact_intraday_inputs
+        self._pin_verified_inputs = pin_verified_inputs
+        self._pinned_request = None
+        self._pinned_snapshot = None
+
+    def _guard(self):
+        return nullcontext() if self._pinned_snapshot is not None else self._read_guard()
+
+    @contextmanager
+    def pin_stream(self, request):
+        """Reuse immutable inputs only while the Canonical maintenance lease is held.
+
+        No cache survives the lease or an interrupted build. The production
+        composition enables this only with the authoritative maintenance lock.
+        """
+        if not self._pin_verified_inputs:
+            yield
+            return
+        if self._pinned_snapshot is not None:
+            raise ValueError("REFERENCE_INPUT_LEASE_ALREADY_HELD")
+        with self._read_guard():
+            try:
+                self._pinned_request = request
+                self._pinned_snapshot = self._read_uncached(request)
+                yield
+            finally:
+                self._pinned_snapshot = None
+                self._pinned_request = None
 
     def _newow_for(self, identity: StreamIdentity) -> object:
         return self._newow(identity) if callable(self._newow) else self._newow
 
     def plan_stream(self, request: object) -> HistoricalInputSnapshot:
-        with self._read_guard():
+        with self._guard():
             return self._read(request)
 
     def estimate_stream(self, request: object) -> tuple[int, int]:
@@ -366,7 +398,7 @@ class MarketDataHistoricalInputReader:
     def load_stream(
         self, request: object, *, expected_source_token: str,
     ) -> HistoricalInputSnapshot:
-        with self._read_guard():
+        with self._guard():
             snapshot = self._read(request)
         if snapshot.source_token != expected_source_token:
             raise ValueError("SOURCE_CHANGED")
@@ -383,7 +415,7 @@ class MarketDataHistoricalInputReader:
 
         class Guard:
             def __enter__(self):
-                self._guard = reader._read_guard()
+                self._guard = reader._guard()
                 self._guard.__enter__()
                 if reader._read(request).source_token != expected_source_token:
                     self._guard.__exit__(None, None, None)
@@ -396,16 +428,43 @@ class MarketDataHistoricalInputReader:
         return Guard()
 
     def _read(self, request: object) -> HistoricalInputSnapshot:
+        if self._pinned_snapshot is not None and request == self._pinned_request:
+            return self._pinned_snapshot
+        return self._read_uncached(request)
+
+    def _read_uncached(self, request: object) -> HistoricalInputSnapshot:
         from app.reference_trading.planning import HistoricalStreamRequest
 
         if not isinstance(request, HistoricalStreamRequest):
             raise TypeError("request must be HistoricalStreamRequest")
         normalized = request.identity.strategy_code.replace("-", "_")
+        if normalized == "newow_dual_fusion":
+            return self._read_fusion(request)
         if normalized == "subing_reference":
             return self._read_subing(request)
         if normalized.startswith("newow_"):
             return self._read_newow(request)
         raise ValueError("REFERENCE_CAPABILITY_UNSUPPORTED")
+
+    def _read_fusion(self, request):
+        from guiyi_quant.newow.product_adapters import build_product_identity
+        from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+        from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
+        from app.reference_trading.newow_fusion import FusionHistoricalPayload
+        if not callable(self._fusion_sources) or not self._compact_intraday_inputs:
+            raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
+        product = build_product_identity(request.identity.product,ProductStrategy.TREND,ProductFrequency(request.identity.frequency))
+        shadow_identity = replace(request.identity,strategy_code="newow_trend",formula_versions=product.formula_versions,profile_id=product.profile_id,reference_model_version=REFERENCE_MODEL_VERSION,futures_adaptation_version=futures_adaptation_version(request.identity.frequency))
+        shadow = self._read_newow(replace(request,identity=shadow_identity))
+        actions, dependencies = self._fusion_sources(request,shadow.dependency_manifest)
+        bars=[]
+        for item in shadow.bars:
+            source_actions=tuple(actions.get((item.bar_end,item.physical_contract,item.owner_segment_id,item.calculation_segment_id),())) if item.strategy_input else ()
+            payload=FusionHistoricalPayload(item.payload.bar,source_actions) if item.strategy_input else item.payload
+            fingerprint=sha256(_canonical([item.fingerprint,[(action.signal_id,str(action.reference_price),action.trade_eligibility.value) for action in source_actions]]).encode()).hexdigest()
+            bars.append(replace(item,payload=payload,fingerprint=fingerprint,boundaries=tuple(replace(boundary,stream=request.identity) for boundary in item.boundaries)))
+        manifest={**shadow.dependency_manifest,"reader":"newow_fusion_saved_sources_v1","source_dependencies":dependencies,"formula_versions":list(request.identity.formula_versions),"reference_model_version":request.identity.reference_model_version,"input_sha256":sha256(_canonical([bar.fingerprint for bar in bars]).encode()).hexdigest()}
+        return HistoricalInputSnapshot(request.identity,shadow.storage_start,shadow.completed_through,tuple(bars),manifest,sha256(_canonical(manifest).encode()).hexdigest(),len(_canonical(manifest).encode())+len(bars)*256)
 
     def _read_subing(self, request):
         from app.market_data.domain import BarFrequency
@@ -701,6 +760,24 @@ class MarketDataHistoricalInputReader:
             "formula_versions": list(request.identity.formula_versions),
             "reference_model_version": request.identity.reference_model_version,
         }
+        if self._compact_intraday_inputs and frequency.value in {"1m", "15m", "30m", "60m"}:
+            evidence = newow_reader.historical_source_evidence(
+                product=query.product, frequency=frequency.value,
+                since=request.since, through=request.through, as_of=request.as_of,
+            )
+            manifest = {
+                "reader": "newow_product_reader_intraday_v3",
+                "query_since": request.since.isoformat(),
+                "query_through": request.through.isoformat(),
+                "query_as_of": request.as_of.isoformat(),
+                "source_evidence_sha256": sha256(_canonical(evidence).encode()).hexdigest(),
+                "input_sha256": sha256(_canonical(manifest).encode()).hexdigest(),
+                "input_count": len(bars),
+                "quality_policy": read.input_quality_policy.value,
+                "formula_versions": list(request.identity.formula_versions),
+                "reference_model_version": request.identity.reference_model_version,
+                "lifecycle_owners": manifest["lifecycle_owners"],
+            }
         token = sha256(_canonical(manifest).encode()).hexdigest()
         return HistoricalInputSnapshot(
             request.identity,

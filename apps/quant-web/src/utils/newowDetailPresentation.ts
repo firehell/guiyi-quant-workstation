@@ -1,3 +1,4 @@
+import { sumReferenceReturns } from './newowReferenceCurve.ts'
 import { formatChartTimeInShanghai } from './barTime.ts'
 import { formatMarketPercent } from './marketDisplay.ts'
 import type { NewowAuxiliaryValue, NewowProductBar, NewowProductSectionResponse, NewowResourceLifecycle } from '../types/newowProduct.ts'
@@ -66,10 +67,11 @@ export function shortNewowTime(value: string | null | undefined): string {
 
 /** Decoration of server-provided Decimal text only; no return calculation. */
 export function referencePercentDisplay(value: string | null | undefined): { text: string; direction: 'up' | 'down' | 'neutral' } {
-  if (value == null || !/^-?\d+(\.\d+)?$/.test(value)) return { text: '—', direction: 'neutral' }
-  const zero = /^-?0+(\.0+)?$/.test(value)
-  const direction = zero ? 'neutral' : value.startsWith('-') ? 'down' : 'up'
-  return { text: formatMarketPercent(value, 'percentage_points', true), direction }
+  const normalized = value == null ? null : sumReferenceReturns([value])
+  if (normalized === null) return { text: '—', direction: 'neutral' }
+  const zero = /^-?0+(\.0+)?$/.test(normalized)
+  const direction = zero ? 'neutral' : normalized.startsWith('-') ? 'down' : 'up'
+  return { text: formatMarketPercent(normalized, 'percentage_points', true), direction }
 }
 export function referenceInterruptionLabel(reason: string | null): string {
   if (reason === 'SOURCE_PRICE_UNAVAILABLE') return '源日线价格不可用，交易参考中断；不计入完整收益'

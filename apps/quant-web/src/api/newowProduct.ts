@@ -70,6 +70,7 @@ const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
   ['newow_product_capabilities_v19', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V19 }],
   ['newow_product_capabilities_v20', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V20 }],
   ['newow_product_capabilities_v21', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V21 }],
+  ['newow_product_capabilities_v23', { stage: 'rb_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v22', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
 ])
 
@@ -277,6 +278,7 @@ function validCalendarDate(value: string): boolean {
 }
 
 interface ProductRequestConfig {
+  readonly timeout?: number
   readonly params: Record<string, unknown>
   readonly signal?: AbortSignal
 }
@@ -284,6 +286,7 @@ interface ProductRequestConfig {
 type ProductTransport = (path: string, config: ProductRequestConfig) => Promise<unknown>
 
 export interface NewowProductRequestOptions {
+  readonly timeout?: number
   readonly signal?: AbortSignal
   readonly request?: ProductTransport
 }
@@ -298,6 +301,7 @@ export async function getNewowProductSection(
     payload = await transport('/market/newow/strategy-detail', {
       params: buildNewowProductQuery(request),
       signal: options.signal,
+      ...(options.timeout !== undefined ? { timeout: options.timeout } : ['1m', '15m', '30m', '60m'].includes(request.identity.frequency) ? { timeout: 60000 } : {}),
     })
   } catch (error) {
     if (error instanceof NewowProductRequestError) throw error
@@ -332,6 +336,7 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     addWindow(common, request.from, request.through)
   } else if (request.section === 'reference') {
     if (request.includeFusion) common.include_fusion = true
+    if (request.fusionBefore !== undefined) common.fusion_before = request.fusionBefore
     if ((request.performanceSince === undefined) !== (request.performanceThrough === undefined)) throw new NewowProductRequestError('NEWOW_INVALID_PERFORMANCE_WINDOW', 'invalid')
     if (request.performanceSince !== undefined) {
       common.performance_since = request.performanceSince
