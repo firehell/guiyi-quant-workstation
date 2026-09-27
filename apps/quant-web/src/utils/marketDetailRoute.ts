@@ -103,7 +103,7 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
   return {
     view: identity.view,
     symbol: identity.symbol,
-    ...(identity.view === 'newow' ? { strategy: identity.strategy, newow_mode: identity.newowMode } : {}),
+    ...(identity.view === 'newow' ? { strategy: identity.strategy, ...(identity.newowMode ? { newow_mode: identity.newowMode } : {}) } : {}),
     series_kind: identity.seriesKind,
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,

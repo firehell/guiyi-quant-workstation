@@ -89,11 +89,14 @@ for (const strategy of NEWOW_STRATEGIES) {
       const clearId = strategy === 'oscillation' ? `${strategy}-${frequency}-clear-same` : `${strategy}-${frequency}-clear`
       await expect(chart).toHaveAttribute('data-action-ids', `${strategy}-${frequency}-build-closed,${clearId},${strategy}-${frequency}-build-open`)
       expectExactQuery(productRequests(fixture, 'chart')[0], { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', section: 'chart', as_of: NEWOW_AS_OF })
-      await expect.poll(() => productRequests(fixture, 'reference').length).toBe(1)
+      await expect.poll(() => productRequests(fixture, 'reference').filter(item => !item.url.searchParams.has('history_limit')).length).toBe(1)
 
       await showReference(page)
       await expect(page.getByTestId('newow-reference-summary')).toContainText('100')
       expectExactQuery(productRequests(fixture, 'reference')[0], { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', section: 'reference', as_of: NEWOW_AS_OF, snapshot_token: `snapshot:${strategy}:${frequency}:fixture-revision-1` })
+      await expect.poll(() => productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('history_limit') === '200').length).toBe(1)
+      const records = productRequests(fixture, 'reference').find(item => item.url.searchParams.get('history_limit') === '200')
+      expectExactQuery(records, { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', section: 'reference', as_of: NEWOW_AS_OF, performance_since: '2026-06-03', performance_through: '2026-09-03', history_limit: '200', snapshot_token: `snapshot:${strategy}:${frequency}:fixture-revision-1` })
       const summaryBefore = await page.getByTestId('newow-reference-summary').innerText()
       await page.getByTestId('newow-load-earlier').click()
       await expect.poll(() => productRequests(fixture, 'chart').length).toBe(2)

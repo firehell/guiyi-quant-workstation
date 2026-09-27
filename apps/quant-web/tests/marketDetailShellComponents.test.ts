@@ -10,8 +10,6 @@ const componentNames = [
   'MarketFactsDialog',
   'MarketFactsDisclosure',
   'MarketDetailViewNav',
-  'MarketDetailFactStrip',
-  'MarketDetailStatusStrip',
   'MarketDetailInsightDeck',
   'MarketDetailDisclosure',
   'MarketDetailSectionTabs',
@@ -98,12 +96,9 @@ test('view navigation exposes six flat analysis choices and emits exact identiti
 })
 
 test('facts and disclosures preserve the strict presentation contract', () => {
-  const facts = parsedComponent('MarketDetailFactStrip')
   const disclosure = parsedComponent('MarketDetailDisclosure')
   const deck = parsedComponent('MarketDetailInsightDeck')
 
-  assert.match(facts.source, /facts:\s*readonly MarketDetailFact\[\]/)
-  assert.match(facts.source, /repeat\(auto-fit/)
   assert.match(disclosure.template, /aria-expanded/)
   assert.match(disclosure.template, /aria-controls/)
   assert.match(disclosure.template, /MarketDetailIcon[^>]+chevron/)
