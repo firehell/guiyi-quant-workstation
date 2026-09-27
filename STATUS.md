@@ -6,9 +6,18 @@
 
 ## Release 与 Runtime
 
-正式发布及已切换 Runtime 的精确身份为 **v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3**。
-PR #403、annotated tag 与非草稿 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.38)
-已读回。develop 后续提交不自动属于该 tag 或现役 Runtime。
+最新正式发布为 **v1.10.39@653e736f5952146a2ea401634d32a605e7b9a0d5**。
+PR #404、annotated tag 与非草稿/非预发布
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.39) 已读回；main 源码树与验证候选一致。
+新增日周 AI 分析、综合决策和状态摘要、双策略参考曲线与近一年记录，以及默认关闭的 RB 分钟历史候选。
+发布说明见 [v1.10.39](docs/releases/v1.10.39.md)。候选验证：Web 719 passed / 1 skipped、后端245 passed、
+数据352 passed、格式修正后19 passed、定向浏览器6 passed；build、lock、Ruff、Newow spec、secret scan通过。
+旧 Newow fixture 扩展套件有合同漂移，本轮尝试保留失败输出并中断，不声明全套 E2E 通过。
+本机原始日志仅保留于 `outputs/release-v1.10.39-20260927/`，未纳入本轮发布提交。
+
+**现役 Runtime 仍为 v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3**，本轮未切换服务。
+发布时只读现场 API/Web HTTP200；runtime health=degraded，盘后 missed、Alert coverage 未验证，
+weekly missed 保持待验收，不声明 RUNTIME_READY。新发布树保留，旧现役树仍有服务引用，不清理。
 
 现役源码根为 linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.10.38`，
 迁移时 detached/clean；六项服务 root/commit、HTTP200 和 readonly health 已读回。
@@ -16,20 +25,20 @@ PR #403、annotated tag 与非草稿 [GitHub Release](https://github.com/firehel
 问题在最新发布树向前修复并发布补丁，不覆盖旧 tag。必要历史盘后/周检 JSON 在
 `outputs/newow-release-v1.10.38-20260927/retired-runtime-evidence/`。
 
-状态为 **RELEASED，切换及即时读回通过**；新根第一根自然 completed Bar、自然盘后增量/MDS 与新根 weekly
+v1.10.38 当时切换及即时读回通过；该根第一根自然 completed Bar、自然盘后增量/MDS 与新根 weekly
 验收仍待完成，**不声明 RUNTIME_READY**。9/24 周检的 23 条 finding 保留；新根 missed/无结果不能替代历史结论。
 详见 [发布与切换记录](docs/tasks/newow-release-v1.10.38-20260927.md) 和
 `outputs/newow-release-v1.10.38-20260927/`。
 
 ## 当前产品与验证范围
 
-- Newow 日周三策略以及日周 CDV2 解释、独立双策略入口已随本次版本交付；主图、辅助、参考曲线和近三个月记录分层。
+- Newow 日周三策略以及日周 CDV2 解释、独立双策略入口已随 v1.10.38 交付；主图、辅助、参考曲线和近三个月记录分层。
   Newow 60m 未开放，日周解释不构成 StrategyDecision、模型账户或真实交易。
 - 正式 60 品种 D1/W1 默认快照、质量断点与预热披露已完成本轮数据/页面验收；不是每个组合均 READY 或盈利的声明。
   来源不足、WARMING、报价不可用及数据中断仍按合同表达。
 - 正式 JM 日线页面主图/辅助/参考收益及双策略入口已读回；普通 74 笔累计 183.66 是页面参考统计，
   理论值与普通参考曲线具有独立口径，不是账户收益。
-- 最终发布验证：前端 691 passed / 1 skipped、后端定向 171 passed、隔离浏览器 6 passed；
+- v1.10.38 冻结发布验证：前端 691 passed / 1 skipped、后端定向 171 passed、隔离浏览器 6 passed；
   build、Ruff、Newow spec 与独立 Review 通过。工程检查 22 passed / 1 既有截图批准库存失败；
   旧分页 E2E 漂移与全模块测试中断已披露，未声明全量通过。以上仅归属冻结发布候选。
 - 当前持续服务保持既有 operational 集合、Rule/Scope/audience（2）及 transport；reference worker 关闭，
@@ -53,7 +62,7 @@ P0–P6 首轮工程与隔离验收已完成并快进集成 develop，集成后�
 
 候选默认关闭、只在隔离preview对RB开放；资产只写隔离schema `newow_intraday_pilot_20260927`。
 复用已有Canonical，实际缺口为零，provider/Canonical/Market Catalog mutation均为零。
-正式日周开关、worker、Scope、Runtime与 `auto_order=false` 未变。P7全量、发布/切换、观察启用、通知、
+正式日周开关、worker、Scope、Runtime与 `auto_order=false` 未变。分钟工程源码随 v1.10.39 发布但正式入口仍关闭；P7全量、Runtime切换、观察启用、通知、
 订单及因果/OOS研究未执行。SQL/hydrate取消有界但非即时；旧7项fixture漂移与既有reference-trading
 OpenSpec结构失败单列，没有声明全套通过。详见 [首轮执行与验收](docs/tasks/newow-intraday-pilot-20260927.md)；
 下一轮从 [P7精确盘点](docs/superpowers/plans/2026-09-19-newow-intraday-roadmap.md#p760-品种扩大与维护接续) 开始。
@@ -92,7 +101,7 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
   跨周期解释保留 bar_end/as_of，不用未来完成周线回填历史决策。
 - 策略公式、页面参考、因果研究、OOS/Walk-forward、Shadow 和账户事实分别验收；解释评分不自动成为执行 Gate。
 
-分钟任务当前另有工作树和未提交路线图，不由本文档整理重新解释或推进。
+分钟 P0–P6 已集成并随 v1.10.39 发布源码；正式开放与 P7 扩大仍未执行。
 
 ## 唯一下一步
 
