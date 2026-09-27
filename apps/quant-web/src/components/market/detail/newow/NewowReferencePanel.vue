@@ -239,7 +239,7 @@ function usePreset(preset: NewowReferencePreset): void {
 
     </template>
     <template v-if="recordsModel">
-      <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
+      <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>近一年 · 历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
         <header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header>
         <p :title="waiting.bar_end">状态时间 {{ referenceTimeDisplay(waiting.bar_end, chartResponse!.meta.identity.frequency, [chartResponse!.meta.as_of]) }} · 截至所示已完成 Bar，仅作页面参考。</p>
@@ -262,7 +262,7 @@ function usePreset(preset: NewowReferencePreset): void {
       <p v-if="locateMessage" class="newow-reference__state" role="status">{{ locateMessage }}</p>
       <button v-if="recordsModel.nextBefore" type="button" :disabled="recordsLoading" @click="emit('load-more')">加载更多参考历史</button>
     </template>
-    <p v-if="recordsLoading" role="status">正在读取近三个月操盘记录…</p>
+    <p v-if="recordsLoading" role="status">正在读取近一年操盘记录…</p>
     <p v-if="recordsError" role="status">{{ recordsError }} <button @click="emit('load-more')">重试记录</button></p>
   </section>
 </template>

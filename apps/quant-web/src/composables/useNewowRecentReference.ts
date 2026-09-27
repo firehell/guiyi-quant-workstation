@@ -10,6 +10,8 @@ export function useNewowRecentReference(source: Ref<NewowProductSectionResponse<
   const error = shallowRef<string | null>(null)
   let controller: AbortController | null = null
   let generation = 0
+  // Freeze the initial server history floor; curve range switches cannot clamp record pages.
+  let availableSince: string | undefined
   async function loadMore() {
     const anchor = source.value
     if (!anchor?.value || !anchor.meta.snapshot_token || loading.value) return
@@ -20,7 +22,7 @@ export function useNewowRecentReference(source: Ref<NewowProductSectionResponse<
     const active = controller
     loading.value = true
     error.value = null
-    const window = newowReferenceWindow(anchor.value.actual_available_through, 'three_months', anchor.value.performance_since)
+    const window = newowReferenceWindow(anchor.value.actual_available_through, 'one_year', availableSince)
     const request: NewowProductRequest = {
       identity: { product: anchor.meta.identity.product, strategy: anchor.meta.identity.strategy, frequency: anchor.meta.identity.frequency, seriesKind: 'actual_dominant' },
       section: 'reference', asOf: anchor.meta.as_of, snapshotToken: anchor.meta.snapshot_token,
@@ -35,13 +37,14 @@ export function useNewowRecentReference(source: Ref<NewowProductSectionResponse<
         ? { ...next, value: { ...next.value, items: [...previous.items, ...next.value.items.filter(item => !previous.items.some(old => old.reference_trade_id === item.reference_trade_id))] } }
         : next
     } catch {
-      if (generation === current && !active.signal.aborted) error.value = '近三个月操盘记录暂不可用，请重试。'
+      if (generation === current && !active.signal.aborted) error.value = '近一年操盘记录暂不可用，请重试。'
     } finally {
       if (generation === current) loading.value = false
     }
   }
   const stop = watch(() => [source.value?.meta.snapshot_token, source.value?.value?.actual_available_through].join('|'), () => {
     ++generation
+    availableSince = source.value?.value?.performance_since
     controller?.abort()
     response.value = null
     loading.value = false
