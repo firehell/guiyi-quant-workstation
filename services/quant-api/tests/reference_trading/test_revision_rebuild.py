@@ -246,7 +246,7 @@ def test_postgresql_long_history_price_rebuild_keeps_past_cutoff(
     revised_prices = [*prices]
     revised_prices[-1] = 120
     reader.bars = Reader(prices=revised_prices, at=datetime(1990, 1, 1, 15, tzinfo=UTC)).bars
-    reader.token = "source-revised-tail-price"
+    reader.token = "test-only-source-revised-tail-price"
     original_snapshot = reader._snapshot
 
     def revised(request):

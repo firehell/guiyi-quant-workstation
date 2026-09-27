@@ -128,3 +128,49 @@ Python 使用既有 `services/quant-api/.venv/bin/python`（主工作区绝对�
 Reviewer 独立运行 capability/route/shell/status/navigation 55项unit，全通过；diff检查通过。
 本轮保留现有产品能力，正式数据、通知、main/tag/release和Runtime均未变更。
 本任务提交可独立回滚；集成与远端身份以最终Git祖先检查和读回为准。
+
+## 2026-09-27 验证遗留项收敛
+
+本轮基线为 `develop@779551f310edd67d5eb4e25120bb0599cbf5698e`，在独立工作树实现；
+只修改验证代码和测试数据标识，不修改生产组件、公式、数据、Runtime 或截图材料。
+
+- 截图卫生检查：原 Owner 批准的29项及9/18五项哈希保持冻结；已经在仓库中的9/26
+  18项公开观察使用 `latest-audit-20260926.json` 校验精确路径、类型、大小、哈希与重复。
+  拒绝路径逃逸、symlink和未登记文件；不将原审批改成任意 glob 审批，不添加新分发材料。
+- 完整秘密扫描：Reader 的 source revision 标识明确使用既有 `test-only` 约定，扫描器未改。
+  新正例保证真实长 token 赋值仍被报告且不回显值。
+- 旧参考分页验证：按固定三个月 `history_limit=200` 建立可分页场景，严格倒序且按同一
+  Bar owner 复用价格事实；收益曲线读完整两笔 CLOSED，记录独立分页，中断浮动不混入已完成收益。
+  替换已移除的逐条展开/筛选/建仓信号定位操作，验证当前曲线定位记录、窗口隔离和显式记录重试。
+  统计409夹具只命中统计请求，保留主图 `not_requested` 和去除 snapshot 绑定的恢复断言。
+- 新增 `newowRecordsFixture.test.ts`，以固定日期、精确Decimal汇总与价格预期验证新夹具；
+  初始化同时验证三策略×三周期的跨section owner事实。
+
+| 实际验证 | 结果 |
+|---|---|
+| `pnpm -C apps/quant-web test` | 685 passed / 1 skipped / 0 failed |
+| `pnpm -C apps/quant-web build` | vue-tsc、Vite及bundle topology通过；保留既有动态import提示 |
+| `PLAYWRIGHT_PORT=5199 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-product.spec.mjs e2e/market-detail.spec.mjs --grep 'reference pagination\|curve selection\|curve window\|record cursor\|reference rebuild\|owns an independent chart\|missing view migrates\|Free uses\|Newow HTDY and Free share' --timeout=20000 --reporter=line` | 最终11 passed（9.2s）；独立Review另跑其中5项全部通过 |
+| `python -m pytest -p no:cacheprovider tests/engineering/test_repository_hygiene.py tests/engineering/test_secret_scan.py tests/engineering/test_canonical_consistency.py services/quant-api/tests/reference_trading/test_revision_rebuild.py -q` | 36 passed / 3 skipped；三个PostgreSQL重建用例因未配置隔离测试数据库跳过，未访问生产DB |
+| `python scripts/engineering/secret_scan.py --json` | full tracked scope通过，0 findings |
+| `python -m ruff check tests/engineering/test_repository_hygiene.py tests/engineering/test_secret_scan.py services/quant-api/tests/reference_trading/test_revision_rebuild.py` | passed |
+| `git diff --check` | passed |
+
+独立Review：工程16项、定向浏览器5项及九组合跨section校验均通过，允许集成已完成部分；
+未发现Confirmed Issue。当前完整浏览器套件与视觉Gate仍未闭合，不能据上述定向结果声称全部通过。
+
+### 尚未收敛的完整浏览器 Gate
+
+完整回归命令：`PLAYWRIGHT_PORT=5199 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-product.spec.mjs e2e/market-detail.spec.mjs --timeout=15000 --reporter=line`。
+本轮扩展扫描得到63 passed / 16 failed；执行期间增加过夹具预校验，最终定向出口另行重跑。
+失败涉及旧动作点击/密集节点交互、已移除的主升浪Tab/记录定位入口、刷新按钮名称、
+独立记录请求增加后的请求计数、旧桌面/移动截图、对话框滚动，以及SuBing视觉和HTDY Event刷新。
+这些失败未全部逐项证明为旧断言漂移，不能统称为无害基线，也不能通过删测试或换截图全部消除。
+`newow-desktop-reference.png` 原断言所覆盖的旧展开卡片已移除；本轮迁移为当前卡片字段与
+窗口隔离检查，未建立该画面的新视觉基线，旧PNG保持原样。
+
+宿主自动审批两次阻断验证迁移：一次阻断将`not_requested`直接改为`ready`（已经通过
+修正冲突注入对象、保留原断言解决）；另一次阻断批量将已退役动作点击测试改为展示属性断言，
+认为可能掩盖行为回归。后者未执行，不绕过自动审批。剩余处理方案为：先对每个失败确认
+当前产品合同和等价覆盖，再迁移旧用例；截图须逐张确认新画面后建立基线，保持现有阈值。
+已完成部分可以独立集成；完整E2E/视觉验收状态仍为PARTIAL。

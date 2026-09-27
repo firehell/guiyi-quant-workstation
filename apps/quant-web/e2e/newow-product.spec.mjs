@@ -358,34 +358,27 @@ test('six flat choices reuse the compatible Newow chart host and replace strateg
   assertNoUnexpectedRequests(fixture)
 })
 
-test('reference pagination exposes OPEN, CLOSED, interrupted, negative and initial rows without inventing zero metrics', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page)
+test('reference pagination exposes OPEN, CLOSED, interrupted and negative rows within the fixed records window without inventing zero metrics', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { recordsHistory: true })
   await page.goto(newowRoute())
   await showReference(page)
   await expect(page.locator('article[data-reference-category="open"]')).toBeVisible()
   await expect(page.locator('article[data-reference-category="closed"]')).toBeVisible()
   await page.getByRole('button', { name: '加载更多参考历史' }).click()
   await expect(page.locator('article[data-reference-category="interrupted"]')).toBeVisible()
-  await expect(page.locator('article[data-reference-category="interrupted"] .newow-return-badge')).toHaveText('-10%')
-  await expect(page.locator('article[data-reference-initial="true"]')).toBeVisible()
+  await expect(page.locator('article[data-reference-category="interrupted"] .newow-reference__record-return')).toContainText('-10%')
+  await expect(page.locator('article[data-reference-initial="true"]')).toHaveCount(0)
   const openRow = page.locator('article[data-reference-category="open"]')
   await expect(openRow.locator('header')).toContainText('2026-08-03 → 至估值日')
-  await openRow.getByRole('button', { name: /展开参考记录/ }).click()
-  await expect(openRow).toContainText('trend-1d-build-open')
-  await expect(openRow).toContainText(/参考建仓\s*▲\s*106/)
-  await expect(openRow).toContainText('清仓 ID —')
+  await expect(openRow).toContainText(/建仓\s*买入\s*106/)
   await expect(openRow).toContainText('104.675')
-  const closedRow = page.locator('article[data-reference-category="closed"][data-reference-initial="false"]')
-  await closedRow.getByRole('button', { name: /展开参考记录/ }).click()
-  await expect(closedRow).toContainText('trend-1d-build-closed')
-  await expect(closedRow).toContainText(/参考建仓\s*▲\s*104/)
-  await expect(closedRow).toContainText('trend-1d-clear')
-  await expect(closedRow).toContainText(/参考清仓\s*▼\s*109\.3061/)
+  const closedRow = page.locator('#reference-trade-trend-1d-closed')
+  await expect(closedRow).toContainText(/建仓\s*买入\s*104/)
+  await expect(closedRow).toContainText(/清仓\s*卖出\s*109\.3061/)
   const interruptedRow = page.locator('article[data-reference-category="interrupted"]')
-  await interruptedRow.getByRole('button', { name: /展开参考记录/ }).click()
-  await expect(interruptedRow).toContainText('trend-1d-bi')
-  await expect(interruptedRow).toContainText(/参考建仓\s*▲\s*88/)
+  await expect(interruptedRow).toContainText(/建仓\s*买入\s*88/)
   await expect(interruptedRow).toContainText('79.2')
+  await expect(interruptedRow).toContainText('中断浮动不计入已完成收益')
   const summaryBeforeViewport = await page.getByTestId('newow-reference-summary').innerText()
   const stage = page.getByTestId('newow-product-chart-stage')
   const pricePane = stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') }).first().locator('td').nth(1)
@@ -413,67 +406,29 @@ test('reference pagination exposes OPEN, CLOSED, interrupted, negative and initi
   await page.evaluate(scrollY => window.scrollTo(0, scrollY), referenceScrollY)
   await page.getByTestId('newow-reference-summary').scrollIntoViewIfNeeded()
   await page.mouse.move(0, 0)
-  await expect(page).toHaveScreenshot('newow-desktop-reference.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
   expect(productRequests(fixture, 'reference').at(-1).url.searchParams.get('history_before')).toBe('reference-page-2')
   assertNoUnexpectedRequests(fixture)
 })
 
-test('exact locate loads an unloaded window and never falls back to nearest marker', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page)
+test('curve selection loads its exact older record inside the fixed records window', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { recordsHistory: true })
   await page.goto(newowRoute())
   await showReference(page)
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
   const summaryBefore = await page.getByTestId('newow-reference-summary').innerText()
-  const rowCountBefore = await page.locator('article[data-reference-category]').count()
-  const referenceRequestsBefore = productRequests(fixture, 'reference').length
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-bi')
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-bi')
-  await expect(page.getByRole('button', { name: '返回原记录' })).toBeVisible()
-  await showReference(page)
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-bi')
-  const locate = productRequests(fixture, 'chart').at(-1).url.searchParams
-  expect(locate.get('from')).toBe('2026-01-05')
-  expect(locate.has('performance_since')).toBe(false)
-  await showReference(page)
+  const chartBefore = productRequests(fixture, 'chart').length
+  await page.getByRole('button', { name: /2026-06-30，累计 .*定位参考交易/ }).press('Enter')
+  await expect(page.locator('#reference-trade-trend-1d-initial')).toBeInViewport()
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
   expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
-  await expect(page.locator('article[data-reference-category]')).toHaveCount(rowCountBefore)
-  await page.getByLabel('筛选参考历史').selectOption('closed')
-  await page.getByRole('button', { name: '返回原记录' }).click()
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('原记录不在当前筛选或已加载页')
-  await expect(page.locator('.newow-product-workspace__research')).toBeFocused()
-  expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
-  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
-  expect(productRequests(fixture, 'reference')).toHaveLength(referenceRequestsBefore)
-  assertNoUnexpectedRequests(fixture)
-})
-
-test('rapid reference locates accept only the current request when chart windows resolve out of order', async ({ page }) => {
-  const delayed = []
-  const fixture = await installNewowProductFixtures(page, {
-    onProductRequest: async ({ route, url, section }) => {
-      if (section !== 'chart' || !url.searchParams.has('from')) return undefined
-      delayed.push({ route, from: url.searchParams.get('from') })
-      return 'handled'
-    },
-  })
-  await page.goto(newowRoute())
-  await showReference(page)
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await page.getByRole('button', { name: '定位参考记录 trend-1d-initial 的建仓信号' }).click()
-  await expect.poll(() => delayed.length).toBe(2)
-  expect(delayed.map(({ from }) => from)).toEqual(['2026-01-05', '2025-12-15'])
-
-  await delayed[1].route.fulfill({ json: buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, delayed[1].from) })
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-b0')
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-b0')
-
-  await delayed[0].route.fulfill({ json: buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, delayed[0].from) }).catch(() => {})
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-b0')
-  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-b0')
+  expect(productRequests(fixture, 'chart')).toHaveLength(chartBefore)
+  const records = productRequests(fixture, 'reference').filter(item => item.url.searchParams.has('history_limit'))
+  expect(records).toHaveLength(2)
+  for (const item of records) {
+    expect(item.url.searchParams.get('history_limit')).toBe('200')
+    expect(item.url.searchParams.get('performance_since')).toBe('2026-06-03')
+    expect(item.url.searchParams.get('performance_through')).toBe('2026-09-03')
+  }
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -491,41 +446,20 @@ test('default completed W1 window remains current on a weekend', async ({ browse
   }
 })
 
-test('auxiliary requests follow the accepted default, located owner, and returned current chart windows', async ({ page }) => {
+test('curve window changes leave records, chart and auxiliary windows unchanged', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute())
-  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(1)
-  let request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
-  expect(request.get('from')).toBe('2025-01-01')
-  expect(request.get('through')).toBe('2026-09-03')
-
   await showReference(page)
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(2)
-  request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
-  expect(request.get('from')).toBe('2026-01-05')
-  expect(request.get('through')).toBe('2026-01-05')
-
-  await page.getByRole('button', { name: '刷新当前', exact: true }).click()
-  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(3)
-  request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
-  expect(request.get('from')).toBe('2025-01-01')
-  expect(request.get('through')).toBe('2026-09-03')
-  assertNoUnexpectedRequests(fixture)
-})
-
-test('absent exact locate stays unavailable without selecting a neighbor or changing performance', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { noAction: true })
-  await page.goto(newowRoute())
-  await showReference(page)
-  const summary = page.getByTestId('newow-reference-summary')
-  const summaryBefore = await summary.innerText()
-  await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByText(/无法按精确信号 trend-1d-bi.*没有跳转到邻近日期/)).toBeVisible()
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', '')
-  expect(await summary.innerText()).toBe(summaryBefore)
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+  const recordsBefore = productRequests(fixture, 'reference').filter(item => item.url.searchParams.has('history_limit')).length
+  const chartBefore = productRequests(fixture, 'chart').length
+  const auxiliaryBefore = productRequests(fixture, 'auxiliary').length
+  await page.getByRole('button', { name: '近3月', exact: true }).click()
+  await expect(page.getByRole('button', { name: '近3月', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.has('history_limit'))).toHaveLength(recordsBefore)
+  expect(productRequests(fixture, 'chart')).toHaveLength(chartBefore)
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(auxiliaryBefore)
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -624,15 +558,23 @@ test('isolated weekly candidate opens three W1 strategies and keeps 60m closed',
   assertNoUnexpectedRequests(fixture)
 })
 
-test('reference cursor generation conflict rebuilds from an unbound first page once', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { cursorConflictOnce: 'trend:1d:reference' })
+test('record cursor conflict preserves accepted records and retries only on explicit request', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { recordsHistory: true, cursorConflictOnce: 'trend:1d:reference' })
   await page.goto(newowRoute())
   await showReference(page)
+  const summaryBefore = await page.getByTestId('newow-reference-summary').innerText()
   await page.getByRole('button', { name: '加载更多参考历史' }).click()
-  await expect(page.locator('article[data-reference-category="open"]')).toBeVisible()
-  await expect.poll(() => productRequests(fixture, 'reference').length).toBe(3)
-  expect(productRequests(fixture, 'reference')[2].url.searchParams.has('snapshot_token')).toBe(false)
-  expect(productRequests(fixture, 'reference')[2].url.searchParams.has('history_before')).toBe(false)
+  await expect(page.getByText('近三个月操盘记录暂不可用，请重试。')).toBeVisible()
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+  expect(productRequests(fixture, 'reference')).toHaveLength(3)
+  await page.getByRole('button', { name: '重试记录', exact: true }).click()
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(4)
+  expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
+  expect(productRequests(fixture, 'reference')).toHaveLength(4)
+  const retry = productRequests(fixture, 'reference').at(-1).url.searchParams
+  expect(retry.get('snapshot_token')).toBe('snapshot:trend:1d:fixture-revision-1')
+  expect(retry.get('history_before')).toBe('reference-page-2')
+  expect(retry.get('history_limit')).toBe('200')
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -709,14 +651,23 @@ test('an auxiliary refresh failure cannot retain the prior chart window', async 
 })
 
 test('reference rebuild remains bounded without requesting the deferred explanation section', async ({ page }) => {
+  let performanceRequests = 0
   const fixture = await installNewowProductFixtures(page, {
-    conflictAt: { 'trend:1d:reference': 2 },
+    onProductRequest: async ({ route, url, section }) => {
+      if (section !== 'reference' || url.searchParams.has('history_limit')) return
+      if (++performanceRequests === 2) {
+        await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' } } })
+        return 'handled'
+      }
+    },
   })
   await page.goto(newowRoute())
   await showReference(page)
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
-  await page.getByRole('button', { name: '应用统计窗口' }).click()
-  await expect.poll(() => productRequests(fixture, 'reference').length).toBe(3)
+  await page.getByRole('button', { name: '近3月', exact: true }).click()
+  await expect.poll(() => performanceRequests).toBe(3)
+  const rebuilt = productRequests(fixture, 'reference').filter(item => !item.url.searchParams.has('history_limit')).at(-1)
+  expect(rebuilt.url.searchParams.has('snapshot_token')).toBe(false)
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'not_requested')
   expect(productRequests(fixture, 'explanation')).toHaveLength(0)
