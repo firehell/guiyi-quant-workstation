@@ -180,6 +180,7 @@ export async function installNewowProductFixtures(page, options = {}) {
         strategy,
         frequency,
         options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
+        options.dualMarket === true,
       )
       if (queryError !== null) return unexpected(route, state, queryError)
       const key = [strategy, frequency, section, url.searchParams.get('component') || '', url.searchParams.get('chart_before') || '', url.searchParams.get('history_before') || ''].join(':')
@@ -288,11 +289,11 @@ function validateFixtureScenario(strategy, frequency, options) {
   }
 }
 
-function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF) {
+function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF, dualMarket = false) {
   const allowedBySection = {
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
-    reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token'],
+    reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token', 'include_fusion'],
     explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
     comparator: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
   }
@@ -305,7 +306,8 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   if (url.searchParams.get('as_of') !== expectedAsOf) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
-  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of'].includes(key)).sort().join(',')
+  if (url.searchParams.has('include_fusion') && (section !== 'reference' || strategy !== 'trend' || url.searchParams.get('include_fusion') !== 'true' || url.searchParams.has('history_limit') || !url.searchParams.has('snapshot_token') || !url.searchParams.has('performance_since') || !url.searchParams.has('performance_through'))) return `invalid fusion query ${url.search}`
+  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion'].includes(key)).sort().join(',')
   const allowedShapes = {
     chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
     auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
@@ -313,7 +315,8 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
     explanation: ['', 'snapshot_token'],
     comparator: ['', 'snapshot_token'],
   }
-  if (!allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
+  const partnerRecords = dualMarket && section === 'reference' && strategy === 'oscillation' && optionalShape === 'history_limit,snapshot_token' && url.searchParams.get('history_limit') === '200'
+  if (!partnerRecords && !allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
   if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
   const fixedRecordWindow = url.searchParams.get('history_limit') === '200'

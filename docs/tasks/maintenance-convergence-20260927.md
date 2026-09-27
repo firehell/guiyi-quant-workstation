@@ -180,3 +180,60 @@ Reviewer 独立运行 capability/route/shell/status/navigation 55项unit，全�
 任务分支先合入该提交，随后重新验证实际集成候选：前端692 passed / 1 skipped，
 build及bundle topology通过，最终11项浏览器回归再次全过（8.9s），完整秘密扫描0 findings。
 这次集成复验仍不替代完整E2E与视觉Gate。
+
+## 已批准的 UI 验证迁移与截图确认（2026-09-27）
+
+Owner 明确批准按当前 UI 合同逐项迁移、核对等价覆盖并确认截图基线。
+本轮在 `6d5f62bdf` 上先完整重现旧结果（63 passed / 16 failed），仅修改测试、夹具、
+8张测试截图和本记录，不改产品行为、公式、数据、Release或Runtime。
+以下映射取代上节仍为PARTIAL的E2E/视觉结论；其他历史证据不改写。
+
+| 旧失败项 | 当前合同与保留的等价覆盖 |
+|---|---|
+| SuBing桌面/窄屏截图 | 原1440×900/390×844，保留历史抽屉、不可变Event时间和无页面横向溢出断言 |
+| HTDY后续Event刷新失败 | `page.clock`推进真实30秒定时器；精确两次请求、失败后保留已成功Marker和Event |
+| 初始CLEAR点击 | 现役最近动作按钮打开详情；无入场解释、选中身份、不生成参考记录 |
+| 日线永久刷新 | 现役冷加载“刷新当前”错误恢复；相同as_of重试、报价恢复、参考失败局部化和请求上限 |
+| 密集提示与动作点击 | 24提示披露、精确D6事实和焦点恢复；最近BUILD仍可打开详情，原生坐标点击已退役 |
+| 同Bar CLEAR/BUILD | 独立身份、CLEAR在前的顺序、同一时间与各自价格；最近BUILD详情和视觉覆盖 |
+| 主升浪图表截图 | 保留主升浪深链、独立生命周期、价格锚点与当前代表视口 |
+| 策略切换前记录定位 | 最近动作真实选中后切换策略清空；记录的精确定位由曲线定位用例覆盖 |
+| 六项导航中的主升浪 | 当前“双策略”趋势/震荡双轨、同一chart host、退出清理；主升浪深链仍独立覆盖 |
+| 通用series失败参考请求数 | 区分普通performance和limit=200固定记录请求；各一次，不以总数掩盖重复 |
+| 通过旧记录按钮改变辅助窗口 | 当前辅助切换失败后清空旧事实、显式重试恢复；跨明确窗口不复用由`useNewowProduct.test.ts`既有用例独立覆盖 |
+| snapshot参考冲突计数 | performance有token请求→无token重建共两次；固定记录另一次；身份冲突仍fail-closed |
+| 照妖镜解释背景滚动 | 模态拥有滚动锁，检查弹窗在视口、重绘披露、关闭和辅助缓存局部性；不强制滚动锁定背景 |
+| 已移除页面比较说明入口 | 当前“查看依据”延后解释和独立图表/记录不变；不触发explanation/comparator请求，后者传输合同单元覆盖保留 |
+| 100个可点击微节点 | 全100个唯一动作身份/顺序保留；可绘制文本框有界且不碰撞；当前最近动作详情仍可用 |
+| 移动震荡记录截图 | 原390×844；未完成历史不伪造完整曲线，开放/关闭记录与浮动/已完成收益分别表达 |
+
+双策略夹具只在`dualMarket=true`接受伙伴oscillation的reference+limit=200+精确snapshot_token；
+融合请求限定trend/reference/include_fusion=true、精确窗口和token且无history参数。
+独立返回503验证融合不可用时双轨仍完整，未编造融合收益或合并两策略数值。
+
+逐张检查并更新8张PNG：SuBing桌面/移动、Newow同Bar、主升浪图表、桌面参考记录、
+照妖镜重绘说明、主升浪延后解释、移动震荡参考记录。
+桌面参考截图恢复到了当前固定三个月分页用例。保持原500像素差异阈值，Free截图的400阈值未动。
+这些是隔离fixture下的视觉基线，不能作为真实行情、收益或自然业务验收证据。
+
+扩展工程检查发现该基线新合入的`/api/v1/market/newow/ai-analysis`漏列精确路由清单；
+对照现役OpenSpec和已挂载实现，仅补充GET及`app.api.market_newow:newow_ai_analysis`归属，
+集合相等和唯一性检查保持不变。
+
+### 最终验证与集成结论
+
+候选先同步develop新增且不重叠的AI错误提示修复`0a2977429`，再复验真实集成树：
+
+| 实际命令（从任务树根执行） | 结果 |
+|---|---|
+| `PLAYWRIGHT_PORT=5199 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-product.spec.mjs e2e/market-detail.spec.mjs --reporter=line` | 正常截图比较79 passed（1.2m）；更新后此前正常比较也79 passed（1.1m） |
+| `pnpm -C apps/quant-web test` | 695 passed / 1既有skipped，未把skip计为通过 |
+| `pnpm -C apps/quant-web build` | vue-tsc、Vite、bundle topology通过；已有request.ts静态/动态import提示不影响构建 |
+| `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python -m pytest -p no:cacheprovider tests/engineering/test_repository_hygiene.py tests/engineering/test_secret_scan.py tests/engineering/test_canonical_consistency.py -q` | 34 passed；独立Review另运行路由精确归属用例1 passed |
+| `python3 scripts/engineering/secret_scan.py --json` | 0 findings |
+| `node --check`三个修改的E2E文件、`git diff --check` | 通过 |
+
+完整79项指本轮两份相关E2E文件，不宣称所有其他浏览器spec或真实生产场景已验证。
+独立Review逐项核对等价行为和8张截图，无Confirmed Issue或阻塞项；结论允许集成develop。
+本轮CODE_COMPLETE、TEST_COMPLETE、REVIEW_COMPLETE；批准的16项UI验证遗留已收敛。
+这不是Release或Runtime验收，也未执行生产操作。
