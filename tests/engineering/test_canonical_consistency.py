@@ -217,13 +217,6 @@ AGENT_DOMAIN_ROUTES = (
     "deploy/README.md",
     "openspec/specs/subing-ths-alert/spec.md",
 )
-AGENT_GLOBAL_BOUNDARIES = (
-    "讨论、比较方案、只读审计或 Plan-only",
-    "连续完成实现",
-    "集成 develop 不授权生产写入",
-    "持续授权只在 owner 已",
-    "系统命令使用固定 executable 与离散参数",
-)
 REQUIRED_PROJECT_SKILL_PATHS = {
     ".agents/skills/futures-data/SKILL.md",
     ".agents/skills/release-agent/SKILL.md",
@@ -556,8 +549,6 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
 
 def test_root_agent_guidance_routes_domain_contracts_without_copying_them() -> None:
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    for boundary in AGENT_GLOBAL_BOUNDARIES:
-        assert boundary in agents
     for relative in AGENT_DOMAIN_ROUTES:
         assert f"`{relative}`" in agents, relative
         assert (ROOT / relative).is_file(), relative

@@ -23,7 +23,7 @@ from app.market_data.rqdata_adapter import (
     _row_date,
 )
 from scripts.newow_weekly_conflict_diagnosis import FIELDS
-from scripts.newow_weekly_conflict_source_plan import _canonical_json, _sha256
+from scripts.newow_weekly_conflict_source_plan import _sha256
 from scripts.newow_weekly_recovery import (
     AttemptJournal,
     RecoveryError,
