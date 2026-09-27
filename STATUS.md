@@ -1,3 +1,14 @@
+## 2026-09-27 v1.10.38 本机 Runtime 切换及页面读回完成
+
+正式 Runtime 已切到 `v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3`，独立 detached/clean 根
+`/Users/zhangzhao/Library/Application Support/GuiyiQuant/runtime-v1.10.38`；旧 v1.10.37 干净副本保留用于回退。
+冻结依赖安装、前端 build/topology、render-only 和 non_trading_interval Market 预检通过；Market、API/Web/logrotate、Alert、weekly 四组安装成功。
+现场 API/Web/Live/Alert 和两个 schedule-only Market 服务 root/commit 一致，HTTP200、readonly health ok、overall passed；reference worker仍关闭，通知audience仍为2。
+正式浏览器JM日线趋势页面已刷新，主图/辅助/参考收益已加载；新双策略入口、目标1668/吸筹1474.5、普通74笔累计183.66及固定近三月参考记录可见。
+新根weekly读回为missed/无结果，旧根9/24的23条finding保留；首根自然completed Bar、盘后与新根weekly自然验收仍未完成，不声明RUNTIME_READY。
+本次发布未创建linked release worktree；Runtime使用独立Git副本，因此Codex Linked Worktrees列表不会显示该运行根。
+详情及切换命令见 `docs/tasks/newow-release-v1.10.38-20260927.md`，现场截图在 `outputs/newow-release-v1.10.38-20260927/runtime-jm-d1.png`。
+
 ## 2026-09-27 Newow v1.10.38 已发布，Runtime 未切换
 
 汇总v1.10.37后已提交页面交互、日周CDV2依据、独立双策略入口及图形、收益与近三个月记录分离、震荡突破线和维护收敛。

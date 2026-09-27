@@ -70,3 +70,29 @@ weekly已读到旧根23项finding，截至9/24，reference worker关闭；没有
 发布冻结之后，另一任务已将`3f53f9d05`测试/fixture/证据检查及`031732345`验收记录合入develop。
 这些后续提交不是v1.10.38源码范围；未修改产品源码。原发布验证中的旧截图库存失败及旧分页E2E漂移，
 是冻结候选上的实际结果，不能用后续develop测试修复倒填为发布候选通过。后续测试收敛记录见maintenance-convergence文档。
+
+
+## 2026-09-27 owner交办 Runtime 切换
+
+目标为已经发布的 exact tag，不部署后续 develop。新根为
+`/Users/zhangzhao/Library/Application Support/GuiyiQuant/runtime-v1.10.38`，detached/clean，
+HEAD=`18b29c985817683bf5dfd08ae3328a4762caf9b3`。旧 v1.10.37 root 同样 detached/clean，
+HEAD=`07cdb4b7b72c1fa003d25bf2b47b3c3de127c8a4`，保留回退。两个tag之间scripts/ops与deploy无差异，
+无migration或数据/Scope更改。旧根late-provider-recovery-status.json不存在，没有待消费恢复状态需要转移；不复制旧after-market/weekly结果冒充新根结果。
+
+实际命令与结果：
+
+- 本地 `git clone --no-hardlinks --no-checkout` 后 `checkout --detach v1.10.38`；`uv sync --frozen --project services/quant-api`及前端`install --frozen-lockfile`通过。
+- exact root执行`pnpm --dir apps/quant-web build`，vue-tsc/Vite/topology通过，保留既有request.ts静/动态import提示。
+- 使用既有安全通知config路径执行`install-local-services.sh --render-only`，通过。
+- `run-local-service.sh market-runtime-preflight`及Market安装内部预检均passed/non_trading_interval，operational_count=60。
+- `install-local-services.sh --confirm-market-runtime`成功3服务；误用不支持的`--confirm-install`只显示usage、未进行base mutation，纠正为`--confirm-load`后成功3服务；随后`--confirm-alert-runtime`成功1服务、`--confirm-weekly-audit`成功1服务。
+- `local-services-status.sh`独立读回overall=passed，API/Web/Live/Alert运行；after-market/late-provider为正常schedule-only idle。六项root/commit均为新根/18b29c98，API/Web HTTP200、Runtime health=ok readonly=true；reference_worker_enabled=false，既有notification audience_count=2。
+- 新根weekly_audit=missed/through unknown/findings unknown，没有新自然结果；旧根23条finding未解决。
+- 正式5173浏览器reload JM D1趋势：截至9/24、报价1509、主图与MACD加载，双策略tab替代第三入口；目标1668、吸筹1474.5可见；普通74笔累计183.66、最大回撤1.27%，固定近三月列表已呈现。截图：`outputs/newow-release-v1.10.38-20260927/runtime-jm-d1.png`。这只是部署现场读回，不代表全策略/全周期交互或自然业务验收。
+
+切换与现场readback通过；首根自然completed Bar、盘后、weekly自然结果及既有P9问题仍独立待验收，不声明RUNTIME_READY。
+现场日志为`/private/tmp/guiyi-v1.10.38-before-switch.log`、`/private/tmp/guiyi-v1.10.38-after-switch.log`和`/private/tmp/guiyi-v1.10.38-runtime-build.log`。
+
+Linked Worktrees显示的是本仓库`git worktree list`，不是Release历史。这次发布使用分支+PR403，没有新建linked release worktree；
+Runtime位于Application Support的独立clone，所以不在该列表。现有validation-closeout和release-v1.10.36 worktree均未清理。
