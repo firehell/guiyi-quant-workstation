@@ -248,7 +248,8 @@ def decode_source_action(value, identity):
 class SavedFusionSources:
     """Load both published base projections at one exact frozen input scope."""
 
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, *, check_cancelled=None):
+        self._check_cancelled = check_cancelled
         from app.reference_trading.persisted_newow import PersistedNewowReference
 
         self._persisted = PersistedNewowReference(session_factory)
@@ -310,24 +311,25 @@ class SavedFusionSources:
                 or source_identity.profile_id != identity.profile_id
             ):
                 raise ValueError("REFERENCE_FUSION_SOURCE_IDENTITY_CONFLICT")
-            facts = self._query.presentation_facts(
+            from contextlib import closing
+            with closing(self._query.historical_actions(
                 stream_id,
                 snapshot_token=summary["snapshot"],
                 since=date.min,
                 through=request.through,
                 cutoff=request.as_of,
-                kinds=("action",),
-                max_points=200_000,
-            )
-            for point in facts["action"]:
-                action = decode_source_action(point["value"], identity)
-                key = (
-                    action.bar_end,
-                    action.physical_contract,
-                    action.segment_id,
-                    action.calculation_segment_id,
-                )
-                actions.setdefault(key, []).append(action)
+                input_count=manifest["input_count"],
+                check_cancelled=self._check_cancelled,
+            )) as facts:
+                for point in facts:
+                    action = decode_source_action(point["value"], identity)
+                    key = (
+                        action.bar_end,
+                        action.physical_contract,
+                        action.segment_id,
+                        action.calculation_segment_id,
+                    )
+                    actions.setdefault(key, []).append(action)
         return actions, dependencies
 
 

@@ -7,6 +7,7 @@ imported here.  A request owns one fresh repeatable-read transaction.
 from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections.abc import Iterator
 from binascii import Error as Base64Error
 from dataclasses import replace
 from datetime import date, datetime
@@ -589,6 +590,87 @@ class HistoricalReferenceQuery:
                     "prior_mark_change_pct": str(item.reference_return),
                 })
         return details
+
+    def historical_actions(
+        self, stream_id: str, *, snapshot_token: str, since: date, through: date,
+        cutoff: datetime | None, input_count: int,
+        check_cancelled=None,
+    ) -> Iterator[dict[str, object]]:
+        """Stream complete saved actions for historical construction, not Web.
+
+        The exact snapshot's verified input count bounds two strategy actions per
+        input bar. Presentation envelopes remain bounded individually; the Web
+        collector's 200k ceiling is unchanged. Closing the iterator releases its
+        read-only transaction even when the consumer rejects a decoded action.
+        """
+        self._window(since, through, cutoff)
+        if type(input_count) is not int or input_count <= 0:
+            raise QueryConflict("QUERY_INVALID")
+        saved = _decode(snapshot_token, kind="snapshot")
+        saved_since, saved_through = _day(saved.get("since")), _day(saved.get("through"))
+        if through > saved_through or cutoff != _instant(saved.get("cutoff")):
+            raise QueryConflict("SNAPSHOT_CONFLICT")
+        count = 0
+
+        def check():
+            if check_cancelled is not None:
+                check_cancelled()
+
+        check()
+        with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
+            row = self._resolve(session, stream_id)
+            if row.recording_mode != "historical_replay":
+                raise QueryConflict("QUERY_INVALID")
+            snapshot, _, _ = self._snapshot(
+                session, row, since=saved_since, through=saved_through,
+                cutoff=cutoff, encoded=snapshot_token,
+            )
+            manifest = session.scalar(select(ReferenceBatch.dependency_manifest).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == snapshot.revision_id,
+                ReferenceBatch.seq <= snapshot.seq,
+                ReferenceBatch.kind.in_(("seed_seal", "calculation")),
+            ).order_by(ReferenceBatch.seq.desc()).limit(1))
+            if (
+                not isinstance(manifest, dict)
+                or type(manifest.get("input_count")) is not int
+                or manifest["input_count"] != input_count
+            ):
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            self._assert_presentations(session, snapshot)
+            batches = session.execute(select(ReferenceBatch.source_evidence).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == snapshot.revision_id,
+                ReferenceBatch.kind == "calculation", ReferenceBatch.seq <= snapshot.seq,
+                ReferenceBatch.source_evidence["presentation_v1"]["last_day"].as_string() >= since.isoformat(),
+                ReferenceBatch.source_evidence["presentation_v1"]["first_day"].as_string() <= through.isoformat(),
+            ).order_by(ReferenceBatch.seq).execution_options(yield_per=1)).scalars()
+            try:
+                for evidence in batches:
+                    check()
+                    for index, point in enumerate(require_envelope(
+                        evidence.get("presentation_v1"),
+                    )):
+                        if index % 128 == 0:
+                            check()
+                        if point.get("kind") != "action":
+                            continue
+                        value = point.get("value")
+                        if not isinstance(value, dict):
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        at = _instant(value.get("bar_end"))
+                        day = _day(point.get("trading_day"))
+                        if at is None:
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        if not since <= day <= through or cutoff is not None and at > cutoff:
+                            continue
+                        count += 1
+                        if count > 2 * input_count:
+                            raise QueryConflict("REFERENCE_BUDGET_EXCEEDED")
+                        yield point
+                check()
+            finally:
+                batches.close()
 
     def presentation_facts(
         self, stream_id: str, *, snapshot_token: str, since: date, through: date,
