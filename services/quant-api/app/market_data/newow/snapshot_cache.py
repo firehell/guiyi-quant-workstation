@@ -189,6 +189,22 @@ class SnapshotCache:
             entry = self._entries.get(fact_key)
             return entry is not None and self._proofs_compatible(entry.proof, proof)
 
+    def token_proof_covers(
+        self, token: str, fact_key: str, proof: dict[str, str]
+    ) -> bool:
+        """Check an already retained proof without admitting a result or extending TTL."""
+        with self._lock:
+            self._expire()
+            if not self._enabled or self._tokens.get(token) != fact_key:
+                return False
+            entry = self._entries.get(fact_key)
+            return (
+                entry is not None
+                and self._proofs_compatible(entry.proof, proof)
+                and all(key in entry.proof and entry.proof[key] == value
+                        for key, value in proof.items())
+            )
+
     @staticmethod
     def _proofs_compatible(left: dict[str, str], right: dict[str, str]) -> bool:
         if not left and not right:

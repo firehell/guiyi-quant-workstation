@@ -1049,7 +1049,19 @@ class NewowProductService:
             common_key, section_key, complete, token=request.snapshot_token,
             proof=proof, related_values=related, value_factory=bind_snapshot,
         )
-        return bind_snapshot(token) if token is not None else result
+        if token is not None:
+            return bind_snapshot(token)
+        # Result admission can exceed the cache budget even though the accepted
+        # snapshot already holds every fact reverified by this read. Binding that
+        # still-valid token does not claim that this result was cached. New proof
+        # facts must never be accepted without being retained atomically.
+        if request.snapshot_token is not None and self._cache.token_proof_covers(
+            request.snapshot_token, common_key, proof
+        ):
+            return replace(
+                result, meta=replace(result.meta, snapshot_token=request.snapshot_token)
+            )
+        return result
 
     def _cached_read_input(
         self,

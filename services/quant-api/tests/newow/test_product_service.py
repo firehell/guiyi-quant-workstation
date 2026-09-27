@@ -1613,3 +1613,42 @@ def test_saved_minute_reference_admission_does_not_starve_current_calculation(mo
             service._query(ProductServiceQuery('rb','trend','1m',section='reference',as_of=now),now,lambda:False)
         assert service._query(ProductServiceQuery('rb','trend','1m',section='comparator',as_of=now),now,lambda:False) is accepted
     assert reference.running == calculation.running == 0
+
+
+def test_rejected_result_keeps_token_only_when_entire_read_proof_is_saved(product_cases, monkeypatch):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+
+    class RejectResultCache(SnapshotCache):
+        reject = False
+
+        def put(self, *args, **kwargs):
+            if self.reject:
+                return None
+            return super().put(*args, **kwargs)
+
+    service, reader, build, clear = _service(product_cases)
+    cache = RejectResultCache()
+    service._cache = cache
+    request = ProductServiceQuery("rb", "trend", "1d", section="reference",
+        performance_since=build.trading_day, performance_through=clear.trading_day,
+        as_of=clear.bar_end, history_limit=1)
+    seed = service.query(request)
+    assert seed.meta.snapshot_token
+    cache.reject = True
+    before = (cache._bytes, [(key, entry.expires_at, dict(entry.proof), dict(entry.values))
+        for key, entry in cache._entries.items()])
+    page = service.query(replace(request, history_limit=2, snapshot_token=seed.meta.snapshot_token))
+    assert page.meta.snapshot_token == seed.meta.snapshot_token
+    assert (cache._bytes, [(key, entry.expires_at, dict(entry.proof), dict(entry.values))
+        for key, entry in cache._entries.items()]) == before
+    assert service.query(replace(request, history_limit=3)).meta.snapshot_token is None
+
+    import app.market_data.newow.product_service as product_module
+    original_proof = product_module._dependency_proof
+    monkeypatch.setattr(product_module, "_dependency_proof", lambda read: {
+        **original_proof(read), "reference-source|new-window": "new-source"})
+    unretained = service.query(replace(request, history_limit=4,
+        snapshot_token=seed.meta.snapshot_token))
+    assert unretained.meta.snapshot_token is None
+    assert (cache._bytes, [(key, entry.expires_at, dict(entry.proof), dict(entry.values))
+        for key, entry in cache._entries.items()]) == before
