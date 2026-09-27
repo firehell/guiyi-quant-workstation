@@ -427,7 +427,7 @@ def test_release_versions_are_consistent() -> None:
     web = json.loads((ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8"))
 
     lock_versions = {
-        package["version"]
+        package.get("version")
         for package in lock["package"]
         if package["name"] == "quant-api" and package.get("source") == {"editable": "."}
     }
@@ -442,10 +442,21 @@ def test_release_versions_are_consistent() -> None:
         and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
     }
-    expected = pyproject["project"]["version"]
-    assert isinstance(expected, str) and expected
-    assert web["version"] == expected
-    assert lock_versions == {expected}
+    assert len(app_versions) == 1
+    expected = next(iter(app_versions))
+    assert re.fullmatch(r"\d+\.\d+\.\d+", expected)
+    assert "version" not in pyproject["project"]
+    assert pyproject["project"]["dynamic"] == ["version"]
+    assert pyproject["tool"]["hatch"]["version"]["path"] == "app/version.py"
+    assert "version" not in web
+    frontend_version = subprocess.run(
+        ["node", "--input-type=module", "-e",
+         "import {readReleaseVersion} from './apps/quant-web/scripts/readReleaseVersion.mjs'; "
+         "console.log(readReleaseVersion())"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    assert frontend_version.stdout.strip() == expected
+    assert lock_versions == {None}  # uv resolves editable package metadata dynamically
     assert app_versions == {expected}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
