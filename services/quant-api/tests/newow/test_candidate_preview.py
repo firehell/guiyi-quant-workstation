@@ -198,6 +198,28 @@ def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):
     assert sessions == []
 
 
+@pytest.mark.parametrize("frequency", ["1m", "15m", "30m"])
+def test_au_period_preview_rejects_undeclared_minutes(frequency):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    from app.api.market_newow import _enforce_product_frequency
+
+    request = Request({"type": "http", "state": {"au_period_preview": True}})
+    with pytest.raises(HTTPException) as refused:
+        _enforce_product_frequency(request, "au", frequency)
+    assert refused.value.status_code == 409
+    assert refused.value.detail == {"code": "NEWOW_FREQUENCY_NOT_OPEN"}
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w", "60m"])
+def test_au_period_preview_preserves_declared_periods(frequency):
+    from starlette.requests import Request
+    from app.api.market_newow import _enforce_product_frequency
+
+    request = Request({"type": "http", "state": {"au_period_preview": True}})
+    _enforce_product_frequency(request, "au", frequency)
+
+
 def test_hourly_preview_opens_only_ap_60m_without_database(preview, monkeypatch):
     monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "ap")
     app, sessions, _factory = preview

@@ -738,7 +738,7 @@ function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') 
 // Precomputed by the existing Python macd_series kernel over these exact fixture
 // closes; fixture-only rendering evidence, never external market or formula parity.
 function richMacdFixture(base, strategy, frequency, options) {
-  const { fixture_input, ...wire } = structuredClone(richMacd[`${strategy}:${frequency}`])
+  const { fixture_input, ...wire } = structuredClone(richMacd[`${strategy}:${frequency}${options.recordsHistory ? ':records' : ''}`])
   const bars = chartValue(fixtureValidationUrl('chart', strategy, frequency, false, null), strategy, frequency, options).bars
   if (JSON.stringify(fixture_input) !== JSON.stringify(bars.map(bar => [bar.bar_end, bar.physical_contract, bar.segment_id, bar.close]))) throw new Error('rich MACD fixture input drift; regenerate through the Python kernel')
   return { ...base, ...wire }

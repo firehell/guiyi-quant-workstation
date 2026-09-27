@@ -253,6 +253,10 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
             status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}
         )
     if getattr(request.state, "au_period_preview", False):
+        if selected not in AU_PERIOD_PREVIEW_FREQUENCIES:
+            raise HTTPException(
+                status_code=409, detail={"code": "NEWOW_FREQUENCY_NOT_OPEN"}
+            )
         return
     require_open_frequency(
         selected,

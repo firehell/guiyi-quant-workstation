@@ -16,7 +16,7 @@ from guiyi_quant.indicators.macd import macd_series  # noqa: E402
 def generate() -> str:
     source = """
 import {buildNewowFixtureEnvelopeForTest as build} from './apps/quant-web/e2e/newow-product.helpers.mjs';
-console.log(JSON.stringify(Object.fromEntries(['trend','oscillation','main_rise'].flatMap(s=>['1d','1w','60m'].map(f=>[s+':'+f,build('chart',s,f,false,null,{visualRich:true}).chart.value.bars])))))
+console.log(JSON.stringify(Object.fromEntries(['trend','oscillation','main_rise'].flatMap(s=>['1d','1w','60m'].flatMap(f=>[false,true].map(recordsHistory=>[s+':'+f+(recordsHistory?':records':''),build('chart',s,f,false,null,{visualRich:true,recordsHistory}).chart.value.bars]))))))
 """
     inputs = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', source], cwd=ROOT, text=True))
     result = {}
@@ -52,6 +52,6 @@ if __name__ == '__main__':
     if args.check:
         if output != target.read_text():
             raise SystemExit('MACD visual fixture drift: regenerate with the existing kernel')
-        print('MACD fixture matches existing kernel for 9 identities')
+        print('MACD fixture matches existing kernel for 18 identity and history scenarios')
     else:
         target.write_text(output)
