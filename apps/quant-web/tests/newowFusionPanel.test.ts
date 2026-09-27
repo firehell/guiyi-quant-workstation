@@ -49,7 +49,7 @@ test('fusion entry loads automatically and drops late results after identity cha
   await nextTick(); await nextTick()
   assert.match(nodeText(root), /current-result/)
   assert.match(nodeText(root), /趋势.*震荡.*融合/)
-  assert.ok(findNode(root, n => n.type === 'details' && n.props.open !== undefined))
+  assert.ok(findNode(root, n => n.type === 'details' && n.props.open === undefined))
   response.value = input('cu')
   await nextTick()
   assert.doesNotMatch(nodeText(root), /current-result/)
@@ -100,3 +100,36 @@ function nodeOperations() {
     parentNode(node: TestNode) { return node.parent }, nextSibling(node: TestNode) { if (node.parent === null) return null; const index = node.parent.children.indexOf(node); return node.parent.children[index + 1] ?? null }, querySelector() { return null }, setScopeId() {}, insertStaticContent() { return [element('#static'), element('#static')] as const },
   }
 }
+
+test('fusion curve uses closed members, range does not replace recent records, truncated source fails closed', async () => {
+  const Panel = await component('newow/NewowFusionPanel')
+  const root = element('root')
+  const base = mock.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input() }) }))
+  app.mount(root)
+  const trade = (id: string, entry: string, exit: string | null, status = 'CLOSED', value: string | null = '2.5') => ({ reference_trade_id: id, entry_source: 'trend', exit_source: exit ? 'oscillation' : null, entry_bar_end: `${entry}T07:00:00Z`, exit_bar_end: exit ? `${exit}T07:00:00Z` : null, physical_contract: 'JM2701', entry_reference_price: '100', exit_reference_price: exit ? '102.5' : null, status, reference_return_pct: value, mark_change_pct: status === 'OPEN' ? '-4.5' : null, statistics_membership: 'entry_in_window_v1' })
+  const data = { ...output('fixture', 'jm'), groups: [{ model: 'fusion', closed_count: 2, sum_return_percentage_points: '5.0', open_count: 1, interrupted_count: 1 }], items: [trade('open','2026-09-11',null,'OPEN',null), trade('recent','2026-09-08','2026-09-09'), trade('roll','2026-08-06','2026-08-18','ROLLOVER_INTERRUPTED',null),trade('old','2023-01-01','2023-01-10')] }
+  mock.calls[base].resolve(data)
+  await nextTick(); await nextTick()
+  assert.match(nodeText(root), /策略收益率走势.*回测操盘提醒/)
+  assert.equal(findNodes(root, n => n.type === 'circle').length, 2)
+  assert.ok(findNode(root,n => n.props.id === 'fusion-trade-open'))
+  assert.ok(findNode(root,n => n.props.id === 'fusion-trade-roll'))
+  assert.equal(findNode(root,n => n.props.id === 'fusion-trade-old'), undefined)
+  assert.match(nodeText(root), /趋势来源.*震荡来源/)
+  const threeMonths = findNode(root,n => n.type === 'button' && nodeText(n).trim() === '近3月')!
+  ;(threeMonths.props.onClick as Function)()
+  await nextTick()
+  assert.equal(findNodes(root,n => n.type === 'circle').length,1)
+  assert.ok(findNode(root,n => n.props.id === 'fusion-trade-open'))
+  assert.ok(findNode(root,n => n.props.id === 'fusion-trade-roll'))
+  assert.match(nodeText(root), /\+2.5%/)
+  const reload = findNode(root,n => n.type === 'button' && nodeText(n).trim() === '重新计算')!
+  ;(reload.props.onClick as Function)()
+  await nextTick()
+  mock.calls[base + 1].resolve({ ...data, records_truncated:true })
+  await nextTick(); await nextTick()
+  assert.equal(findNodes(root,n => n.type === 'circle').length,0)
+  assert.match(nodeText(root), /记录已截断/)
+  app.unmount()
+})

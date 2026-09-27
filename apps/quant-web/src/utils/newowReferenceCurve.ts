@@ -11,14 +11,23 @@ function text(units: bigint, scale: number): string {
   return `${units < 0n ? '-' : ''}${scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits}`
 }
 export function newowReferenceCurve(value: NewowReferenceValue) {
-  const source = value.curve_trades ?? value.items
-  const trades = source.filter(t => t.status === 'CLOSED' && t.statistics_membership === value.summary.membership_policy)
+  return closedReferenceCurve(value.curve_trades ?? value.items, value.summary.closed_count, value.summary.sum_return_percentage_points, value.summary.membership_policy, value.curve_trades === undefined && value.next_before !== null)
+}
+
+type ClosedCurveTrade = Pick<NewowReferenceTrade, 'status' | 'statistics_membership' | 'exit_bar_end' | 'reference_trade_id' | 'reference_return_pct'>
+export function sumReferenceReturns(values: string[]): string | null {
+  const parts = values.map(decimal)
+  if (parts.some(part => part === null)) return null
+  const scale = Math.max(0, ...parts.map(part => part!.scale))
+  return text(parts.reduce((sum, part) => sum + part!.units * 10n ** BigInt(scale - part!.scale), 0n), scale)
+}
+export function closedReferenceCurve<T extends ClosedCurveTrade>(source: readonly T[], count: number, sumReturn: string | null, membership = 'entry_in_window_v1', incomplete = false) {
+  const trades = source.filter(t => t.status === 'CLOSED' && t.statistics_membership === membership)
     .sort((a, b) => (a.exit_bar_end ?? '').localeCompare(b.exit_bar_end ?? '') || a.reference_trade_id.localeCompare(b.reference_trade_id))
-  const pending = (value.curve_trades === undefined && value.next_before !== null) || trades.length !== value.summary.closed_count
-  if (pending) return { points: [], message: '参考历史尚未完整加载；加载更多后显示完整累计曲线。' }
+  if (incomplete || trades.length !== count) return { points: [], message: '参考历史尚未完整加载；暂不绘制完整累计曲线。' }
   if (!trades.length) return { points: [], message: '暂无已完成参考交易；未清仓与中断结果不计入曲线。' }
   const numbers = trades.map(t => t.reference_return_pct === null ? null : decimal(t.reference_return_pct))
-  const total = value.summary.sum_return_percentage_points === null ? null : decimal(value.summary.sum_return_percentage_points)
+  const total = sumReturn === null ? null : decimal(sumReturn)
   if (numbers.some(n => n === null) || total === null || trades.some(t => t.exit_bar_end === null)
     || new Set(trades.map(t => t.reference_trade_id)).size !== trades.length) return { points: [], message: '参考收益事实不完整，暂不绘制累计曲线。' }
   const scale = Math.max(total.scale, ...numbers.map(n => n!.scale))
@@ -67,7 +76,10 @@ export function newowTheoreticalDisplay(value: NewowReferenceValue): NewowRefere
 /** Page curve only: peak-to-trough loss of 100 + additive return, including starting capital 100. */
 export function newowReferenceDrawdown(value: NewowReferenceValue): string | null {
   const curve = newowReferenceCurve(value)
-  if (value.history_coverage !== 'FULL' || curve.message !== null || !curve.points.length) return null
+  return referenceCurveDrawdown(curve, value.history_coverage === 'FULL')
+}
+export function referenceCurveDrawdown(curve: { message: string | null; points: { cumulative: string }[] }, full = true): string | null {
+  if (!full || curve.message !== null || !curve.points.length) return null
   const values = curve.points.map(point => decimal(point.cumulative)!)
   const scale = Math.max(...values.map(item => item.scale))
   const baseline = 100n * 10n ** BigInt(scale)
