@@ -37,11 +37,12 @@ def _identity(*, strategy: str = "newow-trend", frequency: str = "1d") -> Stream
     }:
         product = build_product_identity(
             "rb", ProductStrategy(normalized), ProductFrequency(frequency),
+            input_quality_policy=(InputQualityPolicy.DAILY_V2 if frequency == "1d" else InputQualityPolicy.V1),
         )
         formulas = product.formula_versions
         profile = product.profile_id
         reference_model = REFERENCE_MODEL_VERSION
-        futures_version = futures_adaptation_version(frequency)
+        futures_version = futures_adaptation_version(frequency, product.input_quality_policy)
     else:
         formulas = ("formula-v1",)
         profile = "profile-v1"
@@ -156,8 +157,8 @@ def test_plan_is_deterministic_and_does_not_mutate_repository() -> None:
 @pytest.mark.parametrize(
     ("strategy", "frequency"),
     [
-        ("newow-trend", "15m"),
-        ("newow-oscillation", "30m"),
+        ("newow-trend", "5m"),
+        ("newow-oscillation", "120m"),
         ("newow-main-rise", "5m"),
         ("subing-reference", "1w"),
         ("htdy-first-seen", "1d"),
@@ -288,3 +289,27 @@ def test_request_json_rejects_non_text_dates_without_leaking_type_errors() -> No
 
     with pytest.raises(ValueError, match="REFERENCE_REQUEST_INVALID"):
         request_from_dict(payload)
+
+
+@pytest.mark.parametrize("strategy", ("newow-trend", "newow-oscillation"))
+@pytest.mark.parametrize("frequency", ("1m", "15m", "30m", "60m"))
+def test_intraday_pilot_plan_admits_only_existing_base_kernels(strategy, frequency):
+    reader = Reader()
+    request = HistoricalReferenceRequest(
+        "build", (_stream(strategy=strategy, frequency=frequency),), _budget(),
+    )
+    plan = HistoricalReferencePlanner(reader, now=lambda: NOW).plan(request)
+    assert plan.streams[0].request.identity.frequency == frequency
+    assert len(reader.calls) == 1
+
+
+@pytest.mark.parametrize("frequency", ("1m", "15m", "30m"))
+def test_intraday_pilot_does_not_expand_main_rise(frequency):
+    reader = Reader()
+    with pytest.raises(ValueError, match="REFERENCE_CAPABILITY_UNSUPPORTED"):
+        HistoricalReferencePlanner(reader, now=lambda: NOW).plan(
+            HistoricalReferenceRequest(
+                "build", (_stream(strategy="newow-main-rise", frequency=frequency),), _budget(),
+            ),
+        )
+    assert reader.calls == []

@@ -20,6 +20,7 @@ from guiyi_quant.newow.product_contracts import (
     OwnerBoundary,
     ProductBar,
     ProductFrequency,
+    INTRADAY_PRODUCT_FREQUENCIES,
     lifecycle_input_sha256,
 )
 from guiyi_quant.newow.product_identity import (
@@ -37,7 +38,7 @@ from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSegmentLoader,
 )
-from app.market_data.aggregation import SessionWindow
+from app.market_data.aggregation import SessionWindow, expected_intraday_ends
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
@@ -545,10 +546,19 @@ class NewowProductReader:
             days = tuple(day for day in days if day < before)
             if not days:
                 return None
-        bars_per_day = (
-            4 if ProductFrequency(frequency) is ProductFrequency.HOURLY else 1
-        )
-        day_count = (limit + bars_per_day - 1) // bars_per_day
+        if ProductFrequency(frequency) in INTRADAY_PRODUCT_FREQUENCIES:
+            count = 0
+            first = days[-1]
+            for day in reversed(days):
+                self._check_cancelled()
+                sessions = self._market_data.session_windows(symbol=product, trading_day=day)
+                ends = expected_intraday_ends(tuple(sessions), frequency.value)
+                count += sum(end <= cutoff for end in ends)
+                first = day
+                if count >= limit:
+                    break
+            return ProductReadWindow(first, days[-1])
+        day_count = limit
         if ProductFrequency(frequency) is ProductFrequency.WEEKLY:
             day_count *= 7
         return ProductReadWindow(days[max(0, len(days) - day_count)], days[-1])
@@ -1033,6 +1043,37 @@ class NewowProductReader:
         return self._market_data.historical_metadata_evidence(
             symbol=product, since=since, through=through,
         )
+
+    def historical_source_evidence(
+        self, *, product: str, frequency: str, since: date, through: date,
+        as_of: datetime,
+    ) -> dict[str, object]:
+        """Exact frozen input dependencies; no Bar replay and no file discovery."""
+        owners = self.dependency_owners(product, since, through)
+        if not owners:
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+        facts = []
+        start = since
+        for owner in owners:
+            for selected in dict.fromkeys((BarFrequency.M1, BarFrequency(frequency))):
+                evidence = self._market_data.contract_source_evidence(
+                    symbol=product, contract=owner.contract, frequency=selected,
+                    before=as_of,
+                )
+                start = min(start, date.fromisoformat(evidence["listed_date"]))
+                facts.append(evidence)
+        return {
+            "schema": "newow_intraday_source_evidence_v1",
+            "product": product, "frequency": frequency,
+            "since": since.isoformat(), "through": through.isoformat(),
+            "as_of": as_of.isoformat(),
+            "owners": [(owner.contract, owner.start_trading_day.isoformat(),
+                        owner.end_trading_day.isoformat()) for owner in owners],
+            "physical": facts,
+            "metadata": self.historical_metadata_evidence(
+                product=product, since=start, through=through,
+            ),
+        }
 
     def historical_storage_start(self, product: str) -> date:
         return self._coverage.product_start(product)

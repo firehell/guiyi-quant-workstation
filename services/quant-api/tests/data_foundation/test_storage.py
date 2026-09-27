@@ -341,3 +341,14 @@ def test_partition_structure_is_rejected_before_boundary_metadata(tmp_path):
         store.publish(_request((first, first)))
     with pytest.raises(StorageError, match="EMPTY_PARTITION"):
         store.publish(_request(()))
+
+
+def test_verified_partition_fingerprint_checks_bytes_without_decoding(tmp_path, monkeypatch):
+    import hashlib
+    store = CanonicalMonthlyStore(tmp_path)
+    published = store.publish(_request((_bar(1), _bar(2))))
+    monkeypatch.setattr(pq, "ParquetFile", lambda *args, **kwargs: pytest.fail("proof decoded bars"))
+    assert store.verified_partition_fingerprint(_partition(published)) == hashlib.sha256(published.parquet_path.read_bytes()).hexdigest()
+    published.parquet_path.write_bytes(b"changed")
+    with pytest.raises(StorageError, match="PARTITION_CONTENT_HASH_MISMATCH"):
+        store.verified_partition_fingerprint(_partition(published))

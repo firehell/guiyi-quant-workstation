@@ -11,6 +11,11 @@ def verify_saved_input_prefix(
     saved: dict[str, object], current: dict[str, object], through: date,
     observed_owner_keys: frozenset[tuple[str, str]] = frozenset(),
 ) -> None:
+    if saved.get("reader") == "newow_product_reader_intraday_v3":
+        for key in ("reader", "source_evidence_sha256", "input_sha256", "input_count"):
+            if saved.get(key) is None or saved.get(key) != current.get(key):
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+        return
     for key in ("input_fingerprints", "calendar_session_effective_fingerprints"):
         stored = saved.get(key)
         observed = current.get(key)
@@ -81,3 +86,19 @@ def verify_saved_input_prefix(
                 or observed_last[2] != min(stored_last[2], through.isoformat())
             ):
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+
+
+def verify_saved_compact_source(saved: dict[str, object], current_evidence: dict[str, object]) -> None:
+    """Bind a frozen materialization to freshly verified MDS content proof."""
+    from app.reference_trading.inputs import _canonical
+    from hashlib import sha256
+    if (
+        saved.get("reader") != "newow_product_reader_intraday_v3"
+        or type(saved.get("input_count")) is not int
+        or saved["input_count"] <= 0
+        or not isinstance(saved.get("input_sha256"), str)
+        or len(saved["input_sha256"]) != 64
+        or any(char not in "0123456789abcdef" for char in saved["input_sha256"])
+        or saved.get("source_evidence_sha256") != sha256(_canonical(current_evidence).encode()).hexdigest()
+    ):
+        raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")

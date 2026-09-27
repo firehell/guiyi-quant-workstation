@@ -2,38 +2,62 @@
 
 > **For agentic workers:** 使用 `superpowers:executing-plans` 按任务实施。共享 reader、planner、quality、capability 默认由一个执行者串行修改；高风险部分独立 Review。流程与任务授权统一遵守 [AGENTS.md](../../../AGENTS.md)，不重复设置审批步骤。
 
-**Goal:** 将原 60m 专项扩展为 1m、15m、30m、60m 四周期期货历史产品，覆盖三策略、适用指标与页面参考交易，随后独立交付盘中 completed observation。
+**Goal:** 将原 60m 专项扩展为 1m、15m、30m、60m 四周期期货历史产品，覆盖趋势、震荡、双策略三种页面模式、适用指标与页面参考交易，随后独立交付盘中 completed observation。双策略复用两个基础 kernel，融合是独立参考模型；主升浪保留既有能力，本轮不扩分钟。
 
 **Architecture:** 复用可信物理合约 Canonical 1m；三个派生周期直接从该来源按 Session 生成，通过 Catalog/MainContractMap/MDS 读取。计算、参考交易、快照和开放状态逐周期独立，沿用模块化单体与统一参考交易链。
 
 **Tech Stack:** 现有 Python/Decimal、FastAPI/Pydantic、Canonical Parquet、PostgreSQL Catalog/Reference、Redis Live，以及 Vue/TypeScript/Lightweight Charts；不新增基础设施。
 
-**Spec:** 本会话 2026-09-26 的四周期设计，关键决策完整收敛在下方“设计合同”；active 业务合同以 [Newow canonical](../../../openspec/specs/newow-product-reference-trading/spec.md)、[数据合同](../../DATA_CENTER.md)、[参考交易 canonical](../../../openspec/specs/reference-trading/spec.md) 为准。计划新增部分先在 P1 同步相应 canonical，不把规划当已实现事实。
+**Spec:** 本会话 2026-09-26 四周期设计与 2026-09-27 趋势/震荡/双策略范围修订，关键决策完整收敛在下方“设计合同”；active 业务合同以 [Newow canonical](../../../openspec/specs/newow-product-reference-trading/spec.md)、[数据合同](../../DATA_CENTER.md)、[参考交易 canonical](../../../openspec/specs/reference-trading/spec.md) 为准。计划新增部分先在 P1 同步相应 canonical，不把规划当已实现事实。
 
-创建：2026-09-19；本次修订：2026-09-26。保留此文件作为唯一未完成的四周期开发计划，替代其中旧 P0–P9 描述，不另建平行计划。当前只完成计划编写；下列实现复选框全部保持未完成。
+创建：2026-09-19；本次修订：2026-09-27。保留此文件作为唯一未完成的四周期开发计划，替代其中旧 P0–P9 描述，不另建平行计划。本次按 owner 最新要求，将原“趋势/震荡/主升浪”范围修订为“趋势/震荡/双策略”。当前只完成计划编写；下列实现复选框全部保持未完成。
 
 ## 基线、现场观察与证据边界
 
-- 本轮源码基线 `develop@74526ffcaf04a7ecbcfc7ca3a88bfeb4f6d3e1f7`。主树有其他任务的 `NewowReferencePanel.vue`、`newowReferencePanel.test.ts` 修改和 outputs；本次只改本计划。执行开始重新读取 Git/worktree 和共享文件归属。
-- [STATUS.md](../../../STATUS.md) 最新记录日周 `v1.10.36` 已发布并切换，本机自然运行证据仍待验；P9 持久化面板 503 与部分周审计问题未收尾。本轮未重新探测生产，不能把文档记录当新的现场回读。
-- develop 已有综合解释、跨周期价格和独立双策略参考。保留既有身份与合同；不再按“均不存在”安排重建，也不推定它们已发布或支持新分钟周期。
+- 任务拆分基线 `develop@b48ffe0e504ee3d0850a2e75c2820dca26f9aefe`。已复核自前轮 `0a2977429` 起的变更：综合决策展示、日周状态卡、UI 验证及参考记录近一年。工作树仅本计划有 tracked 修改，另有用户 outputs；只更新本计划。执行者仍须重新读取 Git/worktree 与最新依赖。
+- [STATUS.md](../../../STATUS.md) 最新记录日周 `v1.10.38@18b29c985` 已切换至扩展盘 linked release worktree，新根自然运行证据仍待验；P9 与部分周审计问题未收尾。本轮未重新探测生产，不能把文档记录当新的现场回读。按最新约定向前修复，不要求常驻保留旧 Runtime 树。
+- develop 已有综合解释、跨周期价格、独立双轨图、融合参考曲线/近一年卡片及日周 AI 分析。保留既有身份与合同；不重新开发这些能力，也不推定 develop 新增项已发布或支持新分钟周期。
 - 底层已有 1m → 5m/15m/30m/60m 聚合；Newow 正式能力仍须按实际 capability 核对，枚举扩展不能自动开放页面。
 - [旧四周期盘点](../../tasks/newow-four-period-audit-20260924.md) 的 240 项历史逻辑窗口可读，不证明物理前缀、720 项策略、页面或当前新鲜度。旧 9/24 rank1 缺失是历史快照结论；STATUS 后续已记七周期单日读回通过，不再沿用旧缺口开补数单。原始矩阵与证据不改写。
 - 2026-09-26 经 Chrome 查看牛哇 v3.3.59、盛科通信-U：四周期趋势记录数依次 72/61/62/29；15m 震荡为 29 笔且持有，趋势为空仓；上方继续显示周日背景；分时有独立均价/买卖参考。完整统计窗口、成本与公式未核验，主升浪分钟页面未观察。上述事实仅用于交互设计，不用于收益排名或公式 parity 声明。
+- 2026-09-27 重新在 Chrome 查看同一详情页：菜单包含分时、1/5/15/30/60/120 分及日周月。双策略 15m 融合区显示 67 笔、累计 +111.82%；1m 选择后显示 73 笔、累计 +35.60%，顶部仍是周日背景。未验证两者全量输入与统计窗口；只证明页面切换和展示差异，不能判定哪个周期更优，也不能仅凭按钮证明服务端返回真实 1m。来源为 [牛哇详情页](https://www.v8848.cn/stock_detail.html?code=688702.SH)。
+
+### 当前代码必须解决的具体缺口
+
+| 位置 | 当前事实 | 分钟方案 |
+| --- | --- | --- |
+| `product_contracts.py`、`market_newow.py`、Web 类型 | Newow 只枚举 1w/1d/60m；正式开放日周 | 新增三个周期身份；按品种、周期、模式、section 开放 |
+| `product_reader.py::_resolve_chart_window` | 60m 固定每天 4 根，历史窗口按 date 翻页 | 用 Session 预期端点定位窗口，分钟游标精确到 bar_end |
+| `product_service.py` coverage / explanation | 同日多根只特判 HOURLY；部分上下文枚举所有周期；CDV2 非周即日 | 显式 intraday 集合；明确背景角色，分钟不得误用日线当前角色 |
+| `fusion_reference.py` | 完整重放后仅返回最近 200 条记录 | 保留融合 reducer，输出完整统计/曲线和独立分页 |
+| `NewowFusionPanel.vue` | 从返回记录生成曲线；截断时拒绝绘图；部分窗口按北京时间自然日期筛选，非周标日K | 后端提供权威窗口 membership；夜盘用 trading_day；统一周期标签 |
+| `product_service.py` fusion 分支 | include_fusion 绕过 persisted reader，按需全窗计算 | 构建时复用两套输入，分钟查询读取已验证快照，不请求时全历史重放 |
+
+手册按最新 [公式目录](../../research/newow-v3.2.82/FORMULA_CATALOG_20260926.md)、[双策略任务](../../tasks/newow-dual-entry-20260927.md)、[融合展示任务](../../tasks/newow-fusion-reference-ui-20260927.md) 与当前代码交叉判断；旧手册“尚未实现”描述不能覆盖新代码事实。
 
 ## 设计合同（Global Constraints）
 
-1. 本轮分钟范围固定 `1m/15m/30m/60m`；三策略为趋势、震荡、主升浪。保持现有 D1/W1、其他消费者 5m；不包含分时、120m、新做空规则、通知、Paper 或自动交易，`auto_order=false` 不变。
+1. 本轮分钟范围固定 `1m/15m/30m/60m`；页面为趋势、震荡、双策略。基础策略只有 trend/oscillation，dual 沿用 `strategy=trend&newow_mode=dual`，不新增第三个计算 kernel；fusion 使用独立参考模型身份。保持现有 D1/W1、主升浪及其他消费者 5m；不包含分时、120m、新做空规则、通知、Paper 或自动交易，`auto_order=false` 不变。
 2. 1m 直接读取，15m/30m/60m 分别由同物理合约可信 1m 派生，不逐层聚合。消费者只读 MDS，不另建 resolver、缺口权威或页面聚合器。
 3. Session `(start,end]`、首分钟标签转换一次、不跨休市拼桶；合法短尾 completed，真缺分钟失败。Calendar/Session/Map 不足不推断为行情缺失；分钟不继承 D1/W1 缺价豁免。
 4. 计算前缀、owner 有效区段、图表窗口、统计窗口分开。历史展示验收自 `max(2023-01-01, 品种上市日)`；同合约预热依公式完整前缀核验，不跨合约借值。
 5. 参数仍按所选周期 Bar 数，不换算钟表时长、不寻优；新周期复用公式不等于原站分钟 parity。回看重绘与当时可知 Action 分开，不把所有绘图点都要求成因果事件。
 6. 主力切换、同合约 owner 重入、质量断点按稳定身份处理；预热 HOLD 不补造 BUILD。震荡同 Bar CLEAR 后 BUILD，初始无入场 CLEAR、OPEN、换月/数据中断分别保持原合同。
-7. 单策略参考价继续分别使用趋势慢线 B、震荡 BUILD Low/CLEAR High、主升浪 MA45；价格/收益 Decimal 字符串。零费用零滑点 long/flat 页面参考不变，不新增账户年化/资金回撤，也不制造样本末尾清仓。
+7. 单策略参考价继续使用趋势慢线 B、震荡 BUILD Low/CLEAR High；价格/收益 Decimal 字符串。零费用零滑点 long/flat 页面参考不变，不制造样本末尾清仓。当前页面已有年化展示，保留既有版本与有效性条件并标明页面外推，不能称账户年化；不因分钟窗口很短自动宣称高收益。
 8. 主图、辅助、参考绑定同一快照；quote 与策略时间分开；跨周期背景显示来源周期、bar_end/as_of。时区统一 Asia/Shanghai，夜盘另列 trading_day，负收益保留负号。
-9. 最新综合解释/跨周期价格/双策略模型先做兼容，分钟扩展默认不启用。没有分钟适用证据时显式 EVIDENCE_REQUIRED 或 UNOPENED，不把周日评分重新映射为分钟评分。双策略仍独立身份，不并入单策略 720 分母。
+9. 双策略是本轮正式设计范围，与单策略共用相同 completed 输入和 cutoff。综合解释默认分为当前分钟状态及带来源时间的日周背景；没有分钟适用证据的评分/价格显示 EVIDENCE_REQUIRED 或 UNOPENED，不把周日评分改名为分钟评分。日周 AI 四组合保持原范围，扩展候选会改变归一化评分，分钟 AI 另行研究。
 10. 历史与 Live 分离，先历史产品后盘中观察；checkpoint、快照不能跨 source/formula/adapter/period 身份复用。来源 1m 修订要检查已有 5m 及其他派生/Reference 消费者。
 11. 所有后续生产动作只在交办目标覆盖时执行；本次“列开发计划”不启动下载、apply、build、migration、发布或 Runtime。授权存在时在机器校验通过后连续执行，不要求逐批次重复批准。
+12. 数据矩阵为 60×4=240；基础策略为 60×4×2=480；融合参考为 60×4=240；合计 720 个页面模式结果。三组分母分别报告；不能将 fusion 当第三套独立信号算法，也不沿用原主升浪矩阵。
+
+### 双策略与原站差异合同
+
+- 双轨图分别显示趋势与震荡 Marker、参考价及来源；图例可见标签数不是完整事件数，更不是融合交易数。遮挡或缩放不得改变后台事件和收益。
+- 融合维持一份 long/flat 参考状态：已有参考仓且任一来源 CLEAR 则清；随后空仓且任一来源 BUILD 则建；同向优先震荡，允许跨策略配对，不重复加仓。同根两个动作使用稳定 action 顺序和独立 ID。
+- 不跨物理合约、owner 或 calculation segment 配对；无自身入场的来源 CLEAR 是否可退出另一来源建立的融合仓，继续沿用现有融合合同。OPEN 保留，不能用样本末端或新主力价格伪造退出。
+- 原站普通回测末根强制估值，本地 ReferenceTrade 不强平；原站收益窗口按退出日，本地维持 `entry_in_window_v1`。披露差异，不以逐页收益相等作为本地参考模型验收。
+- 原站震荡图表路径有 `soldThisBar` 限制，`runOscBacktest` 可同根 CLEAR→BUILD；本地保持 accepted 公式合同。若以后调整可见图表 parity，另立展示证据/版本，不能静默改变交易配对。
+- 单策略已实现的事后理论值按现有独立版本保留；融合理论值本轮不新增，明确不适用，不能套用普通融合结果冒充。做空/双向交易需独立候选、公式及研究证据，不由期货能做空推导。
 
 ## 模块与职责
 
@@ -41,10 +65,10 @@
 
 | 入口 | 本轮职责 |
 | --- | --- |
-| Core `product_contracts.py`、`product_identity.py`、`product_adapters.py`、`product_auxiliary.py` | 周期身份、分钟校验、三策略/副图输入与分段，不复制公式 |
+| Core `product_contracts.py`、`product_identity.py`、`product_adapters.py`、`product_auxiliary.py` | 周期身份、分钟校验、两套基础策略/副图输入与分段，不复制公式 |
 | API `product_query.py`、`product_reader.py`、`readiness.py`、`readiness_composition.py` | 精确窗口、完整前缀、只读依赖矩阵 |
 | `services/quant-api/app/market_data/aggregation.py`、`session_clock.py`、`historical_data_manager.py` | 唯一分桶、来源/派生计划、恢复与维护 |
-| Core `reference_trades.py`、`reference_statistics.py`；`services/quant-api/app/reference_trading/` 现有模块 | 参考投影、bounded build/checkpoint、持久化查询 |
+| Core `reference_trades.py`、`reference_statistics.py`、`fusion_reference.py`；`services/quant-api/app/reference_trading/` 现有模块 | 两套参考投影与融合、bounded build/checkpoint、完整曲线和持久化分页 |
 | API `product_service.py`、`product_release.py`；`services/quant-api/app/schemas/market_newow_product.py`、`app/api/market_newow.py` | 同快照响应、能力与开关，旧版本拒绝/兼容 |
 | Web `api/newowProduct.ts`、`types/newowProduct.ts`、`utils/newowProductTypes.ts`、`composables/useNewowProduct.ts`、`components/market/detail/newow/` | 周期切换、分页、请求取消、时间/状态/统计展示 |
 | `scripts/newow_four_period_readonly_audit.py`、Newow readiness CLI | 复用报告入口，不新增第二套数据审计真相 |
@@ -55,13 +79,80 @@
 
 - 同一 trading_day 多根分钟 Bar：P3/P5a 允许有序分钟，不放松 D1 日期约束；新增重复/乱序、同日分页回归。
 - owner 重入与预热时间回退：P5a 每个 owner/calculation segment 独立定位已发生断点，验证初始 HOLD 与无入场 CLEAR。
-- 一个源 revision 改变、其他周期尚未重建：P4/P5b/P5c 阻止旧 token/资产混读，验证 5m 消费者影响与部分成功恢复。
+- 一个源 revision 改变、其他周期尚未重建：P4/P5b/P5c 阻止旧 token/资产混读，验证 5m 消费者影响与部分成功恢复；双策略两来源必须同 revision。
 - 同 Bar CLEAR/BUILD 与历史/实时交界：P5a/P5b/P9 验证顺序、身份、重启幂等及无入场时不造交易。
 - 切周期后迟到响应和巨大 1m 窗口：P5b/P5c 验证取消、游标、完整统计与分页独立，不以截断计算换取性能。
 
 ## 顺序与执行方式
 
-`P0 → P1 → P2 初盘 → P3 → P2 完整依赖复核 → P4 → P5a → P5b → P5c → P6 → P7 → P8`；P9 后续独立交付。
+`P0 → P1 → P2 初盘 → P3 → P4 → P5a → P2 完整依赖复核 → P5b → P5b-F → P5c → P6 → P7 → P8`；P9 为后续盘中观察，R1/R2 为独立研究线。P2 分两次交接，避免在公式输入要求尚未确定时宣布数据就绪。
+
+### 可直接分派的任务总表
+
+本表每一行对应一个任务；P2 保持一个任务、分两次交接。复杂任务内部复选框是执行步骤，不需要再创建同名 Spec/Plan。以下全部是待开发内容；本次交付是计划，不是启动这些任务。
+
+| 编号 / 任务名称 | 必需依赖 | 本任务交付及完成判定 | 建议执行档位 |
+| --- | --- | --- | --- |
+| P0 基线与共享阻塞核对 | 无 | 冻结源码/数据身份、确认文件归属，列出 RB 与本轮相关阻塞；每个阻塞有证据，不沿用旧矩阵结论 | Sol Medium |
+| P1 四周期身份与能力合同 | P0 | 新周期端到端可识别；旧身份稳定；候选入口与正式开放分离；确定以下接口表 | Sol High |
+| P2 四周期数据依赖审计 | P1；最终复核还需 P3/P5a | 初盘列现存数据及未知；复核输出 240/480/240 分母、精确缺口与共享源计划；零生产写入 | Sol High |
+| P3 Session 与分钟窗口 | P1、P2 初盘 | Session 精确端点、同日时间游标、合法短尾和真实缺分钟区分；日周分页不回归 | Sol High |
+| P4 同源维护与恢复工具 | P2 初盘、P3 | 同源去重、只补真实缺口、revision 失效与失败恢复；隔离测试和 dry-run 通过；不执行正式补数 | Sol High |
+| P5a 趋势震荡分钟计算 | P1、P3 | 8 个基础组合及适用副图，分段/预热/同根动作正确；batch/增量/恢复一致 | Sol High |
+| P5b 参考构建与查询容量 | P2 最终复核、P4、P5a | 分钟单策略完整参考、快照、分页、恢复与容量实测；不请求时全历史重算 | Sol High |
+| P5b-F 双策略融合完整化 | P5b | 4 个融合组合，完整统计/曲线不受 200 条限制；两来源同快照，近一年列表独立分页 | Sol High |
+| P5c API 与四周期页面 | P1/P3/P5a/P5b/P5b-F | 趋势/震荡/双策略、分钟标签、背景角色、记录/曲线/主图独立，迟到请求隔离 | Sol Medium；时序部分 High |
+| P6 RB 与期货边界纵向验收 | P2 最终复核、P4、P5c | 首品种 12 个模式结果逐项有证据；日盘/长夜盘/上市/换月/质量断点样本覆盖 | Sol High |
+| P7 operational 60 品种扩展 | P6 | 240 数据、480 基础、240 融合逐项验收，维护可接续；先全品种初遍，再集中处理异常 | Sol High |
+| P8 历史分钟版交付 | P7；先行小范围交付可依 P6 | 冻结声明范围，测试/Review/集成；任务包含发布时完成发布与切换，自然证据单列 | Sol High |
+| P9 盘中 completed 观察 | P8 历史正式交付 | 历史/Live 接缝、增量/重启/修订、实际水位与自然观察；不自动增加通知或订单 | Sol High |
+| R1 分钟因果研究适配 | P5a/P5b-F、P6 冻结样本 | 独立融合因果模型、执行/成本事实、逐笔差异归因和无未来性证据 | Sol High |
+| R2 OOS 与 Walk-forward | R1、所评估样本数据通过审计 | 冻结实验和留出窗口，形成品种×周期×模式研究结论；证据不足允许不出收益 | Sol High |
+
+模型档位按 `docs/DEVELOPMENT.md`：高风险时序、配对、数据恢复、撮合和研究方法做独立 Review，建议 Astra Medium/High；普通 UI/文档自审或按风险安排。无需为本计划创建任何线程，owner 可按编号自行分派。
+
+### 三条交付线及里程碑
+
+| 里程碑 | 包含任务 | 达成后可以声明 | 仍不能声明 |
+| --- | --- | --- | --- |
+| M1 候选计算闭环 | P0–P5a，P2 最终复核 | 四周期输入与基础算法候选成立 | 已有完整页面/全量数据 |
+| M2 首品种历史产品 | P5b、P5b-F、P5c、P6 | RB 或经审计替代品种的 12 个模式结果完成验收 | 60 品种完成/因果盈利 |
+| M3 60 品种历史交付 | P7、P8 | 按矩阵声明已开放范围及例外，版本/运行切换按实际记录 | 自然盘中闭环/策略获准执行 |
+| M4 盘中观察 | P9 | 已完成分钟的实时观察范围和新鲜度有证据 | Paper/Shadow/真实下单 |
+| MR 因果研究 | R1、R2 | 对冻结研究集合给出合格、淘汰、继续观察或证据不足结论 | 自动晋升或修改 active 策略 |
+
+历史页不等待 OOS 才能作为非执行参考交付；研究通过也不跳过页面、数据或 Runtime 验收。P8 可先发布通过 M2 的精确范围，其余品种继续 P7；不能把这个先行版本写成 M3 完成。
+
+### 接口交接表（拟实现合同，不代表已有 API）
+
+| 合同 | 所属任务 | 下游需要的保证 |
+| --- | --- | --- |
+| 周期/模式/section capability | P1 | 显式 `1m/15m/30m/60m`，trend/oscillation 与 dual/fusion 区分；支持、数据就绪、正式开放分开表达 |
+| 分钟窗口与 chart cursor | P3 | 带时区严格排他 `chart_before`，绑定频率、快照和 bar_end；日周原合同保留 |
+| Source plan / revision | P2/P4 | 物理合约、owner 范围、Session/Calendar/Map 身份、源 revision/hash、派生版本；同批源请求去重 |
+| StrategyReplay | P5a | 同源确定 frames/actions，明确 warmup、observation eligibility、physical/calculation segment 与确认时间 |
+| 单策略 reference snapshot | P5b | 稳定 trade ID、完整 summary、曲线、独立 records cursor、cutoff；同根动作按稳定次序排列 |
+| 融合 reference snapshot | P5b-F | 两个源策略版本、fusion model、input hash、共同 cutoff；完整结果与列表分离；条目有 entry/exit trading_day |
+| Web response identity | P5c | 图/副图/参考不混快照；背景可独立缺失并显示来源；窗口规则后端权威，UI 不重算资格 |
+| Forward seam | P9 | historical/observation 分离，重复幂等、冲突失败、缺口不推进；新 observed_at 不伪装旧时点可知 |
+| Research result | R1/R2 | dataset/run/formula/execution/cost/roll 身份齐全，独立于页面 reference_model；无执行事实则显式不足 |
+
+P1 固定 schema 名称、字段类型与版本；P3/P5b/P5b-F 各自提供机器可解析示例和合同行为测试供下游使用。游标使用既有项目机制，须包含稳定排序平局键并校验身份；不可按页面位置或自然日期猜下一页。
+
+### 并行限制与任务交接
+
+- 默认一个任务修改共享核心代码或正式数据。P1、P3、P4、P5a、P5b、P5b-F 都会影响共享身份/输入，不安排多个会话同时修改这些实现。
+- P1 接口冻结后，P5c 可提前做独立 UI fixture 和测试准备；P2 可做只读盘点。与实现并行的 Review 只读，不各自修同一文件。原站证据、文档核对也可并行。
+- P5c 的 `product_service.py`、schema、capability 修改须等 P5b-F 交接后进行。任何真实维护、Canonical/Catalog 更新和 release/Runtime 切换串行，避免审计使用混合 revision。
+- 研究线可以在 P6 冻结数据快照后与 P7 并行，只读引用冻结输入；不能因 P7 补数让进行中的 OOS 自动换数据。
+- 每个任务交接只需：精确 commit、修改路径、实际测试命令及结果、接口/样例、相关数据 snapshot/hash、剩余阻塞。复用本计划和既有任务记录，不为每次交接再建多套报告。
+- 接收者核对依赖 commit 已进入所用分支，再开始。数据修订使既有 evidence 失效时重跑受影响验证，不把老测试结果移植到新 SHA。
+
+### 通用分派文本
+
+> 执行本文件的【任务编号和名称】，先读取设计合同及该任务依赖，核对最新 develop、worktree、dirty state 和交接证据。仅完成该任务的修改范围、行为测试、自审及必要独立 Review；保留无关修改。交付精确代码身份、实际测试与剩余项，不把计划中的命令写成已执行。默认本任务是代码/隔离验证；P6/P7 的正式数据操作、P8 的发布切换、P9 的运行启用，按本次交办明确的目标执行，未交办部分不自行扩大。任务内已授权步骤不重复请示；重要合同歧义先列证据和选项。
+
+分派 P6/P7 时注明“隔离验收”或“包含精确缺口的正式维护与读回”；分派 P8 时注明“候选交付”或“发布并切换”；分派 P9 时注明“实现与隔离验证”或“启用小范围观察并自然验收”。这些说明定义任务范围，不要求执行途中再次指定已可由证据推导的 hash/commit。
 
 P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使用 P3 的权威窗口和 P5a 的实际公式要求。P4 无缺口时只验证工具及复用现有产物，不为了任务完整重复下载。P0 的自然运行证据收集可与隔离开发并行，但共享代码与生产维护默认串行。普通小改动自审；数据时序、策略状态、参考配对、checkpoint 和生产计划独立 Review。
 
@@ -76,7 +167,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 - [ ] 将 P9 503、旧 unknown、周审计问题按“分钟共享依赖 / 无关旧问题 / 需现场核对”分类；只把实际影响试点的项列为前置。
 - [ ] 确定首个试点候选 RB，记录输入量、当前窗口读取/构建的耗时、内存与预算，固定后续容量对比环境；不能以旧 240 可读推定 RB 可直接开通。
 
-**出口：** 当前依赖与共享文件归属清楚；不重跑已经完成的日周工作。源码开发不等待尚未发生的 9/28 自然事件；影响正式切换的证据留到 P8。
+**出口：** 当前依赖与共享文件归属清楚；不重跑已经完成的日周工作。源码开发不等待尚未发生的自然事件；影响正式切换的证据留到 P8。
 
 ## P1：周期、身份与能力合同
 
@@ -85,7 +176,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 **接口：** `ProductFrequency` 扩展 1m/15m/30m；既有 `build_product_identity(product, strategy, frequency, *, input_quality_policy) -> ProductIdentity` 接受新周期并保持旧身份；四周期集合显式传递，不能靠 `tuple(ProductFrequency)` 意外扩大默认查询/开放范围。
 
 - [ ] 补测试：1m/15m/30m/60m 身份不同，旧 D1/W1/60m ID 稳定；非法周期拒绝；新周期正式请求保持关闭，候选入口可显式选择。
-- [ ] 建立 3×4 主策略与适用 section 表，分别标记工程支持、原站 parity、预热/重绘、是否正式开放；杯柄仍沿用既有适用范围。
+- [ ] 建立 2×4 基础策略与 1×4 融合参考表，分别标记工程支持、原站 parity、预热/重绘、是否正式开放；杯柄仍沿用既有适用范围，主升浪分钟不纳入本轮。
 - [ ] 实现枚举、adapter/schema/capability 版本传递与验证，不改变公式参数；分钟质量/适配版本按既有命名登记，旧 token 不得伪装新合同。
 - [ ] 运行上述定向测试及 OpenSpec 校验，自审合同与 API 一致后提交。
 
@@ -95,7 +186,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 
 **修改：** API `readiness.py`、`readiness_composition.py`；`scripts/newow_four_period_readonly_audit.py`；`services/quant-api/app/guiyi_cli/data_commands.py`。
 **测试：** NT `test_readiness.py`；`services/quant-api/tests/data_foundation/test_newow_readiness_cli.py`。
-**接口：** `NewowReadinessAudit.run(ReadinessRequest(..., frequencies=四周期)) -> dict` 显式枚举 240 输入项/720 主策略项；未计算项保留 NOT_EVALUATED，附窗口、owner、source identity、预算及 consumer 关联。
+**接口：** `NewowReadinessAudit.run(ReadinessRequest(..., frequencies=四周期)) -> dict` 显式枚举 240 输入项/480 基础策略项/240 融合参考项；未计算项保留 NOT_EVALUATED，附窗口、owner、source identity、预算及 consumer 关联。基础输入 READY 不自动推出融合 READY。
 
 - [ ] 补测试：晚上市起点裁定不制造上市前缺口；同合约重叠源窗口去重；Map 缺失不变成 provider 目标；预算超限的未检查项不填零。
 - [ ] 实现初盘及复用量/缺源/缺派生/元数据/冲突/预热/未支持分类，区分逻辑 owner 窗口与完整物理前缀。
@@ -131,7 +222,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 
 **出口：** 工具能按精确计划复用、派生、恢复；实际下载/apply 留在目标覆盖的 P6/P7 阶段。
 
-## P5a：三策略与辅助指标的四周期计算
+## P5a：趋势、震荡与辅助指标的四周期计算
 
 **修改：** Core `product_adapters.py`、`product_auxiliary.py`；API reader 与辅助输出适配；仅在真实调用路径需要时调整 `engine.py`。
 **测试：** NT `test_product_adapters.py`、`test_product_replay_invariants.py`、`test_engine_causality.py`、`test_main_rise_page_v1.py`、`test_reference_interruptions.py`。
@@ -143,7 +234,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 - [ ] 验证同 Bar CLEAR→BUILD、Hint 不改变参考持有、批量/增量/checkpoint 恢复一致；对因果输出验证 prefix invariance，对重绘图层验证确认时间及独立标签。
 - [ ] 运行定向与原公式金样回归，独立 Review；把实际策略输入要求回填 P2 依赖矩阵。
 
-**出口：** 12 个主策略组合可独立计算，预热/适用性如实报告；不以原站截图宣称数值一致。
+**出口：** 8 个基础策略组合可独立计算，预热/适用性如实报告；主升浪测试仅回归既有行为，不新增分钟能力；不以原站截图宣称数值一致。
 
 ## P5b：统一参考流、快照构建与容量
 
@@ -156,7 +247,25 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 - [ ] 扩展实际统计起止、样本量、OPEN/CLOSED/interrupted/unpaired 分类及来源截止；保留当前窗口计入和累计算法，不改收益语义。
 - [ ] 核对 P9 reader/build 的实际阻塞并处理本轮必需部分；既有 schema 能表达则不新增 migration。读回成功后才切换声明范围 reader，不默认切全局旧流。
 - [ ] 容量验证分别跑 RB 完整四周期构建、500 根图表读取、200 条参考分页；记录固定环境的输入量、耗时/峰值内存、冷/热请求与取消行为。请求预算/上限沿用已冻结合同，若不足先据测量说明取舍，不能截断 prefix/统计以通过。
-- [ ] 运行离线及必要的一次性 PostgreSQL 隔离测试、独立 Review；skip 或基线失败单列。现有 fusion 按需全窗计算不自动扩展到 1m，分钟 fusion 默认关闭且旧周期回归。
+- [ ] 运行离线及必要的一次性 PostgreSQL 隔离测试、独立 Review；skip 或基线失败单列。分钟 fusion 在下述完整曲线和分页验收前保持关闭，旧周期回归。
+
+### P5b-F：融合结果完整化（分钟双策略必需）
+
+**修改：** Core `fusion_reference.py`；API `product_service.py`、schema、现有 reference 构建/查询模块；Web `api/newowFusion.ts`、`NewowFusionPanel.vue`。
+**测试：** NT `test_fusion_reference.py`、`test_reference_statistics.py`、`test_product_snapshot_cache.py`；RT `test_newow_persisted_query.py`、`test_checkpoint_parity.py`；Web `tests/newowFusionPanel.test.ts`、`tests/newowReferenceCurve.test.ts`、`tests/newowReferenceWindows.test.ts`。
+**接口设计：** 在既有融合 API 增量提供 `summary`、`curve`、`items`、`next_cursor`、`reference_revision`；都绑定 product/frequency、两个 source formula/profile、fusion model、input hash、cutoff 和统计窗口。同一构建输入只读取一次，趋势/震荡 replay 各一次；融合依既有 reducer 消费确定事件。复用既有快照存储，不另建数据库或第二套行情链。
+
+上述为拟新增输出，不声称当前已存在。传输 schema/投影版本随接口升级；不改变配对及算术时保留融合业务 model 版本。若实际实现改变业务语义，则先更新 canonical 和 model 版本，不能用传输升级掩盖。
+
+- [ ] 先补超过 200 条（至少 201/1000 条）融合记录的回归：完整统计与曲线末点一致；列表 page_size 不改变 summary；跨页同一时刻 CLEAR→BUILD 不重复、不漏项。
+- [ ] 保持 `fusion_reference_comparison` 旧调用结果兼容；抽出内部完整结果供构建使用，分页只作用于 delivery，不再让 `[:200]` 决定曲线可用性。日周调用也回归，不建立永久双 reducer。
+- [ ] 曲线读取完整 CLOSED 集合；大规模展示可采用有误差说明的显示抽样，但精确统计、极值和原始记录定位始终来自完整投影，缩放不重算交易。图表页只读 bounded 可视窗口。
+- [ ] 记录返回 entry/exit trading_day 与 bar_end；窗口 membership 由后端依既有合同计算，前端不再用自然日期重算。补周五夜盘归属下一交易日、跨月夜盘及窗口边界回归。
+- [ ] 近一年列表独立分页；曲线点可按稳定 ID 读取未加载记录；统计窗口变化不改主图与固定列表范围。OPEN/中断单列，断点不伪造 CLOSED。
+- [ ] 增量融合 checkpoint 同时保存两个来源状态与融合状态；双源缺任一、revision 不同或截止不一致时融合不可用，仍可单独显示已验证单策略。
+- [ ] 用同一 input hash 对比完整重算、分块、增量、重启恢复；冷热查询测量证明不会每次 1m 页面请求重算全历史。未通过则保持该模式未开放，不用缩短样本替代。
+
+**出口：** 4 个融合组合与 8 个基础组合形成首品种 12 个模式结果；完整收益不再受 200 条列表限制。
 
 **出口：** 一个周期的构建/恢复/分页不污染其他周期；完整统计不依赖图表长度，分钟规模可承受且有实测。
 
@@ -170,7 +279,8 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 - [ ] 实现周期切换、分钟日期时间轴与详情、夜盘 trading_day、显式负号；同周期主状态优先，周日背景独立标识。
 - [ ] 页面分别显示数据/计算/辅助/参考/新鲜度/正式开放状态，WARMING 不清空正常主图，背景缺失不阻断已经证明的当前主策略。
 - [ ] 显示统计实际起止与计数，标注零成本页面参考；图表 Marker 可定位精确记录，不按相邻标签猜配对。
-- [ ] 兼容既有综合解释、跨周期价格和双策略身份；新分钟 capability 对无证据 section 明确关闭，不隐藏请求其他周期或沿用旧得分。
+- [ ] 实现双轨显示与独立融合面板；统一 `1分/15分/30分/60分/日K/周K` 格式，消除非周即日的标签分支。清理切出 dual 后的副图层与旧响应，图例抽样不改变融合统计。
+- [ ] 综合解释显式传递日周背景角色，替换 `tuple(ProductFrequency)` 隐式扩围和非周即日的当前角色判断；按 as_of 取已完成且当时可用的背景输入，同一端点保留明确先后顺序，不见未完成日周数据。新分钟 capability 对无证据 section 明确关闭。
 - [ ] 运行定向前后端测试、Web build（含 typecheck/topology）和候选 fixture E2E；独立真实浏览器验收留 P6，fixture/HTTP 200 不代替真实完成。
 
 **出口：** 候选页面完成四周期交互且错误状态可解释，正式开关仍只按已验收范围开放。
@@ -181,7 +291,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 
 - [ ] 固定代码、配置、Canonical/Catalog 身份、产品集合与 as_of，先 dry-run；缺源才按精确计划补源，缺派生才派生。目标不包含生产修复时只使用隔离输入验收。
 - [ ] 对实际 mutation 独立读回源/派生/指针/剩余目标，再构建参考资产；已有结果不重复提交，恢复范围与旧数据可核验。
-- [ ] 首试点完成 4×3 主策略、全部适用 section、参考记录、首屏、切周期、同日翻页和错误态；其他品种只扩边界，不代替首个完整闭环。
+- [ ] 首试点完成 4×2 基础策略加 4 个融合结果、全部适用 section、参考记录、首屏、切周期、同日翻页和错误态；其他品种只扩边界，不代替首个完整闭环。
 - [ ] 增加 metadata 缺失、缺分钟、短尾、owner 重入、预热不足、源修订反例，并核对最新价格与历史策略截点分离。
 - [ ] 独立 Review 数据计划/时序结果；定向回归 D1/W1 和旧 60m，记录代码通过、数据通过、页面通过各自状态。
 
@@ -190,8 +300,8 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 ## P7：60 品种扩大与维护接续
 
 - [ ] 复用 P2/P4 依赖队列逐品种执行，单个未知结果只阻断受影响 mutation；共享源/维护锁串行，独立只读盘点可继续。
-- [ ] 形成 240 输入项和 720 主策略项的同版本、共同 as_of 矩阵；逐 section 列 READY/WARMING/NOT_APPLICABLE/BLOCKED/UNOPENED/NOT_EVALUATED，明确完成及未完品种。
-- [ ] 双策略/解释若以后纳入分钟，额外列验收矩阵与范围，不替代 720 项，不因既有代码存在而自动扩入。
+- [ ] 形成 240 输入项、480 基础策略项、240 融合参考项的同版本、共同 as_of 矩阵；逐 section 列 READY/WARMING/NOT_APPLICABLE/BLOCKED/UNOPENED/NOT_EVALUATED，明确完成及未完品种。
+- [ ] 日周背景/跨周期价格另列依赖和可用性，不充当分钟主策略验收，也不因缺少无关背景而阻塞有效主图。
 - [ ] 在任务覆盖时验证后续盘后增量、新主力预热与派生接续；自然事件尚未发生则保留待验，不能手工补跑伪装自然证据。
 - [ ] 部分范围可独立候选，但 capability 必须与实际品种×周期×策略证据一致；保持已有日周能力。
 
@@ -218,6 +328,65 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 - [ ] 显示周期独立水位/延迟/断线状态；Scope、Rule、真实通知和订单不因页面接入自动改变。
 
 **出口：** 可以单独声明盘中观察的精确范围、延迟及自然证据；不进入 Paper/Shadow/实盘执行。
+
+## 独立研究出口（不与页面上线混为一项）
+
+已有研究模块继续按品种×周期×趋势/震荡/融合分别评估。页面支持不是 OOS 通过，也不自动进入 Runtime 策略候选。融合需使用同一事件规则建立独立因果研究身份，不把两套回测收益相加。
+
+- 完成 Bar 产生信号后，只能在下一可执行时点按物理合约研究成交；同分钟高低价同时触及不能推导真实先后，按已有撮合合同保守处理，缺少执行事实则明确不足。
+- 成本含具体合约乘数、tick、手续费（含平今/平昨差异）、滑点；涨跌停、零成交量与缺盘口不得假定总能成交。换月中断或显式换月规则独立版本化。
+- 比较窗口、截止、可用历史与成本假设保持一致，同时报告频率各自样本量、换手、收益百分点/研究净值的不同口径、回撤、成本敏感性及中断比例。不能凭原站一页累计或分钟年化选最佳周期。
+- 按时间滚动 OOS/Walk-forward；分钟样本按交易日/持有区间隔离，跨分割边界的交易及标签不得泄漏。参数仍以 Bar 数计，寻优或分钟 AI 排名另立研究，不从已看过的高收益区间选择最终测试集。
+
+### R1：分钟因果研究适配与逐笔归因
+
+**修改：** Core `research_backtest.py`、`research_evidence.py`；API `futures_validation.py`、`futures_evidence_plan.py`、`futures_evidence_service.py`。仅当现有独立模块无法容纳融合意图时抽出小型适配器，不复制撮合引擎。
+**测试：** NT `test_research_backtest.py`、`test_futures_validation.py`、`test_futures_evidence_plan.py`、`test_futures_evidence_service.py`、`test_engine_causality.py`。
+**输入：** P6 冻结的物理合约分钟与 owner/quality segment、P5a 的两策略事件、P5b-F 融合规则、具有生效时间和来源的执行/成本事实。
+**输出：** 固定 run_id 的研究结果与逐笔差异表；reference return、next-executable return、cost/slippage impact、interruption/exclusion 分列，不写回 ReferenceTrade。
+
+- [ ] 先补同日多根研究输入、夜盘、同根双事件、下一可执行 Session、涨跌停/零量、事实缺失回归；确认旧日周研究结果不变。
+- [ ] 复用既有事件与撮合入口，补分钟及融合研究身份。真实执行结果反馈给研究持仓，不能用页面假定全部成交的仓位替代；未成交后不得继续生成虚假的平仓成交。
+- [ ] 将 observed_at、confirmed_at、effective_after、模拟执行时间和估值时间分开。成本/限价规则按对应时点有效事实读取，缺事实报告 EXECUTION_FACTS_MISSING，不以零费用兜底。
+- [ ] 验证信号因果前缀不变性；对展示重绘输出只验证其确认时间和标记，不把它当历史已知信号。聚合端点已完成仍须满足执行严格先后。
+- [ ] 按同一输入生成逐笔差异表，解释未闭合、换月、缺失执行事实与成本导致的样本差异；不要求因果交易逐笔等于页面乐观交易。
+- [ ] 运行上述定向测试及高风险独立 Review，交接版本、固定样本和完整 exclusions。
+
+**出口：** 三种模式均能在执行事实足够时产生可复算因果结果；缺事实时明确拒绝，没有“为填矩阵而补收益”。
+
+### R2：OOS / Walk-forward 与成本敏感性
+
+**修改：** Core `research_walk_forward.py`、`research_evidence.py`；复用 API futures evidence 入口和已有研究输出结构。
+**测试：** NT `test_research_walk_forward.py`、`test_research_evidence.py`、`test_rank1_causality.py`、`test_futures_evidence_service.py`。
+**输入：** R1 固定候选公式、参数、成交/成本/换月版本和经审计数据；P7 未完成时只能使用已经冻结并明确列出的子集。
+**输出：** 品种×周期×模式×fold 的样本/排除项、成本敏感性、研究结果与结论，记录所有尝试过的候选，不覆盖失败实验。
+
+- [ ] 在读取测试集收益前固定 train/validation/test 时间边界和滚动规则；新增同交易日多根数据不会被拆到不同 fold、持有期跨边界不得泄漏的测试。
+- [ ] 预热仅使用当时可获得的前缀；换月、终端未闭合和缺执行事实按冻结规则归类。测试窗口不足不得缩短要求后仍声称原方案通过。
+- [ ] 运行固定公式 Walk-forward，不在当前任务中自动寻优参数；如后续获准寻优，训练选择与最终留出检验须独立，并登记所有比较。
+- [ ] 报告换手、交易数、成本前后、回撤、成本敏感性和分段稳定性；比较四周期时列明共同窗口与各自样本数，不能按累计收益直接排名。
+- [ ] 对实验设计和无泄漏证据做独立 Review；输出“证据不足/继续观察/淘汰/可提请候选评审”，不修改 active、Scope、通知或自动晋升。
+
+**出口：** 研究结论有冻结方法和可重算证据；盈利不是完成标准，无结果也必须有明确原因。
+
+## 全计划验收用例归属
+
+| 必验情形 | 负责任务 | 必须观察到的结果 |
+| --- | --- | --- |
+| 09:00–10:15 Session 的 60m 短尾；10:15–10:30 休市 | P3 | 10:00/10:15 合法端点，休市不拼桶、不判成缺分钟 |
+| 周五夜盘、跨月/跨年、节日前无夜盘 | P3/P5b-F | Calendar/Session 与 trading_day 权威；记录窗口不按自然日期错分 |
+| 缺失一个应有 1m、重复、乱序、非交易端点 | P3/P4/P5a | 明确错误；不插值、不跨频回退、不计算正式信号 |
+| 同一合约离开主力后再进入；新主力历史很短 | P5a/P5b | 分段重置、正确预热、无伪造 BUILD；不使用新合约清旧仓 |
+| 震荡同根 CLEAR→BUILD；双源同向及反向事件 | P5a/P5b-F | 顺序、优先价、trade/action ID、跨来源配对符合冻结合同 |
+| 201/1000 条融合记录、同一时刻多动作、近一年分页 | P5b-F/P5c | 全量统计曲线不变、分页无重漏、曲线定位可读未加载记录 |
+| 1m 源修订，15m 已重建而 30m/60m 未完成 | P4/P5b/P5b-F | 依赖分别失效，拒绝旧快照混读；部分结果不冒充四周期成功 |
+| 进程在提交前/后终止、结果未知、锁被占用 | P4/P5b/P9 | 独立读回、稳定幂等、既有预算/次数合同；不盲重试 |
+| 快速切品种/周期/dual、后台旧响应返回 | P5c | 无串图/串收益，旧图层清理；已验证当前主图不因背景缺失消失 |
+| 自然 completed、断线后恢复、历史/Live 重叠冲突 | P9 | 未完成不晋升、冲突不覆盖、缺口不推进、重启结果一致 |
+| 同分钟上下沿均触及、不能成交、成本事实缺失 | R1 | 不推断价内先后或保证成交；保守撮合/不足原因可解释 |
+| fold 边界前后存在夜盘/持仓/预热 | R2 | 不跨分割泄漏，不借未来主力/费用/输入，实验可重放 |
+
+性能验收使用 P0 冻结环境与既有资源预算，记录完整输入规模、构建峰值内存/耗时、500 根图表、200 条记录分页、完整曲线、冷/热请求及取消；以查询不重放全历史、分页不重算交易、超预算明确失败为硬条件。不能在未测量前承诺毫秒延迟，也不能通过截短计算前缀或统计历史达标。
 
 ## 验证命令与记录方式
 
@@ -247,14 +416,23 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
   services/quant-api/tests/newow/test_reference_trades.py \
   services/quant-api/tests/newow/test_reference_statistics.py \
   services/quant-api/tests/newow/test_reference_interruptions.py \
+  services/quant-api/tests/newow/test_fusion_reference.py \
   services/quant-api/tests/reference_trading/test_newow_historical_driver.py \
   services/quant-api/tests/reference_trading/test_newow_persisted_query.py \
   services/quant-api/tests/reference_trading/test_checkpoint_parity.py \
   services/quant-api/tests/reference_trading/test_revision_rebuild.py
 
 # P5c：页面状态、请求隔离、类型与构建
-pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowProductTypes.test.ts tests/newowCapabilities.test.ts tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowProductTypes.test.ts tests/newowCapabilities.test.ts tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts tests/newowFusionPanel.test.ts tests/newowReferenceCurve.test.ts tests/newowReferenceWindows.test.ts tests/newowDualChartDisplay.test.ts
 pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+
+# R1/R2：仅隔离研究验证，不执行真实交易或自动晋升
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_research_backtest.py \
+  services/quant-api/tests/newow/test_futures_validation.py \
+  services/quant-api/tests/newow/test_research_walk_forward.py \
+  services/quant-api/tests/newow/test_research_evidence.py \
+  services/quant-api/tests/newow/test_rank1_causality.py
 
 # canonical 修改后；当前只改规划文字，不机械运行这些业务检查
 openspec validate --specs --strict --no-interactive
@@ -268,4 +446,4 @@ git diff --check
 
 ## 本次计划检查
 
-本次仅更新本文件，进行本地引用/代码路径、P0–P9 与 P5a/b/c 结构、未完成清单、占位项和 diff 格式检查。未执行上述业务测试、来源查询/下载、生产写入、Reference build、发布或 Runtime 操作。下一步从 P0 基线和 P1 候选周期合同开始，不先全量补数或开放四周期按钮。
+本次仅更新本文件，进行本地引用/代码路径、P0–P9 与 P5a/b/c 结构、未完成清单、占位项和 diff 格式检查。未执行上述业务测试、来源查询/下载、生产写入、Reference build、发布或 Runtime 操作。本轮可直接按下方分派表安排任务；所有实现项仍未完成。下一步只分派 P0，交接后进入 P1，不先全量补数或开放四周期按钮。

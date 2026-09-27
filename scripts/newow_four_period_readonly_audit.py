@@ -24,15 +24,21 @@ from app.core.env import PROJECT_ROOT
 
 
 PERIODS = (BarFrequency.M1, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1)
-STRATEGIES = ("trend", "oscillation", "main_rise")
+STRATEGIES = ("trend", "oscillation")
 
 
-def audit(*, since: date, day: date, timeout_seconds: int) -> dict:
+def audit(*, since: date, day: date, timeout_seconds: int, products: tuple[str, ...] | None = None) -> dict:
     audit_started_at = datetime.now(UTC).isoformat()
     deadline = monotonic() + timeout_seconds
-    products = load_operational_products()
-    if len(products) != 60:
+    universe = load_operational_products()
+    if len(universe) != 60:
         raise ValueError("OPERATIONAL_60_REQUIRED")
+    products = universe if products is None else products
+    if (not products or len(set(products)) != len(products)
+        or not set(products) <= set(universe)):
+        raise ValueError("AUDIT_PRODUCT_SCOPE_INVALID")
+    if not 1 <= timeout_seconds <= 300 or since > day:
+        raise ValueError("AUDIT_WINDOW_INVALID")
     rows: list[dict] = []
     with SessionLocal() as session, readonly_transaction(
         session, timeout_seconds=timeout_seconds,
@@ -82,7 +88,10 @@ def audit(*, since: date, day: date, timeout_seconds: int) -> dict:
          "page": "UNSUPPORTED_OR_CLOSED", "formal_open": False}
         for row in rows for strategy in STRATEGIES
     ]
-    return {"schema_version": 1, "readonly": True, "probe_scope": "bounded_trading_day_window",
+    fusion_rows = [{"product": row["product"], "frequency": row["frequency"],
+                    "model": "fusion", "calculation": "NOT_EVALUATED",
+                    "formal_open": False} for row in rows]
+    return {"schema_version": 2, "readonly": True, "probe_scope": "bounded_trading_day_window",
             "full_history_proven": False, "database": database, "alembic": schema,
             "code_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
             "audit_script_sha256": sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -91,8 +100,10 @@ def audit(*, since: date, day: date, timeout_seconds: int) -> dict:
             ).hexdigest(),
             "audit_started_at_utc": audit_started_at, "database_snapshot_at": snapshot_at,
             "canonical_root": str(canonical_root()), "window": {"since": since.isoformat(), "through": day.isoformat()},
-            "denominator": {"product_period": 240, "product_period_strategy": 720},
-            "rows": rows, "strategy_rows": strategy_rows}
+            "products": list(products),
+            "denominator": {"product_period": len(rows), "base_strategy": len(strategy_rows),
+                            "fusion": len(fusion_rows), "product_mode": len(strategy_rows)+len(fusion_rows)},
+            "rows": rows, "strategy_rows": strategy_rows, "fusion_rows": fusion_rows}
 
 
 def main() -> None:
@@ -101,10 +112,34 @@ def main() -> None:
     parser.add_argument("--trading-day", type=date.fromisoformat, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=300)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--products", nargs="+", help="Explicit operational subset; omission retains readonly 60-product audit")
+    parser.add_argument("--project-env", type=Path, help="Existing private dependency configuration; never printed")
     args = parser.parse_args()
     if not 1 <= args.timeout_seconds <= 300 or args.since > args.trading_day:
         parser.error("timeout out of range")
-    body = audit(since=args.since, day=args.trading_day, timeout_seconds=args.timeout_seconds)
+    global SessionLocal
+    engine = None
+    try:
+        if args.project_env is not None:
+            from scripts.newow_weekly_recovery import load_private_readonly_settings
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            from app.db.url import normalize_database_url
+            import os
+            settings, identity = load_private_readonly_settings(args.project_env)
+            os.environ.update(settings)
+            engine = create_engine(normalize_database_url(settings["DATABASE_URL"]))
+            SessionLocal = sessionmaker(engine)
+        body = audit(since=args.since, day=args.trading_day, timeout_seconds=args.timeout_seconds,
+                     products=None if args.products is None else tuple(args.products))
+        if args.project_env is not None:
+            body["dependency_identity"] = identity
+    except Exception as exc:
+        print(json.dumps({"status": "BLOCKED", "reason": getattr(exc, "code", "READONLY_AUDIT_FAILED")}))
+        raise SystemExit(1) from None
+    finally:
+        if engine is not None:
+            engine.dispose()
     if args.output.exists() or not args.output.parent.is_dir():
         parser.error("output must be new and parent must exist")
     args.output.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n")

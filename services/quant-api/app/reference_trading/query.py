@@ -560,6 +560,78 @@ class HistoricalReferenceQuery:
                 })
         return details
 
+    def presentation_facts(
+        self, stream_id: str, *, snapshot_token: str, since: date, through: date,
+        cutoff: datetime | None, kinds: tuple[str, ...], max_points: int = 100_000,
+    ) -> dict[str, list[dict[str, object]]]:
+        """One bounded scan of saved facts, with daily availability aggregation.
+
+        Initial holdings may need facts before the record window. The snapshot
+        retains its original window identity; this scan never extends its cutoff
+        or through day and does not recalculate any strategy.
+        """
+        self._window(since, through, cutoff)
+        if not kinds or not set(kinds) <= {"availability", "boundary", "hint", "action"}:
+            raise QueryConflict("QUERY_INVALID")
+        if type(max_points) is not int or not 1 <= max_points <= 200_000:
+            raise QueryConflict("QUERY_INVALID")
+        saved = _decode(snapshot_token, kind="snapshot")
+        saved_since, saved_through = _day(saved.get("since")), _day(saved.get("through"))
+        if through > saved_through or cutoff != _instant(saved.get("cutoff")):
+            raise QueryConflict("SNAPSHOT_CONFLICT")
+        result = {kind: [] for kind in kinds}
+        daily = {}
+        count = 0
+        with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
+            row = self._resolve(session, stream_id)
+            snapshot, _, _ = self._snapshot(
+                session, row, since=saved_since, through=saved_through,
+                cutoff=cutoff, encoded=snapshot_token,
+            )
+            self._assert_presentations(session, snapshot)
+            batches = session.execute(select(ReferenceBatch.source_evidence).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == snapshot.revision_id,
+                ReferenceBatch.kind == "calculation", ReferenceBatch.seq <= snapshot.seq,
+                ReferenceBatch.source_evidence["presentation_v1"]["last_day"].as_string() >= since.isoformat(),
+                ReferenceBatch.source_evidence["presentation_v1"]["first_day"].as_string() <= through.isoformat(),
+            ).order_by(ReferenceBatch.seq).execution_options(yield_per=32)).scalars()
+            for evidence in batches:
+                for point in require_envelope(evidence.get("presentation_v1")):
+                    kind = point.get("kind")
+                    if kind not in result:
+                        continue
+                    value = point.get("value")
+                    if not isinstance(value, dict):
+                        raise QueryConflict("PRESENTATION_CORRUPT")
+                    instant = _instant(value.get("bar_end"))
+                    if instant is None:
+                        raise QueryConflict("PRESENTATION_CORRUPT")
+                    day = _day(point.get("trading_day"))
+                    if not since <= day <= through or cutoff is not None and instant > cutoff:
+                        continue
+                    if kind == "hint":
+                        known = _instant(value.get("known_at"))
+                        if known is None:
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        if cutoff is not None and known > cutoff:
+                            continue
+                    if kind == "availability":
+                        key = (day, value.get("physical_contract"), value.get("segment_id"), value.get("calculation_segment_id"))
+                        if any(not isinstance(item, str) or not item for item in key[1:]):
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        prior = daily.get(key)
+                        status = value["status"] if prior is None or prior["value"]["status"] == "ready" else prior["value"]["status"]
+                        daily[key] = {**point, "value": {**value, "status": status, "last_status": value["status"]}}
+                    else:
+                        result[kind].append(point)
+                        count += 1
+                    if count + len(daily) > max_points:
+                        raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
+        if "availability" in result:
+            result["availability"] = sorted(daily.values(), key=lambda point: point["value"]["bar_end"])
+        return result
+
     def signals(
         self, stream_id: str, *, since: date, through: date,
         cutoff: datetime | None = None, limit: int = 50,

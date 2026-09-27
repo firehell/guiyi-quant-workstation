@@ -771,5 +771,5 @@ def test_consumer_only_matrix_skips_dependency_enumeration_and_keeps_all_section
     assert report["complete"] is True
     assert report["enumerations"] == report["dependencies"] == []
     assert len(report["cases"]) == 3
-    assert all(len(case["sections"]) == 7 for case in report["cases"])
-    assert report["work_used"] == 21
+    assert all(set(case["sections"]) == {"chart", "reference", *{f"auxiliary:{item.value}" for item in module.AuxiliaryComponent}} for case in report["cases"])
+    assert report["work_used"] == 3 * (2 + len(module.AuxiliaryComponent))

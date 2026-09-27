@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from guiyi_quant.newow.product_contracts import LEGACY_PRODUCT_FREQUENCIES, INTRADAY_PRODUCT_FREQUENCIES
+
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -387,7 +389,7 @@ def _reference_coverage_intervals(
     for day, grouped in groupby(events, key=lambda item: item[0]):
         same_day = tuple(grouped)
         if len(same_day) > 1:
-            if read.frequency is not ProductFrequency.HOURLY or len({item[2:] for item in same_day}) != 1:
+            if read.frequency not in INTRADAY_PRODUCT_FREQUENCIES or len({item[2:] for item in same_day}) != 1:
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
             if any(item[1] == "PRICE_UNAVAILABLE" for item in same_day):
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
@@ -787,7 +789,7 @@ class NewowProductService:
         cancelled: Callable[[], bool],
     ) -> NewowProductResult:
         context = (
-            (ProductFrequency.DAILY, ProductFrequency.WEEKLY) if request.decision_v2 else tuple(ProductFrequency)
+            (ProductFrequency.DAILY, ProductFrequency.WEEKLY) if request.decision_v2 else LEGACY_PRODUCT_FREQUENCIES
             if request.section is ProductSection.EXPLANATION
             else ()
         )
@@ -1474,7 +1476,7 @@ class NewowProductService:
             ) if main_bars else None
             addon = build_decision_v2(trend, oscillation, main, read, identity)
             for replays, strategy in ((trend, ProductStrategy.TREND), (oscillation, ProductStrategy.OSCILLATION)):
-                for frequency in ProductFrequency:
+                for frequency in LEGACY_PRODUCT_FREQUENCIES:
                     if frequency not in replays:
                         replays[frequency] = StrategyReplay(build_product_identity(identity.product, strategy, frequency), (), (), (), ())
         inputs = build_composite_inputs(trend, oscillation, read.as_of)

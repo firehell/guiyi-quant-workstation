@@ -820,7 +820,7 @@ def test_default_reference_window_is_bounded_by_historical_as_of(product_cases):
         ("product", "r钢"),
         ("product", " rb"),
         ("strategy", "unknown"),
-        ("frequency", "15m"),
+        ("frequency", "5m"),
         ("series_kind", "continuous"),
         ("since", datetime(2023, 1, 2, tzinfo=UTC)),
         ("through", date(2023, 1, 1)),

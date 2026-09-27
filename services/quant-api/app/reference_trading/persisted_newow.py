@@ -12,7 +12,7 @@ from app.reference_trading.models import ReferenceBatch, ReferenceStream
 from app.reference_trading.planning import HistoricalStreamRequest
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict, _decode
 from app.reference_trading.repository import _identity_from_row
-from app.reference_trading.source_identity import verify_saved_input_prefix
+from app.reference_trading.source_identity import verify_saved_input_prefix, verify_saved_compact_source
 
 
 class PersistedNewowReference:
@@ -32,25 +32,6 @@ class PersistedNewowReference:
             if stream is None or batch is None:
                 raise QueryConflict("SNAPSHOT_CONFLICT")
             return _identity_from_row(stream), dict(batch.dependency_manifest)
-
-    def _points(
-        self, stream_id: str, kind: str, since: date, through: date,
-        cutoff: datetime, snapshot: str,
-    ) -> list[dict[str, object]]:
-        result: list[dict[str, object]] = []
-        cursor = None
-        while True:
-            page = self._query.signals(
-                stream_id, since=since, through=through, cutoff=cutoff,
-                snapshot_token=snapshot, cursor=cursor, limit=200,
-                point_kind=kind,
-            )
-            result.extend(page["items"])
-            if len(result) > 10_000:
-                raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
-            cursor = page["next_cursor"]
-            if cursor is None:
-                return result
 
     @staticmethod
     def _coverage(points, gaps, since: date, through: date):
@@ -192,21 +173,36 @@ class PersistedNewowReference:
         storage_start = manifest.get("query_since")
         if not isinstance(storage_start, str):
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
-        try:
-            source_request = HistoricalStreamRequest(
-                stream_identity, date.fromisoformat(storage_start),
-                resolved.actual_through, cutoff,
+        if manifest.get("reader") == "newow_product_reader_intraday_v3":
+            try:
+                source_through = date.fromisoformat(manifest["query_through"])
+                source_as_of = datetime.fromisoformat(manifest["query_as_of"])
+                if resolved.actual_through > source_through or cutoff > source_as_of:
+                    raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+                evidence = reader.historical_source_evidence(
+                    product=request.product, frequency=request.frequency.value,
+                    since=date.fromisoformat(storage_start), through=source_through,
+                    as_of=source_as_of,
+                )
+                verify_saved_compact_source(manifest, evidence)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
+        else:
+            try:
+                source_request = HistoricalStreamRequest(
+                    stream_identity, date.fromisoformat(storage_start),
+                    resolved.actual_through, cutoff,
+                )
+                source = MarketDataHistoricalInputReader(
+                    newow_reader=reader, subing_service=None,
+                ).plan_stream(source_request)
+            except (TypeError, ValueError) as exc:
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
+            verify_saved_input_prefix(
+                manifest, source.dependency_manifest, resolved.actual_through,
+                frozenset((bar.physical_contract, bar.owner_segment_id)
+                          for bar in source.bars if bar.strategy_input),
             )
-            source = MarketDataHistoricalInputReader(
-                newow_reader=reader, subing_service=None,
-            ).plan_stream(source_request)
-        except (TypeError, ValueError) as exc:
-            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
-        verify_saved_input_prefix(
-            manifest, source.dependency_manifest, resolved.actual_through,
-            frozenset((bar.physical_contract, bar.owner_segment_id)
-                      for bar in source.bars if bar.strategy_input),
-        )
         stats = self._query.summary(
             stream_id, since=since, through=through, cutoff=cutoff,
             snapshot_token=snapshot,
@@ -220,16 +216,21 @@ class PersistedNewowReference:
                 snapshot_token=snapshot, cursor=curve_cursor, limit=200,
             )
             curve_items.extend(curve_page["items"])
-            if len(curve_items) > 10_000:
+            if len(curve_items) > 100_000:
                 raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
             curve_cursor = curve_page["next_cursor"]
             if curve_cursor is None:
                 break
         page_ids = {item["reference_trade_id"] for item in page["items"]}
-        availability = self._points(stream_id, "availability", since, resolved.actual_through, cutoff, snapshot)
-        boundaries = self._points(stream_id, "boundary", since, resolved.actual_through, cutoff, snapshot)
-        hints = self._points(stream_id, "hint", date.fromisoformat(storage_start), resolved.actual_through, cutoff, snapshot)
-        actions = self._points(stream_id, "action", date.fromisoformat(storage_start), resolved.actual_through, cutoff, snapshot)
+        facts = self._query.presentation_facts(
+            stream_id, snapshot_token=snapshot, since=date.fromisoformat(storage_start),
+            through=resolved.actual_through, cutoff=cutoff,
+            kinds=("availability", "boundary", "hint", "action"),
+        )
+        availability = [point for point in facts["availability"] if point["trading_day"] >= since.isoformat()]
+        boundaries = facts["boundary"]
+        hints = facts["hint"]
+        actions = facts["action"]
         boundary_by_owner = {
             (item["value"]["physical_contract"], item["value"]["owner_segment_id"]): item
             for item in boundaries
@@ -313,7 +314,7 @@ class PersistedNewowReference:
         }
         warming = (
             not resolved.complete or _has_unresolved_tail_gap(read)
-            or bool(availability and availability[-1]["value"]["status"] != "ready")
+            or bool(availability and availability[-1]["value"].get("last_status", availability[-1]["value"]["status"]) != "ready")
         )
         status = FeatureStatus(
             FeatureRuntimeStatus.WARMING if warming else FeatureRuntimeStatus.READY,

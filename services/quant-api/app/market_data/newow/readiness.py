@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from guiyi_quant.newow.product_contracts import LEGACY_PRODUCT_FREQUENCIES
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -68,7 +70,7 @@ class ReadinessRequest:
     matrix: bool = False
     max_work: int = 10000
     timeout_seconds: int = 300
-    frequencies: tuple[ProductFrequency, ...] = tuple(ProductFrequency)
+    frequencies: tuple[ProductFrequency, ...] = LEGACY_PRODUCT_FREQUENCIES
     candidate_weekly: bool = False
     consumer_only: bool = False
 
@@ -188,7 +190,7 @@ class NewowReadinessAudit:
                 }
                 for symbol in request.products
                 for strategy in ProductStrategy
-                for frequency in ProductFrequency
+                for frequency in tuple(dict.fromkeys((*LEGACY_PRODUCT_FREQUENCIES, *request.frequencies)))
             ]
             if request.matrix
             else []

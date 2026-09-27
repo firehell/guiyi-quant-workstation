@@ -188,6 +188,8 @@ def open_historical_reference_components(*, session_factory=None):
                 active_products=products,
             ),
             read_guard=guard,
+            pin_verified_inputs=True,
+            compact_intraday_inputs=True,
         )
         repository = ReferenceRepository(factory)
         planner = HistoricalReferencePlanner(reader, repository=repository)

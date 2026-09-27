@@ -66,6 +66,23 @@ _MINUTES = {
 }
 
 
+def expected_intraday_ends(
+    sessions: tuple[SessionWindow, ...], frequency: BarFrequency | str,
+) -> tuple[datetime, ...]:
+    """Expand authoritative Session endpoints, preserving legal short tails."""
+    selected = BarFrequency(frequency)
+    if selected is not BarFrequency.M1:
+        selected = _derived_frequency(selected)
+    _validate_sessions(sessions)
+    width = 1 if selected is BarFrequency.M1 else _MINUTES[selected]
+    result = []
+    for window in sessions:
+        count = int((window.end - window.start).total_seconds() // 60)
+        result.extend(window.start + timedelta(minutes=min(offset, count))
+                      for offset in range(width, count + width, width))
+    return tuple(dict.fromkeys(result))
+
+
 def aggregate_from_1m(
     bars: tuple[CanonicalBar, ...],
     *,

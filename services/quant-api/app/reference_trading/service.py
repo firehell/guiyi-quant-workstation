@@ -749,6 +749,14 @@ class HistoricalReferenceService:
         resume: ResumeToken | None,
         deadline: float,
     ) -> StreamBatchReport:
+        pin = getattr(self._reader, "pin_stream", None)
+        with pin(stream_plan.request) if callable(pin) else nullcontext():
+            return self._build_stream_from_input(plan, stream_plan, resume, deadline)
+
+    def _build_stream_from_input(
+        self, plan: HistoricalReferencePlan, stream_plan: HistoricalStreamPlan,
+        resume: ResumeToken | None, deadline: float,
+    ) -> StreamBatchReport:
         stream = stream_plan.request.identity
         if resume is not None and not self._reader.revalidate(
             stream_plan.request, expected_source_token=resume.source_token,

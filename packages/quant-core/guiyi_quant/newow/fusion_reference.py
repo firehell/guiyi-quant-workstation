@@ -33,12 +33,16 @@ def fusion_reference_comparison(
     boundaries: tuple[OwnerBoundary, ...],
     interruptions: tuple[DataInterruption, ...],
     window: PerformanceWindow,
+    *,
+    record_limit: int | None = 200,
 ) -> dict[str, object]:
     """Replay both accepted source strategies over identical complete inputs.
 
     SELL before BUY; oscillation before trend; clear-without-own-entry remains
     usable to close a fusion entry from the other strategy. No terminal force-close.
     """
+    if record_limit is not None and (type(record_limit) is not int or record_limit <= 0):
+        raise ValueError("NEWOW_FUSION_RECORD_LIMIT_INVALID")
     if (
         trend.identity.strategy is not ProductStrategy.TREND
         or oscillation.identity.strategy is not ProductStrategy.OSCILLATION
@@ -105,6 +109,8 @@ def fusion_reference_comparison(
                 "exit_bar_end": exit_action.bar_end.isoformat()
                 if exit_action
                 else None,
+                "exit_trading_day": exit_action.trading_day.isoformat()
+                if exit_action else None,
                 "exit_reference_price": format(exit_action.reference_price, "f")
                 if exit_action
                 else None,
@@ -232,7 +238,27 @@ def fusion_reference_comparison(
             ),
         }
     )
+    revision = sha256(json.dumps({
+        "model": identity,
+        "profiles": [trend.identity.profile_id, oscillation.identity.profile_id],
+        "window": [window.since.isoformat(), window.through.isoformat(), window.cutoff.isoformat()],
+        "rows": rows,
+        "input": [
+            [frame.bar.source_bar_sha256, frame.bar.calculation_segment_id,
+             frame.bar.bar.bar_end.isoformat(), frame.bar.bar.physical_contract,
+             frame.bar.bar.segment_id, str(frame.bar.bar.close), frame.bar.bar.observation_eligible]
+            for frame in trend.frames if frame.bar.bar.bar_end <= window.cutoff
+        ],
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    records = list(reversed(rows))
     return {
+        "snapshot_schema": "newow_fusion_reference_snapshot_v2",
+        "reference_revision": revision,
+        "summary": groups[-1],
+        "curve": sorted(closed, key=lambda row: (row["exit_bar_end"], row["reference_trade_id"])),
+        "source_profiles": [trend.identity.profile_id, oscillation.identity.profile_id],
+        "product": trend.identity.product,
+        "frequency": trend.identity.frequency.value,
         "reference_model_version": MODEL_VERSION,
         "performance_since": window.since.isoformat(),
         "performance_through": window.through.isoformat(),
@@ -243,6 +269,6 @@ def fusion_reference_comparison(
             trend.identity.formula_versions + oscillation.identity.formula_versions
         ),
         "groups": groups,
-        "items": list(reversed(rows))[:200],
-        "records_truncated": len(rows) > 200,
+        "items": records if record_limit is None else records[:record_limit],
+        "records_truncated": record_limit is not None and len(rows) > record_limit,
     }

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from datetime import datetime
 from hashlib import sha256
@@ -5,7 +6,8 @@ from hashlib import sha256
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_adapters import replay_strategy, build_product_identity, label_calculation_segments
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 from guiyi_quant.newow.product_identity import (
     REFERENCE_MODEL_VERSION, futures_adaptation_version,
 )
@@ -75,11 +77,16 @@ def test_newow_goldens_keep_public_trade_ids_and_decimal_statistics() -> None:
     from newow.product_fixtures import ProductCases
 
     case = ProductCases().primitive_input("trend", "1d")
+    case = replace(case, identity=build_product_identity(
+        case.identity.product, case.identity.strategy, case.identity.frequency,
+        input_quality_policy=InputQualityPolicy.DAILY_V2,
+    ))
+    case = replace(case, bars=label_calculation_segments(case.identity, case.bars, ()))
     stream = StreamIdentity(
         strategy_code="newow_trend", formula_versions=case.identity.formula_versions,
         profile_id=case.identity.profile_id,
         reference_model_version=REFERENCE_MODEL_VERSION,
-        futures_adaptation_version=futures_adaptation_version("1d"),
+        futures_adaptation_version=futures_adaptation_version("1d", case.identity.input_quality_policy),
         product=case.identity.product, frequency="1d",
         series_kind="actual_dominant", recording_mode="historical_replay",
         observation_policy_version=None,

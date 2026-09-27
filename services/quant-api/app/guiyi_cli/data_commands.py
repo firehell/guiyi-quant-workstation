@@ -36,7 +36,7 @@ def build_request(args: argparse.Namespace):
         return None
     if args.data_command == "newow-readiness":
         from app.market_data.newow.readiness import ReadinessRequest
-        from guiyi_quant.newow.product_contracts import ProductFrequency
+        from guiyi_quant.newow.product_contracts import ProductFrequency, LEGACY_PRODUCT_FREQUENCIES
 
         as_of = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
         if as_of.utcoffset() is None or as_of > datetime.now(UTC):
@@ -51,7 +51,7 @@ def build_request(args: argparse.Namespace):
             timeout_seconds=args.timeout_seconds,
             frequencies=tuple(
                 ProductFrequency(item)
-                for item in (args.frequency or tuple(ProductFrequency))
+                for item in (args.frequency or LEGACY_PRODUCT_FREQUENCIES)
             ),
         )
     if args.data_command == "update":

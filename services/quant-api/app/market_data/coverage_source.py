@@ -11,7 +11,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
-from app.market_data.aggregation import SessionWindow
+from app.market_data.aggregation import SessionWindow, expected_intraday_ends
 from app.market_data.catalog import CatalogError, ContractFact, MarketCatalog
 from app.market_data.domain import (
     INTRADAY_FREQUENCIES,
@@ -399,34 +399,11 @@ class DatabaseCoverageSource:
             sessions_by_day = {day: batch.windows(day) for day in days}
         except SessionClockError as exc:
             raise InfrastructureError(exc.code) from exc
-        if key.frequency is BarFrequency.M1:
+        if key.frequency in INTRADAY_FREQUENCIES:
             return tuple(
-                (window.start + timedelta(minutes=minute), day)
-                for day in days
-                for window in sessions_by_day[day]
-                for minute in range(1, _minutes(window) + 1)
+                (end, day) for day in days
+                for end in expected_intraday_ends(sessions_by_day[day], key.frequency)
             )
-        if key.frequency in {
-            BarFrequency.M5,
-            BarFrequency.M15,
-            BarFrequency.M30,
-            BarFrequency.H1,
-        }:
-            width = {
-                BarFrequency.M5: 5,
-                BarFrequency.M15: 15,
-                BarFrequency.M30: 30,
-                BarFrequency.H1: 60,
-            }[key.frequency]
-            result: list[tuple[datetime, date]] = []
-            for day in days:
-                for window in sessions_by_day[day]:
-                    count = _minutes(window)
-                    result.extend(
-                        (window.start + timedelta(minutes=min(offset, count)), day)
-                        for offset in range(width, count + width, width)
-                    )
-            return tuple(dict.fromkeys(result))
         daily = tuple((sessions_by_day[day][-1].end, day) for day in days)
         if key.frequency is BarFrequency.D1:
             return daily

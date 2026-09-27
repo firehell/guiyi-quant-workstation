@@ -124,6 +124,37 @@ class MarketDataService:
         self.catalog = catalog
         self.store = store
 
+    def contract_source_evidence(
+        self, *, symbol: str, contract: str, frequency: BarFrequency,
+        before: datetime,
+    ) -> dict[str, object]:
+        """Catalog-resolved physical content proof for materialized consumers.
+
+        This verifies immutable bytes and quality metadata, without decoding
+        history or allowing a consumer to choose files independently.
+        """
+        fact = self.catalog.contract_fact(symbol, contract)
+        key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+        partitions = self.catalog.partitions_before(key, before)
+        if not partitions:
+            raise MarketDataError("PHYSICAL_DATA_MISSING")
+        return {
+            "contract": contract, "frequency": frequency.value,
+            "listed_date": fact.listed_date.isoformat(),
+            "expired_date": fact.expired_date.isoformat(),
+            "partitions": [
+                {"year": part.year, "month": part.month,
+                 "content_sha256": self.store.verified_partition_fingerprint(part),
+                 "row_count": part.row_count,
+                 "coverage_start": part.coverage_start.isoformat() if part.coverage_start else None,
+                 "coverage_end": part.coverage_end.isoformat() if part.coverage_end else None,
+                 "source_coverage_start": part.source_coverage_start.isoformat() if part.source_coverage_start else None,
+                 "source_coverage_end": part.source_coverage_end.isoformat() if part.source_coverage_end else None,
+                 "quality_sha256": part.source_quality_sha256}
+                for part in partitions
+            ],
+        }
+
     def query(self, request: SeriesQuery) -> MarketSeriesResult:
         """执行序列查询；``actual_dominant`` 走拼接路径，其余读单一物理数据集。"""
         try:
