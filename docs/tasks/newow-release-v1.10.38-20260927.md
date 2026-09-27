@@ -59,10 +59,14 @@ env -u VITE_API_BASE_URL -u VITE_MARKET_WS_URL REAL_BACKEND=0 PLAYWRIGHT_PORT=51
 - 正式：`v1.10.38@18b29c985817683bf5dfd08ae3328a4762caf9b3`。main合并源码树与候选完全一致。
 - Annotated tag object：`4bf676c5207dead50054da62802e5be38a03bd5a`；远端peeled commit为上述正式commit。
 - [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.38)：isDraft=false、isPrerelease=false、targetCommitish等于正式commit；publishedAt=2026-09-27T04:24:21Z。
-- develop已快进包含main发布commit，发布后的文档记录另提交，不移动正式tag。
+- develop已普通合并包含main发布commit，保留并行任务提交；发布后的文档记录另提交，不移动正式tag。
 
 只读 `./scripts/ops/macos/local-services-status.sh`：overall=passed，API/Web HTTP200、Runtime health ok/readonly。
 实际API/Web/Live/Alert以及schedule-only服务仍指向独立`runtime-v1.10.37`和`07cdb4b7`；本次未执行任何installer或服务切换。
 weekly已读到旧根23项finding，截至9/24，reference worker关闭；没有将这些问题记为本版本解决。
 
 下一步：按新版本独立执行Runtime promotion和页面读回；在该目标被交办前保持当前运行根。自然业务验收仍单独记录。
+
+发布冻结之后，另一任务已将`3f53f9d05`测试/fixture/证据检查及`031732345`验收记录合入develop。
+这些后续提交不是v1.10.38源码范围；未修改产品源码。原发布验证中的旧截图库存失败及旧分页E2E漂移，
+是冻结候选上的实际结果，不能用后续develop测试修复倒填为发布候选通过。后续测试收敛记录见maintenance-convergence文档。

@@ -8,6 +8,7 @@ Release：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10
 本轮仅发布。只读服务状态overall=passed，API/Web HTTP200，实际运行根仍为v1.10.37/07cdb4b7；weekly保留23 finding，reference worker关闭。
 未改数据、迁移、Scope、通知、auto_order或分钟开放范围；新版本Runtime promotion、页面读回及自然验收未完成。
 详情见 `docs/tasks/newow-release-v1.10.38-20260927.md`。用户既有outputs和worktree保留。
+冻结后另一个任务的测试/fixture/验收文档提交留在develop，未计入已发布tag；main发布历史以普通merge回到develop，未重写历史。
 
 ## 2026-09-26 Newow v1.10.37 已发布并切换本机 Runtime
 
