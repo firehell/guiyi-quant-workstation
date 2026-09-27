@@ -1,0 +1,41 @@
+{
+  "as_of": "2026-09-14T15:10:00+00:00",
+  "budget_exhausted": false,
+  "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+  "code_commit": "ffc13164954a9c6f54a0031b0ebc245e9339fa61",
+  "code_root_name": "newow-daily-60",
+  "complete": true,
+  "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+  "dependency_count": 1956,
+  "dependency_status_counts": {
+    "DATA_READY": 333,
+    "DATA_UNAVAILABLE": 1618,
+    "SOURCE_EXCEPTION": 5
+  },
+  "enumeration_count": 240,
+  "execution_code_sha256": "8b2e6fa84a796e24e76d14a2bae85b243b2528d0263cc289cd24d45444f85b7c",
+  "frequency": "1d",
+  "frequency_scope": [
+    "1d"
+  ],
+  "matrix": false,
+  "metadata_proposal_count": 0,
+  "product_count": 60,
+  "production_writes_allowed": false,
+  "provider_allowed": false,
+  "provider_requests": 0,
+  "release_stage": "daily",
+  "repair_frequency_counts": {
+    "1d": 989
+  },
+  "repair_status_counts": {
+    "PROPOSED": 981,
+    "REVIEW_REQUIRED": 8
+  },
+  "repair_target_count": 989,
+  "report_sha256": "129fe9f424d1e8e0b5eff5a6b09451987a99835de21f8aa29435f960a6016453",
+  "status": "audited",
+  "universe": "operational",
+  "work_used": 3125,
+  "writes": 0
+}

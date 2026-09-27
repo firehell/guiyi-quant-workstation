@@ -1,0 +1,74 @@
+[
+  {
+    "file": "w1-bu-BU2611.prepare.json",
+    "symbol": "bu",
+    "contract": "BU2611",
+    "target_count": 22,
+    "source_requests": 11,
+    "targets_by_frequency": {
+      "1d": 11,
+      "1w": 11
+    },
+    "maintenance_lock_available": false
+  },
+  {
+    "file": "w1-eb-EB2611.prepare.json",
+    "symbol": "eb",
+    "contract": "EB2611",
+    "target_count": 22,
+    "source_requests": 11,
+    "targets_by_frequency": {
+      "1d": 11,
+      "1w": 11
+    },
+    "maintenance_lock_available": false
+  },
+  {
+    "file": "w1-ni-NI2611.prepare.json",
+    "symbol": "ni",
+    "contract": "NI2611",
+    "target_count": 22,
+    "source_requests": 11,
+    "targets_by_frequency": {
+      "1d": 11,
+      "1w": 11
+    },
+    "maintenance_lock_available": false
+  },
+  {
+    "file": "w1-pb-PB2611.prepare.json",
+    "symbol": "pb",
+    "contract": "PB2611",
+    "target_count": 22,
+    "source_requests": 11,
+    "targets_by_frequency": {
+      "1d": 11,
+      "1w": 11
+    },
+    "maintenance_lock_available": false
+  },
+  {
+    "file": "w1-pd-PD2612.prepare.json",
+    "symbol": "pd",
+    "contract": "PD2612",
+    "target_count": 20,
+    "source_requests": 10,
+    "targets_by_frequency": {
+      "1d": 10,
+      "1w": 10
+    },
+    "maintenance_lock_available": false
+  },
+  {
+    "file": "w1-pg-PG2611.prepare.json",
+    "symbol": "pg",
+    "contract": "PG2611",
+    "target_count": 20,
+    "source_requests": 10,
+    "targets_by_frequency": {
+      "1d": 10,
+      "1w": 10
+    },
+    "maintenance_lock_available": false
+  }
+]

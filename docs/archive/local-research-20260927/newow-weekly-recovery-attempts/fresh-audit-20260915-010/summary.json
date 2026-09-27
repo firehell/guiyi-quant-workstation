@@ -1,0 +1,34 @@
+{
+  "as_of": "2026-09-13T06:36:13+00:00",
+  "budget_exhausted": false,
+  "code_commit": "d653a8c864f5f09d98309357f64ab16dde87eb2d",
+  "complete": true,
+  "dependency_counts": {
+    "DATA_READY": 636,
+    "DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 20,
+    "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 1752,
+    "NOT_APPLICABLE:OWNER_HAS_NO_COMPLETED_BAR": 20,
+    "SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 12
+  },
+  "elapsed_seconds": 689.64,
+  "frequency_scope": [
+    "1w"
+  ],
+  "full_report_sha256": "3e9dddb1a5f81b1376b4f38f2ba48cbf17f7d9259912baeb51b23cf25d9f25be",
+  "identity": {
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+    "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746"
+  },
+  "matrix": false,
+  "metadata_counts": {},
+  "ordinary_count": 868,
+  "product_count": 60,
+  "provider_requests": 0,
+  "repair_counts": {
+    "PROPOSED": 868,
+    "REVIEW_REQUIRED:REPAIR_SCOPE_SOURCE_OR_INTEGRITY": 9
+  },
+  "status": "audited",
+  "work_used": 3497,
+  "writes": 0
+}

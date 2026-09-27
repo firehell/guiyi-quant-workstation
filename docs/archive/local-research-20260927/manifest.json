@@ -1,0 +1,162 @@
+{
+  "purpose": "Historical research and validation summary backup; not raw market data or new acceptance evidence",
+  "archived_on": "2026-09-27",
+  "source_checkout_commit": "17e7d2a6f3e555ef69bbaac9404f227cd564c362",
+  "files": [
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260926/warming-label-check-after-fix.json",
+      "archive_path": "newow-d1-60-closeout-20260926/warming-label-check-after-fix.json",
+      "sha256": "38e0c1f570c8c6a931c0b61cfec256708bf537206f6448b1b9b1fb20bafeddbb",
+      "bytes": 1111,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/matrix-summary.json",
+      "archive_path": "newow-w1-closeout-20260926/matrix-summary.json",
+      "sha256": "3d11ebdfc7e81126f1570d7e52945caa2cab94416e4cbdfe611a433efd419dbe",
+      "bytes": 113761,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/prepared-summary.json",
+      "archive_path": "newow-w1-closeout-20260926/prepared-summary.json",
+      "sha256": "1c95ea89db54d643876f2b86dfdc1af73c82658199e73292a68610fbcca99d27",
+      "bytes": 1533,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260926/d1-bu-BU2611-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-d1-60-closeout-20260926/d1-bu-BU2611-attempt-001/invocation-receipt.json",
+      "sha256": "d6187ae613f13f512be5de10533836e4e39a0534f44fe2650289fa5eb2e2de32",
+      "bytes": 478,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260926/d1-eb-EB2611-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-d1-60-closeout-20260926/d1-eb-EB2611-attempt-001/invocation-receipt.json",
+      "sha256": "8d4eca2980ba1ea81ff1ae73d8d220ac1aeb4a6cfbf241f85940bd1f27f65c25",
+      "bytes": 478,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260926/d1-ni-NI2611-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-d1-60-closeout-20260926/d1-ni-NI2611-attempt-001/invocation-receipt.json",
+      "sha256": "306d233c70c0eaff380931957cd55c6f610298a36c075b387218cff12a20e375",
+      "bytes": 478,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260926/d1-pb-PB2611-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-d1-60-closeout-20260926/d1-pb-PB2611-attempt-001/invocation-receipt.json",
+      "sha256": "b6d90ac00ed22243ac73771b96466e9d259e2e6f96598e1d7d136cd8ec2b1a6e",
+      "bytes": 478,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260926/d1-pd-PD2612-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-d1-60-closeout-20260926/d1-pd-PD2612-attempt-001/invocation-receipt.json",
+      "sha256": "e4b3e19b139b383ec5fac9853e56169c83347f1c45c3e65f6ed97c17cd5b1444",
+      "bytes": 478,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260926/d1-pg-PG2611-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-d1-60-closeout-20260926/d1-pg-PG2611-attempt-001/invocation-receipt.json",
+      "sha256": "8d6d70eb79d99c93a26e1de7832439e4cf15dcd3d0098dde40456868af27b097",
+      "bytes": 478,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/w1-bu-BU2611-final-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-w1-closeout-20260926/w1-bu-BU2611-final-attempt-001/invocation-receipt.json",
+      "sha256": "5a2995142e442cc4e4c82e0b81587151cecad0649418e0fd91db27b8e608259b",
+      "bytes": 479,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/w1-eb-EB2611-final-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-w1-closeout-20260926/w1-eb-EB2611-final-attempt-001/invocation-receipt.json",
+      "sha256": "e7982bf2c6fffbf06952529d58a8db58b243e7ef6b7ee4d1159e58738cf4c37b",
+      "bytes": 479,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/w1-ni-NI2611-final-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-w1-closeout-20260926/w1-ni-NI2611-final-attempt-001/invocation-receipt.json",
+      "sha256": "cd50e23488d1a7a9e3e3cce0a070f7411483dbf0433e4982978bc6624071db43",
+      "bytes": 479,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/w1-pb-PB2611-final-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-w1-closeout-20260926/w1-pb-PB2611-final-attempt-001/invocation-receipt.json",
+      "sha256": "cd3bdc9dff53a15657490cac1d1ae949f5b93d5b1c1aa290742a0c6fa610ce1d",
+      "bytes": 479,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/w1-pd-PD2612-final-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-w1-closeout-20260926/w1-pd-PD2612-final-attempt-001/invocation-receipt.json",
+      "sha256": "e18fd977154a80087c4dae824844892180e54810b907f0d39e40ca0286f56e24",
+      "bytes": 479,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/w1-pg-PG2611-final-attempt-001/invocation-receipt.json",
+      "archive_path": "newow-w1-closeout-20260926/w1-pg-PG2611-final-attempt-001/invocation-receipt.json",
+      "sha256": "0e6917f7c8b2f33a022f0d48d85c9f1201b3d996c21750c41a5e8238556d5f63",
+      "bytes": 479,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-w1-closeout-20260926/quality-apply-cli.json",
+      "archive_path": "newow-w1-closeout-20260926/quality-apply-cli.json",
+      "sha256": "c15f368ceab865be6d1b9920e9426d6ed66400e98ce327cc94d41f4708d14b28",
+      "bytes": 8871,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-d1-60-closeout-20260925/summary.json",
+      "archive_path": "newow-d1-60-closeout-20260925/summary.json",
+      "sha256": "716cd3f3130d1961e1196b432565df51c6bb9fc069c31ab5d489ed4703e82eab",
+      "bytes": 1500,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-weekly-recovery-attempts/fresh-audit-20260915-010/summary.json",
+      "archive_path": "newow-weekly-recovery-attempts/fresh-audit-20260915-010/summary.json",
+      "sha256": "0bba82bdc8aa69856dd2891ff3fa62db473e8d882945a4a7d11bbeb170dcd1f8",
+      "bytes": 1065,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-weekly-recovery-attempts/newow-daily-60-20260915/d1-dependency-audit/summary.json",
+      "archive_path": "newow-weekly-recovery-attempts/newow-daily-60-20260915/d1-dependency-audit/summary.json",
+      "sha256": "3c8a33328b603608682de72a764b80e9dc3478f4241b41743a375314fbd58938",
+      "bytes": 1227,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-weekly-recovery-attempts/weekly-matrix-acceptance-20260915-002/acceptance-summary.json",
+      "archive_path": "newow-weekly-recovery-attempts/weekly-matrix-acceptance-20260915-002/acceptance-summary.json",
+      "sha256": "dd836fa2b03927f62196ded3c2486d56c29a9bf1acfa1fb09eea38daf6b4d48c",
+      "bytes": 8058,
+      "transformation": "none"
+    },
+    {
+      "source_path": "outputs/newow-weekly-recovery-attempts/weekly-matrix-acceptance-20260915-002/summary.json",
+      "archive_path": "newow-weekly-recovery-attempts/weekly-matrix-acceptance-20260915-002/summary.json",
+      "sha256": "ebcbde53276d17cd9c4a9620eabcc20a513d084a9af0774e5004552f6c2b1ceb",
+      "bytes": 1067,
+      "transformation": "none"
+    },
+    {
+      "source_path": "Codex visualization/2026-07-30/task-02-data-core-metadata.md",
+      "archive_path": "historical-notes/task-02-data-core-metadata.md",
+      "sha256": "be8df280afa59891465713baa5077f9965415062ced5d64729ad357a49693af9",
+      "source_sha256": "7451f4008bb0e1a836a0dfa616814b808ef018728f3a0ac554be71635cf2c33c",
+      "bytes": 4585,
+      "transformation": "local home and volume paths replaced with placeholders; historical task note, not current plan"
+    }
+  ]
+}

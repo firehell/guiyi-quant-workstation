@@ -1,0 +1,246 @@
+{
+  "as_of": "2026-09-13T06:36:13+00:00",
+  "audit_complete": false,
+  "counts": {
+    "joint_ready": 27,
+    "main_ready": 27,
+    "reference_ready": 27,
+    "total": 540
+  },
+  "joint_ready_cases": [
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "a"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "a"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "a"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "ag"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "ag"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "ag"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "al"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "al"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "al"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "ao"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "ao"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "ao"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "ap"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "ap"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "ap"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "au"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "au"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "au"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "bu"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "bu"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "bu"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "pd"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "pd"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "pd"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "pt"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "pt"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "pt"
+    }
+  ],
+  "matrix_covered": true,
+  "metadata_proposal_count": 0,
+  "metadata_proposal_outcome_counts": {},
+  "non_joint_ready_outcome_counts": {
+    "DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING|DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 136,
+    "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|UNSTARTED:BUDGET_EXHAUSTED": 1,
+    "SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE|SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "UNOPENED:NEWOW_DAILY_RELEASE_PENDING|UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "UNOPENED:NEWOW_HOURLY_RELEASE_PENDING|UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "UNSTARTED:-|UNSTARTED:-": 4
+  },
+  "normalized_scope_sha256": "f71bd64943beecb0e01dd420add827e3f7f9402f020c45c6988192b7e56da2c6",
+  "pending_count": 34,
+  "pending_outcome_counts": {
+    "case_section:UNSTARTED:-": 33,
+    "case_section:UNSTARTED:BUDGET_EXHAUSTED": 1
+  },
+  "provider_requests": 0,
+  "repair_target_count": 985,
+  "repair_target_outcome_counts": {
+    "PROPOSED:-": 976,
+    "REVIEW_REQUIRED:REPAIR_SCOPE_SOURCE_OR_INTEGRITY": 9
+  },
+  "report_sha256": "02598f5e39150f3434318b3609f9bf81b38f96bb66663f0f932e53e23dc4ac02",
+  "schema_version": "newow_weekly_readiness_summary_v1",
+  "scope_covered": true,
+  "scope_file_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+  "section_outcome_counts": {
+    "auxiliary:cup_handle:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "auxiliary:cup_handle:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 137,
+    "auxiliary:cup_handle:NOT_APPLICABLE:NEWOW_CUP_HANDLE_NOT_APPLICABLE": 27,
+    "auxiliary:cup_handle:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "auxiliary:cup_handle:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "auxiliary:cup_handle:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "auxiliary:cup_handle:UNSTARTED:-": 4,
+    "auxiliary:macd:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "auxiliary:macd:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 137,
+    "auxiliary:macd:READY:-": 15,
+    "auxiliary:macd:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "auxiliary:macd:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "auxiliary:macd:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "auxiliary:macd:UNSTARTED:-": 4,
+    "auxiliary:macd:WARMING:NEWOW_MACD_WARMING": 12,
+    "auxiliary:main_force_control:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "auxiliary:main_force_control:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 137,
+    "auxiliary:main_force_control:READY:-": 27,
+    "auxiliary:main_force_control:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "auxiliary:main_force_control:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "auxiliary:main_force_control:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "auxiliary:main_force_control:UNSTARTED:-": 4,
+    "auxiliary:up_down_energy:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "auxiliary:up_down_energy:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 137,
+    "auxiliary:up_down_energy:READY:-": 27,
+    "auxiliary:up_down_energy:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "auxiliary:up_down_energy:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "auxiliary:up_down_energy:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "auxiliary:up_down_energy:UNSTARTED:-": 4,
+    "auxiliary:zhaoyao_mirror:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "auxiliary:zhaoyao_mirror:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 137,
+    "auxiliary:zhaoyao_mirror:READY:-": 24,
+    "auxiliary:zhaoyao_mirror:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "auxiliary:zhaoyao_mirror:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "auxiliary:zhaoyao_mirror:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "auxiliary:zhaoyao_mirror:UNSTARTED:-": 4,
+    "auxiliary:zhaoyao_mirror:WARMING:NEWOW_ZHAOYAO_MIRROR_WARMING": 3,
+    "chart:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "chart:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 137,
+    "chart:READY:-": 27,
+    "chart:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "chart:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "chart:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "chart:UNSTARTED:-": 4,
+    "comparator:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "comparator:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 136,
+    "comparator:NOT_APPLICABLE:NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE": 18,
+    "comparator:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "comparator:UNAVAILABLE:NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS": 9,
+    "comparator:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "comparator:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "comparator:UNSTARTED:-": 5,
+    "explanation:UNOPENED:NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN": 180,
+    "explanation:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "explanation:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "reference:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "reference:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 136,
+    "reference:READY:-": 27,
+    "reference:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "reference:UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+    "reference:UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
+    "reference:UNSTARTED:-": 4,
+    "reference:UNSTARTED:BUDGET_EXHAUSTED": 1
+  },
+  "valid": false,
+  "violations": [
+    "CASE_STATE_INVALID",
+    "ERROR_STATUS_MISMATCH"
+  ],
+  "writes": 0
+}

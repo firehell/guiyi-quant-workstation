@@ -1,0 +1,41 @@
+[
+  {
+    "correct_current_segment": {
+      "bars": 88,
+      "eligible": 38,
+      "first": "2026-05-25",
+      "last": "2026-09-24",
+      "calculation_segment_id": "pl:PL2611:2026-08-03T13:00:00+00:00|price-gap:2026-05-22T07:00:00+00:00|input-quality:newow_daily_input_quality_v2"
+    },
+    "symbol": "pl",
+    "bar_count": 764,
+    "mismatch_count": 0,
+    "examples": []
+  },
+  {
+    "correct_current_segment": {
+      "bars": 7,
+      "eligible": 5,
+      "first": "2026-09-16",
+      "last": "2026-09-24",
+      "calculation_segment_id": "rs:RS2701:2026-09-18T01:00:00+00:00|input-quality:newow_daily_input_quality_v2"
+    },
+    "symbol": "rs",
+    "bar_count": 1101,
+    "mismatch_count": 0,
+    "examples": []
+  },
+  {
+    "correct_current_segment": {
+      "bars": 144,
+      "eligible": 15,
+      "first": "2026-03-02",
+      "last": "2026-09-24",
+      "calculation_segment_id": "pf:PF2611:2026-09-03T13:00:00+00:00|price-gap:2026-02-27T07:00:00+00:00|input-quality:newow_daily_input_quality_v2"
+    },
+    "symbol": "pf",
+    "bar_count": 4043,
+    "mismatch_count": 0,
+    "examples": []
+  }
+]

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "status": "BLOCKED",
+  "as_of": "2026-09-24T07:00:00.000001+00:00",
+  "code_commit": "46f5bf9e37992d336e69d6430fec9ba5682fc91a",
+  "readiness": {
+    "sha256": "f5056d31e01c78f3fdf808820c7b3a70602d9746df3567440656693623afc3fe",
+    "status": "incomplete",
+    "complete": false,
+    "products": 60,
+    "direct_d1_targets": 119,
+    "provider_request_estimate": 119,
+    "dependency_statuses": {
+      "DATA_READY": 1556,
+      "DATA_UNAVAILABLE": 120,
+      "DATA_INTERRUPTED": 80,
+      "UNKNOWN": 216
+    },
+    "source_quality_unsupported_products": [
+      "cj",
+      "oi",
+      "pf",
+      "pk",
+      "pl",
+      "pr",
+      "px",
+      "rs",
+      "sf",
+      "sh",
+      "sm",
+      "sr"
+    ],
+    "price_unavailable_products": [
+      "b",
+      "bz",
+      "eb",
+      "eg",
+      "j",
+      "pg",
+      "si"
+    ],
+    "historical_prefix_products": {
+      "bu": 11,
+      "eb": 11,
+      "ni": 11,
+      "pb": 11,
+      "pd": 10,
+      "pg": 11
+    },
+    "provider_requests": 0,
+    "writes": 0
+  },
+  "matrix": {
+    "sha256": "49ffecb461a129e37d2de70aa7a511b073eb92bfca7a97b548b07f42758a0720",
+    "status": "incomplete",
+    "complete": false,
+    "budget_exhausted": true,
+    "d1_case_count": 180,
+    "d1_main_statuses": {
+      "DATA_UNAVAILABLE": 124,
+      "UNKNOWN": 27,
+      "UNSTARTED": 29
+    },
+    "provider_requests": 0,
+    "writes": 0
+  },
+  "a2611_d1_dryrun_sha256": "ddad3d095fbbf71ca6122f47c27a0e164a8d3fd54f6d86fdf2750e816ec9e20c"
+}

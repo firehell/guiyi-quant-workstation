@@ -1,0 +1,4057 @@
+{
+  "code_commit": "b64cc8dfb60e41600a0e9e7aff9b8d5ac87bc4a8",
+  "as_of": "2026-09-26T03:07:21+00:00",
+  "products": 60,
+  "weekly_cases": 180,
+  "unique_cases": 180,
+  "complete": true,
+  "budget_exhausted": false,
+  "provider_requests": 0,
+  "writes": 0,
+  "dependencies": {
+    "DATA_READY": 2444,
+    "NOT_APPLICABLE": 22
+  },
+  "repair_targets": [],
+  "metadata_proposals": [],
+  "main": {
+    "READY": 179,
+    "WARMING": 1
+  },
+  "sections": {
+    "chart": {
+      "READY": 179,
+      "WARMING": 1
+    },
+    "auxiliary:macd": {
+      "READY": 123,
+      "WARMING": 57
+    },
+    "auxiliary:main_force_control": {
+      "READY": 132,
+      "WARMING": 48
+    },
+    "auxiliary:up_down_energy": {
+      "READY": 129,
+      "WARMING": 51
+    },
+    "auxiliary:trend_reversal": {
+      "WARMING": 180
+    },
+    "auxiliary:zhaoyao_mirror": {
+      "READY": 117,
+      "WARMING": 63
+    },
+    "auxiliary:cup_handle": {
+      "NOT_APPLICABLE": 180
+    },
+    "reference": {
+      "READY": 179,
+      "WARMING": 1
+    },
+    "explanation": {
+      "UNOPENED": 180
+    },
+    "comparator": {
+      "NOT_APPLICABLE": 120,
+      "UNAVAILABLE": 60
+    }
+  },
+  "warming_cases": [
+    {
+      "symbol": "a",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "a",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "a",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ag",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ag",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ag",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "al",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "al",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "al",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ao",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ao",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ao",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ap",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ap",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ap",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "au",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "au",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "au",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "bu",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "bu",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "bu",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "c",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "c",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "c",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cf",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cf",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cf",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cu",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cu",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cu",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ec",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ec",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ec",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "fg",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "fg",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "fg",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "fu",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "fu",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "fu",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "hc",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "hc",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "hc",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "i",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "i",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "i",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "jd",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "jd",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "jd",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "jm",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "jm",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "jm",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "l",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "l",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "l",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "lc",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "lc",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "lc",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "lh",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "lh",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "lh",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "m",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "m",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "m",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ma",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ma",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ma",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ni",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ni",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ni",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "p",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "p",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "p",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pb",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pb",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pb",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pd",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pd",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pd",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pp",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pp",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pp",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ps",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ps",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ps",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pt",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pt",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pt",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rb",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rb",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rb",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rm",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rm",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rm",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ru",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ru",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ru",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sa",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sa",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sa",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sc",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sc",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sc",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sn",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sn",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sn",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ss",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ss",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ss",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ta",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ta",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ta",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ur",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ur",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "ur",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "v",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "v",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "v",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "y",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "y",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "y",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "zn",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "zn",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "zn",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "b",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "b",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "b",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "bz",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "bz",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "bz",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cj",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cj",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "cj",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "eb",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "eb",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "eb",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "eg",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "eg",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "eg",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "j",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "j",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "j",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pf",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pf",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pf",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pg",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pg",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pg",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pk",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pk",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pk",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pl",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pl",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pl",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pr",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pr",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "pr",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "px",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "px",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "px",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rs",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rs",
+      "strategy": "oscillation",
+      "main": {
+        "status": "WARMING",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": "NEWOW_OSCILLATION_WARMING"
+      },
+      "sections": {
+        "chart": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_OSCILLATION_WARMING"
+        },
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        },
+        "reference": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING"
+        }
+      }
+    },
+    {
+      "symbol": "rs",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sf",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sf",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sf",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sh",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sh",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sh",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "si",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "si",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "si",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sm",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sm",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sm",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:macd": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MACD_WARMING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_MAIN_FORCE_CONTROL_WARMING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_UP_DOWN_ENERGY_WARMING"
+        },
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_ZHAOYAO_MIRROR_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sr",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sr",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    },
+    {
+      "symbol": "sr",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "auxiliary:trend_reversal": {
+          "status": "WARMING",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_TREND_REVERSAL_WARMING"
+        }
+      }
+    }
+  ],
+  "reports": [
+    {
+      "path": "matrix-w1-v1.json",
+      "sha256": "230b1f9ed686d258f9ea959f41d84f472b5e227949bf78d1de6aa60f254c16be"
+    },
+    {
+      "path": "matrix-w1-v2.json",
+      "sha256": "c51df5ca812b0fff81411f07f6ef9e7bc0cb33021f3e6908891d8305d086dbc7"
+    }
+  ]
+}
