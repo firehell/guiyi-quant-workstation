@@ -1,0 +1,1372 @@
+{
+  "source_sha256": "b12da74d89a7ac304d7479999d11f13ab53ced834a8472f937d78a0c1bd03709",
+  "oracle_sha256": "71fada93d1d2a8d0edb5b28791ba2095afed20e7482ba64b64885ffc2ee35a83",
+  "cases": [
+    {
+      "bars": [
+        {
+          "date": "0",
+          "open": 14.49,
+          "high": 14.78,
+          "low": 14.26,
+          "close": 14.5
+        },
+        {
+          "date": "1",
+          "open": 14.49,
+          "high": 14.7,
+          "low": 14.07,
+          "close": 14.22
+        },
+        {
+          "date": "2",
+          "open": 14.28,
+          "high": 14.48,
+          "low": 14.01,
+          "close": 14.14
+        },
+        {
+          "date": "3",
+          "open": 14.1,
+          "high": 14.27,
+          "low": 13.9,
+          "close": 14.23
+        },
+        {
+          "date": "4",
+          "open": 14.23,
+          "high": 14.54,
+          "low": 14.19,
+          "close": 14.54
+        },
+        {
+          "date": "5",
+          "open": 14.53,
+          "high": 15.4,
+          "low": 14.25,
+          "close": 15.4
+        },
+        {
+          "date": "6",
+          "open": 15.25,
+          "high": 15.38,
+          "low": 14.59,
+          "close": 14.69
+        },
+        {
+          "date": "7",
+          "open": 14.7,
+          "high": 14.8,
+          "low": 14.33,
+          "close": 14.5
+        },
+        {
+          "date": "8",
+          "open": 14.5,
+          "high": 14.69,
+          "low": 14.32,
+          "close": 14.68
+        },
+        {
+          "date": "9",
+          "open": 14.65,
+          "high": 14.75,
+          "low": 14.2,
+          "close": 14.54
+        },
+        {
+          "date": "10",
+          "open": 14.51,
+          "high": 14.58,
+          "low": 14.16,
+          "close": 14.23
+        },
+        {
+          "date": "11",
+          "open": 14.22,
+          "high": 14.65,
+          "low": 13.96,
+          "close": 14.32
+        },
+        {
+          "date": "12",
+          "open": 14.37,
+          "high": 14.38,
+          "low": 14.16,
+          "close": 14.33
+        },
+        {
+          "date": "13",
+          "open": 14.34,
+          "high": 14.41,
+          "low": 13.92,
+          "close": 14
+        },
+        {
+          "date": "14",
+          "open": 14,
+          "high": 14.23,
+          "low": 13.95,
+          "close": 14.16
+        },
+        {
+          "date": "15",
+          "open": 14.08,
+          "high": 14.11,
+          "low": 13.7,
+          "close": 13.86
+        },
+        {
+          "date": "16",
+          "open": 13.83,
+          "high": 13.87,
+          "low": 13.21,
+          "close": 13.56
+        },
+        {
+          "date": "17",
+          "open": 13.54,
+          "high": 14.03,
+          "low": 13.53,
+          "close": 13.99
+        },
+        {
+          "date": "18",
+          "open": 13.94,
+          "high": 14.14,
+          "low": 13.86,
+          "close": 13.98
+        },
+        {
+          "date": "19",
+          "open": 14.08,
+          "high": 15.33,
+          "low": 14.07,
+          "close": 14.83
+        },
+        {
+          "date": "20",
+          "open": 14.82,
+          "high": 14.88,
+          "low": 14.52,
+          "close": 14.85
+        },
+        {
+          "date": "21",
+          "open": 14.84,
+          "high": 14.96,
+          "low": 14.61,
+          "close": 14.89
+        },
+        {
+          "date": "22",
+          "open": 15.02,
+          "high": 15.02,
+          "low": 14.16,
+          "close": 14.54
+        },
+        {
+          "date": "23",
+          "open": 14.45,
+          "high": 15.02,
+          "low": 14.35,
+          "close": 14.83
+        },
+        {
+          "date": "24",
+          "open": 14.28,
+          "high": 14.53,
+          "low": 13.6,
+          "close": 13.96
+        },
+        {
+          "date": "25",
+          "open": 13.93,
+          "high": 14.12,
+          "low": 13.22,
+          "close": 13.31
+        },
+        {
+          "date": "26",
+          "open": 13.38,
+          "high": 13.58,
+          "low": 13.28,
+          "close": 13.5
+        },
+        {
+          "date": "27",
+          "open": 13.5,
+          "high": 13.62,
+          "low": 13.31,
+          "close": 13.37
+        },
+        {
+          "date": "28",
+          "open": 13.36,
+          "high": 13.58,
+          "low": 12.94,
+          "close": 12.97
+        },
+        {
+          "date": "29",
+          "open": 13.15,
+          "high": 13.37,
+          "low": 13,
+          "close": 13.13
+        }
+      ],
+      "oscillation": {
+        "cumReturn": 11.6,
+        "accuracy": 100,
+        "maxDrawdown": 4.31,
+        "tradeCount": 2
+      },
+      "trend": {
+        "cumReturn": 1.25,
+        "accuracy": 100,
+        "maxDrawdown": 4.23,
+        "tradeCount": 1
+      }
+    },
+    {
+      "bars": [
+        {
+          "date": "0",
+          "open": 14.49,
+          "high": 14.78,
+          "low": 14.26,
+          "close": 14.5
+        },
+        {
+          "date": "1",
+          "open": 14.49,
+          "high": 14.7,
+          "low": 14.07,
+          "close": 14.22
+        },
+        {
+          "date": "2",
+          "open": 14.28,
+          "high": 14.48,
+          "low": 14.01,
+          "close": 14.14
+        },
+        {
+          "date": "3",
+          "open": 14.1,
+          "high": 14.27,
+          "low": 13.9,
+          "close": 14.23
+        },
+        {
+          "date": "4",
+          "open": 14.23,
+          "high": 14.54,
+          "low": 14.19,
+          "close": 14.54
+        },
+        {
+          "date": "5",
+          "open": 14.53,
+          "high": 15.4,
+          "low": 14.25,
+          "close": 15.4
+        },
+        {
+          "date": "6",
+          "open": 15.25,
+          "high": 15.38,
+          "low": 14.59,
+          "close": 14.69
+        },
+        {
+          "date": "7",
+          "open": 14.7,
+          "high": 14.8,
+          "low": 14.33,
+          "close": 14.5
+        },
+        {
+          "date": "8",
+          "open": 14.5,
+          "high": 14.69,
+          "low": 14.32,
+          "close": 14.68
+        },
+        {
+          "date": "9",
+          "open": 14.65,
+          "high": 14.75,
+          "low": 14.2,
+          "close": 14.54
+        },
+        {
+          "date": "10",
+          "open": 14.51,
+          "high": 14.58,
+          "low": 14.16,
+          "close": 14.23
+        }
+      ],
+      "oscillation": {
+        "cumReturn": 0,
+        "accuracy": 0,
+        "maxDrawdown": 0,
+        "tradeCount": 0
+      },
+      "trend": {
+        "cumReturn": 0,
+        "accuracy": 0,
+        "maxDrawdown": 0,
+        "tradeCount": 0
+      }
+    },
+    {
+      "bars": [
+        {
+          "date": "0",
+          "open": 14.49,
+          "high": 14.78,
+          "low": 14.26,
+          "close": 14.5
+        },
+        {
+          "date": "1",
+          "open": 14.49,
+          "high": 14.7,
+          "low": 14.07,
+          "close": 14.22
+        },
+        {
+          "date": "2",
+          "open": 14.28,
+          "high": 14.48,
+          "low": 14.01,
+          "close": 14.14
+        },
+        {
+          "date": "3",
+          "open": 14.1,
+          "high": 14.27,
+          "low": 13.9,
+          "close": 14.23
+        },
+        {
+          "date": "4",
+          "open": 14.23,
+          "high": 14.54,
+          "low": 14.19,
+          "close": 14.54
+        },
+        {
+          "date": "5",
+          "open": 14.53,
+          "high": 15.4,
+          "low": 14.25,
+          "close": 15.4
+        },
+        {
+          "date": "6",
+          "open": 15.25,
+          "high": 15.38,
+          "low": 14.59,
+          "close": 14.69
+        },
+        {
+          "date": "7",
+          "open": 14.7,
+          "high": 14.8,
+          "low": 14.33,
+          "close": 14.5
+        },
+        {
+          "date": "8",
+          "open": 14.5,
+          "high": 14.69,
+          "low": 14.32,
+          "close": 14.68
+        },
+        {
+          "date": "9",
+          "open": 14.65,
+          "high": 14.75,
+          "low": 14.2,
+          "close": 14.54
+        }
+      ],
+      "oscillation": null,
+      "trend": null
+    },
+    {
+      "bars": [
+        {
+          "date": "0",
+          "open": 14.49,
+          "high": 14.78,
+          "low": 14.26,
+          "close": 14.5
+        },
+        {
+          "date": "1",
+          "open": 14.49,
+          "high": 14.7,
+          "low": 14.07,
+          "close": 14.22
+        },
+        {
+          "date": "2",
+          "open": 14.28,
+          "high": 14.48,
+          "low": 14.01,
+          "close": 14.14
+        },
+        {
+          "date": "3",
+          "open": 14.1,
+          "high": 14.27,
+          "low": 13.9,
+          "close": 14.23
+        },
+        {
+          "date": "4",
+          "open": 14.23,
+          "high": 14.54,
+          "low": 14.19,
+          "close": 14.54
+        },
+        {
+          "date": "5",
+          "open": 14.53,
+          "high": 15.4,
+          "low": 14.25,
+          "close": 15.4
+        },
+        {
+          "date": "6",
+          "open": 15.25,
+          "high": 15.38,
+          "low": 14.59,
+          "close": 14.69
+        },
+        {
+          "date": "7",
+          "open": 14.7,
+          "high": 14.8,
+          "low": 14.33,
+          "close": 14.5
+        },
+        {
+          "date": "8",
+          "open": 14.5,
+          "high": 14.69,
+          "low": 14.32,
+          "close": 14.68
+        },
+        {
+          "date": "9",
+          "open": 14.65,
+          "high": 14.75,
+          "low": 14.2,
+          "close": 14.54
+        },
+        {
+          "date": "10",
+          "open": 14.51,
+          "high": 14.58,
+          "low": 14.16,
+          "close": 14.23
+        },
+        {
+          "date": "11",
+          "open": 14.22,
+          "high": 14.65,
+          "low": 13.96,
+          "close": 14.32
+        },
+        {
+          "date": "12",
+          "open": 14.37,
+          "high": 14.38,
+          "low": 14.16,
+          "close": 14.33
+        },
+        {
+          "date": "13",
+          "open": 14.34,
+          "high": 14.41,
+          "low": 13.92,
+          "close": 14
+        },
+        {
+          "date": "14",
+          "open": 14,
+          "high": 14.23,
+          "low": 13.95,
+          "close": 14.16
+        },
+        {
+          "date": "15",
+          "open": 14.08,
+          "high": 14.11,
+          "low": 13.7,
+          "close": 13.86
+        },
+        {
+          "date": "16",
+          "open": 13.83,
+          "high": 13.87,
+          "low": 13.21,
+          "close": 13.56
+        },
+        {
+          "date": "17",
+          "open": 13.54,
+          "high": 14.03,
+          "low": 13.53,
+          "close": 13.99
+        },
+        {
+          "date": "18",
+          "open": 13.94,
+          "high": 14.14,
+          "low": 13.86,
+          "close": 13.98
+        },
+        {
+          "date": "19",
+          "open": 14.08,
+          "high": 15.33,
+          "low": 14.07,
+          "close": 14.83
+        },
+        {
+          "date": "20",
+          "open": 14.82,
+          "high": 14.88,
+          "low": 14.52,
+          "close": 14.85
+        },
+        {
+          "date": "21",
+          "open": 14.84,
+          "high": 14.96,
+          "low": 14.61,
+          "close": 14.89
+        },
+        {
+          "date": "22",
+          "open": 15.02,
+          "high": 15.02,
+          "low": 14.16,
+          "close": 14.54
+        },
+        {
+          "date": "23",
+          "open": 14.45,
+          "high": 15.02,
+          "low": 14.35,
+          "close": 14.83
+        },
+        {
+          "date": "24",
+          "open": 14.28,
+          "high": 14.53,
+          "low": 13.6,
+          "close": 13.96
+        },
+        {
+          "date": "25",
+          "open": 13.93,
+          "high": 14.12,
+          "low": 13.22,
+          "close": 13.31
+        },
+        {
+          "date": "26",
+          "open": 13.38,
+          "high": 13.58,
+          "low": 13.28,
+          "close": 13.5
+        },
+        {
+          "date": "27",
+          "open": 13.5,
+          "high": 13.62,
+          "low": 13.31,
+          "close": 13.37
+        },
+        {
+          "date": "28",
+          "open": 13.36,
+          "high": 13.58,
+          "low": 12.94,
+          "close": 12.97
+        },
+        {
+          "date": "29",
+          "open": 13.15,
+          "high": 13.37,
+          "low": 13,
+          "close": 13.13
+        },
+        {
+          "date": "0",
+          "open": 14.49,
+          "high": 14.78,
+          "low": 14.26,
+          "close": 14.5
+        },
+        {
+          "date": "1",
+          "open": 14.49,
+          "high": 14.7,
+          "low": 14.07,
+          "close": 14.22
+        },
+        {
+          "date": "2",
+          "open": 14.28,
+          "high": 14.48,
+          "low": 14.01,
+          "close": 14.14
+        },
+        {
+          "date": "3",
+          "open": 14.1,
+          "high": 14.27,
+          "low": 13.9,
+          "close": 14.23
+        },
+        {
+          "date": "4",
+          "open": 14.23,
+          "high": 14.54,
+          "low": 14.19,
+          "close": 14.54
+        },
+        {
+          "date": "5",
+          "open": 14.53,
+          "high": 15.4,
+          "low": 14.25,
+          "close": 15.4
+        },
+        {
+          "date": "6",
+          "open": 15.25,
+          "high": 15.38,
+          "low": 14.59,
+          "close": 14.69
+        },
+        {
+          "date": "7",
+          "open": 14.7,
+          "high": 14.8,
+          "low": 14.33,
+          "close": 14.5
+        },
+        {
+          "date": "8",
+          "open": 14.5,
+          "high": 14.69,
+          "low": 14.32,
+          "close": 14.68
+        },
+        {
+          "date": "9",
+          "open": 14.65,
+          "high": 14.75,
+          "low": 14.2,
+          "close": 14.54
+        },
+        {
+          "date": "10",
+          "open": 14.51,
+          "high": 14.58,
+          "low": 14.16,
+          "close": 14.23
+        },
+        {
+          "date": "11",
+          "open": 14.22,
+          "high": 14.65,
+          "low": 13.96,
+          "close": 14.32
+        },
+        {
+          "date": "12",
+          "open": 14.37,
+          "high": 14.38,
+          "low": 14.16,
+          "close": 14.33
+        },
+        {
+          "date": "13",
+          "open": 14.34,
+          "high": 14.41,
+          "low": 13.92,
+          "close": 14
+        },
+        {
+          "date": "14",
+          "open": 14,
+          "high": 14.23,
+          "low": 13.95,
+          "close": 14.16
+        },
+        {
+          "date": "15",
+          "open": 14.08,
+          "high": 14.11,
+          "low": 13.7,
+          "close": 13.86
+        },
+        {
+          "date": "16",
+          "open": 13.83,
+          "high": 13.87,
+          "low": 13.21,
+          "close": 13.56
+        },
+        {
+          "date": "17",
+          "open": 13.54,
+          "high": 14.03,
+          "low": 13.53,
+          "close": 13.99
+        },
+        {
+          "date": "18",
+          "open": 13.94,
+          "high": 14.14,
+          "low": 13.86,
+          "close": 13.98
+        },
+        {
+          "date": "19",
+          "open": 14.08,
+          "high": 15.33,
+          "low": 14.07,
+          "close": 14.83
+        },
+        {
+          "date": "20",
+          "open": 14.82,
+          "high": 14.88,
+          "low": 14.52,
+          "close": 14.85
+        },
+        {
+          "date": "21",
+          "open": 14.84,
+          "high": 14.96,
+          "low": 14.61,
+          "close": 14.89
+        },
+        {
+          "date": "22",
+          "open": 15.02,
+          "high": 15.02,
+          "low": 14.16,
+          "close": 14.54
+        },
+        {
+          "date": "23",
+          "open": 14.45,
+          "high": 15.02,
+          "low": 14.35,
+          "close": 14.83
+        },
+        {
+          "date": "24",
+          "open": 14.28,
+          "high": 14.53,
+          "low": 13.6,
+          "close": 13.96
+        },
+        {
+          "date": "25",
+          "open": 13.93,
+          "high": 14.12,
+          "low": 13.22,
+          "close": 13.31
+        },
+        {
+          "date": "26",
+          "open": 13.38,
+          "high": 13.58,
+          "low": 13.28,
+          "close": 13.5
+        },
+        {
+          "date": "27",
+          "open": 13.5,
+          "high": 13.62,
+          "low": 13.31,
+          "close": 13.37
+        },
+        {
+          "date": "28",
+          "open": 13.36,
+          "high": 13.58,
+          "low": 12.94,
+          "close": 12.97
+        },
+        {
+          "date": "29",
+          "open": 13.15,
+          "high": 13.37,
+          "low": 13,
+          "close": 13.13
+        },
+        {
+          "date": "0",
+          "open": 14.49,
+          "high": 14.78,
+          "low": 14.26,
+          "close": 14.5
+        },
+        {
+          "date": "1",
+          "open": 14.49,
+          "high": 14.7,
+          "low": 14.07,
+          "close": 14.22
+        },
+        {
+          "date": "2",
+          "open": 14.28,
+          "high": 14.48,
+          "low": 14.01,
+          "close": 14.14
+        },
+        {
+          "date": "3",
+          "open": 14.1,
+          "high": 14.27,
+          "low": 13.9,
+          "close": 14.23
+        },
+        {
+          "date": "4",
+          "open": 14.23,
+          "high": 14.54,
+          "low": 14.19,
+          "close": 14.54
+        },
+        {
+          "date": "5",
+          "open": 14.53,
+          "high": 15.4,
+          "low": 14.25,
+          "close": 15.4
+        },
+        {
+          "date": "6",
+          "open": 15.25,
+          "high": 15.38,
+          "low": 14.59,
+          "close": 14.69
+        },
+        {
+          "date": "7",
+          "open": 14.7,
+          "high": 14.8,
+          "low": 14.33,
+          "close": 14.5
+        },
+        {
+          "date": "8",
+          "open": 14.5,
+          "high": 14.69,
+          "low": 14.32,
+          "close": 14.68
+        },
+        {
+          "date": "9",
+          "open": 14.65,
+          "high": 14.75,
+          "low": 14.2,
+          "close": 14.54
+        },
+        {
+          "date": "10",
+          "open": 14.51,
+          "high": 14.58,
+          "low": 14.16,
+          "close": 14.23
+        },
+        {
+          "date": "11",
+          "open": 14.22,
+          "high": 14.65,
+          "low": 13.96,
+          "close": 14.32
+        },
+        {
+          "date": "12",
+          "open": 14.37,
+          "high": 14.38,
+          "low": 14.16,
+          "close": 14.33
+        },
+        {
+          "date": "13",
+          "open": 14.34,
+          "high": 14.41,
+          "low": 13.92,
+          "close": 14
+        },
+        {
+          "date": "14",
+          "open": 14,
+          "high": 14.23,
+          "low": 13.95,
+          "close": 14.16
+        },
+        {
+          "date": "15",
+          "open": 14.08,
+          "high": 14.11,
+          "low": 13.7,
+          "close": 13.86
+        },
+        {
+          "date": "16",
+          "open": 13.83,
+          "high": 13.87,
+          "low": 13.21,
+          "close": 13.56
+        },
+        {
+          "date": "17",
+          "open": 13.54,
+          "high": 14.03,
+          "low": 13.53,
+          "close": 13.99
+        },
+        {
+          "date": "18",
+          "open": 13.94,
+          "high": 14.14,
+          "low": 13.86,
+          "close": 13.98
+        },
+        {
+          "date": "19",
+          "open": 14.08,
+          "high": 15.33,
+          "low": 14.07,
+          "close": 14.83
+        },
+        {
+          "date": "20",
+          "open": 14.82,
+          "high": 14.88,
+          "low": 14.52,
+          "close": 14.85
+        },
+        {
+          "date": "21",
+          "open": 14.84,
+          "high": 14.96,
+          "low": 14.61,
+          "close": 14.89
+        },
+        {
+          "date": "22",
+          "open": 15.02,
+          "high": 15.02,
+          "low": 14.16,
+          "close": 14.54
+        },
+        {
+          "date": "23",
+          "open": 14.45,
+          "high": 15.02,
+          "low": 14.35,
+          "close": 14.83
+        },
+        {
+          "date": "24",
+          "open": 14.28,
+          "high": 14.53,
+          "low": 13.6,
+          "close": 13.96
+        },
+        {
+          "date": "25",
+          "open": 13.93,
+          "high": 14.12,
+          "low": 13.22,
+          "close": 13.31
+        },
+        {
+          "date": "26",
+          "open": 13.38,
+          "high": 13.58,
+          "low": 13.28,
+          "close": 13.5
+        },
+        {
+          "date": "27",
+          "open": 13.5,
+          "high": 13.62,
+          "low": 13.31,
+          "close": 13.37
+        },
+        {
+          "date": "28",
+          "open": 13.36,
+          "high": 13.58,
+          "low": 12.94,
+          "close": 12.97
+        },
+        {
+          "date": "29",
+          "open": 13.15,
+          "high": 13.37,
+          "low": 13,
+          "close": 13.13
+        }
+      ],
+      "oscillation": {
+        "cumReturn": 69.88,
+        "accuracy": 100,
+        "maxDrawdown": 4.31,
+        "tradeCount": 6
+      },
+      "trend": {
+        "cumReturn": 11.61,
+        "accuracy": 100,
+        "maxDrawdown": 6.51,
+        "tradeCount": 5
+      }
+    },
+    {
+      "bars": [
+        {
+          "date": "0",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "1",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "2",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "3",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "4",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "5",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "6",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "7",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "8",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "9",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "10",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "11",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "12",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "13",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "14",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "15",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "16",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "17",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        },
+        {
+          "date": "18",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 90
+        },
+        {
+          "date": "19",
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 100
+        }
+      ],
+      "oscillation": {
+        "cumReturn": 233.33,
+        "accuracy": 100,
+        "maxDrawdown": 0,
+        "tradeCount": 11
+      },
+      "trend": {
+        "cumReturn": 1.69,
+        "accuracy": 17,
+        "maxDrawdown": 1.69,
+        "tradeCount": 6
+      }
+    },
+    {
+      "bars": [
+        {
+          "date": "0",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "1",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "2",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "3",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "4",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "5",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "6",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "7",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "8",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "9",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "10",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "11",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "12",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "13",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        },
+        {
+          "date": "14",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100
+        }
+      ],
+      "oscillation": {
+        "cumReturn": 0,
+        "accuracy": 0,
+        "maxDrawdown": 0,
+        "tradeCount": 6
+      },
+      "trend": {
+        "cumReturn": 0,
+        "accuracy": 0,
+        "maxDrawdown": 0,
+        "tradeCount": 0
+      }
+    }
+  ],
+  "score_inputs": [
+    {
+      "cumReturn": 78.6,
+      "accuracy": 80,
+      "maxDrawdown": 35.4,
+      "tradeCount": 5
+    },
+    {
+      "cumReturn": 45.6,
+      "accuracy": 70,
+      "maxDrawdown": 30,
+      "tradeCount": 10
+    },
+    {
+      "cumReturn": 106,
+      "accuracy": 70,
+      "maxDrawdown": 18.7,
+      "tradeCount": 10
+    },
+    {
+      "cumReturn": 73.9,
+      "accuracy": 54,
+      "maxDrawdown": 25.1,
+      "tradeCount": 26
+    }
+  ],
+  "score_outputs": [
+    {
+      "score": 0.4732,
+      "is_best": false,
+      "confidence": "mid"
+    },
+    {
+      "score": 0.1538,
+      "is_best": false,
+      "confidence": "high"
+    },
+    {
+      "score": 0.9038,
+      "is_best": true,
+      "confidence": "high"
+    },
+    {
+      "score": 0.3485,
+      "is_best": false,
+      "confidence": "high"
+    }
+  ]
+}

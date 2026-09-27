@@ -16,6 +16,8 @@
 }
 .unified-detail-light .detail-view-nav .detail-view-nav__views button:hover { background:#eaeaf0; }
 .unified-detail-light .detail-view-nav .detail-view-nav__views button.is-active { background:#ff6b2c; color:#fff; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views button.detail-view-nav__ai { background:linear-gradient(135deg,#007aff,#45c8ff); color:#fff; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views button.detail-view-nav__ai:hover { filter:brightness(1.04); }
 .unified-detail-light select { min-height:44px; max-width:200px; padding:0 12px; background:#fff; color:#20242b; border:1px solid #ebedf0; border-radius:7px; }
 .unified-detail-light .quote-header--unified { display:grid; gap:8px; padding:8px 0; }
 .unified-detail-light .quote-header__primary { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:16px; }

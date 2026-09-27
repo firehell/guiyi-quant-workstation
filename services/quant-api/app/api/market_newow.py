@@ -162,6 +162,51 @@ _PRODUCT_QUERY_FIELDS = frozenset(
 _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
 
 
+@router.get("/ai-analysis")
+def newow_ai_analysis(request: Request, product: str = Query(...),
+                      as_of: datetime = Query(...), session: Session = Depends(get_db)):
+    """Four page-estimate summaries; no LLM, persistence or Runtime mutation."""
+    from time import monotonic
+    from guiyi_quant.newow.ai_analysis import PAGE_FORMULA, FUTURES_ADAPTER, PAGE_SOURCE_SHA256
+    from app.market_data.newow.ai_analysis import analyze_product
+    if set(request.query_params) != {"product", "as_of"} or any(
+        len(request.query_params.getlist(key)) != 1 for key in request.query_params
+    ):
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
+    if as_of.utcoffset() is None:
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_AS_OF"})
+    as_of = as_of.astimezone(UTC)
+    now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
+    if as_of > now:
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_AS_OF"})
+    deadline = monotonic() + 30
+    def cancelled():
+        if monotonic() >= deadline:
+            return True
+        try:
+            return from_thread.run(request.is_disconnected)
+        except RuntimeError:
+            return False
+    def reader_factory(frequency):
+        return _build_snapshot_inputs(session, cancelled, lambda: now,
+            _input_quality_policy(request, product, frequency))[0]
+    try:
+        with _PRODUCT_GATE.acquire(cancelled):
+            combos = analyze_product(product, as_of, reader_factory, cancelled,
+                                     lambda frequency: _enforce_product_frequency(request, product, frequency))
+        return {"schema_version": "newow_ai_analysis_v1", "product": product,
+                "as_of": _json_value(as_of), "formula_version": PAGE_FORMULA,
+                "futures_adapter_version": FUTURES_ADAPTER, "page_source_sha256": PAGE_SOURCE_SHA256,
+                "page_kernel_parity": True, "page_parity": False, "executable": False,
+                "combos": _json_value(combos)}
+    except HTTPException:
+        raise
+    except Exception as error:
+        status, detail = public_product_error(error, context={"symbol": product})
+        raise HTTPException(status_code=status, detail=detail) from error
+
+
 def _normalize_public_product(product: str) -> str:
     if re.fullmatch(r"[A-Za-z]{1,8}", product) is None:
         raise HTTPException(

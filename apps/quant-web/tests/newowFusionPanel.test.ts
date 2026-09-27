@@ -68,12 +68,18 @@ test('dual tab replaces main rise and emits a presentation identity preserving p
   const Nav = await component('MarketDetailViewNav')
   const root = element('root')
   let selected: unknown
+  let aiRequests = 0
   const identity = { view: 'newow', symbol: 'jm', strategy: 'oscillation', seriesKind: 'actual_dominant', frequency: '1w' }
-  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Nav, { identity, restore: { newow: { strategy: 'trend', frequency: '1d' } }, newowFrequencies: ['1d','1w'], onSelect: (v: unknown) => { selected = v } }) }))
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Nav, { identity, restore: { newow: { strategy: 'trend', frequency: '1d' } }, newowFrequencies: ['1d','1w'], onSelect: (v: unknown) => { selected = v }, onAiAnalysis: () => { aiRequests++ } }) }))
   app.mount(root)
   const dual = findNode(root, n => n.type === 'button' && nodeText(n).trim() === '双策略')!
   assert.ok(dual)
   assert.doesNotMatch(nodeText(root), /主升浪/)
+  const labels = findNodes(root, n => n.type === 'button').map(n => nodeText(n).trim())
+  assert.deepEqual(labels.slice(0, 5), ['震荡策略', '趋势策略', '双策略', '✨AI分析', '火天大有'])
+  ;(findNode(root, n => n.type === 'button' && nodeText(n).trim() === '✨AI分析')!.props.onClick as Function)()
+  assert.equal(aiRequests, 1)
+  assert.equal(selected, undefined)
   ;(dual.props.onClick as Function)()
   assert.deepEqual(selected, { ...identity, strategy: 'trend', newowMode: 'dual' })
   app.unmount()

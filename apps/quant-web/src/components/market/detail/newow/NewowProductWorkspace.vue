@@ -28,7 +28,7 @@ import NewowDetailDialog from './NewowDetailDialog.vue'
 import NewowCupFactsPanel from './NewowCupFactsPanel.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities }>()
-const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': [] }>()
+const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': []; 'analysis-as-of': [asOf: string | null] }>()
 const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const dualMode = computed(() => props.identity.newowMode === 'dual')
@@ -313,6 +313,7 @@ watch(loader.historicalSnapshot, async () => {
   comparisonSelection.value = null; ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
+watch(chartResponse, value => emit('analysis-as-of', value?.meta.as_of ?? null), { immediate: true, flush: 'sync' })
 watch(loader.dailySnapshot, snapshot => {
   if (snapshot === null && strategySwitching.value) return
   emit('daily-snapshot-pending', snapshot?.freshness === 'pending_update')

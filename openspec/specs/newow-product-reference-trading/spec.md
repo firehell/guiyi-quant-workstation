@@ -1124,3 +1124,25 @@ The theoretical tab requests all available maintained history. Other range tabs 
 #### Scenario: Theoretical returns preserve original records
 - **WHEN** the optional display is requested
 - **THEN** only complete CLOSED trades contribute hindsight returns while original entry and exit records remain unchanged
+
+### Independent AI page-analysis ranking v1
+
+`newow_ai_summary_ranking_page_v1` is a deterministic, read-only historical summary analysis, not an LLM, StrategyDecision, or ReferenceTrade projection. `/api/v1/market/newow/ai-analysis` accepts only product and an aware non-future `as_of`. It returns four trend/oscillation × D1/W1 combinations, no hourly fallback. All inputs MUST use the shared validated ProductReader, completed-only actual-dominant observations and frequency-specific active quality policy. The one request cutoff is common to all combinations; each combination exposes its window, actual endpoint and digest binding OHLC lifecycle facts, source digests, quality policy and calculation segment identities. Known missing-period/warm-up inputs remain unavailable; integrity and unexpected faults fail the whole request.
+
+The public single-segment kernel replicates `runOscBacktest`, `runTrendBacktest` and `scoreCombos` from detail v3.3.59 source SHA256 `b12da74d89a7ac304d7479999d11f13ab53ced834a8472f937d78a0c1bd03709`. Trend uses close versus MA10((close+high+low)/3), reference B-line transition prices and partial MA prefix means. Oscillation uses inclusive HHV/LLV10 and low/high touch prices, including same-bar CLEAR then BUILD. Both start at index 9 with minimum 11 input bars. Marked equity is the simple cumulative closed percentage points plus current floating return; drawdown is the peak-minus-current difference with initial peak zero. At the input terminal, an open reference estimate is valued at Close and included in this analysis's win/trade statistics. Public floating-point arithmetic and `toFixed` rounding are source-parity operations; delivered metrics use Decimal strings. This kernel is not causal execution evidence.
+
+`guiyi_newow_ai_segment_valuation_v1` independently runs each eligible physical-owner/calculation-quality segment; non-owned physical warm-up prefixes are excluded. Segments shorter than 11 bars are disclosed as warming. Positions MUST NOT cross a physical or calculation segment boundary. Terminal estimates at each boundary are explicitly counted; they MUST NOT create strategy CLEARs, reference-history exits, simulated fills or roll transactions. Simple returns and marked drawdown accumulate across these independently ended estimates. Accordingly the adapter declares `page_kernel_parity=true`, `page_parity=false`, `executable=false`. Public period windows are W1 from 2024-06-01 and D1 from 2025-09-01, bounded by validated completed facts and the selected snapshot, with no fabricated input replacement.
+
+Only combinations with at least three analysis trades enter scoring. Min-max normalized cumulative return, log1p(max(0, return/drawdown)) and rounded integer win rate have weights 0.40/0.35/0.25; a constant component normalizes to zero. Zero drawdown uses ratio 999 only for positive return, otherwise zero. Fewer than 10 trades multiply the score by 0.85; score rounds to four decimals. Best selection sorts by score then trade count, retaining original order on exact ties. Display ranking sorts stably by score only; four combinations re-normalize independently from the source six-combination screen. No valid samples means no recommendation. The UI MUST disclose dates, terminal estimates, history-only/non-executable semantics, and omitted 60m. Adopt only changes the visible product strategy and frequency; it neither promotes a strategy nor writes an account or Runtime decision.
+
+#### Scenario: Presentation-mode switch retains analysis cutoff
+- **WHEN** the user switches between loaded single-trend and dual mode without changing market input identity
+- **THEN** the analysis cutoff remains available, while an open analysis closes on route identity change
+
+#### Scenario: Segmentation changes invalidate analysis provenance
+- **WHEN** identical OHLC observations have a different calculation segmentation or quality policy
+- **THEN** the analysis input digest changes even if the shared lifecycle OHLC digest does not
+
+#### Scenario: Modal request lifecycle is bounded
+- **WHEN** the user closes, reruns, changes product/cutoff, or unmounts the modal
+- **THEN** previous requests are cancelled, late results cannot become visible or be adopted, and transport errors do not display private exception details
