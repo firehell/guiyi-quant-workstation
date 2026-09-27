@@ -654,6 +654,15 @@ MUST NOT create Actions/Hints or alter strategy formulas, ReferenceTrade, or ret
 public v3.3.59 `_updateBreakoutLines`, audited HTML SHA-256
 `b12da74d89a7ac304d7479999d11f13ab53ced834a8472f937d78a0c1bd03709`.
 
+#### Scenario: Breakout decoration uses a qualifying completed candidate
+- **WHEN** a ready oscillation chart contains a qualifying score >=4 candidate within its latest contiguous calculation segment
+- **THEN** the chart displays the orange dashed breakout price line using the candidate selection and price rules above
+- **AND** strategy Actions, ReferenceTrade prices and returns remain unchanged
+
+#### Scenario: Switching or insufficient inputs clear the prior breakout line
+- **WHEN** the chart is loading, unavailable, switches strategy or has no qualifying candidate in its current calculation segment
+- **THEN** the prior breakout price line is removed without borrowing an older owner or changing the formula threshold
+
 ### Requirement: Trend channel dots are independent aligned display facts
 
 `strategy=trend` 的 `chart.value` SHALL 返回独立 `trend_channel` 图层。绿色上轨逐 Bar 使用冻结

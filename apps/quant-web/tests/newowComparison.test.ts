@@ -41,3 +41,34 @@ test('comparison requests the whole accumulated axis after an older display wind
   assert.equal(comparison.state.value, 'ready')
   comparison.dispose()
 })
+
+test('partner reference records retain their token and a late response cannot survive disabling dual mode', async () => {
+  const base = ref(chart()), enabled = ref(true), partner = chart('oscillation')
+  let resolveReference
+  const requests = []
+  const comparison = useNewowComparison(base, enabled, async request => {
+    requests.push(request)
+    return request.section === 'chart' ? partner : new Promise(resolve => { resolveReference = resolve })
+  })
+  await Promise.resolve(); await Promise.resolve()
+  assert.equal(comparison.state.value, 'ready')
+  assert.equal(requests[1].section, 'reference')
+  assert.equal(requests[1].snapshotToken, partner.meta.snapshot_token)
+  enabled.value = false
+  resolveReference({ section: 'reference', meta: partner.meta, status: { status: 'ready' }, value: { items: [] } })
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  assert.equal(comparison.reference.value, null)
+  assert.equal(comparison.referenceError.value, null)
+  comparison.dispose()
+})
+
+test('a conflicting partner reference token does not decorate labels or revoke valid chart comparison', async () => {
+  const partner = chart('oscillation')
+  const comparison = useNewowComparison(ref(chart()), ref(true), async request => request.section === 'chart' ? partner
+    : { section: 'reference', meta: { ...partner.meta, snapshot_token: 'different' }, status: { status: 'ready' }, value: { items: [] } })
+  for (let i = 0; i < 5; i++) await Promise.resolve()
+  assert.equal(comparison.state.value, 'ready')
+  assert.equal(comparison.reference.value, null)
+  assert.ok(comparison.referenceError.value)
+  comparison.dispose()
+})

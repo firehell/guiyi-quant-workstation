@@ -561,6 +561,42 @@ test('same chart instance restores identity-specific layers and viewport across 
   app.unmount()
 })
 
+test('dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit', async () => {
+  const Stage = await loadComponent()
+  const response = strategyResponse('trend')
+  const partner = ref<MutableChartResponse | null>(strategyResponse('oscillation'))
+  const attached: Array<{ setData(data: unknown[]): void; constructor: { name: string } }> = []
+  const fakeChart = { addSeries: () => ({ setData() {}, createPriceLine() {},
+    attachPrimitive(value: typeof attached[number]) { attached.push(value) }, detachPrimitive() {}, priceToCoordinate: (price: number) => price * 2 }),
+    removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
+    timeScale: () => ({ width: () => 600, timeToCoordinate: () => 210, fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: 'trend', comparisonResponse: partner.value, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root'); app.mount(root); await nextTick(); await nextTick()
+  assert.ok(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'))
+  const actions = findNode(root, n => n.type === 'button' && textContent(n) === '建仓 / 清仓')!
+  if (actions.props['aria-pressed'] === false) {
+    ;(actions.props.onClick as () => void)(); await nextTick(); await nextTick()
+  }
+  for (const origin of ['trend', 'oscillation']) {
+    const label = findNode(root, n => n.props['data-origin-strategy'] === origin)
+    assert.ok(label)
+    assert.equal(label.props['data-anchor-y'], 180)
+    assert.match(String(label.props.class), new RegExp(`origin-${origin}`))
+  }
+  const background = attached.find(p => p.constructor.name === 'NewowDualBackgroundPrimitive')!
+  assert.ok(background)
+  partner.value = null; await nextTick(); await nextTick()
+  assert.equal(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'), undefined)
+  assert.equal(findNode(root, n => n.props['data-origin-strategy'] === 'oscillation'), undefined)
+  app.unmount()
+})
+
 
 test('reference price lines use supplied values and remove stale levels on replacement or invalidation', async () => {
   const Stage = await loadComponent()
