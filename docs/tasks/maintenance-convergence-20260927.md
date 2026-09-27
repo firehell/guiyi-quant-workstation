@@ -174,3 +174,9 @@ Reviewer 独立运行 capability/route/shell/status/navigation 55项unit，全�
 认为可能掩盖行为回归。后者未执行，不绕过自动审批。剩余处理方案为：先对每个失败确认
 当前产品合同和等价覆盖，再迁移旧用例；截图须逐张确认新画面后建立基线，保持现有阈值。
 已完成部分可以独立集成；完整E2E/视觉验收状态仍为PARTIAL。
+
+集成前现场发现另一任务已将 `dfcb8796b1b6a9f26f033bbbce6fc633c3eb84d8`
+（v1.10.38 Newow交互收尾）提交到develop，与本轮七个文件无重叠。
+任务分支先合入该提交，随后重新验证实际集成候选：前端692 passed / 1 skipped，
+build及bundle topology通过，最终11项浏览器回归再次全过（8.9s），完整秘密扫描0 findings。
+这次集成复验仍不替代完整E2E与视觉Gate。
