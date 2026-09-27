@@ -980,6 +980,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "reference_input_sha256": value.reference_input_sha256,
             "history_coverage": value.history_coverage,
             "theoretical": value.theoretical,
+            "holding_curve": value.holding_curve,
             "unavailable_days": list(value.unavailable_days),
             "coverage_intervals": [
                 {

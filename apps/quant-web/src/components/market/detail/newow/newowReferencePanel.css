@@ -93,3 +93,8 @@
 .newow-reference :deep(.fusion-panel button) { min-height:28px; padding:4px 10px; font-size:12px; }
 @media(max-width:600px) { .newow-reference__metrics dd { font-size:15px; }.newow-reference__metrics dt { font-size:10px; }.newow-reference__presets button { padding:0 12px; } }
 .newow-reference__returns-heading { display:flex; align-items:baseline; gap:0; padding-top:10px; font-size:14px; }.newow-reference__returns-heading .newow-reference__annualized { color:#ff9000; font-size:14px; font-weight:700; }
+.newow-curve-modes { margin:8px 0; justify-content:flex-start; flex-wrap:wrap; }
+.newow-curve-modes>span { font-size:11px; color:#8e8e93; }
+.newow-holding-readout { display:flex; align-items:center; gap:8px; margin:8px 0; font-size:12px; color:#667085; }
+.newow-holding-readout span { flex:1; }
+.newow-holding-readout button { min-width:32px; min-height:32px; border:1px solid #e5e5ea; border-radius:6px; background:#fff; cursor:pointer; }

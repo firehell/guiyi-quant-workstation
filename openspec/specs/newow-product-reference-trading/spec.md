@@ -1192,6 +1192,55 @@ Only combinations with at least three analysis trades enter scoring. Min-max nor
 - **THEN** previous requests are cancelled, late results cannot become visible or be adopted, and transport errors do not display private exception details
 
 
+### Independent completed-Bar holding valuation v1
+
+`newow_reference_marked_curve_v1` adds `holding_curve` to the on-demand base-strategy reference and D1/W1 dual-fusion comparison. Every completed observation-eligible Bar inside the performance window exposes closed percentage points, the current same-owner Close floating return and their simple sum. This is a zero-cost non-executable page reference, independently versioned from the existing CLOSED-only summary/curve. It preserves `entry_in_window_v1`; initial holdings before the window contribute neither realized nor floating returns. UI subwindows recompute their CLOSED baseline from complete records and filter floating membership by `entry_trading_day`, without changing reference facts.
+
+CLEAR realized return is included before a same-Bar BUILD is marked at that Bar's Close. OPEN positions remain OPEN. Contract, owner or calculation boundaries interrupt valuation: a boundary emits an `INTERRUPTED` curve point with null floating/marked values at the next eligible Bar, and never realizes the interrupted mark or values an old position on the new contract. Missing endpoints/holding observations, duplicated observations or ambiguous concurrent positions suppress the payload. Source input/cutoff, window and owner lineage remain unchanged; reference records, account facts and causal research are not modified.
+
+#### Scenario: Holding values survive a temporary loss
+- **WHEN** an entry reference price is 100, intermediate completed Close is 95, and explicit CLEAR reference price is 110
+- **THEN** the marked curve shows 0, -5 and +10 percentage points while the original CLOSED return remains +10
+
+### Independent fusion hindsight High display v1
+
+`newow_dual_fusion_hindsight_peak_high_v1` adds an optional `theoretical` payload to the on-demand D1/W1 fusion comparison. It preserves the fusion entry, selected source price, pairing, physical owner, calculation segment and entry-window membership; for each complete CLOSED trade it uses the highest High from entry through exit inclusive. It uses Decimal precision 28 HALF_EVEN and simple summed percentage points, exposing per-trade ideal exit price, return, win rate and mean. OPEN/interrupted trades never become CLOSED; missing, duplicate or ineligible holding observations suppress the payload. Original ordinary CLOSED curve and records remain unchanged. This retrospective page display is non-executable and changes neither base-strategy theoretical models nor persisted reference assets/Runtime. Fusion result revision binds High as well as Close because changing High can now change the independent hindsight payload.
+
+#### Scenario: Fusion theoretical retains ordinary source exits
+- **WHEN** a fusion entry at 100 and explicit CLEAR at 110 have a holding High of 150
+- **THEN** theoretical return is +50 while the ordinary CLOSED record and marked exit remain +10
+
+### Requirement: Independent completed daily and weekly price-path illustration
+
+The read-only `decision_v2.daily_weekly_path` surface SHALL expose D1 and W1 separately under
+`guiyi_daily_weekly_path_v1`, `page_parity=true`, and `executable=false`. The illustration SHALL NOT
+modify strategy markers, scoring, ReferenceTrade, returns, or execution decisions.
+
+Each active period SHALL obtain its reference cost from exactly one unmatched trend BUILD identity
+in its own completed, observation-eligible calculation prefix. CLEAR SHALL close only its explicit
+`related_build_id`; absent or ambiguous entry identity SHALL remain unavailable. Cost SHALL carry
+its BUILD signal identity, raw Decimal price, frequency, source, bar timestamp, physical contract,
+segment, calculation segment and strategy formula versions. A current mark before entry SHALL NOT
+be drawn as a completed holding path.
+
+D1 and W1 targets SHALL independently use their own Canonical HHV10 channel with provenance;
+shared cross-period target selection and weekly status-card overrides SHALL NOT substitute for
+these two paths. Targets remain a disclosed futures adaptation, not proof of the private Niuwa batch
+price algorithm. A latest completed current close may be shared only within the same physical
+contract and owner segment. Future, foreign-owner, foreign-calculation or missing period facts
+SHALL fail closed; missing data SHALL NOT be treated as FLAT or replaced by another period.
+
+#### Scenario: Holding and observing paths stay distinct
+
+- **WHEN** the user expands the daily/weekly illustration
+- **THEN** the UI SHALL use distinct period colors on one price scale and connect available reference
+  cost to current price with a solid line, and current price to target with a dashed line
+- **AND** FLAT/CLEAR SHALL display observing state with no fabricated open cost or held solid line
+- **AND** absent cost/target/period facts SHALL remain explicitly unavailable, with source evidence
+- **AND** the horizontal axis SHALL describe completed and future illustration stages, not forecast
+  dates; absent stop-loss facts SHALL NOT produce a stop-loss line.
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 1m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

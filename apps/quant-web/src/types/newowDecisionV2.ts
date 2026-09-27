@@ -57,4 +57,23 @@ export interface Cdv2 {
     first_action: { rule_token: string; level: 'ok' | 'warn' | 'violate' | 'unknown'; title: string; detail: string; source_formula_version: string | null }
   }
 }
-export interface NewowDecisionV2 { cdv2: Cdv2; prices: CrossPeriodPrices | null }
+export interface NewowDecisionV2 { cdv2: Cdv2; prices: CrossPeriodPrices | null; daily_weekly_path?: DailyWeeklyPath }
+
+export interface DailyWeeklyPathPeriod {
+  frequency: '1d' | '1w'
+  state: string | null
+  status: 'ready' | 'partial' | 'unavailable'
+  cost: (DecisionPriceSource & { entry_marker_id: string }) | null
+  current: DecisionPriceSource | null
+  target: DecisionPriceSource | null
+  reason: string | null
+  formula_versions?: string[]
+}
+export interface DailyWeeklyPath {
+  version: string
+  as_of: string
+  page_parity: true
+  executable: false
+  source_note: string
+  periods: DailyWeeklyPathPeriod[]
+}

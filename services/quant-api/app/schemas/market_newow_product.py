@@ -297,7 +297,30 @@ class FusionTradeOut(_Out):
     statistics_membership: Literal["entry_in_window_v1", "initial_before_window"]
 
 
+class HoldingCurvePointOut(_Out):
+    bar_end: datetime
+    trading_day: date
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str
+    reference_trade_id: str | None
+    entry_trading_day: date | None
+    status: Literal["FLAT", "HOLDING", "INTERRUPTED"]
+    closed_return_percentage_points: str
+    floating_return_pct: str | None
+    marked_return_percentage_points: str | None
+
+
+class HoldingCurveOut(_Out):
+    model_version: Literal["newow_reference_marked_curve_v1"]
+    page_parity: Literal[True]
+    executable: Literal[False]
+    points: list[HoldingCurvePointOut]
+
+
 class FusionComparisonOut(_Out):
+    holding_curve: HoldingCurveOut | None = Field(default=None, exclude_if=lambda value: value is None)
+    theoretical: "TheoreticalReferenceOut | None" = Field(default=None, exclude_if=lambda value: value is None)
     fusion_input_sha256: str | None = Field(default=None, exclude_if=lambda value: value is None)
     next_cursor: str | None = Field(default=None, exclude_if=lambda value: value is None)
     record_since: date | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -329,7 +352,7 @@ class TheoreticalReturnOut(_Out):
 
 
 class TheoreticalReferenceOut(_Out):
-    model_version: Literal["newow_hindsight_peak_reference_v1"]
+    model_version: Literal["newow_hindsight_peak_reference_v1", "newow_dual_fusion_hindsight_peak_high_v1"]
     hindsight: Literal[True]
     executable: Literal[False]
     returns: list[TheoreticalReturnOut]
@@ -339,6 +362,7 @@ class TheoreticalReferenceOut(_Out):
 
 
 class ReferenceValueOut(_Out):
+    holding_curve: HoldingCurveOut | None = Field(default=None, exclude_if=lambda value: value is None)
     theoretical: TheoreticalReferenceOut | None = Field(default=None, exclude_if=lambda value: value is None)
     performance_since: date
     performance_through: date

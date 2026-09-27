@@ -241,6 +241,7 @@ class ReferenceSectionValue:
     coverage_intervals: tuple[ReferenceCoverageInterval, ...] = ()
     fusion_comparison: dict[str, object] | None = None
     theoretical: dict[str, object] | None = None
+    holding_curve: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1435,6 +1436,9 @@ class NewowProductService:
             fusion["reference_input_sha256"] = fact_key
         from guiyi_quant.newow.theoretical_reference import theoretical_reference
         theoretical = theoretical_reference(summary.closed_trades, tuple(frame.bar for frame in replay.frames))
+        from guiyi_quant.newow.holding_reference import holding_reference_curve, reference_trade_rows
+        holding_curve = holding_reference_curve(reference_trade_rows(projection.trades),
+            tuple(frame.bar for frame in replay.frames), summary.window)
         value = ReferenceSectionValue(
             projection,
             summary,
@@ -1452,6 +1456,7 @@ class NewowProductService:
             coverage_intervals,
             fusion,
             theoretical,
+            holding_curve,
         )
         status = (
             _ready()

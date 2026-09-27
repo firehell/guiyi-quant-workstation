@@ -7,6 +7,7 @@ from guiyi_quant.newow.cross_period_prices import (
     PriceSource,
     select_cross_period_prices,
 )
+from guiyi_quant.newow.daily_weekly_path import build_daily_weekly_path
 from guiyi_quant.newow.product_contracts import (
     ProductFrequency,
     FeatureRuntimeStatus,
@@ -194,6 +195,8 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
         cdv2, states["trend"], states["oscillation"]
     )
     prices = None
+    path_current = None
+    channels = {}
     if anchor:
 
         def price_fact(value, product_bar, category):
@@ -213,6 +216,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
         current = price_fact(
             current_bar.bar.close, current_bar, "canonical_completed_close"
         )
+        path_current = current
         previous = next(
             (
                 f.bar
@@ -268,4 +272,17 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
         prices["source_note"] = (
             "Canonical HHV10/LLV10; not private batch price facts. Monthly input unavailable."
         )
-    return {"cdv2": cdv2, "prices": prices}
+    paths = build_daily_weekly_path(
+        as_of=cutoff,
+        current=path_current,
+        periods={
+            freq.value: (states["trend"][PERIODS[freq]],
+                         prefixes.get(("trend", freq), []),
+                         channels.get(freq, (None, None))[0])
+            for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+        },
+    )
+    for row in paths["periods"]:
+        replay = trend.get(ProductFrequency(row["frequency"]))
+        row["formula_versions"] = list(replay.identity.formula_versions) if replay else []
+    return {"cdv2": cdv2, "prices": prices, "daily_weekly_path": paths}

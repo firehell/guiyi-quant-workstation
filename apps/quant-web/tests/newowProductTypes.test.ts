@@ -1132,3 +1132,22 @@ test('reference accepts validated independent hindsight payload and rejects exec
   raw.reference.value.theoretical.returns.push(raw.reference.value.theoretical.returns[0])
   assert.throws(() => normalizeNewowProductResponse(raw, { ...expected, section: 'reference' }), /duplicate theoretical/)
 })
+
+test('reference accepts per-Bar holding wire and rejects future or executable curve facts', () => {
+  const raw = referenceWire()
+  raw.reference.value.holding_curve = {model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points:[{bar_end:'2026-08-10T07:00:00Z',trading_day:'2026-08-10',physical_contract:'JM2609',segment_id:'segment-1',calculation_segment_id:'calc-1',entry_trading_day:'2026-08-09',reference_trade_id:'trade-1',status:'HOLDING',closed_return_percentage_points:'0',floating_return_pct:'10',marked_return_percentage_points:'10'}]}
+  const result = normalizeNewowProductResponse(raw,{...expected,section:'reference'})
+  assert.equal(result.value.holding_curve.points[0].floating_return_pct,'10')
+  raw.reference.value.holding_curve.executable=true
+  assert.throws(()=>normalizeNewowProductResponse(raw,{...expected,section:'reference'}))
+  raw.reference.value.holding_curve.executable=false
+  raw.reference.value.holding_curve.points[0].bar_end='2027-08-10T07:00:00Z'
+  assert.throws(()=>normalizeNewowProductResponse(raw,{...expected,section:'reference'}))
+})
+
+test('per-Bar wire accepts authoritative flat values and null interruptions', () => {
+  const raw=referenceWire(), common={physical_contract:'JM2609',segment_id:'segment-1',calculation_segment_id:'calc-1',entry_trading_day:null,reference_trade_id:null,closed_return_percentage_points:'5'}
+  raw.reference.value.holding_curve={model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points:[{...common,bar_end:'2026-08-10T07:00:00Z',trading_day:'2026-08-10',status:'FLAT',floating_return_pct:'0',marked_return_percentage_points:'5'},{...common,bar_end:'2026-08-11T07:00:00Z',trading_day:'2026-08-11',status:'INTERRUPTED',floating_return_pct:null,marked_return_percentage_points:null}]}
+  const result=normalizeNewowProductResponse(raw,{...expected,section:'reference'})
+  assert.equal(result.value.holding_curve.points[1].marked_return_percentage_points,null)
+})

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, useId } from 'vue'
 import NewowStatusCard from './NewowStatusCard.vue'
+import NewowDailyWeeklyPath from './NewowDailyWeeklyPath.vue'
 import { NewowProductRequestError, getNewowProductSection } from '@/api/newowProduct'
 import type { NewowProductSectionResponse } from '@/types/newowProduct'
 import type { NewowDecisionV2, DecisionPriceSource } from '@/types/newowDecisionV2'
@@ -130,6 +131,7 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
     </div>
     <p class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周仅作背景` : "分钟周期未参与" }} · 仅使用已完成日线／周线；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
+  <NewowDailyWeeklyPath :decision="result" :loading="loading" :error="error" />
   <NewowStatusCard :background="context.background" :decision="result" :strategy="response.meta.identity.strategy" :loading="loading" :error="error" @retry="load" />
 </template>
 

@@ -141,3 +141,43 @@ test('fusion curve uses closed members, range does not replace recent records, t
   assert.match(nodeText(root), /记录已截断/)
   app.unmount()
 })
+
+test('fusion theory is independent and the ordinary record price remains visible', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input('rb') }) }))
+  app.mount(root)
+  const trade = {reference_trade_id:'theory-trade',status:'CLOSED',statistics_membership:'entry_in_window_v1',entry_source:'trend',exit_source:'oscillation',physical_contract:'RB2610',entry_reference_price:'100',exit_reference_price:'105',reference_return_pct:'5',mark_change_pct:null,entry_trading_day:'2026-09-01',exit_trading_day:'2026-09-02',entry_bar_end:'2026-09-01T07:00:00Z',exit_bar_end:'2026-09-02T07:00:00Z'}
+  mock.calls[base].resolve({...output('theory-test'),curve:[trade],items:[trade],groups:[{model:'fusion',closed_count:1,sum_return_percentage_points:'5',open_count:0,interrupted_count:0}],theoretical:{model_version:'newow_dual_fusion_hindsight_peak_high_v1',hindsight:true,executable:false,returns:[{reference_trade_id:'theory-trade',return_pct:'20',ideal_exit_price:'120'}],sum_return_percentage_points:'20'}})
+  await nextTick();await nextTick()
+  const theory = findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='理论值')!
+  assert.ok(theory)
+  ;(theory.props.onClick as Function)()
+  await nextTick()
+  assert.match(nodeText(root), /持有阶段最高价/)
+  assert.match(nodeText(root), /\+20%/)
+  const record = findNode(root,n=>n.props.id==='fusion-trade-theory-trade')!
+  assert.match(nodeText(record), /105/)
+  assert.doesNotMatch(nodeText(record), /120/)
+  app.unmount()
+})
+
+test('missing fusion theory allows returning to ordinary mode; holding readouts keep closed summary separate', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb')})}))
+  app.mount(root)
+  const trade = {reference_trade_id:'readout',status:'CLOSED',statistics_membership:'entry_in_window_v1',entry_source:'trend',exit_source:'oscillation',physical_contract:'RB2610',entry_reference_price:'100',exit_reference_price:'105',reference_return_pct:'5',mark_change_pct:null,entry_trading_day:'2026-09-01',exit_trading_day:'2026-09-02',entry_bar_end:'2026-09-01T07:00:00Z',exit_bar_end:'2026-09-02T07:00:00Z'}
+  mock.calls[base].resolve({...output('holding-test'),curve:[trade],items:[trade],groups:[{model:'fusion',closed_count:1,sum_return_percentage_points:'5',open_count:0,interrupted_count:0}],theoretical:null,holding_curve:{model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points:[{bar_end:'2026-09-01T07:00:00Z',trading_day:'2026-09-01',physical_contract:'RB2610',segment_id:'a',calculation_segment_id:'a',entry_trading_day:'2026-09-01',closed_return_percentage_points:'0',floating_return_pct:'20',marked_return_percentage_points:'20',reference_trade_id:'readout',status:'HOLDING'}]}})
+  await nextTick();await nextTick()
+  const holding = findNode(root,n=>n.props['aria-label']==='逐 Bar 持有过程')!
+  assert.match(nodeText(holding), /浮动 \+20%/)
+  assert.match(nodeText(root), /累计收益 \+5%/)
+  ;(findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='理论值')!.props.onClick as Function)()
+  await nextTick()
+  assert.match(nodeText(root), /理论值所需的完整持有区段暂不可用/)
+  const ordinary = findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='全部')!
+  assert.equal(ordinary.props.disabled,false)
+  ;(ordinary.props.onClick as Function)()
+  await nextTick()
+  assert.match(nodeText(root), /浮动 \+20%/)
+  app.unmount()
+})

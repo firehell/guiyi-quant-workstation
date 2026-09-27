@@ -1477,6 +1477,9 @@ def test_fusion_reference_is_opt_in_and_independent(product_cases):
     from app.api.market_newow import _product_response
     wire = _product_response(fused).model_dump(mode='json')
     assert wire['reference']['value']['fusion_comparison']['executable'] is False
+    assert wire['reference']['value']['holding_curve']['model_version'] == 'newow_reference_marked_curve_v1'
+    assert wire['reference']['value']['fusion_comparison']['holding_curve']['executable'] is False
+    assert wire['reference']['value']['fusion_comparison']['theoretical']['model_version'] == 'newow_dual_fusion_hindsight_peak_high_v1'
     value = fused.reference.value.fusion_comparison
     assert [g['model'] for g in value['groups']] == ['trend', 'oscillation', 'fusion']
     assert value['groups'][0]['closed_count'] == normal.reference.value.summary.closed_count
