@@ -52,3 +52,62 @@ export function decisionMismatchReason(cd: Cdv2): string {
   const age = cd.mismatch_age >= 0 ? `${cd.mismatch_age} 根日K` : '计龄未知'
   return `${reasons[cd.mismatch] ?? '错配依据未知。'}错配计龄来自${source}：${age}。`
 }
+
+const colors = { red: '#ff3b30', green: '#34c759', orange: '#ff9500', warning: '#ff6b35', gray: '#8e8e93' }
+export function decisionTier(total: number) {
+  if (!Number.isFinite(total) || total < 0 || total > 100) return { label: '评分不可用', color: colors.gray }
+  if (total >= 80) return { label: '高确定性', color: colors.red }
+  if (total >= 60) return { label: '中等确定性', color: colors.orange }
+  if (total >= 40) return { label: '低确定性', color: colors.warning }
+  return { label: '信号不足', color: colors.gray }
+}
+export function decisionVolatility(cd: Cdv2) {
+  // Number is only a bounded CSS position. The reported Decimal value/level stay authoritative.
+  if (cd.volatility_pct === null || !/^\d+(?:\.\d+)?$/.test(cd.volatility_pct)) return null
+  const value = Number(cd.volatility_pct)
+  if (!Number.isFinite(value)) return null
+  const level = cd.volatility_level
+  if (level !== 'low' && level !== 'mid' && level !== 'high') return null
+  return { value: cd.volatility_pct, level, label: { low: '低', mid: '中', high: '高' }[level],
+    color: { low: colors.green, mid: colors.orange, high: colors.red }[level], position: Math.max(3, Math.min(97, Math.round(value / 6 * 100))) }
+}
+export function decisionDisplay(cd: Cdv2) {
+  const tier = decisionTier(cd.total)
+  const resonanceTable: Record<string, { name: string; count: number; color: string }> = {
+    R4: { name: '双螺旋共振', count: 5, color: colors.green },
+    R3: { name: '基调共振', count: 3, color: colors.orange },
+    R2: { name: '错配预警', count: 2, color: colors.warning },
+    R1: { name: '信号背离', count: 1, color: colors.red },
+    R0: { name: '数据不足', count: 0, color: colors.gray },
+  }
+  const r = resonanceTable[cd.resonance] ?? { name: '共振未知', count: 0, color: colors.gray }
+  const mismatchTable: Record<string, { name: string; color: string }> = {
+    MM1: { name: '错配期·逃顶窗口', color: colors.warning }, MM2: { name: '错配期·抄底信号', color: colors.orange },
+    MM3: { name: '错配期·趋势转空', color: colors.warning }, MM4: { name: '错配期·趋势转多', color: colors.orange },
+  }
+  const mm = cd.mismatch ? mismatchTable[cd.mismatch] : null
+  const age = Number.isInteger(cd.mismatch_age) && cd.mismatch_age >= 0 ? cd.mismatch_age : null
+  const crossTime = age === 0 ? '最新一根日K' : age === null ? '计龄未知' : `${age} 根日K前`
+  const cross = cd.mismatch === 'MM3' || cd.mismatch === 'MM4'
+  const ageLabel = age === null ? '计龄未知' : cross ? `趋势已转向 ${age} 根日K` : `震荡${cd.mismatch === 'MM1' ? '已清仓' : '已持有'} ${age} 根日K`
+  const scoreRows = [ ['trend', '趋势一致'], ['oscillation', '震荡确认'], ['resonance', '共振'], ['direction', '方向拐点'], ['volatility', '波动折损'] ] as const
+  const scores = scoreRows.map(([key, label]) => {
+    const n = cd.scores[key], value = Number.isFinite(n) ? n : null
+    const color = value === null ? colors.gray : key === 'trend' ? value >= 25 ? colors.red : value > 0 ? colors.orange : colors.gray
+      : key === 'oscillation' ? value >= 25 ? colors.green : value > 0 ? colors.orange : colors.gray
+      : key === 'resonance' ? value >= 20 ? colors.green : value > 0 ? colors.orange : colors.gray
+      : key === 'direction' ? value >= 15 ? colors.red : value > 5 ? colors.orange : colors.gray
+      : value < 0 ? colors.green : colors.gray
+    return { key, label, value, color }
+  })
+  const w = cd.trend_state?.week, d = cd.trend_state?.day
+  const direction = w === 'down' && d === 'up' ? { text: '从周线开始下跌，当前为周线下跌中的反弹（背离），勿追涨。', color: colors.warning }
+    : w === 'down' ? { text: '从周线开始下跌，大级别趋势向下；观察空仓等待反转。', color: colors.red }
+    : w === 'up' && d === 'down' ? { text: '从日线开始回调，周线未转空；等待日线企稳与回补信号。', color: colors.orange }
+    : w === 'up' && d === 'up' ? { text: '日周趋势同向向上；60分钟未参与，尚不能判断小周期启动或回踩。', color: colors.red }
+    : { text: '日周趋势依据不足，等待已完成信号明确。', color: colors.gray }
+  return { tier, scores, direction, volatility: decisionVolatility(cd),
+    exposure: cd.reference_exposure_range || (cd.reference_exposure_cap === 0 ? '0%' : '—'),
+    resonance: { name: r.name, color: r.color, dots: '●'.repeat(r.count) + '○'.repeat(5 - r.count), description: decisionResonanceReason(cd) },
+    mismatch: mm ? { ...mm, ageLabel, detail: cross ? `趋势日线 ${crossTime}${cd.mismatch === 'MM3' ? '下穿' : '上穿'} MA10。${decisionMismatchReason(cd)}` : decisionMismatchReason(cd) } : null }
+}

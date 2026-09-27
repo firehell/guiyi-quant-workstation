@@ -1110,6 +1110,12 @@ The opt-in `explanation` request with `decision_v2=true` reads completed D1/W1 c
 
 The guard baseline is a prior completed, observation-eligible D1 Close from the same physical owner/calculation segment. Missing baseline remains unavailable; no settlement, previous-close alias, synthetic roll price or current Close substitution. Shared selection, status-card selection, previous Close and current Close keep distinct source identities. Context owner conflicts become unknown/missing, never mixed prices. All outputs are read-only explanations, not account, execution or causal profitability facts.
 
+`guiyi_cdv2_daily_weekly_presentation_v1` adds read-only advice and first-action copy to these facts. It reuses the existing first-action priority with omitted hourly idle, never inventing hourly confirmation. Incomplete daily/weekly states cannot establish a permissive first-action result; known bearish trend facts may retain their conservative warning. Stock-index and fixed stock-allocation copy is adapted to futures observation without changing the numerical CDV2 action, scores or exposure. Original weights and certainty thresholds remain unchanged: the daily/weekly maximum is 78, not rescaled to 100. The Web header remains visible while the body is collapsed, remembers the overall fold preference and offers a separate evidence fold. Snapshot/identity changes discard old results and close evidence. Missing volatility and state facts remain explicitly unavailable.
+
+#### Scenario: Presentation does not change strategy or reference results
+- **WHEN** daily/weekly CDV2 explanation is read or its UI folds are toggled
+- **THEN** first-action and advice remain presentation-only, the same reference trades are returned, and no missing hourly state is treated as confirmed
+
 
 #### Scenario: Missing cross-period facts stay unavailable
 - **WHEN** the optional display is requested

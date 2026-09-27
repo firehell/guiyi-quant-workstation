@@ -1500,6 +1500,9 @@ def test_cdv2_explanation_uses_only_available_context_and_no_hidden_trade_gate(p
     from app.api.market_newow import _product_response
     wire=_product_response(result).model_dump(mode='json')['explanation']['value']['decision_v2']
     assert wire['cdv2']['executable'] is False
+    assert wire['cdv2']['presentation']['version'] == 'guiyi_cdv2_daily_weekly_presentation_v1'
+    assert wire['cdv2']['presentation']['scope'] == 'daily_weekly'
+    assert wire['cdv2']['presentation']['first_action']['rule_token']
     assert wire['cdv2']['trend_state']['m60']=='unknown'
     assert 'trend_m60' in wire['cdv2']['missing_roles']
     assert wire['prices']['source_family']=='canonical_channel'
@@ -1523,6 +1526,7 @@ def test_cdv2_tail_interruption_does_not_present_old_state_as_current(product_ca
     assert result['prices'] is None
     assert all(f['status'] == 'unavailable' for f in result['cdv2']['facts'])
     assert result['cdv2']['trend_state']['week' if frequency == '1w' else 'day'] == 'unknown'
+    assert result['cdv2']['presentation']['first_action']['level'] == 'unknown'
 
 
 @pytest.mark.parametrize('frequency', ['1d', '1w'])

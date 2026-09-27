@@ -44,22 +44,22 @@ test('daily/weekly card exposes states, ages and two-period R4 scope; refresh an
   app.mount(root)
   assert.match(nodeText(root), /60分钟未参与/)
   assert.equal(mock.calls.length, 1)
-  const button = () => findNode(root, n => n.type === 'button')!
+  const button = () => findNode(root, n => n.props['aria-label'] === '刷新综合决策')!
   assert.equal(mock.calls[0].request.snapshotToken, 'jm-snapshot')
   mock.calls[0].resolve(output())
   await nextTick(); await nextTick()
   const states = findNode(root, n => n.props['aria-label'] === '日周策略状态与信号年龄')!
-  assert.match(nodeText(states), /日线趋势.*持有.*0 根日K.*周线趋势.*持有.*2 根周K/)
+  assert.match(nodeText(states), /周线趋势.*持有.*2 根周K.*日线趋势.*持有.*0 根日K/)
   assert.equal(findNodes(states, n => n.type === 'article').length, 4)
   response.value = { ...input(), value: { bars: [] } } as any
   await nextTick()
   assert.equal(mock.calls.length, 1, 'same snapshot chart paging must not trigger another composite read')
   const reasons = findNode(root, n => n.props['aria-label'] === '共振与错配依据')!
   assert.match(nodeText(reasons), /日周确认，不包含60分钟确认/)
-  assert.match(nodeText(reasons), /未命中 MM1–MM4/)
+  assert.match(nodeText(root), /未命中 MM1–MM4/)
   ;(button().props.onClick as Function)()
   await nextTick()
-  assert.doesNotMatch(nodeText(root), /78 分/)
+  assert.doesNotMatch(nodeText(root), /78\s*分/)
   mock.calls[1].reject(new mock.NewowProductRequestError('NEWOW_RESOURCE_BUSY','busy'))
   await nextTick(); await nextTick()
   assert.match(nodeText(root), /图表仍在计算/)
@@ -70,8 +70,49 @@ test('daily/weekly card exposes states, ages and two-period R4 scope; refresh an
   assert.equal(mock.calls[3].request.identity.product, 'rb')
   mock.calls[2].resolve(output())
   await nextTick(); await nextTick()
-  assert.doesNotMatch(nodeText(root), /78 分/)
+  assert.doesNotMatch(nodeText(root), /78\s*分/)
   app.unmount()
+})
+
+test('composite card keeps scored header, five components, first action and independently folded evidence', async () => {
+  const stored = new Map<string,string>()
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>stored.get(k)??null,setItem:(k:string,v:string)=>stored.set(k,v)}})
+  const Panel = await component('newow/NewowDecisionV2Panel')
+  const root = element('root'), response = ref(input('cu')), before = mock.calls.length
+  const renderer = createRenderer(nodeOperations())
+  const app = renderer.createApp(defineComponent({setup:()=>()=>h(Panel,{response:response.value})}))
+  app.mount(root)
+  const payload=output()
+  Object.assign(payload.value.decision_v2.cdv2, { total:65, action:'回补窗口·分批建仓', action_code:'MM4', resonance:'R2', mismatch:'MM4', mismatch_age:0,
+    scores:{trend:24,oscillation:22,resonance:10,direction:12,volatility:-3}, certainty_cap:50,resonance_cap:30,reference_exposure_cap:30,reference_exposure_range:'10%–30%',volatility_pct:'2.5',volatility_level:'mid',
+    trend_state:{week:'up',day:'up',m60:'unknown'}, oscillation_state:{week:'holding',day:'cleared',m60:'idle'},
+    presentation:{version:'guiyi_cdv2_daily_weekly_presentation_v1',scope:'daily_weekly',advice:'趋势最新一根上穿 MA10，观察回补。',first_action:{rule_token:'daily_oscillation_cleared',level:'warn',title:'震荡日线已清仓 · 趋势建仓',detail:'等待回补信号。',source_formula_version:'first-action'}} })
+  mock.calls[before].resolve(payload); await nextTick(); await nextTick()
+  const header=()=>findNode(root,n=>n.props['aria-label']==='展开综合决策'||n.props['aria-label']==='收起综合决策')!
+  const body=findNode(root,n=>n.props.class==='decision-v2__body')!
+  assert.equal(header().props['aria-expanded'],false)
+  assert.equal(body.style.display,'none')
+  assert.match(nodeText(header()),/综合决策.*65 分.*中等确定性.*共振 R2.*错配 MM4/)
+  ;(header().props.onClick as Function)(); await nextTick()
+  assert.equal(header().props['aria-expanded'],true); assert.notEqual(body.style.display,'none')
+  assert.equal(stored.get('guiyi_newow_composite_collapsed'),'0')
+  const scores=findNode(root,n=>n.props['aria-label']==='综合决策五项评分')!
+  assert.equal(findNodes(scores,n=>n.props.class==='decision-v2__score').length,5)
+  assert.match(nodeText(scores),/24.*趋势一致.*22.*震荡确认.*10.*共振.*12.*方向拐点.*-3.*波动折损/)
+  assert.match(nodeText(root),/震荡日线已清仓.*错配期·趋势转多.*最新一根日K.*10%–30%/)
+  const evidence=()=>findNode(root,n=>n.props['aria-label']==='展开综合依据'||n.props['aria-label']==='收起综合依据')!
+  const details=findNode(root,n=>n.props.class==='decision-v2__evidence')!
+  assert.equal(evidence().props['aria-expanded'],false); assert.equal(details.style.display,'none')
+  ;(evidence().props.onClick as Function)(); await nextTick()
+  assert.equal(evidence().props['aria-expanded'],true)
+  assert.match(nodeText(details),/2.5%.*日周最高78分/)
+  response.value=input('rb'); await nextTick()
+  assert.doesNotMatch(nodeText(root),/65 分|错配 MM4|回补窗口/)
+  ;(header().props.onClick as Function)(); await nextTick(); app.unmount()
+  const second=element('root'), app2=renderer.createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('al')})}))
+  app2.mount(second)
+  assert.equal(findNode(second,n=>n.props['aria-label']==='展开综合决策')!.props['aria-expanded'],false)
+  app2.unmount(); delete (globalThis as any).localStorage
 })
 
 test('status card has independent folding, preference restore, explanatory expansion and oscillation facts', async () => {

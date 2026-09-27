@@ -46,8 +46,15 @@ export interface Cdv2 {
   reference_exposure_cap: number
   reference_exposure_range: string
   volatility_pct: string | null
+  volatility_level?: 'low' | 'mid' | 'high' | null
   extra_sources: Record<string, string>
   missing_roles: string[]
   facts: { role: string; state: string | null; age: number; frequency: string; bar_end: string | null; physical_contract: string | null; segment_id: string | null; source_category: string; status: string; reason: string | null }[]
+  presentation?: {
+    version: string
+    scope: 'daily_weekly'
+    advice: string
+    first_action: { rule_token: string; level: 'ok' | 'warn' | 'violate' | 'unknown'; title: string; detail: string; source_formula_version: string | null }
+  }
 }
 export interface NewowDecisionV2 { cdv2: Cdv2; prices: CrossPeriodPrices | null }
