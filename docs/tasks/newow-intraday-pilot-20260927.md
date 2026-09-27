@@ -12,8 +12,8 @@ develop b48ffe0e504ee3d0850a2e75c2820dca26f9aefe；用户计划修改已复制�
 
 ## 进度与裁定
 
-- P0–P5c 已实现并进入最终回归；P2 最终 source/generation 读回通过。
-- P6 代码/数据/容量/浏览器/独立 Review 已完成；最后 develop 集成读回进行中。
+- P0–P6 首轮已完成；P2 最终 source/generation 独立读回通过。
+- P6 代码/数据/容量/浏览器/独立 Review 已完成并集成 develop。
 - Pre-flight：P1 周期集合影响默认枚举，须显式保持日周/60m 既有默认；P3 端点与 P5a 实际 warmup 决定 P2 最终结果；P5b 完整快照是 P5b-F 前提；P5c 后端修改等上述交接。
 - Ruling：执行 inline，最终高风险 fresh-context Review；现有用户授权覆盖必要数据修复与 develop 集成，不重复审批。
 
@@ -104,3 +104,11 @@ P7全品种精确盘点/维护/资产构建及240输入/480基础/240融合逐�
 
 - 最终合并候选数据回归：`PYTHONPATH=.:packages/quant-core:services/quant-api services/quant-api/.venv/bin/pytest -q services/quant-api/tests/data_foundation/test_aggregation.py services/quant-api/tests/data_foundation/test_historical_session_window.py services/quant-api/tests/data_foundation/test_session_anchor_repair.py services/quant-api/tests/data_foundation/test_historical_data_manager.py services/quant-api/tests/data_foundation/test_daily_maintenance.py services/quant-api/tests/data_foundation/test_newow_readiness_cli.py services/quant-api/tests/data_foundation/test_storage.py`：352PASS，25.23s。
 - 10d最终1m HTTP：冷基础33.148s、融合20.745s、第二页17.540s，同一snapshot，完整基础曲线33169；没有把旧6264耗时改成10d结果。
+
+## develop 集成读回
+
+2026-09-27远端fetch确认origin/develop=afde169a4e57799691a6c0a28a223ab758985044。候选先合最新develop依赖，再以fast-forward将 `3f5ee0e194542a3601ad8f47658e596acd608cd3` 集成develop，未发生冲突覆盖或force update。root用户计划在实施前完整复制至任务分支，其原始内容与任务计划去掉执行通知后逐字节相同；原计划sha256=`eb38ecdd68bce2b0ce1ea5c9321a64c99422c722bc4cf3dcbae1f607ae6ab3af`，仅该相关文件临时保存到stash `35b0cdab6114416807a5114bb97d4d6e075d6755`，未stash/覆盖其他路径。原始计划保留可恢复，已纳入本轮计划并补充已授权的实施裁定。九个用户untracked outputs目录保留。
+
+集成后的root develop重跑同98项Python定向：98PASS/8.88s；`cd apps/quant-web && pnpm test`：719PASS/1SKIP/6686ms。业务源码自10d未变，最终交接commit只记录证据/集成结果。独立Review精确范围10d，Confirmed Issue=0，允许集成develop。实际命令输出保存为本输出目录的txt，失败/skip没有从证据中删除。
+
+本轮结论：P0–P6首品种历史候选COMPLETED，允许集成develop（已执行）；不是已发布、Runtime Ready、OOS通过或60品种完成。最小下一步只有P7全品种精确只读盘点，再按实测缺口安排扩展任务。

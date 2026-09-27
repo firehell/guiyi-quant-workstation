@@ -1,0 +1,961 @@
+$ node --test tests/*.test.ts
+✔ activates generic facts and mounts Newow in the unified workspace (39.10625ms)
+✔ gives active analysis views their own history, while alert management remains unavailable (0.607542ms)
+✔ keeps Free HTDY and SuBing as separate explicit adapters inside the stable workspace slot (1.1615ms)
+✔ canonicalizes omitted and legacy Trend routes without presenting the retired workspace (0.312917ms)
+✔ keeps navigation and one workspace slot mounted while source data changes locally (1.23125ms)
+✔ gives every market detail route the same full-width layout canvas (0.92925ms)
+✔ accepted Newow chart starts first-screen research once without viewport observation (1.528708ms)
+✔ historical Newow mode hides the independent current quote and contract header (0.866209ms)
+✔ empty main chart legend follows the selected strategy instead of defaulting to main rise (935.403167ms)
+✔ trend A/B boundaries render as lightweight one-pixel lines above the columns (343.581542ms)
+✔ keeps action labels passive and preserves an established viewport and focus when earlier data arrives (236.888041ms)
+✔ dense same-Bar hints stay queryable by exact ID without adding native markers or anchor series (184.825708ms)
+✔ connects action labels to the exact server reference price coordinate (255.488167ms)
+✔ reprojects server-price action labels while the user changes the price scale (162.403625ms)
+✔ same identity resets a retained viewport when a loading transition returns a different time axis (158.41425ms)
+✔ same product and frequency strategy switches keep viewport while replacing mutually exclusive overlays (494.673584ms)
+✔ creates three native panes with volume zero/color and releases resources (313.146833ms)
+✔ channel primitive replaces strategy-owned data on snapshot pagination and clears invalidated snapshots (298.116708ms)
+✔ signed MACD bars share pane 2 and switch/invalidated snapshots remove every old series (275.155583ms)
+✔ zhaoyao mirror uses one dedicated primitive and no generic value series (302.436917ms)
+✔ same chart instance restores identity-specific layers and viewport across dual A -> loading -> B -> A (242.648542ms)
+✔ dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit (467.228459ms)
+✔ reference price lines use supplied values and remove stale levels on replacement or invalidation (181.548ms)
+✔ oscillation breakout is an orange native price line and is revoked on strategy switch or loading (254.066167ms)
+▶ Alert Rule AST ownership guard
+  ✔ accepts exact direct literal ownership (55.556791ms)
+  ✔ rejects an unexpected rule literal (3.996208ms)
+  ✔ rejects direct rule_code routing outside the owner (4.299833ms)
+  ✔ fails closed on malformed TypeScript and Vue (2.160042ms)
+  ✔ accepts the real repository Web sources (1631.066792ms)
+✔ Alert Rule AST ownership guard (1698.6475ms)
+▶ two-Rule Alert presentation
+  ✔ owns the exact SuBing observation labels (2.619625ms)
+✔ two-Rule Alert presentation (5.142292ms)
+▶ persistent Alert markers
+  ✔ uses both rules only for actual-dominant 15m (1.481834ms)
+  ✔ maps first-seen events to observation markers and only exposes them under HTDY (23.221875ms)
+  ✔ maps SuBing Event facts to S markers without formula recomputation (1.232708ms)
+  ✔ does not reinterpret malformed SuBing facts as a sell marker (0.132167ms)
+  ✔ keeps SuBing markers visible without an overlay while retaining HTDY visibility (0.608917ms)
+  ✔ keeps current and persistent markers distinct while sorting by time (0.569333ms)
+  ✔ fetches both 15m rules and clears its timer on dispose (1.677667ms)
+  ✔ reverse frequency switching ignores a stale slow response and requests each exact frequency (0.872333ms)
+  ✔ HTDY workspace narrows read-only Event requests to HTDY and exposes immutable Event facts (0.568583ms)
+  ✔ keeps last immutable Event snapshot while marking an Event refresh unavailable (0.887208ms)
+  ✔ same-identity replacement retains the successful Event snapshot when refresh fails (1.126667ms)
+  ✔ an Event response with a mismatched requested identity fails closed (0.466ms)
+  ✔ an older same-identity replacement cannot overwrite a newer Event snapshot (0.972ms)
+  ✔ an older same-identity failure cannot mark a newer Event snapshot stale (1.274291ms)
+  ✔ a live bar update cannot cancel the initial persistent Event window (0.362792ms)
+  ✔ a live bar update cannot cancel an in-flight prepended Event window (0.464458ms)
+  ✔ a recent refresh merges without canceling an in-flight prepended Event window (1.934917ms)
+  ✔ a full replacement preserves a prepended window when prepend-first completes (0.4255ms)
+  ✔ a full replacement preserves a prepended window when replace-first completes (0.334917ms)
+  ✔ a full replacement preserves a recent refresh when recent-first completes (0.808833ms)
+  ✔ a full replacement preserves a recent refresh when replace-first completes (0.65975ms)
+  ✔ a stale full replacement failure cannot override an accepted prepended window (0.752083ms)
+  ✔ a stale full replacement success cannot hide a newer prepended-window failure (3.093959ms)
+✔ persistent Alert markers (45.141958ms)
+▶ normalizeBarSeries
+  ✔ sorts ascending and keeps the last value for a duplicate formal end (5.59475ms)
+✔ normalizeBarSeries (7.979959ms)
+▶ barTime
+  ✔ formats intraday chart times in Asia/Shanghai for the axis and crosshair (46.074125ms)
+  ✔ positions every intraday K-line at its opening time (0.316167ms)
+  ✔ keeps daily and weekly K-lines at their canonical trading day (2.6985ms)
+  ✔ keeps BusinessDay values date-only when formatting chart times (0.61525ms)
+  ✔ merges daily bars with different time strings on the same trading_day (0.854583ms)
+  ✔ refuses to hide different OHLCV values for the same canonical key (0.741792ms)
+  ✔ maps daily bars to the same BusinessDay chart time (0.428208ms)
+  ✔ keeps intraday bars distinct by normalized datetime (0.451375ms)
+  ✔ normalizes period case for daily dedupe (0.422792ms)
+  ✔ uses chart time keys for intraday hover lookup (0.799041ms)
+  ✔ uses canonical trading day chart keys for daily hover lookup (0.780083ms)
+  ✔ coerces trading_day values from mixed formats (0.196917ms)
+✔ barTime (56.483959ms)
+✔ candidate preview policy exists as explicit isolated configuration (9.28475ms)
+✔ proxy allows exact GET resources only, never encoded paths or WS (2.456583ms)
+✔ wall-clock weekly preview matches a dynamic identity without a fixed cutoff (377.586292ms)
+✔ browser preview identity must match code, cutoff and both fixed origins (25.82125ms)
+✔ overflow AP preview matches 8011 origin and rejects PD/PT 8010 identity (0.798542ms)
+✔ 8011 candidate origin proxies market API to 8011 and binds 5175, not PD/PT 8010/5174 (19.478084ms)
+✔ AP 5175 overlay reuses origin-aligned proxy and does not bind 5174 (29.910417ms)
+✔ 8011 candidate plugin refuses to share PD/PT web port 5174 (0.666583ms)
+✔ candidate config keeps the exact exclusive cutoff string (27.937166ms)
+✔ candidate cutoff validation rejects invalid dates and a future microsecond (33.273041ms)
+✔ preview identity distinguishes microseconds but accepts equivalent timezones (0.342541ms)
+✔ server middleware denies management before proxy and destroys API upgrades (0.75975ms)
+✔ candidate server rejects attempts to bind non-loopback (0.398625ms)
+▶ initialChartLogicalRange
+  ✔ shows exactly the latest 300 bars when the live seam adds to the initial page (1.729417ms)
+  ✔ shows all available bars when fewer than 300 are loaded (3.007458ms)
+✔ initialChartLogicalRange (7.92025ms)
+✔ redactSensitiveText removes absolute unix paths (14.704709ms)
+✔ redactSensitiveText removes tokens and webhooks (1.925125ms)
+✔ redactSensitiveText removes SQL and traceback fragments (0.206083ms)
+✔ toSafeErrorInfo keeps error type and suggestion (0.294125ms)
+✔ toSafeApiError does not leak file paths from axios detail (0.177709ms)
+✔ earlierHistoryLoadError does not treat timeout as incomplete mapping (0.150584ms)
+✔ formatApiLogSummary stays free of query bodies (0.791667ms)
+✔ free exposes identity facts and never strategy history (7.649708ms)
+✔ free formats all supported series kinds and periods as market facts (1.026209ms)
+✔ free reports ready, stale, and unavailable data states without a strategy conclusion (0.287375ms)
+✔ free handles research errors and every Range state without fabricating a strategy conclusion (0.151375ms)
+✔ keeps current repainting observation and first-seen Event as separate facts (18.152917ms)
+✔ keeps Event history unavailable explicit without fabricating a current observation (0.913125ms)
+✔ current repainting observation ignores an older marker when the latest completed Bar has none (0.223542ms)
+✔ keeps last successful Event facts and history when the Event API is stale (0.153916ms)
+﹣ HTDY Web observation-only output matches the fixed Python Golden Sample (0.764041ms) # set HTDY_GOLDEN_BUNDLE to the generated read-only bundle
+✔ HTDY Web exact output agrees with the tracked Step 1 production golden (5.509958ms)
+✔ calculateEMA returns no points when there is not enough data (6.620667ms)
+✔ calculateEMA returns one point per bar after the seed window (0.464333ms)
+✔ calculateEMA supports main chart periods 10, 21 and 60 with the same seed rule (0.424667ms)
+✔ tdxXma uses the corrected symmetric clipped future-looking window (0.338459ms)
+✔ tdxXma normalizes period 6 to the symmetric seven-bar window (0.075709ms)
+✔ HTDY Web remains historical browser observation-only with a conservative 27-bar repaint zone (0.061958ms)
+✔ tdxXma repaints a historical value when future tail changes (0.067125ms)
+✔ calculateHuoTianDaYou returns observation-only channel points aligned to bars (2.525833ms)
+✔ HTDY yellow candle uses all original strict conditions and partial STICKLINE segments (0.744208ms)
+✔ HTDY white candle requires the body to cross ZK1 and preserves white-before-yellow order (0.134375ms)
+✔ HTDY consecutive observations fire only on the newly completed third candle (0.05525ms)
+✔ HTDY Web output exposes only buy and sell observations (1.312875ms)
+✔ HTDY future tail changes historical observation output and remains repainting-only (2.054125ms)
+✔ calculateMACD returns aligned dif dea and histogram points (0.328125ms)
+✔ calculateATR returns no points before the period and then true range averages (0.127625ms)
+✔ only enabled EMA is derived while MACD is always available (21.594ms)
+✔ HTDY is only derived when its observation overlay is explicitly visible (21.7775ms)
+✔ Range Detector remains absent until its calculation anchor is frozen (0.325209ms)
+✔ Range Detector calculates only from its anchored bars and ignores later prepends (22.554625ms)
+✔ crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp (0.586958ms)
+✔ crosshair exposes the exact marker tooltip at its evidence bar (0.426708ms)
+✔ crosshair reports a causal Range Detector fact without treating visual start as confirmation (0.592583ms)
+✔ missing hover values render as unavailable instead of a fabricated zero (16.813667ms)
+▶ KlineChart opening-time presentation
+  ✔ uses the shared opening-time coordinate for intraday chart data (1.291959ms)
+  ✔ passes the selected period to the hover legend (0.695583ms)
+  ✔ locates focused actions by their formal bar end before using the display coordinate (0.079833ms)
+  ✔ reapplies the current EMA palette whenever derived series render (0.101542ms)
+✔ KlineChart opening-time presentation (4.974958ms)
+✔ only none and HTDY remain as research overlays (1.493667ms)
+✔ generic EMA and Range visibility is independent from the selected overlay (0.120542ms)
+✔ HTDY remains explicitly repainting and observation-only (0.261709ms)
+✔ normalizes the real Decimal-string Market bar wire once at the shared API boundary (12.25875ms)
+✔ rejects non-finite, blank, boolean, null and malformed Market numeric wire values (0.649958ms)
+✔ keeps the quote header and cached metadata while switching Newow strategies (125.549042ms)
+✔ reuses one generic source when only the analysis view changes (20.06175ms)
+✔ an incompatible product identity clears the old header immediately (0.85ms)
+✔ late A and B responses cannot overwrite the active C identity (1.636334ms)
+✔ returning to the last completed identity invalidates an intervening series request (3.816584ms)
+✔ keeps route state explicit and delegates pagination and disposal to useMarketSeries seam (10.364834ms)
+✔ keeps sourced market facts readable when optional research is unavailable (12.975417ms)
+✔ refreshes the header from live series mutations for the active identity (1.142458ms)
+✔ fails closed when product metadata is unavailable (0.979125ms)
+✔ fails closed when metadata does not contain the requested symbol (0.541458ms)
+✔ pagination failure preserves the successful identity snapshot (1.63125ms)
+✔ reports only an active generation market-series failure (1.859625ms)
+✔ Newow chart starts while generic series is still pending (8.7045ms)
+✔ SuBing daily falls back to its quality-segmented reference when the strict generic series fails (1.121958ms)
+✔ generic series failure does not suppress an otherwise valid Newow workspace (0.644666ms)
+✔ detail icon registry is finite and labeled (31.634625ms)
+✔ detail icons preserve the frozen clean-room drawing contract (1.99275ms)
+✔ free never exposes strategy markers (60.837833ms)
+✔ Trend rejects generic Alert markers and receives Newow markers through its dedicated projection (0.864667ms)
+✔ HTDY workspace admits only immutable HTDY Event markers (0.461708ms)
+✔ SuBing workspace admits only immutable SuBing Event markers (0.209625ms)
+✔ missing, corrupt, and wrong-version storage fail closed (9.129167ms)
+✔ v9 migrates generic settings to free only and never selects HTDY (0.351917ms)
+✔ normalizes invalid saved values and isolates HTDY from Free (0.474959ms)
+✔ saving never persists a contract or unsupported values (0.310792ms)
+✔ replacing Free preferences preserves HTDY and the current view (0.098166ms)
+✔ migrates an omitted view deterministically to Free (8.854583ms)
+✔ legacy Trend migrates to the unified Newow trend identity and preserves a legal focus (2.618625ms)
+✔ roundtrips a completed Newow focus through the unified route (0.34225ms)
+✔ SuBing research routes accept only four actual dominant periods (0.655916ms)
+✔ rejects explicit fixed-view identity conflicts without correcting the URL (0.124ms)
+✔ validates flexible identities and requires a contract only for contract series (0.309666ms)
+✔ fails closed for unknown values and malformed route fields (0.312208ms)
+✔ serializes only concrete contract and allowed focus fields (0.41975ms)
+✔ switching views restores only active unified view state (0.4545ms)
+✔ reselecting a flexible view preserves its same-symbol contract identity (0.483125ms)
+✔ switching a flexible contract view to another symbol uses safe restore without old contract (0.338166ms)
+✔ events enter their exact view and bar (0.605292ms)
+✔ migration preserves physical identities and HTDY focus, rejects malformed and conflicting fields (1.578917ms)
+✔ only Newow strategy changes preserve the price shell (1.598458ms)
+✔ dual presentation roundtrips without inventing a fourth strategy kernel (0.533167ms)
+✔ all Slice A shell primitives are valid typed Vue components (65.141708ms)
+✔ top bar keeps text semantics and capability-gates alert actions (0.51725ms)
+✔ quote header names the comparison basis and limits status to quote availability (0.196583ms)
+✔ SuBing keeps the chart surface free of runtime summary and reference-version disclosure (0.25175ms)
+✔ view navigation exposes six flat analysis choices and emits exact identities (0.251708ms)
+✔ facts and disclosures preserve the strict presentation contract (0.148875ms)
+✔ market facts disclose status before expansion and close on identity change (0.111ms)
+✔ market facts dialog supports accessible close paths and identity-bounded focus restoration (0.105375ms)
+✔ history uses one source and mobile drawer restores focus (0.332291ms)
+✔ the shared K-line stage uses the registered clean-room action icons (0.526417ms)
+✔ the shared K-line stage exposes an identity-bounded focus seam without view semantics (1.141375ms)
+✔ Free puts direct indicator controls before the chart instead of a status strip (42.638208ms)
+✔ builds sourced market facts from the latest completed bar without synthetic decisions (38.405542ms)
+✔ withholds change and pct when the previous completed bar is absent (0.232709ms)
+✔ does not invent a physical contract for continuous data (0.150875ms)
+✔ keeps the contract route identity as the displayed contract (0.258125ms)
+✔ fails closed when metadata or bars disagree with the requested identity (0.179ms)
+✔ fails closed when the latest actual-dominant bar has no physical contract (1.05775ms)
+✔ keeps stale data distinct from unavailable data (0.195708ms)
+✔ ignores research from another symbol instead of contaminating the header (0.268625ms)
+✔ marks empty bars unavailable without manufacturing market prices (0.46525ms)
+✔ groups sourced facts into market extensions, identity, and data trust (0.700292ms)
+✔ never manufactures the removed five-day change row for any series identity (0.765666ms)
+✔ is deterministic and does not mutate source bars (1.066375ms)
+✔ after-market failure remains separate from valid completed Canonical quotes (0.671042ms)
+✔ formats Decimal text without binary conversion or meaningless trailing zeroes (3.222833ms)
+✔ rounds display percentages by declared source unit without Number conversion (0.360916ms)
+✔ supports exact grouped and fixed precision display for huge Decimal lexemes (0.1295ms)
+✔ labels daily and current-period changes by their actual comparison basis (0.061375ms)
+✔ formats market instants in Beijing time and keeps trading day separate (28.408ms)
+✔ quote availability never endorses strategy or runtime readiness (0.083875ms)
+✔ freezes the approved Market Home icon palette and sizes (6.782ms)
+✔ uses the approved glyph geometry without trading semantics (0.094875ms)
+✔ normalizes Decimal strings and preserves typed unavailable reasons (3.991458ms)
+✔ accepts a complete 60-item snapshot when one unavailable product retains its contract identity (1.145667ms)
+✔ rejects contradictory source, availability, and completed-value identities (0.23225ms)
+✔ applies reset atomically and ignores messages from an older socket generation (0.635125ms)
+✔ requires a snapshot before quotes and rejects out-of-order or cross-identity quotes (1.039916ms)
+✔ accepts same-bar status updates without treating them as overview authority changes (1.160042ms)
+✔ ignores an older frame observed after a newer accepted quote (0.923625ms)
+✔ keeps last values stale on disconnect, reconnects once, and releases resources (2.18025ms)
+✔ uses bounded 10s-to-60s backoff and exposes unavailable after the retry budget (0.230583ms)
+✔ projects same-contract completed price without mutating the overview snapshot (3.555166ms)
+✔ uses a backend-authorized rollover quote without rewriting completed D1 and W1 facts (0.192041ms)
+✔ keeps completed D1 facts when the live item is unavailable (0.070083ms)
+✔ ordinary Market Home product clicks use the discovered weekly Newow identity (324.795667ms)
+✔ Home header choice enters selected view and symbol through the page handler (72.965208ms)
+✔ uses collapsed observation and descending sort for a new user (5.865875ms)
+✔ preserves valid version 1 preferences while defaulting a missing direction to descending (0.222458ms)
+✔ accepts close and ascending preferences while returning only whitelisted fields (0.076125ms)
+✔ falls back to safe defaults for corrupt, unknown, or invalid preferences (0.159958ms)
+✔ writes only normalized preference fields and safely ignores blocked storage (0.591375ms)
+✔ percent distinguishes zero, missing and signed ratios (5.629625ms)
+✔ prices preserve numeric precision and do not turn absent values into zero (1.355125ms)
+✔ direction is determined only by finite nonzero values (0.113209ms)
+✔ volume ratios use two decimals without exposing binary arithmetic noise (0.31975ms)
+✔ source interruption disclosure keeps recovered prices distinct from strategy readiness (0.429917ms)
+✔ missing history stays unavailable rather than being labeled normal warmup (0.34ms)
+✔ loads independent resources and coalesces duplicate in-flight refreshes (1.842542ms)
+✔ retains the previous resource snapshot and marks only that resource stale after failure (0.327791ms)
+✔ reuses a fresh accepted overview immediately after dispose and reentry (0.154292ms)
+✔ keeps an expired overview visible while one background refresh replaces it (0.183833ms)
+✔ invalidating an identity prevents its late response from replacing the new snapshot (0.125667ms)
+✔ start and dispose balance visibility listeners and polling timers across reentry (0.197083ms)
+✔ visible timer recovers failed overview and renews expired snapshots without duplicate reads (0.440416ms)
+✔ directory loads once independently of a pending overview and keeps its accepted snapshot on failure (0.580792ms)
+✔ uses only actual-dominant chart route intents for products and immutable HTDY Events (4.806667ms)
+✔ sends the ordinary unified product entry to Newow while preserving Event identity (0.192875ms)
+✔ explicit Home view choices preserve symbol and fixed view frequency (0.1155ms)
+✔ fails closed when Home has not discovered an open Newow frequency (0.2015ms)
+✔ normalizes finite Decimal strings and preserves null market home metrics (2.422792ms)
+✔ requires four price bins and matches the unavailable bin to null 1d price facts (1.324875ms)
+✔ fails closed for malformed market home authority facts (0.835292ms)
+✔ fails closed for overview status, date, and per-sector fact disagreements (0.652917ms)
+✔ fails closed when summary bins disagree with the returned item facts (0.767167ms)
+✔ fails closed when a completed D1 close is null (0.900625ms)
+✔ distinguishes ready HTDY events from an unavailable current-event projection (2.32575ms)
+✔ normalizes mixed HTDY and SuBing current Event facts (0.2855ms)
+✔ fails closed for a calendar-invalid HTDY instant that Date.parse would normalize (0.287583ms)
+✔ fails closed for malformed historical Alert Event facts (0.300417ms)
+✔ maps D1 and W1 only into the approved alignment states (3.922875ms)
+✔ keeps overview and Runtime authority independent while stale facts override colored row states (0.287875ms)
+✔ server-degraded overview is current transport data but withholds stale row facts (0.132ms)
+✔ filters and sorts Market Home rows locally without changing resource inputs (3.314708ms)
+✔ orders Event rows by direction while keeping missing Events last and time ties stable by symbol (8.932083ms)
+✔ cycles a sortable column through descending, ascending, and default order (0.118041ms)
+✔ sorts exact close values and uses symbol ascending for equal values (0.928041ms)
+✔ keeps null and non-finite numeric values last in both directions (0.136875ms)
+✔ sorts only filtered rows without changing the source array (0.130542ms)
+✔ normalizes a bounded history page without inventing a total or delivery status (6.738459ms)
+✔ rejects malformed history filters and cursors (0.15275ms)
+✔ query changes abort and prevent an old message page from overwriting the new filter (2.642459ms)
+✔ loads cursor pages once and appends immutable event identities (0.9425ms)
+✔ restores successful pages, cursor, and scroll by query before a fresh reentry fetch (1.344875ms)
+✔ keys cached pages by query and lets manual refresh replace a fresh hit (0.361166ms)
+✔ expired refresh blocks the cached cursor until its first page is accepted (0.950917ms)
+✔ force refresh blocks the cached cursor until its first page is accepted (2.876667ms)
+✔ an existing page cannot pollute a replacement refresh when old-more finishes first (0.330375ms)
+✔ an existing page cannot pollute a replacement refresh when refresh finishes first (0.179291ms)
+✔ a failed refresh releases the preserved complete cache for its old cursor (0.261166ms)
+✔ query replacement releases pagination when the old page later resolves (0.238417ms)
+✔ query replacement releases pagination when the old page later rejects (0.18ms)
+✔ home and detail share one global market navigation and one product selector (3.527042ms)
+✔ detail analysis navigation uses one flat six-choice order on every view (0.718167ms)
+✔ Market Home renders the complete filtered list without a fake load-more footer (1.028666ms)
+✔ the top bar is the only product identity header above the chart (0.181125ms)
+✔ detail top bar names return and record destinations explicitly (0.10925ms)
+✔ home table omits the unavailable target-reference column without changing row facts (0.111ms)
+✔ the Web exposes only the strategy-free and HTDY overlay choices (2.691ms)
+✔ market source surface has no strategy history or action marker API (2.036917ms)
+▶ market historical series
+  ✔ binds contract history to the normalized requested physical contract (1.896708ms)
+  ✔ binds actual-dominant history to its one inclusive resolved segment (0.146666ms)
+  ✔ fails closed when an actual-dominant bar has no resolved segment (1.342791ms)
+  ✔ fails closed when an actual-dominant bar matches multiple resolved segments (0.140625ms)
+  ✔ fails closed when the resolved segment has no physical contract (0.084583ms)
+  ✔ leaves continuous history physically unbound (0.22825ms)
+  ✔ maps prepend bars from the prepend page identity rather than the current page (0.347166ms)
+  ✔ sorts and deduplicates an initial page by formal bar_end (0.269417ms)
+  ✔ prepends an older page without duplicating an overlapping bar_end (0.278666ms)
+  ✔ rejects a page response from an older identity generation (0.260666ms)
+  ✔ requests 300 bars for the initial view and each older-history page (1.841041ms)
+  ✔ shares an in-flight older-history request with concurrent callers (1.003958ms)
+  ✔ keeps the original identity when pagination and a replacement start in one tick (0.235958ms)
+  ✔ binds an older-history request to the identity that started it (0.138375ms)
+  ✔ clears the old public series before a replacement identity can fail (1.585708ms)
+  ✔ keeps the API next_before cursor for the earliest formal bar (0.115458ms)
+  ✔ exposes the queried series canonical coverage instead of a physical contract guess (0.196ms)
+  ✔ merges an older page into the full loaded canonical coverage (0.1555ms)
+✔ market historical series (11.744708ms)
+▶ market Live overlay
+  ✔ binds snapshot bars to the snapshot physical contract (1.780041ms)
+  ✔ fails closed when a contract snapshot identity differs from the requested contract (0.295125ms)
+  ✔ accepts the snapshot physical contract for actual-dominant overlays (0.147666ms)
+  ✔ reuses the established snapshot identity for ordinary bars (0.163875ms)
+  ✔ does not guess a physical contract for an ordinary bar before any snapshot identity (0.097709ms)
+  ✔ uses reset authority for the next matching bar and rejects the prior trading day (0.128125ms)
+  ✔ replaces the overlay identity when a snapshot changes physical contract (0.137333ms)
+  ✔ merges only snapshot bars strictly after the canonical seam and replaces duplicate live ends (2.191ms)
+  ✔ drops the transient overlay on a websocket reset while retaining canonical history (0.876875ms)
+  ✔ ignores late REST and websocket messages from a replaced series generation (0.627292ms)
+  ✔ retains history after a socket disconnect and reconnects with its newest live bar (0.527667ms)
+  ✔ keeps CLOSED and BREAK phases historical-safe without treating quiet bars as an error or reconnect (0.145917ms)
+  ✔ waits for the after-market canonical seam when opened after close (23.485125ms)
+  ✔ restores a post-close display snapshot without treating it as realtime Live (0.361583ms)
+  ✔ opens the post-close handoff for an explicitly requested real contract (0.125ms)
+  ✔ preserves an empty post-close reconnect but clears an explicit none source (0.163ms)
+  ✔ drops old post-close bars when a reconnect snapshot changes day or contract (3.698667ms)
+  ✔ tracks an empty realtime snapshot identity before the first bar arrives (1.977292ms)
+  ✔ keeps the canonical page visible when the optional state request is unavailable (0.47275ms)
+  ✔ does not open a Live socket for continuous, non-rank1 contract, daily, or weekly history (0.27ms)
+  ✔ replaces a canonical advance and drops now-formal live bars without losing later live bars (0.367917ms)
+  ✔ refreshes the canonical edge before closing a socket on after-market CLOSED state (2.455375ms)
+  ✔ keeps the socket open until a CLOSED canonical refresh resolves (1.701166ms)
+  ✔ drops stale Live bars and handles a failed CLOSED canonical refresh (0.960292ms)
+  ✔ retains a post-close snapshot when the announced canonical refresh fails (2.020125ms)
+  ✔ drops stale Live bars when an advanced canonical refresh returns an empty page (0.747292ms)
+  ✔ keeps the newest canonical edge when same-series refresh responses resolve out of order (3.207875ms)
+✔ market Live overlay (51.086167ms)
+✔ normalizeApiBaseURL defaults to same-origin /api/v1 when no API base is configured (4.0265ms)
+✔ normalizeApiBaseURL preserves configured URL and removes trailing slashes (0.717ms)
+✔ normalizeApiBaseURL ignores localhost env on external host (0.114625ms)
+✔ resolveWsURL uses current HTTPS origin when no WebSocket URL is configured (0.127292ms)
+✔ resolveWsURL falls back to the market websocket path when no browser location is available (0.101625ms)
+✔ resolveWsURL preserves explicitly configured WebSocket URL without trailing slashes (0.088458ms)
+✔ resolveWsURL ignores localhost env on external host (0.079875ms)
+✔ closed exact exit displays authoritative return with profit/loss colors (24.08575ms)
+✔ missing, interrupted, ambiguous and foreign exits never infer returns (0.149834ms)
+✔ pagination and reordered unrelated trades preserve exact single-trade return (0.101125ms)
+✔ interruption belongs only to the exact entry and is not closed PnL (0.105541ms)
+✔ transport binds exact cutoff, product and page contract; rejects hourly/invalid metrics (4.880625ms)
+✔ dialog request/loading/rerun/adopt/error and stale/close/unmount cancellation (310.359083ms)
+✔ toolbars leave 200 pixels for indicators across desktop and narrow layouts (1.541541ms)
+✔ global scan exposes a scored high-touch even without a CLEAR action (7.65425ms)
+✔ same-date CLEAR takes the server reference price, while a later global candidate wins (0.323584ms)
+✔ scan is limited to fifty bars but an older eligible visible CLEAR stays a candidate (0.669625ms)
+✔ missing warmup, changed physical/quality owner and other strategies revoke the line (0.369125ms)
+✔ out-of-scale event price is hidden rather than replaced by the same-date close (0.167625ms)
+✔ capability loader coalesces reads and exposes only server-open facts (2.531416ms)
+✔ capability failure stays unavailable without inventing legacy defaults (0.924125ms)
+✔ weekly candidate capability opens W1 only in a candidate response (0.531375ms)
+✔ remaining19 candidate v9 opens W1 for all isolated candidate products (0.172041ms)
+✔ formal daily weekly capability opens W1 only for the released 41 products (0.346417ms)
+✔ formal daily weekly v10 opens W1 for the released 48 products (0.364375ms)
+✔ formal daily weekly v11 opens W1 for OI and keeps the other eleven candidates closed (0.295583ms)
+✔ formal daily weekly v12 opens W1 for CJ and keeps the other ten candidates closed (2.156125ms)
+✔ formal daily weekly v13 opens SR W1 while the other nine remain closed (2.448584ms)
+✔ formal daily weekly v14 opens RS W1 while the other eight remain closed (1.528083ms)
+✔ formal daily weekly v15 opens PK W1 while the other seven remain closed (0.1925ms)
+✔ formal daily weekly v16 opens PF W1 while the other six remain closed (0.092375ms)
+✔ formal daily weekly v17 opens PL W1 while the other five remain closed (0.5475ms)
+✔ formal daily weekly v18 opens PR W1 while the other four remain closed (0.135791ms)
+✔ formal daily weekly v19 opens PX W1 while the other three remain closed (0.061084ms)
+✔ formal daily weekly v20 opens SF W1 while the other two remain closed (0.053042ms)
+✔ formal daily weekly v21 opens SH W1 while SM remain closed (0.053458ms)
+✔ formal daily weekly v22 opens SM W1 for all 60 products (0.046583ms)
+✔ AU period preview accepts its exact all-period capability (0.217375ms)
+✔ AP hourly preview opens 60m only for AP and keeps W1 and other products closed (0.100958ms)
+✔ PD/PT hourly preview remains scoped to PD and PT (0.073417ms)
+✔ capability validation rejects unknown versions and mismatched wire fields without fallback (19.799084ms)
+✔ crosshair reads only an exact completed Bar and aligned pane, never a nearby date (19.064083ms)
+✔ missing auxiliary value is explicit and never carried from a different Bar (2.160125ms)
+✔ physical segments with the same legend yield one exact-time reading (1.687125ms)
+✔ five-window presentation comparator preserves Decimal ordering without floats (1.134875ms)
+✔ comparison accepts independent tokens only with equal time, market and calculation segment facts (59.025542ms)
+✔ disabled comparison performs no request and late unabortable response cannot survive identity replacement (4.19075ms)
+✔ comparison requests the whole accumulated axis after an older display window was appended (0.933ms)
+✔ partner reference records retain their token and a late response cannot survive disabling dual mode (2.191416ms)
+✔ a conflicting partner reference token does not decorate labels or revoke valid chart comparison (5.459333ms)
+✔ cup geometry preserves price ordering across modulo boundaries and equal prices (9.802375ms)
+✔ cup geometry retains order for Decimal values beyond JavaScript Number precision (0.195292ms)
+✔ cup geometry accepts wire scientific notation and treats signed zero as equal (0.095125ms)
+(node:94638) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ daily/weekly card exposes states, ages and two-period R4 scope; refresh and identity discard stale output (744.221208ms)
+✔ composite card keeps scored header, five components, first action and independently folded evidence (258.883ms)
+✔ status card has independent folding, preference restore, explanatory expansion and oscillation facts (77.903125ms)
+✔ zero age is valid, weekly age has its own unit, unavailable inputs never appear current (15.179333ms)
+✔ reported mismatch explains its actual daily age source and freshness (0.487916ms)
+✔ R4 is explained as available two-period agreement rather than full three-period confirmation (6.508542ms)
+✔ certainty tiers preserve source boundaries and do not scale daily weekly totals (0.278667ms)
+✔ resonance dots and mismatch copy describe server codes without rejudging them (1.459167ms)
+✔ volatility uses reported rounded level, remains missing and clamps only the visual dot (0.240208ms)
+✔ minute decision uses a separate completed daily weekly background identity (1.1405ms)
+✔ state is the eligible last frame with its actual date, never inferred from an action (14.338917ms)
+✔ historical window is explicitly labelled and unloaded sections invent no numbers (0.26875ms)
+✔ a default window without a current claim is unavailable, not historical (0.438083ms)
+✔ accepted default D1 and W1 windows stay current before the next completed bar exists (2.841833ms)
+✔ target requires compatible snapshot, status and source identity (1.529958ms)
+✔ chart price remains visible when explanation is unopened and FLAT (0.430708ms)
+✔ price badge preserves neutral zero and rejects missing values (8.400167ms)
+✔ proven target retains original price strings and source time, rejecting stale or wrong owner facts (0.568083ms)
+✔ reference summary requires ready compatible current identity and never derives floating returns (0.497917ms)
+✔ short state and enum labels remain deterministic and unknown values are unavailable (12.268625ms)
+✔ historical chart state description never claims to describe current snapshot state (0.402083ms)
+✔ reference percentage display preserves server decimals and never treats missing as zero (1.796708ms)
+✔ reference dates preserve night-session clock, daily density and cross-year identity (1.80925ms)
+✔ latest auxiliary readiness stays independent of historical warming for all six indicators (0.766958ms)
+✔ pending daily update keeps a successfully fetched historical quote unavailable (0.23225ms)
+✔ same-contract repeated prefix dates cannot supply another calculation segment readiness (0.277625ms)
+✔ dual regions bound boxes, retain actual price anchors and connector endpoints (2.437125ms)
+✔ visible statistics accept only exact per-strategy CLOSED references; arithmetic keeps decimal precision (2.31175ms)
+✔ dominance prefers a sole BUILD, preserves simultaneous BUILD and resets at owner boundaries (5.701792ms)
+✔ curve/page overlap preserves exact records and excludes stable-id conflicts in either order (34.042625ms)
+✔ explanation projects rule, source time, exposure, scores, ATR and first action without recomputation (44.816166ms)
+✔ evidence gaps show exact reasons rather than zero or a current-state substitute (3.052292ms)
+✔ comparator remains a separately labelled theoretical five-window result (1.105667ms)
+✔ comparator selects only the exact default segment and fails closed on ambiguous ownership (1.189ms)
+✔ first-load error clears values while retained same-identity failure exposes stale timestamp (0.772417ms)
+✔ explanation component renders evidence gaps and comparator in a separate theoretical panel (586.007625ms)
+✔ missing composite facts and failed explanation requests retain the unavailable notice (168.004625ms)
+✔ comparator renders a natural insufficient-owner boundary without a conflict or computed table (131.688958ms)
+✔ workspace uses a disclosure and dialog while keeping one selected signal authority (1.530958ms)
+✔ fusion entry loads automatically and drops late results after identity change/unmount (693.637333ms)
+✔ dual tab replaces main rise and emits a presentation identity preserving period (216.936166ms)
+✔ fusion curve uses closed members, range does not replace recent records, truncated source fails closed (176.229917ms)
+✔ control points use server statuses at aligned segment indices (3.521375ms)
+✔ normalization uses the entire loaded formula window and leaves negative bars below the reference (0.124ms)
+✔ projects each server-owned main layer for all nine strategy-period identities (43.980709ms)
+✔ does not connect a main line across a price-gap calculation segment (16.458083ms)
+✔ preserves initial-clear eligibility into the marker label and detail model (24.384125ms)
+✔ preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separate from action reference price (45.543208ms)
+✔ splits server values at physical owner boundaries instead of connecting contracts (1.598084ms)
+✔ states auxiliary applicability and evidence without turning unavailable into no signal (0.373792ms)
+✔ uses authoritative trading_day for daily and weekly chart coordinates (0.135625ms)
+✔ projects each auxiliary server sequence without recomputing its values (0.69175ms)
+✔ prioritizes refresh and stale/error state over a retained auxiliary value (0.150375ms)
+✔ trend columns keep valid isolated Bars and omit missing or warming facts (0.340709ms)
+✔ MACD uses point times, preserves signed zero and splits invalid or warming points (0.187334ms)
+✔ aligns auxiliary by chart owner and exact time, never auxiliary array index or snapshot mismatch (0.236417ms)
+✔ auxiliary alignment uses calculation identity and rejects points from before a quality reset (0.104417ms)
+✔ trend model projects one 35%-opacity column per ready Bar with its own state (0.073208ms)
+✔ trend model projects only ready channel facts at their real prices (0.103958ms)
+✔ strategy overlays stay mutually exclusive and preserve only their own server values (0.080667ms)
+✔ classifies real hint kinds for display without changing their identities or anchors (0.196375ms)
+✔ projects action labels from exact server reference prices without deriving returns (0.057334ms)
+✔ preserves Newow viewport only for compatible product frequency and time axes (0.071125ms)
+✔ band primitive paints centered per-Bar rectangles that scale with bar spacing and releases attachment (7.657833ms)
+✔ trend channel primitive paints unconnected price-coordinate dots with fixed colors radius and normal z-order (53.939459ms)
+✔ a warming resource preserves current calculable data and discloses only older warmup (2.067083ms)
+✔ all four intraday periods preserve distinct UTC bar ends across futures night sessions (1.056458ms)
+✔ legacy Trend redirects semantically to the unified fixed D1 Newow trend identity (1.939917ms)
+✔ Newow accepts only its three strategies and independent completed periods (6.007625ms)
+✔ Newow defaults, serializes, and switches with one route identity authority (0.170292ms)
+✔ existing HTDY and SuBing Event identities remain unchanged (0.0885ms)
+✔ detail preferences v2 migrate v1 and v9 without persisting route-owned facts (0.300792ms)
+✔ ordinary unified Market Home product entry uses the discovered daily Newow capability (0.262416ms)
+✔ browser explanation fixture uses shared trend context on trend/1w (237.935208ms)
+✔ browser explanation fixture uses shared trend context on trend/1d (5.109ms)
+✔ browser explanation fixture uses shared trend context on trend/60m (37.544209ms)
+✔ browser explanation fixture uses shared trend context on trend/1m (0.834208ms)
+✔ browser explanation fixture uses shared trend context on trend/15m (0.705792ms)
+✔ browser explanation fixture uses shared trend context on trend/30m (0.795333ms)
+✔ browser explanation fixture uses shared trend context on oscillation/1w (1.36675ms)
+✔ browser explanation fixture uses shared trend context on oscillation/1d (1.87975ms)
+✔ browser explanation fixture uses shared trend context on oscillation/60m (13.295542ms)
+✔ browser explanation fixture uses shared trend context on oscillation/1m (3.104958ms)
+✔ browser explanation fixture uses shared trend context on oscillation/15m (0.582417ms)
+✔ browser explanation fixture uses shared trend context on oscillation/30m (0.242875ms)
+✔ browser explanation fixture uses shared trend context on main_rise/1w (0.158583ms)
+✔ browser explanation fixture uses shared trend context on main_rise/1d (0.807458ms)
+✔ browser explanation fixture uses shared trend context on main_rise/60m (0.8285ms)
+✔ browser explanation fixture uses shared trend context on main_rise/1m (0.921458ms)
+✔ browser explanation fixture uses shared trend context on main_rise/15m (0.867167ms)
+✔ browser explanation fixture uses shared trend context on main_rise/30m (0.588417ms)
+✔ unwraps only the delivered requested section and preserves every Decimal as a string (4.273667ms)
+✔ accepts the versioned daily quality identity only on D1 (1.33375ms)
+✔ accepts explicit partial history intervals without treating warming as a price bar (3.202416ms)
+✔ accepts only the persisted source label on saved reference responses (0.222958ms)
+✔ normalizes an aligned independent trend channel and requires it for trend (0.287917ms)
+✔ rejects trend channel count, formula, owner, evidence, price, and unavailable-value contradictions (3.291167ms)
+✔ fails closed before unwrap when fields or the five delivery wrappers violate the P4 envelope (0.170042ms)
+✔ rejects non-finite Decimal text and wrong contract, frequency, formula, source, or order (0.70325ms)
+✔ shares one Newow strategy and frequency allowlist authority across route and product contracts (0.037166ms)
+✔ loads the server-owned daily release capability and rejects widened or legacy payloads (9.121584ms)
+✔ rejects chart facts later than the fixed snapshot as_of (2.513083ms)
+✔ rejects reference cutoff overflow and trade facts outside or against its causal order (3.499041ms)
+✔ binds frames, actions, and hints to the exact returned Bar owner identities (0.349917ms)
+✔ orders actions by bar_end then per-Bar sequence and permits sequence reset on the next Bar (0.25425ms)
+✔ builds the exact P4 query for every section and omits cross-section parameters (0.806667ms)
+✔ maps 409 and 429 into safe classified errors without leaking transport details (3.094291ms)
+✔ view models distinguish no action, legal zero CLOSED, warming, stale, and input conflict (6.3645ms)
+✔ structured missing diagnostics keep safe locations and Chinese recovery guidance (1.156125ms)
+✔ unknown diagnostic reasons cannot advertise historical recovery or reflect text (0.457208ms)
+✔ legacy data unavailable errors have a Chinese panel message without claiming missing history (0.391834ms)
+✔ keeps runtime and evidence states independent and accepts validated partial value while warming (0.183791ms)
+✔ validates auxiliary component data fields and aligned source bars instead of accepting arbitrary JSON (1.494292ms)
+✔ accepts only aligned trend reversal facts and checks the complete-window flag (0.319542ms)
+✔ binds reference performance windows to the exact section request (0.103875ms)
+✔ shared trend explanation context remains valid on oscillation and main-rise pages (6.512333ms)
+✔ validates explanation context identities and comparator result identities through the full P4 shape (4.618958ms)
+✔ preserves unavailable comparator owner segments with fewer than 20 bars and no computed windows (0.287292ms)
+✔ insufficient comparator status cannot hide computed values, a full source, or malformed identity (1.06275ms)
+✔ accepts only a structurally valid main-rise initial clear without entry (0.738291ms)
+✔ rejects the retired v1 product and reference contracts (0.105875ms)
+✔ accepts MACD as a distinct read-only branch preserving zero and per-point warming (0.553583ms)
+✔ rejects MACD malformed point states, times, identities, parameters and permission claims (4.54425ms)
+✔ fusion reference validates independent version and parent snapshot (1.403667ms)
+✔ CDV2 explanation rejects future ages, inconsistent totals and executable claims (1.694167ms)
+✔ reference accepts validated independent hindsight payload and rejects executable or duplicate theory (0.261375ms)
+✔ recent records have an independent one-year window and cursor (6.329791ms)
+✔ records reject responses from an obsolete chart snapshot (0.713458ms)
+✔ records-history fixture preserves complete closed returns and exact interrupted owners (167.252834ms)
+✔ closed-only cumulative uses exact decimal sums and chronological stable identities (79.953875ms)
+✔ empty, initial and missing returns never synthesize zero returns (8.029875ms)
+✔ page reference annualization uses the accepted window and excludes incomplete facts (3.560958ms)
+✔ theoretical display changes only curve and statistics, with exact closed identities (0.900542ms)
+✔ drawdown uses normalized additive curve peaks, including the initial baseline (0.39175ms)
+✔ saved PostgreSQL Decimal zero and scientific notation preserve exact reference curves (0.460542ms)
+✔ curve interaction anchors are bounded while the complete curve remains intact (5.120375ms)
+✔ click location resolves an unsampled trade from the complete curve (1.662583ms)
+[Vue warn]: Missing required prop: "selectedSignalId" 
+  at <NewowReferencePanel response= {
+  meta: {
+    schema_version: 'newow_product_detail_v3',
+    identity: {
+      product: 'jm',
+      strategy: 'trend',
+      frequency: '1d',
+      series_kind: 'actual_dominant',
+      profile_id: 'profile-1',
+      formula_versions: [Array]
+    },
+    as_of: '2026-08-15T07:00:00Z',
+    read_at: '2026-08-15T07:00:01Z',
+    input_content_sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    data_revision_identity: null,
+    snapshot_token: 'snapshot-1',
+    reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    futures_adaptation_version: 'newow_futures_quality_segment_v3'
+  },
+  section: 'reference',
+  status: {
+    status: 'ready',
+    evidence_status: 'ACTIVE_CODE_VERIFIED',
+    reason_code: null
+  },
+  value: {
+    performance_since: '2024-01-01',
+    performance_through: '2026-08-15',
+    actual_available_through: '2026-08-15',
+    reference_cutoff: '2026-08-15T07:00:00Z',
+    reference_input_sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    history_coverage: 'FULL',
+    unavailable_days: [],
+    coverage_intervals: [],
+    summary: {
+      membership_policy: 'entry_in_window_v1',
+      closed_count: 1,
+      win_count: 0,
+      loss_count: 0,
+      flat_count: 0,
+      win_rate_pct: null,
+      mean_return_pct: null,
+      sum_return_percentage_points: '5',
+      open_count: 1,
+      interrupted_count: 1,
+      rollover_interrupted_count: 1,
+      data_interrupted_count: 0,
+      initial_count: 2
+    },
+    items: [ [Object], [Object], [Object], [Object] ],
+    next_before: 'opaque-history',
+    executable: false,
+    auto_order: false,
+    allowed_uses: [ 'page_parity_reference', 'research_display' ],
+    curve_trades: [ [Object] ],
+    theoretical: {
+      model_version: 'newow_hindsight_peak_reference_v1',
+      hindsight: true,
+      executable: false,
+      returns: [Array],
+      sum_return_percentage_points: '50',
+      win_rate_pct: '100',
+      mean_return_pct: '50'
+    }
+  }
+} lifecycle="ready" crossSectionCompatible=false  ... > 
+  at <App>
+[Vue warn]: Missing required prop: "locateMessage" 
+  at <NewowReferencePanel response= {
+  meta: {
+    schema_version: 'newow_product_detail_v3',
+    identity: {
+      product: 'jm',
+      strategy: 'trend',
+      frequency: '1d',
+      series_kind: 'actual_dominant',
+      profile_id: 'profile-1',
+      formula_versions: [Array]
+    },
+    as_of: '2026-08-15T07:00:00Z',
+    read_at: '2026-08-15T07:00:01Z',
+    input_content_sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    data_revision_identity: null,
+    snapshot_token: 'snapshot-1',
+    reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    futures_adaptation_version: 'newow_futures_quality_segment_v3'
+  },
+  section: 'reference',
+  status: {
+    status: 'ready',
+    evidence_status: 'ACTIVE_CODE_VERIFIED',
+    reason_code: null
+  },
+  value: {
+    performance_since: '2024-01-01',
+    performance_through: '2026-08-15',
+    actual_available_through: '2026-08-15',
+    reference_cutoff: '2026-08-15T07:00:00Z',
+    reference_input_sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    history_coverage: 'FULL',
+    unavailable_days: [],
+    coverage_intervals: [],
+    summary: {
+      membership_policy: 'entry_in_window_v1',
+      closed_count: 1,
+      win_count: 0,
+      loss_count: 0,
+      flat_count: 0,
+      win_rate_pct: null,
+      mean_return_pct: null,
+      sum_return_percentage_points: '5',
+      open_count: 1,
+      interrupted_count: 1,
+      rollover_interrupted_count: 1,
+      data_interrupted_count: 0,
+      initial_count: 2
+    },
+    items: [ [Object], [Object], [Object], [Object] ],
+    next_before: 'opaque-history',
+    executable: false,
+    auto_order: false,
+    allowed_uses: [ 'page_parity_reference', 'research_display' ],
+    curve_trades: [ [Object] ],
+    theoretical: {
+      model_version: 'newow_hindsight_peak_reference_v1',
+      hindsight: true,
+      executable: false,
+      returns: [Array],
+      sum_return_percentage_points: '50',
+      win_rate_pct: '100',
+      mean_return_pct: '50'
+    }
+  }
+} lifecycle="ready" crossSectionCompatible=false  ... > 
+  at <App>
+[Vue warn]: Missing required prop: "loadingPage" 
+  at <NewowReferencePanel response= {
+  meta: {
+    schema_version: 'newow_product_detail_v3',
+    identity: {
+      product: 'jm',
+      strategy: 'trend',
+      frequency: '1d',
+      series_kind: 'actual_dominant',
+      profile_id: 'profile-1',
+      formula_versions: [Array]
+    },
+    as_of: '2026-08-15T07:00:00Z',
+    read_at: '2026-08-15T07:00:01Z',
+    input_content_sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    data_revision_identity: null,
+    snapshot_token: 'snapshot-1',
+    reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    futures_adaptation_version: 'newow_futures_quality_segment_v3'
+  },
+  section: 'reference',
+  status: {
+    status: 'ready',
+    evidence_status: 'ACTIVE_CODE_VERIFIED',
+    reason_code: null
+  },
+  value: {
+    performance_since: '2024-01-01',
+    performance_through: '2026-08-15',
+    actual_available_through: '2026-08-15',
+    reference_cutoff: '2026-08-15T07:00:00Z',
+    reference_input_sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    history_coverage: 'FULL',
+    unavailable_days: [],
+    coverage_intervals: [],
+    summary: {
+      membership_policy: 'entry_in_window_v1',
+      closed_count: 1,
+      win_count: 0,
+      loss_count: 0,
+      flat_count: 0,
+      win_rate_pct: null,
+      mean_return_pct: null,
+      sum_return_percentage_points: '5',
+      open_count: 1,
+      interrupted_count: 1,
+      rollover_interrupted_count: 1,
+      data_interrupted_count: 0,
+      initial_count: 2
+    },
+    items: [ [Object], [Object], [Object], [Object] ],
+    next_before: 'opaque-history',
+    executable: false,
+    auto_order: false,
+    allowed_uses: [ 'page_parity_reference', 'research_display' ],
+    curve_trades: [ [Object] ],
+    theoretical: {
+      model_version: 'newow_hindsight_peak_reference_v1',
+      hindsight: true,
+      executable: false,
+      returns: [Array],
+      sum_return_percentage_points: '50',
+      win_rate_pct: '100',
+      mean_return_pct: '50'
+    }
+  }
+} lifecycle="ready" crossSectionCompatible=false  ... > 
+  at <App>
+✔ weekly partial uses only the server-provided completed boundary across calendar shapes (5.969458ms)
+✔ source price interruption explains reference rewarming in the page (0.614583ms)
+✔ non-weekly or unavailable completed boundaries never expose a guessed action (0.608125ms)
+✔ zero CLOSED stays unavailable while negative interruption and initial-position records remain separate (0.267292ms)
+✔ table filtering keeps the exact server summary and performance window (0.159666ms)
+✔ historical Hints expose only exact IDs already loaded and never infer same-Bar ordering (0.151208ms)
+✔ history locate requires exact signal ID plus bar_end and requests display data without a performance window (0.199958ms)
+✔ reference locate only accepts the requested endpoint in the same physical contract and segment (0.243292ms)
+✔ cross-section Hint and locate stay unavailable without a shared snapshot proof (0.571833ms)
+✔ simple sum keeps percentage points separate and never appends a percent unit (0.549625ms)
+✔ curve axes use true extrema, unscaled labels and the full accepted statistics window (1353.869792ms)
+✔ performance loading and tab responses do not replace recent record cards (93.596166ms)
+✔ reference panel keeps the server summary and all passive reference records without removed controls (72.728666ms)
+✔ reference records present entry, exit, valuation and interruption as separate factual groups (62.834792ms)
+✔ range tabs include three years and clamp all to the initial server history floor (59.0065ms)
+✔ recent complete window action submits the exact server boundary (62.587792ms)
+✔ range tabs cannot load when the current identity has no response (67.683375ms)
+✔ waiting card requires current ready compatible FLAT evidence (63.108166ms)
+✔ theoretical selection survives a same-window history page response (64.044792ms)
+✔ curve selection outside recent records keeps original return under theoretical display (63.528125ms)
+✔ reference presets use accepted cutoff and clamp month ends without local-time drift (6.949459ms)
+✔ reference presets reject an impossible accepted cutoff (0.317958ms)
+✔ preset is highlighted only after the matching request is accepted (0.080459ms)
+✔ late listing clamps one year, three years and all to the same authoritative start (0.120208ms)
+✔ public screenshot percentages, defensive reversal and Decimal bounds (4.283ms)
+✔ 16 original trend pairs have distinct presentation, unified exposure, bearish guard and missing fail closed (2.851167ms)
+✔ oscillation preserves cleared vs idle and excludes hourly even when provided (0.701625ms)
+✔ frozen v3.2.82 JavaScript HHV10/LLV10 matches all 30 page values (15.4085ms)
+✔ trend reversal keeps server categories and colors at their exact bars (10.189166ms)
+✔ trend reversal scale uses visible bars and keeps axis within pane (0.215875ms)
+✔ preferences are identity scoped, patch only display choices and evict older visits (2.563083ms)
+✔ energy steps use server VAR4, same-owner close versus MA10, and never cross a segment (34.158667ms)
+✔ nearby signal labels occupy alternating heights when the chart is compressed (0.313458ms)
+✔ yellow requires a scored eligible action across every strategy, not volume alone (3.819542ms)
+✔ explanation shares the exact yellow decision and exposes all three components (1.494959ms)
+✔ strict body and penetration boundaries and ordinary bars remain explicit (0.099458ms)
+✔ primitive draw is inactive when initially empty, after clear, and after detach (4.417333ms)
+✔ joins split physical segments by global index in one detached mirror row set (1.787667ms)
+✔ projects the frozen six classes with original colors, layering and 48/52 split (0.712125ms)
+✔ visible-window scaling ignores offscreen values and keeps dashed stems/caution geometry (0.163667ms)
+✔ mirror zero and upward bars remain below an overlaid toolbar (0.112375ms)
+▶ productDirectory
+  ✔ keeps only sector labels and does not duplicate the active product directory (2.385458ms)
+  ✔ accepts known backend sectors and safely groups unknown values as other (0.223167ms)
+  ✔ renders backend sector codes with the shared Chinese label (0.141667ms)
+  ✔ groups the backend dominant list in sector order and keeps product codes sorted (11.258958ms)
+✔ productDirectory (24.916208ms)
+✔ searches the complete directory by Chinese name or product code (3.777459ms)
+✔ normalizes duplicate directory rows without requiring a quote (1.097666ms)
+✔ ProductSelector exposes combobox keyboard and explicit empty/error states (0.761541ms)
+✔ production charting vendor chunks have no static import cycle (1889.270291ms)
+✔ Range Detector Web mirror matches the shared Python golden and canonical hash (23.767875ms)
+✔ Range Detector Web mirror uses canonical-decimal half-even rounding (3.425ms)
+✔ Range Detector distinguishes causal confirmation from visual backpaint (4.707083ms)
+✔ Range Detector rejects invalid timestamps and does not rewrite an appended prefix (3.159417ms)
+✔ Range Detector requires an explicit timestamp timezone (0.175333ms)
+✔ loads older pages until the fixed Range Detector warm-up is ready (2.365375ms)
+✔ reports an explicit unavailable reason when available history is below ATR warm-up (0.406708ms)
+✔ same identity becomes ready at 500 bars without moving its frozen anchor (0.788083ms)
+✔ fails closed when a successful older-page request makes no history progress (0.508125ms)
+✔ identity change discards a stale warm-up generation (0.666ms)
+✔ a manual prepend does not move a frozen calculation anchor (0.965958ms)
+✔ draw commands keep pre-break levels intact and color only broken_at onward as broken (6.113708ms)
+✔ active levels terminate at levels_active_until and omit commands with missing coordinates (0.167292ms)
+✔ uses the compact reference-label footprint approved for dense chart overlays (3.355ms)
+✔ dense corner layout keeps every identity inside the main pane without box collisions (4.32025ms)
+✔ selected compact node expands with priority and remains connected to its anchor (1.396584ms)
+✔ layout is stable across repeated calls and narrow panes use focusable compact nodes (1.380875ms)
+✔ dense layouts retain every visible action and never project outside a tiny pane (264.072625ms)
+✔ Niuwa placement searches near anchors and avoids the signal candle (0.530666ms)
+✔ Niuwa density layout omits crowded text then restores it on zoom without merging identities (0.590417ms)
+✔ shared reference pages pin identity and cursor and reject replayed records (6.725166ms)
+✔ saved Newow pages tolerate identical overlap and stop at the display cap (5.831792ms)
+✔ reference stream mode is explicit and historical remains the default (3.069666ms)
+✔ release reader observes a source version change without another metadata copy (11.964667ms)
+✔ accepts only the exact schema-v6 two-rule runtime projection (2.983916ms)
+✔ rejects missing keys, malformed timestamps, and unknown per-rule errors (1.004ms)
+▶ settings storage security
+  ✔ does not expose browser-persisted application or connection settings (4.777167ms)
+  ✔ purges legacy bearer token and application/connection storage keys (1.422083ms)
+✔ settings storage security (7.738458ms)
+✔ renders four separate Scope, Runtime, evaluation, and exact Event facts (17.995042ms)
+✔ does not turn no Event or an unavailable initial snapshot into a neutral signal (0.155ms)
+✔ does not treat no exact Event as neutral and ignores another product Event (0.489167ms)
+✔ does not call a disabled or degraded Runtime globally normal when the Rule has no error (1.664333ms)
+✔ reference normalizer rejects wrong authority and unsafe financial values (13.315208ms)
+✔ new research periods require matching formula identity (0.306ms)
+✔ daily quality response exposes break and exact 34-bar eligibility (0.1425ms)
+✔ daily data interruption requires exact reason, day, and no synthetic mark (0.131209ms)
+✔ reference indicator rendering preserves warmup nulls as chart whitespace (0.486917ms)
+✔ daily quality breaks use an independent marker identity and whitespace anchor (0.282334ms)
+✔ late response from an earlier period cannot replace the selected period (0.578541ms)
+✔ chart callouts use compact price lines and Chinese-market return colors (3.23925ms)
+✔ late historical result cannot overwrite switched symbol or disposed loader (0.277792ms)
+✔ page identity mismatch clears historical facts and preserves explicit unavailable state (0.296125ms)
+✔ known bounded backend diagnostics get a Chinese explanation and unknown text is not reflected (6.186708ms)
+✔ callout density falls back to compact passive markers without overlapping labels (8.354792ms)
+✔ explicit date identity mismatch is unavailable and failed refresh removes previous signals (0.218542ms)
+✔ pagination pins date window and as_of, without deriving or replacing summary (1.445292ms)
+✔ disposed refresh never publishes historical data (2.514833ms)
+✔ same timestamp with another or missing physical owner is never a reference anchor (7.171667ms)
+✔ display rounds Decimal text without binary floating point or changing raw financial facts (0.248625ms)
+✔ reference prices keep exact Decimal display text without meaningless trailing zeroes (0.051ms)
+✔ reference records separate precise chart location from detail inspection (12.169333ms)
+▶ theme control contract
+  ✔ keeps RadioButton active text readable on its selected surface (1.645792ms)
+  ✔ keeps primary buttons readable in active hover and disabled states (0.183042ms)
+  ✔ uses one explicit selected option contract for Select peers (0.303542ms)
+  ✔ keeps active tabs distinct from disabled tabs without direction colors (0.19075ms)
+✔ theme control contract (4.018541ms)
+▶ light theme token contract
+  ✔ declares a fixed light color scheme (0.194208ms)
+  ✔ uses the approved light surface and text palette (0.1465ms)
+  ✔ keeps China futures direction colors: red up, green down (0.146666ms)
+  ✔ keeps accent and warning non-directional (4.56525ms)
+  ✔ keeps the chart fallback aligned with CSS text and HTDY observation tokens (2.113542ms)
+  ✔ resolves indicator series colors from the chart theme contract (0.489917ms)
+  ✔ defines the deep navy brand shell with readable shell text (0.916375ms)
+✔ light theme token contract (9.062584ms)
+✔ drops a late JM Runtime and Scope response after identity switches to RB (133.542458ms)
+✔ bounded daily quote validates request, prices, order, coverage and unique ownership (28.024416ms)
+✔ candidate quote preserves and validates the trusted exclusive cutoff after Decimal wire parsing (8.954458ms)
+✔ candidate quote rejects mismatching, missing or ambiguous echoes and invalid trusted cutoffs (2.813458ms)
+✔ candidate quote enforces exclusive before even when future bars have valid coverage and owner (1.414041ms)
+✔ normal quote retains null echo contract and unbounded fetch (3.342084ms)
+✔ daily quote waits for the accepted snapshot and uses its exclusive cutoff (3.591083ms)
+✔ rollover keeps latest close but never computes a cross-contract change (17.610417ms)
+✔ product switch cancels pending quote and rejects late response; same product does not refetch (0.661625ms)
+✔ explicit same-product refresh retries an unavailable daily quote (4.497667ms)
+✔ D1 timestamps must agree with Shanghai trading day and exact timestamp coverage (57.267042ms)
+✔ default W1 waits for one complete-week cutoff before loading panels (12.884625ms)
+✔ weekly snapshot client rejects a mismatched cutoff (1.455125ms)
+✔ weekly refresh invalidates the old cutoff before requesting new panels (2.69225ms)
+✔ default D1 waits for a verified close and pins every panel to its cutoff (6.78825ms)
+✔ daily snapshot client rejects mismatched dates and preserves microsecond cutoff (0.6595ms)
+✔ refresh keeps accepted D1 chart visible until a new cutoff is accepted (1.1055ms)
+✔ fixed preview cutoff retains microseconds through every current generation (0.395791ms)
+✔ older windows append under the same snapshot after page exhaustion and preserve reference (4.966708ms)
+✔ current chart provenance follows accepted default requests, ignoring calendar dates and late responses (2.6055ms)
+✔ HTTP parser accepts the separate bounded older cursor and request serializes it (0.359ms)
+✔ older navigation rejects token without appending unverified bars (4.783917ms)
+✔ older navigation rejects range without appending unverified bars (4.091375ms)
+✔ older navigation rejects overlap without appending unverified bars (0.865583ms)
+✔ older navigation rejects fingerprint without appending unverified bars (0.455458ms)
+✔ identity switch aborts older-window work and ignores its late result (16.801166ms)
+✔ accumulated older windows stop at 3000 rows and suppress both cursor kinds (117.249667ms)
+✔ wire older cursor cannot coexist with a page cursor or absent snapshot proof (1.14525ms)
+✔ explicit historical switch resets requests and preserves the exact server cutoff (1.521292ms)
+✔ historical resolver client validates dates and keeps the exact cutoff string (0.882208ms)
+✔ identity change and a newer resolver invalidate late historical results (0.914125ms)
+✔ late response never replaces a different strategy and the new identity clears old values synchronously (2.930375ms)
+✔ pins one as_of and keeps chart-reference compatibility independent from an explanation null token (1.54225ms)
+✔ reuses the first-page chart and reference limits for opaque cursor requests (2.583083ms)
+✔ rejects a chart cursor whose data revision differs from the retained page (1.003125ms)
+✔ rejects a reference cursor whose data revision differs from the retained page (2.116875ms)
+✔ same-identity revision may replace chart when shared bars agree, but a shared-bar conflict fails closed (1.230292ms)
+✔ same-identity failure keeps only the last success as stale while an obsolete cancellation stays invisible (1.411167ms)
+✔ same-identity busy and cancelled refreshes retain the last success as stale with visible reason and time (3.130292ms)
+✔ main-chart retry keeps the pinned as_of while refresh-current resets the whole generation (0.442417ms)
+✔ ordinary other-panel failure preserves an accepted main chart (0.5865ms)
+✔ each failed panel shows its sanitized Chinese diagnostic without replacing the main chart (1.056458ms)
+✔ historical reference data unavailable stays section-local and preserves the validated chart and mirror (2.219583ms)
+✔ reference pages merge only under one fingerprint and reject duplicate IDs with changed facts (1.898125ms)
+✔ reader mode switch accepts a saved first page with its own reference identity (4.123166ms)
+✔ a changed reference fingerprint clears old pages and fixes the first actual window for later pagination (1.755291ms)
+✔ rebuilds a 409 snapshot or cursor conflict at most once and never loops a 429 (0.558917ms)
+✔ an auxiliary 409 rebuilds chart provenance without a tokenless auxiliary retry (0.629667ms)
+✔ repeated auxiliary 409 stops after one chart rebuild across watcher-equivalent requests (0.295709ms)
+✔ an auxiliary 409 rebuilds the accepted explicit chart window, not the default window (0.327292ms)
+✔ a rejected reference cursor clears every old-token section before one unbound page-one rebuild (0.317875ms)
+✔ a cursor 409 falls back to the retained reference token and clears a late same-token explanation (0.29175ms)
+✔ a cursor 409 aborts a pending old-token explanation before its late response can be accepted (0.719584ms)
+✔ a rejected reference token aborts a tokenless chart page registered from its retained generation (0.836041ms)
+✔ merges an older chart cursor page atomically without changing the fixed reference window (0.525167ms)
+✔ bounds cumulative chart and reference pages and stops exposing an older cursor at the cap (14.592666ms)
+✔ reopening a validated auxiliary component reuses the current generation (0.436042ms)
+✔ does not reuse a validated auxiliary component across distinct explicit chart windows (0.247667ms)
+✔ does not reuse an auxiliary response after a changed-token chart refresh (0.254083ms)
+✔ keeps validated auxiliary reuse across same-generation chart pagination and refresh (0.238958ms)
+✔ server-proven chart window changes keep reference history and its paging identity (0.354167ms)
+✔ a changed chart token clears loaded dependents and binds the next auxiliary request to the new token (0.329375ms)
+✔ a changed chart token aborts all in-flight dependents and rejects their late old-generation responses (0.288041ms)
+✔ a tokenless chart revision change clears loaded dependents (0.173875ms)
+✔ touches auxiliary LRU hits so the least recently used of five window keys is evicted (0.728875ms)
+✔ accepts an identity-valid auxiliary warming response without a partial value (0.413625ms)
+✔ a proven warming auxiliary value retains its exact accepted chart window (0.835166ms)
+✔ A -> B -> A reuses each validated auxiliary component once (1.04ms)
+✔ identity replacement invalidates validated auxiliary reuse (2.579334ms)
+✔ rejected snapshot generation invalidates validated auxiliary reuse (0.975917ms)
+✔ tokenless rejected generation clears loaded auxiliary and aborts its in-flight replacement (0.368875ms)
+✔ transport-normalized auxiliary identity conflict invalidates ready reuse (0.600917ms)
+✔ shared chart close conflict ignores a late explanation resolve even if fetch ignores abort (0.497833ms)
+✔ shared chart close conflict ignores a late explanation reject even if fetch ignores abort (0.166ms)
+✔ chart conflict revokes all sections before late resolve ignoring abort (0.678042ms)
+✔ chart conflict revokes all sections before late reject ignoring abort (0.361959ms)
+✔ reference conflict revokes all sections before late resolve ignoring abort (1.071125ms)
+✔ reference conflict revokes all sections before late reject ignoring abort (0.413ms)
+✔ explanation conflict revokes all sections before late resolve ignoring abort (0.402125ms)
+✔ explanation conflict revokes all sections before late reject ignoring abort (1.220417ms)
+✔ auxiliary response conflict stays local while clearing auxiliary reuse (0.392667ms)
+✔ comparator response conflict stays local while clearing auxiliary reuse (0.189458ms)
+✔ invalidated resolve finally cannot erase a later explanation controller or token (0.8905ms)
+✔ invalidated reject finally cannot erase a later explanation controller or token (0.542167ms)
+✔ 409 cancels a matching loaded section even when its replacement requests a different token (0.265375ms)
+✔ explanation summary compatibility requires the entire accepted chart generation, not token text alone (0.167625ms)
+✔ refresh binds trades, summary and points to one snapshot (10.10775ms)
+✔ load more uses pinned snapshot and clears pages on conflict (0.862583ms)
+✔ late response cannot overwrite selected identity (0.557ms)
+✔ presentation points keep the same snapshot across pages (0.178167ms)
+✔ projects read-only Rule, Scope, and exact runtime facts for SuBing (5.567458ms)
+✔ fails closed on malformed product identity or runtime schema (0.516375ms)
+✔ clears old identity facts while the next product refresh is pending (0.682667ms)
+ℹ tests 720
+ℹ suites 13
+ℹ pass 719
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 7318.249375
