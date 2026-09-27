@@ -457,21 +457,22 @@ class NewowProductReader:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         if latest <= cutoff.astimezone(_SHANGHAI).date() and latest not in days:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
-        complete_days = []
-        for day in days:
-            self._check_cancelled()
-            if (
-                day <= requested_through
-                and day <= latest
-                and max(
-                    window.end
-                    for window in self._market_data.session_windows(
-                        symbol=product, trading_day=day
-                    )
-                )
-                <= cutoff
-            ):
-                complete_days.append(day)
+        # The overlap read above already validates the full requested Session
+        # horizon. Reuse MDS's batch completion resolver instead of querying
+        # Calendar/Session and crossing the ASGI thread boundary for every day.
+        complete_days = self._market_data.completed_trading_days(
+            symbol=product, start=start, as_of=cutoff,
+            latest=min(latest, requested_through),
+        )
+        self._check_cancelled()
+        allowed_days = set(days)
+        if (
+            not isinstance(complete_days, tuple)
+            or any(type(day) is not date for day in complete_days)
+            or any(day not in allowed_days or day > min(latest, requested_through) for day in complete_days)
+            or any(current <= previous for previous, current in zip(complete_days, complete_days[1:]))
+        ):
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         if not complete_days or complete_days[-1] < since:
             raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
         actual_through = complete_days[-1]
@@ -481,6 +482,8 @@ class NewowProductReader:
                 symbol=product, trading_day=actual_through
             )
         )
+        if resolved_cutoff > cutoff:
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         requested_days = tuple(day for day in days if since <= day <= requested_through)
         complete = bool(requested_days) and actual_through == requested_days[-1]
         reason = None if complete else "NEWOW_REFERENCE_WINDOW_PARTIAL"

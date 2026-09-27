@@ -1337,3 +1337,80 @@ def test_historical_candidate_discovery_cancels_and_rejects_malformed_day_identi
     fake.completed_trading_days = lambda **_kwargs: tuple(reversed(days))
     with pytest.raises(NewowProductReadError, match="NEWOW_DATA_IDENTITY_INVALID"):
         reader.historical_snapshot_candidates("rb", as_of=now)
+
+
+def test_reference_window_uses_completed_day_batch_without_per_day_reads(product_cases, monkeypatch):
+    reader, _query, fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    cutoff = datetime(2023, 1, 4, 7, tzinfo=UTC)
+    completed = (date(2023, 1, 2), date(2023, 1, 3), date(2023, 1, 4))
+    batch_calls = []
+    single_calls = []
+    original = fake.session_windows
+
+    def batch(**kwargs):
+        batch_calls.append(kwargs)
+        return completed
+
+    def single(**kwargs):
+        single_calls.append(kwargs["trading_day"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(fake, "completed_trading_days", batch)
+    monkeypatch.setattr(fake, "session_windows", single)
+    result = reader.resolve_performance_window(
+        "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6), cutoff
+    )
+    assert result.actual_through == date(2023, 1, 4)
+    assert result.cutoff == cutoff
+    assert result.complete is False
+    assert len(batch_calls) == 1
+    assert batch_calls[0]["as_of"] == cutoff
+    assert batch_calls[0]["latest"] == date(2023, 1, 6)
+    assert single_calls == [result.actual_through]
+
+
+@pytest.mark.parametrize("completed", [
+    None, [date(2023, 1, 4)], (datetime(2023, 1, 4, tzinfo=UTC),),
+    (date(2023, 1, 7),), (date(2023, 1, 4), date(2023, 1, 3)),
+    (date(2023, 1, 4), date(2023, 1, 4)), (date(2023, 1, 6),),
+])
+def test_reference_window_rejects_invalid_or_future_completed_batch(product_cases, monkeypatch, completed):
+    reader, _query, fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    monkeypatch.setattr(fake, "completed_trading_days", lambda **kwargs: completed)
+    with pytest.raises(NewowProductReadError, match="NEWOW_DATA_UNAVAILABLE"):
+        reader.resolve_performance_window(
+            "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6),
+            datetime(2023, 1, 4, 7, tzinfo=UTC),
+        )
+
+
+def test_reference_window_cancel_after_completed_batch_stops_final_read(product_cases, monkeypatch):
+    reader, _query, fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    cancelled = [False]
+    reader._cancelled = lambda: cancelled[0]
+    def batch(**kwargs):
+        cancelled[0] = True
+        return (date(2023, 1, 4),)
+    monkeypatch.setattr(fake, "completed_trading_days", batch)
+    with pytest.raises(NewowProductReadCancelled, match="NEWOW_READ_CANCELLED"):
+        reader.resolve_performance_window(
+            "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6),
+            datetime(2023, 1, 4, 7, tzinfo=UTC),
+        )
+    assert fake.session_requests == []
+
+
+def test_reference_window_keeps_full_future_requested_session_horizon(product_cases, monkeypatch):
+    reader, _query, fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    def overlap(*, symbol, start, end):
+        assert end >= datetime(2023, 1, 6, 15, 59, tzinfo=UTC)
+        raise MarketDataError("TRADING_SESSION_MISSING")
+    def batch(**kwargs):
+        pytest.fail("must not bypass missing full-horizon Session facts")
+    monkeypatch.setattr(fake, "trading_days_overlapping_window", overlap)
+    monkeypatch.setattr(fake, "completed_trading_days", batch)
+    with pytest.raises(MarketDataError, match="TRADING_SESSION_MISSING"):
+        reader.resolve_performance_window(
+            "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6),
+            datetime(2023, 1, 4, 7, tzinfo=UTC),
+        )
