@@ -160,7 +160,7 @@ class PersistedNewowReference:
         fusion = payload.get("fusion_comparison")
         if fusion is None:
             return
-        streams = self._query.streams(strategy="newow_dual_fusion", product=payload["product"], frequency=payload["frequency"])
+        streams = self._query.streams(strategy="newow_dual_fusion", product=fusion["product"], frequency=fusion["frequency"])
         if len(streams) != 1:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         latest = self._query.summary(streams[0]["stream_id"], since=since, through=through, cutoff=cutoff)
@@ -173,7 +173,7 @@ class PersistedNewowReference:
         if revision != fusion["reference_revision"]:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         for strategy, dependency in zip(("trend", "oscillation"), dependencies):
-            base = self._query.streams(strategy="newow_" + strategy, product=payload["product"], frequency=payload["frequency"])
+            base = self._query.streams(strategy="newow_" + strategy, product=fusion["product"], frequency=fusion["frequency"])
             if len(base) != 1 or (base[0]["stream_id"], base[0]["active_revision_id"], base[0]["latest_seq"]) != (dependency["stream_id"], dependency["revision_id"], dependency["seq"]):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
 

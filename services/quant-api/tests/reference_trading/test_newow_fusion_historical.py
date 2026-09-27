@@ -204,3 +204,30 @@ def test_hot_reference_cache_rechecks_generation(current_seq):
     else:
         with pytest.raises(QueryConflict, match='SOURCE_GENERATION_CONFLICT'):
             saved.validate_cached_generation(delivery)
+
+
+@pytest.mark.parametrize('changed', (None, 'oscillation', 'fusion'))
+def test_hot_fusion_cache_validates_real_payload_shape_and_all_generations(changed):
+    from types import SimpleNamespace
+    from app.reference_trading.persisted_newow import PersistedNewowReference
+    from app.reference_trading.contracts import manifest_sha256
+    from app.reference_trading.query import QueryConflict
+    from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
+    saved = PersistedNewowReference(lambda: None)
+    dependencies = [{'stream_id':s, 'revision_id':'revision', 'seq':7} for s in ('trend','oscillation')]
+    def streams(*, strategy, product, frequency):
+        assert (product, frequency) == ('rb','1m')
+        name = 'fusion' if strategy == 'newow_dual_fusion' else strategy.removeprefix('newow_')
+        return [{'stream_id':name,'active_revision_id':'revision','latest_seq':8 if changed==name else 7}]
+    def summary(stream, **kw):
+        return {'revision_id':'revision','seq':8 if changed==stream else 7,'snapshot':'fusion-new' if changed=='fusion' and stream=='fusion' else 'fusion-snapshot'}
+    saved._query = SimpleNamespace(streams=streams, summary=summary)
+    saved._manifest = lambda *_: (None, {'source_dependencies':dependencies})
+    revision = manifest_sha256({'snapshot':'fusion-snapshot','dependencies':dependencies,'record_since':'2025-09-25','record_through':'2026-09-24'})
+    payload = {'performance_since':'2023-01-01','performance_through':'2026-09-24','reference_cutoff':'2026-09-24T07:00:00+00:00','fusion_comparison':{'product':'rb','frequency':'1m','reference_revision':revision}}
+    delivery = SectionDelivery('delivered',None,PersistedReferenceSectionValue(payload,('trend','revision',7)))
+    if changed is None:
+        saved.validate_cached_generation(delivery)
+    else:
+        with pytest.raises(QueryConflict, match='SOURCE_GENERATION_CONFLICT'):
+            saved.validate_cached_generation(delivery)
