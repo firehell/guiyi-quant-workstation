@@ -83,7 +83,15 @@ export async function getNewowAiAnalysis(product: string, asOf: string, options:
     const { default: request } = await import('./request.ts')
     return request.get<never, unknown>(path, config)
   })
-  const value = await transport('/market/newow/ai-analysis', { params: { product, as_of: asOf }, signal: options.signal, timeout: 35000 })
+  let value: unknown
+  try {
+    value = await transport('/market/newow/ai-analysis', { params: { product, as_of: asOf }, signal: options.signal, timeout: 35000 })
+  } catch (error) {
+    const response = record(error) && record(error.response) ? error.response : null
+    const detail = response && record(response.data) && record(response.data.detail) ? response.data.detail : null
+    throw new Error(response?.status === 429 && detail?.code === 'NEWOW_RESOURCE_BUSY'
+      ? 'NEWOW_RESOURCE_BUSY' : 'NEWOW_AI_REQUEST_UNAVAILABLE')
+  }
   if (!validateAiAnalysis(value, product, asOf)) throw new Error('NEWOW_AI_RESPONSE_INVALID')
   return value
 }

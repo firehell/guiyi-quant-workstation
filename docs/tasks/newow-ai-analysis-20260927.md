@@ -17,6 +17,8 @@
 
 现场完成：趋势单策略→双策略→AI；重新回测先清空旧推荐/加载，再显示同一结果；采纳关闭弹窗并切为趋势周K，真实周线数据加载；Escape关闭、重新打开请求；弹窗截图 `outputs/newow-release-v1.10.38-20260927/ai-analysis-preview.png`。该四组/其中段末估值不代表四份可执行策略回测，较少样本的推荐已显示提醒。
 
+现场共享计算槽繁忙时返回429；页面单独提示图表或融合参考仍在计算，手动重新回测后正常展示四组结果。传输异常仅保留安全错误码，不展示原始异常详情。
+
 实际验证：
 - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short services/quant-api/tests/newow/test_ai_analysis.py services/quant-api/tests/newow/test_market_newow_product_api.py services/quant-api/tests/newow/test_product_reader.py services/quant-api/tests/newow/test_page_comparator.py`：214 passed / 1 existing gated skip。
 - `node --test tests/newowAiAnalysis.test.ts tests/newowFusionPanel.test.ts`：5 passed；完整 `npm test`：695 passed / 1 existing skip。

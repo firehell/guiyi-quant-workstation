@@ -27,8 +27,10 @@ async function run() {
   try {
     const value = await getNewowAiAnalysis(props.product, props.asOf, { signal: pending.signal })
     if (current === generation && props.open) result.value = value
-  } catch {
-    if (current === generation && props.open) error.value = '分析数据暂不可用，请重新回测。行情质量或身份未确认时不生成推荐。'
+  } catch (failure) {
+    if (current === generation && props.open) error.value = failure instanceof Error && failure.message === 'NEWOW_RESOURCE_BUSY'
+      ? '图表或融合参考仍在计算，请稍后点击“重新回测”。'
+      : '分析数据暂不可用，请重新回测。行情质量或身份未确认时不生成推荐。'
   } finally { if (current === generation) { loading.value = false; pending = null } }
 }
 function adopt() { if (!loading.value && best.value && props.open) emit('adopt', best.value) }

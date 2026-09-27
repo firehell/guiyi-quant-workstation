@@ -15,6 +15,8 @@ test('transport binds exact cutoff, product and page contract; rejects hourly/in
   assert.equal(validateAiAnalysis(output(),'jm','2026-09-24T07:00:00.000002Z'),false)
   for(const mutate of [(v:any)=>{v.combos[0].frequency='60m'},(v:any)=>{v.executable=true},(v:any)=>{v.combos[0]=v.combos[1]},(v:any)=>{v.combos[0].score='NaN'},(v:any)=>{v.combos[0].summary.terminal_valuation_count=11},(v:any)=>{v.combos[0].is_best=true},(v:any)=>{v.combos[0].input_sha256=null}]){const v=output();mutate(v);assert.equal(validateAiAnalysis(v,'jm',asOf),false)}
   await assert.rejects(getNewowAiAnalysis('jm',asOf,{request:async()=>output('rb')}),/NEWOW_AI_RESPONSE_INVALID/)
+  await assert.rejects(getNewowAiAnalysis('jm',asOf,{request:async()=>{throw {response:{status:429,data:{detail:{code:'NEWOW_RESOURCE_BUSY'}}}}}}),/NEWOW_RESOURCE_BUSY/)
+  await assert.rejects(getNewowAiAnalysis('jm',asOf,{request:async()=>{throw new Error('private_transport_detail')}}),/NEWOW_AI_REQUEST_UNAVAILABLE/)
 })
 const mockUrl=`data:text/javascript;base64,${Buffer.from('export const calls=[];export function getNewowAiAnalysis(product,asOf,options){return new Promise((resolve,reject)=>calls.push({product,asOf,options,resolve,reject}));}').toString('base64')}`
 const mock=await import(mockUrl)
