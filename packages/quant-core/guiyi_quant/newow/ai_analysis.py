@@ -85,7 +85,10 @@ def estimate_segments(segments: Sequence[Sequence[tuple[Decimal, Decimal, Decima
             if strategy == "oscillation":
                 if buy is not None and high >= max(row[0] for row in rows[i-9:i+1]):
                     pct = (high - buy) / buy * 100
-                    cumulative += pct; count += 1; wins += int(pct > 0); buy = None
+                    cumulative += pct
+                    count += 1
+                    wins += int(pct > 0)
+                    buy = None
                 # CLEAR -> BUILD on the same bar is deliberately two independent ifs.
                 if buy is None and low <= min(row[1] for row in rows[i-9:i+1]):
                     buy = low
@@ -94,13 +97,19 @@ def estimate_segments(segments: Sequence[Sequence[tuple[Decimal, Decimal, Decima
                     buy = band[i]
                 elif states[i] is False and states[i-1] is True and buy is not None:
                     pct = (band[i] - buy) / buy * 100
-                    cumulative += pct; count += 1; wins += int(pct > 0); buy = None
+                    cumulative += pct
+                    count += 1
+                    wins += int(pct > 0)
+                    buy = None
             equity = cumulative + ((close - buy) / buy * 100 if buy is not None else 0)
             peak = max(peak, equity)
             drawdown = max(drawdown, peak - equity)
         if buy is not None:
             pct = (rows[-1][2] - buy) / buy * 100
-            cumulative += pct; count += 1; wins += int(pct > 0); terminal += 1
+            cumulative += pct
+            count += 1
+            wins += int(pct > 0)
+            terminal += 1
     if not used:
         return None
     return AnalysisSummary(fixed(cumulative, 2), floor(wins / count * 100 + .5) if count else 0,
