@@ -13,7 +13,7 @@ from datetime import date, datetime
 from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 import json
 
-from sqlalchemy import and_, false, func, or_, select, tuple_
+from sqlalchemy import and_, false, func, or_, select, text, tuple_
 from sqlalchemy.orm import Session, aliased
 
 from app.db.readonly import readonly_transaction
@@ -470,6 +470,12 @@ class HistoricalReferenceQuery:
         exits = {item.exit_action_id for item in trades if item.exit_action_id is not None}
         actions = []
         keys = sorted(requested | exits)
+        if len(keys) > 1000 and session.get_bind().dialect.name == "postgresql":
+            # Repeated large IN queries can switch to a generic prepared plan
+            # which scans the entire stream instead of the action-key index.
+            # The caller's read-only transaction always rolls back, so this
+            # choice cannot escape to another request on the pooled connection.
+            session.execute(text("SET LOCAL plan_cache_mode = force_custom_plan"))
         for start in range(0, len(keys), 1000):
             actions.extend(session.execute(select(ReferenceActionRow).where(
                 ReferenceActionRow.stream_id == snapshot.stream_id,
