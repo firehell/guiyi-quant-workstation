@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ref, nextTick } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import { useNewowRecentReference } from '../src/composables/useNewowRecentReference.ts'
 import type { NewowProductRequest, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
 const anchor = (token = 'snapshot') => ({ section: 'reference', meta: { snapshot_token: token, as_of: '2026-09-24T07:00:00Z', identity: { product: 'jm', strategy: 'trend', frequency: '1d' } }, value: { performance_since: '2023-01-01', actual_available_through: '2026-09-24', items: [], next_before: null } }) as unknown as NewowProductSectionResponse<'reference'>
@@ -39,4 +39,40 @@ test('records reject responses from an obsolete chart snapshot', async () => {
   pending[1](anchor('new'))
   await flush()
   assert.equal(state.response.value?.meta.snapshot_token, 'new')
+})
+
+test('hidden single-strategy records stay idle, abort on dual switch and restart on return', async () => {
+  const dual = ref(true)
+  const chartReference = ref(anchor())
+  const source = computed(() => dual.value ? null : chartReference.value)
+  const calls: Array<{ request: NewowProductRequest; signal: AbortSignal; resolve: (value: NewowProductSectionResponse<'reference'>) => void }> = []
+  const state = useNewowRecentReference(source, (request, options) => new Promise(resolve => {
+    calls.push({ request, signal: options!.signal!, resolve })
+  }))
+  await flush()
+  await state.loadMore()
+  assert.equal(calls.length, 0)
+  assert.equal(state.loading.value, false)
+  dual.value = false
+  await flush()
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].request.historyLimit, 200)
+  assert.equal(calls[0].request.performanceSince, '2025-09-24')
+  assert.equal(state.loading.value, true)
+  dual.value = true
+  await flush()
+  assert.equal(calls[0].signal.aborted, true)
+  assert.equal(state.loading.value, false)
+  assert.equal(state.response.value, null)
+  calls[0].resolve(anchor())
+  await flush()
+  assert.equal(state.response.value, null)
+  assert.equal(calls.length, 1)
+  dual.value = false
+  await flush()
+  assert.equal(calls.length, 2)
+  calls[1].resolve(anchor())
+  await flush()
+  assert.equal(state.response.value?.meta.snapshot_token, 'snapshot')
+  assert.equal(state.loading.value, false)
 })

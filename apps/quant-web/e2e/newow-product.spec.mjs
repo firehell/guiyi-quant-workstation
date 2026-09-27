@@ -367,6 +367,29 @@ test('six flat choices reuse the chart host, show independent dual tracks and cl
   assertNoUnexpectedRequests(fixture)
 })
 
+test('dual workspace never dispatches hidden single-strategy near-year records and restores them on return', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { dualMarket: true, onProductRequest: async ({ route, url }) => {
+    if (url.searchParams.get('include_fusion') !== 'true') return
+    await route.fulfill({ status: 503, json: { detail: { code: 'NEWOW_RESOURCE_BUSY' } } })
+    return 'handled'
+  } })
+  await page.goto(newowRoute('trend', '1d', '&newow_mode=dual'))
+  const chart = page.getByTestId('newow-product-chart-stage')
+  await expect(chart).toHaveAttribute('data-comparison-active', 'true')
+  await expect(page.locator('.fusion-panel [role="alert"]')).toHaveText('融合参考读取失败，请重试。')
+  const singleRecords = () => productRequests(fixture, 'reference').filter(item => item.strategy === 'trend' && item.url.searchParams.has('history_limit') && !item.url.searchParams.has('include_fusion'))
+  expect(singleRecords()).toHaveLength(0)
+  await page.getByRole('tab', { name: '趋势策略', exact: true }).click()
+  await expect(chart).toHaveAttribute('data-comparison-active', 'false')
+  await expect.poll(() => singleRecords().length).toBe(1)
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
+  await page.getByRole('tab', { name: '双策略', exact: true }).click()
+  await expect(chart).toHaveAttribute('data-comparison-active', 'true')
+  await expect(page.locator('.fusion-panel [role="alert"]')).toHaveText('融合参考读取失败，请重试。')
+  expect(singleRecords()).toHaveLength(1)
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('reference pagination exposes OPEN, CLOSED, interrupted and negative rows within the fixed records window without inventing zero metrics', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, { recordsHistory: true })
   await page.goto(newowRoute())

@@ -79,7 +79,7 @@ const referenceResponse = computed(() => (
     : null
 ))
 const chartReferenceResponse = computed(() => loader.chartReference.value as NewowProductSectionResponse<'reference'> | null)
-const recentRecords = useNewowRecentReference(chartReferenceResponse)
+const recentRecords = useNewowRecentReference(computed(() => dualMode.value ? null : chartReferenceResponse.value))
 const chartReferenceCompatible = computed(() => chartResponse.value?.meta.snapshot_token != null && chartReferenceResponse.value?.meta.snapshot_token === chartResponse.value.meta.snapshot_token)
 const explanationResponse = computed(() => (
   loader.sections.explanation.data.value?.section === 'explanation'
