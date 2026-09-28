@@ -479,3 +479,23 @@ test('RB and batch new capability versions open the four aggregate periods witho
     await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, open_frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }) }))
   }
 })
+
+
+test('single product candidate keeps its scope separate from historical batch and formal capability', async () => {
+  const payload = {
+    schema_version: 'newow_product_capabilities_v27', release_stage: 'single_product_intraday_candidate',
+    open_frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], intraday_products: ['ma'],
+    deferred_frequencies: [], open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => structuredClone(payload) })
+  const state = useNewowCapabilities(async () => accepted)
+  await state.load()
+  assert.deepEqual(state.openFrequenciesFor('MA'), payload.open_frequencies)
+  assert.deepEqual(state.openFrequenciesFor('rb'), [])
+  assert.equal(state.isFrequencyOpen('1m' as never, 'ma'), false)
+  for (const products of [[], ['rb'], ['ma', 'rb'], ['ma', 'ma'], ['zz'], ['MA']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, schema_version: 'newow_product_capabilities_v26', release_stage: 'black_steel_intraday_candidate' }) }))
+})

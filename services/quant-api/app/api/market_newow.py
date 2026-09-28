@@ -45,6 +45,7 @@ from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
     AU_PERIOD_PREVIEW_FREQUENCIES,
     INTRADAY_BATCH_PREVIEW_SYMBOLS,
+    INTRADAY_SINGLE_PREVIEW_SYMBOLS,
     AU_PERIOD_PREVIEW_SCHEMA_VERSION,
     AU_PERIOD_PREVIEW_STAGE,
     CAPABILITY_SCHEMA_VERSION,
@@ -240,7 +241,7 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
     selected = ProductFrequency(frequency)
     intraday = getattr(request.state, "intraday_preview_products", None)
     if intraday is not None:
-        if product not in (intraday & INTRADAY_BATCH_PREVIEW_SYMBOLS):
+        if product not in (intraday & (INTRADAY_BATCH_PREVIEW_SYMBOLS | INTRADAY_SINGLE_PREVIEW_SYMBOLS)):
             raise HTTPException(status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"})
         if selected is ProductFrequency.MINUTE:
             raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
@@ -280,10 +281,11 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
     """Return the single public scope used by clients for this staged release."""
     if getattr(request.state, "intraday_preview_products", None) is not None:
         batch = getattr(request.state, "intraday_preview_batch", False)
+        single = batch and not request.state.intraday_preview_products <= INTRADAY_BATCH_PREVIEW_SYMBOLS
         return NewowProductCapabilitiesResponse(
-            schema_version=("newow_product_capabilities_v26" if batch
+            schema_version=("newow_product_capabilities_v27" if single else "newow_product_capabilities_v26" if batch
                             else "newow_product_capabilities_v25"),
-            release_stage=("black_steel_intraday_candidate" if batch
+            release_stage=("single_product_intraday_candidate" if single else "black_steel_intraday_candidate" if batch
                            else "rb_intraday_candidate"),
             intraday_products=(sorted(request.state.intraday_preview_products)
                                if batch else None),

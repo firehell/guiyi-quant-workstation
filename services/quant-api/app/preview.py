@@ -17,6 +17,7 @@ from app.db.readonly import readonly_transaction
 from app.market_data.newow.product_release import (
     HOURLY_PRODUCT_PREVIEW_SYMBOLS,
     INTRADAY_BATCH_PREVIEW_SYMBOLS,
+    INTRADAY_SINGLE_PREVIEW_SYMBOLS,
     PD_PT_HOURLY_PREVIEW_SYMBOLS,
 )
 
@@ -97,7 +98,8 @@ def _intraday_preview_products() -> frozenset[str] | None:
     parts = [part.strip().lower() for part in raw.split(",")]
     items = frozenset(parts)
     if (not all(parts) or len(items) != len(parts)
-        or not items <= INTRADAY_BATCH_PREVIEW_SYMBOLS
+        or not (items <= INTRADAY_BATCH_PREVIEW_SYMBOLS
+                or (len(items) == 1 and items <= INTRADAY_SINGLE_PREVIEW_SYMBOLS))
         or (legacy is not None and (legacy != "rb" or items != {"rb"}))):
         raise ValueError("PREVIEW_SCOPE_INVALID")
     return items

@@ -60,7 +60,7 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
       || current?.schema_version === 'newow_product_capabilities_v22') {
       return supportedFrequencies(current.open_frequencies).filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
     }
-    if ((current?.schema_version === 'newow_product_capabilities_v24' || current?.schema_version === 'newow_product_capabilities_v26')) return current.intraday_products?.includes(normalized) ? supportedFrequencies(current.open_frequencies) : []
+    if ((current?.schema_version === 'newow_product_capabilities_v24' || current?.schema_version === 'newow_product_capabilities_v26' || current?.schema_version === 'newow_product_capabilities_v27')) return current.intraday_products?.includes(normalized) ? supportedFrequencies(current.open_frequencies) : []
     if ((current?.schema_version === 'newow_product_capabilities_v23' || current?.schema_version === 'newow_product_capabilities_v25')) return normalized === 'rb' ? supportedFrequencies(current.open_frequencies) : []
     if (current?.schema_version === 'newow_product_capabilities_v5' && normalized !== 'au') return []
     if (current?.schema_version === 'newow_product_capabilities_v6' && normalized !== 'pd' && normalized !== 'pt') {

@@ -71,6 +71,7 @@ const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
   ['newow_product_capabilities_v20', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V20 }],
   ['newow_product_capabilities_v21', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V21 }],
   ['newow_product_capabilities_v25', { stage: 'rb_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
+  ['newow_product_capabilities_v27', { stage: 'single_product_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v26', { stage: 'black_steel_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v24', { stage: 'black_steel_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v23', { stage: 'rb_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
@@ -119,15 +120,18 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(profile.weeklyProducts ? ['weekly_products'] : []),
-    ...(['newow_product_capabilities_v24', 'newow_product_capabilities_v26'].includes(value.schema_version) ? ['intraday_products'] : []),
+    ...(['newow_product_capabilities_v24', 'newow_product_capabilities_v26', 'newow_product_capabilities_v27'].includes(value.schema_version) ? ['intraday_products'] : []),
   ]
   if (Object.keys(value).sort().join(',') !== expectedKeys.sort().join(',')) return false
   if (!sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])) return false
   if (profile.weeklyProducts && !sameLiteralArray(value.weekly_products, profile.weeklyProducts)) return false
-  if (['newow_product_capabilities_v24', 'newow_product_capabilities_v26'].includes(value.schema_version)) {
+  if (['newow_product_capabilities_v24', 'newow_product_capabilities_v26', 'newow_product_capabilities_v27'].includes(value.schema_version)) {
     const products = value.intraday_products
-    const allowed = ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
-    if (!Array.isArray(products) || products.length === 0
+    const single = value.schema_version === 'newow_product_capabilities_v27'
+    const allowed = single
+      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr']
+      : ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
+    if (!Array.isArray(products) || products.length === 0 || (single && products.length !== 1)
       || !products.every(item => typeof item === 'string' && allowed.includes(item))
       || !sameLiteralArray(products, [...new Set(products)].sort())) return false
   }

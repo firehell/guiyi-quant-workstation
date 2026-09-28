@@ -10,6 +10,12 @@ from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 INTRADAY_BATCH_PREVIEW_SYMBOLS = frozenset({"rb", "hc", "ss", "i", "j", "jm", "sf", "sm"})
 
+# P7 candidate eligibility only; each non-batch preview selects one product.
+INTRADAY_SINGLE_PREVIEW_SYMBOLS = frozenset({
+    "fu", "ma", "ur", "ta", "sh", "v", "sa", "au", "ag", "ni", "sf", "sm",
+    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr",
+})
+
 ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]

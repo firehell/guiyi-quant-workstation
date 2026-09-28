@@ -1250,6 +1250,22 @@ SHALL fail closed; missing data SHALL NOT be treated as FLAT or replaced by anot
   dates; absent stop-loss facts SHALL NOT produce a stop-loss line.
 
 
+### Requirement: P7 single-product historical intraday candidate scope
+
+The local historical candidate SHALL accept an explicit singleton from the current P7 queue
+(FU, MA, UR, TA, SH, V, SA, AU, AG, NI, SF, SM, CJ, JD, AP, C, LH, M, RM, PK, SR).
+Eligibility SHALL NOT imply source readiness, asset completeness, acceptance, formal release or Runtime activation.
+The actual configured product SHALL remain the only readable product. Existing black/steel batch capability v26
+SHALL retain its exact scope and wire contract; a singleton outside that batch SHALL use capability v27 and
+`single_product_intraday_candidate`, opening only 5m/15m/30m/60m and compatible D1/W1. Newow 1m SHALL remain closed.
+Malformed, duplicate, unknown or expanded singleton configurations SHALL fail closed before readers.
+
+#### Scenario: MA singleton candidate
+
+- **WHEN** the local preview explicitly configures only MA
+- **THEN** capability v27 lists only ma, rejects other products and Newow 1m, and leaves formal minute access closed
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
