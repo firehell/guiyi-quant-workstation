@@ -32,6 +32,10 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-04 TA **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。48/48 DATA_READY；一次精确维护88源月/360派生月，591旧文件及283日周pointer保留，12候选资产全部新增、disabled/generation=0。
+冻结候选源码ba03d58d7；API、真实Chrome主图/完整曲线/较早窗口各12/12及取消/短超时恢复通过，日周六组33 PASS/3辅助WARMING；当周Calendar/Session证明W1截点9/24 07:00 UTC。独立Review49原图及定向12测试通过，允许集成develop；coverage/deep MACD/持有过程/日周older等边界保留。
+仅交付工程记录；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换。见 [TA处理记录](docs/tasks/ta-minute-closeout-20260928.md)。其余队列及21分母不变。
+
 - Newow 日周三策略以及日周 CDV2 解释、独立双策略入口已随 v1.10.38 交付；主图、辅助、参考曲线分层；v1.10.39参考记录已扩展为近一年。
   Newow 60m 未开放，日周解释不构成 StrategyDecision、模型账户或真实交易。
 - 正式 60 品种 D1/W1 默认快照、质量断点与预热披露已完成本轮数据/页面验收；不是每个组合均 READY 或盈利的声明。
@@ -64,7 +68,7 @@ API12/12、真实Chrome功能/完整曲线/较早主图各12/12、取消/短超�
 保留4个完整策略窗口coverage未证明、深窗口MACD整段覆盖未证明、持有过程不可用、日周较早分页未额外验的边界。
 本次交付至develop；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换，候选不是OOS或可执行收益证明。
 原始证据仅在本机`outputs/ur-minute-closeout-20260928/`；身份、真实命令、失败过程和恢复范围见[UR处理记录](docs/tasks/ur-minute-closeout-20260928.md)。
-下一项P7-04 TA由总控安排，本会话不创建下一项。
+UR交付时的后续项P7-04 TA当前进度见本页TA记录。
 
 ## MA 四周期历史候选（2026-09-28）
 
