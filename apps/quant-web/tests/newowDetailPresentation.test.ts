@@ -72,6 +72,10 @@ test('chart price remains visible when explanation is unopened and FLAT', () => 
     absorb: { raw: '90', display: '90.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
   }
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, true).target?.display, '110.00')
+  assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, true).target?.display, '110.00')
+  assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, false).target, null)
+  c.value.price_reference.anchor_bar_end = '2020-01-01T07:00:00Z'
+  assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, true).target, null)
 })
 test('price badge preserves neutral zero and rejects missing values', () => {
   assert.deepEqual([null, 0, 1, -1].map(priceDirection), ['neutral', 'neutral', 'up', 'down'])
