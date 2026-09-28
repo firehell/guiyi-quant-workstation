@@ -566,6 +566,10 @@ class MarketDataService:
         if not trading_days:
             return None
         last_day = trading_days[-1]
+        # Calendar can prove this week is still in progress without requiring
+        # Session authority that daily maintenance has not published yet.
+        if last_day > as_of.astimezone(SHANGHAI).date():
+            return None
         last_end = max(
             window.end for window in self.session_windows(
                 symbol=symbol, trading_day=last_day,

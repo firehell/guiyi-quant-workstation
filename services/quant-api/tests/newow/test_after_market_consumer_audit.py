@@ -26,6 +26,7 @@ def _case(
             "auxiliary:macd": {"status": auxiliary, "reason": "NEWOW_MACD_WARMING"},
             "auxiliary:main_force_control": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
             "auxiliary:up_down_energy": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
+            "auxiliary:trend_reversal": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
             "auxiliary:zhaoyao_mirror": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
             "auxiliary:cup_handle": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
         },
@@ -57,10 +58,54 @@ def test_summarize_readiness_accepts_legal_non_ready_strategy_states():
     assert result["failures"] == []
 
 
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_summarize_readiness_accepts_all_current_consumer_sections(frequency):
+    result = summarize_readiness(
+        {
+            "complete": True, "budget_exhausted": False,
+            "cases": [
+                _case("au", strategy, "READY", "READY", "READY", frequency=frequency)
+                for strategy in ("trend", "oscillation", "main_rise")
+            ],
+            "repair_targets": [], "provider_requests": 0, "writes": 0,
+        },
+        products=("au",), frequency=frequency,
+        cutoffs={"au": "2026-09-18T07:00:00.000001+00:00"},
+        input_revision="a" * 64,
+    )
+    assert result["status"] == "audited"
+    assert result["main_ready_count"] == result["reference_ready_count"] == 3
+    assert result["auxiliary_ready_count"] == 18
+    assert result["unverified_products"] == result["failures"] == []
+
+
+def test_trend_reversal_failure_survives_public_consumer_status():
+    from app.market_data.after_market import _public_consumer_audit
+
+    cases = [_case("au", strategy, "READY", "READY", "READY")
+             for strategy in ("trend", "oscillation", "main_rise")]
+    failure = {"status": "UNKNOWN", "reason": "TRADING_SESSION_MISSING"}
+    cases[0]["sections"]["auxiliary:trend_reversal"] = failure
+    result = summarize_readiness(
+        {"complete": False, "budget_exhausted": False, "cases": cases,
+         "repair_targets": [], "provider_requests": 0, "writes": 0},
+        products=("au",), frequency="1w",
+        cutoffs={"au": "2026-09-18T07:00:00.000001+00:00"},
+        input_revision="a" * 64,
+    )
+    public = _public_consumer_audit(result)
+    assert public["status"] == "incomplete"
+    assert public["failures"] == [{
+        "product": "au", "strategy": "trend", "section": "auxiliary:trend_reversal",
+        "reason": "TRADING_SESSION_MISSING",
+    }]
+
+
 @pytest.mark.parametrize(
     ("mutation", "section"),
     (("remove", "chart"), ("remove", "reference"),
-     ("remove", "auxiliary:cup_handle"), ("add", "explanation")),
+     ("remove", "auxiliary:cup_handle"), ("remove", "auxiliary:trend_reversal"),
+     ("add", "explanation")),
 )
 def test_summarize_readiness_rejects_missing_or_extra_consumer_section(
     mutation, section,

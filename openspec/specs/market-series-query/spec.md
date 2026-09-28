@@ -94,6 +94,14 @@ actual_dominant MUST 按 rank1 Map 拼接真实 contract，不得存储重复 Pa
 actual_dominant 的 1w SHALL 只返回完整 ISO 周，并以该周最后交易日 rank1 contract 作为整周 owner。
 分页读取 SHALL 在本次请求内复用同品种同 ISO 周日历，候选过滤与分页边界验证共用该事实；不得跨请求
 缓存，后续读取必须能观察到日历更新。复用不改变缺失映射、缺失日历、物理完整性与游标语义。
+完整周候选解析 MUST 先读取精确整周 Calendar。若该周最后交易日仍晚于 `as_of` 的上海本地日期，
+该周明确尚未完成，MUST 返回未完成而不要求未来最后交易日的 Session；消费者可继续选择已完成的前周。
+最后交易日已到时仍 MUST 使用权威 Session end 加一个微秒证明截止点，不得因 Session 缺失跳过该周。
+
+#### Scenario: 周一尚未发布本周最后交易日 Session
+
+- **WHEN** 9/28 盘后 Calendar 证明本周最后交易日为 9/30，而正式 Session 只覆盖 9/28 与 9/29
+- **THEN** 当前周候选为未完成，已完成前周仍可按自身 Session 读取；9/30 已到后缺 Session 则显式失败
 
 #### Scenario: 周中换月
 - **WHEN** rank1 在完整 ISO 周内变更

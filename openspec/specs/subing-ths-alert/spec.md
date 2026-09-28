@@ -390,6 +390,10 @@ Alert processing, Rule, coverage, transport and notification configuration failu
 component but SHALL NOT degrade the top-level operational health. Optional weekly audit remains independent.
 Fresh, available Live with all operational products explicitly CLOSED and complete phase counts SHALL be operationally
 healthy despite unverified coverage after cleanup or a closed-session restart. Coverage MUST remain unverified;
+mixed trading/closed sessions MAY exempt only the unverified coverage of individually CLOSED products when
+`phase_by_product` covers the exact operational coverage keys and agrees with complete aggregate phase counts.
+Unverified coverage of TRADING, BREAK or UNKNOWN products, or an absent/inconsistent per-product phase identity
+in mixed sessions, MUST remain degraded.
 this exception MUST NOT hide known lagging, stale/missing/future heartbeats, unavailable connections, or unverified
 coverage during trading or unknown/incomplete phases. After-market failure/missed/stuck/invalid-state semantics remain unchanged.
 
@@ -397,6 +401,11 @@ coverage during trading or unknown/incomplete phases. After-market failure/misse
 
 - **WHEN** DB/Redis are healthy, Live heartbeat is fresh and available with all products CLOSED, and the expected after-market increment passed
 - **THEN** top-level health is ok even if Live coverage is unverified and Alert processing or notifications failed; diagnostic evidence remains unchanged
+
+#### Scenario: Mixed night session keeps closed products unverified without masking active gaps
+
+- **WHEN** 45 products are TRADING with ok coverage, 15 products are explicitly CLOSED with unverified coverage, the exact per-product phases agree with the complete 60-product counts, and DB/Redis/heartbeats/after-market are healthy
+- **THEN** operational health is ok and closed coverage remains unverified; any active unverified coverage, known lagging, unavailable connection, stale/future heartbeat or inconsistent phase identity still degrades health
 
 ### Requirement: Alert component health preserves current rule errors
 

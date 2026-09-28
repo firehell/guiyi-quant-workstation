@@ -29,6 +29,7 @@ from app.models import (
 from guiyi_quant.newow.product_contracts import ProductFrequency
 
 from .product_reader import NewowProductReader
+from .product_service import AuxiliaryComponent
 from .product_release import (
     CANDIDATE_WEEKLY_PRODUCTS,
     candidate_input_quality_policy,
@@ -39,14 +40,10 @@ from .weekly_snapshot import publication_state_from_status
 
 
 _STRATEGIES = frozenset({"trend", "oscillation", "main_rise"})
-_SECTIONS = frozenset({
+CONSUMER_SECTIONS = frozenset({
     "chart",
     "reference",
-    "auxiliary:macd",
-    "auxiliary:main_force_control",
-    "auxiliary:up_down_energy",
-    "auxiliary:zhaoyao_mirror",
-    "auxiliary:cup_handle",
+    *(f"auxiliary:{component.value}" for component in AuxiliaryComponent),
 })
 _LEGAL_NON_READY = frozenset({"WARMING", "NOT_APPLICABLE", "UNAVAILABLE", "DATA_INTERRUPTED"})
 _PRODUCT = re.compile(r"[a-z]{1,4}\Z")
@@ -358,7 +355,7 @@ def summarize_readiness(
                 invalid_products.add(product)
             continue
         seen.add((product, str(strategy)))
-        if set(sections) != _SECTIONS:
+        if set(sections) != CONSUMER_SECTIONS:
             structurally_complete = False
             invalid_products.add(product)
             continue

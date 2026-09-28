@@ -1280,6 +1280,8 @@ def _public_consumer_audit(value: object) -> dict[str, object]:
     raw_failures = value.get("failures")
     if not isinstance(raw_failures, list) or len(raw_failures) > 1800:
         return {"status": "not_verified"}
+    from app.market_data.newow.after_market_consumer_audit import CONSUMER_SECTIONS
+
     failures: list[dict[str, str]] = []
     for row in raw_failures:
         if not isinstance(row, Mapping):
@@ -1291,7 +1293,7 @@ def _public_consumer_audit(value: object) -> dict[str, object]:
         if (
             not isinstance(product, str) or _PUBLIC_PRODUCT_CODE.fullmatch(product) is None
             or strategy not in {"trend", "oscillation", "main_rise"}
-            or section not in {"chart", "reference", "auxiliary:macd", "auxiliary:main_force_control", "auxiliary:up_down_energy", "auxiliary:zhaoyao_mirror", "auxiliary:cup_handle"}
+            or section not in CONSUMER_SECTIONS
             or not isinstance(reason, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", reason) is None
         ):
             return {"status": "not_verified"}

@@ -1035,6 +1035,74 @@ def test_closed_live_health_preserves_coverage_and_real_failures(
     assert live["coverage"]["a"]["contract"] is None
 
 
+@pytest.mark.parametrize("trading_count,closed_count", [(1, 1), (45, 15)])
+@pytest.mark.parametrize("fault", [
+    None, "trading_unverified", "closed_lagging", "missing_phases",
+    "mismatched_phases", "unknown_phase", "incomplete_counts",
+    "legacy_coverage", "list_phase", "dict_phase", "break_unverified",
+    "stale", "future", "unavailable",
+])
+def test_mixed_live_health_exempts_only_verified_closed_products(
+    trading_count, closed_count, fault,
+) -> None:
+    from app.services.runtime_health import _collect_live_market_health
+
+    now = datetime(2026, 9, 28, 13, 2, tzinfo=UTC)
+    trading = [f"trading{index}" for index in range(trading_count)]
+    closed = [f"closed{index}" for index in range(closed_count)]
+    heartbeat = {
+        "generated_at": now.isoformat(), "available": True,
+        "operational_count": trading_count + closed_count,
+        "subscribed_count": trading_count, "last_bar_at": now.isoformat(),
+        "phase_counts": {"TRADING": trading_count, "CLOSED": closed_count},
+        "phase_by_product": {
+            **dict.fromkeys(trading, "TRADING"), **dict.fromkeys(closed, "CLOSED"),
+        },
+        "coverage_schema_version": 1,
+        "coverage": {
+            **{s: {"state": "ok", "sessions": []} for s in trading},
+            **{s: {"state": "unverified", "sessions": []} for s in closed},
+        },
+    }
+    if fault == "trading_unverified":
+        heartbeat["coverage"][trading[0]]["state"] = "unverified"
+    elif fault == "closed_lagging":
+        heartbeat["coverage"][closed[0]]["state"] = "lagging"
+    elif fault == "missing_phases":
+        heartbeat.pop("phase_by_product")
+    elif fault == "mismatched_phases":
+        heartbeat["phase_by_product"][closed[0]] = "TRADING"
+    elif fault == "unknown_phase":
+        heartbeat["phase_by_product"][closed[0]] = "UNKNOWN"
+        heartbeat["phase_counts"]["CLOSED"] -= 1
+        heartbeat["phase_counts"]["UNKNOWN"] = 1
+    elif fault == "incomplete_counts":
+        heartbeat["phase_counts"]["CLOSED"] -= 1
+    elif fault == "legacy_coverage":
+        heartbeat.pop("coverage_schema_version")
+    elif fault in {"list_phase", "dict_phase"}:
+        heartbeat["phase_by_product"][closed[0]] = [] if fault == "list_phase" else {}
+    elif fault == "break_unverified":
+        heartbeat["phase_by_product"][closed[0]] = "BREAK"
+        heartbeat["phase_counts"]["CLOSED"] -= 1
+        heartbeat["phase_counts"]["BREAK"] = 1
+    elif fault in {"stale", "future"}:
+        age = 301 if fault == "stale" else -1
+        heartbeat["generated_at"] = (now - timedelta(seconds=age)).isoformat()
+    elif fault == "unavailable":
+        heartbeat["available"] = False
+
+    live = _collect_live_market_health(
+        FakeRedis(values={"live:heartbeat": json.dumps(heartbeat)}), now=now,
+        configured_enabled=True, freshness_seconds=300,
+    )
+    assert live["status"] == ("ok" if fault is None else "degraded")
+    if fault is None:
+        assert live["coverage_state"] == "unverified"
+        assert all(live["coverage"][s]["state"] == "unverified" for s in closed)
+        assert all(live["coverage"][s]["state"] == "ok" for s in trading)
+
+
 @pytest.mark.parametrize("market_failure", [None, "db", "redis", "live_market", "after_market"])
 @pytest.mark.parametrize("alert_status", ["ok", "degraded", "failed"])
 def test_overall_health_only_depends_on_market_path(monkeypatch, market_failure, alert_status):
