@@ -524,6 +524,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       status: prior!.status,
       value: {
         ...value,
+        // Older rows extend the timeline; the accepted viewport keeps its price anchor.
+        price_reference: priorValue.price_reference,
         bars: boundedBars, frames: boundedFrames, trend_channel: boundedTrendChannel,
         actions: boundedActions, hints: boundedHints,
         diagnostics: [...new Set([...priorValue.diagnostics, ...value.diagnostics])],

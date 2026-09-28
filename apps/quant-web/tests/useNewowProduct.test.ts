@@ -156,15 +156,16 @@ test('older windows append under the same snapshot after page exhaustion and pre
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
   await nextTick()
-  const first = normalizedChartPage(pending[0]!.request, '2026-08-14', 'within') as NewowProductSectionResponse<'chart'>
+  const first = withChartPrice(normalizedChartPage(pending[0]!.request, '2026-08-14', 'within'), '140') as NewowProductSectionResponse<'chart'>
   pending[0]!.resolve(first); await flush()
   assert.equal(state.currentChartWindow?.value, true)
   const within = state.loadNextChartPage()
   assert.equal((pending[1]!.request as any).chartBefore, 'within')
-  const last = normalizedChartPage(pending[1]!.request, '2026-08-13', null) as NewowProductSectionResponse<'chart'>
+  const last = withChartPrice(normalizedChartPage(pending[1]!.request, '2026-08-13', null), '130') as NewowProductSectionResponse<'chart'>
   pending[1]!.resolve({ ...last, value: { ...last.value!, next_older_window: 'older-window' } } as any)
   await within
   assert.equal(state.currentChartWindow.value, true, 'same-window pagination keeps current provenance')
+  assert.deepEqual((state.sections.chart.data.value as any).value.price_reference, first.value!.price_reference)
   const reference = state.loadReference()
   pending[2]!.resolve(normalizedReference(pending[2]!.request)); await reference
   const referenceBefore = state.sections.reference.data.value
@@ -173,13 +174,14 @@ test('older windows append under the same snapshot after page exhaustion and pre
   assert.equal((pending[3]!.request as any).chartOlderWindow, 'older-window')
   assert.equal((pending[3]!.request as any).from, undefined)
   assert.equal((pending[3]!.request as any).chartBefore, undefined)
-  const previous = normalizedChartPage(pending[3]!.request, '2026-07-31', null) as NewowProductSectionResponse<'chart'>
+  const previous = withChartPrice(normalizedChartPage(pending[3]!.request, '2026-07-31', null), '110') as NewowProductSectionResponse<'chart'>
   pending[3]!.resolve({ ...previous, meta: { ...previous.meta, input_content_sha256: 'b'.repeat(64) }, value: { ...previous.value!, chart_from: '2026-07-01', chart_through: '2026-07-31', page_identity: 'c'.repeat(64), next_older_window: null } } as any)
   await older
   assert.equal(state.currentChartWindow.value, false, 'older navigation suppresses a current claim')
   const chart = state.sections.chart.data.value as NewowProductSectionResponse<'chart'>
   assert.deepEqual(chart.value!.bars.map(bar => bar.trading_day), ['2026-07-31', '2026-08-13', '2026-08-14'])
   assert.equal(state.sections.reference.data.value, referenceBefore)
+  assert.deepEqual(chart.value!.price_reference, first.value!.price_reference)
   state.dispose()
 })
 
@@ -2041,3 +2043,16 @@ test('explanation summary compatibility requires the entire accepted chart gener
   assert.equal(state.explanationChartCompatible.value, false)
   state.dispose()
 })
+
+function withChartPrice(response: NewowProductSectionResponse, raw: string): NewowProductSectionResponse<'chart'> {
+  if (response.section !== 'chart' || response.value === null) throw new Error('chart required')
+  const anchor = response.value.bars.at(-1)!
+  const value = { raw, display: raw + '.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } }
+  return { ...response, value: { ...response.value, price_reference: {
+    surface: 'chart_legend', frequency: response.meta.identity.frequency, as_of: response.meta.as_of,
+    anchor_bar_end: anchor.bar_end, physical_contract: anchor.physical_contract, segment_id: anchor.segment_id,
+    calculation_segment_id: anchor.calculation_segment_id, input_sha256: response.meta.input_content_sha256,
+    formula_version: 'newow_chart_legend_hhv_llv10_page_v1', adapter_version: 'newow_chart_price_projection_v1',
+    target: value, absorb: value,
+  } } } as NewowProductSectionResponse<'chart'>
+}

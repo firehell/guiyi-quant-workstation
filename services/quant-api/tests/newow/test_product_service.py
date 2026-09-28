@@ -104,7 +104,7 @@ class _Reader:
         self.loads.append(query)
         return ProductReadSet(
             query.frequency,
-            {query.frequency: self.bars},
+            {query.frequency: tuple(bar for bar in self.bars if bar.bar.bar_end <= as_of)},
             (),
             (),
             ProductReadWindow(query.since, query.through),

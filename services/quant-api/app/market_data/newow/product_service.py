@@ -1189,7 +1189,7 @@ class NewowProductService:
         deliveries = {section: _not_requested() for section in ProductSection}
         if request.section is ProductSection.CHART:
             deliveries[request.section] = self._chart(
-                request, read, identity, fact_key, page_identity
+                request, read, identity, fact_key, page_identity, request_as_of
             )
         elif request.section is ProductSection.AUXILIARY:
             assert request.component is not None
@@ -1250,6 +1250,7 @@ class NewowProductService:
         identity: ProductIdentity,
         fact_key: str,
         page_identity: str,
+        request_as_of: datetime,
     ) -> SectionDelivery:
         replay = replay_strategy(
             identity,
@@ -1315,7 +1316,7 @@ class NewowProductService:
             tuple(frame.bar for frame in replay.frames), tuple(frame.bar for frame in selected)
         )
         price_reference = project_chart_price_reference(
-            channel, selected[-1].bar, as_of=read.replay_bars[-1].bar.bar_end,
+            channel, selected[-1].bar, as_of=request_as_of,
             input_sha256=lifecycle_input_sha256(read.replay_bars),
         ) if selected else None
         return SectionDelivery(
