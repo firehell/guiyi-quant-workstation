@@ -20,7 +20,7 @@ export default defineConfig(({ mode, command }) => {
     throw new Error('PREVIEW_CUTOFF_INVALID_OR_NOT_DEV_SERVER')
   }
   const candidateOrigin = candidate ? resolveCandidateOrigin() : 'http://127.0.0.1:8010'
-  if (candidate && !/^http:\/\/127\.0\.0\.1:801[01]$/.test(candidateOrigin)) {
+  if (candidate && !/^http:\/\/127\.0\.0\.1:801[012]$/.test(candidateOrigin)) {
     throw new Error('PREVIEW_CANDIDATE_ORIGIN_INVALID')
   }
   const codeSha = candidate ? execFileSync('git', ['rev-parse', 'HEAD'], {

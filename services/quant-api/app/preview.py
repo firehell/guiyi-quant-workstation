@@ -37,7 +37,7 @@ PREVIEW_PATHS = frozenset(
 _SUBING_REFERENCE_PATH = re.compile(
     r"^/api/v1/market/[a-z]{1,8}/subing/reference$"
 )
-_LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[01]$")
+_LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[012]$")
 DEFAULT_CANDIDATE_ORIGIN = "http://127.0.0.1:8010"
 DEFAULT_STATUS_ORIGIN = "http://127.0.0.1:8000"
 

@@ -230,3 +230,41 @@ test('candidate server rejects attempts to bind non-loopback', async () => {
   assert.throws(() => hook({ server: { host: '0.0.0.0' } }), /PREVIEW_LOCAL_ONLY/)
   assert.doesNotThrow(() => hook({ server: { host: '127.0.0.1' } }))
 })
+
+
+test('third isolated candidate accepts only fixed loopback 8012 and defaults to independent 5178', async (context) => {
+  context.mock.method(Date, 'now', () => Date.parse('2026-09-18T00:00:00Z'))
+  const originalAsOf = process.env.GUIYI_PREVIEW_AS_OF
+  const originalOrigin = process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN
+  process.env.GUIYI_PREVIEW_AS_OF = '2026-09-17T07:00:00Z'
+  process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN = 'http://127.0.0.1:8012'
+  try {
+    const origin = 'http://127.0.0.1:8012'
+    const { resolveCandidateOrigin, candidatePreviewWebPort, previewTarget, candidatePreviewPlugin } = await import('../previewProxy.ts')
+    assert.equal(resolveCandidateOrigin(origin), origin)
+    assert.equal(candidatePreviewWebPort(origin), 5178)
+    assert.equal(previewTarget('GET', '/api/v1/market/newow/strategy-detail', false, origin), origin)
+    assert.equal(previewTarget('POST', '/api/v1/market/newow/strategy-detail', false, origin), null)
+    assert.equal(previewTarget('GET', '/api/v1/market/newow/strategy-detail', true, origin), null)
+    const hook = candidatePreviewPlugin(origin).configResolved as Function
+    for (const port of [5173, 5174, 5175, 5176, 5177]) assert.throws(() => hook({ server: { host: '127.0.0.1', port } }), /PREVIEW_OVERFLOW_PORT_REQUIRED/)
+    assert.doesNotThrow(() => hook({ server: { host: '127.0.0.1', port: 5178 } }))
+    assert.throws(() => hook({ server: { host: '0.0.0.0', port: 5178 } }), /PREVIEW_LOCAL_ONLY/)
+    const { default: config } = await import('../vite.config.ts')
+    const result = (config as Function)({ mode: 'candidate-preview', command: 'serve' })
+    assert.equal(result.server.port, 5178)
+    assert.equal(result.server.host, '127.0.0.1')
+    assert.equal(result.server.proxy['^/api/(preview/identity|v1/market/)'].target, origin)
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_CANDIDATE_ORIGIN']), origin)
+    for (const invalid of ['http://127.0.0.1:8013', 'http://127.0.0.2:8012', 'http://localhost:8012', 'http://0.0.0.0:8012', 'https://127.0.0.1:8012', 'http://127.0.0.1:8012/']) {
+      assert.throws(() => resolveCandidateOrigin(invalid), /PREVIEW_CANDIDATE_ORIGIN_INVALID/)
+      process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN = invalid
+      assert.throws(() => (config as Function)({ mode: 'candidate-preview', command: 'serve' }), /PREVIEW_CANDIDATE_ORIGIN_INVALID/)
+    }
+  } finally {
+    if (originalAsOf === undefined) delete process.env.GUIYI_PREVIEW_AS_OF
+    else process.env.GUIYI_PREVIEW_AS_OF = originalAsOf
+    if (originalOrigin === undefined) delete process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN
+    else process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN = originalOrigin
+  }
+})

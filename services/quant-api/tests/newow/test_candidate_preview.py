@@ -349,8 +349,9 @@ def test_preview_identity_declares_subing_reference_with_the_cutoff_scope(previe
     assert payload["status_origin"] == "http://127.0.0.1:8000"
 
 
-def test_preview_identity_candidate_origin_can_be_overflow_8011(preview, monkeypatch):
-    monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", "http://127.0.0.1:8011")
+@pytest.mark.parametrize("origin", ("http://127.0.0.1:8011", "http://127.0.0.1:8012"))
+def test_preview_identity_candidate_origin_can_be_overflow(preview, monkeypatch, origin):
+    monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", origin)
     from app.preview import create_preview_app
 
     _app, _sessions, factory = preview
@@ -358,7 +359,7 @@ def test_preview_identity_candidate_origin_can_be_overflow_8011(preview, monkeyp
         enabled=True, as_of="2026-09-03T08:00:00Z", session_factory=factory
     )
     payload = TestClient(app).get("/api/preview/identity").json()
-    assert payload["candidate_origin"] == "http://127.0.0.1:8011"
+    assert payload["candidate_origin"] == origin
 
 
 def test_preview_identity_rejects_non_loopback_or_non_overflow_origin(monkeypatch):
@@ -367,7 +368,10 @@ def test_preview_identity_rejects_non_loopback_or_non_overflow_origin(monkeypatc
     monkeypatch.setenv("GUIYI_CANDIDATE_PREVIEW", "1")
     for value in (
         "http://127.0.0.1:8000",
-        "http://127.0.0.1:8012",
+        "http://127.0.0.1:8013",
+        "http://127.0.0.2:8012",
+        "http://localhost:8012",
+        "http://127.0.0.1:8012/",
         "http://0.0.0.0:8011",
         "https://127.0.0.1:8011",
         "http://127.0.0.1:8011/extra",
