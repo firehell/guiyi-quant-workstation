@@ -316,7 +316,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 
 | 任务 | 品种 | 代码 | 本轮初始状态 |
 | --- | --- | --- | --- |
-| P7-01 | 燃料油 | FU | NOT_STARTED |
+| P7-01 | 燃料油 | FU | DEFERRED_DATA_BLOCKED，0/12；会话 `01a0e788-a1d4-7b82-9446-b72f5f4815ae`；[处理记录](../../tasks/fu-minute-closeout-20260928.md) |
 | P7-02 | 甲醇 | MA | NOT_STARTED |
 | P7-03 | 尿素 | UR | NOT_STARTED |
 | P7-04 | PTA | TA | NOT_STARTED |
