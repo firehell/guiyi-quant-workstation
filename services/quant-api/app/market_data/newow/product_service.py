@@ -396,7 +396,7 @@ def _reference_coverage_intervals(
     for day, grouped in groupby(events, key=lambda item: item[0]):
         same_day = tuple(grouped)
         if len(same_day) > 1:
-            if read.frequency not in INTRADAY_PRODUCT_FREQUENCIES or len({item[2:] for item in same_day}) != 1:
+            if read.frequency not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) or len({item[2:] for item in same_day}) != 1:
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
             if any(item[1] == "PRICE_UNAVAILABLE" for item in same_day):
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
@@ -795,7 +795,7 @@ class NewowProductService:
         if request.section in {ProductSection.REFERENCE, ProductSection.COMPARATOR}:
             gate = self._reference_gate if (
                 request.section is ProductSection.REFERENCE
-                and request.frequency in INTRADAY_PRODUCT_FREQUENCIES
+                and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
                 and self._persisted_reference is not None
             ) else self._gate
             with gate.acquire(cancelled):
@@ -912,7 +912,7 @@ class NewowProductService:
             self._market_read_key(low_query, read_as_of, policy),
             lambda: reader.load_reference_scope(low_query, read_as_of)
             if self._persisted_reference is not None and request.section is ProductSection.REFERENCE
-            and request.frequency in INTRADAY_PRODUCT_FREQUENCIES
+            and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
             and callable(getattr(reader, "load_reference_scope", None))
             else reader.load(low_query, read_as_of),
         )
@@ -942,7 +942,7 @@ class NewowProductService:
             )
         fact_key = _fingerprint(read, identity)
         proof = _dependency_proof(read)
-        if self._persisted_reference is not None and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(
+        if self._persisted_reference is not None and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(
             getattr(reader, "historical_source_evidence", None)
         ):
             # Every section shares the same verified Canonical generation at
@@ -981,14 +981,14 @@ class NewowProductService:
         cached = self._cache.get(common_key, section_key)
         if isinstance(cached, NewowProductResult):
             validator = getattr(getattr(self._persisted_reference, "__self__", None), "validate_cached_generation", None)
-            if request.section is ProductSection.REFERENCE and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(validator):
+            if request.section is ProductSection.REFERENCE and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(validator):
                 validator(cached.reference)
             return replace(
                 cached, meta=replace(cached.meta, read_at=utc_timestamp(self._now()))
             )
         base = None
         attach_fusion = getattr(getattr(self._persisted_reference, "__self__", None), "attach_cached_fusion", None)
-        if request.include_fusion and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(attach_fusion):
+        if request.include_fusion and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(attach_fusion):
             base_key = self._section_key(replace(request, include_fusion=False, fusion_before=None), window, resolved, fact_key, page_identity) + (navigable,)
             candidate = self._cache.get(common_key, base_key)
             if isinstance(candidate, NewowProductResult) and isinstance(candidate.reference.value, PersistedReferenceSectionValue):
@@ -1211,7 +1211,7 @@ class NewowProductService:
             assert resolved is not None
             deliveries[request.section] = (
                 self._reference(request, read, identity, fact_key, page_identity, resolved)
-                if self._persisted_reference is None or (request.include_fusion and request.frequency not in INTRADAY_PRODUCT_FREQUENCIES) else
+                if self._persisted_reference is None or (request.include_fusion and request.frequency not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)) else
                 self._persisted_reference(
                     request, read, identity, reader, fact_key, page_identity, resolved,
                 )
