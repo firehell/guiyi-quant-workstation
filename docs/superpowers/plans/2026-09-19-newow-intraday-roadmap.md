@@ -320,7 +320,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 | P7-02 | 甲醇 | MA | CANDIDATE_CLOSED，12/12；会话 `01a0e7ac-e302-7c61-bf58-828470f9c986`；[处理记录](../../tasks/ma-minute-closeout-20260928.md) |
 | P7-03 | 尿素 | UR | CANDIDATE_CLOSED，12/12；会话 `01a0e81f-3f72-7c11-984a-49d28065be8e`；[处理记录](../../tasks/ur-minute-closeout-20260928.md) |
 | P7-04 | PTA | TA | CANDIDATE_CLOSED，12/12；会话 `01a0e854-76a8-7b12-b6ba-4ce7dc562341`；[处理记录](../../tasks/ta-minute-closeout-20260928.md) |
-| P7-05 | 烧碱 | SH | NOT_STARTED |
+| P7-05 | 烧碱 | SH | CANDIDATE_CLOSED，12/12；会话 `01a0e895-159e-70b0-aa88-df1d96fad51a`；[处理记录](../../tasks/sh-minute-closeout-20260928.md) |
 | P7-06 | PVC | V | NOT_STARTED |
 | P7-07 | 纯碱 | SA | NOT_STARTED |
 | P7-08 | 黄金 | AU | NOT_STARTED |
