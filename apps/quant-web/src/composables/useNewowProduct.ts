@@ -351,6 +351,11 @@ export function useNewowProduct(options: UseNewowProductOptions) {
               : request.from !== undefined && request.through !== undefined
                 ? { from: request.from, through: request.through }
                 : null
+            const referenceChartWindow = section === 'reference' && chartWindow !== null
+              ? acceptedCurrentChartWindow.value
+                ? { chartLimit: chartPageLimit ?? 500 }
+                : { from: chartWindow.from, through: chartWindow.through, chartLimit: chartPageLimit ?? 500 }
+              : null
             invalidateTokenDependents(rejectedToken, section)
             if (section === 'auxiliary') {
               if (rebuildExhausted || rebuildChartWindow === null) {
@@ -365,6 +370,19 @@ export function useNewowProduct(options: UseNewowProductOptions) {
               return
             }
             request = withoutGenerationBindings(request)
+            if (referenceChartWindow !== null) {
+              // Revoking shared reference proof also revokes the displayed chart.
+              // Recover that exact window before binding the single page-one rebuild.
+              invalidateSection('chart')
+              await loadChart(referenceChartWindow)
+              if (!isCurrent(section, requestGeneration, sectionGeneration, controller)) return
+              const chartToken = resources.chart.data.value?.meta.snapshot_token
+              if (!chartToken) {
+                failConflict(section, 'NEWOW_SNAPSHOT_GENERATION_CONFLICT')
+                return
+              }
+              request = { ...request, snapshotToken: chartToken }
+            }
             continue
           }
           fail(section, error)

@@ -891,6 +891,11 @@ summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit �
 也不得以缓存命中绕过逐事实重验。旧 cursor、失效 token、数据修订或共同事实冲突 MUST 返回
 可分类 409，要求客户端清除相关旧结果并重建快照；不得无限自动重试或继续旧 cursor。
 
+结果容量拒绝后，若请求携带的既有 token 仍有效、namespace 一致，且本次重新验证的 proof **全部键和值**
+已被该 entry 保存并覆盖，响应 MAY 绑定该既有 token；这不表示超限结果已缓存，不更新 proof、TTL 或 LRU，
+也不得返回未原子保存的更早窗口导航。只有交集相同而存在未保存的新 proof 键时不得采用该路径；首次超限读取、
+失效 token 或缓存关闭时仍不得宣称已建立 snapshot。
+
 失败、不完整读取和未验证结果不得缓存。关闭缓存时结果、身份和错误语义 MUST 不变。reference/comparator
 共享同一个重型预算：运行并发 1、FIFO 等待队列最多 2、等待 5 秒超时；第三个等待者或超时返回429。
 排队取消必须移除 waiter 并释放名额，运行阶段在安全边界释放 permit，不新增常驻 worker。取消 MUST
@@ -1109,6 +1114,8 @@ All prices and returns SHALL remain server Decimal strings; no frontend return f
 - **WHEN** 当前请求遭遇允许重建的 409
 - **THEN** 关联旧资源与其他在途请求失效，当前请求可保留身份完成最多一次去除旧绑定的重建
 - **AND** 第二次失败不再重建，429 不得触发自动重试
+- **AND** reference 的重建若清除了已接受的主图，先重建原主图窗口，再用新主图 snapshot proof
+  重读 reference 页首；主图重建失败、无 token 或身份已切换时不得继续该 reference 重读
 - **AND** auxiliary 不得去除 snapshot proof 后直接重试；首次 409 先按原 current 或 explicit/older
   chart window 重建主图，再至多发起一次带新 snapshot proof 的 auxiliary 请求，重复 409 后显式停止
 
