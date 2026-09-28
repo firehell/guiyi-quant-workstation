@@ -104,3 +104,6 @@ secrets/
 
 # MA local frozen candidate evidence
 /outputs/ma-minute-closeout-20260928/
+
+# TA candidate raw local evidence and market data; never Git payload
+/outputs/ta-minute-closeout-20260928/
