@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-09-27。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-09-28。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
@@ -96,12 +96,14 @@ P0–P6 首轮工程与隔离验收已完成并快进集成 develop，集成后�
 容量/取消、真实Chrome及高风险独立Review已完成。精确实现候选为 `10d40faa05badc04c86cefb65c53525a11dba4fb`，
 本节不把后续文档提交当另一轮业务实现。
 
-候选默认关闭、只在隔离preview对RB开放；资产只写隔离schema `newow_intraday_pilot_20260927`。
-复用已有Canonical，实际缺口为零，provider/Canonical/Market Catalog mutation均为零。
+P0–P6 首轮候选默认关闭、当时只在隔离preview对RB开放；资产只写隔离schema `newow_intraday_pilot_20260927`。
+P0–P6 首轮复用已有Canonical，实际缺口为零，provider/Canonical/Market Catalog mutation均为零。
 正式日周开关、worker、Scope、Runtime与 `auto_order=false` 未变。分钟工程源码随 v1.10.39 发布但正式入口仍关闭；P7全量、Runtime切换、观察启用、通知、
 订单及因果/OOS研究未执行。SQL/hydrate取消有界但非即时；旧7项fixture漂移与既有reference-trading
 OpenSpec结构失败单列，没有声明全套通过。详见 [首轮执行与验收](docs/tasks/newow-intraday-pilot-20260927.md)；
-下一轮从 [P7精确盘点](docs/superpowers/plans/2026-09-19-newow-intraday-roadmap.md#p760-品种扩大与维护接续) 开始。
+P7 首批 black + steel 八品种已进入隔离历史候选验收；与首轮范围不同，不沿用此处的零缺口结论。
+精确维护、资产、当前 API/浏览器实测与 SS 阻断见 [首批任务记录](docs/tasks/newow-intraday-black-20260927.md)。
+正式分钟入口仍关闭，整个 P7 未完成。
 
 ## 统一参考交易与数据恢复未完成项
 
@@ -137,7 +139,8 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
   跨周期解释保留 bar_end/as_of，不用未来完成周线回填历史决策。
 - 策略公式、页面参考、因果研究、OOS/Walk-forward、Shadow 和账户事实分别验收；解释评分不自动成为执行 Gate。
 
-分钟 P0–P6 已集成并随 v1.10.39 发布源码；正式开放与 P7 扩大仍未执行。
+分钟 P0–P6 已集成并随 v1.10.39 发布源码；P7 首批八品种历史候选正在隔离验收，正式开放及后续批次未执行。
+本批数据/资产/API读回代码冻结 `c576b3614ff79c26ee5a192cb3b0fb1449710240`：28/32 输入 READY、56/64 基础与28/32融合资产独立读回通过；96项真实 API 为84 READY、SS12 BLOCKED。owner 于本轮明确暂缓 SS 数据修复，当前验收范围为 RB、HC、I、J、JM、SF、SM 的84组合；原96项分母保留，SS12记为 `DEFERRED_DATA_BLOCKED`。第一版接受1m加载较慢，性能优化不作为收尾条件；身份、数据质量和页面正确性仍须逐项通过。reference快照恢复修复已集成develop `00cea970e7e87295ddcc89f7937a34430fb64b11`（97项定向测试、构建及独立Review通过）；新隔离页面/API验收实例为同树的 `9dd3714e596c1f5aebd6579b3f583fc2def93fe7`，原c576证据按后端依赖对象一致证明复用、保留原身份。真实页面84组合尚未终验，不能声明当前范围或整个 P7 完成；详见 `docs/tasks/newow-intraday-black-20260927.md`。
 
 ## 唯一下一步
 
