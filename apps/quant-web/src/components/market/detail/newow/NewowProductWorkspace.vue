@@ -455,8 +455,9 @@ onBeforeUnmount(() => {
     </div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
-      <NewowFusionPanel v-if="dualMode && referenceResponse?.value" :key="identityKey" :response="referenceResponse" />
-      <p v-else-if="dualMode" role="status">{{ loader.sections.reference.state.value === 'loading' ? '正在读取双策略参考输入…' : '双策略参考输入暂不可用' }} <button @click="loader.loadReference()">重试</button></p>
+      <NewowFusionPanel v-if="dualMode && referenceResponse?.value && comparison.referenceSettled.value" :key="identityKey" :response="referenceResponse" />
+      <p v-else-if="dualMode && referenceResponse?.value" role="status">正在读取另一策略参考输入…</p>
+      <p v-else-if="dualMode" role="status">{{ loader.sections.reference.state.value === 'loading' ? '正在读取双策略参考输入…' : '双策略参考输入暂不可用' }} <button v-if="loader.sections.reference.state.value !== 'loading'" @click="loader.loadReference()">重试</button></p>
       <NewowReferencePanel v-else :key="identityKey" :updating-strategy="strategySwitching" :records-response="recentRecords.response.value" :records-loading="recentRecords.loading.value" :records-error="recentRecords.error.value" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="recentRecords.loadMore" @locate="locateReferenceTrade" />
     </section>
     <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle' || dialogKind === 'formula'" :variant="isNiuwaIndicatorDialog ? 'niuwa-indicator' : undefined" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">

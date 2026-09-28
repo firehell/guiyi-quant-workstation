@@ -1,4 +1,4 @@
-import { shallowRef, watch, type Ref } from 'vue'
+import { computed, shallowRef, watch, type Ref } from 'vue'
 import { getNewowProductSection } from '../api/newowProduct.ts'
 import type { NewowProductRequest, NewowProductSectionResponse, NewowResourceLifecycle } from '../types/newowProduct.ts'
 import { newowChartSnapshotKey } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
@@ -13,6 +13,9 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
   const referenceError = shallowRef<string | null>(null)
   const state = shallowRef<NewowResourceLifecycle>('not_requested')
   const error = shallowRef<string | null>(null)
+  // Chart readiness precedes the partner reference request; fusion must wait for both.
+  const referenceSettled = computed(() => enabled.value && (state.value === 'unavailable' || state.value === 'input_conflict'
+    || (state.value === 'ready' && (reference.value !== null || referenceError.value !== null))))
   let controller: AbortController | null = null
   let generation = 0
   let disposed = false
@@ -65,6 +68,6 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
     } finally { if (controller === active) controller = null }
   }
   const stop = watch(() => [enabled.value, base.value], () => { void reload() }, { immediate: true, flush: 'sync' })
-  function dispose() { disposed = true; ++generation; controller?.abort(); stop() }
-  return { response, reference, referenceError, state, error, reload, dispose }
+  function dispose() { disposed = true; ++generation; controller?.abort(); state.value = 'not_requested'; stop() }
+  return { response, reference, referenceError, referenceSettled, state, error, reload, dispose }
 }
