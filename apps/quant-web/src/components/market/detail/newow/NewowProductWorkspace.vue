@@ -134,7 +134,7 @@ const summary = computed(() => projectNewowDetail(chartResponse.value, loader.se
   chartReferenceResponse.value, chartReferenceResponse.value?.status.status ?? 'not_requested', chartReferenceCompatible.value,
   loader.currentChartWindow.value, loader.historicalChartWindow.value))
 const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(currentAuxiliaryResponse.value?.value, chartResponse.value?.value?.bars.at(-1)))
-const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
+const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }, { id: 'trend_reversal', label: '趋势转折' }] as const
 const zhaoyaoMirrorLegend = NEWOW_ZHAOYAO_MIRROR_LEGEND
 const upDownEnergyLegend = [

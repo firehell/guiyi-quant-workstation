@@ -11,8 +11,10 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ### Requirement: RB historical intraday candidate preserves independent period and model identities
 
-The default-off RB candidate SHALL recognize `1m / 15m / 30m / 60m` for trend and oscillation,
-and an independent persisted dual-fusion reference model. Formal daily/weekly capability and
+The default-off RB candidate SHALL recognize `5m / 15m / 30m / 60m` for trend and oscillation,
+and an independent persisted dual-fusion reference model. Canonical 1m SHALL remain an aggregation
+source only in this version; Newow 1m routes, saved preferences and API entry SHALL fail closed,
+without deleting historical 1m assets or altering generic Market 1m readers. Formal daily/weekly capability and
 its deferred 60m gate SHALL remain unchanged. Minute main-rise SHALL be rejected before kernel
 execution; candidate recognition SHALL NOT enable Runtime, observation, notification or orders.
 
@@ -1250,7 +1252,7 @@ SHALL fail closed; missing data SHALL NOT be treated as FLAT or replaced by anot
 
 ## Intraday pilot contracts (P0–P6 candidate)
 
-The product identity and wire frequency recognize 1m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
+The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
 
 #### Frozen intraday reference input evidence
 

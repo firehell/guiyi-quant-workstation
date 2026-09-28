@@ -1,5 +1,7 @@
 import { computed, readonly, shallowRef } from 'vue'
 
+import { NEWOW_FREQUENCIES } from '../types/marketDetail.ts'
+
 import { getNewowProductCapabilities } from '../api/newowProduct.ts'
 import type {
   NewowProductCapabilities,
@@ -35,7 +37,8 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
     return inFlight
   }
 
-  const openFrequencies = computed<readonly NewowProductFrequency[]>(() => capabilities.value?.open_frequencies ?? [])
+  const supportedFrequencies = (frequencies: readonly string[]) => frequencies.filter((item): item is NewowProductFrequency => (NEWOW_FREQUENCIES as readonly string[]).includes(item))
+  const openFrequencies = computed<readonly NewowProductFrequency[]>(() => supportedFrequencies(capabilities.value?.open_frequencies ?? []))
   const openFrequenciesFor = (symbol: string): readonly NewowProductFrequency[] => {
     const current = capabilities.value
     const normalized = symbol.toLowerCase()
@@ -55,10 +58,10 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
       || current?.schema_version === 'newow_product_capabilities_v20'
       || current?.schema_version === 'newow_product_capabilities_v21'
       || current?.schema_version === 'newow_product_capabilities_v22') {
-      return current.open_frequencies.filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
+      return supportedFrequencies(current.open_frequencies).filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
     }
-    if (current?.schema_version === 'newow_product_capabilities_v24') return current.intraday_products?.includes(normalized) ? current.open_frequencies : []
-    if (current?.schema_version === 'newow_product_capabilities_v23') return normalized === 'rb' ? current.open_frequencies : []
+    if ((current?.schema_version === 'newow_product_capabilities_v24' || current?.schema_version === 'newow_product_capabilities_v26')) return current.intraday_products?.includes(normalized) ? supportedFrequencies(current.open_frequencies) : []
+    if ((current?.schema_version === 'newow_product_capabilities_v23' || current?.schema_version === 'newow_product_capabilities_v25')) return normalized === 'rb' ? supportedFrequencies(current.open_frequencies) : []
     if (current?.schema_version === 'newow_product_capabilities_v5' && normalized !== 'au') return []
     if (current?.schema_version === 'newow_product_capabilities_v6' && normalized !== 'pd' && normalized !== 'pt') {
       return current.open_frequencies.filter((item): item is '1d' => item === '1d')

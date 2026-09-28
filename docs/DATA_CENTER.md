@@ -248,8 +248,8 @@ contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四�
 `contract-warmup` 只维护一个已验证 identity 的 physical contract：请求窗口从 `listed_date` 到不晚于最近完整
 交易日的 `requested_window.through`；计划的 `effective_window.through` 再按 `expired_date - 1 day` 截断，获取该
 contract 的 `1m/1d` 基础事实。CLI schema v2 必须同时公开两个窗口，不使用含义不明的单一 `through`；两者也进入
-plan hash identity。省略 `--frequency` 时维持七周期；显式 `1d` 只规划/执行 `1d`，显式 `1w`
-只规划/执行同源 `1d + 1w`，显式 `15m` 或 `60m` 仍只规划/执行同 contract `1m` 基础与所选
+plan hash identity。省略 `--frequency` 时维持七周期；显式 `1m` 或 `1d` 只规划/执行所选基础周期，显式 `1w`
+只规划/执行同源 `1d + 1w`，显式 `5m`、`15m`、`30m` 或 `60m` 仍只规划/执行同 contract `1m` 基础与所选
 日内派生。payload 与 plan hash 必须同时绑定所选频率、完整 frequency scope 及其依赖，即使没有 target
 也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
@@ -679,7 +679,7 @@ guiyi data update (--symbol X | --universe active) [--since DATE] [--through DAT
 guiyi data daily-recovery --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --through DATE [--apply --expected-plan-sha256 HASH]
 guiyi data current-day-metadata-recovery --phase {capture,plan,apply} --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --trading-day DATE [--snapshot PATH --expected-snapshot-sha256 HASH --expected-plan-sha256 HASH --apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
-guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
+guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1m,5m,1d,1w,15m,30m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
 guiyi data newow-readiness (--symbol X | --universe {active,operational}) --as-of TIMESTAMP [--frequency {1w,1d,60m}]... [--matrix] [--compact] [--max-work N] [--timeout-seconds N]
 guiyi data session-anchor-repair --phase plan

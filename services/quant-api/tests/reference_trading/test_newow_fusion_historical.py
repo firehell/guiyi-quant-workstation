@@ -8,7 +8,7 @@ from app.reference_trading.inputs import HistoricalInputBar
 from app.reference_trading.service import _advance_batch, _seed_checkpoint
 
 
-@pytest.mark.parametrize("frequency", ("1m", "15m", "30m", "60m"))
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m"))
 @pytest.mark.parametrize("same_bar_reentry", (False, True))
 def test_fusion_saved_source_driver_matches_accepted_core_and_restart(
     frequency, same_bar_reentry

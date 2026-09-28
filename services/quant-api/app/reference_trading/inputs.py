@@ -760,7 +760,7 @@ class MarketDataHistoricalInputReader:
             "formula_versions": list(request.identity.formula_versions),
             "reference_model_version": request.identity.reference_model_version,
         }
-        if self._compact_intraday_inputs and frequency.value in {"1m", "15m", "30m", "60m"}:
+        if self._compact_intraday_inputs and frequency.value in {"1m", "5m", "15m", "30m", "60m"}:
             evidence = newow_reader.historical_source_evidence(
                 product=query.product, frequency=frequency.value,
                 since=request.since, through=request.through, as_of=request.as_of,

@@ -70,6 +70,8 @@ const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
   ['newow_product_capabilities_v19', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V19 }],
   ['newow_product_capabilities_v20', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V20 }],
   ['newow_product_capabilities_v21', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V21 }],
+  ['newow_product_capabilities_v25', { stage: 'rb_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
+  ['newow_product_capabilities_v26', { stage: 'black_steel_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v24', { stage: 'black_steel_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v23', { stage: 'rb_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v22', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
@@ -117,12 +119,12 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(profile.weeklyProducts ? ['weekly_products'] : []),
-    ...(value.schema_version === 'newow_product_capabilities_v24' ? ['intraday_products'] : []),
+    ...(['newow_product_capabilities_v24', 'newow_product_capabilities_v26'].includes(value.schema_version) ? ['intraday_products'] : []),
   ]
   if (Object.keys(value).sort().join(',') !== expectedKeys.sort().join(',')) return false
   if (!sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])) return false
   if (profile.weeklyProducts && !sameLiteralArray(value.weekly_products, profile.weeklyProducts)) return false
-  if (value.schema_version === 'newow_product_capabilities_v24') {
+  if (['newow_product_capabilities_v24', 'newow_product_capabilities_v26'].includes(value.schema_version)) {
     const products = value.intraday_products
     const allowed = ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
     if (!Array.isArray(products) || products.length === 0
@@ -311,7 +313,7 @@ export async function getNewowProductSection(
     payload = await transport('/market/newow/strategy-detail', {
       params: buildNewowProductQuery(request),
       signal: options.signal,
-      ...(options.timeout !== undefined ? { timeout: options.timeout } : ['1m', '15m', '30m', '60m'].includes(request.identity.frequency) ? { timeout: 60000 } : {}),
+      ...(options.timeout !== undefined ? { timeout: options.timeout } : ['5m', '15m', '30m', '60m'].includes(request.identity.frequency) ? { timeout: 60000 } : {}),
     })
   } catch (error) {
     if (error instanceof NewowProductRequestError) throw error
@@ -325,6 +327,7 @@ export async function getNewowProductSection(
 }
 
 export function buildNewowProductQuery(request: NewowProductRequest): Record<string, unknown> {
+  if (String(request.identity.frequency) === '1m') throw new NewowProductRequestError('NEWOW_FREQUENCY_NOT_OPEN', 'unavailable')
   const common: Record<string, unknown> = {
     product: request.identity.product,
     strategy: request.identity.strategy,

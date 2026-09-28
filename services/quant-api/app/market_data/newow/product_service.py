@@ -142,7 +142,7 @@ class ProductServiceQuery:
         object.__setattr__(self, "strategy", ProductStrategy(self.strategy))
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
         object.__setattr__(self, "section", ProductSection(self.section))
-        if self.strategy is ProductStrategy.MAIN_RISE and self.frequency.value in ("1m", "15m", "30m"):
+        if self.strategy is ProductStrategy.MAIN_RISE and self.frequency.value in ("1m", "5m", "15m", "30m"):
             raise ValueError("NEWOW_STRATEGY_NOT_OPEN")
         if self.component is not None:
             object.__setattr__(self, "component", AuxiliaryComponent(self.component))

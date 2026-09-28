@@ -92,6 +92,7 @@ class ReadinessRequest:
             or type(self.candidate_weekly) is not bool
             or type(self.consumer_only) is not bool
             or (self.consumer_only and not self.matrix)
+            or ProductFrequency.MINUTE in frequencies
             or not frequencies
             or len(set(frequencies)) != len(frequencies)
             or (

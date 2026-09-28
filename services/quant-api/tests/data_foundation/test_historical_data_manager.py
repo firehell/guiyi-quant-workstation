@@ -1799,7 +1799,9 @@ def test_contract_warmup_contracts_expose_only_the_frozen_public_fields() -> Non
         "derived_target_count",
     ),
     (
+        ("1m", (), ("1m",), 1, 0),
         ("1d", (), ("1d",), 1, 0),
+        ("5m", ("1m",), ("1m", "5m"), 1, 1),
         ("1w", ("1d",), ("1d", "1w"), 2, 0),
         ("15m", ("1m",), ("1m", "15m"), 1, 1),
         ("60m", ("1m",), ("1m", "60m"), 1, 1),
@@ -2236,7 +2238,7 @@ def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(
     assert len({plan.plan_sha256 for plan in plans.values()}) == len(plans)
 
 
-@pytest.mark.parametrize("frequency", ("5m", "invalid"))
+@pytest.mark.parametrize("frequency", ("invalid",))
 def test_contract_warmup_rejects_unsupported_frequency_scope_before_planning(
     session, tmp_path, frequency
 ) -> None:

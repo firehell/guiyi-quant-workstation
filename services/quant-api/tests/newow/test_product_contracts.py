@@ -36,7 +36,7 @@ def test_product_combinations_and_profile(product_cases, strategy, frequency):
     "changes",
     [
         {"strategy": "unknown"},
-        {"frequency": "5m"},
+        {"frequency": "2m"},
         {"series_kind": "continuous"},
         {"product": ""},
         {"product": "RB"},
@@ -77,7 +77,7 @@ def test_product_bar_rejects_invalid_market_fact(product_cases, changes):
 
 def test_product_bar_rejects_frequency_and_series(product_cases):
     bar = product_cases.closed().bars[0]
-    for changes in ({"frequency": "5m"}, {"series_kind": "contract"}, {"bar": None}):
+    for changes in ({"frequency": "2m"}, {"series_kind": "contract"}, {"bar": None}):
         with pytest.raises(ValueError):
             replace(bar, **changes)
     assert isinstance(bar, ProductBar)

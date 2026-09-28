@@ -579,9 +579,9 @@ def test_rb_intraday_preview_scope_and_wire_are_explicit(preview, monkeypatch):
     response = client.get("/api/v1/market/newow/product-capabilities")
     assert response.status_code == 200
     value = response.json()
-    assert value["schema_version"] == "newow_product_capabilities_v23"
-    assert value["open_frequencies"] == ["1m", "15m", "30m", "60m", "1d", "1w"]
-    for frequency in ("1m", "15m", "30m", "60m"):
+    assert value["schema_version"] == "newow_product_capabilities_v25"
+    assert value["open_frequencies"] == ["5m", "15m", "30m", "60m", "1d", "1w"]
+    for frequency in ("5m", "15m", "30m", "60m"):
         response = client.get("/api/v1/market/newow/strategy-detail", params={
             "product": "au", "strategy": "trend", "frequency": frequency, "section": "chart",
         })
@@ -593,12 +593,12 @@ def test_intraday_candidate_does_not_implicitly_expand_formal_scope():
     from types import SimpleNamespace
     from app.api.market_newow import _enforce_product_frequency
     request = SimpleNamespace(state=SimpleNamespace())
-    for frequency in ("1m", "15m", "30m", "60m"):
+    for frequency in ("5m", "15m", "30m", "60m"):
         with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
             _enforce_product_frequency(request, "rb", frequency)
 
 
-@pytest.mark.parametrize('frequency', ('1m','15m','30m','60m'))
+@pytest.mark.parametrize('frequency', ('5m','15m','30m','60m'))
 def test_rb_minute_candidate_rejects_main_rise_before_kernel(preview, monkeypatch, frequency):
     from app.api import market_newow
     monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', 'rb')
@@ -626,7 +626,7 @@ def test_intraday_batch_capability_and_exact_scope(preview, monkeypatch):
     monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS", "rb,hc,ss,i,j,jm,sf,sm")
     client = TestClient(preview[0])
     value = client.get("/api/v1/market/newow/product-capabilities").json()
-    assert value["schema_version"] == "newow_product_capabilities_v24"
+    assert value["schema_version"] == "newow_product_capabilities_v26"
     assert value["release_stage"] == "black_steel_intraday_candidate"
     assert value["intraday_products"] == ["hc", "i", "j", "jm", "rb", "sf", "sm", "ss"]
     request = SimpleNamespace(state=SimpleNamespace(intraday_preview_products=frozenset(value["intraday_products"])))
@@ -649,3 +649,18 @@ def test_intraday_batch_raw_bars_cannot_bypass_scope(preview, monkeypatch, param
     response = TestClient(preview[0]).get("/api/v1/market/bars/page", params={**params, "frequency": "1m"})
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+
+
+@pytest.mark.parametrize("path", ["strategy-detail", "historical-snapshot"])
+def test_rb_candidate_minute_product_request_is_closed_before_reader(preview, monkeypatch, path):
+    from app.api import market_newow
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCT", "rb")
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("legacy minute request reached product reader")
+    monkeypatch.setattr(market_newow, "_build_product_service", forbidden)
+    monkeypatch.setattr(market_newow, "_build_historical_resolver", forbidden)
+    response = TestClient(preview[0]).get(f"/api/v1/market/newow/{path}", params={
+        "product": "rb", "strategy": "trend", "frequency": "1m", "section": "chart",
+    } if path == "strategy-detail" else {"product": "rb", "strategy": "trend", "frequency": "1m"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "NEWOW_FREQUENCY_NOT_OPEN"

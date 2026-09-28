@@ -25,7 +25,7 @@ export interface FlexibleDetailPreferences extends FlexibleViewRestore {
 export interface MarketDetailPreferences {
   version: 2
   lastView: Exclude<MarketDetailView, 'trend'>
-  newow: { strategy: NewowStrategy; frequency: NewowFrequency }
+  newow: { strategy: NewowStrategy; frequency: NewowFrequency | '1m' }
   htdy: FlexibleDetailPreferences
   free: FlexibleDetailPreferences
 }
@@ -142,8 +142,9 @@ function normalizeNewow(value: unknown): MarketDetailPreferences['newow'] {
     strategy: typeof value.strategy === 'string' && NEWOW_STRATEGY_SET.has(value.strategy)
       ? value.strategy as NewowStrategy
       : 'trend',
-    frequency: typeof value.frequency === 'string' && NEWOW_FREQUENCY_SET.has(value.frequency)
-      ? value.frequency as NewowFrequency
+    // Keep a legacy 1m selection visible to route validation; never silently choose D1.
+    frequency: typeof value.frequency === 'string' && (NEWOW_FREQUENCY_SET.has(value.frequency) || value.frequency === '1m')
+      ? value.frequency as NewowFrequency | '1m'
       : '1d',
   }
 }

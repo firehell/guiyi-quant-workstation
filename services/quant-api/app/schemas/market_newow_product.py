@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-ProductFrequencyValue = Literal["1w", "1d", "60m", "1m", "15m", "30m"]
+ProductFrequencyValue = Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"]
 ProductStrategyValue = Literal["trend", "oscillation", "main_rise"]
 RuntimeStatusValue = Literal[
     "ready", "warming", "unavailable", "not_applicable", "evidence_required"
@@ -967,6 +967,8 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v22",
         "newow_product_capabilities_v23",
         "newow_product_capabilities_v24",
+        "newow_product_capabilities_v25",
+        "newow_product_capabilities_v26",
     ]
     release_stage: Literal[
         "daily",
