@@ -53,6 +53,19 @@ owner 确认 #146 PT2610 14:00 对应微信收件。该完成事实不重开，�
 
 来源版本与公式复刻边界见 [当前研究复核](docs/research/newow-current-review.md)；历史原站证据不等于当前期货 OOS。
 
+## UR 四周期历史候选（2026-09-28）
+
+P7-03 UR **5m/15m/30m/60m × 趋势/震荡/独立双策略，12/12 CANDIDATE_CLOSED**。
+48/48物理前缀依赖DATA_READY；精确维护87源月/356派生月，583旧不可变文件保留、46计划内扩展旧Bar不变，280日周pointer未变。
+4输入、8基础和4融合保存资产全部新增、复用0，disabled/generation=0；1m仅可信聚合来源。
+
+冻结候选源码`d990fae5b587c581a5aeafca95c81d0143c82fcc`，本次无产品源码/公式/收益口径修改；只修任务验收checker的records绑定。
+API12/12、真实Chrome功能/完整曲线/较早主图各12/12、取消/短超时恢复及独立Review通过；日周六组合33 PASS/3明确WARMING，实际W1参考端点9/24 15:00。
+保留4个完整策略窗口coverage未证明、深窗口MACD整段覆盖未证明、持有过程不可用、日周较早分页未额外验的边界。
+本次交付至develop；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换，候选不是OOS或可执行收益证明。
+原始证据仅在本机`outputs/ur-minute-closeout-20260928/`；身份、真实命令、失败过程和恢复范围见[UR处理记录](docs/tasks/ur-minute-closeout-20260928.md)。
+下一项P7-04 TA由总控安排，本会话不创建下一项。
+
 ## MA 四周期历史候选（2026-09-28）
 
 P7-02 MA **5m/15m/30m/60m × 趋势/震荡/独立双策略，12/12 CANDIDATE_CLOSED**。
