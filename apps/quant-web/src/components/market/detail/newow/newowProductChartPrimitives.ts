@@ -482,7 +482,7 @@ export function chartMarkerTime(
   frequency: NewowProductFrequency,
   tradingDay: string,
 ): Time {
-  if (['1m', '15m', '30m', '60m'].includes(frequency)) return Math.floor(Date.parse(barEnd) / 1000) as Time
+  if (['5m', '15m', '30m', '60m'].includes(frequency)) return Math.floor(Date.parse(barEnd) / 1000) as Time
   const [year, month, day] = tradingDay.split('-').map(Number)
   return { year: year!, month: month!, day: day! }
 }

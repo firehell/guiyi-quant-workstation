@@ -568,7 +568,7 @@ test('a warming resource preserves current calculable data and discloses only ol
 })
 
  test('all four intraday periods preserve distinct UTC bar ends across futures night sessions', () => {
-  for (const frequency of ['1m', '15m', '30m', '60m'] as const) {
+  for (const frequency of ['5m', '15m', '30m', '60m'] as const) {
     const first = chartMarkerTime('2026-09-24T13:01:00Z', frequency, '2026-09-25')
     const second = chartMarkerTime('2026-09-24T13:02:00Z', frequency, '2026-09-25')
     assert.equal(first, Date.parse('2026-09-24T13:01:00Z') / 1000)

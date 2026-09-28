@@ -142,7 +142,7 @@ def require_open_section(section: ProductSectionName) -> None:
 def deferred_frequency_reason(frequency: ProductFrequency) -> str | None:
     """Return the public staged-release reason without opening data readers."""
     selected = ProductFrequency(frequency)
-    if selected in (ProductFrequency.MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY):
+    if selected in (ProductFrequency.MINUTE, ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY):
         return "NEWOW_INTRADAY_RELEASE_PENDING"
     return next(
         (reason for item, reason in DEFERRED_FREQUENCIES if item == selected), None

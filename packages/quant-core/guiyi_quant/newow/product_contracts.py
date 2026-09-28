@@ -30,13 +30,14 @@ class ProductFrequency(StrEnum):
     WEEKLY = "1w"
     DAILY = "1d"
     HOURLY = "60m"
-    MINUTE = "1m"
+    MINUTE = "1m"  # Retained for immutable saved identities; no current product entry.
+    FIVE_MINUTE = "5m"
     QUARTER_HOURLY = "15m"
     HALF_HOURLY = "30m"
 
 
 LEGACY_PRODUCT_FREQUENCIES = (ProductFrequency.WEEKLY, ProductFrequency.DAILY, ProductFrequency.HOURLY)
-INTRADAY_PRODUCT_FREQUENCIES = (ProductFrequency.MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY, ProductFrequency.HOURLY)
+INTRADAY_PRODUCT_FREQUENCIES = (ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY, ProductFrequency.HOURLY)
 
 
 class ActionKind(StrEnum):

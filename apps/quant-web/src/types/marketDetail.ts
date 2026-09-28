@@ -6,7 +6,7 @@ export type MarketDetailView = (typeof MARKET_DETAIL_VIEWS)[number]
 
 export const NEWOW_STRATEGIES = ['trend', 'oscillation', 'main_rise'] as const
 export type NewowStrategy = (typeof NEWOW_STRATEGIES)[number]
-export const NEWOW_FREQUENCIES = ['1w', '1d', '60m', '1m', '15m', '30m'] as const
+export const NEWOW_FREQUENCIES = ['1w', '1d', '60m', '30m', '15m', '5m'] as const
 export type NewowFrequency = (typeof NEWOW_FREQUENCIES)[number]
 
 export interface FlexibleViewRestore {
@@ -17,7 +17,8 @@ export interface FlexibleViewRestore {
 export interface MarketDetailViewRestore {
   newow: {
     strategy: NewowStrategy
-    frequency: NewowFrequency
+    /** Retain legacy 1m only so restored routes fail closed instead of changing period. */
+    frequency: NewowFrequency | '1m'
   }
   htdy: FlexibleViewRestore
   free: FlexibleViewRestore

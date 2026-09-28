@@ -208,12 +208,12 @@ provider-free apply 与 commit-unknown 合同由 `data-foundation-metadata` cano
 - **THEN** 系统保持维护状态并返回 forward recovery required，不恢复错误 session 或混用新旧锚点
 
 ### Requirement: Exact physical-contract warm-up is a hash-locked maintenance seam
-`guiyi data contract-warmup --symbol SYMBOL --contract CONTRACT --through DATE [--frequency {1m,1d,1w,15m,30m,60m}]` SHALL 只接受 active、
+`guiyi data contract-warmup --symbol SYMBOL --contract CONTRACT --through DATE [--frequency {1m,5m,1d,1w,15m,30m,60m}]` SHALL 只接受 active、
 non-retired symbol 与其 RQData Contract identity。窗口 MUST 为该 Contract 的
 `[listed_date, min(through, expired_date - 1 day)]`，且 `through` 不得晚于最近完整交易日。无 `--apply`
 时 MUST 只读 Catalog/Calendar/Session，零 RQData 请求、零 PostgreSQL/Parquet/Redis mutation，并返回稳定
 plan hash、direct/derived target 数、预计 Bar 数和 provider request 数。省略 `--frequency` MUST 保持全部七周期；
-显式 `1m` 或 `1d` MUST 只规划/执行所选基础周期，显式 `1w` MUST 只规划/执行同源 `1d + 1w`，显式 `15m`、`30m` 或 `60m`
+显式 `1m` 或 `1d` MUST 只规划/执行所选基础周期，显式 `1w` MUST 只规划/执行同源 `1d + 1w`，显式 `5m`、`15m`、`30m` 或 `60m`
 MUST 只规划/执行同 contract 的 `1m` 基础和所选周期派生。payload 与 plan hash MUST 绑定所选 frequency、
 完整 frequency scope 及其 dependency，即使 targets 为空也不得跨 scope 复用 hash。其它显式
 frequency MUST fail closed。`--apply` MUST 要求相同的 lowercase

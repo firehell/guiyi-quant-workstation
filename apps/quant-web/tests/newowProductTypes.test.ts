@@ -1151,3 +1151,18 @@ test('per-Bar wire accepts authoritative flat values and null interruptions', ()
   const result=normalizeNewowProductResponse(raw,{...expected,section:'reference'})
   assert.equal(result.value.holding_curve.points[1].marked_return_percentage_points,null)
 })
+
+test('aggregate minute requests keep the existing timeout and legacy 1m stops before transport', async () => {
+  for (const frequency of ['5m', '15m', '30m', '60m'] as const) {
+    let timeout: number | undefined
+    await assert.rejects(getNewowProductSection({ identity: { ...expectedIdentity(), frequency }, section: 'chart', asOf: AS_OF }, {
+      request: async (_path, config) => { timeout = config.timeout; throw new NewowProductRequestError('NEWOW_DATA_UNAVAILABLE', 'unavailable') },
+    }))
+    assert.equal(timeout, 60000)
+  }
+  let called = false
+  await assert.rejects(getNewowProductSection({ identity: { ...expectedIdentity(), frequency: '1m' as never }, section: 'chart', asOf: AS_OF }, {
+    request: async () => { called = true; return chartWire() },
+  }), (error: unknown) => error instanceof NewowProductRequestError && error.code === 'NEWOW_FREQUENCY_NOT_OPEN')
+  assert.equal(called, false)
+})

@@ -236,7 +236,7 @@ class PersistedNewowReference:
 
     def section(self, request, read, identity, reader, fact_key, _page_identity, resolved):
         from guiyi_quant.newow.product_contracts import (
-            EvidenceStatus, FeatureRuntimeStatus, FeatureStatus, INTRADAY_PRODUCT_FREQUENCIES,
+            EvidenceStatus, FeatureRuntimeStatus, FeatureStatus, INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency,
         )
         from app.market_data.newow.product_service import (
             PersistedReferenceSectionValue, SectionDelivery, _has_unresolved_tail_gap,
@@ -254,7 +254,7 @@ class PersistedNewowReference:
         since, through, cutoff = (
             resolved.requested_since, resolved.requested_through, resolved.cutoff,
         )
-        minute = request.frequency in INTRADAY_PRODUCT_FREQUENCIES
+        minute = request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
         saved_snapshot = None
         if request.history_before is not None:
             cursor = _decode(request.history_before, kind="record_trades" if minute else "trades")

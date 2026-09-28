@@ -27,7 +27,7 @@ def product_cases():
 
 @pytest.mark.parametrize("strategy,frequency",
     [(s,f) for s in ("trend","oscillation","main_rise") for f in ("1d","1w","60m")]
-    + [(s,f) for s in ("trend","oscillation") for f in ("1m","15m","30m")])
+    + [(s,f) for s in ("trend","oscillation") for f in ("5m","15m","30m")])
 def test_newow_supported_matrix_advances_with_real_p2_adapter(
     product_cases, strategy: str, frequency: str,
 ) -> None:

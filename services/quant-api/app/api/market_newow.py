@@ -242,6 +242,8 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
     if intraday is not None:
         if product not in (intraday & INTRADAY_BATCH_PREVIEW_SYMBOLS):
             raise HTTPException(status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"})
+        if selected is ProductFrequency.MINUTE:
+            raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
         return
     hourly = _hourly_preview_products(request)
     if (
@@ -279,13 +281,13 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
     if getattr(request.state, "intraday_preview_products", None) is not None:
         batch = getattr(request.state, "intraday_preview_batch", False)
         return NewowProductCapabilitiesResponse(
-            schema_version=("newow_product_capabilities_v24" if batch
-                            else "newow_product_capabilities_v23"),
+            schema_version=("newow_product_capabilities_v26" if batch
+                            else "newow_product_capabilities_v25"),
             release_stage=("black_steel_intraday_candidate" if batch
                            else "rb_intraday_candidate"),
             intraday_products=(sorted(request.state.intraday_preview_products)
                                if batch else None),
-            open_frequencies=["1m", "15m", "30m", "60m", "1d", "1w"],
+            open_frequencies=["5m", "15m", "30m", "60m", "1d", "1w"],
             open_sections=list(OPEN_SECTIONS), deferred_frequencies=[],
             deferred_sections=[DeferredSectionOut(section=section, reason_code=reason)
                                for section, reason in DEFERRED_SECTIONS],
@@ -500,7 +502,7 @@ def newow_historical_snapshot(
     request: Request,
     product: str = Query(...),
     strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
-    frequency: Literal["1w", "1d", "60m", "1m", "15m", "30m"] = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"] = Query(...),
     session: Session = Depends(get_db),
 ) -> NewowHistoricalSnapshotResponse:
     unknown = set(request.query_params) - _HISTORICAL_QUERY_FIELDS
@@ -523,7 +525,7 @@ def newow_historical_snapshot(
     try:
         _enforce_product_frequency(request, product, frequency)
         if (getattr(request.state, "intraday_preview_products", None) is not None
-            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
+            and frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise"):
             raise ValueError("NEWOW_INVALID_QUERY")
         policy = _input_quality_policy(request, product, frequency)
         resolver = (
@@ -623,7 +625,7 @@ def newow_weekly_snapshot(
     try:
         _enforce_product_frequency(request, product, frequency)
         if (getattr(request.state, "intraday_preview_products", None) is not None
-            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
+            and frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise"):
             raise ValueError("NEWOW_INVALID_QUERY")
         policy = _input_quality_policy(request, product, frequency)
         resolver = (
@@ -656,7 +658,7 @@ def newow_strategy_detail(
     request: Request,
     product: str = Query(...),
     strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
-    frequency: Literal["1w", "1d", "60m", "1m", "15m", "30m"] = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"] = Query(...),
     series_kind: Literal["actual_dominant"] = Query("actual_dominant"),
     section: Literal[
         "chart", "auxiliary", "reference", "explanation", "comparator"
@@ -698,7 +700,7 @@ def newow_strategy_detail(
     try:
         _enforce_product_frequency(request, product, frequency)
         if (getattr(request.state, "intraday_preview_products", None) is not None
-            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
+            and frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise"):
             raise ValueError("NEWOW_INVALID_QUERY")
         if not (decision_v2 and section == "explanation"):
             require_open_section(section)

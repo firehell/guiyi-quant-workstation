@@ -35,7 +35,7 @@ def build_fusion_stream_identity(product: str, frequency: str):
     from .product_identity import futures_adaptation_version
     from ..reference_trading import StreamIdentity
     selected = ProductFrequency(frequency)
-    if selected not in INTRADAY_PRODUCT_FREQUENCIES:
+    if selected not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE):
         raise ValueError("NEWOW_FUSION_FREQUENCY_UNSUPPORTED")
     trend = build_product_identity(product, ProductStrategy.TREND, selected)
     oscillation = build_product_identity(product, ProductStrategy.OSCILLATION, selected)

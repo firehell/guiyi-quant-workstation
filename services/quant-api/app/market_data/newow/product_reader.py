@@ -963,7 +963,7 @@ class NewowProductReader:
         from hashlib import sha256
         import json
         from guiyi_quant.newow.product_contracts import INTRADAY_PRODUCT_FREQUENCIES
-        if query.frequency not in INTRADAY_PRODUCT_FREQUENCIES:
+        if query.frequency not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE):
             raise NewowProductReadError("NEWOW_INVALID_QUERY")
         cutoff = utc_timestamp(query.as_of if query.as_of is not None else as_of)
         if cutoff > utc_timestamp(self._now()):

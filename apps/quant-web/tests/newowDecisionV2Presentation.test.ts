@@ -72,7 +72,7 @@ test('volatility uses reported rounded level, remains missing and clamps only th
 
 test('minute decision uses a separate completed daily weekly background identity', async () => {
   const { decisionContextIdentity } = await import('../src/utils/newowDecisionV2Presentation.ts')
-  for (const frequency of ['1m', '15m', '30m', '60m'] as const) {
+  for (const frequency of ['5m', '15m', '30m', '60m'] as const) {
     const context = decisionContextIdentity({ product: 'rb', strategy: 'trend', frequency })
     assert.equal(context.background, true)
     assert.equal(context.identity.frequency, '1d')

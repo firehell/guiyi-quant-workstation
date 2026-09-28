@@ -57,7 +57,7 @@ const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: str
 const newowCapabilities = useNewowCapabilities()
 const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
-  || newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '60m', explicitIdentity.value.symbol))
+  || newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', explicitIdentity.value.symbol))
 const shellReady = computed(() => isWorkspacePreview.value && (
   (isNewowView.value && newowCapabilities.state.value !== 'loading') || (controller.state.value.header !== null && !controller.state.value.loading)
 ))
@@ -312,7 +312,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
           <MarketDetailUnavailable
             v-else-if="routeResult.identity.view === 'newow'"
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
-            :message="newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
+            :message="newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
             recovery-label="切换到已开放日线"
             :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowOpenFrequencies.length > 0"
             :can-return-market="true"

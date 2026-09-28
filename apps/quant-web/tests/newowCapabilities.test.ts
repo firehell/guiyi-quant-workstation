@@ -447,7 +447,7 @@ test('black and steel candidate uses its exact allowlist and rejects expanded or
   const state = useNewowCapabilities(async () => accepted)
   await state.load()
   for (const product of payload.intraday_products) {
-    assert.deepEqual(state.openFrequenciesFor(product.toUpperCase()), payload.open_frequencies)
+    assert.deepEqual(state.openFrequenciesFor(product.toUpperCase()), payload.open_frequencies.filter(item => item !== '1m'))
   }
   assert.deepEqual(state.openFrequenciesFor('au'), [])
   for (const products of [[], ['rb', 'au'], ['rb', 'rb'], ['ss', 'rb'], ['RB']]) {
@@ -457,5 +457,25 @@ test('black and steel candidate uses its exact allowlist and rejects expanded or
   const scoped = useNewowCapabilities(async () => subset)
   await scoped.load()
   assert.deepEqual(scoped.openFrequenciesFor('hc'), [])
-  assert.equal(scoped.isFrequencyOpen('1m', 'jm'), true)
+  assert.equal(scoped.isFrequencyOpen('1m' as never, 'jm'), false)
+})
+
+
+test('RB and batch new capability versions open the four aggregate periods without 1m', async () => {
+  for (const [version, stage] of [['v25', 'rb_intraday_candidate'], ['v26', 'black_steel_intraday_candidate']] as const) {
+    const payload = {
+      schema_version: `newow_product_capabilities_${version}`, release_stage: stage,
+      open_frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'],
+      ...(version === 'v26' ? { intraday_products: ['rb'] } : {}),
+      deferred_frequencies: [], open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+      deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+    }
+    const accepted = await getNewowProductCapabilities({ request: async () => payload })
+    const state = useNewowCapabilities(async () => accepted)
+    await state.load()
+    assert.deepEqual(state.openFrequenciesFor('RB'), payload.open_frequencies)
+    assert.deepEqual(state.openFrequenciesFor('au'), [])
+    assert.equal(state.isFrequencyOpen('1m' as never, 'rb'), false)
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, open_frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }) }))
+  }
 })
