@@ -101,3 +101,6 @@ secrets/
 /outputs/subing-record-review-20260927/
 
 /outputs/fu-minute-closeout-20260928/
+
+# MA local frozen candidate evidence
+/outputs/ma-minute-closeout-20260928/
