@@ -650,7 +650,7 @@ W1 合法零 Bar owner 标为 `NOT_APPLICABLE`，不得填 Bar 或计入 data-re
 `--frequency` 检查未开放周期的 Canonical 准备度，但不能因此把产品面标成已开放。
 
 `newow-readiness` 只接受互斥的单 active symbol、active universe 或 operational universe，并可显式重复
-`--frequency` 收窄到 `1w/1d/60m` 的任意非空、不重复子集；未传时保持三周期兼容审计。必须固定带时区
+`--frequency` 收窄到 `1w/1d/5m/15m/30m/60m` 的任意非空、不重复子集；未传时保持 `1w/1d/60m` 三周期兼容审计。Newow `1m` 产品 readiness 拒绝；其可信来源检查由所选派生周期依赖承担。必须固定带时区
 `as_of`，串行工作量和 deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
 为 null；预算耗尽明确 `incomplete`，保留未启动枚举/依赖/case，不能报告完整覆盖。未知异常仅公开固定内部
 错误，原始非正价格单列 `SOURCE_EXCEPTION`，完整性错误单列 `INTEGRITY_ERROR`，两者不生成盲目下载目标。
@@ -681,7 +681,7 @@ guiyi data current-day-metadata-recovery --phase {capture,plan,apply} --runtime-
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1m,5m,1d,1w,15m,30m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
-guiyi data newow-readiness (--symbol X | --universe {active,operational}) --as-of TIMESTAMP [--frequency {1w,1d,60m}]... [--matrix] [--compact] [--max-work N] [--timeout-seconds N]
+guiyi data newow-readiness (--symbol X | --universe {active,operational}) --as-of TIMESTAMP [--frequency {1w,1d,5m,15m,30m,60m}]... [--matrix] [--compact] [--max-work N] [--timeout-seconds N]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
