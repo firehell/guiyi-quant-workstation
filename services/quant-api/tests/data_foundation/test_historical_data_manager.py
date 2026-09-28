@@ -2229,7 +2229,7 @@ def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(
                 "pf", "PF2611", date(2025, 1, 2), frequency=frequency
             )
         ).plan
-        for frequency in (None, "1d", "1w", "15m", "30m", "60m")
+        for frequency in (None, "1m", "1d", "1w", "15m", "30m", "60m")
     }
 
     assert all(plan.target_windows == () for plan in plans.values())
