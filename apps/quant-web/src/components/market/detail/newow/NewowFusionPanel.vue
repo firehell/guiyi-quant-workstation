@@ -7,21 +7,27 @@ import { newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowRe
 import { referencePercentDisplay, referenceTimeDisplay } from '@/utils/newowDetailPresentation'
 import type { NewowProductSectionResponse } from '@/types/newowProduct'
 import { formatMarketDecimal, formatBeijingInstant } from '@/utils/marketDisplay'
-const props = defineProps<{ response: NewowProductSectionResponse<'reference'> }>()
+const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'reference'>; readyToLoad?: boolean }>(), { readyToLoad: true })
 const result = ref<FusionComparison | null>(null)
 const loading = ref(false)
 const error = ref('')
 let controller: AbortController | null = null
 let generation = 0
-watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, props.response.value?.reference_input_sha256, props.response.value?.performance_since, props.response.value?.performance_through], () => {
-  generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''
+const initialLoadPending = ref(true)
+const waitingForInput = computed(() => initialLoadPending.value && !props.readyToLoad)
+const inputKey = computed(() => JSON.stringify([props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, props.response.value?.reference_input_sha256, props.response.value?.performance_since, props.response.value?.performance_through]))
+watch(inputKey, () => {
+  generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; initialLoadPending.value = true
   void load()
 }, { immediate: true })
+watch(() => props.readyToLoad, ready => { if (ready && initialLoadPending.value) void load() })
 onBeforeUnmount(() => { generation++; controller?.abort() })
 async function load() {
+  if (!props.readyToLoad) return
   result.value = null
   const value = props.response.value
   if (!value || props.response.meta.identity.strategy !== 'trend') return
+  initialLoadPending.value = false
   const token = ++generation
   controller?.abort(); controller = new AbortController()
   loading.value = true; error.value = ''
@@ -92,7 +98,7 @@ const records = computed(() => {
 })
 async function loadMore() {
   const current = result.value, value = props.response.value
-  if (!current?.next_cursor || !value || loading.value) return
+  if (!props.readyToLoad || !current?.next_cursor || !value || loading.value) return
   const token = generation
   const identity = props.response.meta.identity
   loading.value = true; error.value = ''
@@ -137,11 +143,12 @@ function inspectHolding(event: MouseEvent) {
 }
 </script>
 <template>
-  <section class="fusion-panel newow-reference" aria-label="双策略融合参考模型" :aria-busy="loading">
-    <header class="newow-reference__returns-heading"><strong>策略收益率走势</strong><span class="newow-reference__annualized">年化{{ annualized }}</span><button class="fusion-refresh" :disabled="loading" @click="load">{{ loading ? '计算中…' : '重新计算' }}</button></header>
+  <section class="fusion-panel newow-reference" aria-label="双策略融合参考模型" :aria-busy="loading || waitingForInput">
+    <header class="newow-reference__returns-heading"><strong>策略收益率走势</strong><span class="newow-reference__annualized">年化{{ annualized }}</span><button class="fusion-refresh" :disabled="loading || !readyToLoad" @click="load">{{ waitingForInput ? '读取中…' : loading ? '计算中…' : '重新计算' }}</button></header>
     <p class="fusion-caption">双策略融合 · 单仓 long/flat · 零费用、零滑点页面参考，不代表可执行收益。</p>
     <p v-if="response.value?.history_coverage === 'PARTIAL'" role="status">数据覆盖不完整，仅统计已验证片段，中断不计入已完成收益。</p>
     <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="waitingForInput" role="status">正在读取另一策略参考输入…</p>
     <p v-if="loading" role="status">正在读取融合参考…</p>
     <template v-if="result">
       <div class="newow-reference__window"><div class="newow-reference__presets" aria-label="融合参考统计快捷窗口"><button v-for="item in presets" :key="item[0]" :aria-pressed="preset === item[0]" :disabled="loading" @click="preset = item[0]">{{ item[1] }}</button></div></div>
@@ -190,7 +197,7 @@ function inspectHolding(event: MouseEvent) {
           <p v-else class="newow-reference__interruption">{{ row.status === 'OPEN' ? '截至所示已完成Bar，未清仓浮动不计入已完成收益。' : '物理合约或数据区段中断，中断浮动不计入已完成收益。' }}</p>
         </article>
       </div>
-      <button v-if="result.next_cursor" :disabled="loading" @click="loadMore">加载更多近一年记录</button>
+      <button v-if="result.next_cursor" :disabled="loading || !readyToLoad" @click="loadMore">加载更多近一年记录</button>
       <p v-if="!records.length">近一年暂无融合参考记录。</p>
       <details><summary>三组独立统计与融合配对规则</summary><p>{{ result.performance_since }} — {{ result.performance_through }} · 截至 {{ formatBeijingInstant(result.reference_cutoff) }}<small>{{ result.reference_model_version }}</small></p><div class="fusion-panel__scroll"><table><thead><tr><th>模型</th><th>已完成</th><th>累计收益百分点</th><th>未清仓</th><th>中断</th></tr></thead><tbody><tr v-for="g in result.groups" :key="g.model"><th>{{ names[g.model] }}</th><td>{{ g.closed_count }}</td><td :class="tone(g.sum_return_percentage_points)">{{ display(g.sum_return_percentage_points) }}</td><td>{{ g.open_count }}</td><td>{{ g.interrupted_count }}</td></tr></tbody></table></div><p>累计简单相加窗口内建仓且已完成的参考收益。同根先清仓再建仓，同方向优先震荡价；允许跨策略配对，持有期间不重复建仓，不跨合约配对。期初已有、未清仓浮动和中断不计入累计。</p></details>
     </template>

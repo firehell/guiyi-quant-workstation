@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { compileScript, parse } from '@vue/compiler-sfc'
+import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 
@@ -25,6 +25,16 @@ async function component(name: string) {
       throw new Error(specifier)
     })
   return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default
+}
+async function workspaceFusionHost(Panel: unknown, setup: () => unknown) {
+  const source = readFileSync(new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url), 'utf8')
+  const { descriptor } = parse(source)
+  const actualPanelTemplate = descriptor.template!.content.match(/<NewowFusionPanel\b[^>]*\/>/)![0]
+  const compiled = compileTemplate({ source: actualPanelTemplate, filename: 'WorkspaceFusionHost.vue', id: 'workspace-fusion-test' })
+  assert.deepEqual(compiled.errors, [])
+  const code = compiled.code.replace(/from ["']vue["']/g, `from '${import.meta.resolve('vue')}'`)
+  const { render } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+  return defineComponent({ components: { NewowFusionPanel: Panel }, setup, render })
 }
 const input = (product = 'jm') => ({ meta: { identity: { product, strategy: 'trend', frequency: '1d' }, as_of: '2026-09-26T15:00:00Z', snapshot_token: product + '-snapshot' }, value: { performance_since: '2023-01-01', performance_through: '2026-09-24', reference_input_sha256: product, reference_cutoff: '2026-09-24T07:00:00Z', history_coverage: 'FULL' } })
 const output = (version: string, product = 'rb') => ({ reference_model_version: version, reference_input_sha256: product, performance_since: '2023-01-01', performance_through: '2026-09-24', reference_cutoff: '2026-09-24T07:00:00Z', records_truncated: false, groups: ['trend','oscillation','fusion'].map(model => ({ model, closed_count: 0, sum_return_percentage_points: null, open_count: 0, interrupted_count: 0 })), items: [] })
@@ -179,5 +189,70 @@ test('missing fusion theory allows returning to ordinary mode; holding readouts 
   ;(ordinary.props.onClick as Function)()
   await nextTick()
   assert.match(nodeText(root), /浮动 \+20%/)
+  app.unmount()
+})
+
+
+test('fusion admission waits initially but preserves appended records across same-identity comparison reloads', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const response = ref(input('j')), readyToLoad = ref(false)
+  const Host = await workspaceFusionHost(Panel, () => ({ dualMode: true, referenceResponse: response, identityKey: 'j:1d', comparison: { referenceSettled: readyToLoad } }))
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  assert.equal(mock.calls.length, base)
+  assert.match(nodeText(root), /正在读取另一策略参考输入/)
+  assert.equal(findNode(root, n => n.type === 'button' && n.props.class === 'fusion-refresh')?.props.disabled, true)
+  readyToLoad.value = true; await nextTick()
+  assert.equal(mock.calls.length, base + 1)
+  const trade = id => ({ reference_trade_id: id, entry_source: 'trend', exit_source: null, physical_contract: 'J2701',
+    entry_bar_end: '2026-09-01T07:00:00Z', entry_reference_price: '100', exit_bar_end: null, exit_reference_price: null,
+    status: 'OPEN', statistics_membership: 'entry_in_window_v1', reference_return_pct: null, mark_change_pct: null })
+  const first = { ...output('admission', 'j'), reference_revision: 'same-revision', items: [trade('first')], next_cursor: 'older' }
+  mock.calls[base].resolve(first); await nextTick(); await nextTick()
+  readyToLoad.value = false; await nextTick()
+  const more = findNode(root, n => n.type === 'button' && nodeText(n).trim() === '加载更多近一年记录')!
+  assert.equal(more.props.disabled, true)
+  ;(more.props.onClick as Function)()
+  ;(findNode(root, n => n.type === 'button' && n.props.class === 'fusion-refresh')!.props.onClick as Function)()
+  await nextTick()
+  assert.equal(mock.calls.length, base + 1, 'pending comparison cannot initiate pagination or recomputation')
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-first'))
+  readyToLoad.value = true; await nextTick()
+  ;(more.props.onClick as Function)()
+  await nextTick()
+  assert.equal(mock.calls[base + 1].request.fusionBefore, 'older')
+  readyToLoad.value = false; await nextTick()
+  assert.equal(mock.calls[base + 1].options.signal.aborted, false)
+  mock.calls[base + 1].resolve({ ...first, items: [trade('appended')], next_cursor: null })
+  await nextTick(); await nextTick()
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-first'))
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-appended'))
+  response.value = { ...response.value, meta: { ...response.value.meta } }
+  readyToLoad.value = true; await nextTick(); await nextTick()
+  assert.equal(mock.calls.length, base + 2, 'same primary snapshot must not reload or discard appended rows')
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-appended'))
+  app.unmount()
+})
+
+test('new fusion identity clears and aborts old input, waits for admission, and does not retry rejected input', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const response = ref(input('j')), readyToLoad = ref(true)
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: response.value, readyToLoad: readyToLoad.value }) }))
+  app.mount(root)
+  readyToLoad.value = false
+  response.value = input('hc')
+  await nextTick()
+  assert.equal(mock.calls[base].options.signal.aborted, true)
+  assert.equal(mock.calls.length, base + 1)
+  mock.calls[base].resolve(output('stale-j', 'j')); await nextTick(); await nextTick()
+  assert.doesNotMatch(nodeText(root), /stale-j/)
+  readyToLoad.value = true; await nextTick()
+  assert.equal(mock.calls.length, base + 2)
+  assert.equal(mock.calls[base + 1].request.identity.product, 'hc')
+  mock.calls[base + 1].resolve(output('wrong-source', 'j')); await nextTick(); await nextTick()
+  assert.match(nodeText(root), /融合输入已变化/)
+  readyToLoad.value = false; await nextTick()
+  readyToLoad.value = true; await nextTick()
+  assert.equal(mock.calls.length, base + 2, 'readiness recovery is not an automatic retry')
   app.unmount()
 })
