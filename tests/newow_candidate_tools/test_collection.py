@@ -433,3 +433,42 @@ def test_actual_observer_legacy_listener_native_zero_and_aux_pipeline():
     assert observed["auxComponent"] == "macd" and observed["auxPoints"] == 2
     assert observed["partialCurve"][0]["reference_trade_id"] == "closed"
     assert observed["bodyErrors"] == []
+
+
+def test_minute_xhr_binding_excludes_aborted_peer_but_rejects_missing_or_wrong_response():
+    """Exercise the actual minute binding code for the LH cancelled-then-refreshed URL."""
+    import shutil
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node unavailable")
+    minute = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/newow_candidate_tools/browser/minute.js"
+    ).read_text()
+    binding = minute[minute.index(" const readXHR=async r=>{") : minute.index(" const xhrBindings=")]
+    script = r"""
+    const url='http://127.0.0.1:5178/api/v1/market/newow/strategy-detail?product=lh&frequency=1d&section=explanation';
+    const cancelled={},replacement={};
+    const xhrRequests=[{request:cancelled,id:1,url,method:'GET',done:true},{request:replacement,id:2,url,method:'GET',done:true}];
+    const requestRows=new WeakMap([[cancelled,{failed:true}],[replacement,{finished:true}]]);
+    const xhrWatermark={document_id:'same',sequence:0};
+    globalThis.__p7XHR={document_id:'same',records:[]};
+    const page={evaluate:async(fn,arg)=>fn(arg),waitForTimeout:async()=>new Promise(resolve=>setTimeout(resolve,1))};
+    let xhrDeadline=Date.now()+40;
+    __BINDING__
+    const response={request:()=>replacement,status:()=>200};
+    const row={url,sequence:1,started_order:1,completed_order:2,http:200,payload:{meta:{identity:{product:'lh'}}}};
+    (async()=>{
+      globalThis.__p7XHR.records=[row];
+      const success=await readXHR(response);
+      globalThis.__p7XHR.records=[];xhrDeadline=Date.now()+30;
+      let missing=false;try{await readXHR(response)}catch(e){missing=e.message==='XHR_COMPACT_OBSERVATION_MISSING'}
+      globalThis.__p7XHR.records=[{...row,http:201}];xhrDeadline=Date.now()+30;
+      let mismatch=false;try{await readXHR(response)}catch(e){mismatch=e.message==='XHR_RESPONSE_IDENTITY_MISMATCH'}
+      console.log(JSON.stringify({success:success.binding.node_request_id,missing,mismatch}));
+    })().catch(e=>{console.error(e);process.exit(1)});
+    """.replace("__BINDING__", binding)
+    result = subprocess.run([node, "-e", script], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"success": 2, "missing": True, "mismatch": True}

@@ -39,7 +39,9 @@ const xhrRequests=[];let xhrSerial=0;let xhrWatermark=null;let xhrReady=false;le
   const item=xhrRequests.find(x=>x.request===r.request());if(!item||item.method!=='GET')throw new Error('XHR_REQUEST_IDENTITY_MISSING');
 
   while(Date.now()<xhrDeadline){
-   const peers=xhrRequests.filter(x=>x.url===item.url);
+   // Aborted SPA requests can share a URL with the replacement request but
+   // have no XHR response row. Bind only requests that produced a response.
+   const peers=xhrRequests.filter(x=>x.url===item.url&&!requestRows.get(x.request)?.failed);
    if(peers.some(x=>!x.done)){await page.waitForTimeout(25);continue;}
    const found=await page.evaluate(({url,watermark})=>{const s=globalThis.__p7XHR;if(!s)return {missing:true};return {rows:s.records.filter(x=>x.url===url&&(s.document_id!==watermark.document_id||x.sequence>watermark.sequence)).sort((a,b)=>a.sequence-b.sequence)}},{url:item.url,watermark:xhrWatermark});
    if(found.missing)throw new Error('XHR_OBSERVER_MISSING');

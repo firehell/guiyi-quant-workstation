@@ -32,7 +32,9 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
-P7-16 C **PARTIAL / DEFERRED_BROWSER_BLOCKED，0/12 页面闭环**。21 owner/84 依赖全部 DATA_READY（81 读回、3 NO_GAP），195 次行情请求、790 派生目标；507667 根四频物理 Bar 独立全前缀复核，1174 旧文件与 95887 旧 Bar 保持。4 输入/8 基础/4 融合共 12 候选 READY、disabled/generation=0/complete_window_proven=false，API 12/12。Chrome 仅 5m trend/oscillation 两场完整；5m dual 先遇 Playwright V8 OOM，隔离诊断再遇较早窗口原生 409 且无对应成功读回，失败证据保留，未完成 19 场及独立视觉/数值 Review。专属服务已停、锁0；候选未晋升，未启动 LH；正式分钟/Runtime/Scope/通知/账户未变。见 [C暂缓记录](docs/tasks/c-candidate-pilot-20260930.md)。
+P7-17 LH **COMPLETED，12/12 历史候选页面闭环**。21 个物理 owner、84 个 owner×周期单元全部 DATA_READY（91 条 section 检查含 7 条重复）；一次维护 196 次行情请求、794 派生目标，320835 根四周期物理 Bar 独立全前缀逐值复核。旧1165文件、85144旧Bar及579日周分区保持。4输入/8基础/4融合共12候选READY、disabled/generation=0/complete_window_proven=false；API 12/12。Chrome 原采集第10场因取消请求与同URL成功请求的观察绑定等待超时，失败证据保留；定位并修复工具后仅续采失败及后续10场，前9场按SHA复用。最终19场数值审计、49原图视觉检查及14578笔CLOSED收益/14614曲线点独立核算通过。采集返工约581.414s+477.963s，未伪称一次无重采；专属API/Web服务已停，维护锁以最终现场读回为准。未启动M，正式分钟/Runtime/Scope/通知/账户未变。见[LH处理记录](docs/tasks/lh-candidate-pilot-20260930.md)。
+
+P7-16 C **PARTIAL / DEFERRED_BROWSER_BLOCKED，0/12 页面闭环**。21 owner/84 依赖全部 DATA_READY（81 读回、3 NO_GAP），195 次行情请求、790 派生目标；507667 根四频物理 Bar 独立全前缀复核，1174 旧文件与 95887 旧 Bar 保持。4 输入/8 基础/4 融合共 12 候选 READY、disabled/generation=0/complete_window_proven=false，API 12/12。Chrome 仅 5m trend/oscillation 两场完整；5m dual 先遇 Playwright V8 OOM，隔离诊断再遇较早窗口原生 409 且无对应成功读回，失败证据保留，未完成 19 场及独立视觉/数值 Review。专属服务已停、锁0；候选未晋升，当时未启动 LH；正式分钟/Runtime/Scope/通知/账户未变。见 [C暂缓记录](docs/tasks/c-candidate-pilot-20260930.md)。
 
 P7-15 AP **COMPLETED，12/12 历史候选页面闭环**。12 owner/48 依赖 READY（31 实际读回、17 NO_GAP），0 行情价格请求、247 派生月；一次 4 输入/8 基础/4 融合 disabled 首建、一次 19 场 Chrome，维护/构建/采集无重试。186588 物理 Bar 全前缀独立 Decimal 复核，1095 旧文件、9674 旧 Bar、370 日周分区保持；12 流 READY、enabled=false/generation=0/complete_window_proven=false。API 12/12，14772 CLOSED/14808 SVG 点及 49 原图独立审查完成；P3 密集 Marker 重叠、副图短窗及截图覆盖、W1 35/120 与 11 段预热、报价和持有过程限制保留。API 148.679s、Chrome 826.314s；维护/资产完整 walltime 缺失，不声称整体提速。专属服务已停、锁0；未启动 C，正式分钟/Runtime/Scope/通知/账户未变。见 [AP处理记录](docs/tasks/ap-candidate-pilot-20260930.md)。
 
