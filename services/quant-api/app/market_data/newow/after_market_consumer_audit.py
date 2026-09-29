@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
+import math
 import re
 
 from sqlalchemy import select
@@ -239,29 +240,54 @@ def run_bounded_consumer_audits(
     global_deadline = clock() + total_timeout_seconds
     results: dict[str, dict[str, object]] = {}
     for scope in scopes:
-        scope_deadline = min(global_deadline, clock() + scope.timeout_seconds)
+        scope_started = clock()
+        scope_deadline = min(global_deadline, scope_started + scope.timeout_seconds)
         cutoffs: dict[str, datetime] = {}
         unverified: list[str] = []
+        scope_budget_exhausted = False
         for product in scope.products:
             if clock() >= scope_deadline:
+                scope_budget_exhausted = True
                 unverified.extend(item for item in scope.products if item not in cutoffs)
                 break
             try:
                 cutoffs[product] = resolve_cutoff(scope, product)
             except Exception:  # noqa: BLE001 - consumer receipt contains bounded status only
                 unverified.append(product)
+        cutoff_seconds = max(0.0, clock() - scope_started)
+        revision_started = clock()
         revision = input_revision(scope)
+        revision_seconds = max(0.0, clock() - revision_started)
         grouped: dict[tuple[datetime, object], list[str]] = {}
         for product, cutoff in cutoffs.items():
             partition = None if partition_key is None else partition_key(scope, product)
             grouped.setdefault((cutoff, partition), []).append(product)
         parts: list[dict[str, object]] = []
+        groups: list[dict[str, object]] = []
+        report_seconds = 0.0
         for (cutoff, _partition), products in grouped.items():
             remaining = int(scope_deadline - clock())
+            group = {
+                "products": list(products),
+                "status": "skipped_budget",
+                "allotted_seconds": max(0, remaining),
+                "elapsed_seconds": 0.0,
+                "budget_exhausted": True,
+            }
+            groups.append(group)
             if remaining < 1:
+                scope_budget_exhausted = True
                 unverified.extend(products)
                 continue
+            report_started = clock()
             report = build_report(scope, tuple(products), cutoff, remaining)
+            duration = max(0.0, clock() - report_started)
+            report_seconds += duration
+            group.update(
+                status="completed",
+                elapsed_seconds=round(duration, 6),
+                budget_exhausted=report.get("budget_exhausted") is True,
+            )
             parts.append(summarize_readiness(
                 report,
                 products=tuple(products),
@@ -269,7 +295,46 @@ def run_bounded_consumer_audits(
                 cutoffs={product: cutoff.isoformat() for product in products},
                 input_revision=revision,
             ))
-        results[scope.key] = _merge_scope_parts(scope, parts, cutoffs, unverified, revision)
+        result = _merge_scope_parts(
+            scope,
+            parts,
+            cutoffs,
+            unverified,
+            revision,
+            budget_exhausted=scope_budget_exhausted,
+        )
+        slow_calls = [
+            call
+            for part in parts
+            for call in part.get("diagnostics", {}).get("slow_calls", [])
+        ]
+        slow_calls.sort(key=lambda call: call["elapsed_seconds"], reverse=True)
+        result["diagnostics"] = {
+            "elapsed_seconds": round(max(0.0, clock() - scope_started), 6),
+            "cutoff_seconds": round(cutoff_seconds, 6),
+            "revision_seconds": round(revision_seconds, 6),
+            "report_seconds": round(report_seconds, 6),
+            "consumer_seconds": round(
+                sum(
+                    part.get("diagnostics", {}).get("consumer_seconds", 0.0)
+                    for part in parts
+                ),
+                6,
+            ),
+            "repair_seconds": round(
+                sum(
+                    part.get("diagnostics", {}).get("repair_seconds", 0.0)
+                    for part in parts
+                ),
+                6,
+            ),
+            "work_used": sum(
+                part.get("diagnostics", {}).get("work_used", 0) for part in parts
+            ),
+            "groups": groups,
+            "slow_calls": slow_calls[:8],
+        }
+        results[scope.key] = result
     return results
 
 
@@ -279,8 +344,14 @@ def _merge_scope_parts(
     cutoffs: Mapping[str, datetime],
     unverified: list[str],
     revision: str,
+    *,
+    budget_exhausted: bool = False,
 ) -> dict[str, object]:
-    unique_unverified = list(dict.fromkeys(unverified))
+    child_unverified = [
+        product for part in parts for product in part.get("unverified_products", [])
+    ]
+    missing = set(unverified) | set(child_unverified)
+    unique_unverified = [product for product in scope.products if product in missing]
     failures = [row for part in parts for row in part["failures"]]  # type: ignore[index]
     proposals = [row for part in parts for row in part["warmup_proposals"]]  # type: ignore[index]
     complete = (
@@ -294,16 +365,20 @@ def _merge_scope_parts(
         "input_revision": revision,
         "product_cutoffs": [
             {"product": product, "as_of": cutoffs[product].isoformat()}
-            for product in scope.products if product in cutoffs
+            for product in scope.products
+            if product in cutoffs
         ],
         "unverified_products": unique_unverified,
         "case_count": sum(int(part["case_count"]) for part in parts),
         "main_ready_count": sum(int(part["main_ready_count"]) for part in parts),
-        "reference_ready_count": sum(int(part["reference_ready_count"]) for part in parts),
-        "auxiliary_ready_count": sum(int(part["auxiliary_ready_count"]) for part in parts),
-        "budget_exhausted": bool(unique_unverified) or any(
-            part["budget_exhausted"] is True for part in parts
+        "reference_ready_count": sum(
+            int(part["reference_ready_count"]) for part in parts
         ),
+        "auxiliary_ready_count": sum(
+            int(part["auxiliary_ready_count"]) for part in parts
+        ),
+        "budget_exhausted": budget_exhausted
+        or any(part["budget_exhausted"] is True for part in parts),
         "failures": failures,
         "warmup_proposals": proposals,
     }
@@ -365,6 +440,8 @@ def summarize_readiness(
                 invalid_products.add(product)
                 continue
             status = state["status"]
+            if status in {"UNKNOWN", "UNSTARTED"}:
+                invalid_products.add(product)
             family = "auxiliary" if str(section).startswith("auxiliary:") else str(section)
             if status == "READY":
                 ready[family] += 1
@@ -395,8 +472,9 @@ def summarize_readiness(
         "product_cutoffs": [
             {"product": product, "as_of": cutoffs[product]} for product in products
         ],
-        "unverified_products": [] if structurally_complete else [
-            product for product in products
+        "unverified_products": [
+            product
+            for product in products
             if product in invalid_products
             or any((product, strategy) not in seen for strategy in _STRATEGIES)
         ],
@@ -405,9 +483,102 @@ def summarize_readiness(
         "reference_ready_count": ready["reference"],
         "auxiliary_ready_count": ready["auxiliary"],
         "budget_exhausted": budget_exhausted,
+        **(
+            {"diagnostics": public_consumer_diagnostics(report["diagnostics"])}
+            if "diagnostics" in report
+            else {}
+        ),
         "failures": failures,
         "warmup_proposals": proposals,
     }
+
+
+def public_consumer_diagnostics(value: object) -> dict[str, object]:
+    """Copy only bounded identities and numeric timings, never arbitrary details."""
+    if not isinstance(value, Mapping):
+        raise ValueError("NEWOW_CONSUMER_DIAGNOSTICS_INVALID")
+    result: dict[str, object] = {}
+    for key in (
+        "elapsed_seconds",
+        "cutoff_seconds",
+        "revision_seconds",
+        "report_seconds",
+        "consumer_seconds",
+        "repair_seconds",
+    ):
+        if key not in value:
+            continue
+        number = value[key]
+        if (
+            type(number) not in (int, float)
+            or not 0 <= number <= 86400
+            or not math.isfinite(number)
+        ):
+            raise ValueError("NEWOW_CONSUMER_DIAGNOSTICS_INVALID")
+        result[key] = round(float(number), 6)
+    if "work_used" in value:
+        if (
+            type(value["work_used"]) is not int
+            or not 0 <= value["work_used"] <= 6000000
+        ):
+            raise ValueError("NEWOW_CONSUMER_DIAGNOSTICS_INVALID")
+        result["work_used"] = value["work_used"]
+    for key, limit in (("groups", 60), ("slow_calls", 8)):
+        if key not in value:
+            continue
+        rows = value[key]
+        if not isinstance(rows, list) or len(rows) > limit:
+            raise ValueError("NEWOW_CONSUMER_DIAGNOSTICS_INVALID")
+        cleaned = []
+        for row in rows:
+            if not isinstance(row, Mapping):
+                raise ValueError("NEWOW_CONSUMER_DIAGNOSTICS_INVALID")
+            item = public_consumer_diagnostics(
+                {"elapsed_seconds": row.get("elapsed_seconds")}
+            )
+            if key == "groups":
+                products = row.get("products")
+                allotted = row.get("allotted_seconds")
+                if (
+                    not isinstance(products, list)
+                    or not 1 <= len(products) <= 60
+                    or any(
+                        not isinstance(p, str) or _PRODUCT.fullmatch(p) is None
+                        for p in products
+                    )
+                    or len(set(products)) != len(products)
+                    or not isinstance(row.get("status"), str)
+                    or row["status"] not in {"completed", "skipped_budget"}
+                    or type(row.get("budget_exhausted")) is not bool
+                    or type(allotted) is not int
+                    or not 0 <= allotted <= 900
+                ):
+                    raise ValueError("NEWOW_CONSUMER_DIAGNOSTICS_INVALID")
+                item.update(
+                    products=list(products),
+                    status=row["status"],
+                    allotted_seconds=allotted,
+                    budget_exhausted=row["budget_exhausted"],
+                )
+            else:
+                product = row.get("product")
+                if (
+                    not isinstance(product, str)
+                    or _PRODUCT.fullmatch(product) is None
+                    or not isinstance(row.get("strategy"), str)
+                    or row["strategy"] not in _STRATEGIES
+                    or not isinstance(row.get("section"), str)
+                    or row["section"] not in CONSUMER_SECTIONS
+                    or not isinstance(row.get("status"), str)
+                    or row["status"] not in {"completed", "error", "budget_exhausted"}
+                ):
+                    raise ValueError("NEWOW_CONSUMER_DIAGNOSTICS_INVALID")
+                item.update(
+                    {k: row[k] for k in ("product", "strategy", "section", "status")}
+                )
+            cleaned.append(item)
+        result[key] = cleaned
+    return result
 
 
 def _warmup_proposal(value: object) -> dict[str, object]:

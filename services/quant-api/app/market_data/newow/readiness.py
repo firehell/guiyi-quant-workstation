@@ -567,6 +567,8 @@ class NewowReadinessAudit:
         self, request: ReadinessRequest, budget: AuditBudget
     ) -> dict[str, Any]:
         cases: list[dict[str, Any]] = []
+        consumer_seconds = 0.0
+        slow_calls: list[dict[str, Any]] = []
         for symbol in request.products:
             for strategy in ProductStrategy:
                 for frequency in request.frequencies:
@@ -591,6 +593,8 @@ class NewowReadinessAudit:
                         case["sections"][section_name] = state
                         if section is ProductSection.CHART:
                             case["main"] = state
+                        started = None
+                        outcome = "completed"
                         try:
                             budget.take()
                             if self.service is None:
@@ -599,6 +603,7 @@ class NewowReadinessAudit:
                                     reason="VALIDATION_SERVICE_UNAVAILABLE",
                                 )
                                 continue
+                            started = budget.clock()
                             result = self.service.query(ProductServiceQuery(
                                 symbol,
                                 strategy,
@@ -618,13 +623,34 @@ class NewowReadinessAudit:
                                     reason=delivery.status.reason_code,
                                 )
                         except AuditBudgetExceeded:
+                            outcome = "budget_exhausted"
                             continue
                         except Exception as exc:
+                            outcome = "error"
                             state.update(_failure(exc))
                             if budget.expired():
+                                outcome = "budget_exhausted"
                                 state.update(
                                     status="UNSTARTED", reason="BUDGET_EXHAUSTED"
                                 )
+                        finally:
+                            if started is not None:
+                                duration = max(0.0, budget.clock() - started)
+                                consumer_seconds += duration
+                                slow_calls.append(
+                                    {
+                                        "product": symbol,
+                                        "strategy": strategy.value,
+                                        "section": section_name,
+                                        "elapsed_seconds": round(duration, 6),
+                                        "status": outcome,
+                                    }
+                                )
+                                slow_calls.sort(
+                                    key=lambda item: item["elapsed_seconds"],
+                                    reverse=True,
+                                )
+                                del slow_calls[8:]
         incomplete = any(
             state["status"] in {"UNKNOWN", "UNSTARTED"}
             for case in cases
@@ -644,9 +670,17 @@ class NewowReadinessAudit:
             "frequency_scope": [item.value for item in request.frequencies],
             "product_count": len(request.products),
             "main_case_count": len(cases),
-            "main_ready_count": sum(case["main"]["status"] == "READY" for case in cases),
+            "main_ready_count": sum(
+                case["main"]["status"] == "READY" for case in cases
+            ),
             "budget_exhausted": budget.exhausted,
             "work_used": budget.used,
+            "diagnostics": {
+                "consumer_seconds": round(consumer_seconds, 6),
+                "repair_seconds": 0.0,
+                "work_used": budget.used,
+                "slow_calls": slow_calls,
+            },
             "enumerations": [],
             "dependencies": [],
             "repair_targets": [],

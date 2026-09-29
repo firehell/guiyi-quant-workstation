@@ -773,3 +773,52 @@ def test_consumer_only_matrix_skips_dependency_enumeration_and_keeps_all_section
     assert len(report["cases"]) == 3
     assert all(set(case["sections"]) == {"chart", "reference", *{f"auxiliary:{item.value}" for item in module.AuxiliaryComponent}} for case in report["cases"])
     assert report["work_used"] == 3 * (2 + len(module.AuxiliaryComponent))
+    assert len(report["diagnostics"]["slow_calls"]) == 8
+    assert report["diagnostics"]["consumer_seconds"] >= 0
+
+
+def test_consumer_timing_preserves_call_crossing_budget():
+    module = _audit_module()
+    from app.market_data.newow.product_service import SectionDelivery
+    from guiyi_quant.newow.product_contracts import FeatureStatus
+
+    elapsed = [0.0]
+
+    class Service:
+        def query(self, request):
+            elapsed[0] += 3
+            return SimpleNamespace(
+                **{
+                    request.section: SectionDelivery(
+                        "delivered",
+                        FeatureStatus("ready", "ACTIVE_CODE_VERIFIED"),
+                        None,
+                    )
+                }
+            )
+
+    report = module.NewowReadinessAudit(
+        reader=SimpleNamespace(),
+        service=Service(),
+        clock=lambda: elapsed[0],
+    ).run(
+        module.ReadinessRequest(
+            ("rb",),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            matrix=True,
+            frequencies=("1w",),
+            consumer_only=True,
+            timeout_seconds=2,
+        )
+    )
+    assert report["budget_exhausted"] is True
+    assert report["diagnostics"]["consumer_seconds"] == 3
+    assert report["diagnostics"]["slow_calls"] == [
+        {
+            "product": "rb",
+            "strategy": "trend",
+            "section": "chart",
+            "elapsed_seconds": 3.0,
+            "status": "budget_exhausted",
+        }
+    ]

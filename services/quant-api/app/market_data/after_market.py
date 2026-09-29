@@ -1249,6 +1249,18 @@ def _public_consumer_audit(value: object) -> dict[str, object]:
         return {"status": "not_verified"}
     if type(value.get("budget_exhausted")) is not bool:
         return {"status": "not_verified"}
+    diagnostics = {}
+    if "diagnostics" in value:
+        from app.market_data.newow.after_market_consumer_audit import (
+            public_consumer_diagnostics,
+        )
+
+        try:
+            diagnostics = {
+                "diagnostics": public_consumer_diagnostics(value["diagnostics"])
+            }
+        except ValueError:
+            return {"status": "not_verified"}
     audit_as_of = value.get("as_of")
     if audit_as_of is not None and _public_timestamp(audit_as_of) is None:
         return {"status": "not_verified"}
@@ -1347,6 +1359,7 @@ def _public_consumer_audit(value: object) -> dict[str, object]:
         "status": value["status"],
         **{key: value[key] for key in counts},
         "budget_exhausted": value["budget_exhausted"],
+        **diagnostics,
         "failures": failures,
         **({"frequency": frequency} if frequency is not None else {}),
         **({"warmup_proposals": proposals} if raw_proposals is not None else {}),
@@ -1354,7 +1367,11 @@ def _public_consumer_audit(value: object) -> dict[str, object]:
         **({"input_revision": revision} if revision is not None else {}),
         **({"code_commit": code_commit} if code_commit is not None else {}),
         **({"product_cutoffs": cutoffs} if raw_cutoffs is not None else {}),
-        **({"unverified_products": raw_unverified} if raw_unverified is not None else {}),
+        **(
+            {"unverified_products": raw_unverified}
+            if raw_unverified is not None
+            else {}
+        ),
         **({"run_started_at": run_started_at} if run_started_at is not None else {}),
     }
 

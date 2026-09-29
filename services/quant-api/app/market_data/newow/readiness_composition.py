@@ -98,12 +98,17 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
     ))
     if not failed_products:
         return report
+    repair_started = budget.clock()
     repair_report = audit.run(replace(
         request,
         products=failed_products,
         matrix=False,
         consumer_only=False,
     ))
+    report["diagnostics"]["repair_seconds"] = round(
+        max(0.0, budget.clock() - repair_started), 6
+    )
+    report["diagnostics"]["work_used"] = budget.used
     report["repair_targets"] = repair_report["repair_targets"]
     report["metadata_proposals"] = repair_report["metadata_proposals"]
     report["budget_exhausted"] = budget.exhausted

@@ -410,6 +410,10 @@ Calendar/Session 与不可变 Parquet 分区指针摘要；W1 摘要同时绑定
 逐品种截止、输入摘要、只读预热提案与运行 commit。`READY` 之外的 `WARMING`、
 `NOT_APPLICABLE`、`UNAVAILABLE`、`DATA_INTERRUPTED` 保持显式合法状态；未知、预算耗尽、
 未检或 `input_changed` 不构成验收通过。
+可选 `diagnostics` 记录 cutoff 解析、输入摘要、消费查询、预热提案和 scope 总耗时，分组预算与跳过状态，
+以及最多 8 条最慢消费调用的品种、策略、section、耗时和完成/错误/预算取消状态；仅保留白名单身份与有限数值，
+不输出异常正文、SQL、路径或凭据。子报告未检品种按 scope 顺序去重合并；未检不自动等同预算耗尽。
+旧状态缺少诊断表示耗时未取证；这些诊断不扩大既有预算，不启动额外检查或重跑自然任务。
 消费验收超时或异常只记 `not_verified`/`incomplete`，不得改写主任务终态、触发新的下载、
 生产重试或发送额外通知。未执行或旧 Runtime 没有该字段表示未验证。
 
