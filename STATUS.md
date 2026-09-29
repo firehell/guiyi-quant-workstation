@@ -32,6 +32,9 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-12 SM **COMPLETED，12/12 页面闭环**。自身19owner/76依赖全部READY（19实际执行、57 NO_GAP），0行情fetch/178个5m派生月发布；4输入、8基础、4融合及真实API/Chrome通过。四频完整前缀独立Decimal重聚合、旧1689七频文件与510日周pointer保持；5m新建3流、其余9流重建，旧generation历史事实保持，最终12候选disabled/generation=0/complete_window_proven=false。
+独立数值审计PASS，61张原图逐张Review无Confirmed Issue；日周6组合原生非空曲线及WARMING、顶部报价预览403与较早MACD窗口边界保留。日周helper缺identity失败及D1离线恢复原证据保留，未重采D1；专用Chrome/API/Web已停止。仅更新P7-12，未自启CJ，正式分钟/Runtime/Scope/通知/账户未变。见[SM处理记录](docs/tasks/sm-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
+
 P7-11 SF **COMPLETED，12/12 页面闭环**。自身28owner/112依赖最终全部READY，0源请求/287个5m派生月发布；4输入、8基础、4融合及真实API/Chrome通过。四频完整物理前缀独立重聚合、旧七频文件/行保持、旧9资产仅invalid且历史事实保持；最终12候选disabled、generation=0、complete_window_proven=false。
 独立数值审计PASS，61张原始截图逐张Review无Confirmed Issue；日周6组合保留原生WARMING/零CLOSED空曲线，顶部报价保留预览403边界。授权后经正常宿主复核完成原计划，旧阻断/失败证据保留；预览资源已停止，未自启SM，正式分钟/Runtime/Scope/通知/账户未变。见[SF处理记录](docs/tasks/sf-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
 
