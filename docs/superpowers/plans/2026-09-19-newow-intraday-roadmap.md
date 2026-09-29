@@ -326,7 +326,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 | P7-08 | 黄金 | AU | CANDIDATE_CLOSED；12/12，88/88 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/au-minute-closeout-20260929.md) |
 | P7-09 | 白银 | AG | CANDIDATE_CLOSED；12/12，80/80 DATA_READY，12 disabled候选资产，API/Chrome/日周与61原图独立Review通过；[处理记录](../../tasks/ag-minute-closeout-20260929.md) |
 | P7-10 | 镍 | NI | DEFERRED_DATA_BLOCKED，0/12；首单NI2302/5m原子发布失败停止，14部分分区保留、无重试；[处理记录](../../tasks/ni-minute-closeout-20260929.md) |
-| P7-11 | 硅铁 | SF | NOT_STARTED |
+| P7-11 | 硅铁 | SF | HOST_APPROVAL_BLOCKED，0/12；apply未启动，见[SF处理记录](../../tasks/sf-minute-closeout-20260929.md) |
 | P7-12 | 锰硅 | SM | NOT_STARTED |
 | P7-13 | 红枣 | CJ | NOT_STARTED |
 | P7-14 | 鸡蛋 | JD | NOT_STARTED |
