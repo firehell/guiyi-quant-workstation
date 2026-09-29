@@ -328,7 +328,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 | P7-10 | 镍 | NI | DEFERRED_DATA_BLOCKED，0/12；首单NI2302/5m原子发布失败停止，14部分分区保留、无重试；[处理记录](../../tasks/ni-minute-closeout-20260929.md) |
 | P7-11 | 硅铁 | SF | COMPLETED，12/12；四输入/八基础/四融合disabled，独立数值及61图Review通过；原生预览/日周边界保留，见[SF处理记录](../../tasks/sf-minute-closeout-20260929.md) |
 | P7-12 | 锰硅 | SM | COMPLETED，12/12；4输入/8基础/4融合disabled，独立数值与61原图Review通过；自身日周/预览边界及失败证据保留，见[SM处理记录](../../tasks/sm-minute-closeout-20260929.md) |
-| P7-13 | 红枣 | CJ | NOT_STARTED |
+| P7-13 | 红枣 | CJ | COMPLETED，12/12；4输入/8基础/4融合disabled，独立数值与61原图Review通过；自身日周/预览边界保留，见[CJ处理记录](../../tasks/cj-minute-closeout-20260929.md) |
 | P7-14 | 鸡蛋 | JD | NOT_STARTED |
 | P7-15 | 苹果 | AP | NOT_STARTED |
 | P7-16 | 玉米 | C | NOT_STARTED |

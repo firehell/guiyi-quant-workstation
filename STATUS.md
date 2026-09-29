@@ -32,6 +32,9 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-13 CJ **COMPLETED，12/12 页面闭环**。自身12owner/48依赖全部READY（45实际执行、3 NO_GAP），86行情fetch/352派生月发布；4输入、8基础、4融合首次disabled构建及真实API/Chrome通过。183668物理Bar全前缀独立Decimal重算、899旧七频文件与366日周pointer保持，最终12候选disabled/generation=0/complete_window_proven=false。
+独立数值审计及61原图逐张Review通过；自身日周六组非空曲线、W1趋势转折WARMING、报价预览403和较早MACD窗口边界保留，取消/短超时/fresh恢复通过。专属Chrome/API/Web已停止，锁0；仅更新P7-13，未自启JD，正式分钟/Runtime/Scope/通知/账户未变。见[CJ处理记录](docs/tasks/cj-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
+
 P7-12 SM **COMPLETED，12/12 页面闭环**。自身19owner/76依赖全部READY（19实际执行、57 NO_GAP），0行情fetch/178个5m派生月发布；4输入、8基础、4融合及真实API/Chrome通过。四频完整前缀独立Decimal重聚合、旧1689七频文件与510日周pointer保持；5m新建3流、其余9流重建，旧generation历史事实保持，最终12候选disabled/generation=0/complete_window_proven=false。
 独立数值审计PASS，61张原图逐张Review无Confirmed Issue；日周6组合原生非空曲线及WARMING、顶部报价预览403与较早MACD窗口边界保留。日周helper缺identity失败及D1离线恢复原证据保留，未重采D1；专用Chrome/API/Web已停止。仅更新P7-12，未自启CJ，正式分钟/Runtime/Scope/通知/账户未变。见[SM处理记录](docs/tasks/sm-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
 
