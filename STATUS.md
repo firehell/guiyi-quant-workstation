@@ -32,6 +32,10 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-06 V **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。按owner续接和新规则重新核对后，宿主正常放行原exact维护；88源请求/360派生月完成，48/48 DATA_READY，591旧文件及283日周pointer保留。12新候选资产READY、disabled/generation=0，保存manifest与4融合依赖独立核对通过。
+冻结源码756a22fe2；API、真实Chrome主图/完整曲线/较早窗口各12/12，实际取消/0.252秒短超时/恢复通过。日周六组32 PASS/3辅助WARMING/1有据空曲线N/A；W1震荡真实零CLOSED、7换月中断，原工具失败保留，未造曲线。49原图独立Review及定向29测试通过，允许集成develop；complete_window_proven=false、持有过程及未测deep MACD/日周older边界保留。
+本项8012/5178和专属Chrome已释放；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换。见 [V处理记录](docs/tasks/v-minute-closeout-20260929.md)。其余队列及21分母不变。
+
 P7-05 SH **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。44/44 DATA_READY；一次精确维护80源月/330派生月，523旧文件及252日周pointer保留，12候选资产全部新增、disabled/generation=0。
 冻结候选源码397dd8dee；API、真实Chrome主图/完整曲线/较早窗口各12/12及取消恢复通过；日周六组30 PASS/6辅助WARMING，原生coverage及Calendar/Session周端点完成独立读回。49原图独立Review与定向18测试通过，允许集成develop；真实PARTIAL、complete_window_proven=false、旧quality及未测深MACD/日周older边界保留。
 仅交付工程记录，自己的8012/5178与Chrome已释放；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换。见 [SH处理记录](docs/tasks/sh-minute-closeout-20260928.md)。其余队列及21分母不变。
