@@ -32,6 +32,9 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-10 NI **DEFERRED_DATA_BLOCKED，0/12候选页面闭环**。自身41owner/164依赖最终7 DATA_READY，零保存资产；首单NI2302/5m第8源请求发生`ATOMIC_PUBLISH_FAILED`（底层`ArrowInvalid`）后停批，无重试/续接。实际新增2022-02..08七个1m及七个5m分区，原525五频分区和首单29七频文件/24日周pointer不变；最早剩余NI2302/1m/2022-09，目录空、锁0，具体原因UNKNOWN。
+14范围测试、58原生边界测试、scratch与独立只读实际发布/旧bytes核对、12,411根5m逐值重聚合及安全暂缓Review通过；API/Chrome及日周未运行，不宣称候选或共享存储根因已解决。只集成安全暂缓记录，正式分钟/Runtime/Scope/通知/账户未变，未自启SF。见[NI处理记录](docs/tasks/ni-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
+
 P7-09 AG **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。20实际owner、80/80 DATA_READY；149行情源请求/679派生月，930旧文件及479日周pointer保留；776109物理Bar独立重算一致。12候选资产READY、disabled/generation=0，manifest与4融合依赖独立核对通过。
 冻结源码718349a62；API、真实Chrome功能/完整CLOSED曲线/较早窗口各12/12，取消/0.254秒短超时/恢复通过。完整曲线33687 CLOSED IDs/33711 SVG点独立核对；日周六组33 PASS/3原生辅助WARMING，AG自身Calendar完成周/cutoff绑定。61原图独立Review、64定向测试及58原生边界回归通过，允许集成develop。
 原AG2310/60m发布后账户quota异常停止保留；精确只读核对后仅续接64未启动单元，未重跑或覆盖停止记录。全部complete_window_proven=false、持有过程/deep MACD/日周older与跨窗口全段MACD覆盖未验收，后者为非阻断Risk / Needs Verification。
