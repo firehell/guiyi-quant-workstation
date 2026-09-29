@@ -1,43 +1,55 @@
-# P7-11 SF 四周期历史候选处理
+# P7-11 SF 四周期历史候选闭环
 
-状态：**BLOCKED / HOST_APPROVAL_BLOCKED，0/12 页面闭环**。宿主在真实生产 apply 进程启动前拒绝，未产生维护 attempt、行情下载或生产写入。此状态不是数据失败或安全暂缓；固定21品种分母和其余队列行保持，仅SF，未启动SM。
+状态：**COMPLETED，12/12 页面闭环**。仅 SF（硅铁），4 输入、8 基础、4 融合候选完成数据、资产、API、真实 Chrome 与独立数值及视觉核验。固定 21 品种分母不变，未启动 SM。候选全部 disabled、activation generation=0、`complete_window_proven=false`；本结果是历史页面参考验收，不是因果收益、OOS、账户收益或正式运行晋升。
 
-冻结 develop/源码 `9531a6352d6507269a1adf9d58edd13e10dbe798`，启动时本地与远端develop一致。native managed隔离工作区 `/Volumes/扩展盘/worktree/sf-minute-closeout/guiyi-quant-workstation` 为冻结detached HEAD，无产品源码、公式或正式配置修改；保留供同一计划恢复核对。原始证据/helper只保存在本机 `outputs/sf-minute-closeout-20260929/`，不提交行情、响应、图片、配置或秘密。
+源码、数据读回与预览冻结于 `9531a6352d6507269a1adf9d58edd13e10dbe798`，未修改产品源码、公式或正式配置。原始行情、helper、响应和图片保留在本机 `outputs/sf-minute-closeout-20260929/`，不提交。原 `matrix.json` 保留宿主阻断历史，最终结果另存 `matrix-final.json`。
 
-## 自身范围与执行前验证
+## 范围与授权恢复
 
-窗口 `max(2023-01-01, SF产品权威起点2014-08-08)..2026-09-24`，as_of `2026-09-24T07:00:00.000001+00:00`。产品起点来自 `data/universe/product_window_starts.csv` 的 `rq_or_listing_start`，不是物理合约上市日；当前Catalog维护起点2023-01-01与产品上市事实分开。SF自身MDS/Map确定28个唯一rank1 owner，无重入；每个计算前缀从自身Contract.listed_date到owner-through，首单SF2303起于2022-03-15，不缩成页面窗口。
+窗口 `max(2023-01-01, SF 产品权威起点 2014-08-08)..2026-09-24`，as_of `2026-09-24T07:00:00.000001+00:00`。只验收 `5m/15m/30m/60m × trend/oscillation/dual`，1m 仅聚合来源。SF 自身 Map/MDS 确定 28 个唯一 rank1 owner，无重入；计算前缀使用物理合约自身 listed_date，首单 SF2303 从 2022-03-15 开始，不缩成页面窗口。
 
-仅 `5m/15m/30m/60m × trend/oscillation/dual`，4输入、8基础、4融合、12页面；1m仅Canonical聚合来源。初盘112依赖中84 DATA_READY，28个5m依赖缺前缀；输入3/4完整。既有15m/30m/60m各有3个保存流，5m没有保存流。既有资产是否精确可复用须独立manifest/source/identity读回，不因存在就计为本轮完成。独立离线比对旧plan/report与本项fresh source摘要发现三个周期的source_evidence_sha256均不匹配；旧revision/seq摘要一致不能替代stored manifest和当前source逐字段证明。因此九旧资产本轮不计为exact reuse通过；差异原因仍待只读核实，不据此断言行情数值变化或公式缺陷。
+初次宿主在 apply 进程创建前拒绝，旧 `host-approval-blocked.json` 与停止证据完整保留；用户本聊天明确回复“授权”后，经正常宿主复核执行原冻结计划，没有绕过控制。campaign SHA 始终为 `a38ec0e8be2692b0f1b2577c3c0aa75f61401f08b781171d21b55786f79d3f2b`。
 
-SF自身历史Session只有09:00..10:15、10:30..11:30、13:30..15:00，前缀3306个Session记录未见夜盘或时段变化。夜盘/跨午夜/周末夜盘归属按SF事实N/A，不复制AG或NI；30m合法15分钟尾、60m合法15/30分钟尾遵循原生 `(start,end]`。Calendar/Session原生completed week读回为2026-09-24，9/25..27休市；该元数据结果不代替日周真实页面验收。
+恢复前严格前像检查发现 SF2611 当月新增 9/29 数据，旧文件与旧行均保持。独立只读核验确认 112 份 fresh plan 的范围、窗口、生命周期、零源请求和 287 个目标不变；追加行为的 actor 未归因，不猜测来源。差异及核验保留在 `independent-authorized-drift-review.json` 与 `independent-authorized-drift-review.md`。未复用失败 attempt、修改 plan hash、缩窗或盲重试。
 
-完整112份contract_warmup dry-run去重为 **0源请求、287个5m派生月目标、247950根预期派生Bar**，全目标仅SF，其他周期无目标。计划资源估算253900800 bytes，空间约774GB；供应商账户余量1001577411 bytes只作现场quota事实，不冒充实际下载消费或供应商字节上限。
+## 数据与候选资产
 
-SF2303/1m/2022-03真实2925根Bar经本项同盘scratch原生发布、严格读回，SHA与源文件一致；canonical schema SHA `679ce5bb0b71aad3cb60bd7dc3c60539b0e08bf6d00e667fd16c6767cb41434a`。先前读取尚未完整dry-run的scratch记录保留为 `preflight-partial-dryrun.json`，未用于apply；完整28owner final preflight单独PASS。scratch不保证所有后续派生文件可发布。
+112 个维护单元实际完成，**0 provider requests，287 个 5m 派生月发布**；其中 27 个旧月份指针扩展、260 个新增月份。计划 247950 根预期派生 Bar 是目标规模，不能表述为新增 Bar 数量。`campaign-complete.json` 与逐单元计划、attempt、结果和读回保留。
 
-任务helper新增仅观察型publisher异常捕获，安全记录exact dataset/year/month及class/code/errno因果链后原样raise，不保留可能泄漏敏感信息的异常正文/traceback，不修改产品存储或事务语义。执行前独立scope Review通过。
+独立前后核对：2036 个旧七频文件、1576576 根旧行均保留；2009 个旧指针保持，只有上述 27 个 5m 指针扩展，636 个 D1/W1 指针保持。见 `inventory-difference.json`、`review-offline-maintenance-v2.json`。最终依赖 **112/112 DATA_READY**。
 
-## 宿主拒绝与停止边界
+SF 自身 Session 为 09:00–10:15、10:30–11:30、13:30–15:00，前缀含 3306 个 Session 记录。夜盘、跨午夜、周末夜盘按自身事实 N/A；30m 的 15 分钟尾段和 60m 的 15/30 分钟尾段遵循 `(start,end]`。四频各 28 owners、332 月，独立从同物理 Canonical 1m 核验的 required Bars 为：5m 271845、15m 90615、30m 48328、60m 30205。独立 Decimal 重聚合、月份完整性、Calendar/Session 与边界检查全部 PASS，详见 `data-review.md`。
 
-冻结campaign计划SHA `a38ec0e8be2692b0f1b2577c3c0aa75f61401f08b781171d21b55786f79d3f2b`。`campaign.py --apply --expected-plan-sha256 <该SHA>` 的宿主审批被拒绝，理由是当前可信用户消息未明确授权此次具体生产写入，代理交接记录不能代替可信授权。未原样重试、换工具绕过、改hash、缩窗或关闭控制；已在本聊天请求明确授权供正常复核。
+旧 9 个资产 stored source evidence 不再匹配当前月份 source 摘要，不能因输入数值身份未变就宣称 exact reuse。5m 原生新建 3 个流，其余三频原生重建 9 个流；旧 revision 仅 invalid 状态及原因变化，旧 batch/action/trade/mark 全量行数与 SHA 保持。见 `independent-asset-source-review.md`、`old-asset-rows-after-v3.json`。
 
-拒绝发生在进程创建之前：`campaign-attempt.json` 与 `campaign/` 均不存在，真实维护未启动，零本项源行情请求、零Canonical/Catalog写入。独立只读host boundary读取证明28owner初始五频1400个Catalog月份/row_count/旧文件SHA全部保持：1m332、5m72、15m332、30m332、60m332；共享锁0。D1/W1当前332/304指纹已捕获，但初始inventory未含七频，所以不虚称日周前后比对通过。
+12 个最终资产的 stored manifest、fresh full reader、checkpoint、snapshot、source 和融合依赖逐字段核验 PASS。四频输入分别为 271872/90642/48355/30232（各含 27 个换月边界），seq 为 1063/356/190/120，终点为 9/24 07:00 UTC。8 个基础 coverage 为 FULL、各含 28 个区间，但不将其改写成 `complete_window_proven=true`。见 `source-assets-final-v5.json`、`independent-asset-final-v4.json`、`independent-final-asset-review.md`。
 
-NI/FU旧失败attempt、数据、工作区和证据未触碰；SF停止不证明它们的根因已解决。未启动API/Web/Chrome，无本项服务资源需要停止。未改正式分钟、main/tag/release、Runtime/worker/消费者/Scope/audience/通知/Broker/账户，`auto_order=false`保持。
+## API、页面与独立验收
 
-## 实际只读验证与未完成项
+仅任务预览使用 frozen 源码、只读 DB、SF 白名单和固定 as_of。SF 原生能力为 **v26 / black_steel_intraday_candidate**；最初错误套用 AG v27 的断言失败证据保留，修正的是任务核验 helper，没有修改产品能力或正式配置。
 
-使用现有quant-api venv，显式 `PYTHONPATH=<冻结树>/services/quant-api:<冻结树>/packages/quant-core:<冻结树>`，import guard防止editable误导入。私有配置只由现有loader加载；初次sandbox连接限制保留，host只读查询成功，不归类为SF数据缺陷。
+- API 12/12 READY、12 个更早窗口、两次错误周期 snapshot 的真实 409 与正确请求恢复全部 PASS；UTC Z/+00 同时点一致，1 微秒变更产生原生冲突；原生 null 字段保持。见 `api-v5/`、`snapshot-recovery-readback-v5.json`。
+- Chrome 12/12 主图、参考 records、曲线、5 个副图、切换返回与错误检查通过。同日分页 3 项实际 PASS、9 项原生无 next cursor 为 N/A。更早窗口 12 项通过；主图累积多个窗口，MACD 只显示最后接受的窗口，该原生显示边界保留。
+- 12 个完整 CLOSED 曲线按每笔记录身份、Decimal 累计值及全部 SVG 点核验，通过全量 membership 而非首尾抽样。见 `complete-curve-binding-fresh-v8.json`。
+- D1/W1 共 6 组合回归完成；D1 副图原生 trend reversal WARMING，W1 副图原生 MACD/trend reversal WARMING。W1 oscillation 实际零 CLOSED，页面显示空曲线及“—”，没有伪造 0% 收益线。自身 Calendar/Session 证明 completed week 为 9/24，9/25..27 非交易日。见 `legacy-complete-binding.json`、`independent-legacy-response-curve-audit.json`。
+- 真实 pending cancel、250ms timeout AbortError 和 fresh 恢复均观测通过，未注入 mock 失败。见 `browser/sf-cancel-timeout-observations-v5.json`。
+- 独立数值审计 `independent-acceptance-audit.json` PASS；61 张原始 PNG 全部逐张视觉检查并核对 SHA，`independent-visual-review-v1.json` 为 PASS_WITH_NATIVE_AND_VIEWPORT_BOUNDARIES，没有 Confirmed Visual Issue。截图不证明视口外记录或收益算法，全量数值证据分别覆盖。
 
-- `inventory.py`、`dependencies.py`、`plan.py`、`review_metadata_readonly.py`：28owners/112依赖/9旧流、完整dry-run与自身metadata，零provider/生产写入。
-- `quota_current.py`、`preflight.py`：final完整scope/quota/空间/锁与SF scratch PASS。
-- `python -m pytest --confcutdir=outputs/sf-minute-closeout-20260929 outputs/sf-minute-closeout-20260929/test_scope.py -q -p no:cacheprovider`：**14 passed in 0.61s**（最终helper）。
-- 冻结树 `python -m pytest services/quant-api/tests/data_foundation/test_aggregation.py services/quant-api/tests/data_foundation/test_historical_session_window.py services/quant-api/tests/newow/test_reference_interruptions.py -q -p no:cacheprovider`：**58 passed in 1.00s**。
-- `aggregation_full_prefix.py` 分周期真实只读运行：15m/30m/60m各28owner、332月，分别90615/48328/30205根Bar从同物理Canonical1m原生逐字段重聚合一致；这项使用原生算法，不冒充独立算法验收。30m首次只读占锁 `SOURCE_BUSY` 保留，既有检查自然结束后fresh只读检查通过，无mutation attempt。
-- `weekly_authority_readback.py`：7日Calendar、SF Session及原生completed week PASS。
-- `review_host_boundary.py`：独立只读PASS，原五频1400文件/rows/pointers严格保持、attempt不存在、锁0。停止Review见 `independent-host-block-review.md`。
+候选预览原生禁止市场顶部报价所用 `/api/v1/market/research/product`，真实响应为 403 PREVIEW_ROUTE_FORBIDDEN；顶部报价 unavailable 是预览合同边界，不冒称行情缺口，也不将策略目标价/吸筹价当作顶部报价通过。没有开放额外路由或伪造报价。
 
-`matrix.json`固定12项HOST_APPROVAL_BLOCKED。287个5m目标发布、5m来源独立重聚合、12READY disabled资产精确完整绑定、API/真实Chrome十二组合、主图/副图/完整曲线/records/分页/切换/错误和pending取消恢复、SF自身日周六组合及逐图独立视觉Review均未完成，不借其他品种结果填补。prepared后续helper不是已执行结果。
+## 实际验证与收尾
 
-本项未完成历史候选闭环；验收结论：**阻塞**。唯一最小下一步：取得本聊天可信明确授权后按宿主流程复核同一冻结计划，并在任何真实执行前fresh校验范围、前像、预算和锁；宿主拒绝解除前不启动mutation，不自启SM。
+所有 Python 导入由 frozen PYTHONPATH/import guard 固定，秘密仅由现有 loader 使用，不进入输出。实际命令及结果：
+
+- `python -m pytest --confcutdir=outputs/sf-minute-closeout-20260929 outputs/sf-minute-closeout-20260929/test_scope.py -q -p no:cacheprovider`：14 passed in 0.61s。
+- `python -m pytest services/quant-api/tests/data_foundation/test_aggregation.py services/quant-api/tests/data_foundation/test_historical_session_window.py services/quant-api/tests/newow/test_reference_interruptions.py -q -p no:cacheprovider`：58 passed in 1.00s（冻结树）。
+- 原生 source/fusion/persisted query 定向测试：22 passed in 0.65s，命令输出见 `native-assets-tests.txt`；原生 rebuild：6 passed、3 skipped in 0.81s，见 `native-rebuild-tests.txt`。PG fixture skip 不冒充生产验证，真实构建及全量读回已有独立证据。
+- prefix negative selftests：6 passed；`python outputs/sf-minute-closeout-20260929/independent_acceptance_audit.py --saved`：独立保存证据重算 PASS，零 HTTP/DB/provider/writes。
+
+历史 scratch partial preflight、SOURCE_BUSY、旧资产 source conflict、任务 helper 校验失败、sandbox 连接失败与宿主拒绝均保留，不用成功文件覆盖。最终共享维护锁为 0，见 `final-lock-readback.json`。
+
+任务专用 Chrome 会话 `sf-minute-closeout` 已关闭；API PID73971/8012、Web PID74035/5178 已 TERM，两个 exec 会话均退出，两个端口无监听。managed worktree 已经原生归档，list_artifacts 回读为 archived_worktree，保留可恢复 Git 快照；未使用 shell 删除。原始本机证据保留。
+
+NI/FU 旧失败 attempt 和证据未触碰，未声称其根因已修复。未启动 SM；未修改正式分钟 Scope、Runtime/worker/消费者、audience/通知、main/tag/release、Broker 或账户，`auto_order=false` 保持。
+
+验收结论：**允许集成 develop**（仅本项三份收尾文档）。唯一最小下一步：按既有串行队列处理 SM，本任务未启动。
