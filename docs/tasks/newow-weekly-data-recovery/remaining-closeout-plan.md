@@ -1,5 +1,10 @@
 # 牛哇周线剩余工作：数据恢复与产品验收实施方案
 
+> 当前执行规则（2026-09-29）：数据补全交办覆盖必要来源下载和 Canonical/Catalog 修复。
+> 按 [AGENTS.md](../../../AGENTS.md#任务授权与验证-gate) 由执行者冻结精确包/hash/attempt，
+> 完成机器与现场校验后连续执行，不再逐包请求批准；旧包、失败 attempt 和历史余额不复用。
+> 本数据任务不扩大到 release、Runtime、Scope、通知或交易，未知结果与禁重试合同仍有效。
+
 日期：2026-09-15。状态：`PLAN_READY`，不代表数据、产品或外部 Gate 完成。
 执行者：一个 `gpt-5.6-sol` / `medium` 新任务，在隔离工作树按 `superpowers:executing-plans` 连续推进。
 本方案是当前执行入口；旧 `remaining-123-implementation-plan.md`、`ordinary-full-closeout-plan.md`

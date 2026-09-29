@@ -342,6 +342,12 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 
 ### 单品种任务边界与复用入口
 
+**执行授权（2026-09-29）：** owner 交办单品种历史候选闭环即覆盖必要 RQData 下载、Canonical/Catalog
+修复和候选资产构建。执行者自行冻结精确合约、周期、窗口、预算、hash、attempt 和恢复边界，完成
+校验后连续执行，不再等待“本次精确维护授权”。跨会话重新核对现场，不复用失败 attempt、不重做
+已成功对象；未知提交、质量失败和宿主拒绝分别处理。该规则按 [AGENTS.md](../../../AGENTS.md)
+长期执行，不扩大 P8/P9/R1/R2、正式 Scope、Runtime、通知或交易范围；旧拒绝与证据保留。
+
 **文件：** 复用本计划“模块与职责”中的唯一实现；主要任务通常是数据/资产准备和真实验收，不预设每个品种都必须修改代码。事实记录复用 `docs/tasks/<code>-minute-closeout-<YYYYMMDD>.md` 和 `outputs/<code>-minute-closeout-<YYYYMMDD>/`；品种代码按项目既有大小写规范传递，输出目录小写。一个品种只保留一份任务记录和必要原始证据，完成后更新本队列与 STATUS，不提前宣布完成。
 
 **已验证样板：** [JM](../../tasks/jm-minute-closeout-20260928.md) 的来源/派生/资产读回、API、真实 Chrome、局部回归与独立 Review；[J](../../tasks/j-minute-closeout-20260928.md) 的融合请求队列和翻主图后参考面板状态修复。`outputs/jm-minute-closeout-20260928/` 中的 `source_assets.py`、`aggregation_full_prefix.py`、`api/readback.py`、`snapshot_recovery.py`、`browser/verify_jm12.py`、`regression_recovery.py` 可作为现有验收样板，运行前必须核对本机文件和硬编码身份。改用当前品种、owner、端口、日期、hash 和 schema，不能原样执行 JM 的 apply/recovery 命令。缺少脚本时按任务记录及当前服务接口恢复最小验收入口，不自建行情 resolver。

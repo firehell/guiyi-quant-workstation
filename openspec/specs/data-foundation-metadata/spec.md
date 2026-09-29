@@ -127,7 +127,8 @@ current-day source SHALL 在同一批 trading periods 中取得该全集每个�
 系统 SHALL 提供默认只读、零 provider 的受限入口，只允许已核实的 SHFE／2022-03-16 Calendar
 id=46796 的 `has_night_session` 从 false 更正为 true。源响应内容、来源合约/日期、输入文件与
 旧事实 MUST 精确绑定；不得扩展为任意日期/交易所编辑，不得修改其他 Calendar 字段或补入 Session。
-Apply MUST 另获单次授权、匹配 dry-run hash、锁内核对旧事实，一次提交后独立只读验证。
+Apply MUST 属于 `AGENTS.md` 定义的交办任务范围、匹配 dry-run hash、锁内核对旧事实，
+一次提交后独立只读验证；精确 hash 和单次 attempt 由执行者生成及校验，不另设人工授权。
 任何提交不确定 MUST 明确停止、不自动重试；已有事实或证据变化 MUST 使旧计划失效。
 
 #### Scenario: 有界元数据插入提交确认丢失
@@ -136,7 +137,7 @@ Apply MUST 另获单次授权、匹配 dry-run hash、锁内核对旧事实，�
 
 #### Scenario: 单键冲突处理
 - **WHEN** 已获准捕获的 AU2304 时段证明该日期有夜盘，而本地已核实前像为无夜盘
-- **THEN** dry-run 仅规划一个字段更正，零数据库写入；真正 apply 仍等待新的单次执行意图
+- **THEN** dry-run 仅规划一个字段更正，零数据库写入；真正 apply 在任务范围与新单次 attempt、hash 和现场校验均满足后执行，不等待重复人工批准
 
 #### Scenario: 已有事实漂移
 - **WHEN** apply 时 Calendar、来源身份或当日 Session 与计划不一致

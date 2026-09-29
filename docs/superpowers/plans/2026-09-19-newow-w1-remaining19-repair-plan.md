@@ -14,7 +14,9 @@
 
 用户本轮要求：设计方案并交给一个 Terra medium 会话开发，完成方案后推进第四步的数据修复与 57 组合验收；不能实现的记录原因，不强行实现。已授权代码、隔离测试、只读诊断、prepare、隔离开发预览、Review 和满足条件的 develop 集成。
 
-真实 RQData 请求/下载、Canonical/Catalog 或 production DB 写入尚未授权。提交精确批次后等待对应授权；其间继续独立安全工作。main/tag/release、Runtime 切换、通知及 Scope 变更均不包含在本任务。
+原工程委派不包含真实写入；后续明确交办剩余数据补全时，必要 RQData 下载及 Canonical/Catalog
+修复由任务目标覆盖，执行者冻结精确批次并完成校验后连续执行，不另请逐包批准。
+main/tag/release、Runtime 切换、通知及 Scope 变更均不包含在本数据任务。
 
 固定品种：`B BZ CJ EB EG J OI PF PG PK PL PR PX RS SF SH SI SM SR`。
 三策略：`trend / oscillation / main_rise`，频率仅 `1w`。1d 仅作为 W1 权威来源与回归面，不能顺带扩大 D1 策略质量语义；60m/explanation 不开放。首批 41 品种范围保持原样。
@@ -107,7 +109,7 @@ W1 仍为 RQData 直接事实；D1 聚合用于一致性验证，不直接替代
 
 ### P3 完成第四步：受控修复及真实 57 矩阵
 
-- [ ] 完成代码、局部测试及只读准备后向 owner 提交批次，明确仅批准下载或同时批准 Canonical/Catalog 发布的差别；等待精确授权。
+- [ ] 完成代码、局部测试及只读准备后冻结精确批次；核对已交办的是 source-only 还是完整数据补全，按该范围校验并执行，不重复索取 hash 授权。
 - [ ] 等待期间完成不依赖真实写入的候选接口、页面状态测试、已有可读输入的真实矩阵，不能因一项 Gate 停所有工程工作。
 - [ ] 授权后先 fresh preflight/锁/hash 校验，再按批次串行执行；结果不明先只读核对，未明确授权的 retry 不执行。不得补发通知或触发 Runtime。
 - [ ] 写后独立回读每个合约活动身份、覆盖、完整周、D1 companion 变化、来源质量、幂等与 W1 consumer；保留原始失败及后续成功，不覆盖。

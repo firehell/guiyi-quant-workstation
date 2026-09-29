@@ -3,6 +3,8 @@
 以下命令区分隔离测试、现场只读和受控操作用法；示例本身不授予生产操作权限。
 授权统一按 `AGENTS.md`：任务内只读诊断和隔离开发预览自主执行；真实 provider、生产写入、发布与 Runtime
 须在明确任务/批次范围内。有效授权可跨会话恢复；批次内不逐命令审批，exact hash、锁和质量校验保持不变。
+数据补全与品种历史候选闭环的交办包含必要下载、Canonical/Catalog 修复和候选构建；执行者自行
+绑定 exact hash、attempt、环境和恢复边界，通过校验后执行，无需另请“本次精确维护授权”。
 
 ## 开盘恢复队列与预警合约身份
 
@@ -145,7 +147,8 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/g
 ## Newow 日线候选工程（仅 1d 开放，1w/60m 为 UNOPENED）
 
 以下组验证日版 capability v2、恢复器严格单频 1d、跨频 plan/hash 隔离、close 与 settlement 分离。
-不授权 RQData 下载、Canonical 写入或 Runtime。真实 D1 总包 prepare/apply 仍走独立 Gate。
+本组测试不授予 RQData 下载、Canonical 写入或 Runtime 权限。真实 D1 总包在已交办数据补全范围内
+通过 prepare/hash/preflight 后执行；这些 Gate 是验证条件，不是再次请求人工批准。
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
@@ -624,8 +627,8 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --attempt-id "$NEWOW_SOURCE_ATTEMPT_ID"
 ```
 
-`execute` 是一次真实来源查询 Gate。只有 owner 对上述 prepared/request hash、固定 attempt 和 exact command
-明确授权后才运行；未知结果不重试：
+`execute` 是一次真实来源查询 Gate。已交办来源取证或数据补全时，由执行者绑定上述 prepared/request
+hash、固定 attempt 和 exact command，通过校验后执行，不再要求 owner 逐 hash 批准；未知结果不重试：
 
 ```bash
 PYTHONPATH=.:services/quant-api:packages/quant-core \
@@ -1000,7 +1003,7 @@ uv run --project services/quant-api guiyi data newow-readiness \
 查询受 statement timeout 约束，进行中的文件读取返回后才检查 deadline。审计完成退出 0，
 `status=incomplete` 或异常退出 1，非法参数退出 2。退出 0 表示审计完成而非所有数据/业务 ready；
 必须读取 dependencies、repair_targets、metadata_proposals、main_ready_count 和逐 case section 状态。
-fixture 的 540-case 枚举不构成真实 540-case 验收。后续下载/生产数据写入仍需独立明确授权。
+fixture 的 540-case 枚举不构成真实 540-case 验收。后续下载/生产数据写入须属于交办目标，精确计划及现场校验通过后连续执行。
 定向测试同时覆盖完整 warm-up scope 的 source/integrity 阻断、SQLite 原只读状态恢复及恢复失败时连接丢弃。
 
 Newow P4 分区编排、typed API、统计截止、来源事实、快照/资源边界、旧 D1 兼容与只读保护：
@@ -1246,7 +1249,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 该组测试仅使用 fake API、Runtime/context doubles、SQLite 与临时路径；不连接真实 RQData、生产
 PostgreSQL/Redis，不写现场 Canonical/status/Runtime。真实 capture、metadata apply 各自需要绑定 exact
-Runtime/status/日期及相应 source/plan hash 的一次明确意图；capture 意图不授权后续数据库写入。
+Runtime/status/日期及相应 source/plan hash、单次 attempt，且属于交办范围；仅 source-only capture
+任务不扩展到数据库写入，完整数据修复任务按目标连续推进，不另请逐阶段批准。
 
 Canonical 不可变月发布的 storage、Catalog strict-read 与 manager 失败回归：
 
