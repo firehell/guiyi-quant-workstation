@@ -23,17 +23,19 @@ Spec: owner 本轮明确交办前述方案第一批与第二批；P7 canonical �
 - [x] context.py：严格 Candidate 参数、冻结工作区与实际导入 guard。
 - [x] preflight.py：实际只读preview identity/capability校验、原生日周identity准备、资产依赖门禁。
 - [x] stages.py：只验证前置证据，不能自动重试或创建生产attempt。
-- [x] cli.py：prepare/preflight/check 阶段入口；输出保护/缺文件自检。
+- [x] cli.py：prepare/preflight 阶段入口；输出保护/缺文件自检。
 - [x] RED/GREEN：错误identity、未知capability、缺依赖、timestamp精度、路径保护。
 - [x] 第一批独立Review、真实原生identity和保存SM/CJ预检验证后提交。
 
 ## 第二批
 
-- [ ] browser resources + collection.py：固定JS与JSON配置，minute组合连续采集functional/full/earlier，legacy/recovery独立场景。
-- [ ] curves.py/audit.py：完整Decimal/ID/SVG、section/window/token和记录绑定，缺门禁不通过。
-- [ ] evidence.py：排他写入、完整索引、SHA与identity核查、视觉待审状态保持。
-- [ ] RED/GREEN：错品种、漏ID、内部曲线点、快照/窗口/source不匹配、null/空曲线负例。
-- [ ] 真实历史SM/CJ保存证据离线验证；collector启动/资源语法与CLI dry-run，不执行重复生产维护。
-- [ ] 独立Review修正、定向回归、diff/secret检查、commit/push/develop exact读回。
+- [x] browser resources + collection.py：固定JS与JSON配置，minute组合连续采集functional/full/earlier，legacy/recovery独立场景。
+- [x] curves.py/audit.py：完整Decimal/ID/SVG、section/window/token和记录绑定，缺门禁不通过。
+- [x] evidence.py：排他写入、完整索引、SHA与identity核查、视觉待审状态保持。
+- [x] RED/GREEN：错品种、漏ID、内部曲线点、快照/窗口/source不匹配、null/空曲线负例。
+- [x] 真实历史SM/CJ保存证据离线验证；collector启动/资源语法与CLI dry-run，不执行重复生产维护。
+- [x] 独立Review修正、149项定向回归、diff/secret检查通过；commit/push/develop exact读回以实际Git交付记录为准。
 
 第二批实际新品种试用属于后续第三批；本任务不自启JD，不将历史证据当新版本现场验证。
+
+最终验证：149 tests passed；F静态检查、定向secret scan、diff检查通过。CJ/SM保存原始证据离线回放通过；旧日周绑定缺项明确保留，新采集强制绑定。独立Review结论：允许集成develop。未执行新Chrome现场或生产数据/Runtime操作。

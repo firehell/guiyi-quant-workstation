@@ -1,0 +1,64 @@
+async page=>{
+const xhrRequests=[];let xhrSerial=0;let xhrWatermark=null;let xhrReady=false;let xhrDeadline=Date.now()+110000;
+ const xhrOwn=url=>{try{const [path,query='']=url.split('?',2);if(![CONFIG.api_origin,CONFIG.web_origin].some(origin=>path===origin+'/api/v1/market/newow/strategy-detail'))return false;const products=query.split('&').map(part=>part.split('=',2)).filter(([key])=>decodeURIComponent(key)==='product').map(([,value=''])=>decodeURIComponent(value.replace(/\+/g,' ')));return products.length===1&&products[0]===CONFIG.product;}catch{return false}};
+ const xhrOnRequest=r=>{if(xhrReady&&xhrOwn(r.url()))xhrRequests.push({request:r,id:++xhrSerial,url:r.url(),method:r.method(),done:false})};
+ const xhrOnFinished=r=>{const item=xhrRequests.find(x=>x.request===r);if(item)item.done=true};
+ page.on('request',xhrOnRequest);page.on('requestfinished',xhrOnFinished);page.on('requestfailed',xhrOnFinished);
+ const installXHR=async()=>{xhrReady=false;await page.addInitScript(XHR_INIT,CONFIG);await page.evaluate(XHR_INIT,CONFIG);xhrWatermark=await page.evaluate(()=>{const s=globalThis.__p7XHR;s.records=[];return {document_id:s.document_id,sequence:s.sequence}});xhrReady=true;};
+ const readXHR=async r=>{
+  const item=xhrRequests.find(x=>x.request===r.request());if(!item||item.method!=='GET')throw new Error('XHR_REQUEST_IDENTITY_MISSING');
+
+  while(Date.now()<xhrDeadline){
+   const peers=xhrRequests.filter(x=>x.url===item.url);
+   if(peers.some(x=>!x.done)){await page.waitForTimeout(25);continue;}
+   const found=await page.evaluate(({url,watermark})=>{const s=globalThis.__p7XHR;if(!s)return {missing:true};return {rows:s.records.filter(x=>x.url===url&&(s.document_id!==watermark.document_id||x.sequence>watermark.sequence)).sort((a,b)=>a.sequence-b.sequence)}},{url:item.url,watermark:xhrWatermark});
+   if(found.missing)throw new Error('XHR_OBSERVER_MISSING');
+   if(found.rows.length<peers.length){await page.waitForTimeout(25);continue;}
+   if(found.rows.length!==peers.length||found.rows.some((x,i)=>!Number.isInteger(x.started_order)||!Number.isInteger(x.completed_order)||x.started_order>=x.completed_order||(i&&x.started_order<=found.rows[i-1].completed_order)))throw new Error('XHR_REQUEST_BINDING_AMBIGUOUS');
+   const row=found.rows[peers.indexOf(item)];if(row.error||row.http!==r.status()||!row.payload)throw new Error(row.error??'XHR_RESPONSE_IDENTITY_MISMATCH');
+   return {payload:row.payload,binding:{evidence_kind:row.evidence_kind,xhr_sequence:row.sequence,node_request_id:item.id,url:item.url,http:row.http,started_at:row.started_at,completed_at:row.completed_at,started_order:row.started_order,completed_order:row.completed_order,response_text_chars:row.response_text_chars,observer_parse_ms:row.observer_parse_ms}};
+  }
+  throw new Error('XHR_COMPACT_OBSERVATION_MISSING');
+ };
+ const xhrBindings=new WeakMap();
+ const observedJSON=async r=>{if(r.status()<200||r.status()>=300)return r.json();const observed=await readXHR(r);xhrBindings.set(r.request(),observed.binding);return observed.payload;};
+ const cleanupXHR=()=>{xhrReady=false;page.off('request',xhrOnRequest);page.off('requestfinished',xhrOnFinished);page.off('requestfailed',xhrOnFinished);};
+
+
+ const responses=[],failures=[],bodyErrors=[],pending=[],pageErrors=[],inFlight=new Set();let phase='initial';const own=url=>url.includes('/api/v1/market/newow/strategy-detail');
+ const dispatched=r=>{if(own(r.url()))inFlight.add(r)};const finished=r=>inFlight.delete(r);
+ const listen=r=>{if(!own(r.url()))return;const requestPhase=phase;pending.push(observedJSON(r).then(p=>{
+  const c=p.chart,a=p.auxiliary,v=p.reference?.value,f=v?.fusion_comparison;responses.push({phase:requestPhase,url:r.url(),http:r.status(),xhr_binding:xhrBindings.get(r.request()),meta:p.meta,detail:p.detail,
+   chart:c?{delivery:c.delivery,status:c.status,value:c.value?{from:c.value.chart_from,through:c.value.chart_through,next_before:c.value.next_before,next_older_window:c.value.next_older_window,bars:c.value.bars.map(b=>({bar_end:b.bar_end,trading_day:b.trading_day,physical_contract:b.physical_contract,segment_id:b.segment_id,calculation_segment_id:b.calculation_segment_id,source_identity:b.source_identity,completed:b.completed,observation_eligible:b.observation_eligible}))}:null}:null,
+   auxiliary:a?{delivery:a.delivery,status:a.status,value:a.value?{component:a.value.component,formula_version:a.value.formula_version,segments:a.value.segments.map(s=>({segment_id:s.segment_id,physical_contract:s.physical_contract,points:s.point_count}))}:null}:null,
+   reference:p.reference?{delivery:p.reference.delivery,status:p.reference.status,value:v?{performance_since:v.performance_since,performance_through:v.performance_through,actual_available_through:v.actual_available_through,reference_cutoff:v.reference_cutoff,reference_input_sha256:v.reference_input_sha256,page_parity:v.page_parity,executable:v.executable,auto_order:v.auto_order,summary:v.summary,curve_trades:v.curve_trades,items:v.items.map(t=>({reference_trade_id:t.reference_trade_id,entry_bar_end:t.entry_bar_end,entry_trading_day:t.entry_trading_day,status:t.status})),fusion:f?{product:f.product,frequency:f.frequency,reference_revision:f.reference_revision,reference_input_sha256:f.reference_input_sha256,reference_cutoff:f.reference_cutoff,items:f.items.map(t=>({reference_trade_id:t.reference_trade_id,entry_bar_end:t.entry_bar_end,entry_trading_day:t.entry_trading_day,status:t.status})),record_since:f.record_since,performance_since:f.performance_since,performance_through:f.performance_through,reference_model_version:f.reference_model_version,source_profiles:f.source_profiles,source_formula_versions:f.source_formula_versions,page_parity:f.page_parity,executable:f.executable,snapshot_schema:f.snapshot_schema,groups:f.groups,curve:f.curve}:null}:null}:null});
+ }).catch(e=>bodyErrors.push({url:r.url(),name:e.name})))};
+ const failed=r=>{if(own(r.url()))failures.push({phase,url:r.url(),error:r.failure()?.errorText})};const onError=e=>pageErrors.push(e?.name??'PAGE_ERROR');
+ page.on('request',dispatched);page.on('requestfinished',finished);page.on('requestfailed',finished);page.on('response',listen);page.on('requestfailed',failed);page.on('pageerror',onError);
+ const dom=()=>page.evaluate(({mode})=>{const scope=mode==='dual'?document.querySelector('.fusion-panel'):document.querySelector('.newow-reference');const stage=document.querySelector('[data-testid=newow-product-chart-stage]');return {scopeBusy:scope?.getAttribute('aria-busy')==='true'||/正在读取|读取中|正在刷新/.test(scope?.textContent??''),url:location.href,mode:[...document.querySelectorAll('[role=tab][aria-selected=true]')].map(e=>e.textContent.trim()),cards:[...scope?.querySelectorAll('.newow-reference__cards > .newow-reference__card')??[]].map(e=>e.id),curves:[...scope?.querySelectorAll('.newow-reference__curve polyline')??[]].map(e=>({points:e.getAttribute('points'),width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),statuses:[...document.querySelectorAll('[role=status],[role=alert]')].map(e=>e.textContent.trim()),all:[...scope?.querySelectorAll('button')??[]].find(e=>e.textContent.trim()==='全部')?.getAttribute('aria-pressed'),stage:stage?{component:stage.getAttribute('data-auxiliary-component'),state:stage.getAttribute('data-auxiliary-state')}:null}}, {mode:MODE});
+ const nativeZero=r=>{
+  const v=r.reference?.value,c=MODE==='dual'?v?.fusion:v,group=MODE==='dual'?c?.groups?.find(g=>g.model==='fusion'):c?.summary,curve=MODE==='dual'?c?.curve:c?.curve_trades;
+  const status=r.reference?.status;
+  return r.http===200&&r.meta?.identity?.product===CONFIG.product&&r.meta?.identity?.frequency===FREQUENCY&&r.meta?.identity?.strategy===(MODE==='oscillation'?'oscillation':'trend')&&r.meta?.as_of?.replace('Z','+00:00')===ASOF&&r.reference?.delivery==='delivered'&&(status?.status==='ready'||FREQUENCY==='1w'&&status?.status==='warming'&&status?.reason_code==='NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL')&&group?.closed_count===0&&Array.isArray(curve)&&curve.length===0&&v.reference_input_sha256===r.meta.input_content_sha256&&r.meta.snapshot_token&&v.executable===false&&v.auto_order===false;
+ };
+ const waitStable=async()=>{const deadline=Date.now()+65000;xhrDeadline=deadline;let last='',stable=0;while(Date.now()<deadline){await Promise.all(pending);const d=await dom();const ready=d.url.includes('frequency='+FREQUENCY)&&d.mode.includes({trend:'趋势策略',oscillation:'震荡策略',dual:'双策略'}[MODE])&&((d.cards.length&&d.curves.length)||(d.statuses.includes('暂无已完成参考交易；未清仓与中断结果不计入曲线。')&&responses.some(nativeZero)))&&!inFlight.size&&!d.scopeBusy&&!d.statuses.some(s=>/正在读取|读取中/.test(s));const signature=JSON.stringify(d);stable=ready?(last===signature?stable+1:1):0;last=signature;if(stable>=3)return d;await page.waitForTimeout(100)}throw Error('LEGACY_DOM_NOT_SETTLED_ZERO_CLOSED_REQUIRES_NATIVE_PROOF')};
+ const selectClosed=async()=>{const scope=MODE==='dual'?page.locator('.fusion-panel'):page.locator('.newow-reference').first();const b=scope.getByRole('button',{name:'已完成累计',exact:true});await b.waitFor({state:'visible',timeout:65000});await b.click({timeout:2000})};
+ try{
+  const ir=await page.request.get(CONFIG.api_origin+'/api/preview/identity');const identity=await ir.json();const wr=await page.request.get(CONFIG.web_origin+'/api/preview/identity');const webIdentity=await wr.json();if(ir.status()!==200||wr.status()!==200||identity.code_sha!==CODE||webIdentity.code_sha!==EXPECTED_WEB_CODE||identity.as_of?.replace('Z','+00:00')!==ASOF||webIdentity.as_of?.replace('Z','+00:00')!==ASOF||identity.mode!=='local_candidate_readonly'||webIdentity.mode!=='local_candidate_readonly'||identity.realtime!==false||webIdentity.realtime!==false||webIdentity.candidate_origin!==CONFIG.api_origin)throw Error('LEGACY_IDENTITY_MISMATCH');
+  await installXHR();xhrDeadline=Date.now()+110000;await page.goto(TARGET);await selectClosed();const initial=await waitStable();
+  const scope=MODE==='dual'?page.locator('.fusion-panel'):page.locator('.newow-reference').first();await scope.getByRole('button',{name:'全部',exact:true}).click({timeout:2000});await selectClosed();const full=await waitStable();
+  const auxiliary=[];
+  for(const [component,label] of [['macd','MACD'],['trend_reversal','趋势转折']]){
+   const button=page.locator('.newow-product-workspace__auxiliary-tabs').getByRole('button',{name:label,exact:true});phase=component;
+   if(await button.getAttribute('aria-pressed')!=='true')await button.click({timeout:2000});
+   const deadline=Date.now()+65000;xhrDeadline=deadline;let accepted=null;
+   while(Date.now()<deadline){await Promise.all(pending);const d=await dom();const a=responses.filter(r=>r.http===200&&r.meta?.identity?.frequency===FREQUENCY&&r.auxiliary?.delivery==='delivered'&&r.auxiliary.value?.component===component).at(-1);if(a&&d.stage?.component===component&&!d.statuses.some(s=>/正在读取|读取中/.test(s))){accepted={component,dom:d.stage,status:a.auxiliary.status,meta:a.meta};break}await page.waitForTimeout(100)}
+   if(!accepted)throw Error('LEGACY_AUX_NOT_SETTLED_'+component);auxiliary.push(accepted);
+  }
+  const before=await waitStable();await scope.evaluate(e=>e.scrollIntoView({block:'start',behavior:'instant'}));await page.screenshot({path:SHOTCURVE});await page.getByTestId('newow-product-chart-stage').evaluate(e=>e.scrollIntoView({block:'center',behavior:'instant'}));await page.screenshot({path:SHOTMAIN});
+  const returnFloor=responses.length;xhrDeadline=Date.now()+110000;phase='away';await page.getByRole('button',{name:'60m',exact:true}).click({timeout:2000});await page.waitForFunction(()=>new URL(location.href).searchParams.get('frequency')==='60m'&&document.querySelector('.newow-reference__cards > .newow-reference__card'),null,{timeout:65000});await Promise.all(pending);const awayDeadline=Date.now()+65000;let awayStable=0;while(Date.now()<awayDeadline){await Promise.all(pending);awayStable=!inFlight.size?awayStable+1:0;if(awayStable>=3)break;await page.waitForTimeout(100)}if(awayStable<3)throw Error('LEGACY_AWAY_REQUESTS_PENDING');
+  phase='return';await page.getByRole('button',{name:FREQUENCY,exact:true}).click({timeout:2000});await selectClosed();const returned=await waitStable();await Promise.all(pending);
+  return {capture_schema:'newow_legacy_xhr_v1',identity,webIdentity,initial,full,before,returned,returnFloor,auxiliary,responses,bodyErrors,failures,pageErrors,status:'OBSERVED_NEEDS_REVIEW'};
+ }catch(e){return {status:'BLOCKED',error:e?.message&&/^[A-Z_]+$/.test(e.message)?e.message:'LEGACY_CAPTURE_FAILED',current:await dom(),responses,bodyErrors,failures,pageErrors}}
+ finally{cleanupXHR();page.off('request',dispatched);page.off('requestfinished',finished);page.off('requestfailed',finished);page.off('response',listen);page.off('requestfailed',failed);page.off('pageerror',onError)}
+}

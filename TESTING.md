@@ -1622,3 +1622,13 @@ uv run --project services/quant-api pytest services/quant-api/tests/data_foundat
 
 测试证明双自然日/单次 claim、精确 CAS、源缺失零历史发布、Calendar/Session 有界解析。
 不能代替部署或下一交易日自然盘后成功。
+
+### Newow 单品种候选验收工具
+
+参数、19 场景采集与离线门禁见 `scripts/newow_candidate_tools/README.md`。不启动服务、浏览器或访问 DB/provider 的定向测试：
+
+```sh
+python -m pytest tests/newow_candidate_tools -q -p no:cacheprovider
+```
+
+测试覆盖冻结身份、前置门禁、路径/排他输出、JS 场景与 XHR observer、完整数组/Decimal/SVG、分页/较早窗口、原生日周空态及取消/409 恢复。离线 PASS 不代替新现场采集、视觉核验或 candidate/source 闭环。

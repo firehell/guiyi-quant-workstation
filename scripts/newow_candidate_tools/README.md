@@ -42,3 +42,32 @@ python -m pytest --confcutdir=tests/newow_candidate_tools \
 ```
 
 原始行情、截图、配置及响应不提交。未确认/UNKNOWN生产结果停止相关mutation并原生只读核对；工具不解锁FU/NI失败attempt。
+
+## 第二批：连续采集与离线验收
+
+服务启动、native 数据维护与候选资产构建仍使用现有入口；本工具只采集已经通过 preflight 的单品种只读 preview。采集前再次检查冻结 HEAD。先完成相同输出目录的 prepare/preflight，再显式执行：
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core:. python -m scripts.newow_candidate_tools capture \
+  --output /private/tmp/cj-candidate-prepared \
+  --cli /Users/zhangzhao/.codex/skills/playwright/scripts/playwright_cli.sh \
+  --session cj-candidate --execute
+python -m scripts.newow_candidate_tools index --output /private/tmp/cj-candidate-prepared
+python -m scripts.newow_candidate_tools audit --output /private/tmp/cj-candidate-prepared
+```
+
+`capture` 不启动服务，不下载、构建或激活数据。19 个串行场景为四分钟周期 × 三模式、日周 × 三模式和一个取消恢复场景。每个分钟组合连续取得功能观察、原始 XHR 全曲线数组、立即 GET 的完整数组和记录、同页面较早窗口，不再分别导航三次。保留真实辅助图、分页、SPA 回切、旧窗口可见 Marker 和稳定顶价检查。日周与取消恢复保留独立场景；250ms 请求若真实提前完成，明确记为不适用，不能假称 timeout。
+
+每次保存静态资源/实际脚本 SHA、CLI 原始输出、观察 JSON 和截图。`collection-start.json` 排他创建；失败停止余下场景，保留现场，不自动恢复或重放。输出目录存在旧 capture 时直接拒绝。若需要另一次采集，先核对失败边界与新任务身份，不能通过换目录绕过 native 禁重试合同。
+
+`index` 核验精确 19 场景、声明的原始文件 SHA/大小和截图集合；`audit` 重新计算全部索引并验原始响应、读回、DOM、完整交易 ID、Decimal 累计收益与 SVG 每个点。不同 section 使用各自 input hash，chart/reference 使用相同 snapshot；时点保留微秒。记录请求绑定实际 history_limit/cursor，错误频率 snapshot 必须返回原生 409，恢复必须使用新的正确 token。
+
+成功的离线结果是 `NUMERICAL_PASS_VISUAL_PENDING`，不是候选闭环完成。需要逐图视觉核验和 native source manifest 独立 evidence；本工具不更新品种完成矩阵、Scope、Runtime 或正式配置。原生日周零 CLOSED 必须对应真实空态、无曲线与零/null 统计。当前分钟 collector 保留非空记录/曲线门禁，零 CLOSED 会明确阻塞；不能用空页面冒充通过。
+
+2026-09-29 验证采用 CJ/SM 既有原始证据：每品种功能 12、完整曲线 12、较早窗口 12、日周 6、取消恢复 1。旧日周记录缺少 XHR request binding 与逐 base 的公式分组，因此历史回放明确标注这两项未重验；新 prepare/capture 强制完整身份。以上是保存证据离线回放，不是新 collector 的真实 Chrome 现场结果。首次新品种现场试用仍需单独实际验收。
+
+全部定向测试：
+
+```sh
+python -m pytest tests/newow_candidate_tools -q -p no:cacheprovider
+```
