@@ -323,7 +323,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 | P7-05 | 烧碱 | SH | CANDIDATE_CLOSED，12/12；会话 `01a0e895-159e-70b0-aa88-df1d96fad51a`；[处理记录](../../tasks/sh-minute-closeout-20260928.md) |
 | P7-06 | PVC | V | CANDIDATE_CLOSED；12/12，48/48 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/v-minute-closeout-20260929.md) |
 | P7-07 | 纯碱 | SA | CANDIDATE_CLOSED；12/12，48/48 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/sa-minute-closeout-20260929.md) |
-| P7-08 | 黄金 | AU | NOT_STARTED |
+| P7-08 | 黄金 | AU | CANDIDATE_CLOSED；12/12，88/88 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/au-minute-closeout-20260929.md) |
 | P7-09 | 白银 | AG | NOT_STARTED |
 | P7-10 | 镍 | NI | NOT_STARTED |
 | P7-11 | 硅铁 | SF | NOT_STARTED |

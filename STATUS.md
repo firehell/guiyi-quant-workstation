@@ -32,9 +32,14 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-08 AU **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。22实际owner、88/88 DATA_READY；0行情下载/681派生月，1350旧文件、562日周pointer保留；全生命周期926135 Bar独立重算一致。12候选资产READY、disabled/generation=0，manifest与4融合依赖独立核对通过。
+冻结源码b2c355f5f；API、真实Chrome主图/完整CLOSED曲线/较早窗口各12/12，取消/0.254秒短超时/恢复通过。日周六组32 PASS/3原生WARMING/1零CLOSED曲线N/A；AU周线震荡完整窗口0 CLOSED+2换月中断，原生统计null/页面—且无伪造曲线。49原图独立Review、67定向测试及58原生边界回归通过，允许集成develop。
+5m基础构建后RSS工具异常的原attempt与report缺失事实保留，未重跑；完整publication经只读与独立核对后复用。complete_window_proven=false、持有过程/deep MACD/日周older及跨窗口MACD覆盖未验收；后者为非阻断Risk / Needs Verification。
+本项8012/5178与专属Chrome已释放；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换。见 [AU处理记录](docs/tasks/au-minute-closeout-20260929.md)。仅更新P7-08，其余队列及21分母不变，AG未启动。
+
 P7-07 SA **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。一次精确维护86源请求/352派生月完成，48/48 DATA_READY；586旧文件及278日周pointer保留，12新候选资产READY、disabled/generation=0，manifest与4融合依赖独立核对通过。
 冻结源码604b90e7b；API、真实Chrome主图/完整CLOSED曲线/较早窗口各12/12，取消/0.253秒短超时/恢复通过。日周六组33 PASS/3原生辅助WARMING；SA周线震荡完整窗口真实1 CLOSED+5换月中断，自身Calendar完成周/cutoff已绑定。旧snapshot409、CLI启动及helper校验失败保留；fresh全量曲线与自身section/window身份、原完整集合/全部坐标精确绑定。49原图独立Review与68定向测试通过，允许集成develop；complete_window_proven=false、持有过程/deep MACD/日周older等边界保留。
-本项8012/5178与专属Chrome已释放；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换。见 [SA处理记录](docs/tasks/sa-minute-closeout-20260929.md)。仅更新P7-07，其余队列及21分母不变，AU未启动。
+本项8012/5178与专属Chrome已释放；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换。见 [SA处理记录](docs/tasks/sa-minute-closeout-20260929.md)。仅更新P7-07，其余队列及21分母不变；AU状态见上项。
 
 P7-06 V **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。按owner续接和新规则重新核对后，宿主正常放行原exact维护；88源请求/360派生月完成，48/48 DATA_READY，591旧文件及283日周pointer保留。12新候选资产READY、disabled/generation=0，保存manifest与4融合依赖独立核对通过。
 冻结源码756a22fe2；API、真实Chrome主图/完整曲线/较早窗口各12/12，实际取消/0.252秒短超时/恢复通过。日周六组32 PASS/3辅助WARMING/1有据空曲线N/A；W1震荡真实零CLOSED、7换月中断，原工具失败保留，未造曲线。49原图独立Review及定向29测试通过，允许集成develop；complete_window_proven=false、持有过程及未测deep MACD/日周older边界保留。
