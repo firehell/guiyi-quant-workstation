@@ -32,7 +32,9 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
-P7-17 LH **COMPLETED，12/12 历史候选页面闭环**。21 个物理 owner、84 个 owner×周期单元全部 DATA_READY（91 条 section 检查含 7 条重复）；一次维护 196 次行情请求、794 派生目标，320835 根四周期物理 Bar 独立全前缀逐值复核。旧1165文件、85144旧Bar及579日周分区保持。4输入/8基础/4融合共12候选READY、disabled/generation=0/complete_window_proven=false；API 12/12。Chrome 原采集第10场因取消请求与同URL成功请求的观察绑定等待超时，失败证据保留；定位并修复工具后仅续采失败及后续10场，前9场按SHA复用。最终19场数值审计、49原图视觉检查及14578笔CLOSED收益/14614曲线点独立核算通过。采集返工约581.414s+477.963s，未伪称一次无重采；专属API/Web服务已停，维护锁以最终现场读回为准。未启动M，正式分钟/Runtime/Scope/通知/账户未变。见[LH处理记录](docs/tasks/lh-candidate-pilot-20260930.md)。
+P7-18 M **COMPLETED，12/12 历史候选页面闭环**。12 个物理 owner、48 个 owner×周期单元 DATA_READY；一次维护 87 次真实行情请求、356 派生目标，278360 根四频 Bar 独立全前缀 Decimal 核对通过；902 旧文件、71399 旧 Bar 和 369 个日周分区保持。4 输入/8 基础/4 融合共 12 候选 READY、disabled/generation=0/complete_window_proven=false；API 12/12。Playwright 整场 JSON 序列化 OOM 原证据保留；按有序哈希分块修复后，5m dual 真实 180 块/187774211 字节完整读回，前三场 SHA 复用，最终 19 场数值审计、49 原图检查、21983 笔 CLOSED 收益及 22019 个 SVG 点独立核算通过。浏览器返工和密集标签遮挡如实保留，专属 Chrome/API/Web 已停、8012/5178 无监听；未启动 RM，正式分钟/Runtime/Scope/通知/账户未变。见 [M处理记录](docs/tasks/m-candidate-pilot-20260930.md)。
+
+P7-17 LH **COMPLETED，12/12 历史候选页面闭环**。21 个物理 owner、84 个 owner×周期单元全部 DATA_READY（91 条 section 检查含 7 条重复）；一次维护 196 次行情请求、794 派生目标，320835 根四周期物理 Bar 独立全前缀逐值复核。旧1165文件、85144旧Bar及579日周分区保持。4输入/8基础/4融合共12候选READY、disabled/generation=0/complete_window_proven=false；API 12/12。Chrome 原采集第10场因取消请求与同URL成功请求的观察绑定等待超时，失败证据保留；定位并修复工具后仅续采失败及后续10场，前9场按SHA复用。最终19场数值审计、49原图视觉检查及14578笔CLOSED收益/14614曲线点独立核算通过。采集返工约581.414s+477.963s，未伪称一次无重采；专属API/Web服务已停，维护锁以最终现场读回为准。其交付当时未启动M，正式分钟/Runtime/Scope/通知/账户未变。见[LH处理记录](docs/tasks/lh-candidate-pilot-20260930.md)。
 
 P7-16 C **PARTIAL / DEFERRED_BROWSER_BLOCKED，0/12 页面闭环**。21 owner/84 依赖全部 DATA_READY（81 读回、3 NO_GAP），195 次行情请求、790 派生目标；507667 根四频物理 Bar 独立全前缀复核，1174 旧文件与 95887 旧 Bar 保持。4 输入/8 基础/4 融合共 12 候选 READY、disabled/generation=0/complete_window_proven=false，API 12/12。Chrome 仅 5m trend/oscillation 两场完整；5m dual 先遇 Playwright V8 OOM，隔离诊断再遇较早窗口原生 409 且无对应成功读回，失败证据保留，未完成 19 场及独立视觉/数值 Review。专属服务已停、锁0；候选未晋升，当时未启动 LH；正式分钟/Runtime/Scope/通知/账户未变。见 [C暂缓记录](docs/tasks/c-candidate-pilot-20260930.md)。
 

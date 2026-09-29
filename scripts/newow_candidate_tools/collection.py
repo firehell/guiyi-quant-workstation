@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shutil
 from typing import Any
 from urllib.parse import urlencode
 
@@ -19,6 +20,7 @@ from .context import Candidate, FREQUENCIES, MODES, instant, need
 from .evidence import EvidenceStore
 from .stages import require_stage
 from .preflight import read_preview
+from .transport import collect_result, verify_transport, parse_result
 
 RESOURCES = Path(__file__).parent / "browser"
 
@@ -179,7 +181,8 @@ def _scene_observed(candidate: Candidate, scenario: str, observed: dict) -> bool
 
 
 def capture(
-    candidate: dict | Candidate, output_dir: Path, cli_path: Path, session: str
+    candidate: dict | Candidate, output_dir: Path, cli_path: Path, session: str,
+    resume_from: Path | None = None,
 ) -> dict:
     """Run 12 combined minute views + 6 legacy views + one real recovery scene.
 
@@ -229,6 +232,9 @@ def capture(
         for path in sorted(RESOURCES.glob("*.js"))
     }
     resources["collection.py"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    resources["transport.py"] = hashlib.sha256(
+        (Path(__file__).parent / "transport.py").read_bytes()
+    ).hexdigest()
     store.write(
         "collection-start.json",
         dict(
@@ -245,38 +251,126 @@ def capture(
     scenarios = [("minute", f, m) for f in FREQUENCIES for m in MODES]
     scenarios += [("legacy", f, m) for f in ("1d", "1w") for m in MODES]
     scenarios += [("cancel", "5m", "trend")]
+    if resume_from is not None:
+        prior = EvidenceStore(Path(resume_from).absolute())
+        need(prior.root != store.root, "RESUME_SOURCE_EQUALS_TARGET")
+        old = prior.read("collection-observations.json")
+        need(old.get("task_sha256") == context.task_sha256
+             and old.get("status") == "BLOCKED", "RESUME_SOURCE_IDENTITY")
+        prefix = old.get("rows", [])
+        need(len(prefix) >= 2 and len(prefix) <= 19
+             and prefix[-1].get("status") == "BLOCKED", "RESUME_PREFIX_INVALID")
+        failed_row = prefix[-1]
+        failed_number = len(prefix) - 1
+        need((failed_row.get("scenario"), failed_row.get("frequency"), failed_row.get("mode"))
+             == scenarios[failed_number]
+             and failed_row.get("task_sha256") == context.task_sha256,
+             "RESUME_FAILED_SCENE_IDENTITY")
+        for key in ("raw", "cli"):
+            need(prior.reference(failed_row[key]["path"]) == failed_row[key],
+                 "RESUME_FAILED_SCENE_CHANGED")
+        failed_raw = prior.read(failed_row["raw"]["path"])
+        need(failed_raw.get("status") == "BLOCKED"
+             and failed_raw.get("task_sha256") == context.task_sha256
+             and (failed_raw.get("scenario"), failed_raw.get("frequency"), failed_raw.get("mode"))
+             == scenarios[failed_number], "RESUME_FAILED_RAW_IDENTITY")
+        for number, old_row in enumerate(prefix[:-1]):
+            scenario, frequency, mode = scenarios[number]
+            label = f"{scenario}-{frequency}-{mode}"
+            need((old_row.get("scenario"), old_row.get("frequency"), old_row.get("mode"))
+                 == scenarios[number]
+                 and old_row.get("status") == "OBSERVED_NEEDS_VISUAL_REVIEW"
+                 and old_row.get("task_sha256") == context.task_sha256,
+                 "RESUME_PREFIX_INVALID")
+            for key in ("raw", "cli"):
+                ref = old_row[key]
+                need(prior.reference(ref["path"]) == ref, "RESUME_SOURCE_CHANGED")
+                target = store.path(ref["path"])
+                with prior.path(ref["path"]).open("rb") as source, target.open("xb") as out:
+                    shutil.copyfileobj(source, out)
+                need(store.reference(ref["path"]) == ref, "RESUME_COPY_MISMATCH")
+            old_raw = store.read(old_row["raw"]["path"])
+            need(old_raw.get("status") == "OBSERVED_NEEDS_VISUAL_REVIEW"
+                 and old_raw.get("task_sha256") == context.task_sha256
+                 and old_raw.get("scenario") == scenario
+                 and old_raw.get("frequency") == frequency
+                 and old_raw.get("mode") == mode
+                 and _scene_observed(context, scenario, old_raw.get("observed", {})),
+                 "RESUME_RAW_UNVERIFIED")
+            old_cli = store.read(old_row["cli"]["path"])
+            need(old_cli.get("exit_code") == 0
+                 and old_cli.get("browser_script_sha256") == old_row.get("browser_script_sha256")
+                 and hashlib.sha256(old_cli["browser_script"].encode()).hexdigest()
+                 == old_row["browser_script_sha256"], "RESUME_CLI_UNVERIFIED")
+            if old_row.get("transport") is None:
+                need(parse_result(old_cli["stdout"]) == old_raw["observed"],
+                     "RESUME_CLI_OBSERVATION_MISMATCH")
+            else:
+                nonce = hashlib.sha256((label + "\0" + old_cli["browser_script"]).encode()).hexdigest()
+                need(parse_result(old_cli["stdout"]) == {"kind": "stored", "nonce": nonce},
+                     "RESUME_TRANSPORT_ACK_MISMATCH")
+            images = old_row["images"]
+            need({x["path"] for x in images}
+                 == {f"browser/{label}-{kind}.png" for kind in
+                     (("main", "curve", "earlier") if scenario == "minute"
+                      else ("main", "curve") if scenario == "legacy" else ("main",))},
+                 "RESUME_IMAGES_INCOMPLETE")
+            for ref in images:
+                need(prior.reference(ref["path"]) == ref, "RESUME_SOURCE_CHANGED")
+                with prior.path(ref["path"]).open("rb") as source, store.path(ref["path"]).open("xb") as out:
+                    shutil.copyfileobj(source, out)
+                need(store.reference(ref["path"]) == ref, "RESUME_COPY_MISMATCH")
+            if old_row.get("transport") is not None:
+                for ref in verify_transport(prior, label, old_row["transport"],
+                                            old_raw["observed"], nonce):
+                    with prior.path(ref["path"]).open("rb") as source, store.path(ref["path"]).open("xb") as out:
+                        shutil.copyfileobj(source, out)
+                    need(store.reference(ref["path"]) == ref, "RESUME_COPY_MISMATCH")
+                verify_transport(store, label, old_row["transport"],
+                                 old_raw["observed"], nonce)
+            copied = dict(old_row, reused_from=str(prior.root))
+            rows.append(copied)
+            store.write(f"collection-progress/{number:02d}.json", copied)
+        store.write("resume-boundary.json", dict(
+            source=str(prior.root), source_collection=prior.reference("collection-observations.json"),
+            reused_scene_count=len(rows), first_new_scene=scenarios[len(rows)],
+            failed_source_scene=scenarios[len(rows)], source_failed_scene_preserved=True,
+            task_sha256=context.task_sha256,
+        ))
+    resume_count = len(rows)
+    transport_source = (RESOURCES / "transport.js").read_text()
     for number, (scenario, frequency, mode) in enumerate(scenarios):
+        if number < resume_count:
+            continue
         label = f"{scenario}-{frequency}-{mode}"
         code = render_scenario(context, scenario, frequency, mode, capture_root)
         failure = None
+        stdout = stderr = ""
         try:
-            result = subprocess.run(
-                [str(executable), "-s=" + session, "run-code", code],
-                capture_output=True,
-                text=True,
-                timeout=900,
-                check=False,
+            observed, cli_ref, transport_ref = collect_result(
+                store, label, executable, session, code, transport_source,
             )
-            stdout, stderr = result.stdout, result.stderr
-            exit_code = result.returncode
+            exit_code = 0
         except subprocess.TimeoutExpired as error:
             stdout, stderr = _text(error.stdout), _text(error.stderr)
             exit_code, failure = None, "CLI_TIMEOUT_NO_REPLAY"
-        except OSError:
-            stdout, stderr = "", ""
-            exit_code, failure = None, "CLI_INVOCATION_FAILED_NO_REPLAY"
-        cli_ref = store.write(
-            "browser/" + label + "-cli.json",
-            dict(
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
-                failure=failure,
-                browser_script=code,
-                browser_script_sha256=hashlib.sha256(code.encode()).hexdigest(),
-            ),
-        )
-        observed = _parse_result(stdout)
+        except (OSError, ValueError) as error:
+            exit_code = None
+            failure = str(error) if isinstance(error, ValueError) else "CLI_INVOCATION_FAILED_NO_REPLAY"
+        if failure:
+            observed = dict(status="BLOCKED", code=failure)
+            cli_name = "browser/" + label + "-cli.json"
+            if store.path(cli_name).exists():
+                cli_ref = store.reference(cli_name)
+            else:
+                cli_ref = store.write(cli_name, dict(
+                    stdout=stdout,
+                    stderr=stderr,
+                    exit_code=exit_code, failure=failure,
+                    browser_script=code,
+                    browser_script_sha256=hashlib.sha256(code.encode()).hexdigest(),
+                ))
+            transport_ref = None
         failed = (
             failure is not None
             or exit_code != 0
@@ -301,6 +395,7 @@ def capture(
             visual_review="NOT_RUN",
             browser_script_sha256=hashlib.sha256(code.encode()).hexdigest(),
             failure=failure,
+            transport=transport_ref,
         )
         raw = store.write("browser/" + label + ".json", row)
         images = []

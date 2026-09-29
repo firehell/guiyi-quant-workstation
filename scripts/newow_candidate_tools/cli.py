@@ -79,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Absolute existing Playwright CLI executable",
     )
     collect.add_argument("--session", required=True)
+    collect.add_argument("--resume-from", type=Path,
+                         help="Verified prior blocked collection; reuse completed prefix")
     collect.add_argument(
         "--execute",
         action="store_true",
@@ -131,7 +133,8 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("EXPLICIT_CAPTURE_EXECUTION_REQUIRED")
                 from .collection import capture
 
-                result = capture(candidate, store.root, args.cli, args.session)
+                result = capture(candidate, store.root, args.cli, args.session,
+                                 args.resume_from)
             else:
                 from .bundle import build_index, audit_bundle
 

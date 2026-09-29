@@ -82,7 +82,7 @@ def complete_index_fixture(tmp_path):
             dict(
                 browser_script=script,
                 browser_script_sha256=sha,
-                stdout="fixture",
+                stdout='### Result\n{"unit_fixture": true}\n### End',
                 stderr="",
                 exit_code=0,
                 failure=None,

@@ -7,6 +7,7 @@ from .evidence import EvidenceStore
 from .audit import validate_full_capture, validate_index
 from .checks import functional_checks, validate_earlier, validate_recovery
 from .stages import require_stage
+from .transport import verify_transport, parse_result
 
 SCENES = tuple(
     [("minute", f, m) for f in FREQUENCIES for m in MODES]
@@ -75,6 +76,8 @@ def build_index(candidate: Candidate, store: EvidenceStore) -> dict:
         "capture-preview-check.json",
     ):
         add(name, "context")
+    if store.path("resume-boundary.json").exists():
+        add("resume-boundary.json", "context")
     for row in collection["rows"]:
         label = f"{row['scenario']}-{row['frequency']}-{row['mode']}"
         need(
@@ -92,6 +95,20 @@ def build_index(candidate: Candidate, store: EvidenceStore) -> dict:
             == cli.get("browser_script_sha256"),
             "ACTUAL_SCRIPT_HASH_CHANGED",
         )
+        raw_body = store.read(row["raw"]["path"])
+        need(raw_body.get("transport") == row.get("transport"),
+             "RAW_TRANSPORT_DECLARATION_CHANGED")
+        need(cli.get("exit_code") == 0, "SCENE_CLI_FAILED")
+        cli_result = parse_result(cli.get("stdout", ""))
+        if row.get("transport") is not None:
+            nonce = hashlib.sha256((label + "\0" + cli["browser_script"]).encode()).hexdigest()
+            need(cli_result == {"kind": "stored", "nonce": nonce},
+                 "TRANSPORT_ACK_CHANGED")
+            for ref in verify_transport(store, label, row["transport"],
+                                        raw_body["observed"], nonce):
+                add(ref["path"], "transport", ref)
+        else:
+            need(cli_result == raw_body["observed"], "LEGACY_CLI_RESULT_CHANGED")
         required = (
             {"main", "curve", "earlier"}
             if row["scenario"] == "minute"

@@ -1,12 +1,16 @@
 import json
 from pathlib import Path
+import subprocess
 from unittest.mock import patch
 import pytest
 from scripts.newow_candidate_tools.collection import (
     render_capture,
     render_scenario,
     capture,
+    _parse_result,
 )
+from scripts.newow_candidate_tools.context import Candidate
+from scripts.newow_candidate_tools.evidence import EvidenceStore
 
 C = {
     "product": "cj",
@@ -84,12 +88,6 @@ def test_existing_output_refuses_before_browser(tmp_path):
         run.assert_not_called()
 
 
-from scripts.newow_candidate_tools.context import Candidate
-from scripts.newow_candidate_tools.evidence import EvidenceStore
-from scripts.newow_candidate_tools.collection import _parse_result
-import subprocess
-
-
 def prepared(tmp_path):
     candidate = Candidate.from_mapping(C)
     proof = candidate.proof()
@@ -162,7 +160,9 @@ def test_cli_timeout_saved_and_never_replayed(tmp_path):
         "cancel.js",
         "observer.js",
         "runtime.js",
+        "transport.js",
         "collection.py",
+        "transport.py",
     }
     assert all(len(value) == 64 for value in start["tool_resource_sha256"].values())
     with patch("scripts.newow_candidate_tools.collection.subprocess.run") as run:

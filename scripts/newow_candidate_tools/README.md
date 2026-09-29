@@ -48,6 +48,8 @@ python -m pytest --confcutdir=tests/newow_candidate_tools \
 服务启动、native 数据维护与候选资产构建仍使用现有入口；本工具只采集已经通过 preflight 的单品种只读 preview。采集前再次检查冻结 HEAD。先完成相同输出目录的 prepare/preflight，再显式执行：
 
 ```sh
+/Users/zhangzhao/.codex/skills/playwright/scripts/playwright_cli.sh -s=cj-candidate open http://127.0.0.1:5178/
+/Users/zhangzhao/.codex/skills/playwright/scripts/playwright_cli.sh -s=cj-candidate tab-list
 PYTHONPATH=services/quant-api:packages/quant-core:. python -m scripts.newow_candidate_tools capture \
   --output /private/tmp/cj-candidate-prepared \
   --cli /Users/zhangzhao/.codex/skills/playwright/scripts/playwright_cli.sh \
@@ -58,7 +60,9 @@ python -m scripts.newow_candidate_tools audit --output /private/tmp/cj-candidate
 
 `capture` 不启动服务，不下载、构建或激活数据。19 个串行场景为四分钟周期 × 三模式、日周 × 三模式和一个取消恢复场景。每个分钟组合连续取得功能观察、原始 XHR 全曲线数组、立即 GET 的完整数组和记录、同页面较早窗口，不再分别导航三次。保留真实辅助图、分页、SPA 回切、旧窗口可见 Marker 和稳定顶价检查。日周与取消恢复保留独立场景；250ms 请求若真实提前完成，明确记为不适用，不能假称 timeout。
 
-每次保存静态资源/实际脚本 SHA、CLI 原始输出、观察 JSON 和截图。`collection-start.json` 排他创建；失败停止余下场景，保留现场，不自动恢复或重放。输出目录存在旧 capture 时直接拒绝。若需要另一次采集，先核对失败边界与新任务身份，不能通过换目录绕过 native 禁重试合同。
+先打开并核对指定 session 的本地 preview tab；`capture` 不代替 `open`。每个场景先在 CLI 会话中保存完整结果，再以不超过 1 Mi UTF-16 字符的块传输；每块校验 session nonce、顺序、字节数及 SHA-256，最终校验完整 JSON 哈希和终态。数组、closed、SVG 点与原生 409 响应均不截断。保存静态资源/实际脚本 SHA、CLI 原始输出、完整结果、传输清单与截图。`collection-start.json` 排他创建；缺块、会话丢失、CLI 部分输出或场景失败立即停止并保留现场，不把半成品计为成功。
+
+若采集已有连续成功前缀、后续场景阻塞，可在新输出目录重新运行 prepare/preflight，然后显式传 `capture --resume-from /absolute/path/prior-blocked-output`。工具核对同一 Candidate 身份、旧 collection 的连续成功前缀、每个原始文件和截图哈希，逐字节复制成功场景；旧失败场景及其截图仍留在旧目录，新现场从该场景重新采集。新目录输出 `resume-boundary.json`。这不是自动重试；继续前须调查具体失败边界，不能以此重放 native 数据维护或资产构建。其他旧 capture 仍直接拒绝覆盖。
 
 `index` 核验精确 19 场景、声明的原始文件 SHA/大小和截图集合；`audit` 重新计算全部索引并验原始响应、读回、DOM、完整交易 ID、Decimal 累计收益与 SVG 每个点。不同 section 使用各自 input hash，chart/reference 使用相同 snapshot；时点保留微秒。记录请求绑定实际 history_limit/cursor，错误频率 snapshot 必须返回原生 409，恢复必须使用新的正确 token。
 
