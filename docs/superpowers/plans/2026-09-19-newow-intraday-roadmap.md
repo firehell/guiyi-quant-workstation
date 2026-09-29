@@ -331,7 +331,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 | P7-13 | 红枣 | CJ | COMPLETED，12/12；4输入/8基础/4融合disabled，独立数值与61原图Review通过；自身日周/预览边界保留，见[CJ处理记录](../../tasks/cj-minute-closeout-20260929.md) |
 | P7-14 | 鸡蛋 | JD | COMPLETED，12/12；31 owner/124 依赖READY，4输入/8基础/4融合disabled；一次维护/一次19场Chrome采集，独立数值与49原图Review通过，原生W1/报价/较早副图边界保留；[首次实测](../../tasks/jd-candidate-pilot-20260929.md) |
 | P7-15 | 苹果 | AP | COMPLETED，12/12；12 owner/48 依赖READY，4输入/8基础/4融合disabled；一次维护/一次19场Chrome，独立数值及49原图Review完成，P3标注重叠及原生预热/副图/报价边界保留；[处理记录](../../tasks/ap-candidate-pilot-20260930.md) |
-| P7-16 | 玉米 | C | NOT_STARTED |
+| P7-16 | 玉米 | C | DEFERRED_BROWSER_BLOCKED，0/12；21 owner/84 依赖 READY、12 disabled 候选资产、API 12/12；Chrome 仅两场完整，5m dual 原生较早窗口 409 无成功读回，OOM 与失败证据保留；[处理记录](../../tasks/c-candidate-pilot-20260930.md) |
 | P7-17 | 生猪 | LH | NOT_STARTED |
 | P7-18 | 豆粕 | M | NOT_STARTED |
 | P7-19 | 菜粕 | RM | NOT_STARTED |
