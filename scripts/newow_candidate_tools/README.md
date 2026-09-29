@@ -64,7 +64,7 @@ python -m scripts.newow_candidate_tools audit --output /private/tmp/cj-candidate
 
 成功的离线结果是 `NUMERICAL_PASS_VISUAL_PENDING`，不是候选闭环完成。需要逐图视觉核验和 native source manifest 独立 evidence；本工具不更新品种完成矩阵、Scope、Runtime 或正式配置。原生日周零 CLOSED 必须对应真实空态、无曲线与零/null 统计。当前分钟 collector 保留非空记录/曲线门禁，零 CLOSED 会明确阻塞；不能用空页面冒充通过。
 
-2026-09-29 验证采用 CJ/SM 既有原始证据：每品种功能 12、完整曲线 12、较早窗口 12、日周 6、取消恢复 1。旧日周记录缺少 XHR request binding 与逐 base 的公式分组，因此历史回放明确标注这两项未重验；新 prepare/capture 强制完整身份。以上是保存证据离线回放，不是新 collector 的真实 Chrome 现场结果。首次新品种现场试用仍需单独实际验收。
+2026-09-29 验证采用 CJ/SM 既有原始证据：每品种功能 12、完整曲线 12、较早窗口 12、日周 6、取消恢复 1。旧日周记录缺少 XHR request binding 与逐 base 的公式分组，因此历史回放明确标注这两项未重验；新 prepare/capture 强制完整身份。以上是保存证据离线回放，不是新 collector 的真实 Chrome 现场结果。首次新品种现场试用已由 JD 完成：一次真实维护、一次19场真实Chrome采集，12/12 API和49张原图的独立数值/逐图Review通过；22m49.8s 仅是本次采集耗时，旧 CJ/SM 缺完整阶段计时，不能推导整体提速。W1原生预热、报价403、较早副图短窗和标签遮挡保留；见 `docs/tasks/jd-candidate-pilot-20260929.md`。
 
 全部定向测试：
 

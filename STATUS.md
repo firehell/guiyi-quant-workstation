@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-09-28。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-09-30。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
@@ -31,6 +31,8 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 首根自然completed Bar、盘后增量/MDS与weekly结果仍待验收，**不声明RUNTIME_READY**。
 
 ## 当前产品与验证范围
+
+P7-14 JD **COMPLETED，12/12 历史候选页面闭环**。31 owner/124 依赖全部 READY（118 实际读回、6 NO_GAP）；一次真实维护 303 行情 fetch、1234 派生月，一次 12 流 disabled 首建及一次 19 场 Chrome 采集，维护/采集无重试。四周期 481654 物理 Bar 全前缀独立 Decimal 复核，旧 1496 七频文件、95563 旧 Bar 与 821 日周分区保持；12 候选均 READY、enabled=false/generation=0/complete_window_proven=false。API 12/12、19 场及 49 原图逐张 Review 通过，独立核算 14798 CLOSED/14832 SVG 点；W1 震荡真实零 CLOSED、WARMING、报价403及较早副图短窗和局部遮挡保留。维护 1056.100s、资产 752.774s、API 231.987s、采集 1369.784s；仅证明分钟场景 36→12，旧完整耗时缺失，不能声称全流程提速。9 项准备/离线/清理修正与原错误保留，无实际维护或 Chrome 重采。专属服务已停、锁0；未自启AP，正式分钟/Runtime/Scope/通知/账户未变。见[JD首次实测](docs/tasks/jd-candidate-pilot-20260929.md)。
 
 P7-13 CJ **COMPLETED，12/12 页面闭环**。自身12owner/48依赖全部READY（45实际执行、3 NO_GAP），86行情fetch/352派生月发布；4输入、8基础、4融合首次disabled构建及真实API/Chrome通过。183668物理Bar全前缀独立Decimal重算、899旧七频文件与366日周pointer保持，最终12候选disabled/generation=0/complete_window_proven=false。
 独立数值审计及61原图逐张Review通过；自身日周六组非空曲线、W1趋势转折WARMING、报价预览403和较早MACD窗口边界保留，取消/短超时/fresh恢复通过。专属Chrome/API/Web已停止，锁0；仅更新P7-13，未自启JD，正式分钟/Runtime/Scope/通知/账户未变。见[CJ处理记录](docs/tasks/cj-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
