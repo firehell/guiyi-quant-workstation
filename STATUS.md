@@ -32,6 +32,8 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-15 AP **COMPLETED，12/12 历史候选页面闭环**。12 owner/48 依赖 READY（31 实际读回、17 NO_GAP），0 行情价格请求、247 派生月；一次 4 输入/8 基础/4 融合 disabled 首建、一次 19 场 Chrome，维护/构建/采集无重试。186588 物理 Bar 全前缀独立 Decimal 复核，1095 旧文件、9674 旧 Bar、370 日周分区保持；12 流 READY、enabled=false/generation=0/complete_window_proven=false。API 12/12，14772 CLOSED/14808 SVG 点及 49 原图独立审查完成；P3 密集 Marker 重叠、副图短窗及截图覆盖、W1 35/120 与 11 段预热、报价和持有过程限制保留。API 148.679s、Chrome 826.314s；维护/资产完整 walltime 缺失，不声称整体提速。专属服务已停、锁0；未启动 C，正式分钟/Runtime/Scope/通知/账户未变。见 [AP处理记录](docs/tasks/ap-candidate-pilot-20260930.md)。
+
 P7-14 JD **COMPLETED，12/12 历史候选页面闭环**。31 owner/124 依赖全部 READY（118 实际读回、6 NO_GAP）；一次真实维护 303 行情 fetch、1234 派生月，一次 12 流 disabled 首建及一次 19 场 Chrome 采集，维护/采集无重试。四周期 481654 物理 Bar 全前缀独立 Decimal 复核，旧 1496 七频文件、95563 旧 Bar 与 821 日周分区保持；12 候选均 READY、enabled=false/generation=0/complete_window_proven=false。API 12/12、19 场及 49 原图逐张 Review 通过，独立核算 14798 CLOSED/14832 SVG 点；W1 震荡真实零 CLOSED、WARMING、报价403及较早副图短窗和局部遮挡保留。维护 1056.100s、资产 752.774s、API 231.987s、采集 1369.784s；仅证明分钟场景 36→12，旧完整耗时缺失，不能声称全流程提速。9 项准备/离线/清理修正与原错误保留，无实际维护或 Chrome 重采。专属服务已停、锁0；未自启AP，正式分钟/Runtime/Scope/通知/账户未变。见[JD首次实测](docs/tasks/jd-candidate-pilot-20260929.md)。
 
 P7-13 CJ **COMPLETED，12/12 页面闭环**。自身12owner/48依赖全部READY（45实际执行、3 NO_GAP），86行情fetch/352派生月发布；4输入、8基础、4融合首次disabled构建及真实API/Chrome通过。183668物理Bar全前缀独立Decimal重算、899旧七频文件与366日周pointer保持，最终12候选disabled/generation=0/complete_window_proven=false。
