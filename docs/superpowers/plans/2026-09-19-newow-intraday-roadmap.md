@@ -415,7 +415,7 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 | --- | --- | --- | --- |
 | P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
 | P7B-02 | 棉花 | CF | CANDIDATE_CLOSED，12/12；见 [CF记录](../../tasks/cf-candidate-pilot-20260930.md) |
-| P7B-03 | 菜籽油 | OI | IN_PROGRESS；52/52维护、306621 Bar核对；稳定新源12 native rebuild及独立fresh reader通过，API12/12与source稳定；首场Chrome误拒away200/137完整DOM而停止，原失败保留、资源释放；ee3a164 collector-only修正独立Review/160回归通过，新prepare和12资产只读桥接完成，待新API及19场/49图/数值验收，未启动P |
+| P7B-03 | 菜籽油 | OI | CLOSED；52/52维护、306621 Bar完整前缀核对；新源12 native rebuild/fresh reader通过，API12/12与152 HTTP200；Chrome19场/49原图/631索引独立核验，21213 CLOSED收益/21249 SVG点无差异；取消恢复通过、source稳定、资源与维护锁0，disabled/generation0；失败证据保留，见[处理记录](../../tasks/oi-candidate-pilot-20260930.md) |
 | P7B-04 | 棕榈油 | P | NOT_STARTED |
 | P7B-05 | 豆油 | Y | NOT_STARTED |
 | P7B-06 | 氧化铝 | AO | NOT_STARTED |
