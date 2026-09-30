@@ -1652,3 +1652,35 @@ def test_rejected_result_keeps_token_only_when_entire_read_proof_is_saved(produc
     assert unretained.meta.snapshot_token is None
     assert (cache._bytes, [(key, entry.expires_at, dict(entry.proof), dict(entry.values))
         for key, entry in cache._entries.items()]) == before
+
+
+def test_token_expiring_during_reference_calculation_returns_conflict(product_cases, monkeypatch):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+
+    service, _reader, build, clear = _service(product_cases)
+    clock = [0.0]
+    service._cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=5)
+    chart = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", as_of=clear.bar_end,
+    ))
+    assert chart.meta.snapshot_token
+
+    calculate = service._calculate
+
+    def cross_expiry(*args, **kwargs):
+        result = calculate(*args, **kwargs)
+        clock[0] = 5.1
+        return result
+
+    monkeypatch.setattr(service, "_calculate", cross_expiry)
+    clock[0] = 4.9
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
+    ):
+        service.query(ProductServiceQuery(
+            "rb", "trend", "1d", section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+            snapshot_token=chart.meta.snapshot_token,
+        ))

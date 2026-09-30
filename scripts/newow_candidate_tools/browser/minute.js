@@ -78,13 +78,15 @@ const settleNavigation=async(deadline,after=null,expected={})=>{
       await settleNavigation(gateDeadline,navigationFloor,{product:PRODUCT,frequency:FREQUENCY,mode:MODE});
       seedIdentity={product:PRODUCT,frequency:FREQUENCY};
 const recordsMatchDOM=(dom,terminal,after=0,frequency=FREQUENCY)=>{
- if(!dom.target||dom.busy||dom.explanationBusy||!dom.curves||!Array.isArray(dom.ids)||!dom.ids.length||new Set(dom.ids).size!==dom.ids.length)return false;
+ if(terminal?.kind!=='ready'||!dom.target||dom.busy||dom.explanationBusy||!dom.curves||!Array.isArray(dom.ids)||new Set(dom.ids).size!==dom.ids.length)return false;
  const wanted=MODE==='oscillation'?'oscillation':'trend',chains=new Map();
  for(const r of responses){
   if(!r.row_request||(r.request_id??1)<=after||r.http!==200)continue;
   const q=apiParams(r.url),meta=r.payload?.meta,ref=r.payload?.reference;
   if(!isTargetRequest(r.url,frequency)||q.get('strategy')!==wanted||ref?.delivery!=='delivered'||!['ready','warming'].includes(ref?.status?.status)||meta?.snapshot_token!==terminal.snapshots?.[wanted])continue;
-  if(MODE!=='dual'&&q.get('history_limit')!=='200')continue;
+  // The target selects 200 records. A temporary away period uses the page's
+  // actual default first page (50 records), with no history_limit parameter.
+  if(MODE!=='dual'&&(frequency===FREQUENCY?q.get('history_limit')!=='200':q.get('history_limit')!==null))continue;
   const value=MODE==='dual'?ref.value?.fusion_comparison:ref.value;if(!Array.isArray(value?.items)||!value.reference_input_sha256)continue;
   const ids=value.items.map(x=>x.reference_trade_id);if(ids.some(x=>typeof x!=='string'||!x)||new Set(ids).size!==ids.length)continue;
   const key=JSON.stringify([meta.snapshot_token,value.reference_input_sha256,value.reference_revision,value.performance_since,value.performance_through]);
@@ -92,7 +94,7 @@ const recordsMatchDOM=(dom,terminal,after=0,frequency=FREQUENCY)=>{
   if(!cursor)chains.set(key,{ids,cursor:value[MODE==='dual'?'next_cursor':'next_before']});
   else if(prior&&prior.cursor===cursor&&!ids.some(x=>prior.ids.includes(x)))chains.set(key,{ids:[...prior.ids,...ids],cursor:value[MODE==='dual'?'next_cursor':'next_before']});
  }
- return [...chains.values()].some(({ids})=>ids.length===dom.ids.length&&ids.every((id,i)=>dom.ids[i].endsWith(id)));
+ return [...chains.values()].some(({ids})=>(ids.length>0||frequency!==FREQUENCY)&&ids.length===dom.ids.length&&ids.every((id,i)=>dom.ids[i].endsWith(id)));
 };
 const settleTarget=async(deadline,after=0,frequency=FREQUENCY)=>{
  let stable=0,last='';
@@ -101,11 +103,8 @@ const settleTarget=async(deadline,after=0,frequency=FREQUENCY)=>{
   await Promise.all(pending);const terminal=targetTerminal(after,frequency);
   if(terminal?.kind==='blocked')throw new Error('TARGET_BECAME_BLOCKED');
   const dom=await page.evaluate(({product,frequency,mode})=>{const q=new URL(location.href).searchParams;const tab={trend:'趋势策略',oscillation:'震荡策略',dual:'双策略'}[mode];return {target:q.get('symbol')===product&&q.get('frequency')===frequency&&[...document.querySelectorAll('[role=tab][aria-selected=true]')].some(e=>e.textContent?.trim()===tab),ids:[...document.querySelectorAll('.newow-reference__cards > .newow-reference__card')].map(e=>e.id),waiting:{count:document.querySelectorAll('[data-testid="newow-reference-waiting"]').length,texts:[...document.querySelectorAll('[data-testid="newow-reference-waiting"]')].map(e=>e.textContent??'')},curves:document.querySelectorAll('.newow-reference__curve polyline').length,explanationBusy:[...document.querySelectorAll('[role=status]')].some(e=>/正在读取|读取中/.test(e.textContent??'')&&/日周策略|日线.*周线|同一快照/.test(e.textContent??'')),busy:[...document.querySelectorAll('.newow-reference,.fusion-panel')].some(e=>/正在读取|读取中/.test(e.textContent??''))}},{product:PRODUCT,frequency,mode:MODE});
-  // The temporary away period may legitimately have no visible reference cards
-  // in its default window. Its chart/reference response and settled chart prove
-  // navigation; the return to the target period still checks every record ID.
   const targetRecords=frequency===FREQUENCY;
-  const displayMatch=targetRecords?recordsMatchDOM(dom,terminal,after,frequency):dom.target&&!dom.busy&&!dom.explanationBusy&&dom.curves>0;
+  const displayMatch=recordsMatchDOM(dom,terminal,after,frequency);
   lastSettle={frequency,request_floor:after,terminal,dom,in_flight:inFlight.size,response_count:responses.length,request_count:requestEvidence.length,records_match:targetRecords&&displayMatch,away_display_match:!targetRecords&&displayMatch,stability_polls:stable};
   const signature=JSON.stringify([dom.ids,terminal?.snapshots,requestEvidence.length]);
   if(!inFlight.size&&terminal?.kind==='ready'&&displayMatch){stable=signature===last?stable+1:1;last=signature;if(stable>=3)return {terminal,dom};}else stable=0;
