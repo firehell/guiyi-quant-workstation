@@ -1,34 +1,43 @@
 # 当前状态
 
-更新：2026-09-30。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-01。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.10.39@653e736f5952146a2ea401634d32a605e7b9a0d5**。
-PR #404、annotated tag 与非草稿/非预发布
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.39) 已读回；main 源码树与验证候选一致。
-新增日周 AI 分析、综合决策和状态摘要、双策略参考曲线与近一年记录，以及默认关闭的 RB 分钟历史候选。
-发布说明见 [v1.10.39](docs/releases/v1.10.39.md)。候选验证：Web 719 passed / 1 skipped、后端245 passed、
-数据352 passed、格式修正后19 passed、定向浏览器6 passed；build、lock、Ruff、Newow spec、secret scan通过。
-旧 Newow fixture 扩展套件有合同漂移，本轮尝试保留失败输出并中断，不声明全套 E2E 通过。
-本机原始日志仅保留于 `outputs/release-v1.10.39-20260927/`，未纳入本轮发布提交。
+最新正式发布为 **v1.11.0@4fc60acb7f5df229d7a73164980f83e2ca3eeec9**。
+PR #405、annotated tag 与非草稿/非预发布
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.0) 已实际读回；main 源码树与独立审查候选
+`db36f4cb9c85dabbe7f5de4bdac1f72a4081365a` 完全一致。发布说明见 [v1.11.0](docs/releases/v1.11.0.md)。
+汇总日周路径图、持有曲线、融合理论、分页/快照及盘后健康修正；正式开放 AG、AP、AU、C、CF、CJ、HC、I、J、JD、
+JM、LH、M、MA、OI、PK、RB、RM、SA、SF、SH、SM、SR、TA、UR、V 共26品种
+**5m/15m/30m/60m × 趋势/震荡/双策略，312个历史参考页面组合**，固定截至2026-09-24 15:00（北京时间）。
+持续更新尚未开放，1m仅聚合、分钟主升浪不开放，日周60品种保持；FU、NI、SS、SC及本轮冻结时未完成的P不在分钟名单。
 
-**现役 Runtime 已切换为 v1.10.39@653e736f5952146a2ea401634d32a605e7b9a0d5**。
-源码根为 linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.10.39`，detached/clean。
-冻结依赖和 build、render-only、Market preflight（non_trading_interval，60品种）通过；
-Market/base/Alert/weekly安装完成，六服务 root/commit、API版本1.10.39、HTTP200连续读回通过。
-运维状态脚本 overall=passed，runtime health=ok/readonly=true；新根盘后 pending，
-休市 Live/Alert coverage仍unverified、Alert组件degraded、weekly missed独立披露。
+候选验证：Newow全模块及对应合同检查2477 passed / 1 skipped，Web757 passed / 1 skipped，浏览器61 passed；
+build、冻结lock、OpenSpec、secret scan及最终diff检查通过，独立Review允许发布main/tag。
+22品种来源指纹变化的264项原生刷新全部READBACK_VERIFIED，重算前后数值汇总不变；另4品种复用有效资产。
+最终104来源窗口匹配、312保存流disabled/generation=0，208基础API响应与104融合结果独立核对CLOSED身份、曲线、
+Decimal收益及截止边界通过。历史参考仍page_parity=true/executable=false，不代表因果/OOS、模拟或真实账户收益。
+来源指纹变化仍失败关闭并要求显式原生rebuild，不以本版验收证明未来持续更新。
+
+**现役 Runtime 已切换为 v1.11.0@4fc60acb7f5df229d7a73164980f83e2ca3eeec9**。
+源码根为linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.0`，detached/clean。
+冻结依赖、build、render-only、Market preflight（non_trading_interval，60品种）通过；
+Market/base/Alert/既有weekly安装完成，六服务与weekly root/commit一致、API版本1.11.0、capability v28 exact26、
+HTTP200和readonly runtime health读回通过；正式AG5m双策略真实Chrome历史提示、曲线定位与年度窗口标签正确。
+切换后正式8000端口208基础响应及104融合结果全部重新读回并独立数值校验通过，覆盖312页面组合；连续两次运维检查通过。
+新根盘后pending、weekly not_run；休市Live/Alert coverage仍unverified、Alert组件degraded。
 health=ok只证明当前运维检查，不证明首次自然业务、全部Alert覆盖或RUNTIME_READY。
 
-旧v1.10.38根clean且配置/loaded服务/进程引用均为零；盘后JSON逐字节保留后，以非force Git worktree remove退休。
-现在仅保留最新发布树，不删除tag、数据、安全配置或用户outputs。历史23项weekly finding和P9阻断未解决。
-本轮不重跑盘后/周检、不清除健康错误、不回放Event或补发通知；operational/Rule/Scope/audience及auto_order=false不变。
-本机切换与退休证据位于 `outputs/release-v1.10.39-20260927/`，不提交原始运行日志。
+旧v1.10.39树clean且配置/loaded服务/进程引用均为零；盘后JSON逐字节及SHA保留后，以非force Git worktree remove退休。
+现在仅保留最新发布树，不删除tag/Release历史、行情、数据库、安全配置、用户outputs或其他任务树。
+未手工重跑盘后/周检、回放Event或补发通知；operational/Rule/Scope/audience及auto_order=false保持，reference worker仍关闭。
+发布、刷新、实际安装、接口/Chrome及退休原始证据保留于本机 `outputs/release-v1.11.0-20260930/`，不提交原始日志。
 
 首根自然completed Bar、盘后增量/MDS与weekly结果仍待验收，**不声明RUNTIME_READY**。
+历史23项weekly finding与P9阻断未解决；后续分钟持续更新和实时观察另行验收。
 
 ## 当前产品与验证范围
 
