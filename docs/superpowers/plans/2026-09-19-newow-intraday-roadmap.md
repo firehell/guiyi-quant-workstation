@@ -336,7 +336,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 | P7-18 | 豆粕 | M | CANDIDATE_CLOSED，12/12；12 owner/48 单元 READY、12 disabled 候选资产；真实分块 Chrome 19 场、49 原图、独立数值/视觉审查通过，OOM 与续采失败证据保留；[处理记录](../../tasks/m-candidate-pilot-20260930.md) |
 | P7-19 | 菜粕 | RM | CANDIDATE_CLOSED，12/12；13 owner/52 单元 READY、12 disabled 候选资产；一次 Chrome 19 场、49 原图、独立数值/视觉审查通过，审查脚本身份错误及修正证据保留；[处理记录](../../tasks/rm-candidate-pilot-20260930.md) |
 | P7-20 | 花生 | PK | CANDIDATE_CLOSED，12/12；18 owner/72 单元 READY、12 disabled 候选资产；一次 Chrome 19 场、49 原图、独立数值/视觉审查通过；API wrapper 重复 coverage 失败证据保留；[处理记录](../../tasks/pk-candidate-pilot-20260930.md) |
-| P7-21 | 白糖 | SR | NOT_STARTED |
+| P7-21 | 白糖 | SR | CANDIDATE_CLOSED，12/12；14 owner/56 单元 READY、12 disabled 候选资产；一次 Chrome 19 场、49 原图、独立数值/视觉审查通过；密集标签、hover 遮挡和 W1 预热边界保留；[处理记录](../../tasks/sr-candidate-pilot-20260930.md) |
 
 每行同一交付规格：`5m/15m/30m/60m × trend/oscillation/dual`，4 输入、8 基础流、4 融合流、12 页面组合。252 页面组合只是累计分母，禁止以“先全部跑完才能关闭一个品种”组织工作。已有五品种不并入本轮分母；剩余清单中没有 SS，也不新增其他品种。
 
