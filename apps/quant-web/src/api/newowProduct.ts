@@ -129,7 +129,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
     const products = value.intraday_products
     const single = value.schema_version === 'newow_product_capabilities_v27'
     const allowed = single
-      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr']
+      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf']
       : ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
     if (!Array.isArray(products) || products.length === 0 || (single && products.length !== 1)
       || !products.every(item => typeof item === 'string' && allowed.includes(item))
