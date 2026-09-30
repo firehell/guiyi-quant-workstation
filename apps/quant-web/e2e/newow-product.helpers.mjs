@@ -310,7 +310,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   if (url.searchParams.has('decision_v2') && (section !== 'explanation' || url.searchParams.get('decision_v2') !== 'true')) return `invalid decision V2 query ${url.search}`
   const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion'].includes(key)).sort().join(',')
   const allowedShapes = {
-    chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
+    chart: ['', 'chart_limit', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
     auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
     reference: ['', 'snapshot_token', 'performance_since,performance_through', 'performance_since,performance_through,snapshot_token', 'history_limit,performance_since,performance_through', 'history_limit,performance_since,performance_through,snapshot_token', 'history_before,history_limit,performance_since,performance_through,snapshot_token'],
     explanation: ['', 'snapshot_token', 'decision_v2', 'decision_v2,snapshot_token'],

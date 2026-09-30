@@ -196,7 +196,7 @@ def test_four_socket_connections_keep_navigation_and_history_bound_to_snapshot()
             )
         get(
             clients[1],
-            {**chart_params, "snapshot_token": token, "frequency": "60m"},
+            {**chart_params, "snapshot_token": token, "frequency": "1m"},
             409,
             "NEWOW_FREQUENCY_NOT_OPEN",
         )

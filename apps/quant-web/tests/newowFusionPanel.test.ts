@@ -256,3 +256,36 @@ test('new fusion identity clears and aborts old input, waits for admission, and 
   assert.equal(mock.calls.length, base + 2, 'readiness recovery is not an automatic retry')
   app.unmount()
 })
+
+
+test('minute fusion curve location labels only records outside the past year', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const response = { ...input('ag'), meta: { ...input('ag').meta, identity: { product: 'ag', strategy: 'trend', frequency: '5m' } } }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response }) }))
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { getElementById: () => null } })
+  try {
+    app.mount(root)
+    const trade = (id: string, entry: string, exit: string, exitDay?: string) => ({ reference_trade_id: id, status: 'CLOSED', statistics_membership: 'entry_in_window_v1', entry_source: 'trend', exit_source: 'oscillation', physical_contract: 'AG2612', entry_reference_price: '100', exit_reference_price: '105', reference_return_pct: '5', mark_change_pct: null, entry_bar_end: entry, exit_bar_end: exit, ...(exitDay ? { exit_trading_day: exitDay } : {}) })
+    const rows = [
+      trade('recent', '2026-09-24T06:50:00Z', '2026-09-24T06:55:00Z', '2026-09-24'),
+      trade('old', '2025-09-22T06:50:00Z', '2025-09-23T06:55:00Z', '2025-09-23'),
+      trade('beijing-boundary', '2025-09-23T16:50:00Z', '2025-09-23T17:00:00Z'),
+    ]
+    mock.calls[base].resolve({ ...output('minute-location', 'ag'), curve: rows, items: rows, groups: [{ model: 'fusion', closed_count: 3, sum_return_percentage_points: '15', open_count: 0, interrupted_count: 0 }] })
+    await nextTick(); await nextTick()
+    for (const [id, date, outside] of [['recent', '09-24 14:55', false], ['old', '2025-09-23', true], ['beijing-boundary', '2025-09-24', false]] as const) {
+      const point = findNode(root, n => n.type === 'circle' && String(n.props['aria-label']).includes(date))!
+      assert.ok(point, `curve point ${id} must be selectable`)
+      await (point.props.onClick as Function)({ stopPropagation() {} })
+      await nextTick()
+      const record = findNode(root, n => n.props.id === `fusion-trade-${id}`)!
+      assert.ok(record, `located record ${id} must be visible`)
+      assert.equal(nodeText(record).includes('曲线定位 · 近一年外'), outside, id)
+    }
+  } finally {
+    app.unmount()
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument)
+    else Reflect.deleteProperty(globalThis, 'document')
+  }
+})
