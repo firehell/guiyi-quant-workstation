@@ -474,7 +474,7 @@ def test_minute_xhr_binding_excludes_aborted_peer_but_rejects_missing_or_wrong_r
     assert json.loads(result.stdout) == {"success": 2, "missing": True, "mismatch": True}
 
 
-def test_minute_away_default_records_match_actual_dom_and_keep_target_200_gate():
+def test_minute_away_default_or_full_records_match_actual_dom_and_keep_target_200_gate():
     """Exercise the collector's real terminal and record matching functions."""
     import shutil
 
@@ -503,6 +503,12 @@ def test_minute_away_default_records_match_actual_dom_and_keep_target_200_gate()
       return {terminal:resolved?.kind??null,match:recordsMatchDOM(dom(ids),resolved,0,frequency)};
     };
     const away=run('60m',['a','b'],['a','b']);
+    const away200=base('60m','reference',['a','b','c'],'snapshot',{history_limit:'200'});away200.request_id=3;
+    away200.payload.reference.value.reference_input_sha256='full-window-source';
+    away200.payload.reference.value.performance_since='2025-09-24';
+    const awayFull=run('60m',['a','b','c'],['a','b'],{additional:[away200]});
+    const awayFullWrongDOM=run('60m',['a','c','b'],['a','b'],{additional:[away200]});
+    const awayUnsupportedLimit=run('60m',['a'],['a'],{extra:{history_limit:'100'}});
     const emptyAway=run('60m',[],[]);
     const target=run('5m',['a','b'],['a','b'],{extra:{history_limit:'200'}});
     const emptyTarget=run('5m',[],[],{extra:{history_limit:'200'}});
@@ -516,12 +522,15 @@ def test_minute_away_default_records_match_actual_dom_and_keep_target_200_gate()
     responses=[base('60m','chart',[]),first,page];
     const cursorTerminal=targetTerminal(0,'60m');
     const wrongCursor={terminal:cursorTerminal?.kind??null,match:recordsMatchDOM(dom(['a','b']),cursorTerminal,0,'60m')};
-    console.log(JSON.stringify({away,emptyAway,target,emptyTarget,defaultTarget,wrongToken,duplicate,missing,reversed,wrongCursor}));
+    console.log(JSON.stringify({away,awayFull,awayFullWrongDOM,awayUnsupportedLimit,emptyAway,target,emptyTarget,defaultTarget,wrongToken,duplicate,missing,reversed,wrongCursor}));
     """.replace("__TERMINAL__", terminal).replace("__MATCHING__", matching)
     result = subprocess.run([node, "-e", script], text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     actual = json.loads(result.stdout)
     assert actual["away"] == {"terminal": "ready", "match": True}
+    assert actual["awayFull"] == {"terminal": "ready", "match": True}
+    assert actual["awayFullWrongDOM"] == {"terminal": "ready", "match": False}
+    assert actual["awayUnsupportedLimit"] == {"terminal": "ready", "match": False}
     assert actual["emptyAway"] == {"terminal": "ready", "match": True}
     assert actual["target"] == {"terminal": "ready", "match": True}
     assert actual["emptyTarget"] == {"terminal": "ready", "match": False}

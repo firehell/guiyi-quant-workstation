@@ -84,9 +84,10 @@ const recordsMatchDOM=(dom,terminal,after=0,frequency=FREQUENCY)=>{
   if(!r.row_request||(r.request_id??1)<=after||r.http!==200)continue;
   const q=apiParams(r.url),meta=r.payload?.meta,ref=r.payload?.reference;
   if(!isTargetRequest(r.url,frequency)||q.get('strategy')!==wanted||ref?.delivery!=='delivered'||!['ready','warming'].includes(ref?.status?.status)||meta?.snapshot_token!==terminal.snapshots?.[wanted])continue;
-  // The target selects 200 records. A temporary away period uses the page's
-  // actual default first page (50 records), with no history_limit parameter.
-  if(MODE!=='dual'&&(frequency===FREQUENCY?q.get('history_limit')!=='200':q.get('history_limit')!==null))continue;
+  // The target selects 200 records. An away page may first request its default
+  // 50 records and then request 200 for the visible panel. Bind the DOM to the
+  // actual same-snapshot response; never accept an arbitrary history limit.
+  if(MODE!=='dual'&&(frequency===FREQUENCY?q.get('history_limit')!=='200':![null,'200'].includes(q.get('history_limit'))))continue;
   const value=MODE==='dual'?ref.value?.fusion_comparison:ref.value;if(!Array.isArray(value?.items)||!value.reference_input_sha256)continue;
   const ids=value.items.map(x=>x.reference_trade_id);if(ids.some(x=>typeof x!=='string'||!x)||new Set(ids).size!==ids.length)continue;
   const key=JSON.stringify([meta.snapshot_token,value.reference_input_sha256,value.reference_revision,value.performance_since,value.performance_through]);
