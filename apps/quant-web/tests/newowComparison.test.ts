@@ -221,7 +221,10 @@ test('partner conflict recovery stops after a second conflict or a non-conflict 
     await flushComparison()
     assert.deepEqual(requests.map(item => item.section), secondConflict ? ['chart', 'reference', 'chart', 'reference'] : ['chart', 'reference'])
     assert.equal(comparison.reference.value, null)
-    assert.ok(comparison.referenceError.value)
+    assert.equal(comparison.response.value === null, secondConflict)
+    assert.equal(comparison.state.value, secondConflict ? 'input_conflict' : 'ready')
+    if (secondConflict) assert.ok(comparison.error.value)
+    else assert.ok(comparison.referenceError.value)
     assert.equal(comparison.referenceSettled.value, true)
     comparison.dispose()
   }

@@ -71,10 +71,12 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
           return
         } catch (cause) {
           if (!isCurrent()) return
-          if (rebuild === 0 && cause instanceof NewowProductRequestError && cause.classification === 'conflict'
+          if (cause instanceof NewowProductRequestError && cause.classification === 'conflict'
             && cause.code === 'NEWOW_SNAPSHOT_GENERATION_CONFLICT') {
-            response.value = null; reference.value = null; state.value = 'loading'
-            continue
+            response.value = null; reference.value = null
+            if (rebuild === 0) { state.value = 'loading'; continue }
+            state.value = 'input_conflict'; error.value = '另一策略参考快照持续冲突，已停止叠加。'
+            return
           }
           referenceError.value = '另一策略参考收益暂不可用，未计算缺失样本。'
           return
