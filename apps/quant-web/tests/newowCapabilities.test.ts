@@ -517,3 +517,34 @@ test('single product candidate keeps its scope separate from historical batch an
   }
   await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, schema_version: 'newow_product_capabilities_v26', release_stage: 'black_steel_intraday_candidate' }) }))
 })
+
+function historicalMinutes(): NewowProductCapabilities {
+  return {
+    schema_version: 'newow_product_capabilities_v28', release_stage: 'daily_weekly_intraday_history',
+    open_frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'],
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' '),
+    intraday_products: 'rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi'.split(' ').sort(),
+    intraday_as_of: '2026-09-24T07:00:00.000001Z',
+    deferred_frequencies: [], open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+  }
+}
+
+test('released historical minutes retain daily weekly for other products and reject scope drift', async () => {
+  const capability = await getNewowProductCapabilities({ request: async () => historicalMinutes() })
+  const state = useNewowCapabilities(async () => capability)
+  await state.load()
+  for (const product of capability.intraday_products!) {
+    assert.deepEqual(state.openFrequenciesFor(product), ['5m', '15m', '30m', '60m', '1d', '1w'])
+    assert.equal(state.isFrequencyOpen('1m' as never, product), false)
+  }
+  for (const product of ['fu', 'ni', 'ss', 'sc', 'p', 'y']) {
+    assert.deepEqual(state.openFrequenciesFor(product), ['1d', '1w'])
+  }
+  for (const mutation of [
+    { intraday_products: [...capability.intraday_products!, 'p'].sort() },
+    { intraday_as_of: '2026-09-30T07:00:00.000001Z' },
+  ]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...historicalMinutes(), ...mutation }) }))
+  }
+})

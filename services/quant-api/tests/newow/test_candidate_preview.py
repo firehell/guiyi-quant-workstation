@@ -599,7 +599,7 @@ def test_intraday_candidate_does_not_implicitly_expand_formal_scope():
     request = SimpleNamespace(state=SimpleNamespace())
     for frequency in ("5m", "15m", "30m", "60m"):
         with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
-            _enforce_product_frequency(request, "rb", frequency)
+            _enforce_product_frequency(request, "fu", frequency)
 
 
 @pytest.mark.parametrize('frequency', ('5m','15m','30m','60m'))
@@ -693,7 +693,7 @@ def test_ma_single_product_candidate_scope_and_formal_boundary(preview, monkeypa
         assert rejected.json()['detail']['code'] == 'PREVIEW_PRODUCT_OUT_OF_SCOPE'
     monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS')
     with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
-        _enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), 'ma', '5m')
+        _enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), 'fu', '5m')
 
 
 @pytest.mark.parametrize('raw', ('ma,rb', 'ma,ma', 'ma,ur', 'zz'))
@@ -717,8 +717,13 @@ def test_p7_candidate_eligibility_is_single_product_and_does_not_open_formal(pro
     _enforce_product_frequency(request, product, '5m')
     with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
         _enforce_product_frequency(request, product, '1m')
-    with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
-        _enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), product, '5m')
+    from app.market_data.newow.product_release import OPEN_INTRADAY_PRODUCTS
+    formal = SimpleNamespace(state=SimpleNamespace())
+    if product in OPEN_INTRADAY_PRODUCTS:
+        _enforce_product_frequency(formal, product, '5m')
+    else:
+        with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
+            _enforce_product_frequency(formal, product, '5m')
 
 
 @pytest.mark.parametrize('raw', ('cf,rb', 'cf,ma', 'cf,cf', 'oi,rb', 'oi,ma', 'oi,oi', 'oi,zz'))

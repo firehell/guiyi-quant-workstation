@@ -1275,3 +1275,31 @@ The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default 
 Minute candidate builds may pin a verified input only while holding the authoritative Canonical maintenance lease; no input cache survives lease release or interruption. `newow_product_reader_intraday_v3` stores full input hash/count and an exact frozen source-evidence hash instead of repeating every Bar fingerprint in each batch. Source evidence is obtained through MDS and verifies Catalog-selected Canonical file bytes, quality/coverage metadata, physical contract lifecycle, rank1 ownership and Calendar/Session facts. A saved result is rejected when that evidence or frozen scope changes. Compact hashes do not constitute append-only proof; changed source/cutoff requires an explicit rebuild. Historical page queries validate the saved scope and may read necessary initial-holding facts before the record window, but cannot extend the snapshot cutoff or through day.
 
 Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading_day and a deterministic result revision independently of the limited record list. This changes delivery completeness only; fusion action order, source-price priority, pairing, terminal OPEN semantics and reference model remain unchanged. Page reference remains non-executable.
+
+
+### Requirement: Released historical intraday scope
+
+Formal capability v28 uses `daily_weekly_intraday_history`, retains all 60 existing D1/W1 products,
+and opens only `5m/15m/30m/60m × trend/oscillation/dual` for the following 26 products:
+`ag ap au c cf cj hc i j jd jm lh m ma oi pk rb rm sa sf sh sm sr ta ur v`.
+The exact `intraday_as_of` is `2026-09-24T07:00:00.000001Z`. Web SHALL bind minute requests to
+this timestamp and display the historical cutoff in Beijing time. Newow 1m and minute main-rise
+remain closed. Products outside this set retain their existing daily/weekly scope.
+
+The minute reference section SHALL read the existing historical materializations in
+`newow_intraday_pilot_20260927` through the native persisted reader using a schema-scoped session
+factory. Every persisted query retains its bounded repeatable-read read-only transaction and the
+fresh Canonical source proof; D1/W1, public reference endpoints and workers do not change schemas.
+This release does not activate streams, install a reference worker, advance the cutoff, change
+formula/profile/reference-model identities or introduce a production writer. Source drift still
+fails closed and requires an explicit native rebuild; a past candidate closure is not current source proof.
+
+#### Scenario: Released minutes are fixed historical observations
+- **WHEN** a released product requests a minute chart/reference without an as-of
+- **THEN** the server binds the exact historical cutoff and the Web labels it as historical reference
+- **AND** an explicit later as-of is rejected before reading, and 1m, unclosed products and minute main-rise stay closed
+
+#### Scenario: Source drift is not hidden by release admission
+- **WHEN** a saved historical minute source hash no longer matches fresh MDS evidence
+- **THEN** the persisted reader rejects the result using its existing source-identity error
+- **AND** the consumer does not recalculate, choose another schema, truncate the window or activate a stream as fallback

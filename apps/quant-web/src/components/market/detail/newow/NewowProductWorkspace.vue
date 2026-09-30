@@ -38,7 +38,8 @@ const strategySwitching = ref(false)
 watch(identity, (next, previous) => {
   strategySwitching.value = previous.strategy !== next.strategy && isNewowStrategySwitch(previous, next)
 }, { flush: 'sync' })
-const loader = useNewowProduct({ identity })
+const releasedMinuteHistory = computed(() => props.capabilities.schema_version === 'newow_product_capabilities_v28' && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency))
+const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : new Date() })
 const comparisonSelected = ref(false)
 const comparisonEnabled = computed(() => dualMode.value || comparisonSelected.value)
 const comparisonSelection = shallowRef<{ strategy: 'trend' | 'oscillation'; signalId: string } | null>(null)
@@ -440,6 +441,7 @@ onBeforeUnmount(() => {
     </section>
     </template>
     </NewowProductChartStage><button v-if="locatedTradeId !== null" type="button" class="newow-product-workspace__return" @click="returnToReferenceTrade">返回原记录</button></div>
+    <p v-if="releasedMinuteHistory" class="newow-product-workspace__load-notice" role="status">分钟历史参考 · 截至 2026-09-24 15:00（北京时间） · 尚未开放持续更新</p>
     <div v-if="loader.historicalSnapshot.value || loader.dailyLoading.value || loader.dailySnapshot.value?.freshness === 'pending_update' || loader.weeklySnapshot.value?.freshness === 'pending_update' || (loader.dailyError.value && chartResponse !== null)" class="newow-product-workspace__load-notice" role="status">
       <template v-if="loader.historicalSnapshot.value">
         <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}</span>

@@ -81,18 +81,18 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v22",
-        "release_stage": "daily_weekly",
-        "open_frequencies": ["1d", "1w"],
+        "schema_version": "newow_product_capabilities_v28",
+        "release_stage": "daily_weekly_intraday_history",
+        "open_frequencies": ["5m", "15m", "30m", "60m", "1d", "1w"],
+        "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi".split()),
+        "intraday_as_of": "2026-09-24T07:00:00.000001Z",
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
             "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps", "pt", "px", "rb",
             "rm", "rs", "ru", "sa", "sc", "sf", "sh", "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
         ],
-        "deferred_frequencies": [
-            {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
-        ],
+        "deferred_frequencies": [],
         "open_sections": ["chart", "auxiliary", "reference", "comparator"],
         "deferred_sections": [
             {
@@ -314,7 +314,7 @@ def test_daily_release_rejects_deferred_product_frequencies_before_service(
             response = client.get(
                 "/api/v1/market/newow/strategy-detail",
                 params={
-                    "product": "rb",
+                    "product": "fu",
                     "strategy": "trend",
                     "frequency": frequency,
                 },
@@ -343,7 +343,7 @@ def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
             response = client.get(
                 "/api/v1/market/newow/historical-snapshot",
                 params={
-                    "product": "rb",
+                    "product": "fu",
                     "strategy": "trend",
                     "frequency": frequency,
                 },
