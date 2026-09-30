@@ -472,3 +472,69 @@ def test_minute_xhr_binding_excludes_aborted_peer_but_rejects_missing_or_wrong_r
     result = subprocess.run([node, "-e", script], text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {"success": 2, "missing": True, "mismatch": True}
+
+
+def test_minute_away_default_or_full_records_match_actual_dom_and_keep_target_200_gate():
+    """Exercise the collector's real terminal and record matching functions."""
+    import shutil
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node unavailable")
+    minute = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/newow_candidate_tools/browser/minute.js"
+    ).read_text()
+    terminal = minute[minute.index("const targetTerminal=") : minute.index(";const responses=[]")] + ";"
+    matching = minute[minute.index("const recordsMatchDOM=") : minute.index("const settleTarget=")]
+    script = r"""
+    const PRODUCT='oi',FREQUENCY='5m',MODE='trend',CONFIG={as_of:'2026-09-24T07:00:00.000001+00:00'};
+    const apiParams=url=>{const q=new URL(url).searchParams;return {get:key=>q.get(key)}};
+    const isTargetRequest=(url,frequency=FREQUENCY)=>{const q=apiParams(url);return q.get('product')===PRODUCT&&q.get('frequency')===frequency&&q.get('strategy')==='trend'};
+    let responses=[];
+    __TERMINAL__
+    __MATCHING__
+    const base=(frequency,section,items,token='snapshot',extra={})=>({row_request:true,request_id:1,http:200,url:'http://127.0.0.1:5178/api/v1/market/newow/strategy-detail?'+new URLSearchParams({product:'oi',frequency,strategy:'trend',section,as_of:CONFIG.as_of,...extra}),payload:{meta:{identity:{product:'oi',frequency,strategy:'trend'},as_of:CONFIG.as_of,snapshot_token:token,input_content_sha256:'digest'},[section]:{delivery:'delivered',status:{status:'ready'},value:section==='reference'?{items:items.map(reference_trade_id=>({reference_trade_id})),reference_input_sha256:'source',reference_revision:'revision',performance_since:'2023-01-01',performance_through:'2026-09-24',next_before:null}:{}}}});
+    const dom=ids=>({target:true,busy:false,explanationBusy:false,curves:1,ids:ids.map(id=>'card-'+id)});
+    const run=(frequency,ids,items,options={})=>{
+      const chart=base(frequency,'chart',[]),reference=base(frequency,'reference',items,options.referenceToken??'snapshot',options.extra??{});
+      chart.request_id=1;reference.request_id=2;responses=[chart,reference,...(options.additional??[])];
+      const resolved=targetTerminal(0,frequency);
+      return {terminal:resolved?.kind??null,match:recordsMatchDOM(dom(ids),resolved,0,frequency)};
+    };
+    const away=run('60m',['a','b'],['a','b']);
+    const away200=base('60m','reference',['a','b','c'],'snapshot',{history_limit:'200'});away200.request_id=3;
+    away200.payload.reference.value.reference_input_sha256='full-window-source';
+    away200.payload.reference.value.performance_since='2025-09-24';
+    const awayFull=run('60m',['a','b','c'],['a','b'],{additional:[away200]});
+    const awayFullWrongDOM=run('60m',['a','c','b'],['a','b'],{additional:[away200]});
+    const awayUnsupportedLimit=run('60m',['a'],['a'],{extra:{history_limit:'100'}});
+    const emptyAway=run('60m',[],[]);
+    const target=run('5m',['a','b'],['a','b'],{extra:{history_limit:'200'}});
+    const emptyTarget=run('5m',[],[],{extra:{history_limit:'200'}});
+    const defaultTarget=run('5m',['a'],['a']);
+    const wrongToken=run('60m',['a'],['a'],{referenceToken:'other'});
+    const duplicate=run('60m',['a','a'],['a','a']);
+    const missing=run('60m',['a'],['a','b']);
+    const reversed=run('60m',['b','a'],['a','b']);
+    const first=base('60m','reference',['a']);first.request_id=2;first.payload.reference.value.next_before='cursor-a';
+    const page=base('60m','reference',['b'],'snapshot',{history_before:'wrong-cursor'});page.request_id=3;
+    responses=[base('60m','chart',[]),first,page];
+    const cursorTerminal=targetTerminal(0,'60m');
+    const wrongCursor={terminal:cursorTerminal?.kind??null,match:recordsMatchDOM(dom(['a','b']),cursorTerminal,0,'60m')};
+    console.log(JSON.stringify({away,awayFull,awayFullWrongDOM,awayUnsupportedLimit,emptyAway,target,emptyTarget,defaultTarget,wrongToken,duplicate,missing,reversed,wrongCursor}));
+    """.replace("__TERMINAL__", terminal).replace("__MATCHING__", matching)
+    result = subprocess.run([node, "-e", script], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    actual = json.loads(result.stdout)
+    assert actual["away"] == {"terminal": "ready", "match": True}
+    assert actual["awayFull"] == {"terminal": "ready", "match": True}
+    assert actual["awayFullWrongDOM"] == {"terminal": "ready", "match": False}
+    assert actual["awayUnsupportedLimit"] == {"terminal": "ready", "match": False}
+    assert actual["emptyAway"] == {"terminal": "ready", "match": True}
+    assert actual["target"] == {"terminal": "ready", "match": True}
+    assert actual["emptyTarget"] == {"terminal": "ready", "match": False}
+    assert actual["defaultTarget"] == {"terminal": "ready", "match": False}
+    assert actual["wrongToken"] == {"terminal": None, "match": False}
+    for name in ("duplicate", "missing", "reversed", "wrongCursor"):
+        assert actual[name] == {"terminal": "ready", "match": False}

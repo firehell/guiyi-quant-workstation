@@ -1055,12 +1055,20 @@ class NewowProductService:
         # snapshot already holds every fact reverified by this read. Binding that
         # still-valid token does not claim that this result was cached. New proof
         # facts must never be accepted without being retained atomically.
-        if request.snapshot_token is not None and self._cache.token_proof_covers(
-            request.snapshot_token, common_key, proof
-        ):
-            return replace(
-                result, meta=replace(result.meta, snapshot_token=request.snapshot_token)
-            )
+        if request.snapshot_token is not None:
+            if self._cache.token_proof_covers(
+                request.snapshot_token, common_key, proof
+            ):
+                return replace(
+                    result, meta=replace(result.meta, snapshot_token=request.snapshot_token)
+                )
+            # The token may expire while this section is being calculated.
+            # A caller asking for that generation must receive a conflict,
+            # not a ready section without a matching snapshot token.
+            if not self._cache.token_is_compatible(
+                request.snapshot_token, common_key, proof
+            ):
+                raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
         return result
 
     def _cached_read_input(
