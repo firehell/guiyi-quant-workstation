@@ -13,7 +13,7 @@ INTRADAY_BATCH_PREVIEW_SYMBOLS = frozenset({"rb", "hc", "ss", "i", "j", "jm", "s
 # P7 candidate eligibility only; each non-batch preview selects one product.
 INTRADAY_SINGLE_PREVIEW_SYMBOLS = frozenset({
     "fu", "ma", "ur", "ta", "sh", "v", "sa", "au", "ag", "ni", "sf", "sm",
-    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr",
+    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr", "cf",
 })
 
 ProductSectionName = Literal[
