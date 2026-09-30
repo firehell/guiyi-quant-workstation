@@ -415,7 +415,7 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 | --- | --- | --- | --- |
 | P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
 | P7B-02 | 棉花 | CF | CANDIDATE_CLOSED，12/12；见 [CF记录](../../tasks/cf-candidate-pilot-20260930.md) |
-| P7B-03 | 菜籽油 | OI | IN_PROGRESS；52/52 维护、306621 派生 Bar 独立核对、12/12 保存资产及 API 通过；首场 Chrome 切频 reference token=null，原现场保留，只读诊断中，页面尚未闭环 |
+| P7B-03 | 菜籽油 | OI | IN_PROGRESS；52/52 维护、306621 派生 Bar 独立核对；ecc70dd 修复代码 Review通过，新 API 11/12 后自然盘后改变四频来源，停止旧源验收；14更新分区截止窗口16460 Bar 全字段不变，待稳定新源资产绑定与页面验收 |
 | P7B-04 | 棕榈油 | P | NOT_STARTED |
 | P7B-05 | 豆油 | Y | NOT_STARTED |
 | P7B-06 | 氧化铝 | AO | NOT_STARTED |
