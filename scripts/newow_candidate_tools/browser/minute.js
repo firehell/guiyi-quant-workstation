@@ -101,9 +101,14 @@ const settleTarget=async(deadline,after=0,frequency=FREQUENCY)=>{
   await Promise.all(pending);const terminal=targetTerminal(after,frequency);
   if(terminal?.kind==='blocked')throw new Error('TARGET_BECAME_BLOCKED');
   const dom=await page.evaluate(({product,frequency,mode})=>{const q=new URL(location.href).searchParams;const tab={trend:'趋势策略',oscillation:'震荡策略',dual:'双策略'}[mode];return {target:q.get('symbol')===product&&q.get('frequency')===frequency&&[...document.querySelectorAll('[role=tab][aria-selected=true]')].some(e=>e.textContent?.trim()===tab),ids:[...document.querySelectorAll('.newow-reference__cards > .newow-reference__card')].map(e=>e.id),waiting:{count:document.querySelectorAll('[data-testid="newow-reference-waiting"]').length,texts:[...document.querySelectorAll('[data-testid="newow-reference-waiting"]')].map(e=>e.textContent??'')},curves:document.querySelectorAll('.newow-reference__curve polyline').length,explanationBusy:[...document.querySelectorAll('[role=status]')].some(e=>/正在读取|读取中/.test(e.textContent??'')&&/日周策略|日线.*周线|同一快照/.test(e.textContent??'')),busy:[...document.querySelectorAll('.newow-reference,.fusion-panel')].some(e=>/正在读取|读取中/.test(e.textContent??''))}},{product:PRODUCT,frequency,mode:MODE});
-  lastSettle={frequency,request_floor:after,terminal,dom,in_flight:inFlight.size,response_count:responses.length,request_count:requestEvidence.length,records_match:terminal?.kind==='ready'&&recordsMatchDOM(dom,terminal,after,frequency),stability_polls:stable};
+  // The temporary away period may legitimately have no visible reference cards
+  // in its default window. Its chart/reference response and settled chart prove
+  // navigation; the return to the target period still checks every record ID.
+  const targetRecords=frequency===FREQUENCY;
+  const displayMatch=targetRecords?recordsMatchDOM(dom,terminal,after,frequency):dom.target&&!dom.busy&&!dom.explanationBusy&&dom.curves>0;
+  lastSettle={frequency,request_floor:after,terminal,dom,in_flight:inFlight.size,response_count:responses.length,request_count:requestEvidence.length,records_match:targetRecords&&displayMatch,away_display_match:!targetRecords&&displayMatch,stability_polls:stable};
   const signature=JSON.stringify([dom.ids,terminal?.snapshots,requestEvidence.length]);
-  if(!inFlight.size&&terminal?.kind==='ready'&&recordsMatchDOM(dom,terminal,after,frequency)){stable=signature===last?stable+1:1;last=signature;if(stable>=3)return {terminal,dom};}else stable=0;
+  if(!inFlight.size&&terminal?.kind==='ready'&&displayMatch){stable=signature===last?stable+1:1;last=signature;if(stable>=3)return {terminal,dom};}else stable=0;
   await page.waitForTimeout(50);
  }
  throw new Error('TARGET_REQUESTS_OR_RECORD_DOM_NOT_SETTLED');
