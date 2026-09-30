@@ -415,7 +415,7 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 | --- | --- | --- | --- |
 | P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
 | P7B-02 | 棉花 | CF | CANDIDATE_CLOSED，12/12；见 [CF记录](../../tasks/cf-candidate-pilot-20260930.md) |
-| P7B-03 | 菜籽油 | OI | NOT_STARTED |
+| P7B-03 | 菜籽油 | OI | IN_PROGRESS；自身只读 preflight 与准入验证中，未执行数据维护/资产构建 |
 | P7B-04 | 棕榈油 | P | NOT_STARTED |
 | P7B-05 | 豆油 | Y | NOT_STARTED |
 | P7B-06 | 氧化铝 | AO | NOT_STARTED |

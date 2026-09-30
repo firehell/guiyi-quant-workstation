@@ -32,7 +32,9 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
-P7B-02 CF **COMPLETED / CANDIDATE_CLOSED，12/12 历史候选页面**。12 owner、48 单元一次维护完成，86 次真实行情请求/352 派生目标；279949 根四频 Bar 完整前缀独立 Decimal 核对通过，897 旧七频文件/56004 旧 Bar/369 日周文件保持。12 保存流 READY、disabled/generation0/complete_window_proven=false，API 12/12；Web singleton 准入修复后一次真实 Chrome 19 场、49 原图逐张 Review，23437 笔 CLOSED 收益和 23473 个 SVG 点独立核算通过。原失败浏览器现场保留，SC ArrowInvalid 根因仍 UNKNOWN；专属 Chrome/API/Web 已停、维护锁0，正式分钟/Runtime/Scope/通知/账户不变。见 [CF处理记录](docs/tasks/cf-candidate-pilot-20260930.md)。独立第二轮固定 13 品种，原 21 分母不变，OI 尚未启动。
+P7B-02 CF **COMPLETED / CANDIDATE_CLOSED，12/12 历史候选页面**。12 owner、48 单元一次维护完成，86 次真实行情请求/352 派生目标；279949 根四频 Bar 完整前缀独立 Decimal 核对通过，897 旧七频文件/56004 旧 Bar/369 日周文件保持。12 保存流 READY、disabled/generation0/complete_window_proven=false，API 12/12；Web singleton 准入修复后一次真实 Chrome 19 场、49 原图逐张 Review，23437 笔 CLOSED 收益和 23473 个 SVG 点独立核算通过。原失败浏览器现场保留，SC ArrowInvalid 根因仍 UNKNOWN；专属 Chrome/API/Web 已停、维护锁0，正式分钟/Runtime/Scope/通知/账户不变。见 [CF处理记录](docs/tasks/cf-candidate-pilot-20260930.md)。独立第二轮固定 13 品种，原 21 分母不变。
+
+P7B-03 OI **IN_PROGRESS**。仅启动自身历史候选只读 preflight 与 API/Web singleton 准入验证；数据维护、候选资产构建及页面验收尚未执行。窗口固定为 `2023-01-01..2026-09-24`，`as_of=2026-09-24T07:00:00.000001+00:00`；1m 仅作可信聚合源，正式分钟、Runtime、Scope、通知和账户不变。结果以自身后续读回与独立 Review 为准。
 
 P7B-01 SC **PARTIAL / DEFERRED_DATA_BLOCKED，0/12 历史候选页面**。独立第二轮固定 13 品种，原 21 分母不变；46 owner、184 单元，SC2302 四频 4/184 READBACK_VERIFIED 后，SC2303/5m unit 在源 SC2303/1m/2022-04 发布 `ATOMIC_PUBLISH_FAILED → ArrowInvalid` 停止，根因 UNKNOWN、不重试。观察到 12 个已完成请求与 26 个失败 unit 已启动请求；110 新增 active 分区已核清，2662 旧文件/指针与 1907 日周分区保持，92963 根实际成功派生 Bar 独立 Decimal 复核通过。候选 0 stream/0 revision、无 asset build/API/Chrome；最终锁0、8012/5178无监听，独立安全暂缓 Review通过。正式分钟/Runtime/Scope/通知/账户不变，SC收尾时未启动CF，后续CF结果见上段；见 [SC处理记录](docs/tasks/sc-candidate-pilot-20260930.md)。
 
