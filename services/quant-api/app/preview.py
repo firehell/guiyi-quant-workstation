@@ -16,6 +16,8 @@ from app.core.env import PROJECT_ROOT
 from app.db.readonly import readonly_transaction
 from app.market_data.newow.product_release import (
     HOURLY_PRODUCT_PREVIEW_SYMBOLS,
+    INTRADAY_BATCH_PREVIEW_SYMBOLS,
+    INTRADAY_SINGLE_PREVIEW_SYMBOLS,
     PD_PT_HOURLY_PREVIEW_SYMBOLS,
 )
 
@@ -36,7 +38,7 @@ PREVIEW_PATHS = frozenset(
 _SUBING_REFERENCE_PATH = re.compile(
     r"^/api/v1/market/[a-z]{1,8}/subing/reference$"
 )
-_LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[01]$")
+_LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[012]$")
 DEFAULT_CANDIDATE_ORIGIN = "http://127.0.0.1:8010"
 DEFAULT_STATUS_ORIGIN = "http://127.0.0.1:8000"
 
@@ -83,6 +85,26 @@ def _hourly_preview_products() -> frozenset[str] | None:
     return items or None
 
 
+def _intraday_preview_products() -> frozenset[str] | None:
+    """Explicit batch allowlist; reject malformed or expanded scopes in full."""
+    raw = os.getenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS")
+    legacy = os.getenv("GUIYI_INTRADAY_PREVIEW_PRODUCT")
+    if raw is None:
+        if legacy is None:
+            return None
+        if legacy != "rb":
+            raise ValueError("PREVIEW_SCOPE_INVALID")
+        return frozenset({"rb"})
+    parts = [part.strip().lower() for part in raw.split(",")]
+    items = frozenset(parts)
+    if (not all(parts) or len(items) != len(parts)
+        or not (items <= INTRADAY_BATCH_PREVIEW_SYMBOLS
+                or (len(items) == 1 and items <= INTRADAY_SINGLE_PREVIEW_SYMBOLS))
+        or (legacy is not None and (legacy != "rb" or items != {"rb"}))):
+        raise ValueError("PREVIEW_SCOPE_INVALID")
+    return items
+
+
 def _candidate_origin() -> str:
     raw = os.getenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN") or DEFAULT_CANDIDATE_ORIGIN
     if _LOCAL_CANDIDATE_ORIGIN.fullmatch(raw) is None:
@@ -114,7 +136,7 @@ def create_preview_app(
     from app.api import market, market_newow, market_subing_reference
     from app.db.session import SessionLocal, get_db
 
-    if os.getenv("GUIYI_INTRADAY_PREVIEW_PRODUCT") == "rb":
+    if _intraday_preview_products() is not None:
         from app.market_data.newow.snapshot_cache import SnapshotCache
         # The RB 1m complete reference wire graph is about 77 MiB. Keep the
         # candidate's complete base/fusion snapshot bounded without truncation.
@@ -144,9 +166,7 @@ def create_preview_app(
             if len({key for key, value in query}) != len(query):
                 raise ValueError
             values = dict(query)
-            intraday_product = os.getenv("GUIYI_INTRADAY_PREVIEW_PRODUCT")
-            if intraday_product is not None and intraday_product != "rb":
-                raise ValueError("PREVIEW_SCOPE_INVALID")
+            intraday_products = _intraday_preview_products()
             hourly_products = _hourly_preview_products()
             au_period_preview = (
                 os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1" and hourly_products is None
@@ -174,12 +194,20 @@ def create_preview_app(
                         status_code=409,
                         content={"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}},
                     )
-            if intraday_product and raw_path in {
+            if intraday_products and raw_path in {
                 "/api/v1/market/newow/strategy-detail", "/api/v1/market/newow/historical-snapshot",
                 "/api/v1/market/newow/daily-snapshot", "/api/v1/market/newow/weekly-snapshot",
-            } and values.get("product", "").lower() != intraday_product:
+            } and values.get("product", "").lower() not in intraday_products:
                 return JSONResponse(status_code=403, content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}})
-            request.state.intraday_preview_product = intraday_product
+            if intraday_products and raw_path == "/api/v1/market/bars/page":
+                if (values.get("symbol", "").lower() not in intraday_products
+                    or values.get("series_kind") != "actual_dominant"
+                    or values.get("contract") is not None):
+                    return JSONResponse(status_code=403, content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}})
+            if intraday_products and _SUBING_REFERENCE_PATH.fullmatch(raw_path):
+                return JSONResponse(status_code=403, content={"detail": {"code": "PREVIEW_ROUTE_FORBIDDEN"}})
+            request.state.intraday_preview_products = intraday_products
+            request.state.intraday_preview_batch = os.getenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS") is not None
             field = {
                 "/api/v1/market/bars/page": "before",
                 "/api/v1/market/newow/strategy-detail": "as_of",

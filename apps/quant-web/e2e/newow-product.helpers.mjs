@@ -294,7 +294,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
     reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token', 'include_fusion'],
-    explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
+    explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token', 'decision_v2'],
     comparator: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
   }
   if (!Object.hasOwn(allowedBySection, section)) return `invalid Newow section ${section}`
@@ -307,24 +307,24 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
   if (url.searchParams.has('include_fusion') && (section !== 'reference' || strategy !== 'trend' || url.searchParams.get('include_fusion') !== 'true' || url.searchParams.has('history_limit') || !url.searchParams.has('snapshot_token') || !url.searchParams.has('performance_since') || !url.searchParams.has('performance_through'))) return `invalid fusion query ${url.search}`
+  if (url.searchParams.has('decision_v2') && (section !== 'explanation' || url.searchParams.get('decision_v2') !== 'true')) return `invalid decision V2 query ${url.search}`
   const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion'].includes(key)).sort().join(',')
   const allowedShapes = {
-    chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
+    chart: ['', 'chart_limit', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
     auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
     reference: ['', 'snapshot_token', 'performance_since,performance_through', 'performance_since,performance_through,snapshot_token', 'history_limit,performance_since,performance_through', 'history_limit,performance_since,performance_through,snapshot_token', 'history_before,history_limit,performance_since,performance_through,snapshot_token'],
-    explanation: ['', 'snapshot_token'],
+    explanation: ['', 'snapshot_token', 'decision_v2', 'decision_v2,snapshot_token'],
     comparator: ['', 'snapshot_token'],
   }
   const partnerRecords = dualMarket && section === 'reference' && strategy === 'oscillation' && optionalShape === 'history_limit,snapshot_token' && url.searchParams.get('history_limit') === '200'
   if (!partnerRecords && !allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
   if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
-  const fixedRecordWindow = url.searchParams.get('history_limit') === '200'
   if (url.searchParams.has('history_limit') && !['50', '200'].includes(url.searchParams.get('history_limit'))) return `invalid reference limit ${url.search}`
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
   if (url.searchParams.has('history_before') && url.searchParams.get('history_before') !== 'reference-page-2') return `invalid reference cursor ${url.search}`
   if (url.searchParams.has('snapshot_token') && url.searchParams.get('snapshot_token') !== `snapshot:${strategy}:${frequency}:fixture-revision-1`) return `invalid snapshot token ${url.search}`
-  if (url.searchParams.has('performance_since') && !(fixedRecordWindow ? ['2026-06-03'] : ['2026-01-01', '2026-06-03']).includes(url.searchParams.get('performance_since'))) return `invalid performance start ${url.search}`
+  if (url.searchParams.has('performance_since') && !['2026-01-01', '2026-06-03'].includes(url.searchParams.get('performance_since'))) return `invalid performance start ${url.search}`
   if (url.searchParams.has('performance_through') && url.searchParams.get('performance_through') !== '2026-09-03') return `invalid performance end ${url.search}`
   const fixtureDates = ['2025-01-01', '2025-12-15', '2025-12-31', '2026-01-01', '2026-01-05', '2026-01-06', '2026-06-05', '2026-06-06', '2026-06-15', '2026-06-30', '2026-09-03']
   if (url.searchParams.has('from') && !fixtureDates.includes(url.searchParams.get('from'))) return `invalid chart start ${url.search}`
@@ -738,7 +738,7 @@ function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') 
 // Precomputed by the existing Python macd_series kernel over these exact fixture
 // closes; fixture-only rendering evidence, never external market or formula parity.
 function richMacdFixture(base, strategy, frequency, options) {
-  const { fixture_input, ...wire } = structuredClone(richMacd[`${strategy}:${frequency}`])
+  const { fixture_input, ...wire } = structuredClone(richMacd[`${strategy}:${frequency}${options.recordsHistory ? ':records' : ''}`])
   const bars = chartValue(fixtureValidationUrl('chart', strategy, frequency, false, null), strategy, frequency, options).bars
   if (JSON.stringify(fixture_input) !== JSON.stringify(bars.map(bar => [bar.bar_end, bar.physical_contract, bar.segment_id, bar.close]))) throw new Error('rich MACD fixture input drift; regenerate through the Python kernel')
   return { ...base, ...wire }

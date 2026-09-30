@@ -113,6 +113,6 @@ export function decisionDisplay(cd: Cdv2) {
 }
 
 export function decisionContextIdentity(identity: { product: string; strategy: import('../types/newowProduct').NewowProductStrategy; frequency: import('../types/newowProduct').NewowProductFrequency }) {
-  const background = ['1m', '15m', '30m', '60m'].includes(identity.frequency)
+  const background = ['5m', '15m', '30m', '60m'].includes(identity.frequency)
   return { background, identity: { product: identity.product, strategy: identity.strategy, frequency: background ? '1d' as const : identity.frequency, seriesKind: 'actual_dominant' as const } }
 }

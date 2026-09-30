@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { holdingCurvePlot } from '@/utils/newowHoldingCurve'
 import { computed, nextTick, ref, watch } from 'vue'
 import { closestReferenceCurvePoint, referenceCurveAnchors, newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
-import { formatMarketDecimal } from '@/utils/marketDisplay'
+import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
 
 import type {
@@ -185,6 +186,20 @@ function locateCurvePoint(event: MouseEvent) {
   const point = closestReferenceCurvePoint(curvePoints.value.points, (event.clientX - bounds.left) / bounds.width * 712, (event.clientY - bounds.top) / bounds.height * 140)
   if (point) selectCurveTrade(point.trade)
 }
+
+const curveMode = ref<'holding' | 'closed'>('holding')
+const holdingIndex = ref<number | null>(null)
+const holdingPlot = computed(() => holdingCurvePlot(props.response?.value?.holding_curve, props.response?.value?.performance_since ?? '', props.response?.value?.performance_through ?? ''))
+const holdingReadout = computed(() => holdingPlot.value.points[holdingIndex.value ?? holdingPlot.value.points.length - 1] ?? null)
+watch(holdingPlot, () => { holdingIndex.value = null })
+function inspectHolding(event: MouseEvent) {
+  const bounds = (event.currentTarget as SVGElement).getBoundingClientRect()
+  if (bounds.width <= 0) return
+  const x = (event.clientX - bounds.left) / bounds.width * 712
+  let index = 0, distance = Infinity
+  holdingPlot.value.points.forEach((p,i) => { if (Math.abs(p.x-x) < distance) { distance = Math.abs(p.x-x); index = i } })
+  holdingIndex.value = index
+}
 </script>
 
 <template>
@@ -208,9 +223,27 @@ function locateCurvePoint(event: MouseEvent) {
     <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
     <div v-if="!model && (updatingStrategy || lifecycle === 'loading' || chartLifecycle === 'loading')" class="newow-reference__loading-curve" aria-hidden="true" />
     <template v-if="model">
-      <section class="newow-reference__curve" aria-label="已完成参考交易累计收益曲线">
-        <p v-if="curve?.message" role="status">{{ curve.message }}</p>
+
+      <div v-if="acceptedPreset !== 'ideal'" class="newow-reference__presets newow-curve-modes" aria-label="参考曲线口径"><button type="button" :disabled="!response?.value?.holding_curve" :aria-pressed="curveMode === 'holding' && !!response?.value?.holding_curve" @click="curveMode = 'holding'">持有过程</button><button type="button" :aria-pressed="curveMode === 'closed' || !response?.value?.holding_curve" @click="curveMode = 'closed'">已完成累计</button><span>{{ response?.value?.holding_curve ? '下方统计仅含已完成交易' : '持有过程暂不可用；当前显示已完成累计' }}</span></div>
+      <section v-if="curveMode === 'holding' && acceptedPreset !== 'ideal'" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
+        <p v-if="holdingPlot.message" role="status">{{ holdingPlot.message }}</p>
         <template v-else>
+          <p class="newow-reference__state">逐 Bar 页面参考 = 已完成累计 + 当根持有浮动；中断处断线，不计入已完成收益。</p>
+          <div class="newow-reference__plot"><div class="newow-reference__plot-area">
+            <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @click="inspectHolding">
+              <line v-for="level in holdingPlot.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
+              <line x1="0" x2="712" :y1="holdingPlot.zero" :y2="holdingPlot.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
+              <polyline v-for="(segment,i) in holdingPlot.segments" :key="i" :points="segment" fill="none" stroke="#ff403a" stroke-width="1.8" />
+              <circle v-if="holdingReadout" :cx="holdingReadout.x" :cy="holdingReadout.y" r="3" fill="#ff9500" />
+            </svg>
+            <span v-for="level in holdingPlot.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
+          <span class="newow-reference__date-tick" data-anchor="start" style="left:0">{{ holdingPlot.points[0]?.trading_day }}</span><span class="newow-reference__date-tick" data-anchor="end" style="left:100%">{{ holdingPlot.points.at(-1)?.trading_day }}</span></div></div>
+          <div class="newow-holding-readout" aria-live="polite"><button type="button" aria-label="上一根持有读数" @click="holdingIndex = Math.max(0, (holdingIndex ?? holdingPlot.points.length - 1) - 1)">‹</button><span v-if="holdingReadout">{{ formatBeijingInstant(holdingReadout.bar_end) }} · {{ holdingReadout.physical_contract }} · 已完成 {{ formatMarketDecimal(holdingReadout.closed_return_percentage_points) }} · 浮动 {{ referencePercentDisplay(holdingReadout.floating_return_pct).text }} · 合计 {{ referencePercentDisplay(holdingReadout.marked_return_percentage_points).text }}</span><button type="button" aria-label="下一根持有读数" @click="holdingIndex = Math.min(holdingPlot.points.length - 1, (holdingIndex ?? holdingPlot.points.length - 1) + 1)">›</button></div>
+        </template>
+      </section>
+<section class="newow-reference__curve" aria-label="已完成参考交易累计收益曲线">
+        <p v-if="(curveMode === 'closed' || acceptedPreset === 'ideal' || !response?.value?.holding_curve) && curve?.message" role="status">{{ curve.message }}</p>
+        <template v-if="!curve.message && (curveMode === 'closed' || acceptedPreset === 'ideal' || !response?.value?.holding_curve)">
           <div class="newow-reference__plot">
             <div class="newow-reference__plot-area">
               <svg @click="locateCurvePoint" viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">

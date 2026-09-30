@@ -644,23 +644,23 @@ def _collect_live_market_health(
         sum(phase_counts.values()) != operational_count
         or phase_counts.get("UNKNOWN", 0) > 0
     )
+    raw_product_phases = heartbeat.get("phase_by_product")
+    product_phases = raw_product_phases if (
+        isinstance(raw_product_phases, Mapping)
+        and set(raw_product_phases) == set(coverage)
+        and all(isinstance(value, str) and value in {"TRADING", "BREAK", "CLOSED", "UNKNOWN"}
+                for value in raw_product_phases.values())
+        and all(
+            sum(value == phase for value in raw_product_phases.values())
+            == phase_counts.get(phase, 0)
+            for phase in ("TRADING", "BREAK", "CLOSED", "UNKNOWN")
+        )
+        and set(phase_counts) <= {"TRADING", "BREAK", "CLOSED", "UNKNOWN"}
+        and sum(phase_counts.values()) == operational_count
+    ) else None
     if phase_unverified:
         # Older heartbeat writers may carry an ok coverage from a prior Session.
         # Without a per-symbol phase identity, none of those ok rows proves now.
-        raw_product_phases = heartbeat.get("phase_by_product")
-        product_phases = raw_product_phases if (
-            isinstance(raw_product_phases, Mapping)
-            and set(raw_product_phases) == set(coverage)
-            and all(value in {"TRADING", "BREAK", "CLOSED", "UNKNOWN"}
-                    for value in raw_product_phases.values())
-            and all(
-                sum(value == phase for value in raw_product_phases.values())
-                == phase_counts.get(phase, 0)
-                for phase in ("TRADING", "BREAK", "CLOSED", "UNKNOWN")
-            )
-            and set(phase_counts) <= {"TRADING", "BREAK", "CLOSED", "UNKNOWN"}
-            and sum(phase_counts.values()) == operational_count
-        ) else None
         coverage = {
             symbol: {**item, "state": "unverified", "sessions": [],
                      "expected_bar_end": None, "expected_by_frequency": {}}
@@ -708,10 +708,15 @@ def _collect_live_market_health(
         and sum(phase_counts.values()) == operational_count
     )
     # After cleanup or a closed-session restart, coverage remains unverified.
-    # That is not an operational failure while every product is known closed.
+    # A known CLOSED product also needs no live coverage during mixed sessions.
     # Preserve actual lagging evidence and all heartbeat/availability failures.
+    unverified_active = not coverage or any(
+        item["state"] == "unverified"
+        and (product_phases is None or product_phases[symbol] != "CLOSED")
+        for symbol, item in coverage.items()
+    )
     coverage_unhealthy = payload["coverage_state"] == "lagging" or (
-        payload["coverage_state"] == "unverified" and not all_closed
+        unverified_active and not all_closed
     )
     return {
         "status": RUNTIME_STATUS_DEGRADED

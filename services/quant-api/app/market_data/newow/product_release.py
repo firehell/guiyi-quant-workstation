@@ -3,19 +3,43 @@
 from __future__ import annotations
 
 from typing import Literal
+from datetime import UTC, datetime
 
 from guiyi_quant.newow.product_contracts import ProductFrequency
 from guiyi_quant.newow.product_identity import InputQualityPolicy
+
+
+INTRADAY_BATCH_PREVIEW_SYMBOLS = frozenset({"rb", "hc", "ss", "i", "j", "jm", "sf", "sm"})
+
+# P7 candidate eligibility only; each non-batch preview selects one product.
+INTRADAY_SINGLE_PREVIEW_SYMBOLS = frozenset({
+    "fu", "ma", "ur", "ta", "sh", "v", "sa", "au", "ag", "ni", "sf", "sm",
+    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr", "cf", "oi",
+})
+
+# Released read-only historical scope; no forward stream activation.
+OPEN_INTRADAY_PRODUCTS = tuple(sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi".split()))
+INTRADAY_HISTORY_AS_OF = datetime(2026, 9, 24, 7, 0, 0, 1, tzinfo=UTC)
+INTRADAY_HISTORY_SCHEMA = "newow_intraday_pilot_20260927"
+INTRADAY_HISTORY_FREQUENCIES = (ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY, ProductFrequency.HOURLY)
+
+
+def released_intraday_as_of(value: datetime | None) -> datetime:
+    if value is None:
+        return INTRADAY_HISTORY_AS_OF
+    if value.utcoffset() is None or value > INTRADAY_HISTORY_AS_OF:
+        raise ValueError("NEWOW_INVALID_AS_OF")
+    return value
 
 
 ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v22"] = (
-    "newow_product_capabilities_v22"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v28"] = (
+    "newow_product_capabilities_v28"
 )
-RELEASE_STAGE: Literal["daily_weekly"] = "daily_weekly"
+RELEASE_STAGE: Literal["daily_weekly_intraday_history"] = "daily_weekly_intraday_history"
 OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
 OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
     "chart",
@@ -140,7 +164,7 @@ def require_open_section(section: ProductSectionName) -> None:
 def deferred_frequency_reason(frequency: ProductFrequency) -> str | None:
     """Return the public staged-release reason without opening data readers."""
     selected = ProductFrequency(frequency)
-    if selected in (ProductFrequency.MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY):
+    if selected in (ProductFrequency.MINUTE, ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY):
         return "NEWOW_INTRADAY_RELEASE_PENDING"
     return next(
         (reason for item, reason in DEFERRED_FREQUENCIES if item == selected), None

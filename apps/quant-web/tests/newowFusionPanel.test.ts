@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { compileScript, parse } from '@vue/compiler-sfc'
+import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 
@@ -25,6 +25,16 @@ async function component(name: string) {
       throw new Error(specifier)
     })
   return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default
+}
+async function workspaceFusionHost(Panel: unknown, setup: () => unknown) {
+  const source = readFileSync(new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url), 'utf8')
+  const { descriptor } = parse(source)
+  const actualPanelTemplate = descriptor.template!.content.match(/<NewowFusionPanel\b[^>]*\/>/)![0]
+  const compiled = compileTemplate({ source: actualPanelTemplate, filename: 'WorkspaceFusionHost.vue', id: 'workspace-fusion-test' })
+  assert.deepEqual(compiled.errors, [])
+  const code = compiled.code.replace(/from ["']vue["']/g, `from '${import.meta.resolve('vue')}'`)
+  const { render } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+  return defineComponent({ components: { NewowFusionPanel: Panel }, setup, render })
 }
 const input = (product = 'jm') => ({ meta: { identity: { product, strategy: 'trend', frequency: '1d' }, as_of: '2026-09-26T15:00:00Z', snapshot_token: product + '-snapshot' }, value: { performance_since: '2023-01-01', performance_through: '2026-09-24', reference_input_sha256: product, reference_cutoff: '2026-09-24T07:00:00Z', history_coverage: 'FULL' } })
 const output = (version: string, product = 'rb') => ({ reference_model_version: version, reference_input_sha256: product, performance_since: '2023-01-01', performance_through: '2026-09-24', reference_cutoff: '2026-09-24T07:00:00Z', records_truncated: false, groups: ['trend','oscillation','fusion'].map(model => ({ model, closed_count: 0, sum_return_percentage_points: null, open_count: 0, interrupted_count: 0 })), items: [] })
@@ -140,4 +150,142 @@ test('fusion curve uses closed members, range does not replace recent records, t
   assert.equal(findNodes(root,n => n.type === 'circle').length,0)
   assert.match(nodeText(root), /记录已截断/)
   app.unmount()
+})
+
+test('fusion theory is independent and the ordinary record price remains visible', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input('rb') }) }))
+  app.mount(root)
+  const trade = {reference_trade_id:'theory-trade',status:'CLOSED',statistics_membership:'entry_in_window_v1',entry_source:'trend',exit_source:'oscillation',physical_contract:'RB2610',entry_reference_price:'100',exit_reference_price:'105',reference_return_pct:'5',mark_change_pct:null,entry_trading_day:'2026-09-01',exit_trading_day:'2026-09-02',entry_bar_end:'2026-09-01T07:00:00Z',exit_bar_end:'2026-09-02T07:00:00Z'}
+  mock.calls[base].resolve({...output('theory-test'),curve:[trade],items:[trade],groups:[{model:'fusion',closed_count:1,sum_return_percentage_points:'5',open_count:0,interrupted_count:0}],theoretical:{model_version:'newow_dual_fusion_hindsight_peak_high_v1',hindsight:true,executable:false,returns:[{reference_trade_id:'theory-trade',return_pct:'20',ideal_exit_price:'120'}],sum_return_percentage_points:'20'}})
+  await nextTick();await nextTick()
+  const theory = findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='理论值')!
+  assert.ok(theory)
+  ;(theory.props.onClick as Function)()
+  await nextTick()
+  assert.match(nodeText(root), /持有阶段最高价/)
+  assert.match(nodeText(root), /\+20%/)
+  const record = findNode(root,n=>n.props.id==='fusion-trade-theory-trade')!
+  assert.match(nodeText(record), /105/)
+  assert.doesNotMatch(nodeText(record), /120/)
+  app.unmount()
+})
+
+test('missing fusion theory allows returning to ordinary mode; holding readouts keep closed summary separate', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb')})}))
+  app.mount(root)
+  const trade = {reference_trade_id:'readout',status:'CLOSED',statistics_membership:'entry_in_window_v1',entry_source:'trend',exit_source:'oscillation',physical_contract:'RB2610',entry_reference_price:'100',exit_reference_price:'105',reference_return_pct:'5',mark_change_pct:null,entry_trading_day:'2026-09-01',exit_trading_day:'2026-09-02',entry_bar_end:'2026-09-01T07:00:00Z',exit_bar_end:'2026-09-02T07:00:00Z'}
+  mock.calls[base].resolve({...output('holding-test'),curve:[trade],items:[trade],groups:[{model:'fusion',closed_count:1,sum_return_percentage_points:'5',open_count:0,interrupted_count:0}],theoretical:null,holding_curve:{model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points:[{bar_end:'2026-09-01T07:00:00Z',trading_day:'2026-09-01',physical_contract:'RB2610',segment_id:'a',calculation_segment_id:'a',entry_trading_day:'2026-09-01',closed_return_percentage_points:'0',floating_return_pct:'20',marked_return_percentage_points:'20',reference_trade_id:'readout',status:'HOLDING'}]}})
+  await nextTick();await nextTick()
+  const holding = findNode(root,n=>n.props['aria-label']==='逐 Bar 持有过程')!
+  assert.match(nodeText(holding), /浮动 \+20%/)
+  assert.match(nodeText(root), /累计收益 \+5%/)
+  ;(findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='理论值')!.props.onClick as Function)()
+  await nextTick()
+  assert.match(nodeText(root), /理论值所需的完整持有区段暂不可用/)
+  const ordinary = findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='全部')!
+  assert.equal(ordinary.props.disabled,false)
+  ;(ordinary.props.onClick as Function)()
+  await nextTick()
+  assert.match(nodeText(root), /浮动 \+20%/)
+  app.unmount()
+})
+
+
+test('fusion admission waits initially but preserves appended records across same-identity comparison reloads', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const response = ref(input('j')), readyToLoad = ref(false)
+  const Host = await workspaceFusionHost(Panel, () => ({ dualMode: true, referenceResponse: response, identityKey: 'j:1d', comparison: { referenceSettled: readyToLoad } }))
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  assert.equal(mock.calls.length, base)
+  assert.match(nodeText(root), /正在读取另一策略参考输入/)
+  assert.equal(findNode(root, n => n.type === 'button' && n.props.class === 'fusion-refresh')?.props.disabled, true)
+  readyToLoad.value = true; await nextTick()
+  assert.equal(mock.calls.length, base + 1)
+  const trade = id => ({ reference_trade_id: id, entry_source: 'trend', exit_source: null, physical_contract: 'J2701',
+    entry_bar_end: '2026-09-01T07:00:00Z', entry_reference_price: '100', exit_bar_end: null, exit_reference_price: null,
+    status: 'OPEN', statistics_membership: 'entry_in_window_v1', reference_return_pct: null, mark_change_pct: null })
+  const first = { ...output('admission', 'j'), reference_revision: 'same-revision', items: [trade('first')], next_cursor: 'older' }
+  mock.calls[base].resolve(first); await nextTick(); await nextTick()
+  readyToLoad.value = false; await nextTick()
+  const more = findNode(root, n => n.type === 'button' && nodeText(n).trim() === '加载更多近一年记录')!
+  assert.equal(more.props.disabled, true)
+  ;(more.props.onClick as Function)()
+  ;(findNode(root, n => n.type === 'button' && n.props.class === 'fusion-refresh')!.props.onClick as Function)()
+  await nextTick()
+  assert.equal(mock.calls.length, base + 1, 'pending comparison cannot initiate pagination or recomputation')
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-first'))
+  readyToLoad.value = true; await nextTick()
+  ;(more.props.onClick as Function)()
+  await nextTick()
+  assert.equal(mock.calls[base + 1].request.fusionBefore, 'older')
+  readyToLoad.value = false; await nextTick()
+  assert.equal(mock.calls[base + 1].options.signal.aborted, false)
+  mock.calls[base + 1].resolve({ ...first, items: [trade('appended')], next_cursor: null })
+  await nextTick(); await nextTick()
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-first'))
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-appended'))
+  response.value = { ...response.value, meta: { ...response.value.meta } }
+  readyToLoad.value = true; await nextTick(); await nextTick()
+  assert.equal(mock.calls.length, base + 2, 'same primary snapshot must not reload or discard appended rows')
+  assert.ok(findNode(root, n => n.props.id === 'fusion-trade-appended'))
+  app.unmount()
+})
+
+test('new fusion identity clears and aborts old input, waits for admission, and does not retry rejected input', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const response = ref(input('j')), readyToLoad = ref(true)
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: response.value, readyToLoad: readyToLoad.value }) }))
+  app.mount(root)
+  readyToLoad.value = false
+  response.value = input('hc')
+  await nextTick()
+  assert.equal(mock.calls[base].options.signal.aborted, true)
+  assert.equal(mock.calls.length, base + 1)
+  mock.calls[base].resolve(output('stale-j', 'j')); await nextTick(); await nextTick()
+  assert.doesNotMatch(nodeText(root), /stale-j/)
+  readyToLoad.value = true; await nextTick()
+  assert.equal(mock.calls.length, base + 2)
+  assert.equal(mock.calls[base + 1].request.identity.product, 'hc')
+  mock.calls[base + 1].resolve(output('wrong-source', 'j')); await nextTick(); await nextTick()
+  assert.match(nodeText(root), /融合输入已变化/)
+  readyToLoad.value = false; await nextTick()
+  readyToLoad.value = true; await nextTick()
+  assert.equal(mock.calls.length, base + 2, 'readiness recovery is not an automatic retry')
+  app.unmount()
+})
+
+
+test('minute fusion curve location labels only records outside the past year', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const response = { ...input('ag'), meta: { ...input('ag').meta, identity: { product: 'ag', strategy: 'trend', frequency: '5m' } } }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response }) }))
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { getElementById: () => null } })
+  try {
+    app.mount(root)
+    const trade = (id: string, entry: string, exit: string, exitDay?: string) => ({ reference_trade_id: id, status: 'CLOSED', statistics_membership: 'entry_in_window_v1', entry_source: 'trend', exit_source: 'oscillation', physical_contract: 'AG2612', entry_reference_price: '100', exit_reference_price: '105', reference_return_pct: '5', mark_change_pct: null, entry_bar_end: entry, exit_bar_end: exit, ...(exitDay ? { exit_trading_day: exitDay } : {}) })
+    const rows = [
+      trade('recent', '2026-09-24T06:50:00Z', '2026-09-24T06:55:00Z', '2026-09-24'),
+      trade('old', '2025-09-22T06:50:00Z', '2025-09-23T06:55:00Z', '2025-09-23'),
+      trade('beijing-boundary', '2025-09-23T16:50:00Z', '2025-09-23T17:00:00Z'),
+    ]
+    mock.calls[base].resolve({ ...output('minute-location', 'ag'), curve: rows, items: rows, groups: [{ model: 'fusion', closed_count: 3, sum_return_percentage_points: '15', open_count: 0, interrupted_count: 0 }] })
+    await nextTick(); await nextTick()
+    for (const [id, date, outside] of [['recent', '09-24 14:55', false], ['old', '2025-09-23', true], ['beijing-boundary', '2025-09-24', false]] as const) {
+      const point = findNode(root, n => n.type === 'circle' && String(n.props['aria-label']).includes(date))!
+      assert.ok(point, `curve point ${id} must be selectable`)
+      await (point.props.onClick as Function)({ stopPropagation() {} })
+      await nextTick()
+      const record = findNode(root, n => n.props.id === `fusion-trade-${id}`)!
+      assert.ok(record, `located record ${id} must be visible`)
+      assert.equal(nodeText(record).includes('曲线定位 · 近一年外'), outside, id)
+    }
+  } finally {
+    app.unmount()
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument)
+    else Reflect.deleteProperty(globalThis, 'document')
+  }
 })

@@ -13,7 +13,7 @@ from app.market_data.newow.readiness import ReadinessRequest
 from app.schemas.market_newow_product import ProductFrequencyValue
 
 
-@pytest.mark.parametrize("frequency", ["1m", "15m", "30m", "60m"])
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
 @pytest.mark.parametrize("strategy", ["trend", "oscillation"])
 def test_intraday_identity_and_wire_frequency(frequency, strategy):
     identity = build_product_identity("rb", strategy, frequency)
@@ -22,7 +22,7 @@ def test_intraday_identity_and_wire_frequency(frequency, strategy):
     assert identity != build_product_identity("rb", strategy, "1d")
 
 
-@pytest.mark.parametrize("frequency", ["1m", "15m", "30m", "60m"])
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
 def test_intraday_remains_formally_closed_until_pilot_accepted(frequency):
     with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
         require_open_frequency(ProductFrequency(frequency))
@@ -36,7 +36,7 @@ def test_readiness_default_does_not_expand_when_frequency_enum_grows():
 
 @pytest.mark.parametrize(
     "frequency,limit,expected_since",
-    [("1m", 300, 3), ("15m", 24, 3), ("30m", 13, 2), ("60m", 11, 2)],
+    [("5m", 60, 3), ("15m", 24, 3), ("30m", 13, 2), ("60m", 11, 2)],
 )
 def test_intraday_chart_window_counts_authoritative_sessions(
     frequency, limit, expected_since
@@ -97,7 +97,7 @@ def test_four_period_audit_rejects_invalid_scope_before_database_access(products
         )
 
 
-@pytest.mark.parametrize("frequency", ["1m", "15m", "30m", "60m"])
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
 @pytest.mark.parametrize("strategy", ["trend", "oscillation"])
 def test_minute_replay_is_prefix_and_incremental_invariant(
     product_cases, frequency, strategy
@@ -139,7 +139,7 @@ def test_minute_replay_is_prefix_and_incremental_invariant(
     assert tuple(frames) == full.frames
 
 
-@pytest.mark.parametrize("frequency", ["1m", "15m", "30m", "60m"])
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
 def test_reference_coverage_accepts_multiple_completed_bars_in_one_trading_day(
     product_cases, frequency
 ):
@@ -206,3 +206,51 @@ def test_snapshot_requires_shared_verified_market_source_or_bar():
     assert not SnapshotCache._proofs_compatible(market, {'canonical-source|1m|cutoff': 'b' * 64})
     assert not SnapshotCache._proofs_compatible(market, {'canonical-source|15m|cutoff': 'a' * 64})
     assert not SnapshotCache._proofs_compatible({'owner|x': 'a'}, {'owner|x': 'a'})
+
+
+def test_five_minute_warmup_scope_uses_only_same_contract_minute_dependency():
+    from app.market_data.historical_data_manager import _contract_warmup_scope
+    from app.market_data.domain import BarFrequency
+    assert _contract_warmup_scope("5m") == ("5m", ("1m",), ("1m", "5m"), (BarFrequency.M1, BarFrequency.M5))
+
+
+def test_intraday_product_scope_keeps_minute_as_legacy_identity_only():
+    from guiyi_quant.newow.product_contracts import INTRADAY_PRODUCT_FREQUENCIES
+    assert tuple(x.value for x in INTRADAY_PRODUCT_FREQUENCIES) == ("5m", "15m", "30m", "60m")
+    assert ProductFrequency("1m") is ProductFrequency.MINUTE
+
+
+def test_candidate_guard_rejects_minute_before_loading_saved_assets():
+    from types import SimpleNamespace
+    from app.api.market_newow import _enforce_product_frequency
+    request = SimpleNamespace(state=SimpleNamespace(intraday_preview_products=frozenset({"rb"})))
+    with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
+        _enforce_product_frequency(request, "rb", "1m")
+    _enforce_product_frequency(request, "rb", "5m")
+
+
+def test_five_minute_data_commands_parse_explicit_scope():
+    from app.guiyi_cli.main import build_parser
+    parser = build_parser()
+    warmup = parser.parse_args(["data", "contract-warmup", "--symbol", "rb", "--contract", "RB2701", "--through", "2026-09-24", "--frequency", "5m"])
+    assert warmup.frequency == "5m"
+    readiness = parser.parse_args(["data", "newow-readiness", "--symbol", "rb", "--as-of", "2026-09-24T08:00:00+00:00", "--frequency", "5m"])
+    assert readiness.frequency == ["5m"]
+
+
+def test_legacy_minute_fusion_identity_is_not_relabelled_as_five_minute():
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    legacy = build_fusion_stream_identity("rb", "1m")
+    current = build_fusion_stream_identity("rb", "5m")
+    assert legacy.frequency == "1m"
+    assert legacy.profile_id == "newow_dual_fusion_1m_v1"
+    assert legacy.stream_id != current.stream_id
+
+
+def test_newow_readiness_rejects_minute_product_checks_before_reading_data():
+    with pytest.raises(ValueError, match="NEWOW_READINESS_ARGUMENT_INVALID"):
+        ReadinessRequest(("rb",), datetime(2026, 9, 24, 8, tzinfo=UTC), frequencies=(ProductFrequency.MINUTE,))
+    from app.guiyi_cli.main import build_parser
+    from app.guiyi_cli.data_parser import CliUsageError
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(["data", "newow-readiness", "--symbol", "rb", "--as-of", "2026-09-24T08:00:00+00:00", "--frequency", "1m"])

@@ -4,4 +4,4 @@ Change APP_VERSION here; packaging and Web builds read this same source.
 Formula/schema versions and historical release evidence retain their own identities.
 """
 
-APP_VERSION = "1.10.39"
+APP_VERSION = "1.11.0"

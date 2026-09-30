@@ -44,6 +44,12 @@ def test_default_window_can_end_before_authoritative_history(product_cases, freq
     assert older.chart.value.bars[-1].bar.bar_end < first.chart.value.bars[0].bar.bar_end
     assert older.chart.value.next_older_window is None
     assert older.reference.delivery == "not_requested"
+    for result in (first, older):
+        price = result.chart.value.price_reference
+        assert price is not None
+        assert price.as_of == result.meta.as_of
+        assert price.anchor_bar_end == result.chart.value.bars[-1].bar.bar_end
+    assert older.chart.value.price_reference.anchor_bar_end < first.chart.value.price_reference.anchor_bar_end
 
 
 def test_hourly_exhausts_all_pages_before_issuing_older_window(product_cases):

@@ -6,6 +6,20 @@
 
 ## Requirements
 
+### Requirement: Task-scoped maintenance execution
+
+授权与停止条件 SHALL 统一遵循仓库 `AGENTS.md`。用户交办真实数据补全或品种历史候选闭环时，
+执行者 SHALL 自行生成精确对象、窗口、预算、plan hash、attempt 与恢复边界，并在机器及现场校验
+通过后连续执行必要 RQData 下载、Canonical/Catalog 修复；MUST NOT 再要求用户逐批批准 hash。
+只读、Plan-only 或仅编码任务 MUST NOT 因本条扩大为生产执行。exact hash、维护锁、质量、
+幂等、禁重试和提交未知停止合同 MUST 保留；宿主审批控制 MUST 独立遵守。
+
+#### Scenario: Data closeout requires bounded maintenance
+
+- **WHEN** 已交办品种历史候选闭环，精确维护计划与现场校验均通过且宿主允许执行
+- **THEN** 执行者继续范围内真实下载及发布，不等待额外“本次精确维护授权”
+- **AND** 每个执行结果独立读回，失败或未知结果按既有合同停止相关写入
+
 ### Requirement: Provider responses retain request identity and trading-day attribution
 
 The RQData adapter MUST verify each raw `order_book_id` against the requested physical or continuous contract before normalizing Bars. It MUST reject duplicate raw endpoints or duplicate exchange-daily rows, including rows later filtered from a requested missing subset. The maintainer MUST bind each fetched batch to its DatasetKey and requested endpoints and reject a misplaced batch or duplicate normalized endpoint before publication. A permitted refresh MAY replace an older committed value only within the frozen planned target; provider duplicates are never treated as a refresh.
@@ -208,12 +222,12 @@ provider-free apply 与 commit-unknown 合同由 `data-foundation-metadata` cano
 - **THEN** 系统保持维护状态并返回 forward recovery required，不恢复错误 session 或混用新旧锚点
 
 ### Requirement: Exact physical-contract warm-up is a hash-locked maintenance seam
-`guiyi data contract-warmup --symbol SYMBOL --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}]` SHALL 只接受 active、
+`guiyi data contract-warmup --symbol SYMBOL --contract CONTRACT --through DATE [--frequency {1m,5m,1d,1w,15m,30m,60m}]` SHALL 只接受 active、
 non-retired symbol 与其 RQData Contract identity。窗口 MUST 为该 Contract 的
 `[listed_date, min(through, expired_date - 1 day)]`，且 `through` 不得晚于最近完整交易日。无 `--apply`
 时 MUST 只读 Catalog/Calendar/Session，零 RQData 请求、零 PostgreSQL/Parquet/Redis mutation，并返回稳定
 plan hash、direct/derived target 数、预计 Bar 数和 provider request 数。省略 `--frequency` MUST 保持全部七周期；
-显式 `1d` MUST 只规划/执行 `1d`，显式 `1w` MUST 只规划/执行同源 `1d + 1w`，显式 `15m` 或 `60m`
+显式 `1m` 或 `1d` MUST 只规划/执行所选基础周期，显式 `1w` MUST 只规划/执行同源 `1d + 1w`，显式 `5m`、`15m`、`30m` 或 `60m`
 MUST 只规划/执行同 contract 的 `1m` 基础和所选周期派生。payload 与 plan hash MUST 绑定所选 frequency、
 完整 frequency scope 及其 dependency，即使 targets 为空也不得跨 scope 复用 hash。其它显式
 frequency MUST fail closed。`--apply` MUST 要求相同的 lowercase
@@ -236,7 +250,8 @@ MainContractMap、Rule、Scope、Runtime、Redis Live、
 Event 或通知。月分区仍依次经过 staging 与完整发布校验。任一显式 scope 的 provider、发布或派生失败 MUST 立即
 停止该 contract 的后续 target。仅同族同月存在待补 `1m` target 时，才可在开始派生前推迟至源发布后；
 已开始的派生/发布失败 MUST NOT 按缺源错误码自动推迟或重试。额度耗尽 MUST 返回 `partial`，不得报告 `passed`。部分成功 MUST 显式返回 `partial/failed`；不得
-自动 retry，任何真实 RQData/Canonical apply 仍需一次与 exact plan hash 对应的独立授权。
+自动 retry。真实 RQData/Canonical apply MUST 属于交办任务范围并匹配 exact plan hash；
+该 hash 由执行者冻结和校验，不构成新增人工授权要求。
 
 对 physical contract `1d`，若 RQData 完整返回严格匹配已批准零 O/H/L、正 close 和正 volume
 的来源行，维护层 MAY 将其作为版本化 `PRICE_UNAVAILABLE` 质量事实计入端点覆盖，继续同批后续
@@ -255,7 +270,7 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 - **WHEN** operator 指定 `1d` 或 `1w`
 - **THEN** `1d` 计划只含 D1，`1w` 计划只含同源 D1 + W1，且跨月 ISO 周的两侧 D1 与 W1 整组验证后再发布
 
-#### Scenario: Plan changes after operator approval
+#### Scenario: Plan changes after freezing the execution plan
 
 - **WHEN** apply lock 后重新计算的 contract identity、window、target 或 hash 与 `--expected-plan-sha256` 不一致
 - **THEN** 系统在首次 provider request 和任何写入前拒绝执行

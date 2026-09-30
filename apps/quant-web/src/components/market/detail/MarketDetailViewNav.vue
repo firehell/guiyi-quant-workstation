@@ -62,7 +62,7 @@ function chooseView(view: AnalysisChoice) {
     const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
     const frequency = props.identity.view === 'newow'
       ? props.identity.frequency
-      : props.newowFrequencies.includes(restored.frequency) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
+      : (restored.frequency === '1m' || props.newowFrequencies.includes(restored.frequency)) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
     emit('select', {
       view: 'newow', symbol: props.identity.symbol, strategy: view === 'dual' ? 'trend' : view,
       ...(view === 'dual' ? { newowMode: 'dual' as const } : {}),

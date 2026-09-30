@@ -11,8 +11,10 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ### Requirement: RB historical intraday candidate preserves independent period and model identities
 
-The default-off RB candidate SHALL recognize `1m / 15m / 30m / 60m` for trend and oscillation,
-and an independent persisted dual-fusion reference model. Formal daily/weekly capability and
+The default-off RB candidate SHALL recognize `5m / 15m / 30m / 60m` for trend and oscillation,
+and an independent persisted dual-fusion reference model. Canonical 1m SHALL remain an aggregation
+source only in this version; Newow 1m routes, saved preferences and API entry SHALL fail closed,
+without deleting historical 1m assets or altering generic Market 1m readers. Formal daily/weekly capability and
 its deferred 60m gate SHALL remain unchanged. Minute main-rise SHALL be rejected before kernel
 execution; candidate recognition SHALL NOT enable Runtime, observation, notification or orders.
 
@@ -891,6 +893,11 @@ summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit �
 也不得以缓存命中绕过逐事实重验。旧 cursor、失效 token、数据修订或共同事实冲突 MUST 返回
 可分类 409，要求客户端清除相关旧结果并重建快照；不得无限自动重试或继续旧 cursor。
 
+结果容量拒绝后，若请求携带的既有 token 仍有效、namespace 一致，且本次重新验证的 proof **全部键和值**
+已被该 entry 保存并覆盖，响应 MAY 绑定该既有 token；这不表示超限结果已缓存，不更新 proof、TTL 或 LRU，
+也不得返回未原子保存的更早窗口导航。只有交集相同而存在未保存的新 proof 键时不得采用该路径；首次超限读取、
+失效 token 或缓存关闭时仍不得宣称已建立 snapshot。
+
 失败、不完整读取和未验证结果不得缓存。关闭缓存时结果、身份和错误语义 MUST 不变。reference/comparator
 共享同一个重型预算：运行并发 1、FIFO 等待队列最多 2、等待 5 秒超时；第三个等待者或超时返回429。
 排队取消必须移除 waiter 并释放名额，运行阶段在安全边界释放 permit，不新增常驻 worker。取消 MUST
@@ -1109,6 +1116,8 @@ All prices and returns SHALL remain server Decimal strings; no frontend return f
 - **WHEN** 当前请求遭遇允许重建的 409
 - **THEN** 关联旧资源与其他在途请求失效，当前请求可保留身份完成最多一次去除旧绑定的重建
 - **AND** 第二次失败不再重建，429 不得触发自动重试
+- **AND** reference 的重建若清除了已接受的主图，先重建原主图窗口，再用新主图 snapshot proof
+  重读 reference 页首；主图重建失败、无 token 或身份已切换时不得继续该 reference 重读
 - **AND** auxiliary 不得去除 snapshot proof 后直接重试；首次 409 先按原 current 或 explicit/older
   chart window 重建主图，再至多发起一次带新 snapshot proof 的 auxiliary 请求，重复 409 后显式停止
 
@@ -1192,9 +1201,104 @@ Only combinations with at least three analysis trades enter scoring. Min-max nor
 - **THEN** previous requests are cancelled, late results cannot become visible or be adopted, and transport errors do not display private exception details
 
 
+### Independent completed-Bar holding valuation v1
+
+`newow_reference_marked_curve_v1` adds `holding_curve` to the on-demand base-strategy reference and D1/W1 dual-fusion comparison. Every completed observation-eligible Bar inside the performance window exposes closed percentage points, the current same-owner Close floating return and their simple sum. This is a zero-cost non-executable page reference, independently versioned from the existing CLOSED-only summary/curve. It preserves `entry_in_window_v1`; initial holdings before the window contribute neither realized nor floating returns. UI subwindows recompute their CLOSED baseline from complete records and filter floating membership by `entry_trading_day`, without changing reference facts.
+
+CLEAR realized return is included before a same-Bar BUILD is marked at that Bar's Close. OPEN positions remain OPEN. Contract, owner or calculation boundaries interrupt valuation: a boundary emits an `INTERRUPTED` curve point with null floating/marked values at the next eligible Bar, and never realizes the interrupted mark or values an old position on the new contract. Missing endpoints/holding observations, duplicated observations or ambiguous concurrent positions suppress the payload. Source input/cutoff, window and owner lineage remain unchanged; reference records, account facts and causal research are not modified.
+
+#### Scenario: Holding values survive a temporary loss
+- **WHEN** an entry reference price is 100, intermediate completed Close is 95, and explicit CLEAR reference price is 110
+- **THEN** the marked curve shows 0, -5 and +10 percentage points while the original CLOSED return remains +10
+
+### Independent fusion hindsight High display v1
+
+`newow_dual_fusion_hindsight_peak_high_v1` adds an optional `theoretical` payload to the on-demand D1/W1 fusion comparison. It preserves the fusion entry, selected source price, pairing, physical owner, calculation segment and entry-window membership; for each complete CLOSED trade it uses the highest High from entry through exit inclusive. It uses Decimal precision 28 HALF_EVEN and simple summed percentage points, exposing per-trade ideal exit price, return, win rate and mean. OPEN/interrupted trades never become CLOSED; missing, duplicate or ineligible holding observations suppress the payload. Original ordinary CLOSED curve and records remain unchanged. This retrospective page display is non-executable and changes neither base-strategy theoretical models nor persisted reference assets/Runtime. Fusion result revision binds High as well as Close because changing High can now change the independent hindsight payload.
+
+#### Scenario: Fusion theoretical retains ordinary source exits
+- **WHEN** a fusion entry at 100 and explicit CLEAR at 110 have a holding High of 150
+- **THEN** theoretical return is +50 while the ordinary CLOSED record and marked exit remain +10
+
+### Requirement: Independent completed daily and weekly price-path illustration
+
+The read-only `decision_v2.daily_weekly_path` surface SHALL expose D1 and W1 separately under
+`guiyi_daily_weekly_path_v1`, `page_parity=true`, and `executable=false`. The illustration SHALL NOT
+modify strategy markers, scoring, ReferenceTrade, returns, or execution decisions.
+
+Each active period SHALL obtain its reference cost from exactly one unmatched trend BUILD identity
+in its own completed, observation-eligible calculation prefix. CLEAR SHALL close only its explicit
+`related_build_id`; absent or ambiguous entry identity SHALL remain unavailable. Cost SHALL carry
+its BUILD signal identity, raw Decimal price, frequency, source, bar timestamp, physical contract,
+segment, calculation segment and strategy formula versions. A current mark before entry SHALL NOT
+be drawn as a completed holding path.
+
+D1 and W1 targets SHALL independently use their own Canonical HHV10 channel with provenance;
+shared cross-period target selection and weekly status-card overrides SHALL NOT substitute for
+these two paths. Targets remain a disclosed futures adaptation, not proof of the private Niuwa batch
+price algorithm. A latest completed current close may be shared only within the same physical
+contract and owner segment. Future, foreign-owner, foreign-calculation or missing period facts
+SHALL fail closed; missing data SHALL NOT be treated as FLAT or replaced by another period.
+
+#### Scenario: Holding and observing paths stay distinct
+
+- **WHEN** the user expands the daily/weekly illustration
+- **THEN** the UI SHALL use distinct period colors on one price scale and connect available reference
+  cost to current price with a solid line, and current price to target with a dashed line
+- **AND** FLAT/CLEAR SHALL display observing state with no fabricated open cost or held solid line
+- **AND** absent cost/target/period facts SHALL remain explicitly unavailable, with source evidence
+- **AND** the horizontal axis SHALL describe completed and future illustration stages, not forecast
+  dates; absent stop-loss facts SHALL NOT produce a stop-loss line.
+
+
+### Requirement: P7 single-product historical intraday candidate scope
+
+The local historical candidate SHALL accept an explicit singleton from the current P7 queue
+(FU, MA, UR, TA, SH, V, SA, AU, AG, NI, SF, SM, CJ, JD, AP, C, LH, M, RM, PK, SR).
+Eligibility SHALL NOT imply source readiness, asset completeness, acceptance, formal release or Runtime activation.
+The actual configured product SHALL remain the only readable product. Existing black/steel batch capability v26
+SHALL retain its exact scope and wire contract; a singleton outside that batch SHALL use capability v27 and
+`single_product_intraday_candidate`, opening only 5m/15m/30m/60m and compatible D1/W1. Newow 1m SHALL remain closed.
+Malformed, duplicate, unknown or expanded singleton configurations SHALL fail closed before readers.
+
+#### Scenario: MA singleton candidate
+
+- **WHEN** the local preview explicitly configures only MA
+- **THEN** capability v27 lists only ma, rejects other products and Newow 1m, and leaves formal minute access closed
+
+
+### Requirement: Released historical intraday scope
+
+Formal capability v28 uses `daily_weekly_intraday_history`, retains all 60 existing D1/W1 products,
+and opens only `5m/15m/30m/60m × trend/oscillation/dual` for the following 26 products:
+`ag ap au c cf cj hc i j jd jm lh m ma oi pk rb rm sa sf sh sm sr ta ur v`.
+The exact `intraday_as_of` is `2026-09-24T07:00:00.000001Z`. Web SHALL bind minute requests to
+this timestamp and display the historical cutoff in Beijing time. Newow 1m and minute main-rise
+remain closed. Products outside this set retain their existing daily/weekly scope.
+
+The minute reference section SHALL read the existing historical materializations in
+`newow_intraday_pilot_20260927` through the native persisted reader using a schema-scoped session
+factory. Every persisted query retains its bounded repeatable-read read-only transaction and the
+fresh Canonical source proof; D1/W1, public reference endpoints and workers do not change schemas.
+The released minute service uses its own bounded 512 MiB / 256 MiB-entry snapshot cache; the
+existing D1/W1 and resolver cache remains at 128 MiB / 32 MiB-entry.
+This release does not activate streams, install a reference worker, advance the cutoff, change
+formula/profile/reference-model identities or introduce a production writer. Source drift still
+fails closed and requires an explicit native rebuild; a past candidate closure is not current source proof.
+
+#### Scenario: Released minutes are fixed historical observations
+- **WHEN** a released product requests a minute chart/reference without an as-of
+- **THEN** the server binds the exact historical cutoff and the Web labels it as historical reference
+- **AND** an explicit later as-of is rejected before reading, and 1m, unclosed products and minute main-rise stay closed
+
+#### Scenario: Source drift is not hidden by release admission
+- **WHEN** a saved historical minute source hash no longer matches fresh MDS evidence
+- **THEN** the persisted reader rejects the result using its existing source-identity error
+- **AND** the consumer does not recalculate, choose another schema, truncate the window or activate a stream as fallback
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
-The product identity and wire frequency recognize 1m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
+The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
 
 #### Frozen intraday reference input evidence
 

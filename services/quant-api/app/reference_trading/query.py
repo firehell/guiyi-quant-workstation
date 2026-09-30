@@ -7,13 +7,14 @@ imported here.  A request owns one fresh repeatable-read transaction.
 from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections.abc import Iterator
 from binascii import Error as Base64Error
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 import json
 
-from sqlalchemy import and_, false, func, or_, select, tuple_
+from sqlalchemy import and_, false, func, or_, select, text, tuple_
 from sqlalchemy.orm import Session, aliased
 
 from app.db.readonly import readonly_transaction
@@ -470,6 +471,12 @@ class HistoricalReferenceQuery:
         exits = {item.exit_action_id for item in trades if item.exit_action_id is not None}
         actions = []
         keys = sorted(requested | exits)
+        if len(keys) > 1000 and session.get_bind().dialect.name == "postgresql":
+            # Repeated large IN queries can switch to a generic prepared plan
+            # which scans the entire stream instead of the action-key index.
+            # The caller's read-only transaction always rolls back, so this
+            # choice cannot escape to another request on the pooled connection.
+            session.execute(text("SET LOCAL plan_cache_mode = force_custom_plan"))
         for start in range(0, len(keys), 1000):
             actions.extend(session.execute(select(ReferenceActionRow).where(
                 ReferenceActionRow.stream_id == snapshot.stream_id,
@@ -521,27 +528,27 @@ class HistoricalReferenceQuery:
         if not ids:
             return {}
         row = ReferenceTradeRow
-        conditions = [
-            row.stream_id == snapshot.stream_id,
-            row.revision_id == snapshot.revision_id,
+        def eligible(candidate):
+            conditions = [
+                candidate.stream_id == snapshot.stream_id,
+                candidate.revision_id == snapshot.revision_id,
+                candidate.valid_from_seq <= snapshot.seq,
+            ]
+            if cutoff is not None:
+                conditions.append(candidate.effective_bar_end <= cutoff)
+            return conditions
+
+        newer = aliased(ReferenceTradeRow)
+        latest_seq = select(newer.valid_from_seq).where(
+            *eligible(newer),
+            newer.stream_id == row.stream_id,
+            newer.revision_id == row.revision_id,
+            newer.trade_id == row.trade_id,
+        ).order_by(newer.valid_from_seq.desc()).limit(1).correlate(row).scalar_subquery()
+        versions = session.execute(select(row).where(
+            *eligible(row),
             row.trade_id.in_(ids),
-            row.valid_from_seq <= snapshot.seq,
-        ]
-        if cutoff is not None:
-            conditions.append(row.effective_bar_end <= cutoff)
-        ranked = select(
-            row.trade_id.label("trade_id"), row.valid_from_seq.label("valid_from_seq"),
-            func.row_number().over(
-                partition_by=row.trade_id, order_by=row.valid_from_seq.desc(),
-            ).label("rank"),
-        ).where(*conditions).subquery()
-        versions = session.execute(select(row).join(ranked, and_(
-            ranked.c.trade_id == row.trade_id,
-            ranked.c.valid_from_seq == row.valid_from_seq,
-            ranked.c.rank == 1,
-        )).where(
-            row.stream_id == snapshot.stream_id,
-            row.revision_id == snapshot.revision_id,
+            row.valid_from_seq == latest_seq,
         )).scalars().all()
         details = {
             item.trade_id: {"interrupted_at": item.effective_bar_end.isoformat()}
@@ -559,21 +566,15 @@ class HistoricalReferenceQuery:
         if cutoff is not None:
             eligible.append(mark.bar_end <= cutoff)
         latest = select(
-            mark.trade_id.label("trade_id"), mark.batch_seq.label("batch_seq"),
-            mark.bar_end.label("bar_end"),
+            mark,
             func.row_number().over(
                 partition_by=mark.trade_id,
                 order_by=(mark.bar_end.desc(), mark.batch_seq.desc()),
             ).label("rank"),
         ).where(*eligible).subquery()
-        marks = session.execute(select(mark).join(latest, and_(
-            latest.c.trade_id == mark.trade_id,
-            latest.c.batch_seq == mark.batch_seq,
-            latest.c.bar_end == mark.bar_end,
+        latest_mark = aliased(ReferenceMarkRow, latest)
+        marks = session.execute(select(latest_mark).where(
             latest.c.rank == 1,
-        )).where(
-            mark.stream_id == snapshot.stream_id,
-            mark.revision_id == snapshot.revision_id,
         )).scalars().all()
         for item in marks:
             if item.trade_id in details:
@@ -583,6 +584,87 @@ class HistoricalReferenceQuery:
                     "prior_mark_change_pct": str(item.reference_return),
                 })
         return details
+
+    def historical_actions(
+        self, stream_id: str, *, snapshot_token: str, since: date, through: date,
+        cutoff: datetime | None, input_count: int,
+        check_cancelled=None,
+    ) -> Iterator[dict[str, object]]:
+        """Stream complete saved actions for historical construction, not Web.
+
+        The exact snapshot's verified input count bounds two strategy actions per
+        input bar. Presentation envelopes remain bounded individually; the Web
+        collector's 200k ceiling is unchanged. Closing the iterator releases its
+        read-only transaction even when the consumer rejects a decoded action.
+        """
+        self._window(since, through, cutoff)
+        if type(input_count) is not int or input_count <= 0:
+            raise QueryConflict("QUERY_INVALID")
+        saved = _decode(snapshot_token, kind="snapshot")
+        saved_since, saved_through = _day(saved.get("since")), _day(saved.get("through"))
+        if through > saved_through or cutoff != _instant(saved.get("cutoff")):
+            raise QueryConflict("SNAPSHOT_CONFLICT")
+        count = 0
+
+        def check():
+            if check_cancelled is not None:
+                check_cancelled()
+
+        check()
+        with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
+            row = self._resolve(session, stream_id)
+            if row.recording_mode != "historical_replay":
+                raise QueryConflict("QUERY_INVALID")
+            snapshot, _, _ = self._snapshot(
+                session, row, since=saved_since, through=saved_through,
+                cutoff=cutoff, encoded=snapshot_token,
+            )
+            manifest = session.scalar(select(ReferenceBatch.dependency_manifest).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == snapshot.revision_id,
+                ReferenceBatch.seq <= snapshot.seq,
+                ReferenceBatch.kind.in_(("seed_seal", "calculation")),
+            ).order_by(ReferenceBatch.seq.desc()).limit(1))
+            if (
+                not isinstance(manifest, dict)
+                or type(manifest.get("input_count")) is not int
+                or manifest["input_count"] != input_count
+            ):
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            self._assert_presentations(session, snapshot)
+            batches = session.execute(select(ReferenceBatch.source_evidence).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == snapshot.revision_id,
+                ReferenceBatch.kind == "calculation", ReferenceBatch.seq <= snapshot.seq,
+                ReferenceBatch.source_evidence["presentation_v1"]["last_day"].as_string() >= since.isoformat(),
+                ReferenceBatch.source_evidence["presentation_v1"]["first_day"].as_string() <= through.isoformat(),
+            ).order_by(ReferenceBatch.seq).execution_options(yield_per=1)).scalars()
+            try:
+                for evidence in batches:
+                    check()
+                    for index, point in enumerate(require_envelope(
+                        evidence.get("presentation_v1"),
+                    )):
+                        if index % 128 == 0:
+                            check()
+                        if point.get("kind") != "action":
+                            continue
+                        value = point.get("value")
+                        if not isinstance(value, dict):
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        at = _instant(value.get("bar_end"))
+                        day = _day(point.get("trading_day"))
+                        if at is None:
+                            raise QueryConflict("PRESENTATION_CORRUPT")
+                        if not since <= day <= through or cutoff is not None and at > cutoff:
+                            continue
+                        count += 1
+                        if count > 2 * input_count:
+                            raise QueryConflict("REFERENCE_BUDGET_EXCEEDED")
+                        yield point
+                check()
+            finally:
+                batches.close()
 
     def presentation_facts(
         self, stream_id: str, *, snapshot_token: str, since: date, through: date,

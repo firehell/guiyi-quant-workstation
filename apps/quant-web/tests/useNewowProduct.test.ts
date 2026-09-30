@@ -156,15 +156,16 @@ test('older windows append under the same snapshot after page exhaustion and pre
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
   await nextTick()
-  const first = normalizedChartPage(pending[0]!.request, '2026-08-14', 'within') as NewowProductSectionResponse<'chart'>
+  const first = withChartPrice(normalizedChartPage(pending[0]!.request, '2026-08-14', 'within'), '140') as NewowProductSectionResponse<'chart'>
   pending[0]!.resolve(first); await flush()
   assert.equal(state.currentChartWindow?.value, true)
   const within = state.loadNextChartPage()
   assert.equal((pending[1]!.request as any).chartBefore, 'within')
-  const last = normalizedChartPage(pending[1]!.request, '2026-08-13', null) as NewowProductSectionResponse<'chart'>
+  const last = withChartPrice(normalizedChartPage(pending[1]!.request, '2026-08-13', null), '130') as NewowProductSectionResponse<'chart'>
   pending[1]!.resolve({ ...last, value: { ...last.value!, next_older_window: 'older-window' } } as any)
   await within
   assert.equal(state.currentChartWindow.value, true, 'same-window pagination keeps current provenance')
+  assert.deepEqual((state.sections.chart.data.value as any).value.price_reference, first.value!.price_reference)
   const reference = state.loadReference()
   pending[2]!.resolve(normalizedReference(pending[2]!.request)); await reference
   const referenceBefore = state.sections.reference.data.value
@@ -173,13 +174,14 @@ test('older windows append under the same snapshot after page exhaustion and pre
   assert.equal((pending[3]!.request as any).chartOlderWindow, 'older-window')
   assert.equal((pending[3]!.request as any).from, undefined)
   assert.equal((pending[3]!.request as any).chartBefore, undefined)
-  const previous = normalizedChartPage(pending[3]!.request, '2026-07-31', null) as NewowProductSectionResponse<'chart'>
+  const previous = withChartPrice(normalizedChartPage(pending[3]!.request, '2026-07-31', null), '110') as NewowProductSectionResponse<'chart'>
   pending[3]!.resolve({ ...previous, meta: { ...previous.meta, input_content_sha256: 'b'.repeat(64) }, value: { ...previous.value!, chart_from: '2026-07-01', chart_through: '2026-07-31', page_identity: 'c'.repeat(64), next_older_window: null } } as any)
   await older
   assert.equal(state.currentChartWindow.value, false, 'older navigation suppresses a current claim')
   const chart = state.sections.chart.data.value as NewowProductSectionResponse<'chart'>
   assert.deepEqual(chart.value!.bars.map(bar => bar.trading_day), ['2026-07-31', '2026-08-13', '2026-08-14'])
   assert.equal(state.sections.reference.data.value, referenceBefore)
+  assert.deepEqual(chart.value!.price_reference, first.value!.price_reference)
   state.dispose()
 })
 
@@ -868,7 +870,7 @@ test('an auxiliary 409 rebuilds the accepted explicit chart window, not the defa
   state.dispose()
 })
 
-test('a rejected reference cursor clears every old-token section before one unbound page-one rebuild', async () => {
+test('a rejected reference cursor restores chart proof before rebuilding page one', async () => {
   const calls: NewowProductRequest[] = []
   let referenceCalls = 0
   let state!: ReturnType<typeof useNewowProduct>
@@ -876,12 +878,12 @@ test('a rejected reference cursor clears every old-token section before one unbo
     identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF),
     fetchSection: async (request) => {
       calls.push(request)
-      if (request.section === 'chart') return normalizedChart(request, { token: 'shared-token' })
+      if (request.section === 'chart') return normalizedChart(request, { token: referenceCalls < 2 ? 'shared-token' : 'compatible-b' })
       if (request.section === 'explanation') return normalizedStatus(request, 'shared-token')
       referenceCalls += 1
       if (referenceCalls === 1) return normalizedReference(request, { token: 'shared-token', nextBefore: 'old-cursor' })
       if (referenceCalls === 2) throw new NewowProductRequestError('NEWOW_CURSOR_GENERATION_CONFLICT', 'conflict')
-      assert.equal(state.sections.chart.data.value, null)
+      assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'compatible-b')
       assert.equal(state.sections.reference.data.value, null)
       assert.equal(state.sections.explanation.data.value, null)
       return normalizedReference(request, { token: 'compatible-b', nextBefore: null })
@@ -896,14 +898,127 @@ test('a rejected reference cursor clears every old-token section before one unbo
   assert.equal(referenceRequests.length, 3)
   assert.equal(referenceRequests[1]!.section === 'reference' && referenceRequests[1]!.historyBefore, 'old-cursor')
   assert.equal(referenceRequests[2]!.section === 'reference' && referenceRequests[2]!.historyBefore, undefined)
-  assert.equal(referenceRequests[2]!.snapshotToken, undefined)
-  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(referenceRequests[2]!.snapshotToken, 'compatible-b')
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'compatible-b')
   assert.equal(state.sections.explanation.data.value, null)
   assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'compatible-b')
   state.dispose()
 })
 
-test('a cursor 409 falls back to the retained reference token and clears a late same-token explanation', async () => {
+test('reference 409 preserves current chart provenance and first-page budgets', async () => {
+  const calls: NewowProductRequest[] = []
+  let charts = 0
+  let references = 0
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+    calls.push(request)
+    if (request.section === 'chart') return normalizedChart(request, { token: ++charts === 1 ? 'old-token' : 'new-token' })
+    if (++references === 1) throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+    return normalizedReference(request, { token: 'new-token', nextBefore: null })
+  } })
+  await flush()
+  assert.equal(state.currentChartWindow.value, true)
+  await state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15', historyLimit: 19 })
+  const rebuilt = calls.filter(request => request.section === 'chart').at(-1)!
+  assert.equal(rebuilt.from, undefined, 'current viewport must be resolved as current again')
+  assert.equal(rebuilt.through, undefined)
+  assert.equal(rebuilt.chartLimit, 500)
+  const retried = calls.filter(request => request.section === 'reference').at(-1)!
+  assert.equal(retried.snapshotToken, 'new-token')
+  assert.equal(retried.section === 'reference' && retried.historyLimit, 19)
+  assert.equal(retried.section === 'reference' && retried.performanceSince, '2025-01-01')
+  assert.equal(state.currentChartWindow.value, true)
+  assert.equal(state.historicalChartWindow.value, false)
+  state.dispose()
+})
+
+test('reference 409 preserves the exact explicit historical chart window and limit', async () => {
+  const calls: NewowProductRequest[] = []
+  let references = 0
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+    calls.push(request)
+    if (request.section === 'chart') return normalizedChart(request, { token: references === 0 ? 'old-token' : 'new-token' })
+    if (++references === 1) throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+    return normalizedReference(request, { token: 'new-token', nextBefore: null })
+  } })
+  await flush()
+  const window = { from: '2026-08-14', through: '2026-08-15', chartLimit: 37 }
+  await state.loadChart(window)
+  await state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  const charts = calls.filter(request => request.section === 'chart')
+  assert.deepEqual(charts.slice(-2).map(request => [request.from, request.through, request.chartLimit]), [[window.from, window.through, 37], [window.from, window.through, 37]])
+  assert.equal(state.currentChartWindow.value, false)
+  assert.equal(state.historicalChartWindow.value, true)
+  assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'new-token')
+  state.dispose()
+})
+
+test('a second reference 409 stops without a third reference or another chart rebuild', async () => {
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+    calls.push(request)
+    if (request.section === 'chart') return normalizedChart(request, { token: calls.length === 1 ? 'old-token' : 'new-token' })
+    throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+  } })
+  await flush()
+  await state.loadReference()
+  assert.equal(calls.filter(request => request.section === 'reference').length, 2)
+  assert.equal(calls.filter(request => request.section === 'chart').length, 2)
+  assert.equal(state.sections.reference.state.value, 'input_conflict')
+  assert.equal(state.sections.reference.data.value, null)
+  state.dispose()
+})
+
+test('identity switch aborts reference chart recovery and ignores its late old-identity proof', async () => {
+  const pending: Pending[] = []
+  const identity = ref<MarketDetailIdentity | null>(newowIdentity('trend', '1d'))
+  const state = useNewowProduct({ identity, now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'old-token' }))
+  await flush()
+  const reference = state.loadReference()
+  const oldReference = pending[1]!
+  oldReference.reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
+  await flush()
+  const rebuilding = pending[2]!
+  assert.equal(rebuilding.request.section, 'chart')
+  identity.value = newowIdentity('oscillation', '60m')
+  await flush()
+  assert.equal(oldReference.signal.aborted, true)
+  assert.equal(rebuilding.signal.aborted, true)
+  const fresh = pending[3]!
+  assert.equal(fresh.request.identity.strategy, 'oscillation')
+  rebuilding.resolve(normalizedChart(rebuilding.request, { token: 'late-old-token' }))
+  await reference
+  assert.equal(pending.length, 4, 'cancelled recovery must not dispatch a reference retry')
+  assert.equal(state.sections.chart.data.value, null)
+  fresh.resolve(normalizedChart(fresh.request, { token: 'fresh-token' }))
+  await flush()
+  assert.equal(state.sections.chart.data.value?.meta.identity.strategy, 'oscillation')
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'fresh-token')
+  assert.equal(state.sections.reference.data.value, null)
+  state.dispose()
+})
+
+for (const chartError of ['NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'NEWOW_API_UNAVAILABLE']) {
+  test(`reference recovery stops after bounded chart failure ${chartError}`, async () => {
+    const calls: NewowProductRequest[] = []
+    let charts = 0
+    const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+      calls.push(request)
+      if (request.section === 'chart' && ++charts === 1) return normalizedChart(request, { token: 'old-token' })
+      throw new NewowProductRequestError(request.section === 'chart' ? chartError : 'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+    } })
+    await flush()
+    await state.loadReference()
+    assert.equal(calls.filter(request => request.section === 'reference').length, 1, 'failed chart proof cannot dispatch reference page one')
+    assert.equal(charts, chartError === 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' ? 3 : 2, 'chart has its own single rebuild, never an unbounded loop')
+    assert.equal(state.sections.reference.state.value, 'input_conflict')
+    assert.equal(state.sections.chart.data.value, null)
+    assert.equal(state.sections.reference.data.value, null)
+    state.dispose()
+  })
+}
+
+test('a cursor 409 rebuilds chart proof from the retained reference generation and clears a late same-token explanation', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
   await nextTick()
@@ -928,12 +1043,16 @@ test('a cursor 409 falls back to the retained reference token and clears a late 
   pending[2]!.reject(new NewowProductRequestError('NEWOW_CURSOR_GENERATION_CONFLICT', 'conflict'))
   await flush()
   assert.equal(pending.length, 5)
-  assert.equal(pending[4]!.request.section === 'reference' && pending[4]!.request.historyBefore, undefined)
+  assert.equal(pending[4]!.request.section, 'chart')
   assert.equal(pending[4]!.request.snapshotToken, undefined)
   assert.equal(state.sections.reference.data.value, null)
   assert.equal(state.sections.explanation.data.value, null)
 
-  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'new-token', nextBefore: null }))
+  pending[4]!.resolve(normalizedChart(pending[4]!.request, { token: 'new-token' }))
+  await flush()
+  assert.equal(pending[5]!.request.section === 'reference' && pending[5]!.request.historyBefore, undefined)
+  assert.equal(pending[5]!.request.snapshotToken, 'new-token')
+  pending[5]!.resolve(normalizedReference(pending[5]!.request, { token: 'new-token', nextBefore: null }))
   await page
   assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'new-token')
   assert.equal(state.sections.explanation.data.value, null)
@@ -969,7 +1088,11 @@ test('a cursor 409 aborts a pending old-token explanation before its late respon
   await explanation
   assert.equal(state.sections.explanation.data.value, null)
 
-  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'new-token', nextBefore: null }))
+  pending[4]!.resolve(normalizedChart(pending[4]!.request, { token: 'new-token' }))
+  await flush()
+  assert.equal(pending[5]!.request.section === 'reference' && pending[5]!.request.historyBefore, undefined)
+  assert.equal(pending[5]!.request.snapshotToken, 'new-token')
+  pending[5]!.resolve(normalizedReference(pending[5]!.request, { token: 'new-token', nextBefore: null }))
   await page
   assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'new-token')
   assert.equal(state.sections.explanation.data.value, null)
@@ -994,14 +1117,17 @@ test('a rejected reference token aborts a tokenless chart page registered from i
   await flush()
   assert.equal(pending.length, 4)
   assert.equal(pending[2]!.signal.aborted, true)
-  assert.equal(pending[3]!.request.section, 'reference')
+  assert.equal(pending[3]!.request.section, 'chart')
   assert.equal(pending[3]!.request.snapshotToken, undefined)
 
-  pending[3]!.resolve(normalizedReference(pending[3]!.request, { token: 'new-token', nextBefore: null }))
+  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'new-token' }))
+  await flush()
+  assert.equal(pending[4]!.request.snapshotToken, 'new-token')
+  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'new-token', nextBefore: null }))
   await reference
   pending[2]!.resolve(normalizedChartPage(pending[2]!.request, '2026-08-13', null))
   await chartPage
-  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'new-token', 'late old page cannot erase the rebuilt chart')
   assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'new-token')
   state.dispose()
 })
@@ -1408,7 +1534,7 @@ test('rejected snapshot generation invalidates validated auxiliary reuse', async
     now: () => new Date(AS_OF),
     fetchSection: async (request) => {
       calls.push(request)
-      if (request.section === 'chart') return normalizedChart(request, { token: 'old-token' })
+      if (request.section === 'chart') return normalizedChart(request, { token: referenceAttempts === 0 ? 'old-token' : 'new-token' })
       if (request.section === 'auxiliary') return normalizedAuxiliary(request, request.snapshotToken ?? null)
       referenceAttempts += 1
       if (referenceAttempts === 1) throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
@@ -1456,8 +1582,12 @@ test('tokenless rejected generation clears loaded auxiliary and aborts its in-fl
   assert.equal(state.sections.auxiliary.state.value, 'not_requested')
 
   pending[2]!.reject(new DOMException('aborted', 'AbortError'))
-  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: null }))
+  assert.equal(pending[4]!.request.section, 'chart')
+  pending[4]!.resolve(normalizedChart(pending[4]!.request, { token: null }))
   await Promise.all([replacement, reference])
+  assert.equal(pending.length, 5, 'a rebuilt chart without a token must not retry reference')
+  assert.equal(state.sections.reference.state.value, 'input_conflict')
+  assert.equal(state.sections.reference.data.value, null)
   state.dispose()
 })
 
@@ -1645,6 +1775,10 @@ for (const completion of ['resolve', 'reject'] as const) {
     assert.equal(freshRequest.signal.aborted, true)
     resolveTestSection(freshRequest)
     await fresh
+    assert.equal(pending.at(-1)!.request.section, 'chart')
+    resolveTestSection(pending.at(-1)!)
+    await flush()
+    assert.equal(pending.at(-1)!.request.section, 'reference')
     resolveTestSection(pending.at(-1)!)
     await reference
     const latest = state.loadExplanation()
@@ -1909,3 +2043,16 @@ test('explanation summary compatibility requires the entire accepted chart gener
   assert.equal(state.explanationChartCompatible.value, false)
   state.dispose()
 })
+
+function withChartPrice(response: NewowProductSectionResponse, raw: string): NewowProductSectionResponse<'chart'> {
+  if (response.section !== 'chart' || response.value === null) throw new Error('chart required')
+  const anchor = response.value.bars.at(-1)!
+  const value = { raw, display: raw + '.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } }
+  return { ...response, value: { ...response.value, price_reference: {
+    surface: 'chart_legend', frequency: response.meta.identity.frequency, as_of: response.meta.as_of,
+    anchor_bar_end: anchor.bar_end, physical_contract: anchor.physical_contract, segment_id: anchor.segment_id,
+    calculation_segment_id: anchor.calculation_segment_id, input_sha256: response.meta.input_content_sha256,
+    formula_version: 'newow_chart_legend_hhv_llv10_page_v1', adapter_version: 'newow_chart_price_projection_v1',
+    target: value, absorb: value,
+  } } } as NewowProductSectionResponse<'chart'>
+}

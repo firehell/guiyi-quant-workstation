@@ -18,6 +18,7 @@ from .product_contracts import (
 from .reference_trades import ReferenceTradeProjector
 from .product_identity import REFERENCE_MODEL_VERSION
 from .reference_statistics import PerformanceWindow, summarize_reference
+from .holding_reference import holding_reference_curve, fusion_theoretical_reference
 
 MODEL_VERSION = "newow_dual_fusion_reference_zero_cost_v1"
 
@@ -34,7 +35,7 @@ def build_fusion_stream_identity(product: str, frequency: str):
     from .product_identity import futures_adaptation_version
     from ..reference_trading import StreamIdentity
     selected = ProductFrequency(frequency)
-    if selected not in INTRADAY_PRODUCT_FREQUENCIES:
+    if selected not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE):
         raise ValueError("NEWOW_FUSION_FREQUENCY_UNSUPPORTED")
     trend = build_product_identity(product, ProductStrategy.TREND, selected)
     oscillation = build_product_identity(product, ProductStrategy.OSCILLATION, selected)
@@ -279,7 +280,7 @@ def fusion_reference_comparison(
         "input": [
             [frame.bar.source_bar_sha256, frame.bar.calculation_segment_id,
              frame.bar.bar.bar_end.isoformat(), frame.bar.bar.physical_contract,
-             frame.bar.bar.segment_id, str(frame.bar.bar.close), frame.bar.bar.observation_eligible]
+             frame.bar.bar.segment_id, str(frame.bar.bar.close), str(frame.bar.bar.high), frame.bar.bar.observation_eligible]
             for frame in trend.frames if frame.bar.bar.bar_end <= window.cutoff
         ],
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -288,6 +289,8 @@ def fusion_reference_comparison(
         "snapshot_schema": "newow_fusion_reference_snapshot_v2",
         "reference_revision": revision,
         "summary": groups[-1],
+        "holding_curve": holding_reference_curve(rows, tuple(frame.bar for frame in trend.frames), window),
+        "theoretical": fusion_theoretical_reference(rows, tuple(frame.bar for frame in trend.frames), window),
         "curve": sorted(closed, key=lambda row: (row["exit_bar_end"], row["reference_trade_id"])),
         "source_profiles": [trend.identity.profile_id, oscillation.identity.profile_id],
         "product": trend.identity.product,

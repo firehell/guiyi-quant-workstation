@@ -19,11 +19,11 @@ from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainM
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import InputQualityPolicy
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from app.reference_trading.presentation import PresentationUnavailable
 from app.reference_trading.query import QueryConflict
 
-from app.db.session import SessionLocal, get_db
+from app.db.session import SessionLocal, get_db, engine
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import _load_status, public_after_market_status
 from app.market_data.composition import (
@@ -44,6 +44,8 @@ from app.market_data.newow.weekly_snapshot import (
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
     AU_PERIOD_PREVIEW_FREQUENCIES,
+    INTRADAY_BATCH_PREVIEW_SYMBOLS,
+    INTRADAY_SINGLE_PREVIEW_SYMBOLS,
     AU_PERIOD_PREVIEW_SCHEMA_VERSION,
     AU_PERIOD_PREVIEW_STAGE,
     CAPABILITY_SCHEMA_VERSION,
@@ -52,7 +54,6 @@ from app.market_data.newow.product_release import (
     CANDIDATE_DEFERRED_FREQUENCIES,
     CANDIDATE_OPEN_FREQUENCIES,
     CANDIDATE_RELEASE_STAGE,
-    DEFERRED_FREQUENCIES,
     DEFERRED_SECTIONS,
     HOURLY_PRODUCT_PREVIEW_DEFERRED,
     HOURLY_PRODUCT_PREVIEW_FREQUENCIES,
@@ -63,6 +64,11 @@ from app.market_data.newow.product_release import (
     PD_PT_HOURLY_PREVIEW_STAGE,
     PD_PT_HOURLY_PREVIEW_SYMBOLS,
     OPEN_FREQUENCIES,
+    OPEN_INTRADAY_PRODUCTS,
+    INTRADAY_HISTORY_AS_OF,
+    INTRADAY_HISTORY_SCHEMA,
+    INTRADAY_HISTORY_FREQUENCIES,
+    released_intraday_as_of,
     OPEN_WEEKLY_PRODUCTS,
     OPEN_SECTIONS,
     RELEASE_STAGE,
@@ -134,6 +140,7 @@ _CUP_MARKERS = frozenset(
     }
 )
 _PRODUCT_CACHE = SnapshotCache()
+_INTRADAY_HISTORY_CACHE = SnapshotCache(max_bytes=512 * 1024 * 1024, max_entry_bytes=256 * 1024 * 1024)
 _PRODUCT_GATE = HeavyResourceGate()
 # Saved minute history has independent bounded admission; it must not starve
 # current chart comparisons and D1/W1 background calculations.
@@ -237,10 +244,19 @@ def _input_quality_policy(
 
 def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:
     selected = ProductFrequency(frequency)
-    intraday = getattr(request.state, "intraday_preview_product", None)
+    intraday = getattr(request.state, "intraday_preview_products", None)
     if intraday is not None:
-        if product != intraday or intraday != "rb":
+        if product not in (intraday & (INTRADAY_BATCH_PREVIEW_SYMBOLS | INTRADAY_SINGLE_PREVIEW_SYMBOLS)):
             raise HTTPException(status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"})
+        if selected is ProductFrequency.MINUTE:
+            raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
+        return
+    if (getattr(request.state, "candidate_preview_as_of", None) is None
+        and not getattr(request.state, "au_period_preview", False)
+        and _hourly_preview_products(request) is None
+        and selected in INTRADAY_HISTORY_FREQUENCIES):
+        if product not in OPEN_INTRADAY_PRODUCTS:
+            raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
         return
     hourly = _hourly_preview_products(request)
     if (
@@ -252,6 +268,10 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
             status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}
         )
     if getattr(request.state, "au_period_preview", False):
+        if selected not in AU_PERIOD_PREVIEW_FREQUENCIES:
+            raise HTTPException(
+                status_code=409, detail={"code": "NEWOW_FREQUENCY_NOT_OPEN"}
+            )
         return
     require_open_frequency(
         selected,
@@ -271,10 +291,17 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
 )
 def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse:
     """Return the single public scope used by clients for this staged release."""
-    if getattr(request.state, "intraday_preview_product", None) == "rb":
+    if getattr(request.state, "intraday_preview_products", None) is not None:
+        batch = getattr(request.state, "intraday_preview_batch", False)
+        single = batch and not request.state.intraday_preview_products <= INTRADAY_BATCH_PREVIEW_SYMBOLS
         return NewowProductCapabilitiesResponse(
-            schema_version="newow_product_capabilities_v23", release_stage="rb_intraday_candidate",
-            open_frequencies=["1m", "15m", "30m", "60m", "1d", "1w"],
+            schema_version=("newow_product_capabilities_v27" if single else "newow_product_capabilities_v26" if batch
+                            else "newow_product_capabilities_v25"),
+            release_stage=("single_product_intraday_candidate" if single else "black_steel_intraday_candidate" if batch
+                           else "rb_intraday_candidate"),
+            intraday_products=(sorted(request.state.intraday_preview_products)
+                               if batch else None),
+            open_frequencies=["5m", "15m", "30m", "60m", "1d", "1w"],
             open_sections=list(OPEN_SECTIONS), deferred_frequencies=[],
             deferred_sections=[DeferredSectionOut(section=section, reason_code=reason)
                                for section, reason in DEFERRED_SECTIONS],
@@ -287,12 +314,12 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
     frequencies = (
         AU_PERIOD_PREVIEW_FREQUENCIES if au_preview else
         HOURLY_PRODUCT_PREVIEW_FREQUENCIES if hourly_preview else
-        CANDIDATE_OPEN_FREQUENCIES if candidate else OPEN_FREQUENCIES
+        CANDIDATE_OPEN_FREQUENCIES if candidate else (*INTRADAY_HISTORY_FREQUENCIES, *OPEN_FREQUENCIES)
     )
     deferred = (
         () if au_preview else
         HOURLY_PRODUCT_PREVIEW_DEFERRED if hourly_preview else
-        CANDIDATE_DEFERRED_FREQUENCIES if candidate else DEFERRED_FREQUENCIES
+        CANDIDATE_DEFERRED_FREQUENCIES if candidate else ()
     )
     return NewowProductCapabilitiesResponse(
         schema_version=(
@@ -308,6 +335,8 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
             CANDIDATE_RELEASE_STAGE if candidate else RELEASE_STAGE
         ),
         open_frequencies=[item.value for item in frequencies],
+        intraday_products=list(OPEN_INTRADAY_PRODUCTS) if not candidate else None,
+        intraday_as_of=INTRADAY_HISTORY_AS_OF if not candidate else None,
         weekly_products=(
             list(CANDIDATE_WEEKLY_PRODUCTS)
             if candidate and not au_preview and not hourly_preview
@@ -361,6 +390,7 @@ def _build_product_service(
     session: Session,
     cancelled: Callable[[], bool] | None = None,
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
+    *, historical_intraday: bool = False,
 ) -> NewowProductService:
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
@@ -380,14 +410,17 @@ def _build_product_service(
     mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
     if mode not in {"legacy", "persisted"}:
         raise ValueError("REFERENCE_READER_MODE_INVALID")
-    if mode == "persisted":
+    if mode == "persisted" or historical_intraday:
         from app.reference_trading.persisted_newow import PersistedNewowReference
-        persisted_reference = PersistedNewowReference(SessionLocal).section
+        factory = (sessionmaker(bind=engine.execution_options(
+            schema_translate_map={None: INTRADAY_HISTORY_SCHEMA}), autoflush=False)
+            if historical_intraday else SessionLocal)
+        persisted_reference = PersistedNewowReference(factory).section
     else:
         persisted_reference = None
     return NewowProductService(
         reader_factory,
-        cache=_PRODUCT_CACHE,
+        cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,
         persisted_reference_gate=_PERSISTED_REFERENCE_GATE,
         inflight=_PRODUCT_INFLIGHT,
@@ -489,7 +522,7 @@ def newow_historical_snapshot(
     request: Request,
     product: str = Query(...),
     strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
-    frequency: Literal["1w", "1d", "60m", "1m", "15m", "30m"] = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"] = Query(...),
     session: Session = Depends(get_db),
 ) -> NewowHistoricalSnapshotResponse:
     unknown = set(request.query_params) - _HISTORICAL_QUERY_FIELDS
@@ -511,10 +544,12 @@ def newow_historical_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if (getattr(request.state, "intraday_preview_product", None) is not None
-            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
-            raise ValueError("NEWOW_INVALID_QUERY")
+        if frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise":
+            raise ValueError("NEWOW_INVALID_QUERY" if getattr(request.state, "intraday_preview_products", None) is not None else "NEWOW_FREQUENCY_NOT_OPEN")
         policy = _input_quality_policy(request, product, frequency)
+        if (getattr(request.state, "candidate_preview_as_of", None) is None
+            and ProductFrequency(frequency) in INTRADAY_HISTORY_FREQUENCIES):
+            now = INTRADAY_HISTORY_AS_OF
         resolver = (
             _build_historical_resolver(session, cancelled, lambda: now)
             if policy is InputQualityPolicy.V1
@@ -611,9 +646,8 @@ def newow_weekly_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if (getattr(request.state, "intraday_preview_product", None) is not None
-            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
-            raise ValueError("NEWOW_INVALID_QUERY")
+        if frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise":
+            raise ValueError("NEWOW_INVALID_QUERY" if getattr(request.state, "intraday_preview_products", None) is not None else "NEWOW_FREQUENCY_NOT_OPEN")
         policy = _input_quality_policy(request, product, frequency)
         resolver = (
             _build_weekly_resolver(session, cancelled, lambda: now)
@@ -645,7 +679,7 @@ def newow_strategy_detail(
     request: Request,
     product: str = Query(...),
     strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
-    frequency: Literal["1w", "1d", "60m", "1m", "15m", "30m"] = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"] = Query(...),
     series_kind: Literal["actual_dominant"] = Query("actual_dominant"),
     section: Literal[
         "chart", "auxiliary", "reference", "explanation", "comparator"
@@ -686,9 +720,8 @@ def newow_strategy_detail(
     product = _normalize_public_product(product)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if (getattr(request.state, "intraday_preview_product", None) is not None
-            and frequency in ("1m", "15m", "30m", "60m") and strategy == "main_rise"):
-            raise ValueError("NEWOW_INVALID_QUERY")
+        if frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise":
+            raise ValueError("NEWOW_INVALID_QUERY" if getattr(request.state, "intraday_preview_products", None) is not None else "NEWOW_FREQUENCY_NOT_OPEN")
         if not (decision_v2 and section == "explanation"):
             require_open_section(section)
 
@@ -698,6 +731,9 @@ def newow_strategy_detail(
             except RuntimeError:
                 return False
 
+        if (getattr(request.state, "candidate_preview_as_of", None) is None
+            and ProductFrequency(frequency) in INTRADAY_HISTORY_FREQUENCIES):
+            as_of = released_intraday_as_of(as_of)
         product_query = ProductServiceQuery(
             product=product,
             strategy=ProductStrategy(strategy),
@@ -721,11 +757,12 @@ def newow_strategy_detail(
             decision_v2=decision_v2,
         )
         policy = _input_quality_policy(request, product, frequency)
-        service = (
-            _build_product_service(session, cancelled)
-            if policy is InputQualityPolicy.V1
-            else _build_product_service(session, cancelled, policy)
-        )
+        historical_intraday = (getattr(request.state, "candidate_preview_as_of", None) is None
+                               and ProductFrequency(frequency) in INTRADAY_HISTORY_FREQUENCIES)
+        service = (_build_product_service(session, cancelled, policy, historical_intraday=True)
+                   if historical_intraday else
+                   _build_product_service(session, cancelled) if policy is InputQualityPolicy.V1
+                   else _build_product_service(session, cancelled, policy))
         result = service.query(product_query)
         return _product_response(result)
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
@@ -969,6 +1006,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "reference_input_sha256": value.reference_input_sha256,
             "history_coverage": value.history_coverage,
             "theoretical": value.theoretical,
+            "holding_curve": value.holding_curve,
             "unavailable_days": list(value.unavailable_days),
             "coverage_intervals": [
                 {

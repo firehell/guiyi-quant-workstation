@@ -34,8 +34,8 @@ test('legacy Trend redirects semantically to the unified fixed D1 Newow trend id
 
 test('Newow accepts only its three strategies and independent completed periods', () => {
   for (const strategy of ['trend', 'oscillation', 'main_rise'] as const) {
-    for (const frequency of ['1w', '1d', '1m', '15m', '30m', '60m'] as const) {
-      if (strategy === 'main_rise' && ['1m', '15m', '30m'].includes(frequency)) {
+    for (const frequency of ['1w', '1d', '5m', '15m', '30m', '60m'] as const) {
+      if (strategy === 'main_rise' && ['5m', '15m', '30m'].includes(frequency)) {
         assert.equal(parseMarketDetailRoute({ symbol: 'rb', view: 'newow', strategy, frequency }).kind, 'invalid')
         continue
       }
@@ -53,7 +53,7 @@ test('Newow accepts only its three strategies and independent completed periods'
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'continuous', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'contract', contract: 'RB2610', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', contract: ['RB2610'], frequency: '1d' },
-    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '5m' },
+    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1m' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 
   assert.equal(parseMarketDetailRoute({
@@ -160,4 +160,27 @@ test('ordinary unified Market Home product entry uses the discovered daily Newow
     view: 'newow', symbol: 'ag', strategy: 'trend', series_kind: 'actual_dominant',
     contract: undefined, frequency: '1d', focus_bar_end: undefined,
   })
+})
+
+
+test('all RB four-period trend oscillation and dual routes are explicit identities', () => {
+  for (const frequency of ['5m', '15m', '30m', '60m']) {
+    for (const strategy of ['trend', 'oscillation', 'dual']) {
+      const parsed = parseMarketDetailRoute({ view: 'newow', symbol: 'rb', frequency,
+        strategy: strategy === 'dual' ? 'trend' : strategy, ...(strategy === 'dual' ? { newow_mode: 'dual' } : {}) })
+      assert.equal(parsed.kind, 'valid')
+      if (parsed.kind === 'valid') assert.equal(serializeMarketDetailIdentity(parsed.identity).frequency, frequency)
+    }
+  }
+})
+
+test('legacy Newow 1m preference retains its rejected identity while Market 1m stays usable', () => {
+  const preferences = loadMarketDetailPreferences(storage({ [MARKET_DETAIL_PREFERENCES_KEY]: JSON.stringify({
+    version: 2, newow: { strategy: 'trend', frequency: '1m' }, free: { frequency: '1m' },
+  }) }))
+  const restored = resolveViewSwitchIdentity('newow', 'rb', null, preferences)
+  assert.equal(restored.frequency, '1m')
+  assert.equal(parseMarketDetailRoute(serializeMarketDetailIdentity(restored)).kind, 'invalid')
+  assert.equal(preferences.free.frequency, '1m')
+  assert.equal(parseMarketDetailRoute({ view: 'free', symbol: 'rb', series_kind: 'actual_dominant', frequency: '1m' }).kind, 'valid')
 })

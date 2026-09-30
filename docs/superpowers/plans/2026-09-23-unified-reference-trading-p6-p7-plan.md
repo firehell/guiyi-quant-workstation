@@ -45,7 +45,7 @@ P5 公共 GET 只支持 historical；缺 HTDY adapter/checkpoint/model；缺运�
 | SuBing forward | 15m/30m/60m adapter、completed 输入、查询与隔离运行；D1 仅在权威完成输入具备时按源可用时刻记录 | 不扩大苏冰 15m Alert Scope |
 | Newow forward | 三策略复用现有适配；60m 独立测试；D1/W1 为权威完成源到达后的观察，不造盘中日/周 Bar | 不自动开放尚未通过产品 Gate 的组合 |
 | HTDY forward | 支持已存在且验证通过的观察周期；32 Bar first_seen + 独立参考模型 | 不复制现有 Alert Scope 为 Reference Scope |
-| historical 后续更新 | 编写 Canonical 更新后的只读 advance plan 与对账编排；执行只接受明确维护授权范围 | 不自动重建、补数或开启全品种后台写入 |
+| historical 后续更新 | 编写 Canonical 更新后的只读 advance plan 与对账编排；已交办历史候选闭环时在精确计划和校验通过后执行必要补数与构建，不另请维护 hash 授权 | 仅工程任务不扩为生产操作，不开启全品种后台写入 |
 | forward API/Web | 共用分页/统计/交易表，显式模式、启用起点与观察截止 | 不切生产全局 persisted reader |
 
 所有策略/周期须列出 code / fixture / source readiness / product capability / enabled 五列；缺权威输入明确 unavailable。

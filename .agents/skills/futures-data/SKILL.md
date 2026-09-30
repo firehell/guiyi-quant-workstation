@@ -31,3 +31,7 @@ description: Use when 任务涉及归一量化 RQData、期货合约行情、Can
 验证以 `TESTING.md` 为准。生产 mutation 前重读精确计划和现场身份；provider、commit 或网络结果不明时
 先做独立只读核对；结果查明后仅在已证明安全且符合任务范围的重试/预算边界内继续，无法证明时停止受影响操作。
 任务边界、跨会话恢复和批次内执行统一按 `AGENTS.md`，不增加逐命令审批。
+交办的数据补全或品种历史候选闭环已覆盖必要真实 provider、Canonical/Catalog 写入及候选构建，
+无需额外“本次精确维护授权”。由执行者冻结并校验 exact plan/hash/attempt；它们是执行条件，
+不是逐批人工 Gate。宿主审批须如实附上用户任务授权和精确副作用；拒绝保留并按 `AGENTS.md`
+核对处理，不关闭审批、不绕过控制，也不把拒绝当成已启动的维护 attempt。

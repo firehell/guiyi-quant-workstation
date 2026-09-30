@@ -25,6 +25,8 @@ export interface FusionTrade {
   statistics_membership: 'entry_in_window_v1' | 'initial_before_window'
 }
 export interface FusionComparison {
+  holding_curve?: import('../utils/newowHoldingCurve').HoldingCurve | null
+  theoretical?: import('../utils/newowHoldingCurve').FusionTheory | null
   snapshot_schema?: 'newow_fusion_reference_snapshot_v2'
   reference_revision?: string
   fusion_input_sha256?: string

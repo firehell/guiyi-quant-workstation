@@ -142,7 +142,7 @@ class ProductServiceQuery:
         object.__setattr__(self, "strategy", ProductStrategy(self.strategy))
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
         object.__setattr__(self, "section", ProductSection(self.section))
-        if self.strategy is ProductStrategy.MAIN_RISE and self.frequency.value in ("1m", "15m", "30m"):
+        if self.strategy is ProductStrategy.MAIN_RISE and self.frequency.value in ("1m", "5m", "15m", "30m"):
             raise ValueError("NEWOW_STRATEGY_NOT_OPEN")
         if self.component is not None:
             object.__setattr__(self, "component", AuxiliaryComponent(self.component))
@@ -241,6 +241,7 @@ class ReferenceSectionValue:
     coverage_intervals: tuple[ReferenceCoverageInterval, ...] = ()
     fusion_comparison: dict[str, object] | None = None
     theoretical: dict[str, object] | None = None
+    holding_curve: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -395,7 +396,7 @@ def _reference_coverage_intervals(
     for day, grouped in groupby(events, key=lambda item: item[0]):
         same_day = tuple(grouped)
         if len(same_day) > 1:
-            if read.frequency not in INTRADAY_PRODUCT_FREQUENCIES or len({item[2:] for item in same_day}) != 1:
+            if read.frequency not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) or len({item[2:] for item in same_day}) != 1:
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
             if any(item[1] == "PRICE_UNAVAILABLE" for item in same_day):
                 raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
@@ -794,7 +795,7 @@ class NewowProductService:
         if request.section in {ProductSection.REFERENCE, ProductSection.COMPARATOR}:
             gate = self._reference_gate if (
                 request.section is ProductSection.REFERENCE
-                and request.frequency in INTRADAY_PRODUCT_FREQUENCIES
+                and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
                 and self._persisted_reference is not None
             ) else self._gate
             with gate.acquire(cancelled):
@@ -911,7 +912,7 @@ class NewowProductService:
             self._market_read_key(low_query, read_as_of, policy),
             lambda: reader.load_reference_scope(low_query, read_as_of)
             if self._persisted_reference is not None and request.section is ProductSection.REFERENCE
-            and request.frequency in INTRADAY_PRODUCT_FREQUENCIES
+            and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
             and callable(getattr(reader, "load_reference_scope", None))
             else reader.load(low_query, read_as_of),
         )
@@ -941,7 +942,7 @@ class NewowProductService:
             )
         fact_key = _fingerprint(read, identity)
         proof = _dependency_proof(read)
-        if self._persisted_reference is not None and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(
+        if self._persisted_reference is not None and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(
             getattr(reader, "historical_source_evidence", None)
         ):
             # Every section shares the same verified Canonical generation at
@@ -980,14 +981,14 @@ class NewowProductService:
         cached = self._cache.get(common_key, section_key)
         if isinstance(cached, NewowProductResult):
             validator = getattr(getattr(self._persisted_reference, "__self__", None), "validate_cached_generation", None)
-            if request.section is ProductSection.REFERENCE and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(validator):
+            if request.section is ProductSection.REFERENCE and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(validator):
                 validator(cached.reference)
             return replace(
                 cached, meta=replace(cached.meta, read_at=utc_timestamp(self._now()))
             )
         base = None
         attach_fusion = getattr(getattr(self._persisted_reference, "__self__", None), "attach_cached_fusion", None)
-        if request.include_fusion and request.frequency in INTRADAY_PRODUCT_FREQUENCIES and callable(attach_fusion):
+        if request.include_fusion and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(attach_fusion):
             base_key = self._section_key(replace(request, include_fusion=False, fusion_before=None), window, resolved, fact_key, page_identity) + (navigable,)
             candidate = self._cache.get(common_key, base_key)
             if isinstance(candidate, NewowProductResult) and isinstance(candidate.reference.value, PersistedReferenceSectionValue):
@@ -1048,7 +1049,27 @@ class NewowProductService:
             common_key, section_key, complete, token=request.snapshot_token,
             proof=proof, related_values=related, value_factory=bind_snapshot,
         )
-        return bind_snapshot(token) if token is not None else result
+        if token is not None:
+            return bind_snapshot(token)
+        # Result admission can exceed the cache budget even though the accepted
+        # snapshot already holds every fact reverified by this read. Binding that
+        # still-valid token does not claim that this result was cached. New proof
+        # facts must never be accepted without being retained atomically.
+        if request.snapshot_token is not None:
+            if self._cache.token_proof_covers(
+                request.snapshot_token, common_key, proof
+            ):
+                return replace(
+                    result, meta=replace(result.meta, snapshot_token=request.snapshot_token)
+                )
+            # The token may expire while this section is being calculated.
+            # A caller asking for that generation must receive a conflict,
+            # not a ready section without a matching snapshot token.
+            if not self._cache.token_is_compatible(
+                request.snapshot_token, common_key, proof
+            ):
+                raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
+        return result
 
     def _cached_read_input(
         self,
@@ -1176,7 +1197,7 @@ class NewowProductService:
         deliveries = {section: _not_requested() for section in ProductSection}
         if request.section is ProductSection.CHART:
             deliveries[request.section] = self._chart(
-                request, read, identity, fact_key, page_identity
+                request, read, identity, fact_key, page_identity, request_as_of
             )
         elif request.section is ProductSection.AUXILIARY:
             assert request.component is not None
@@ -1198,7 +1219,7 @@ class NewowProductService:
             assert resolved is not None
             deliveries[request.section] = (
                 self._reference(request, read, identity, fact_key, page_identity, resolved)
-                if self._persisted_reference is None or (request.include_fusion and request.frequency not in INTRADAY_PRODUCT_FREQUENCIES) else
+                if self._persisted_reference is None or (request.include_fusion and request.frequency not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)) else
                 self._persisted_reference(
                     request, read, identity, reader, fact_key, page_identity, resolved,
                 )
@@ -1237,6 +1258,7 @@ class NewowProductService:
         identity: ProductIdentity,
         fact_key: str,
         page_identity: str,
+        request_as_of: datetime,
     ) -> SectionDelivery:
         replay = replay_strategy(
             identity,
@@ -1302,7 +1324,7 @@ class NewowProductService:
             tuple(frame.bar for frame in replay.frames), tuple(frame.bar for frame in selected)
         )
         price_reference = project_chart_price_reference(
-            channel, selected[-1].bar, as_of=read.replay_bars[-1].bar.bar_end,
+            channel, selected[-1].bar, as_of=request_as_of,
             input_sha256=lifecycle_input_sha256(read.replay_bars),
         ) if selected else None
         return SectionDelivery(
@@ -1435,6 +1457,9 @@ class NewowProductService:
             fusion["reference_input_sha256"] = fact_key
         from guiyi_quant.newow.theoretical_reference import theoretical_reference
         theoretical = theoretical_reference(summary.closed_trades, tuple(frame.bar for frame in replay.frames))
+        from guiyi_quant.newow.holding_reference import holding_reference_curve, reference_trade_rows
+        holding_curve = holding_reference_curve(reference_trade_rows(projection.trades),
+            tuple(frame.bar for frame in replay.frames), summary.window)
         value = ReferenceSectionValue(
             projection,
             summary,
@@ -1452,6 +1477,7 @@ class NewowProductService:
             coverage_intervals,
             fusion,
             theoretical,
+            holding_curve,
         )
         status = (
             _ready()

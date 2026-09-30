@@ -104,7 +104,7 @@ class _Reader:
         self.loads.append(query)
         return ProductReadSet(
             query.frequency,
-            {query.frequency: self.bars},
+            {query.frequency: tuple(bar for bar in self.bars if bar.bar.bar_end <= as_of)},
             (),
             (),
             ProductReadWindow(query.since, query.through),
@@ -1477,6 +1477,9 @@ def test_fusion_reference_is_opt_in_and_independent(product_cases):
     from app.api.market_newow import _product_response
     wire = _product_response(fused).model_dump(mode='json')
     assert wire['reference']['value']['fusion_comparison']['executable'] is False
+    assert wire['reference']['value']['holding_curve']['model_version'] == 'newow_reference_marked_curve_v1'
+    assert wire['reference']['value']['fusion_comparison']['holding_curve']['executable'] is False
+    assert wire['reference']['value']['fusion_comparison']['theoretical']['model_version'] == 'newow_dual_fusion_hindsight_peak_high_v1'
     value = fused.reference.value.fusion_comparison
     assert [g['model'] for g in value['groups']] == ['trend', 'oscillation', 'fusion']
     assert value['groups'][0]['closed_count'] == normal.reference.value.summary.closed_count
@@ -1610,3 +1613,74 @@ def test_saved_minute_reference_admission_does_not_starve_current_calculation(mo
             service._query(ProductServiceQuery('rb','trend','1m',section='reference',as_of=now),now,lambda:False)
         assert service._query(ProductServiceQuery('rb','trend','1m',section='comparator',as_of=now),now,lambda:False) is accepted
     assert reference.running == calculation.running == 0
+
+
+def test_rejected_result_keeps_token_only_when_entire_read_proof_is_saved(product_cases, monkeypatch):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+
+    class RejectResultCache(SnapshotCache):
+        reject = False
+
+        def put(self, *args, **kwargs):
+            if self.reject:
+                return None
+            return super().put(*args, **kwargs)
+
+    service, reader, build, clear = _service(product_cases)
+    cache = RejectResultCache()
+    service._cache = cache
+    request = ProductServiceQuery("rb", "trend", "1d", section="reference",
+        performance_since=build.trading_day, performance_through=clear.trading_day,
+        as_of=clear.bar_end, history_limit=1)
+    seed = service.query(request)
+    assert seed.meta.snapshot_token
+    cache.reject = True
+    before = (cache._bytes, [(key, entry.expires_at, dict(entry.proof), dict(entry.values))
+        for key, entry in cache._entries.items()])
+    page = service.query(replace(request, history_limit=2, snapshot_token=seed.meta.snapshot_token))
+    assert page.meta.snapshot_token == seed.meta.snapshot_token
+    assert (cache._bytes, [(key, entry.expires_at, dict(entry.proof), dict(entry.values))
+        for key, entry in cache._entries.items()]) == before
+    assert service.query(replace(request, history_limit=3)).meta.snapshot_token is None
+
+    import app.market_data.newow.product_service as product_module
+    original_proof = product_module._dependency_proof
+    monkeypatch.setattr(product_module, "_dependency_proof", lambda read: {
+        **original_proof(read), "reference-source|new-window": "new-source"})
+    unretained = service.query(replace(request, history_limit=4,
+        snapshot_token=seed.meta.snapshot_token))
+    assert unretained.meta.snapshot_token is None
+    assert (cache._bytes, [(key, entry.expires_at, dict(entry.proof), dict(entry.values))
+        for key, entry in cache._entries.items()]) == before
+
+
+def test_token_expiring_during_reference_calculation_returns_conflict(product_cases, monkeypatch):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+
+    service, _reader, build, clear = _service(product_cases)
+    clock = [0.0]
+    service._cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=5)
+    chart = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", as_of=clear.bar_end,
+    ))
+    assert chart.meta.snapshot_token
+
+    calculate = service._calculate
+
+    def cross_expiry(*args, **kwargs):
+        result = calculate(*args, **kwargs)
+        clock[0] = 5.1
+        return result
+
+    monkeypatch.setattr(service, "_calculate", cross_expiry)
+    clock[0] = 4.9
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
+    ):
+        service.query(ProductServiceQuery(
+            "rb", "trend", "1d", section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+            snapshot_token=chart.meta.snapshot_token,
+        ))

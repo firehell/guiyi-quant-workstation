@@ -74,7 +74,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   }
 
   if (isNewow && (seriesKind !== 'actual_dominant' || !NEWOW_FREQUENCY_SET.has(frequency)
-    || (strategy === 'main_rise' && ['1m', '15m', '30m'].includes(frequency)))) {
+    || (strategy === 'main_rise' && ['5m', '15m', '30m'].includes(frequency)))) {
     return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
 

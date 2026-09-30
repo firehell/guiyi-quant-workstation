@@ -204,8 +204,9 @@ Calendar/Session、周归属、Catalog/MDS 仍是时间和输入权威；共享�
 自然换月和未发生的特殊日历场景单列证据状态，不把确定性回归写成生产自然事件。
 
 owner 已确认实施意图，可推进代码、隔离测试、只读核查、精确 prepare 和常规 develop 集成。
-provider/Canonical/Catalog 数据差量或持续维护扩围、main/tag/Release、Runtime 切换分别按 AGENTS.md 取得
-目标和范围明确的批准；阶段内不逐品种重复审批。无需新数据的品种不制造数据审批流程。
+已交办闭环内的 provider/Canonical/Catalog 数据差量在精确计划与现场校验通过后执行，不逐品种或
+逐 hash 重复审批。持续维护扩围、main/tag/Release、Runtime 切换须分别属于明确交办目标；
+无需新数据的品种不制造数据审批流程。统一遵循 AGENTS.md。
 真实通知、Scope 变更、订单和账户操作不包含在本方案。
 
 回退优先关闭本版 W1 产品能力并保留 D1，或切回已验证兼容的数据 reader 版本；生产配置/Runtime 回退必须

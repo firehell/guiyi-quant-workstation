@@ -157,7 +157,7 @@ def test_plan_is_deterministic_and_does_not_mutate_repository() -> None:
 @pytest.mark.parametrize(
     ("strategy", "frequency"),
     [
-        ("newow-trend", "5m"),
+        ("newow-trend", "1m"),
         ("newow-oscillation", "120m"),
         ("newow-main-rise", "5m"),
         ("subing-reference", "1w"),
@@ -292,7 +292,7 @@ def test_request_json_rejects_non_text_dates_without_leaking_type_errors() -> No
 
 
 @pytest.mark.parametrize("strategy", ("newow-trend", "newow-oscillation"))
-@pytest.mark.parametrize("frequency", ("1m", "15m", "30m", "60m"))
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m"))
 def test_intraday_pilot_plan_admits_only_existing_base_kernels(strategy, frequency):
     reader = Reader()
     request = HistoricalReferenceRequest(
@@ -303,7 +303,7 @@ def test_intraday_pilot_plan_admits_only_existing_base_kernels(strategy, frequen
     assert len(reader.calls) == 1
 
 
-@pytest.mark.parametrize("frequency", ("1m", "15m", "30m"))
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m"))
 def test_intraday_pilot_does_not_expand_main_rise(frequency):
     reader = Reader()
     with pytest.raises(ValueError, match="REFERENCE_CAPABILITY_UNSUPPORTED"):
@@ -315,7 +315,7 @@ def test_intraday_pilot_does_not_expand_main_rise(frequency):
     assert reader.calls == []
 
 
-@pytest.mark.parametrize("frequency", ("1m", "15m", "30m", "60m"))
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m"))
 def test_independent_fusion_stream_plan_requires_own_model_and_profile(frequency):
     from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
     stream = replace(_stream(), identity=build_fusion_stream_identity("rb", frequency))
@@ -327,3 +327,20 @@ def test_independent_fusion_stream_plan_requires_own_model_and_profile(frequency
     for identity in (replace(stream.identity, profile_id="wrong"), replace(stream.identity, reference_model_version=REFERENCE_MODEL_VERSION)):
         with pytest.raises(ValueError, match="REFERENCE_IDENTITY_VERSION_UNSUPPORTED"):
             HistoricalReferencePlanner(Reader(), now=lambda:NOW).plan(HistoricalReferenceRequest("build",(replace(stream,identity=identity),),_budget()))
+
+
+@pytest.mark.parametrize("strategy", ["newow-trend", "newow_oscillation"])
+def test_newow_product_planning_accepts_five_minute_without_formula_changes(strategy):
+    request = HistoricalReferenceRequest("build", (_stream(strategy=strategy, frequency="5m"),), _budget())
+    plan = HistoricalReferencePlanner(Reader(), now=lambda: NOW).plan(request)
+    assert plan.streams[0].request.identity.frequency == "5m"
+
+
+@pytest.mark.parametrize("strategy", ["newow-trend", "newow_oscillation"])
+def test_newow_minute_legacy_identity_cannot_create_new_product_history(strategy):
+    class NoRead(Reader):
+        def plan_stream(self, request):
+            pytest.fail("closed product frequency loaded historical inputs")
+    request = HistoricalReferenceRequest("build", (_stream(strategy=strategy, frequency="1m"),), _budget())
+    with pytest.raises(ValueError, match="REFERENCE_CAPABILITY_UNSUPPORTED"):
+        HistoricalReferencePlanner(NoRead(), now=lambda: NOW).plan(request)

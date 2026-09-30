@@ -11,6 +11,154 @@ from app.market_data.newow.after_market_consumer_audit import (
 )
 
 
+def test_scope_retains_child_unverified_without_claiming_budget_exhaustion():
+    from app.market_data.newow.after_market_consumer_audit import _merge_scope_parts
+
+    part = {
+        "status": "incomplete",
+        "unverified_products": ["au"],
+        "failures": [],
+        "warmup_proposals": [],
+        "case_count": 3,
+        "main_ready_count": 0,
+        "reference_ready_count": 0,
+        "auxiliary_ready_count": 0,
+        "budget_exhausted": False,
+    }
+    result = _merge_scope_parts(
+        ConsumerAuditScope("newow_d1", ("au",), "1d", 600),
+        [part],
+        {"au": datetime(2026, 9, 29, 7, tzinfo=UTC)},
+        [],
+        "a" * 64,
+    )
+    assert result["unverified_products"] == ["au"]
+    assert result["budget_exhausted"] is False
+
+
+def test_unstarted_section_is_unverified_even_with_complete_case_structure():
+    cases = [
+        _case("au", strategy, "READY", "READY", "READY")
+        for strategy in ("trend", "oscillation", "main_rise")
+    ]
+    cases[0]["sections"]["reference"] = {"status": "UNSTARTED"}
+    result = summarize_readiness(
+        {
+            "complete": False,
+            "budget_exhausted": True,
+            "cases": cases,
+            "provider_requests": 0,
+            "writes": 0,
+            "repair_targets": [],
+        },
+        products=("au",),
+        frequency="1w",
+        cutoffs={"au": "2026-09-24T07:00:00+00:00"},
+        input_revision="a" * 64,
+    )
+    assert result["unverified_products"] == ["au"]
+
+
+def test_cutoff_failure_is_unverified_but_not_a_timeout():
+    def cutoff(scope, product):
+        raise ValueError("CALENDAR_MISSING")
+
+    result = run_bounded_consumer_audits(
+        (ConsumerAuditScope("newow_d1", ("au",), "1d", 600),),
+        resolve_cutoff=cutoff,
+        input_revision=lambda scope: "a" * 64,
+        build_report=lambda *args: pytest.fail("no cutoff means no report call"),
+        clock=lambda: 0.0,
+        total_timeout_seconds=1200,
+    )["newow_d1"]
+    assert result["unverified_products"] == ["au"]
+    assert result["budget_exhausted"] is False
+
+
+@pytest.mark.parametrize("number", [float("inf"), float("nan"), -1, True])
+def test_diagnostics_reject_invalid_durations(number):
+    from app.market_data.newow.after_market_consumer_audit import (
+        public_consumer_diagnostics,
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_CONSUMER_DIAGNOSTICS_INVALID"):
+        public_consumer_diagnostics({"consumer_seconds": number})
+
+
+def test_diagnostics_drop_untrusted_details_and_reject_unknown_call_identity():
+    from app.market_data.newow.after_market_consumer_audit import (
+        public_consumer_diagnostics,
+    )
+
+    call = {
+        "product": "au",
+        "strategy": "trend",
+        "section": "chart",
+        "elapsed_seconds": 1,
+        "status": "error",
+        "exception": "private-detail",
+    }
+    clean = public_consumer_diagnostics({"slow_calls": [call], "sql": "private-detail"})
+    assert "sql" not in clean and "exception" not in clean["slow_calls"][0]
+    call["section"] = "private-detail"
+    with pytest.raises(ValueError, match="NEWOW_CONSUMER_DIAGNOSTICS_INVALID"):
+        public_consumer_diagnostics({"slow_calls": [call]})
+
+
+def test_scope_diagnostics_record_stage_time_and_skipped_group():
+    elapsed = [0.0]
+
+    def cutoff(scope, product):
+        elapsed[0] += 1
+        return datetime(2026, 9, 24, 7, tzinfo=UTC)
+
+    def revision(scope):
+        elapsed[0] += 1
+        return "a" * 64
+
+    def report(scope, products, at, remaining):
+        assert remaining == 7
+        elapsed[0] += 7
+        return {
+            "complete": True,
+            "budget_exhausted": False,
+            "cases": [
+                _case(products[0], strategy, "READY", "READY", "READY")
+                for strategy in ("trend", "oscillation", "main_rise")
+            ],
+            "provider_requests": 0,
+            "writes": 0,
+            "repair_targets": [],
+        }
+
+    result = run_bounded_consumer_audits(
+        (ConsumerAuditScope("newow_w1", ("au", "b"), "1w", 10),),
+        resolve_cutoff=cutoff,
+        input_revision=revision,
+        build_report=report,
+        clock=lambda: elapsed[0],
+        total_timeout_seconds=10,
+        partition_key=lambda scope, product: product,
+    )["newow_w1"]
+    assert result["unverified_products"] == ["b"]
+    assert result["budget_exhausted"] is True
+    diagnostics = result["diagnostics"]
+    assert diagnostics["cutoff_seconds"] == 2
+    assert diagnostics["revision_seconds"] == 1
+    assert diagnostics["report_seconds"] == 7
+    assert diagnostics["elapsed_seconds"] == 10
+    assert [g["status"] for g in diagnostics["groups"]] == [
+        "completed",
+        "skipped_budget",
+    ]
+    from app.market_data.after_market import _public_consumer_audit
+
+    assert _public_consumer_audit(result)["diagnostics"] == diagnostics
+
+    diagnostics["elapsed_seconds"] = float("nan")
+    assert _public_consumer_audit(result) == {"status": "not_verified"}
+
+
 def _case(
     product: str, strategy: str, chart: str, reference: str, auxiliary: str,
     *, frequency: str = "1w",
@@ -26,6 +174,7 @@ def _case(
             "auxiliary:macd": {"status": auxiliary, "reason": "NEWOW_MACD_WARMING"},
             "auxiliary:main_force_control": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
             "auxiliary:up_down_energy": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
+            "auxiliary:trend_reversal": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
             "auxiliary:zhaoyao_mirror": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
             "auxiliary:cup_handle": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
         },
@@ -57,10 +206,54 @@ def test_summarize_readiness_accepts_legal_non_ready_strategy_states():
     assert result["failures"] == []
 
 
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_summarize_readiness_accepts_all_current_consumer_sections(frequency):
+    result = summarize_readiness(
+        {
+            "complete": True, "budget_exhausted": False,
+            "cases": [
+                _case("au", strategy, "READY", "READY", "READY", frequency=frequency)
+                for strategy in ("trend", "oscillation", "main_rise")
+            ],
+            "repair_targets": [], "provider_requests": 0, "writes": 0,
+        },
+        products=("au",), frequency=frequency,
+        cutoffs={"au": "2026-09-18T07:00:00.000001+00:00"},
+        input_revision="a" * 64,
+    )
+    assert result["status"] == "audited"
+    assert result["main_ready_count"] == result["reference_ready_count"] == 3
+    assert result["auxiliary_ready_count"] == 18
+    assert result["unverified_products"] == result["failures"] == []
+
+
+def test_trend_reversal_failure_survives_public_consumer_status():
+    from app.market_data.after_market import _public_consumer_audit
+
+    cases = [_case("au", strategy, "READY", "READY", "READY")
+             for strategy in ("trend", "oscillation", "main_rise")]
+    failure = {"status": "UNKNOWN", "reason": "TRADING_SESSION_MISSING"}
+    cases[0]["sections"]["auxiliary:trend_reversal"] = failure
+    result = summarize_readiness(
+        {"complete": False, "budget_exhausted": False, "cases": cases,
+         "repair_targets": [], "provider_requests": 0, "writes": 0},
+        products=("au",), frequency="1w",
+        cutoffs={"au": "2026-09-18T07:00:00.000001+00:00"},
+        input_revision="a" * 64,
+    )
+    public = _public_consumer_audit(result)
+    assert public["status"] == "incomplete"
+    assert public["failures"] == [{
+        "product": "au", "strategy": "trend", "section": "auxiliary:trend_reversal",
+        "reason": "TRADING_SESSION_MISSING",
+    }]
+
+
 @pytest.mark.parametrize(
     ("mutation", "section"),
     (("remove", "chart"), ("remove", "reference"),
-     ("remove", "auxiliary:cup_handle"), ("add", "explanation")),
+     ("remove", "auxiliary:cup_handle"), ("remove", "auxiliary:trend_reversal"),
+     ("add", "explanation")),
 )
 def test_summarize_readiness_rejects_missing_or_extra_consumer_section(
     mutation, section,
@@ -125,11 +318,12 @@ def test_summarize_readiness_preserves_exact_readonly_warmup_proposal():
 
 
 def test_bounded_consumer_audits_keep_scopes_and_total_deadline_separate():
-    ticks = iter((0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0))
+    elapsed = [0.0]
     calls = []
 
     def build(scope, products, as_of, timeout):
         calls.append((scope.key, products, as_of, timeout))
+        elapsed[0] += 3
         return {
             "complete": True, "budget_exhausted": False,
             "provider_requests": 0, "writes": 0, "repair_targets": [],
@@ -149,10 +343,12 @@ def test_bounded_consumer_audits_keep_scopes_and_total_deadline_separate():
     )
     result = run_bounded_consumer_audits(
         scopes,
-        resolve_cutoff=lambda scope, product: datetime(2026, 9, 18, 7, 0, 0, 1, tzinfo=UTC),
+        resolve_cutoff=lambda scope, product: datetime(
+            2026, 9, 18, 7, 0, 0, 1, tzinfo=UTC
+        ),
         build_report=build,
         input_revision=lambda scope: ("a" if scope.frequency == "1d" else "b") * 64,
-        clock=lambda: next(ticks),
+        clock=lambda: elapsed[0],
         total_timeout_seconds=8,
     )
     assert set(result) == {"newow_d1", "newow_w1"}

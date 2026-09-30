@@ -4,6 +4,9 @@
 
 本页定义数据身份、质量和执行校验；任务授权与是否需要人工再次确认以 `AGENTS.md` 为准。
 交办的数据修复任务可在各阶段精确校验通过后连续执行，不因本页历史“批准/授权”措辞逐步请示。
+完整品种历史候选闭环包含必要的 RQData 下载、Canonical/Catalog 修复和候选资产构建；Codex
+自行冻结精确维护计划并校验，不等待 owner 再批准 plan hash 或每个分包。只读/仅编码限制、维护锁、
+预算、质量、原子发布、幂等与未知结果停止合同保持有效。宿主拒绝按 `AGENTS.md` 独立处理。
 
 ## 1. 唯一 active 数据语言
 
@@ -248,8 +251,8 @@ contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四�
 `contract-warmup` 只维护一个已验证 identity 的 physical contract：请求窗口从 `listed_date` 到不晚于最近完整
 交易日的 `requested_window.through`；计划的 `effective_window.through` 再按 `expired_date - 1 day` 截断，获取该
 contract 的 `1m/1d` 基础事实。CLI schema v2 必须同时公开两个窗口，不使用含义不明的单一 `through`；两者也进入
-plan hash identity。省略 `--frequency` 时维持七周期；显式 `1d` 只规划/执行 `1d`，显式 `1w`
-只规划/执行同源 `1d + 1w`，显式 `15m` 或 `60m` 仍只规划/执行同 contract `1m` 基础与所选
+plan hash identity。省略 `--frequency` 时维持七周期；显式 `1m` 或 `1d` 只规划/执行所选基础周期，显式 `1w`
+只规划/执行同源 `1d + 1w`，显式 `5m`、`15m`、`30m` 或 `60m` 仍只规划/执行同 contract `1m` 基础与所选
 日内派生。payload 与 plan hash 必须同时绑定所选频率、完整 frequency scope 及其依赖，即使没有 target
 也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
@@ -407,6 +410,10 @@ Calendar/Session 与不可变 Parquet 分区指针摘要；W1 摘要同时绑定
 逐品种截止、输入摘要、只读预热提案与运行 commit。`READY` 之外的 `WARMING`、
 `NOT_APPLICABLE`、`UNAVAILABLE`、`DATA_INTERRUPTED` 保持显式合法状态；未知、预算耗尽、
 未检或 `input_changed` 不构成验收通过。
+可选 `diagnostics` 记录 cutoff 解析、输入摘要、消费查询、预热提案和 scope 总耗时，分组预算与跳过状态，
+以及最多 8 条最慢消费调用的品种、策略、section、耗时和完成/错误/预算取消状态；仅保留白名单身份与有限数值，
+不输出异常正文、SQL、路径或凭据。子报告未检品种按 scope 顺序去重合并；未检不自动等同预算耗尽。
+旧状态缺少诊断表示耗时未取证；这些诊断不扩大既有预算，不启动额外检查或重跑自然任务。
 消费验收超时或异常只记 `not_verified`/`incomplete`，不得改写主任务终态、触发新的下载、
 生产重试或发送额外通知。未执行或旧 Runtime 没有该字段表示未验证。
 
@@ -425,7 +432,9 @@ Runtime operational health v2 只由行情运行链的 `db`、`redis`、`live_ma
 共同决定。Alert 处理、Rule、coverage 和通知失败仍公开在独立组件中，不影响顶层 health；
 可选 weekly audit 同样不参与。Live 已启用、心跳新鲜且 available=true，所有 operational 品种
 明确为 CLOSED（计数完整且无其他 phase）时，cleanup 或休市重启后的 `coverage=unverified`
-不再使 Live operational health 降级；原 coverage 和缺失证据仍保留，不表示历史连续性已通过。
+不再使 Live operational health 降级。混合开市/休市时，仅在 `phase_by_product` 的品种集合、phase 与
+汇总计数完整一致时，逐品种豁免明确 CLOSED 的未验证 coverage；开市品种仍须保持正常 coverage。
+原 coverage 和缺失证据始终保留，不表示历史连续性已通过。
 已知 lagging、开市或未知 phase 的未验证 coverage、心跳缺失/过期/未来、连接不可用继续降级。
 盘后增量的失败、缺跑、卡住、状态不可读及以下时序规则保持不变；不得以提醒失败掩盖行情失败，
 也不得通过清除历史错误、重跑盘后或补发通知改变健康展示。
@@ -650,7 +659,7 @@ W1 合法零 Bar owner 标为 `NOT_APPLICABLE`，不得填 Bar 或计入 data-re
 `--frequency` 检查未开放周期的 Canonical 准备度，但不能因此把产品面标成已开放。
 
 `newow-readiness` 只接受互斥的单 active symbol、active universe 或 operational universe，并可显式重复
-`--frequency` 收窄到 `1w/1d/60m` 的任意非空、不重复子集；未传时保持三周期兼容审计。必须固定带时区
+`--frequency` 收窄到 `1w/1d/5m/15m/30m/60m` 的任意非空、不重复子集；未传时保持 `1w/1d/60m` 三周期兼容审计。Newow `1m` 产品 readiness 拒绝；其可信来源检查由所选派生周期依赖承担。必须固定带时区
 `as_of`，串行工作量和 deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
 为 null；预算耗尽明确 `incomplete`，保留未启动枚举/依赖/case，不能报告完整覆盖。未知异常仅公开固定内部
 错误，原始非正价格单列 `SOURCE_EXCEPTION`，完整性错误单列 `INTEGRITY_ERROR`，两者不生成盲目下载目标。
@@ -679,9 +688,9 @@ guiyi data update (--symbol X | --universe active) [--since DATE] [--through DAT
 guiyi data daily-recovery --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --through DATE [--apply --expected-plan-sha256 HASH]
 guiyi data current-day-metadata-recovery --phase {capture,plan,apply} --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --trading-day DATE [--snapshot PATH --expected-snapshot-sha256 HASH --expected-plan-sha256 HASH --apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
-guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
+guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1m,5m,1d,1w,15m,30m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
-guiyi data newow-readiness (--symbol X | --universe {active,operational}) --as-of TIMESTAMP [--frequency {1w,1d,60m}]... [--matrix] [--compact] [--max-work N] [--timeout-seconds N]
+guiyi data newow-readiness (--symbol X | --universe {active,operational}) --as-of TIMESTAMP [--frequency {1w,1d,5m,15m,30m,60m}]... [--matrix] [--compact] [--max-work N] [--timeout-seconds N]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply

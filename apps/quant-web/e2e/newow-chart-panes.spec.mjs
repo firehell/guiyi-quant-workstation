@@ -35,7 +35,8 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
       await expect(stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })).toHaveCount(4)
     }
     expect(productRequests(fixture, 'chart')).toHaveLength(1)
-    expect(productRequests(fixture, 'explanation')).toHaveLength(0)
+    expect(productRequests(fixture, 'explanation').filter(item => item.url.searchParams.get('decision_v2') === 'true')).toHaveLength(1)
+    expect(productRequests(fixture, 'explanation').filter(item => !item.url.searchParams.has('decision_v2'))).toHaveLength(0)
     await stage.locator('.newow-product-chart-stage__legend summary').filter({ hasText: /^过程提示$/ }).click()
     const hint = stage.locator('[data-hint-id]').first()
     const id = await hint.getAttribute('data-hint-id')
@@ -45,7 +46,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
     await dialog.getByText('来源与原始事实', { exact: true }).click()
     await expect(dialog).toContainText(id)
     await expect(dialog).toContainText('known_at')
-    expect(productRequests(fixture, 'explanation')).toHaveLength(0)
+    expect(productRequests(fixture, 'explanation').filter(item => !item.url.searchParams.has('decision_v2'))).toHaveLength(0)
     await page.keyboard.press('Escape')
     if (strategy === 'trend' && frequency === '1d') {
       await page.getByRole('button', { name: '图表全屏', exact: true }).click()

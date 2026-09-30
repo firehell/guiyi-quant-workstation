@@ -166,3 +166,35 @@ def test_repeated_eviction_keeps_actual_index_capacity_inside_global_budget():
             next(iter(entry.values)), "chart", i,
         ))
         assert retained <= 1300
+
+
+def test_token_proof_covers_requires_complete_saved_proof_without_touching_entry():
+    clock = [0.0]
+    cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=5)
+    proof = {"bar|a": "same", "reference-source|window": "source"}
+    token = cache.put("facts", ("chart",), "chart", proof=proof)
+    entry = cache._entries["facts"]
+    before = (entry.expires_at, cache._bytes, tuple(cache._entries))
+    clock[0] = 4
+    assert cache.token_proof_covers(token, "facts", proof)
+    assert cache.token_proof_covers(token, "facts", {"bar|a": "same"})
+    assert not cache.token_proof_covers(token, "facts", {**proof, "bar|new": "new"})
+    assert not cache.token_proof_covers(token, "facts", {"bar|a": "changed"})
+    assert not cache.token_proof_covers("unknown", "facts", proof)
+    assert not cache.token_proof_covers(token, "other", proof)
+    assert (entry.expires_at, cache._bytes, tuple(cache._entries)) == before
+    clock[0] = 5
+    assert not cache.token_proof_covers(token, "facts", proof)
+    assert not SnapshotCache(enabled=False).token_proof_covers(token, "facts", proof)
+
+
+def test_oversized_result_does_not_prevent_binding_an_already_saved_proof():
+    cache = SnapshotCache(max_entry_bytes=4096)
+    proof = {"bar|a": "same"}
+    token = cache.put("facts", ("chart",), "chart", proof=proof)
+    before = (cache._bytes, cache._entries["facts"].expires_at)
+    assert cache.put("facts", ("reference",), "x" * 10000,
+        token=token, proof=proof) is None
+    assert cache.token_proof_covers(token, "facts", proof)
+    assert cache.get("facts", ("reference",)) is None
+    assert (cache._bytes, cache._entries["facts"].expires_at) == before

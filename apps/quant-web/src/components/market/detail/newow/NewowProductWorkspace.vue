@@ -38,7 +38,8 @@ const strategySwitching = ref(false)
 watch(identity, (next, previous) => {
   strategySwitching.value = previous.strategy !== next.strategy && isNewowStrategySwitch(previous, next)
 }, { flush: 'sync' })
-const loader = useNewowProduct({ identity })
+const releasedMinuteHistory = computed(() => props.capabilities.schema_version === 'newow_product_capabilities_v28' && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency))
+const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : new Date() })
 const comparisonSelected = ref(false)
 const comparisonEnabled = computed(() => dualMode.value || comparisonSelected.value)
 const comparisonSelection = shallowRef<{ strategy: 'trend' | 'oscillation'; signalId: string } | null>(null)
@@ -79,7 +80,7 @@ const referenceResponse = computed(() => (
     : null
 ))
 const chartReferenceResponse = computed(() => loader.chartReference.value as NewowProductSectionResponse<'reference'> | null)
-const recentRecords = useNewowRecentReference(chartReferenceResponse)
+const recentRecords = useNewowRecentReference(computed(() => dualMode.value ? null : chartReferenceResponse.value))
 const chartReferenceCompatible = computed(() => chartResponse.value?.meta.snapshot_token != null && chartReferenceResponse.value?.meta.snapshot_token === chartResponse.value.meta.snapshot_token)
 const explanationResponse = computed(() => (
   loader.sections.explanation.data.value?.section === 'explanation'
@@ -134,7 +135,7 @@ const summary = computed(() => projectNewowDetail(chartResponse.value, loader.se
   chartReferenceResponse.value, chartReferenceResponse.value?.status.status ?? 'not_requested', chartReferenceCompatible.value,
   loader.currentChartWindow.value, loader.historicalChartWindow.value))
 const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(currentAuxiliaryResponse.value?.value, chartResponse.value?.value?.bars.at(-1)))
-const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
+const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }, { id: 'trend_reversal', label: '趋势转折' }] as const
 const zhaoyaoMirrorLegend = NEWOW_ZHAOYAO_MIRROR_LEGEND
 const upDownEnergyLegend = [
@@ -440,6 +441,7 @@ onBeforeUnmount(() => {
     </section>
     </template>
     </NewowProductChartStage><button v-if="locatedTradeId !== null" type="button" class="newow-product-workspace__return" @click="returnToReferenceTrade">返回原记录</button></div>
+    <p v-if="releasedMinuteHistory" class="newow-product-workspace__load-notice" role="status">分钟历史参考 · 截至 2026-09-24 15:00（北京时间） · 尚未开放持续更新</p>
     <div v-if="loader.historicalSnapshot.value || loader.dailyLoading.value || loader.dailySnapshot.value?.freshness === 'pending_update' || loader.weeklySnapshot.value?.freshness === 'pending_update' || (loader.dailyError.value && chartResponse !== null)" class="newow-product-workspace__load-notice" role="status">
       <template v-if="loader.historicalSnapshot.value">
         <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}</span>
@@ -455,8 +457,8 @@ onBeforeUnmount(() => {
     </div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
-      <NewowFusionPanel v-if="dualMode && referenceResponse?.value" :key="identityKey" :response="referenceResponse" />
-      <p v-else-if="dualMode" role="status">{{ loader.sections.reference.state.value === 'loading' ? '正在读取双策略参考输入…' : '双策略参考输入暂不可用' }} <button @click="loader.loadReference()">重试</button></p>
+      <NewowFusionPanel v-if="dualMode && referenceResponse?.value" :key="identityKey" :response="referenceResponse" :ready-to-load="comparison.referenceSettled.value" />
+      <p v-else-if="dualMode" role="status">{{ loader.sections.reference.state.value === 'loading' ? '正在读取双策略参考输入…' : '双策略参考输入暂不可用' }} <button v-if="loader.sections.reference.state.value !== 'loading'" @click="loader.loadReference()">重试</button></p>
       <NewowReferencePanel v-else :key="identityKey" :updating-strategy="strategySwitching" :records-response="recentRecords.response.value" :records-loading="recentRecords.loading.value" :records-error="recentRecords.error.value" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="recentRecords.loadMore" @locate="locateReferenceTrade" />
     </section>
     <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle' || dialogKind === 'formula'" :variant="isNiuwaIndicatorDialog ? 'niuwa-indicator' : undefined" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">

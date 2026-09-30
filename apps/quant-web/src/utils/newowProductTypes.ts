@@ -477,6 +477,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     ...(hasStorageMode ? ['storage_mode'] : []),
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'fusion_comparison') ? ['fusion_comparison'] : []),
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'theoretical') ? ['theoretical'] : []),
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'holding_curve') ? ['holding_curve'] : []),
   ])
   if (hasStorageMode) requireExact(value.storage_mode, 'persisted', 'reference.storage_mode')
   const performanceSince = day(value.performance_since, 'reference.performance_since')
@@ -520,6 +521,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     history_coverage: historyCoverage, unavailable_days: unavailableDays, coverage_intervals: coverageIntervals,
     ...(value.fusion_comparison === undefined ? {} : { fusion_comparison: normalizeFusion(value.fusion_comparison, performanceSince, performanceThrough, value.reference_input_sha256, value.reference_cutoff) }),
     ...(value.theoretical === undefined ? {} : { theoretical: normalizeTheoretical(value.theoretical) }),
+    ...(value.holding_curve === undefined ? {} : { holding_curve: normalizeHoldingCurve(value.holding_curve, referenceCutoff) }),
     summary, items, next_before: nullableText(value.next_before, 'reference.next_before'), executable: false, auto_order: false,
     ...(value.curve_trades === undefined ? {} : { curve_trades: array(value.curve_trades, 'reference.curve_trades').map((item, index) => normalizeTrade(item, index, meta, referenceCutoff)) }),
     ...(hasStorageMode ? { storage_mode: 'persisted' as const } : {}),
@@ -1028,6 +1030,13 @@ function normalizeFusion(payload: unknown, since: string, through: string, hash:
     if (!['CLOSED', 'OPEN', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'].includes(String(r.status)) || !['entry_in_window_v1', 'initial_before_window'].includes(String(r.statistics_membership))) throw new Error('invalid fusion status')
     if ((r.status === 'CLOSED') !== (r.exit_source !== null && r.exit_reference_price !== null && r.reference_return_pct !== null)) throw new Error('invalid fusion close')
   })
+  if (value.holding_curve !== undefined) value.holding_curve = normalizeHoldingCurve(value.holding_curve, String(cutoff))
+  if (value.theoretical !== undefined && value.theoretical !== null) {
+    const theory = record(value.theoretical, 'fusion.theoretical')
+    requireExact(theory.model_version, 'newow_dual_fusion_hindsight_peak_high_v1', 'fusion.theoretical.version')
+    const normalized = normalizeTheoretical({...theory,model_version:'newow_hindsight_peak_reference_v1'})!
+    value.theoretical = {...normalized,model_version:'newow_dual_fusion_hindsight_peak_high_v1'}
+  }
   return value as unknown as import('../api/newowFusion').FusionComparison
 }
 
@@ -1085,8 +1094,72 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
       if (Date.parse(String(previous.bar_end))>=Date.parse(String(current.bar_end))) throw new Error('previous close order')
     }
   }
-  return value as unknown as import('../types/newowDecisionV2').NewowDecisionV2
+  const path = value.daily_weekly_path === undefined ? undefined : normalizeDailyWeeklyPath(value.daily_weekly_path,meta,cd)
+  return { ...value, ...(path === undefined ? {} : {daily_weekly_path:path}) } as unknown as import('../types/newowDecisionV2').NewowDecisionV2
 }
+
+function normalizeDailyWeeklyPath(payload: unknown, meta: NewowProductMeta, cd: Record<string, unknown>): import('../types/newowDecisionV2').DailyWeeklyPath {
+  const field = 'daily_weekly_path'
+  const value = exactRecord(payload, field, ['version','as_of','page_parity','executable','source_note','periods'])
+  requireExact(value.version,'guiyi_daily_weekly_path_v1',`${field}.version`)
+  sameInstant(value.as_of,meta.as_of,`${field}.as_of`)
+  requireExact(value.page_parity,true,`${field}.page_parity`)
+  requireExact(value.executable,false,`${field}.executable`)
+  text(value.source_note,`${field}.source_note`)
+  const rows = array(value.periods,`${field}.periods`)
+  if (rows.length !== 2) throw new Error(`${field}.periods must contain independent D1/W1`)
+  const periods = rows.map((raw,index) => {
+    const name = `${field}.periods[${index}]`
+    const row = exactRecord(raw,name,['frequency','state','status','cost','current','target','reason','formula_versions'])
+    requireExact(row.frequency,index===0?'1w':'1d',`${name}.frequency`)
+    const frequency = row.frequency as '1w' | '1d'
+    const state = row.state === null ? null : literal(row.state,['buy','hold','sell','wait'] as const,`${name}.state`)
+    const status = literal(row.status,['ready','partial','unavailable'] as const,`${name}.status`)
+    if (row.reason !== null) literal(row.reason,['PERIOD_CONTEXT_UNAVAILABLE','FLAT_NO_OPEN_ENTRY','OPEN_ENTRY_UNAVAILABLE','TARGET_UNAVAILABLE'] as const,`${name}.reason`)
+    const versions = uniqueStrings(row.formula_versions,`${name}.formula_versions`)
+    const fact = array(cd.facts,'cdv2.facts').map(f=>record(f,'cdv2.fact')).find(f=>f.role===`trend_${frequency==='1w'?'week':'day'}`)
+    if (fact) requireExact(state,fact.state,`${name}.state_fact`)
+    const source = (rawSource: unknown, kind: 'cost' | 'current' | 'target') => {
+      if (rawSource === null) return null
+      const label = `${name}.${kind}`
+      const keys = ['raw','frequency','bar_end','physical_contract','segment_id','calculation_segment_id','source_identity','source_category',...(kind==='cost'?['entry_marker_id']:[])]
+      const p = exactRecord(rawSource,label,keys)
+      const amount = decimal(p.raw,`${label}.raw`)
+      if (!Number.isFinite(Number(amount)) || Number(amount)<=0) throw new Error(`${label}.raw must be positive finite price`)
+      literal(p.frequency,kind==='current'?['1d','1w'] as const:[frequency],`${label}.frequency`)
+      requireNotAfter(instant(p.bar_end,`${label}.bar_end`),meta.as_of,`${label}.bar_end`,'meta.as_of')
+      const physical = contract(p.physical_contract,`${label}.physical_contract`)
+      if (!physical.startsWith(meta.identity.product.toUpperCase()) || !/^\d+$/.test(physical.slice(meta.identity.product.length))) throw new Error(`${label}.product conflict`)
+      for (const key of ['segment_id','calculation_segment_id','source_identity']) text(p[key],`${label}.${key}`)
+      requireExact(p.source_category,kind==='cost'?'canonical_strategy_build':kind==='current'?'canonical_completed_close':'canonical_channel',`${label}.source_category`)
+      if (kind==='cost') text(p.entry_marker_id,`${label}.entry_marker_id`)
+      if (fact && fact.bar_end !== null) {
+        requireExact(p.physical_contract,fact.physical_contract,`${label}.fact_contract`)
+        requireExact(p.segment_id,fact.segment_id,`${label}.fact_segment`)
+        if (kind==='target') sameInstant(p.bar_end,instant(fact.bar_end,`${label}.fact_bar_end`),`${label}.fact_bar_end`)
+      }
+      return p as unknown as import('../types/newowDecisionV2').DecisionPriceSource & {entry_marker_id:string}
+    }
+    const cost = source(row.cost,'cost'), current = source(row.current,'current'), target = source(row.target,'target')
+    const available = [cost,current,target].filter((p): p is NonNullable<typeof p> => p !== null)
+    for (const p of available) {
+      requireExact(p.physical_contract,available[0]!.physical_contract,`${name}.contract`)
+      requireExact(p.segment_id,available[0]!.segment_id,`${name}.segment`)
+    }
+    if (cost && target) requireExact(cost.calculation_segment_id,target.calculation_segment_id,`${name}.calculation_segment_id`)
+    for (const p of [cost,target]) if (p && current && p.frequency === current.frequency) requireExact(p.calculation_segment_id,current.calculation_segment_id,`${name}.current_calculation_segment_id`)
+    if (cost && current) requireNotAfter(cost.bar_end,current.bar_end,`${name}.entry_bar_end`,`${name}.current_bar_end`)
+    const active = state==='buy' || state==='hold'
+    if (!active && cost) throw new Error(`${name}.flat must not have cost`)
+    if (status==='unavailable' && available.length) throw new Error(`${name}.unavailable must not have prices`)
+    if (status!=='unavailable' && !current) throw new Error(`${name}.current missing`)
+    if (status==='ready' && (!target || active && !cost)) throw new Error(`${name}.ready missing source`)
+    if (status!=='unavailable') exactStringArray(versions,EXPECTED_FORMULAS.trend,`${name}.formula_versions`)
+    return {frequency,state,status,cost,current,target,reason:row.reason as string|null,formula_versions:versions}
+  })
+  return {version:'guiyi_daily_weekly_path_v1',as_of:meta.as_of,page_parity:true,executable:false,source_note:value.source_note as string,periods}
+}
+
 
 function normalizeTheoretical(payload: unknown): NewowReferenceValue['theoretical'] {
   if (payload === null) return null
@@ -1101,4 +1174,26 @@ function normalizeTheoretical(payload: unknown): NewowReferenceValue['theoretica
   })
   if (new Set(returns.map(r => r.reference_trade_id)).size !== returns.length) throw new Error('duplicate theoretical identity')
   return { model_version: 'newow_hindsight_peak_reference_v1', hindsight: true, executable: false, returns, sum_return_percentage_points: decimal(v.sum_return_percentage_points, 'theoretical.sum'), win_rate_pct: nullableDecimal(v.win_rate_pct, 'theoretical.win'), mean_return_pct: nullableDecimal(v.mean_return_pct, 'theoretical.mean') }
+}
+
+function normalizeHoldingCurve(payload: unknown, cutoff: string): import('./newowHoldingCurve').HoldingCurve | null {
+  if (payload === null) return null
+  const v = exactRecord(payload,'holding_curve',['model_version','page_parity','executable','points'])
+  requireExact(v.model_version,'newow_reference_marked_curve_v1','holding.version')
+  requireExact(v.page_parity,true,'holding.parity'); requireExact(v.executable,false,'holding.executable')
+  const points = array(v.points,'holding.points').map((raw,index) => {
+    const f = `holding.points[${index}]`, p = exactRecord(raw,f,['bar_end','trading_day','physical_contract','segment_id','calculation_segment_id','reference_trade_id','entry_trading_day','status','closed_return_percentage_points','floating_return_pct','marked_return_percentage_points'])
+    const time = instant(p.bar_end,`${f}.bar_end`); requireNotAfter(time,cutoff,`${f}.bar_end`,'cutoff')
+    const state = literal(p.status,['FLAT','HOLDING','INTERRUPTED'],`${f}.status`)
+    const tradingDay = day(p.trading_day,`${f}.day`), entryDay = p.entry_trading_day === null ? null : day(p.entry_trading_day,`${f}.entry_day`)
+    if (entryDay !== null && entryDay > tradingDay) throw new Error('holding entry day is in future')
+    const id = nullableText(p.reference_trade_id,`${f}.trade_id`)
+    const floating = nullableDecimal(p.floating_return_pct,`${f}.floating`), marked = nullableDecimal(p.marked_return_percentage_points,`${f}.marked`)
+    if (state === 'INTERRUPTED' ? floating !== null || marked !== null : floating === null || marked === null) throw new Error('holding interruption conflicts with values')
+    if (state === 'HOLDING' && (id === null || entryDay === null)) throw new Error('holding identity missing')
+    if (state === 'FLAT' && (id !== null || entryDay !== null || floating === null || compareDecimal(floating,'0') !== 0)) throw new Error('flat holding identity conflict')
+    return {bar_end:time,trading_day:tradingDay,physical_contract:contract(p.physical_contract,`${f}.contract`),segment_id:text(p.segment_id,`${f}.segment`),calculation_segment_id:text(p.calculation_segment_id,`${f}.calculation`),reference_trade_id:id,entry_trading_day:entryDay,status:state,closed_return_percentage_points:decimal(p.closed_return_percentage_points,`${f}.closed`),floating_return_pct:floating,marked_return_percentage_points:marked}
+  })
+  requireOrderedUnique(points,p=>p.bar_end,'holding.points')
+  return {model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points}
 }

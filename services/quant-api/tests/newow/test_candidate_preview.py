@@ -198,6 +198,28 @@ def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):
     assert sessions == []
 
 
+@pytest.mark.parametrize("frequency", ["1m", "15m", "30m"])
+def test_au_period_preview_rejects_undeclared_minutes(frequency):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    from app.api.market_newow import _enforce_product_frequency
+
+    request = Request({"type": "http", "state": {"au_period_preview": True}})
+    with pytest.raises(HTTPException) as refused:
+        _enforce_product_frequency(request, "au", frequency)
+    assert refused.value.status_code == 409
+    assert refused.value.detail == {"code": "NEWOW_FREQUENCY_NOT_OPEN"}
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w", "60m"])
+def test_au_period_preview_preserves_declared_periods(frequency):
+    from starlette.requests import Request
+    from app.api.market_newow import _enforce_product_frequency
+
+    request = Request({"type": "http", "state": {"au_period_preview": True}})
+    _enforce_product_frequency(request, "au", frequency)
+
+
 def test_hourly_preview_opens_only_ap_60m_without_database(preview, monkeypatch):
     monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "ap")
     app, sessions, _factory = preview
@@ -327,8 +349,9 @@ def test_preview_identity_declares_subing_reference_with_the_cutoff_scope(previe
     assert payload["status_origin"] == "http://127.0.0.1:8000"
 
 
-def test_preview_identity_candidate_origin_can_be_overflow_8011(preview, monkeypatch):
-    monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", "http://127.0.0.1:8011")
+@pytest.mark.parametrize("origin", ("http://127.0.0.1:8011", "http://127.0.0.1:8012"))
+def test_preview_identity_candidate_origin_can_be_overflow(preview, monkeypatch, origin):
+    monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", origin)
     from app.preview import create_preview_app
 
     _app, _sessions, factory = preview
@@ -336,7 +359,7 @@ def test_preview_identity_candidate_origin_can_be_overflow_8011(preview, monkeyp
         enabled=True, as_of="2026-09-03T08:00:00Z", session_factory=factory
     )
     payload = TestClient(app).get("/api/preview/identity").json()
-    assert payload["candidate_origin"] == "http://127.0.0.1:8011"
+    assert payload["candidate_origin"] == origin
 
 
 def test_preview_identity_rejects_non_loopback_or_non_overflow_origin(monkeypatch):
@@ -345,7 +368,10 @@ def test_preview_identity_rejects_non_loopback_or_non_overflow_origin(monkeypatc
     monkeypatch.setenv("GUIYI_CANDIDATE_PREVIEW", "1")
     for value in (
         "http://127.0.0.1:8000",
-        "http://127.0.0.1:8012",
+        "http://127.0.0.1:8013",
+        "http://127.0.0.2:8012",
+        "http://localhost:8012",
+        "http://127.0.0.1:8012/",
         "http://0.0.0.0:8011",
         "https://127.0.0.1:8011",
         "http://127.0.0.1:8011/extra",
@@ -557,9 +583,9 @@ def test_rb_intraday_preview_scope_and_wire_are_explicit(preview, monkeypatch):
     response = client.get("/api/v1/market/newow/product-capabilities")
     assert response.status_code == 200
     value = response.json()
-    assert value["schema_version"] == "newow_product_capabilities_v23"
-    assert value["open_frequencies"] == ["1m", "15m", "30m", "60m", "1d", "1w"]
-    for frequency in ("1m", "15m", "30m", "60m"):
+    assert value["schema_version"] == "newow_product_capabilities_v25"
+    assert value["open_frequencies"] == ["5m", "15m", "30m", "60m", "1d", "1w"]
+    for frequency in ("5m", "15m", "30m", "60m"):
         response = client.get("/api/v1/market/newow/strategy-detail", params={
             "product": "au", "strategy": "trend", "frequency": frequency, "section": "chart",
         })
@@ -571,12 +597,12 @@ def test_intraday_candidate_does_not_implicitly_expand_formal_scope():
     from types import SimpleNamespace
     from app.api.market_newow import _enforce_product_frequency
     request = SimpleNamespace(state=SimpleNamespace())
-    for frequency in ("1m", "15m", "30m", "60m"):
+    for frequency in ("5m", "15m", "30m", "60m"):
         with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
-            _enforce_product_frequency(request, "rb", frequency)
+            _enforce_product_frequency(request, "fu", frequency)
 
 
-@pytest.mark.parametrize('frequency', ('1m','15m','30m','60m'))
+@pytest.mark.parametrize('frequency', ('5m','15m','30m','60m'))
 def test_rb_minute_candidate_rejects_main_rise_before_kernel(preview, monkeypatch, frequency):
     from app.api import market_newow
     monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', 'rb')
@@ -586,3 +612,124 @@ def test_rb_minute_candidate_rejects_main_rise_before_kernel(preview, monkeypatc
     })
     assert response.status_code == 422
     assert response.json()['detail']['code'] == 'NEWOW_INVALID_QUERY'
+
+
+@pytest.mark.parametrize("raw", ("", "rb,au", "rb,rb", "rb,", "../../rb"))
+def test_intraday_batch_scope_rejects_invalid_configuration(monkeypatch, raw):
+    from app.preview import _intraday_preview_products
+    monkeypatch.delenv("GUIYI_INTRADAY_PREVIEW_PRODUCT", raising=False)
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS", raw)
+    with pytest.raises(ValueError, match="PREVIEW_SCOPE_INVALID"):
+        _intraday_preview_products()
+
+
+def test_intraday_batch_capability_and_exact_scope(preview, monkeypatch):
+    from types import SimpleNamespace
+    from app.api.market_newow import _enforce_product_frequency
+    monkeypatch.delenv("GUIYI_INTRADAY_PREVIEW_PRODUCT", raising=False)
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS", "rb,hc,ss,i,j,jm,sf,sm")
+    client = TestClient(preview[0])
+    value = client.get("/api/v1/market/newow/product-capabilities").json()
+    assert value["schema_version"] == "newow_product_capabilities_v26"
+    assert value["release_stage"] == "black_steel_intraday_candidate"
+    assert value["intraday_products"] == ["hc", "i", "j", "jm", "rb", "sf", "sm", "ss"]
+    request = SimpleNamespace(state=SimpleNamespace(intraday_preview_products=frozenset(value["intraday_products"])))
+    for product in value["intraday_products"]:
+        for frequency in value["open_frequencies"]:
+            _enforce_product_frequency(request, product, frequency)
+    for path in ("strategy-detail", "historical-snapshot", "daily-snapshot", "weekly-snapshot"):
+        response = client.get(f"/api/v1/market/newow/{path}", params={"product": "au"})
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+
+
+@pytest.mark.parametrize("params", (
+    {"symbol": "au", "series_kind": "actual_dominant"},
+    {"symbol": "rb", "series_kind": "physical_contract", "contract": "RB2701"},
+    {"symbol": "rb", "series_kind": "actual_dominant", "contract": "RB2701"},
+))
+def test_intraday_batch_raw_bars_cannot_bypass_scope(preview, monkeypatch, params):
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCTS", "rb,jm")
+    response = TestClient(preview[0]).get("/api/v1/market/bars/page", params={**params, "frequency": "1m"})
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+
+
+@pytest.mark.parametrize("path", ["strategy-detail", "historical-snapshot"])
+def test_rb_candidate_minute_product_request_is_closed_before_reader(preview, monkeypatch, path):
+    from app.api import market_newow
+    monkeypatch.setenv("GUIYI_INTRADAY_PREVIEW_PRODUCT", "rb")
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("legacy minute request reached product reader")
+    monkeypatch.setattr(market_newow, "_build_product_service", forbidden)
+    monkeypatch.setattr(market_newow, "_build_historical_resolver", forbidden)
+    response = TestClient(preview[0]).get(f"/api/v1/market/newow/{path}", params={
+        "product": "rb", "strategy": "trend", "frequency": "1m", "section": "chart",
+    } if path == "strategy-detail" else {"product": "rb", "strategy": "trend", "frequency": "1m"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "NEWOW_FREQUENCY_NOT_OPEN"
+
+
+def test_ma_single_product_candidate_scope_and_formal_boundary(preview, monkeypatch):
+    from types import SimpleNamespace
+    from app.api.market_newow import _enforce_product_frequency
+    monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', raising=False)
+    monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS', 'ma')
+    client = TestClient(preview[0])
+    response = client.get('/api/v1/market/newow/product-capabilities')
+    assert response.status_code == 200
+    value = response.json()
+    assert value['schema_version'] == 'newow_product_capabilities_v27'
+    assert value['release_stage'] == 'single_product_intraday_candidate'
+    assert value['intraday_products'] == ['ma']
+    request = SimpleNamespace(state=SimpleNamespace(intraday_preview_products=frozenset({'ma'})))
+    for frequency in ('5m', '15m', '30m', '60m', '1d', '1w'):
+        _enforce_product_frequency(request, 'ma', frequency)
+    with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
+        _enforce_product_frequency(request, 'ma', '1m')
+    for product in ('rb', 'fu', 'ur'):
+        rejected = client.get('/api/v1/market/newow/strategy-detail', params={'product': product})
+        assert rejected.status_code == 403
+        assert rejected.json()['detail']['code'] == 'PREVIEW_PRODUCT_OUT_OF_SCOPE'
+    monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS')
+    with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
+        _enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), 'fu', '5m')
+
+
+@pytest.mark.parametrize('raw', ('ma,rb', 'ma,ma', 'ma,ur', 'zz'))
+def test_ma_candidate_cannot_expand_its_single_product_scope(monkeypatch, raw):
+    from app.preview import _intraday_preview_products
+    monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', raising=False)
+    monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS', raw)
+    with pytest.raises(ValueError, match='PREVIEW_SCOPE_INVALID'):
+        _intraday_preview_products()
+
+
+@pytest.mark.parametrize('product', ('fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi'))
+def test_p7_candidate_eligibility_is_single_product_and_does_not_open_formal(product, monkeypatch):
+    from types import SimpleNamespace
+    from app.preview import _intraday_preview_products
+    from app.api.market_newow import _enforce_product_frequency
+    monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', raising=False)
+    monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS', product)
+    assert _intraday_preview_products() == frozenset({product})
+    request = SimpleNamespace(state=SimpleNamespace(intraday_preview_products=frozenset({product})))
+    _enforce_product_frequency(request, product, '5m')
+    with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
+        _enforce_product_frequency(request, product, '1m')
+    from app.market_data.newow.product_release import OPEN_INTRADAY_PRODUCTS
+    formal = SimpleNamespace(state=SimpleNamespace())
+    if product in OPEN_INTRADAY_PRODUCTS:
+        _enforce_product_frequency(formal, product, '5m')
+    else:
+        with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
+            _enforce_product_frequency(formal, product, '5m')
+
+
+@pytest.mark.parametrize('raw', ('cf,rb', 'cf,ma', 'cf,cf', 'oi,rb', 'oi,ma', 'oi,oi', 'oi,zz'))
+def test_p7_candidate_rejects_multi_product_preview_scope(monkeypatch, raw):
+    from app.preview import _intraday_preview_products
+    monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', raising=False)
+    monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS', raw)
+    with pytest.raises(ValueError, match='PREVIEW_SCOPE_INVALID'):
+        _intraday_preview_products()

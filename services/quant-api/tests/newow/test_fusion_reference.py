@@ -230,3 +230,26 @@ def test_complete_fusion_curve_is_independent_of_record_page_limit(product_cases
     assert len(full["items"]) == trade_count
     assert full["curve"] == result["curve"]
     assert full["reference_revision"] == result["reference_revision"]
+    assert len(result["theoretical"]["returns"]) == trade_count
+    assert full["holding_curve"] == result["holding_curve"]
+    assert full["theoretical"] == result["theoretical"]
+
+
+def test_fusion_theoretical_uses_high_without_mutating_ordinary_records(product_cases):
+    t, o = sources(product_cases, lambda c: (c.entry, c.exit), lambda c: ())
+    frame = t.frames[-1]
+    changed = replace(frame, bar=replace(frame.bar, bar=replace(frame.bar.bar, high=Decimal('150'))))
+    t = replace(t, frames=(*t.frames[:-1], changed))
+    o = replace(o, frames=(*o.frames[:-1], replace(o.frames[-1], bar=changed.bar)))
+    result = project(t, o)
+    assert result['theoretical']['model_version'] == 'newow_dual_fusion_hindsight_peak_high_v1'
+    assert Decimal(result['theoretical']['returns'][0]['return_pct']) == 50
+    assert result['theoretical']['returns'][0]['ideal_exit_price'] == '150'
+    assert Decimal(result['items'][0]['reference_return_pct']) == 10
+    original_t = replace(t, frames=(*t.frames[:-1], frame))
+    original_o = replace(o, frames=(*o.frames[:-1], replace(o.frames[-1], bar=frame.bar)))
+    assert result['reference_revision'] != project(original_t, original_o)['reference_revision']
+    assert Decimal(result['holding_curve']['points'][-1]['marked_return_percentage_points']) == 10
+    opened = project(t, o, t.actions[0].bar_end)
+    assert opened['theoretical']['returns'] == []
+    assert opened['items'][0]['status'] == 'OPEN'

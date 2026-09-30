@@ -36,6 +36,12 @@ Newow 提供显式历史快照入口：当前数据缺失时可主动选择已�
 
 ### 分阶段开放边界
 
+分钟 Newow 产品周期为 `5m/15m/30m/60m`，使用同物理合约 Canonical 1m 独立聚合。
+正式历史开放以 capability 的品种名单和精确 `intraday_as_of` 为边界；页面明确历史截止时间，
+持续更新不由历史验收或源码发布自动启用。具体版本与现场范围见 `STATUS.md`。
+1m仅承担行情事实和聚合输入，Newow的1m页面与策略产品后续单独版本处理；保留通用Market的1m能力。
+当前优先完成RB四周期趋势、震荡及独立双策略参考闭环；实际开放与验收状态见 `STATUS.md`。
+
 九组合是长期允许的产品范围，不要求同一版本同时开放或通过全品种生产验收。
 允许先交付趋势、震荡、主升浪 × `1d` 三组合，再分别验收 `1w` 和 `60m`；
 每次须声明品种、历史窗口和面板支持范围。阶段目标、实际发布/开放和未完成 Gate 只看 `STATUS.md`。
@@ -91,7 +97,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 - `active_products.txt` 定义研究能力；`operational_products.txt` 定义持续 Runtime 授权。即使内容相同也不合并。
 - 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 只通过 `MainContractMap rank=1` 有效区间拼接。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
-- 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的任务/批次授权内，并继续校验 exact plan hash。
+- 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的交办范围内；数据补全或历史候选闭环无需逐批人工批准，由执行者冻结并校验 exact plan hash。
 
 稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 仅 `data` 与 `runtime`。
 

@@ -1,20 +1,29 @@
+> 当前计划（2026-09-28）：**1m 仅聚合来源，分钟显示/指标/牛哇策略仅 5m/15m/30m/60m**。RB、HC、I、J、JM 五品种已各自完成 12/12 历史候选闭环；本轮只规划剩余 **21 品种逐个闭环**，执行队列及验收标准见 P7。取消全品种预审和板块整批收尾前置。下文 P0–P6 保留历史实现依据，不重做；历史 1m 页面验收不计入本轮。发布、Runtime、观察范围不因本计划扩大。
+
 > 执行状态（2026-09-27）：P0–P6 首品种 RB 历史候选已完成代码、数据、容量、真实浏览器与独立 Review；已快进集成 develop并完成集成后定向读回。4输入/8基础/4融合/12页面模式，未执行 P7、发布、Runtime、通知或订单。实际 SHA、证据与限制统一见 `docs/tasks/newow-intraday-pilot-20260927.md`。下文“当前缺口”是原始实施基线，已完成能力不得重做。
 
 # 牛哇四周期开发计划（Implementation Plan）
 
 > **For agentic workers:** 使用 `superpowers:executing-plans` 按任务实施。共享 reader、planner、quality、capability 默认由一个执行者串行修改；高风险部分独立 Review。流程与任务授权统一遵守 [AGENTS.md](../../../AGENTS.md)，不重复设置审批步骤。
 
-**Goal:** 将原 60m 专项扩展为 1m、15m、30m、60m 四周期期货历史产品，覆盖趋势、震荡、双策略三种页面模式、适用指标与页面参考交易，随后独立交付盘中 completed observation。双策略复用两个基础 kernel，融合是独立参考模型；主升浪保留既有能力，本轮不扩分钟。
+**Goal:** 复用五个已闭环品种的能力，按 P7 队列逐个完成剩余 21 品种的 5m、15m、30m、60m 历史候选，覆盖趋势、震荡、双策略三种页面模式、适用指标与页面参考交易。独立数据问题记录后暂缓，先交付可闭环品种。双策略复用两个基础 kernel，融合是独立参考模型；主升浪保留既有能力，本轮不扩分钟。
 
-**Architecture:** 复用可信物理合约 Canonical 1m；三个派生周期直接从该来源按 Session 生成，通过 Catalog/MainContractMap/MDS 读取。计算、参考交易、快照和开放状态逐周期独立，沿用模块化单体与统一参考交易链。
+**Architecture:** 复用可信物理合约 Canonical 1m；四个派生周期分别直接从该来源按 Session 生成，通过 Catalog/MainContractMap/MDS 读取。一次只推进一个品种的来源、资产、API、页面和证据；计算、参考交易、快照和开放状态逐周期独立，沿用模块化单体与统一参考交易链。
 
 **Tech Stack:** 现有 Python/Decimal、FastAPI/Pydantic、Canonical Parquet、PostgreSQL Catalog/Reference、Redis Live，以及 Vue/TypeScript/Lightweight Charts；不新增基础设施。
 
-**Spec:** 本会话 2026-09-26 四周期设计与 2026-09-27 趋势/震荡/双策略范围修订，关键决策完整收敛在下方“设计合同”；active 业务合同以 [Newow canonical](../../../openspec/specs/newow-product-reference-trading/spec.md)、[数据合同](../../DATA_CENTER.md)、[参考交易 canonical](../../../openspec/specs/reference-trading/spec.md) 为准。计划新增部分先在 P1 同步相应 canonical，不把规划当已实现事实。
+**Spec:** 本会话 2026-09-28 的四个派生周期、数据问题可暂缓、剩余品种逐个推进要求，替代旧批次安排；active 业务合同以 [Newow canonical](../../../openspec/specs/newow-product-reference-trading/spec.md)、[数据合同](../../DATA_CENTER.md)、[参考交易 canonical](../../../openspec/specs/reference-trading/spec.md) 为准。不修改公式或收益语义，不把规划当已实现事实。
 
-创建：2026-09-19；本次修订：2026-09-27。保留此文件作为唯一未完成的四周期开发计划，替代其中旧 P0–P9 描述，不另建平行计划。本次按 owner 最新要求，将原“趋势/震荡/主升浪”范围修订为“趋势/震荡/双策略”。当前只完成计划编写；下列实现复选框全部保持未完成。
+创建：2026-09-19；本次修订：2026-09-28。保留此文件作为唯一四周期开发计划，不另建平行计划。P0–P6 已实现，P7 是当前执行入口；P8/P9/R1/R2 保留为后续独立范围。本次只更新计划，不执行数据维护、资产构建或新候选验收。
 
-## 基线、现场观察与证据边界
+## 当前逐品种基线
+
+- 本次只读核对：`develop@019514fd6158515755f90cbcf8968a9985532664`，领先 `origin/develop` 一个提交，修改前工作区干净；已有多个候选预览工作树，后续执行先核对占用再复用空闲环境。
+- 五个完成品种：[RB](../../tasks/rb-minute-closeout-20260928.md)、[HC](../../tasks/hc-minute-closeout-20260928.md)、[I](../../tasks/i-minute-closeout-20260928.md)、[J](../../tasks/j-minute-closeout-20260928.md)、[JM](../../tasks/jm-minute-closeout-20260928.md)。本次核对 STATUS 与任务记录，不重复执行它们的验收；完成指历史候选，不代表正式发布或 Runtime Ready。
+- 原优先清单有 25 品种，其中已完成 JM/J/HC/I 四个，另一个完成品种 RB 不在原清单，因此剩余 **21**；SS 不在本轮队列，保留原失败事实与暂缓状态。队列 21 个代码均已核对存在于 `data/universe/operational_products.txt`，不需要扩 Scope。
+- STATUS 当前记录正式版本为 `v1.10.39@653e736f5952146a2ea401634d32a605e7b9a0d5`；正式分钟入口、reference worker 仍关闭。本次未重新探测 Runtime，实际运行状态仍需现场读回。
+
+## 历史基线、现场观察与证据边界（2026-09-26/27）
 
 - 任务拆分基线 `develop@b48ffe0e504ee3d0850a2e75c2820dca26f9aefe`。已复核自前轮 `0a2977429` 起的变更：综合决策展示、日周状态卡、UI 验证及参考记录近一年。工作树仅本计划有 tracked 修改，另有用户 outputs；只更新本计划。执行者仍须重新读取 Git/worktree 与最新依赖。
 - [STATUS.md](../../../STATUS.md) 最新记录日周 `v1.10.38@18b29c985` 已切换至扩展盘 linked release worktree，新根自然运行证据仍待验；P9 与部分周审计问题未收尾。本轮未重新探测生产，不能把文档记录当新的现场回读。按最新约定向前修复，不要求常驻保留旧 Runtime 树。
@@ -39,8 +48,8 @@
 
 ## 设计合同（Global Constraints）
 
-1. 本轮分钟范围固定 `1m/15m/30m/60m`；页面为趋势、震荡、双策略。基础策略只有 trend/oscillation，dual 沿用 `strategy=trend&newow_mode=dual`，不新增第三个计算 kernel；fusion 使用独立参考模型身份。保持现有 D1/W1、主升浪及其他消费者 5m；不包含分时、120m、新做空规则、通知、Paper 或自动交易，`auto_order=false` 不变。
-2. 1m 直接读取，15m/30m/60m 分别由同物理合约可信 1m 派生，不逐层聚合。消费者只读 MDS，不另建 resolver、缺口权威或页面聚合器。
+1. 本轮分钟范围固定 `5m/15m/30m/60m`；页面为趋势、震荡、双策略。基础策略只有 trend/oscillation，dual 沿用 `strategy=trend&newow_mode=dual`，不新增第三个计算 kernel；fusion 使用独立参考模型身份。保持现有 D1/W1、主升浪及其他消费者行为；不包含 Newow 1m 页面/策略、分时、120m、新做空规则、通知、Paper 或自动交易，`auto_order=false` 不变。
+2. 1m 仅承担聚合输入，5m/15m/30m/60m 分别由同物理合约可信 1m 派生，不逐层聚合。只核对当前品种所需来源、完整物理计算前缀和聚合质量；不做 Newow 1m 全链路、参考收益或页面验收。消费者只读 MDS，不另建 resolver、缺口权威或页面聚合器。
 3. Session `(start,end]`、首分钟标签转换一次、不跨休市拼桶；合法短尾 completed，真缺分钟失败。Calendar/Session/Map 不足不推断为行情缺失；分钟不继承 D1/W1 缺价豁免。
 4. 计算前缀、owner 有效区段、图表窗口、统计窗口分开。历史展示验收自 `max(2023-01-01, 品种上市日)`；同合约预热依公式完整前缀核验，不跨合约借值。
 5. 参数仍按所选周期 Bar 数，不换算钟表时长、不寻优；新周期复用公式不等于原站分钟 parity。回看重绘与当时可知 Action 分开，不把所有绘图点都要求成因果事件。
@@ -50,7 +59,7 @@
 9. 双策略是本轮正式设计范围，与单策略共用相同 completed 输入和 cutoff。综合解释默认分为当前分钟状态及带来源时间的日周背景；没有分钟适用证据的评分/价格显示 EVIDENCE_REQUIRED 或 UNOPENED，不把周日评分改名为分钟评分。日周 AI 四组合保持原范围，扩展候选会改变归一化评分，分钟 AI 另行研究。
 10. 历史与 Live 分离，先历史产品后盘中观察；checkpoint、快照不能跨 source/formula/adapter/period 身份复用。来源 1m 修订要检查已有 5m 及其他派生/Reference 消费者。
 11. 所有后续生产动作只在交办目标覆盖时执行；本次“列开发计划”不启动下载、apply、build、migration、发布或 Runtime。授权存在时在机器校验通过后连续执行，不要求逐批次重复批准。
-12. 数据矩阵为 60×4=240；基础策略为 60×4×2=480；融合参考为 60×4=240；合计 720 个页面模式结果。三组分母分别报告；不能将 fusion 当第三套独立信号算法，也不沿用原主升浪矩阵。
+12. 每品种固定 4 输入、8 基础策略、4 融合、12 页面组合；剩余 21 品种总计 84 输入、168 基础策略、84 融合、252 页面组合，仅用于进度汇总，不作为整批运行任务。暂缓项仍留在 21 的分母中。旧 60 品种及黑色批次矩阵保留历史身份，不能改写成新四周期的完成证据。
 
 ### 双策略与原站差异合同
 
@@ -83,15 +92,15 @@
 - owner 重入与预热时间回退：P5a 每个 owner/calculation segment 独立定位已发生断点，验证初始 HOLD 与无入场 CLEAR。
 - 一个源 revision 改变、其他周期尚未重建：P4/P5b/P5c 阻止旧 token/资产混读，验证 5m 消费者影响与部分成功恢复；双策略两来源必须同 revision。
 - 同 Bar CLEAR/BUILD 与历史/实时交界：P5a/P5b/P9 验证顺序、身份、重启幂等及无入场时不造交易。
-- 切周期后迟到响应和巨大 1m 窗口：P5b/P5c 验证取消、游标、完整统计与分页独立，不以截断计算换取性能。
+- 切周期后迟到响应和大规模 5m 结果：P5b/P5c/P7 验证取消、游标、完整统计与分页独立，不以截断计算换取性能。
 
 ## 顺序与执行方式
 
-`P0 → P1 → P2 初盘 → P3 → P4 → P5a → P2 完整依赖复核 → P5b → P5b-F → P5c → P6 → P7 → P8`；P9 为后续盘中观察，R1/R2 为独立研究线。P2 分两次交接，避免在公式输入要求尚未确定时宣布数据就绪。
+当前只执行 `P7-01 → P7-02 → … → P7-21`：一个品种完成或安全暂缓后才进入下一个。复用 P0–P6 已完成能力；每个品种只核对自身必要依赖，不重跑整套研发阶段。P8/P9/R1/R2 仍为后续独立交付，不作为本轮历史候选收尾前置。
 
-### 可直接分派的任务总表
+### 能力阶段索引（P0–P6 已完成，不作为新任务重派）
 
-本表每一行对应一个任务；P2 保持一个任务、分两次交接。复杂任务内部复选框是执行步骤，不需要再创建同名 Spec/Plan。以下全部是待开发内容；本次交付是计划，不是启动这些任务。
+本表保留原能力拆分和代码定位；P0–P6 的旧周期/大矩阵数值是历史实施依据。当前品种任务、周期及分母统一看 P7，不需要为每个品种再建 Spec/Plan。
 
 | 编号 / 任务名称 | 必需依赖 | 本任务交付及完成判定 | 建议执行档位 |
 | --- | --- | --- | --- |
@@ -105,7 +114,7 @@
 | P5b-F 双策略融合完整化 | P5b | 4 个融合组合，完整统计/曲线不受 200 条限制；两来源同快照，近一年列表独立分页 | Sol High |
 | P5c API 与四周期页面 | P1/P3/P5a/P5b/P5b-F | 趋势/震荡/双策略、分钟标签、背景角色、记录/曲线/主图独立，迟到请求隔离 | Sol Medium；时序部分 High |
 | P6 RB 与期货边界纵向验收 | P2 最终复核、P4、P5c | 首品种 12 个模式结果逐项有证据；日盘/长夜盘/上市/换月/质量断点样本覆盖 | Sol High |
-| P7 operational 60 品种扩展 | P6 | 240 数据、480 基础、240 融合逐项验收，维护可接续；先全品种初遍，再集中处理异常 | Sol High |
+| P7 逐品种闭环 | 已完成能力与当前品种依赖 | 剩余 21 品种串行；每次 4 输入、8 基础、4 融合、12 页面；完成或安全暂缓后继续下一项 | Sol Medium；时序/恢复问题 High |
 | P8 历史分钟版交付 | P7；先行小范围交付可依 P6 | 冻结声明范围，测试/Review/集成；任务包含发布时完成发布与切换，自然证据单列 | Sol High |
 | P9 盘中 completed 观察 | P8 历史正式交付 | 历史/Live 接缝、增量/重启/修订、实际水位与自然观察；不自动增加通知或订单 | Sol High |
 | R1 分钟因果研究适配 | P5a/P5b-F、P6 冻结样本 | 独立融合因果模型、执行/成本事实、逐笔差异归因和无未来性证据 | Sol High |
@@ -119,7 +128,7 @@
 | --- | --- | --- | --- |
 | M1 候选计算闭环 | P0–P5a，P2 最终复核 | 四周期输入与基础算法候选成立 | 已有完整页面/全量数据 |
 | M2 首品种历史产品 | P5b、P5b-F、P5c、P6 | RB 或经审计替代品种的 12 个模式结果完成验收 | 60 品种完成/因果盈利 |
-| M3 60 品种历史交付 | P7、P8 | 按矩阵声明已开放范围及例外，版本/运行切换按实际记录 | 自然盘中闭环/策略获准执行 |
+| M3 优先品种候选收尾 | P7 | 分别报告已闭环、部分完成、暂缓和未开始品种；正式交付另按 P8 | 全 60 品种完成/正式分钟开放/自然盘中闭环 |
 | M4 盘中观察 | P9 | 已完成分钟的实时观察范围和新鲜度有证据 | Paper/Shadow/真实下单 |
 | MR 因果研究 | R1、R2 | 对冻结研究集合给出合格、淘汰、继续观察或证据不足结论 | 自动晋升或修改 active 策略 |
 
@@ -299,15 +308,127 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 
 **出口：** RB 或 fresh audit 选定替代试点有完整 12 组合证据；其余边界覆盖明确，不能外推 60 品种全完成。
 
-## P7：60 品种扩大与维护接续
+## P7：剩余 21 品种逐个闭环（当前执行入口）
 
-- [ ] 复用 P2/P4 依赖队列逐品种执行，单个未知结果只阻断受影响 mutation；共享源/维护锁串行，独立只读盘点可继续。
-- [ ] 形成 240 输入项、480 基础策略项、240 融合参考项的同版本、共同 as_of 矩阵；逐 section 列 READY/WARMING/NOT_APPLICABLE/BLOCKED/UNOPENED/NOT_EVALUATED，明确完成及未完品种。
-- [ ] 日周背景/跨周期价格另列依赖和可用性，不充当分钟主策略验收，也不因缺少无关背景而阻塞有效主图。
-- [ ] 在任务覆盖时验证后续盘后增量、新主力预热与派生接续；自然事件尚未发生则保留待验，不能手工补跑伪装自然证据。
-- [ ] 部分范围可独立候选，但 capability 必须与实际品种×周期×策略证据一致；保持已有日周能力。
+### 队列与工作量
 
-**出口：** 明确可交付范围和剩余阻塞，不用单日 MDS 成功或历史窗口可读代替全量产品验收。
+沿用 owner 原清单顺序，移除已完成的 JM/J/HC/I；RB 作为额外完成品种保留。旧 JM 记录中的“下一步 SF”属于当时交接，本次统一队列从 FU 开始。**同时只推进一个品种，不先批量补数据、再批量建资产、最后批量验页面。** 下表状态是本次计划初始状态，不表示不存在历史数据或资产；轮到该项时现场核对。
+
+| 任务 | 品种 | 代码 | 本轮初始状态 |
+| --- | --- | --- | --- |
+| P7-01 | 燃料油 | FU | DEFERRED_DATA_BLOCKED，0/12；会话 `01a0e788-a1d4-7b82-9446-b72f5f4815ae`；[处理记录](../../tasks/fu-minute-closeout-20260928.md) |
+| P7-02 | 甲醇 | MA | CANDIDATE_CLOSED，12/12；会话 `01a0e7ac-e302-7c61-bf58-828470f9c986`；[处理记录](../../tasks/ma-minute-closeout-20260928.md) |
+| P7-03 | 尿素 | UR | CANDIDATE_CLOSED，12/12；会话 `01a0e81f-3f72-7c11-984a-49d28065be8e`；[处理记录](../../tasks/ur-minute-closeout-20260928.md) |
+| P7-04 | PTA | TA | CANDIDATE_CLOSED，12/12；会话 `01a0e854-76a8-7b12-b6ba-4ce7dc562341`；[处理记录](../../tasks/ta-minute-closeout-20260928.md) |
+| P7-05 | 烧碱 | SH | CANDIDATE_CLOSED，12/12；会话 `01a0e895-159e-70b0-aa88-df1d96fad51a`；[处理记录](../../tasks/sh-minute-closeout-20260928.md) |
+| P7-06 | PVC | V | CANDIDATE_CLOSED；12/12，48/48 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/v-minute-closeout-20260929.md) |
+| P7-07 | 纯碱 | SA | CANDIDATE_CLOSED；12/12，48/48 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/sa-minute-closeout-20260929.md) |
+| P7-08 | 黄金 | AU | CANDIDATE_CLOSED；12/12，88/88 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/au-minute-closeout-20260929.md) |
+| P7-09 | 白银 | AG | CANDIDATE_CLOSED；12/12，80/80 DATA_READY，12 disabled候选资产，API/Chrome/日周与61原图独立Review通过；[处理记录](../../tasks/ag-minute-closeout-20260929.md) |
+| P7-10 | 镍 | NI | DEFERRED_DATA_BLOCKED，0/12；首单NI2302/5m原子发布失败停止，14部分分区保留、无重试；[处理记录](../../tasks/ni-minute-closeout-20260929.md) |
+| P7-11 | 硅铁 | SF | COMPLETED，12/12；四输入/八基础/四融合disabled，独立数值及61图Review通过；原生预览/日周边界保留，见[SF处理记录](../../tasks/sf-minute-closeout-20260929.md) |
+| P7-12 | 锰硅 | SM | COMPLETED，12/12；4输入/8基础/4融合disabled，独立数值与61原图Review通过；自身日周/预览边界及失败证据保留，见[SM处理记录](../../tasks/sm-minute-closeout-20260929.md) |
+| P7-13 | 红枣 | CJ | COMPLETED，12/12；4输入/8基础/4融合disabled，独立数值与61原图Review通过；自身日周/预览边界保留，见[CJ处理记录](../../tasks/cj-minute-closeout-20260929.md) |
+| P7-14 | 鸡蛋 | JD | COMPLETED，12/12；31 owner/124 依赖READY，4输入/8基础/4融合disabled；一次维护/一次19场Chrome采集，独立数值与49原图Review通过，原生W1/报价/较早副图边界保留；[首次实测](../../tasks/jd-candidate-pilot-20260929.md) |
+| P7-15 | 苹果 | AP | COMPLETED，12/12；12 owner/48 依赖READY，4输入/8基础/4融合disabled；一次维护/一次19场Chrome，独立数值及49原图Review完成，P3标注重叠及原生预热/副图/报价边界保留；[处理记录](../../tasks/ap-candidate-pilot-20260930.md) |
+| P7-16 | 玉米 | C | CANDIDATE_CLOSED，12/12；21 owner/84 依赖 READY、12 disabled 候选资产；当前源码 Chrome 19 场、49 原图、独立数值/视觉审查通过；旧 OOM/409 及未证实的间歇性原因保留；[恢复闭环](../../tasks/c-candidate-recovery-20260930.md)、[原暂缓](../../tasks/c-candidate-pilot-20260930.md) |
+| P7-17 | 生猪 | LH | CANDIDATE_CLOSED，12/12；21 owner/84 单元 READY、12 disabled 候选资产，API/Chrome/日周与49原图审查通过；第10场采集器故障及续采证据保留；[处理记录](../../tasks/lh-candidate-pilot-20260930.md) |
+| P7-18 | 豆粕 | M | CANDIDATE_CLOSED，12/12；12 owner/48 单元 READY、12 disabled 候选资产；真实分块 Chrome 19 场、49 原图、独立数值/视觉审查通过，OOM 与续采失败证据保留；[处理记录](../../tasks/m-candidate-pilot-20260930.md) |
+| P7-19 | 菜粕 | RM | CANDIDATE_CLOSED，12/12；13 owner/52 单元 READY、12 disabled 候选资产；一次 Chrome 19 场、49 原图、独立数值/视觉审查通过，审查脚本身份错误及修正证据保留；[处理记录](../../tasks/rm-candidate-pilot-20260930.md) |
+| P7-20 | 花生 | PK | CANDIDATE_CLOSED，12/12；18 owner/72 单元 READY、12 disabled 候选资产；一次 Chrome 19 场、49 原图、独立数值/视觉审查通过；API wrapper 重复 coverage 失败证据保留；[处理记录](../../tasks/pk-candidate-pilot-20260930.md) |
+| P7-21 | 白糖 | SR | CANDIDATE_CLOSED，12/12；14 owner/56 单元 READY、12 disabled 候选资产；一次 Chrome 19 场、49 原图、独立数值/视觉审查通过；密集标签、hover 遮挡和 W1 预热边界保留；[处理记录](../../tasks/sr-candidate-pilot-20260930.md) |
+
+每行同一交付规格：`5m/15m/30m/60m × trend/oscillation/dual`，4 输入、8 基础流、4 融合流、12 页面组合。252 页面组合只是累计分母，禁止以“先全部跑完才能关闭一个品种”组织工作。已有五品种不并入本轮分母；剩余清单中没有 SS，也不新增其他品种。
+
+### 单品种任务边界与复用入口
+
+**执行授权（2026-09-29）：** owner 交办单品种历史候选闭环即覆盖必要 RQData 下载、Canonical/Catalog
+修复和候选资产构建。执行者自行冻结精确合约、周期、窗口、预算、hash、attempt 和恢复边界，完成
+校验后连续执行，不再等待“本次精确维护授权”。跨会话重新核对现场，不复用失败 attempt、不重做
+已成功对象；未知提交、质量失败和宿主拒绝分别处理。该规则按 [AGENTS.md](../../../AGENTS.md)
+长期执行，不扩大 P8/P9/R1/R2、正式 Scope、Runtime、通知或交易范围；旧拒绝与证据保留。
+
+**文件：** 复用本计划“模块与职责”中的唯一实现；主要任务通常是数据/资产准备和真实验收，不预设每个品种都必须修改代码。事实记录复用 `docs/tasks/<code>-minute-closeout-<YYYYMMDD>.md` 和 `outputs/<code>-minute-closeout-<YYYYMMDD>/`；品种代码按项目既有大小写规范传递，输出目录小写。一个品种只保留一份任务记录和必要原始证据，完成后更新本队列与 STATUS，不提前宣布完成。
+
+**已验证样板：** [JM](../../tasks/jm-minute-closeout-20260928.md) 的来源/派生/资产读回、API、真实 Chrome、局部回归与独立 Review；[J](../../tasks/j-minute-closeout-20260928.md) 的融合请求队列和翻主图后参考面板状态修复。`outputs/jm-minute-closeout-20260928/` 中的 `source_assets.py`、`aggregation_full_prefix.py`、`api/readback.py`、`snapshot_recovery.py`、`browser/verify_jm12.py`、`regression_recovery.py` 可作为现有验收样板，运行前必须核对本机文件和硬编码身份。改用当前品种、owner、端口、日期、hash 和 schema，不能原样执行 JM 的 apply/recovery 命令。缺少脚本时按任务记录及当前服务接口恢复最小验收入口，不自建行情 resolver。
+
+**输入：** 当前 develop 精确 SHA、单品种白名单、显式四周期、Calendar/Session/MainContractMap、MDS 来源身份及完整计算前缀。复用 `NewowReadinessAudit.run(ReadinessRequest(...))`、`HistoricalDataManager.contract_warmup`、现有 reference planning/build/query；函数签名以当前代码为准，参数中不得使用全品种默认集合或枚举隐式包含 1m。
+
+**输出：** 当前品种 12 项来源与资产身份、实际 API/页面读回和逐项状态，或具有精确边界的暂缓记录。候选默认关闭、固定历史时点、`realtime=false`；预览 API/Web 地址必须来自该任务环境，不接错正式服务或其他品种预览。
+
+### 每个品种都走完这一条闭环
+
+- [ ] **1. 冻结现场和验收范围。** 核对 branch/HEAD/dirty、已有依赖和预览进程归属；复用空闲 worktree/端口，不停其他任务进程。历史起点为 `max(2023-01-01, 权威上市日)`，首轮沿用已完成五品种的 `2026-09-24` 截止基准、`as_of=2026-09-24T07:00:00.000001+00:00`，再由权威 Session 解析该品种实际 completed 端点。不随执行日期每天追新而使已验收结果失效；新截止需要独立登记并重验受影响部分。新鲜度/盘后增量留后续目标，页面明确历史日期。
+- [ ] **2. 只审当前品种的精确依赖。** 从 MDS/Map 获取 owner 和同物理合约完整计算前缀，列出已有可复用、缺派生、缺 1m、元数据冲突、质量不足。四周期同源检查去重；不验 Newow 1m 策略或页面，不对 21/60 品种做全历史预审。先核对已有 15m/30m/60m 和历史参考资产，身份一致才复用，不能照搬 JM“九条可复用”的结论。
+- [ ] **3. 只处理可证明的缺口。** 缺派生且来源可信时只聚合，provider 请求为零；确实缺源时才在后续实施任务已覆盖维护的范围内生成精确源计划。维护前完成 dry-run、目标/hash/预算/锁、恢复办法校验；提交后独立读回。源修订只失效实际依赖该源的派生/资产。遇到独立难以闭合的数据问题，按下面的暂缓规则结束当前项。
+- [ ] **4. 完成四频资产。** 聚合按 `(start,end]` 与当前合约历史 Session 验证；逐周期保存两基础流及一融合流。复用资产须匹配公式、参考模型、owner、source revision、输入 hash、cutoff、计算前缀与当前 schema；否则只重建失效项。融合两来源必须一致；四频 12 流全部独立读回，不用 build 返回成功替代落盘事实。统计覆盖完整冻结历史，图表窗口与列表分页不裁掉计算输入。
+- [ ] **5. 验收 12 个 API/页面组合。** 每个组合实际检查主图、适用副图、Marker、完整参考统计/累计曲线、OPEN/中断、记录分页、时间/合约/快照身份。执行四周期切换、趋势/震荡/双策略切换及返回；有后续页时检查稳定 ID 无重漏、原前缀不变，主图与参考游标独立。较早主图分页单列实测状态，不能把未测写成通过；新出现的正常使用阻塞必须修复或明确保留部分完成。候选拒绝错频/旧 token 并能重新获取正确快照；实际取消/超时后恢复，不接受只有 HTTP200、空图或截图占位的验收。
+- [ ] **6. 按影响验证、复核、收尾。** 当前品种日周三模式做兼容读回，背景 WARMING/NOT_APPLICABLE 如实显示，不以预热不足伪造 READY，也不把不适用副图当主策略失败。没有共用源码变化时不重跑前五品种、全量 Web 或全仓库测试；发生修复时只补对应行为回归、受影响模块与最小代表品种，风险涉及共用时序/公式/数据恢复时做独立 Review。已通过且输入/代码身份未变的证据复用，Review 可核对原始证据而不重复全部浏览器请求。完成本品种记录、必要代码集成和队列状态后，再启动下一项。
+
+### 期货差异与定向验证
+
+这些是需核对的边界，不是按品种名硬编码交易时间；均读取对应历史有效 Calendar/Session/合约元数据。
+
+| 触发条件 | 验证重点 | 对应入口 |
+| --- | --- | --- |
+| 当前品种有夜盘或跨午夜 Session；AU/AG/NI 等重点核对 | 夜盘归属 trading_day、长夜盘完成端点、节假日无夜盘、历史 Session 变更 | 步骤 2–4；`test_aggregation.py`、`test_historical_session_window.py` |
+| 日盘休市、短尾桶或某时段没有夜盘 | 不跨休市凑足根数；合法尾桶 completed；不为不存在的 Session 补数据 | 步骤 2–4；`test_session_anchor_repair.py`、`test_product_reader.py` |
+| 上市较晚或新主力历史不足；SH 等重点核对 | 权威上市起点、实际完整物理预热、当前可计算与历史 WARMING 分开 | 步骤 2/4/6；`test_readiness.py`、`test_product_replay_invariants.py` |
+| 主力切换、owner 重入、缺分钟、重复冲突 | 不跨合约配对、不借新主力价清旧仓、数据断点显式中断；零量与缺 Bar 不混淆，不填充价格 | 步骤 2–4；`test_reference_interruptions.py`、`test_aggregation.py` |
+| 5m 记录多、同根双动作、分页后再切换 | 全量曲线/统计不受列表截断；同根次序与 ID 稳定；迟到响应不串图，主图翻页不重置参考状态 | 步骤 5–6；`test_fusion_reference.py`、`test_product_snapshot_cache.py`、Web `tests/useNewowProduct.test.ts`、`tests/newowReferencePanel.test.ts` |
+
+测试路径前缀见“模块与职责”和下方“验证命令”；这些是出现相应代码变更时的选测入口，不要求每个品种机械重跑全部。新发现问题先补能复现该问题的定向测试，再做最小修复。
+
+### 完成、部分完成与暂缓
+
+- **CANDIDATE_CLOSED：** 4 输入、8 基础、4 融合及 12 页面全部有当前冻结身份下的证据；适用性、预热、原有基线风险与未测子项明确，核心闭环无阻塞，风险所需 Review 完成。不能只验 60m 后宣布整个品种闭环，不能用既有品种证据替代本品种事实。
+- **PARTIAL：** 已完成的周期/模式保留，但未达到 12/12；列出实际分子及缺项，不抹掉进度，也不计入闭环品种数。
+- **DEFERRED_DATA_BLOCKED：** 记录品种、物理合约、周期、owner/日期范围、错误类别、原始 evidence/attempt、已提交与未知状态、恢复前提和已完成部分。无法安全闭合时结束当前任务，转下一品种，不自动循环重试或扩大到全湖修复。SS 按这一原则继续暂缓。
+- **共享故障：** `ATOMIC_PUBLISH_FAILED`、提交结果未知、锁/预算状态不清时，先停受影响写入并只读核对；确认当前失败不会污染下一品种的源、共享表、锁和预算后才能继续其 mutation。不能把“跳过”当成忽略未知写入。共用聚合器/身份/公式缺陷则先修根因，验证受影响范围；独立只读工作可以继续。
+- 恢复暂缓项需要新的事实：来源问题已修复、身份可证明、失败结果已厘清或安全恢复路径已验证。没有这些变化不重新排到队首。同一失败不靠改 plan hash、重置 attempt 或缩短历史窗口绕过。
+
+**进度记录：** 每次只报告“本品种结果；12 项完成数；新增/复用资产；真实验证；阻塞或基线限制；下一品种”。本轮汇总保留闭环/部分/暂缓/未开始之和等于 21，不以移除失败项提高完成率。不预建 21 个线程、计划文件或后台任务；不把历史候选、代码集成、正式发布、自然增量验收混为一项。
+
+**出口：** 能闭环的品种逐个交付；其余有可续接的精确记录。本轮全部走完可声明“21 项已处理，闭环 X / 部分 Y / 暂缓 Z”，只有 X=21 才声明剩余品种全部闭环。P8 发布、P9 实时及 R1/R2 研究另按后续交办推进，不阻塞本轮已满足标准的候选收尾。
+
+## P7 扩展：第二轮 13 品种串行历史候选闭环
+
+owner 于 2026-09-30 交办：复用原 21 品种经验，以目标模式和新方法逐品种完成下表。
+本轮独立固定分母为 **13 品种 / 52 输入 / 104 基础 / 52 融合 / 156 页面组合**；
+原 21 品种队列及失败恢复证据保持，不将其暂缓项计入本轮，也不推定其已恢复。
+
+沿用上文单品种闭环、暂缓与共享故障合同；历史窗口为
+`max(2023-01-01, 权威上市日)..2026-09-24`，
+`as_of=2026-09-24T07:00:00.000001+00:00`。1m 只作可信聚合来源，
+分钟验收为 `5m/15m/30m/60m × trend/oscillation/dual`，保留自身日周三模式兼容核对。
+复用 `scripts/newow_candidate_tools/` 的参数化身份冻结、preflight、19 场连续采集、
+完整响应分块传输、index 和离线 audit；原生维护/构建、全物理前缀独立 Decimal 核对、
+保存流依赖核对及逐张原图 Review 仍分别执行，工具数值 PASS 不等于闭环完成。
+
+一次只启动下表一个品种。完成或安全暂缓、核清实际 mutation/锁/预算，释放本品种专属
+API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控。真实下载、派生发布和
+候选构建已由本次历史候选闭环目标覆盖，精确对象、计划/hash、预算和恢复证明仍须通过。
+候选保持 disabled/generation=0；正式分钟开放、发布、Runtime、Scope、通知和交易不在本轮。
+全部代码已存在时不为每个品种制造源码修改；实际结果与证据进入对应单品种记录和 STATUS。
+
+| 顺序 | 品种 | 代码 | 当前状态 |
+| --- | --- | --- | --- |
+| P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
+| P7B-02 | 棉花 | CF | CANDIDATE_CLOSED，12/12；见 [CF记录](../../tasks/cf-candidate-pilot-20260930.md) |
+| P7B-03 | 菜籽油 | OI | CLOSED；52/52维护、306621 Bar完整前缀核对；新源12 native rebuild/fresh reader通过，API12/12与152 HTTP200；Chrome19场/49原图/631索引独立核验，21213 CLOSED收益/21249 SVG点无差异；取消恢复通过、source稳定、资源与维护锁0，disabled/generation0；失败证据保留，见[处理记录](../../tasks/oi-candidate-pilot-20260930.md) |
+| P7B-04 | 棕榈油 | P | IN_PROGRESS；36ed8e64准入独立Review通过；12 owner/48维护单元完成、88实际请求/360派生目标；906旧文件/60246旧Bar/373日周保留，新增397/扩展51/删除0；每频141合约月、283612 Bar根Decimal完整前缀核对通过，候选0stream，待原生资产及API/Chrome验收，未启动Y |
+| P7B-05 | 豆油 | Y | NOT_STARTED |
+| P7B-06 | 氧化铝 | AO | NOT_STARTED |
+| P7B-07 | 锌 | ZN | NOT_STARTED |
+| P7B-08 | 锡 | SN | NOT_STARTED |
+| P7B-09 | 铝 | AL | NOT_STARTED |
+| P7B-10 | 铜 | CU | NOT_STARTED |
+| P7B-11 | 碳酸锂 | LC | NOT_STARTED |
+| P7B-12 | 多晶硅 | PS | NOT_STARTED |
+| P7B-13 | 玻璃 | FG | NOT_STARTED |
+
+逐项记录完成分子及闭环/部分/暂缓/未开始，总和始终等于 13。仅完成 12/12 且必要
+独立 Review 通过才记 CANDIDATE_CLOSED；安全暂缓只代表本项已处理，不代表闭环。
 
 ## P8：历史分钟版集成、发布与自然验收
 
@@ -448,6 +569,6 @@ git diff --check
 
 ## 当前交接与实施裁定
 
-P0–P6 已按依赖连续完成，P2 分初盘/最终复核；所有本轮勾选项以任务记录中的实际证据为准。既有 opaque chart cursor、维护恢复与基础 replay 被复用；融合复用基础保存流而非重复计算两 kernel。实际无数据缺口，因此没有 provider 下载、Canonical/Catalog mutation 或全历史补数；8基础/4融合资产仅在隔离 schema 构建。fixture E2E 与真实 Chrome 分列，旧7项fixture失败在未修改develop逐项复现，不把旧失败包装成通过。全spec9/10，既有reference-trading段落结构失败单列，本轮Newow spec有效。
+P0–P6 已按依赖连续完成，P2 分初盘/最终复核；所有首轮勾选项以任务记录中的实际证据为准。既有 opaque chart cursor、维护恢复与基础 replay 被复用；融合复用基础保存流而非重复计算两 kernel。P0–P6 首轮实际无数据缺口，因此当时没有 provider 下载、Canonical/Catalog mutation 或全历史补数；8基础/4融合资产仅在隔离 schema 构建。P7 首批的精确缺口维护另见本批任务记录，不能沿用首轮的零缺口结论。fixture E2E 与真实 Chrome 分列，旧7项fixture失败在未修改develop逐项复现，不把旧失败包装成通过。全spec9/10，既有reference-trading段落结构失败单列，本轮Newow spec有效。
 
-下一轮从 P7 精确盘点开始；不得按本文件旧基线重新实施 P0–P6。P8发布、P9观察启用、R1/R2因果研究与OOS不属于本轮完成声明。100k完整曲线与有限队列有实测预算；SQL/hydrate不保证即时取消，正式扩展前继续验证并发/冷读预算。
+P7 首批 black + steel 正在执行，实际证据见本批任务交接；不得按本文件旧基线重新实施 P0–P6。P8发布、P9观察启用、R1/R2因果研究与OOS不属于本轮完成声明。首轮 aef3 版本的100k完整曲线与有限队列有有限样本实测预算，不能代替本批 c576 板块规模验收；SQL/hydrate不保证即时取消，正式扩展前继续验证并发/冷读预算。

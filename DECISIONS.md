@@ -32,6 +32,6 @@
 | 既有策略整体退役 | 删除其代码、配置、API、CLI、Web、Runtime、Scope、Event 和派生 cache 能力 | 旧身份只保留 Git/Alembic lineage 与删除迁移断言；未来策略必须使用新身份、新合同和新版本 |
 | Validation | causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed 是长期合同 | Retrospective 不回填 prospective OOS，不自动晋升候选 |
 | 开发协作 | AI 自主完成开发维护闭环；owner 决定产品方向、重要架构/业务语义和生产边界 | 讨论/Plan-only 不提前实施；普通开发授权不推导生产 mutation、main/tag/release 或 Runtime promotion，细则见 `AGENTS.md` |
-| 外部操作 | 真实数据/DB、Runtime/live、Scope、通知、release/tag 按目标、环境、范围明确的任务或批次授权 | 授权不因会话切换失效；已完成的历史授权、测试、dry-run、配置或 health 不授权重跑；重试和恢复须在交办范围及既有幂等、预算和恢复约束内 |
+| 外部操作 | 真实数据/DB、Runtime/live、Scope、通知、release/tag 按目标、环境、范围明确的任务授权；数据补全/历史候选闭环覆盖必要下载、Canonical/Catalog 修复与候选构建，不逐包批准 hash | 执行者冻结精确计划并完成校验；授权不因会话切换失效，已完成对象不重做；历史证据不授权重跑，重试和恢复须在交办范围及既有幂等、预算和恢复约束内；宿主控制独立遵守 |
 | 交付收敛 | 精确候选冻结后只接纳该次交付阻断；代码缺陷、数据缺口、证据不足、现场 Gate 与新版需求分开处理 | 已修复先验证不重写；已披露限制不得掩盖共享完整性缺陷；release 与 Runtime promotion 分别校验和留证，任务已覆盖时连续执行、不重复审批；运行证据绑定对应版本，不由 develop 集成自动推导 |
 | 文档职责 | `PROJECT_SOURCE.md` 定义稳定产品面；`docs/ARCHITECTURE.md` 定义 active 依赖；deep canonical 定义业务语义 | `STATUS.md` 不承载历史过程，Git history 不构成未来授权 |
