@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import { buildNewowFixtureEnvelopeForTest } from '../e2e/newow-product.helpers.mjs'
 import { newowComparisonCompatible } from '../src/utils/newowComparison.ts'
 import { useNewowComparison } from '../src/composables/useNewowComparison.ts'
+import { NewowProductRequestError } from '../src/api/newowProduct.ts'
 function chart(strategy = 'trend') { const raw = buildNewowFixtureEnvelopeForTest('chart', strategy, '1d', false, null, { dualMarket: true }); return { meta: raw.meta, section: 'chart', ...raw.chart } }
 test('comparison accepts independent tokens only with equal time, market and calculation segment facts', () => {
   const a = chart(), b = chart('oscillation')
@@ -183,6 +184,118 @@ test('non-ready and conflicting partner reference responses settle as unavailabl
     assert.ok(comparison.referenceError.value)
     assert.equal(comparison.referenceSettled.value, true)
     assert.equal(calls, 2)
+    comparison.dispose()
+  }
+})
+
+test('partner reference snapshot conflict rebuilds the same chart window once and binds a fresh reference token', async () => {
+  const first = chart('oscillation'), fresh = chart('oscillation')
+  first.meta.snapshot_token = 'first-partner-token'; fresh.meta.snapshot_token = 'fresh-partner-token'
+  const requests = []
+  const comparison = useNewowComparison(ref(chart()), ref(true), async request => {
+    requests.push(request)
+    if (request.section === 'chart') return requests.filter(item => item.section === 'chart').length === 1 ? first : fresh
+    if (request.snapshotToken === first.meta.snapshot_token) throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+    return { section: 'reference', meta: fresh.meta, status: { status: 'ready' }, value: { items: [] } }
+  })
+  await flushComparison()
+  assert.deepEqual(requests.map(item => item.section), ['chart', 'reference', 'chart', 'reference'])
+  assert.deepEqual(requests[2], requests[0], 'recovery must use the same chart window and no rejected token')
+  assert.equal(requests[3].snapshotToken, fresh.meta.snapshot_token)
+  assert.equal(comparison.response.value?.meta.snapshot_token, fresh.meta.snapshot_token)
+  assert.equal(comparison.reference.value?.meta.snapshot_token, fresh.meta.snapshot_token)
+  assert.equal(comparison.referenceError.value, null)
+  comparison.dispose()
+})
+
+test('partner conflict recovery stops after a second conflict or a non-conflict error', async () => {
+  for (const secondConflict of [true, false]) {
+    const requests = []
+    const first = chart('oscillation'), fresh = chart('oscillation')
+    first.meta.snapshot_token = 'first-partner-token'; fresh.meta.snapshot_token = 'fresh-partner-token'
+    const comparison = useNewowComparison(ref(chart()), ref(true), async request => {
+      requests.push(request)
+      if (request.section === 'chart') return requests.filter(item => item.section === 'chart').length === 1 ? first : fresh
+      throw new NewowProductRequestError(secondConflict ? 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' : 'NEWOW_API_UNAVAILABLE', secondConflict ? 'conflict' : 'unavailable')
+    })
+    await flushComparison()
+    assert.deepEqual(requests.map(item => item.section), secondConflict ? ['chart', 'reference', 'chart', 'reference'] : ['chart', 'reference'])
+    assert.equal(comparison.reference.value, null)
+    assert.ok(comparison.referenceError.value)
+    assert.equal(comparison.referenceSettled.value, true)
+    comparison.dispose()
+  }
+})
+
+test('a matching code without conflict classification does not trigger partner recovery', async () => {
+  const requests = [], partner = chart('oscillation')
+  const comparison = useNewowComparison(ref(chart()), ref(true), async request => {
+    requests.push(request)
+    if (request.section === 'chart') return partner
+    throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'unavailable')
+  })
+  await flushComparison()
+  assert.deepEqual(requests.map(item => item.section), ['chart', 'reference'])
+  assert.ok(comparison.referenceError.value)
+  comparison.dispose()
+})
+
+test('changed market facts in the rebuilt partner chart fail closed before fresh reference', async () => {
+  const first = chart('oscillation'), changed = chart('oscillation'), requests = []
+  changed.value.bars[0].close = '777'
+  const comparison = useNewowComparison(ref(chart()), ref(true), async request => {
+    requests.push(request)
+    if (request.section === 'chart') return requests.filter(item => item.section === 'chart').length === 1 ? first : changed
+    throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+  })
+  await flushComparison()
+  assert.deepEqual(requests.map(item => item.section), ['chart', 'reference', 'chart'])
+  assert.equal(comparison.state.value, 'input_conflict')
+  assert.equal(comparison.response.value, null)
+  assert.equal(comparison.reference.value, null)
+  assert.equal(comparison.referenceSettled.value, true)
+  comparison.dispose()
+})
+
+test('disabled comparison drops a late rebuilt chart and never dispatches fresh reference', async () => {
+  const enabled = ref(true), first = chart('oscillation'), fresh = chart('oscillation'), requests = []
+  fresh.value.bars = fresh.value.bars.slice(0, 1)
+  fresh.value.next_before = '2026-08-01T00:00:00Z'
+  let finishRebuild
+  const comparison = useNewowComparison(ref(chart()), enabled, async request => {
+    requests.push(request)
+    if (request.section === 'chart') return requests.filter(item => item.section === 'chart').length === 1
+      ? first : new Promise(resolve => { finishRebuild = resolve })
+    throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+  })
+  await flushComparison()
+  assert.deepEqual(requests.map(item => item.section), ['chart', 'reference', 'chart'])
+  assert.equal(comparison.state.value, 'loading')
+  assert.equal(comparison.referenceSettled.value, false)
+  enabled.value = false
+  finishRebuild(fresh)
+  await flushComparison()
+  assert.deepEqual(requests.map(item => item.section), ['chart', 'reference', 'chart'])
+  assert.equal(comparison.state.value, 'not_requested')
+  assert.equal(comparison.response.value, null)
+  comparison.dispose()
+})
+
+test('abort or base replacement during rejected partner reference cannot dispatch recovery', async () => {
+  for (const replaceBase of [false, true]) {
+    const base = ref(chart()), enabled = ref(true), requests = []
+    let rejectReference
+    const comparison = useNewowComparison(base, enabled, async request => {
+      requests.push(request)
+      return request.section === 'chart' ? chart('oscillation') : new Promise((_resolve, reject) => { rejectReference = reject })
+    })
+    await flushComparison()
+    if (replaceBase) { const replacement = chart(); replacement.meta.identity.product = 'j'; base.value = replacement }
+    else enabled.value = false
+    rejectReference(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
+    await flushComparison()
+    assert.equal(requests.filter(item => item.identity.product === 'rb').length, 2)
+    assert.equal(comparison.reference.value, null)
     comparison.dispose()
   }
 })
