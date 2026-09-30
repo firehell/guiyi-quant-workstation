@@ -32,6 +32,8 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+P7-20 PK **COMPLETED，12/12 历史候选页面闭环**。18 个物理 owner、72 个 owner×周期单元 DATA_READY；一次维护 152 次真实行情请求、617 派生目标，276597 根四频 Bar 独立全前缀 Decimal 复核通过；1065 旧文件、53539 旧 Bar 和 498 日周分区保持。4 输入/8 基础/4 融合共 12 候选 READY、disabled/generation=0/complete_window_proven=false；API 12/12。一次 Chrome 19 场、49 原图逐张审查，15109 笔 CLOSED 收益和 15145 个 SVG 点独立核算通过；API wrapper 重复 coverage 步骤的失败证据保留，未重跑已完成阶段。密集标签遮挡、W1 原生 WARMING 等边界保留；专属 Chrome/API/Web 已停、锁0。未启动 SR，正式分钟/Runtime/Scope/通知/账户未变。见 [PK处理记录](docs/tasks/pk-candidate-pilot-20260930.md)。
+
 P7-19 RM **COMPLETED，12/12 历史候选页面闭环**。13 个物理 owner、52 个 owner×周期单元 DATA_READY；一次维护 98 次真实行情请求、402 派生目标，310135 根四频 Bar 独立全前缀 Decimal 复核通过；942 旧文件、60495 旧 Bar 和 396 日周分区保持。4 输入/8 基础/4 融合共 12 候选 READY、disabled/generation=0/complete_window_proven=false；API 12/12。一次 Chrome 19 场、49 原图逐张审查，22057 笔 CLOSED 收益和 22093 个 SVG 点独立核算通过；审查脚本误用 M 前缀的失败证据及修正后 RM 身份 Gate 均保留。密集标签遮挡、W1 原生 WARMING 等边界保留；专属 Chrome/API/Web 已停、锁0。未启动 PK，正式分钟/Runtime/Scope/通知/账户未变。见 [RM处理记录](docs/tasks/rm-candidate-pilot-20260930.md)。
 
 P7-18 M **COMPLETED，12/12 历史候选页面闭环**。12 个物理 owner、48 个 owner×周期单元 DATA_READY；一次维护 87 次真实行情请求、356 派生目标，278360 根四频 Bar 独立全前缀 Decimal 核对通过；902 旧文件、71399 旧 Bar 和 369 个日周分区保持。4 输入/8 基础/4 融合共 12 候选 READY、disabled/generation=0/complete_window_proven=false；API 12/12。Playwright 整场 JSON 序列化 OOM 原证据保留；按有序哈希分块修复后，5m dual 真实 180 块/187774211 字节完整读回，前三场 SHA 复用，最终 19 场数值审计、49 原图检查、21983 笔 CLOSED 收益及 22019 个 SVG 点独立核算通过。浏览器返工和密集标签遮挡如实保留，专属 Chrome/API/Web 已停、8012/5178 无监听；未启动 RM，正式分钟/Runtime/Scope/通知/账户未变。见 [M处理记录](docs/tasks/m-candidate-pilot-20260930.md)。
