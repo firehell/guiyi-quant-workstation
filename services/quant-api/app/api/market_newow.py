@@ -139,7 +139,8 @@ _CUP_MARKERS = frozenset(
         "CUP_HANDLE_EXPIRED",
     }
 )
-_PRODUCT_CACHE = SnapshotCache(max_bytes=512 * 1024 * 1024, max_entry_bytes=256 * 1024 * 1024)
+_PRODUCT_CACHE = SnapshotCache()
+_INTRADAY_HISTORY_CACHE = SnapshotCache(max_bytes=512 * 1024 * 1024, max_entry_bytes=256 * 1024 * 1024)
 _PRODUCT_GATE = HeavyResourceGate()
 # Saved minute history has independent bounded admission; it must not starve
 # current chart comparisons and D1/W1 background calculations.
@@ -419,7 +420,7 @@ def _build_product_service(
         persisted_reference = None
     return NewowProductService(
         reader_factory,
-        cache=_PRODUCT_CACHE,
+        cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,
         persisted_reference_gate=_PERSISTED_REFERENCE_GATE,
         inflight=_PRODUCT_INFLIGHT,

@@ -1290,6 +1290,8 @@ The minute reference section SHALL read the existing historical materializations
 `newow_intraday_pilot_20260927` through the native persisted reader using a schema-scoped session
 factory. Every persisted query retains its bounded repeatable-read read-only transaction and the
 fresh Canonical source proof; D1/W1, public reference endpoints and workers do not change schemas.
+The released minute service uses its own bounded 512 MiB / 256 MiB-entry snapshot cache; the
+existing D1/W1 and resolver cache remains at 128 MiB / 32 MiB-entry.
 This release does not activate streams, install a reference worker, advance the cutoff, change
 formula/profile/reference-model identities or introduce a production writer. Source drift still
 fails closed and requires an explicit native rebuild; a past candidate closure is not current source proof.
