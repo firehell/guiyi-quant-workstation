@@ -1,7 +1,7 @@
 import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 
 import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
-import { candidatePreview } from '../utils/candidatePreview.ts'
+import { candidatePreviewNow } from '../utils/candidatePreview.ts'
 import { previewInstant } from '../utils/candidatePreviewInstant.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
 import {
@@ -62,8 +62,7 @@ interface ChartLoadOptions {
 export function useNewowProduct(options: UseNewowProductOptions) {
   const fetchSection: FetchSection = options.fetchSection
     ?? ((request, signal) => getNewowProductSection(request, { signal }))
-  const now = options.now ?? (() => candidatePreview.enabled && !candidatePreview.defaultWeekly
-    ? candidatePreview.asOf : new Date())
+  const now = options.now ?? candidatePreviewNow
   const currentIdentity = shallowRef<NewowProductIdentity | null>(null)
   const asOf = shallowRef<string | null>(null)
   const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { isNewowStrategySwitch } from '@/utils/marketDetailRoute'
+import { candidatePreviewNow } from '@/utils/candidatePreview'
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowUiStateLabel } from '@/utils/newowUiState'
 import { useNewowComparison } from '@/composables/useNewowComparison'
@@ -39,7 +40,7 @@ watch(identity, (next, previous) => {
   strategySwitching.value = previous.strategy !== next.strategy && isNewowStrategySwitch(previous, next)
 }, { flush: 'sync' })
 const releasedMinuteHistory = computed(() => props.capabilities.schema_version === 'newow_product_capabilities_v28' && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency))
-const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : new Date() })
+const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : candidatePreviewNow() })
 const comparisonSelected = ref(false)
 const comparisonEnabled = computed(() => dualMode.value || comparisonSelected.value)
 const comparisonSelection = shallowRef<{ strategy: 'trend' | 'oscillation'; signalId: string } | null>(null)
