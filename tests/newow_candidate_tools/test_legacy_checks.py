@@ -287,12 +287,41 @@ def recovery_sample():
                          summary=dict(membership_policy="entry_in_window_v1", closed_count=1),
                          curve_trades=[{"reference_trade_id": "one"}], items=[{"reference_trade_id": "one"}],
                      )))
-    observation["responses"][4:4] = [main, old, conflict, fresh, reference]
-    observation["returnFloor"] = 9
+    fusion_trade = dict(
+        reference_trade_id="one", status="CLOSED", statistics_membership="entry_in_window_v1",
+        entry_bar_end="2026-09-23T07:00:00+00:00", entry_trading_day="2026-09-23",
+        exit_bar_end=bar["bar_end"], exit_trading_day=bar["trading_day"],
+        reference_return_pct="1.25",
+    )
+    fusion = dict(
+        product=candidate.product, frequency="60m", reference_revision="a" * 64,
+        reference_input_sha256="d" * 64, reference_cutoff=bar["bar_end"],
+        items=[fusion_trade], record_since="2025-09-24",
+        performance_since=candidate.since, performance_through=candidate.through,
+        reference_model_version=expected["rows"]["1w"]["reference_model_version"],
+        source_profiles=["newow_product_trend_60m_v1", "newow_product_oscillation_60m_v1"],
+        source_formula_versions=expected["rows"]["1w"]["source_formula_versions"],
+        page_parity=True, executable=False, snapshot_schema="newow_fusion_reference_snapshot_v2",
+        groups=[dict(model="fusion", closed_count=1, sum_return_percentage_points="1.25")],
+        curve=[fusion_trade],
+    )
+    fusion_wire = dict(
+        phase="away", url=url("trend", "reference", include_fusion="true",
+                              snapshot_token="main-token", performance_since=candidate.since,
+                              performance_through=candidate.through), http=200,
+        meta=meta("trend", "main-token"),
+        reference=dict(delivery="delivered", status=dict(status="ready"), value=dict(
+            reference_input_sha256="d" * 64, reference_cutoff=bar["bar_end"], fusion=fusion,
+        )),
+    )
+    observation["responses"][4:4] = [main, old, conflict, fresh, reference, fusion_wire]
+    observation["returnFloor"] = 10
+    points, _ = expected_curve(fusion, True)
     observation["away"] = dict(
         url=candidate.web_origin + "/market/chart?symbol=cj&frequency=60m&newow_mode=dual",
         mode=["双策略"], scopeBusy=False, cards=["fusion-trade-one"],
-        curves=[dict(points="0,0 1,1", width=700, height=140)], statuses=[],
+        curves=[dict(points=" ".join(f"{x},{y}" for x, y in points), width=700, height=140)],
+        statuses=[], all="true",
         observed_at=10_000,
     )
     bind_recovery_rows(observation)
@@ -322,7 +351,8 @@ def test_exact_bound_partner_recovery_accepts_one_same_window_chain():
     "wrong_order", "fresh_bar", "main_bar", "wrong_source", "wrong_reference_hash",
     "away_error", "away_before_reference", "away_missing_time", "away_boolean_time",
     "away_missing_busy", "away_busy", "away_missing_cards", "wrong_frequency", "wrong_formula",
-    "missing_fresh_reference", "wrong_reference_token",
+    "missing_fresh_reference", "wrong_reference_token", "wrong_both_formula", "away_unrelated_card",
+    "away_invalid_curve", "fusion_before_fresh", "fusion_stale_token", "fusion_wrong_hash",
 ])
 def test_partner_recovery_rejects_unproven_chain(change):
     c, p, o = recovery_sample()
@@ -348,10 +378,20 @@ def test_partner_recovery_rejects_unproven_chain(change):
     elif change == "away_missing_busy": o["away"].pop("scopeBusy")
     elif change == "away_busy": o["away"]["scopeBusy"] = True
     elif change == "away_missing_cards": o["away"]["cards"] = []
+    elif change == "away_unrelated_card": o["away"]["cards"] = ["fusion-trade-unrelated"]
+    elif change == "away_invalid_curve": o["away"]["curves"][0]["points"] = "0,NaN 712,140"
     elif change == "wrong_frequency": conflict["url"] = conflict["url"].replace("frequency=60m", "frequency=15m"); conflict["xhr_binding"]["url"] = conflict["url"]
     elif change == "wrong_formula": fresh["meta"]["identity"]["formula_versions"] = ["changed"]
+    elif change == "wrong_both_formula":
+        main["meta"]["identity"]["formula_versions"] = ["wrong-trend"]
+        old["meta"]["identity"]["formula_versions"] = ["wrong-oscillation"]
+        fresh["meta"]["identity"]["formula_versions"] = ["wrong-oscillation"]
+        rows[9]["reference"]["value"]["fusion"]["source_formula_versions"] = ["wrong-trend", "wrong-oscillation"]
     elif change == "missing_fresh_reference": rows.pop(8)
     elif change == "wrong_reference_token": reference["meta"]["snapshot_token"] = "old-token"
+    elif change == "fusion_before_fresh": rows.insert(8, rows.pop(9)); bind_recovery_rows(o)
+    elif change == "fusion_stale_token": rows[9]["url"] = rows[9]["url"].replace("main-token", "stale-token"); rows[9]["xhr_binding"]["url"] = rows[9]["url"]
+    elif change == "fusion_wrong_hash": rows[9]["reference"]["value"]["fusion"]["reference_input_sha256"] = "f" * 64
     with pytest.raises((ValueError, KeyError, TypeError)):
         validate_legacy_capture(c, p, o, "1w", "dual")
 

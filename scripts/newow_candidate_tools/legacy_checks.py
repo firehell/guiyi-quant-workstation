@@ -83,6 +83,9 @@ def validate_away_snapshot_recovery(
     need(
         old_q == fresh_q
         and old_q.get("section") == ["chart"]
+        and old_q.get("from") == [old["chart"]["value"]["from"]]
+        and old_q.get("through") == [candidate.through]
+        and old["chart"]["value"].get("through") == candidate.through
         and "snapshot_token" not in old_q
         and "chart_before" not in old_q
         and old.get("chart", {}).get("delivery") == "delivered"
@@ -103,7 +106,10 @@ def validate_away_snapshot_recovery(
         len(main_charts) == 1
         and main_charts[0].get("chart", {}).get("delivery") == "delivered"
         and main_charts[0]["chart"].get("status", {}).get("status") == "ready"
-        and main_charts[0]["chart"].get("value") == old["chart"]["value"],
+        and all(
+            main_charts[0]["chart"]["value"].get(key) == old["chart"]["value"].get(key)
+            for key in ("from", "through", "bars")
+        ),
         "LEGACY_RECOVERY_MAIN_PARTNER_FACTS",
     )
     for chart_row in (main_charts[0], old, fresh):
@@ -204,6 +210,58 @@ def validate_away_snapshot_recovery(
         ),
         "LEGACY_RECOVERY_ORDER",
     )
+    fusion_rows = [
+        r for r in responses[recovered_index + 1:]
+        if r.get("phase") == "away" and r.get("http") == 200
+        and (q := parse_qs(urlsplit(r.get("url", "")).query)).get("section") == ["reference"]
+        and q.get("include_fusion") == ["true"]
+    ]
+    need(len(fusion_rows) == 1, "LEGACY_RECOVERY_FUSION_WIRE_MISSING")
+    fusion_row = fusion_rows[0]
+    fusion_url = urlsplit(fusion_row["url"])
+    fusion_q = parse_qs(fusion_url.query)
+    fusion_meta = fusion_row.get("meta") or {}
+    fusion_value = (fusion_row.get("reference") or {}).get("value") or {}
+    fusion = fusion_value.get("fusion") or {}
+    need(
+        f"{fusion_url.scheme}://{fusion_url.netloc}" in (candidate.web_origin, candidate.api_origin)
+        and fusion_url.path == "/api/v1/market/newow/strategy-detail"
+        and not fusion_url.fragment and fusion_url.username is None and fusion_url.password is None
+        and fusion_q.get("product") == [candidate.product]
+        and fusion_q.get("frequency") == ["60m"]
+        and fusion_q.get("strategy") == ["trend"]
+        and fusion_q.get("series_kind") == ["actual_dominant"]
+        and fusion_q.get("section") == ["reference"]
+        and fusion_q.get("include_fusion") == ["true"]
+        and fusion_q.get("snapshot_token") == [main_meta["snapshot_token"]]
+        and fusion_q.get("performance_since") == [candidate.since]
+        and fusion_q.get("performance_through") == [candidate.through]
+        and len(fusion_q.get("as_of", [])) == 1
+        and instant(fusion_q["as_of"][0]) == instant(candidate.as_of)
+        and fusion_meta.get("snapshot_token") == main_meta["snapshot_token"]
+        and fusion_meta.get("identity") == main_meta.get("identity")
+        and instant(fusion_meta["as_of"]) == instant(candidate.as_of)
+        and re.fullmatch("[a-f0-9]{64}", str(fusion_meta.get("input_content_sha256", ""))) is not None
+        and fusion_row["reference"].get("delivery") == "delivered"
+        and fusion_row["reference"].get("status", {}).get("status") == "ready"
+        and fusion_value.get("reference_input_sha256") == fusion_meta.get("input_content_sha256")
+        and fusion_value.get("reference_cutoff") == value["reference_cutoff"]
+        and fusion.get("product") == candidate.product
+        and fusion.get("frequency") == "60m"
+        and fusion.get("reference_input_sha256") == fusion_value["reference_input_sha256"]
+        and fusion.get("reference_cutoff") == value["reference_cutoff"]
+        and fusion.get("performance_since") == candidate.since
+        and fusion.get("performance_through") == candidate.through
+        and fusion.get("snapshot_schema") == "newow_fusion_reference_snapshot_v2"
+        and fusion.get("source_profiles") == [main_meta["identity"]["profile_id"], old_meta["identity"]["profile_id"]]
+        and fusion.get("source_formula_versions") == main_meta["identity"]["formula_versions"] + old_meta["identity"]["formula_versions"]
+        and fusion.get("reference_model_version") == expected["reference_model_version"]
+        and fusion.get("page_parity") is True
+        and fusion.get("executable") is False
+        and fusion_row["xhr_binding"]["started_order"] > reference["xhr_binding"]["completed_order"]
+        and fusion_row["xhr_binding"]["xhr_sequence"] > reference["xhr_binding"]["xhr_sequence"],
+        "LEGACY_RECOVERY_FUSION_WIRE_CHANGED",
+    )
     away = observation.get("away") or {}
     away_query = parse_qs(urlsplit(away.get("url", "")).query)
     need(
@@ -213,9 +271,11 @@ def validate_away_snapshot_recovery(
         and type(away.get("observed_at")) is int
         and away["observed_at"] > 0
         and away["observed_at"] >= reference["xhr_binding"]["completed_at"]
+        and away["observed_at"] >= fusion_row["xhr_binding"]["completed_at"]
         and away.get("scopeBusy") is False
-        and bool(away.get("cards"))
-        and bool(away.get("curves"))
+        and away.get("all") == "true"
+        and isinstance(away.get("cards"), list)
+        and isinstance(away.get("curves"), list)
         and all(c.get("width", 0) > 0 and c.get("height", 0) > 0 for c in away["curves"])
         and not any(
             re.search("正在读取|读取中|另一策略参考收益暂不可用|无法对齐|读取失败", s)
@@ -223,6 +283,18 @@ def validate_away_snapshot_recovery(
         ),
         "LEGACY_RECOVERY_AWAY_DOM",
     )
+    anchor = (instant(fusion["reference_cutoff"]) + timedelta(hours=8)).date()
+    try:
+        record_since = anchor.replace(year=anchor.year - 1).isoformat()
+    except ValueError:
+        record_since = anchor.replace(year=anchor.year - 1, day=28).isoformat()
+    items = [
+        t for t in fusion["items"]
+        if t["status"] == "OPEN"
+        or (t.get("entry_trading_day") or t["entry_bar_end"][:10]) >= record_since
+    ]
+    need(record_ids_match(items, away["cards"]), "LEGACY_RECOVERY_AWAY_RECORDS")
+    validate_curve_ui(fusion, [c["points"] for c in away["curves"]], away.get("statuses", []), True)
     return True
 
 
