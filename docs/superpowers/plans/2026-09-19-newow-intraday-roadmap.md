@@ -413,7 +413,7 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 
 owner 于 2026-10-01 续交办四品种，当前执行顺序改为 **LC → FG → AO → CU**。
 四项仍归属下表原有行号，不新增或缩减原 13 品种和原 21 品种分母；其余未开始品种不因本轮自动启动。
-LC已候选闭环、资源释放并集成推送develop，当前FG进入只读基线与精确预检准备；AO/CU在前项闭环或有证据的安全暂缓、资源释放后再启动。
+LC已候选闭环、资源释放并集成推送develop；FG已候选闭环并释放资源、进入develop集成验证，AO/CU在前项交付完成或有证据的安全暂缓后再启动。
 
 | 顺序 | 品种 | 代码 | 当前状态 |
 | --- | --- | --- | --- |
@@ -429,7 +429,7 @@ LC已候选闭环、资源释放并集成推送develop，当前FG进入只读基
 | P7B-10 | 铜 | CU | NOT_STARTED |
 | P7B-11 | 碳酸锂 | LC | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；48维护41读回+7无缺口/87请求/356派生；819旧文件29997旧Bar346日周保持，179653 Bar独立Decimal；12 READY disabled/gen0；71198 clock修复后API12/149、Chrome19/49/461索引、12399 CLOSED/12433 SVG通过；source三fresh一致/资源锁0，首失败保留；上市预热PARTIAL/DD不可用/W1震荡0交易保留；任务a01ce928→develop2b25cec63，298 API工具/130 Web/build通过，push读回d2362b0bf；见[LC记录](../../tasks/lc-candidate-pilot-20261001.md) |
 | P7B-12 | 多晶硅 | PS | NOT_STARTED |
-| P7B-13 | 玻璃 | FG | IN_PROGRESS / MAINTENANCE_RUNNING；6fd1da613 singleton双轴Review/114API/122Web；native起点2012-12-03、页面2023-01-01..Sept24；12owner/48依赖/private0，906旧文件/373日周前像，48原生dryplans/88源月/360派生目标，预算scratch通过，campaign c8d99077/runner76b570、独立fresh48plans/前像/map/scratch/锁0通过，唯一维护执行阶段；FG2305完整物理预热前缀含2022上市后数据，页面窗口不前移 |
+| P7B-13 | 玻璃 | FG | CANDIDATE_CLOSED / DEVELOP_INTEGRATION_PENDING，12/12；6fd1da613 singleton双轴Review/114API/122Web；窗口2023-01-01..Sept24；12owner/48维护45读回+3无缺口/88请求/360派生，906旧bytes/58989旧Bar/373日周保持，397新增/51扩展/0删；四频各141物理月/284389 Bar独立Decimal；12完整state/summary/4伙伴READY disabled/gen0/completewindowfalse，分钟基础页面覆盖FULL；API12/152/UTC7，Chrome19/49原图/675索引、23557 CLOSED/23593 SVG独审通过，source三fresh443f2a77一致/资源锁0；W1 35/120与震荡11预热区段/1交易及显示、融合、取消TTL局限保留，原生维护/build/API/采集无失败重试；见[FG记录](../../tasks/fg-candidate-pilot-20261001.md) |
 
 逐项记录完成分子及闭环/部分/暂缓/未开始，总和始终等于 13。仅完成 12/12 且必要
 独立 Review 通过才记 CANDIDATE_CLOSED；安全暂缓只代表本项已处理，不代表闭环。
