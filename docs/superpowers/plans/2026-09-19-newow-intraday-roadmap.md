@@ -413,7 +413,7 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 
 owner 于 2026-10-01 续交办四品种，当前执行顺序改为 **LC → FG → AO → CU**。
 四项仍归属下表原有行号，不新增或缩减原 13 品种和原 21 品种分母；其余未开始品种不因本轮自动启动。
-当前仅 LC 进入只读准备，FG/AO/CU 在前项闭环或有证据的安全暂缓、资源释放后再启动。
+LC已候选闭环、资源释放并集成推送develop，当前FG进入只读基线与精确预检准备；AO/CU在前项闭环或有证据的安全暂缓、资源释放后再启动。
 
 | 顺序 | 品种 | 代码 | 当前状态 |
 | --- | --- | --- | --- |
@@ -427,9 +427,9 @@ owner 于 2026-10-01 续交办四品种，当前执行顺序改为 **LC → FG �
 | P7B-08 | 锡 | SN | NOT_STARTED |
 | P7B-09 | 铝 | AL | NOT_STARTED |
 | P7B-10 | 铜 | CU | NOT_STARTED |
-| P7B-11 | 碳酸锂 | LC | CANDIDATE_CLOSED / DEVELOP_INTEGRATED；owner四品种串行首项，de7e68571 singleton准入两轴Review/API109/Web26/build通过；权威上市2023-07-21，12owner/48原生计划、819旧七频前像、87源月/356派生目标预算、scratch及锁0独立fresh preapply通过，冻结plan d8770585；唯一维护48/48完成（41读回＋7无缺口），实际87请求/356派生发布；819旧文件、29997旧Bar、346日周独立保留，179653根四频Bar独立全前缀Decimal通过，8基础/4融合唯一构建并读回、最终12state/summary及4融合依赖独立核对通过，READY/disabled/gen0，API12/12、149 GET/UTC边界及postapi整文件来源一致通过，首轮Chrome首场clock覆盖导致严格110s超时，无seal/PNG，原失败保留，根因15b9e94 Workspace now覆盖，共享候选clock修复71198c1a/104tests/build/双轴Review通过，新source/12state-summary/4依赖独立原生桥接旧de7构建一致，新API12/12、149条件GET及UTC边界通过，新final/postapi/postbrowser整文件一致，19场/49原图/461原生索引文件独立核对，12399 CLOSED/12433 SVG逐值通过，实际cancel/timeout/409恢复通过（DOM201/89、不宣称cancel完整卡身份），最终12state-summary/4依赖及专属资源/锁0读回通过，root最终REVIEW_COMPLETE_CANDIDATE_CLOSED；上市预热PARTIAL/DD不可用/W1震荡0交易保留，任务文档a01ce928已普通合入develop 2b25cec63；合并态API+工具298、Web130及build通过，待本轮普通push读回 |
+| P7B-11 | 碳酸锂 | LC | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；48维护41读回+7无缺口/87请求/356派生；819旧文件29997旧Bar346日周保持，179653 Bar独立Decimal；12 READY disabled/gen0；71198 clock修复后API12/149、Chrome19/49/461索引、12399 CLOSED/12433 SVG通过；source三fresh一致/资源锁0，首失败保留；上市预热PARTIAL/DD不可用/W1震荡0交易保留；任务a01ce928→develop2b25cec63，298 API工具/130 Web/build通过，push读回d2362b0bf；见[LC记录](../../tasks/lc-candidate-pilot-20261001.md) |
 | P7B-12 | 多晶硅 | PS | NOT_STARTED |
-| P7B-13 | 玻璃 | FG | NOT_STARTED |
+| P7B-13 | 玻璃 | FG | IN_PROGRESS / MAINTENANCE_RUNNING；6fd1da613 singleton双轴Review/114API/122Web；native起点2012-12-03、页面2023-01-01..Sept24；12owner/48依赖/private0，906旧文件/373日周前像，48原生dryplans/88源月/360派生目标，预算scratch通过，campaign c8d99077/runner76b570、独立fresh48plans/前像/map/scratch/锁0通过，唯一维护执行阶段；FG2305完整物理预热前缀含2022上市后数据，页面窗口不前移 |
 
 逐项记录完成分子及闭环/部分/暂缓/未开始，总和始终等于 13。仅完成 12/12 且必要
 独立 Review 通过才记 CANDIDATE_CLOSED；安全暂缓只代表本项已处理，不代表闭环。
