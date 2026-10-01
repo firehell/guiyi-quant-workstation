@@ -6,6 +6,16 @@ test('candidate preview policy exists as explicit isolated configuration', () =>
   assert.ok(existsSync(new URL('../previewProxy.ts', import.meta.url)))
 })
 
+test('candidate clock keeps the exact cutoff while formal and weekly clocks retain their own source', async () => {
+  const { candidatePreviewNow } = await import('../src/utils/candidatePreview.ts')
+  const cutoff = '2026-09-24T07:00:00.000001+00:00'
+  const wall = new Date('2026-10-01T01:52:45.512Z')
+  const clock = () => wall
+  assert.equal(candidatePreviewNow({ enabled: true, defaultWeekly: false, asOf: cutoff }, clock), cutoff)
+  assert.equal(candidatePreviewNow({ enabled: true, defaultWeekly: true, asOf: cutoff }, clock), wall)
+  assert.equal(candidatePreviewNow({ enabled: false, defaultWeekly: false, asOf: cutoff }, clock), wall)
+})
+
 test('proxy allows exact GET resources only, never encoded paths or WS', async () => {
   const { previewTarget } = await import('../previewProxy.ts')
   assert.equal(previewTarget('GET', '/api/v1/market/bars/page?symbol=rb'), 'http://127.0.0.1:8010')
