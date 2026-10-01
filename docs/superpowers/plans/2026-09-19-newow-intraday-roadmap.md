@@ -415,6 +415,8 @@ owner 于 2026-10-01 续交办四品种，当前执行顺序改为 **LC → FG �
 四项仍归属下表原有行号，不新增或缩减原 13 品种和原 21 品种分母；其余未开始品种不因本轮自动启动。
 LC已候选闭环、资源释放并集成推送develop；FG已候选闭环、资源释放并集成develop，通过303 API工具/130 Web/build，普通push/远端8777b167c读回一致；AO唯一维护出现源Decimal无法无损发布，已停批，独立安全暂缓完成、0/12；记录4640ecceb已普通集成develop150ad5e5b、308 API工具/130 Web/build通过，普通push/远端a9a8c2a3e读回一致，CU已安全暂缓0/12、记录ff23a287普通集成developca64b256，313 API工具/130 Web/build及diff/secret通过，普通push/远端1f647ba08读回一致；本轮实际2闭环+2安全暂缓，其余品种不启动；AO/CU实际候选仍阻塞，须先确定无损成交额表示与精确恢复合同。
 
+owner 新交办的本轮优先顺序为 **PS 多晶硅 → Y 豆油 → SI 工业硅**；当前PS历史候选12/12闭环、develop集成待完成，Y/SI未开始。旧AO/CU失败不重试；PS/Y沿用原13行号，SI单列补充，不改变原13/21分母。
+
 | 顺序 | 品种 | 代码 | 当前状态 |
 | --- | --- | --- | --- |
 | P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
@@ -428,7 +430,7 @@ LC已候选闭环、资源释放并集成推送develop；FG已候选闭环、资
 | P7B-09 | 铝 | AL | NOT_STARTED |
 | P7B-10 | 铜 | CU | DEFERRED_DATA_BLOCKED / SAFE_DEFERRED，0/12；冻结准入e81693c7、独审124 API/122 Web；45owner/180单元唯一81392首CU2302/5m源Aug2022 scale24不能无损decimal128(38,18)，payload937bca9a封存；0完成/1knownfailedpartial/179未尝试，7started请求，实际12新增1m+5m各Feb-Jul2022六个月，1952旧bytes/1173日周保持，51360源端点/10272派生Bar独立Decimal200通过；failedsource active0/目录空、private0/锁0/端口释放、最终独立safe-defer通过，禁止重试/roundzero/schema绕过；记录ff23a287普通集成ca64b256、313 API工具/130 Web/build及diff/secret通过，普通push/远端1f647ba08读回一致 |
 | P7B-11 | 碳酸锂 | LC | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；48维护41读回+7无缺口/87请求/356派生；819旧文件29997旧Bar346日周保持，179653 Bar独立Decimal；12 READY disabled/gen0；71198 clock修复后API12/149、Chrome19/49/461索引、12399 CLOSED/12433 SVG通过；source三fresh一致/资源锁0，首失败保留；上市预热PARTIAL/DD不可用/W1震荡0交易保留；任务a01ce928→develop2b25cec63，298 API工具/130 Web/build通过，push读回d2362b0bf；见[LC记录](../../tasks/lc-candidate-pilot-20261001.md) |
-| P7B-12 | 多晶硅 | PS | NOT_STARTED |
+| P7B-12 | 多晶硅 | PS | CANDIDATE_CLOSED / DEVELOP_INTEGRATION_PENDING，12/12；develop739644666→冻结c214b9d5，独审129 API/122 Web；窗口2024-12-26..2026-09-24、10owner/40unit=33读回+7无缺口，68真实源请求/282派生；545旧bytes/24290旧Bar/244日周保持，309新增/41扩展/0删；四频各100物理月、130232 Bar独立Decimal200通过；8基础+4融合/current12完整state/summary/4对依赖READY关闭generation0，complete_window_proven=false。API12/149GET/UTC7、Chrome19场49原图/358索引、6864CLOSED价格回报/6898SVG独审通过，source三份264d9f84整字节一致；原生cancel/timeout0.251/409与fresh恢复通过（不证明TTL/完整卡片身份），专属3PID退出/端口空闲/锁0；四趋势FULL/四震荡PARTIAL和W1转折44/120、震荡0CLOSED指标—保持，未声明OOS或可执行收益；独立最终REVIEW_COMPLETE_CANDIDATE_CLOSED，待普通集成测试push/readback |
 | P7B-13 | 玻璃 | FG | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；6fd1da613 singleton双轴Review/114API/122Web；窗口2023-01-01..Sept24；12owner/48维护45读回+3无缺口/88请求/360派生，906旧bytes/58989旧Bar/373日周保持，397新增/51扩展/0删；四频各141物理月/284389 Bar独立Decimal；12完整state/summary/4伙伴READY disabled/gen0/completewindowfalse，分钟基础页面覆盖FULL；API12/152/UTC7，Chrome19/49原图/675索引、23557 CLOSED/23593 SVG独审通过，source三fresh443f2a77一致/资源锁0；W1 35/120与震荡11预热区段/1交易及显示、融合、取消TTL局限保留，原生维护/build/API/采集无失败重试；任务b7d204ccd→develop2de2e2f7f，合并态303 API工具/130 Web/build及diff/secret通过，普通push/远端8777b167c读回一致；见[FG记录](../../tasks/fg-candidate-pilot-20261001.md) |
 
 逐项记录完成分子及闭环/部分/暂缓/未开始，总和始终等于 13。仅完成 12/12 且必要
@@ -576,3 +578,5 @@ git diff --check
 P0–P6 已按依赖连续完成，P2 分初盘/最终复核；所有首轮勾选项以任务记录中的实际证据为准。既有 opaque chart cursor、维护恢复与基础 replay 被复用；融合复用基础保存流而非重复计算两 kernel。P0–P6 首轮实际无数据缺口，因此当时没有 provider 下载、Canonical/Catalog mutation 或全历史补数；8基础/4融合资产仅在隔离 schema 构建。P7 首批的精确缺口维护另见本批任务记录，不能沿用首轮的零缺口结论。fixture E2E 与真实 Chrome 分列，旧7项fixture失败在未修改develop逐项复现，不把旧失败包装成通过。全spec9/10，既有reference-trading段落结构失败单列，本轮Newow spec有效。
 
 P7 首批 black + steel 正在执行，实际证据见本批任务交接；不得按本文件旧基线重新实施 P0–P6。P8发布、P9观察启用、R1/R2因果研究与OOS不属于本轮完成声明。首轮 aef3 版本的100k完整曲线与有限队列有有限样本实测预算，不能代替本批 c576 板块规模验收；SQL/hydrate不保证即时取消，正式扩展前继续验证并发/冷读预算。
+
+本轮新增补充品种：SI 工业硅，NOT_STARTED；在PS、Y依序完成或有证据的安全暂缓后再启动，不计入原13/21分母。
