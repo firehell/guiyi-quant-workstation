@@ -10,6 +10,222 @@ from .curves import validate_curve_ui, record_ids_match
 from .wire import validate_binding, validate_bars
 
 
+def validate_away_snapshot_recovery(
+    candidate: Candidate, observation: dict, responses: list[dict], mode: str, expected: dict
+) -> bool:
+    """Admit one proven partner 409 -> same-window chart -> reference chain."""
+    rejected = [(i, r) for i, r in enumerate(responses) if r.get("http") != 200]
+    if not rejected:
+        return False
+    need(len(rejected) == 1 and mode == "dual", "LEGACY_HTTP_ERROR")
+    need(all(isinstance(r.get("xhr_binding"), dict) for r in responses), "LEGACY_RECOVERY_BINDING_MISSING")
+    responses = sorted(responses, key=lambda r: r["xhr_binding"]["started_order"])
+    need(
+        len({r["xhr_binding"]["xhr_sequence"] for r in responses}) == len(responses)
+        and len({r["xhr_binding"]["node_request_id"] for r in responses}) == len(responses)
+        and len({r["xhr_binding"]["started_order"] for r in responses}) == len(responses),
+        "LEGACY_RECOVERY_BINDING_DUPLICATE",
+    )
+    rejected = [(i, r) for i, r in enumerate(responses) if r.get("http") != 200]
+    index, conflict = rejected[0]
+    need(
+        conflict.get("http") == 409
+        and conflict.get("phase") == "away"
+        and conflict.get("detail") == {"code": "NEWOW_SNAPSHOT_GENERATION_CONFLICT"},
+        "LEGACY_RECOVERY_CONFLICT_INVALID",
+    )
+
+    def query(row: dict) -> dict[str, list[str]]:
+        parsed = urlsplit(row["url"])
+        q = parse_qs(parsed.query)
+        need(
+            f"{parsed.scheme}://{parsed.netloc}"
+            in (candidate.web_origin, candidate.api_origin)
+            and parsed.path == "/api/v1/market/newow/strategy-detail"
+            and not parsed.fragment
+            and parsed.username is None
+            and parsed.password is None
+            and q.get("product") == [candidate.product]
+            and q.get("frequency") == ["60m"]
+            and q.get("strategy") == ["oscillation"]
+            and q.get("series_kind") == ["actual_dominant"]
+            and len(q.get("as_of", [])) == 1
+            and instant(q["as_of"][0]) == instant(candidate.as_of),
+            "LEGACY_RECOVERY_IDENTITY",
+        )
+        return q
+
+    failed_q = query(conflict)
+    need(
+        failed_q.get("section") == ["reference"]
+        and len(failed_q.get("snapshot_token", [])) == 1
+        and failed_q.get("history_limit") == ["200"],
+        "LEGACY_RECOVERY_REJECTED_REQUEST",
+    )
+
+    def matching(start: int, stop: int, section: str) -> list[tuple[int, dict]]:
+        return [
+            (i, r) for i, r in enumerate(responses[start:stop], start)
+            if r.get("phase") == "away"
+            and r.get("http") == 200
+            and (q := parse_qs(urlsplit(r.get("url", "")).query)).get("product") == [candidate.product]
+            and q.get("frequency") == ["60m"]
+            and q.get("strategy") == ["oscillation"]
+            and q.get("section") == [section]
+        ]
+
+    old_charts = matching(0, index, "chart")
+    fresh_charts = matching(index + 1, len(responses), "chart")
+    need(len(old_charts) == len(fresh_charts) == 1, "LEGACY_RECOVERY_CHART_COUNT")
+    old_index, old = old_charts[0]
+    fresh_index, fresh = fresh_charts[0]
+    old_q, fresh_q = query(old), query(fresh)
+    need(
+        old_q == fresh_q
+        and old_q.get("section") == ["chart"]
+        and "snapshot_token" not in old_q
+        and "chart_before" not in old_q
+        and old.get("chart", {}).get("delivery") == "delivered"
+        and fresh.get("chart", {}).get("delivery") == "delivered"
+        and old["chart"].get("status", {}).get("status") == "ready"
+        and fresh["chart"].get("status", {}).get("status") == "ready"
+        and old["chart"].get("value") == fresh["chart"].get("value"),
+        "LEGACY_RECOVERY_CHART_FACTS_CHANGED",
+    )
+    main_charts = [
+        r for r in responses[:index]
+        if r.get("phase") == "away" and r.get("http") == 200
+        and (q := parse_qs(urlsplit(r.get("url", "")).query)).get("product") == [candidate.product]
+        and q.get("frequency") == ["60m"] and q.get("strategy") == ["trend"]
+        and q.get("section") == ["chart"]
+    ]
+    need(
+        len(main_charts) == 1
+        and main_charts[0].get("chart", {}).get("delivery") == "delivered"
+        and main_charts[0]["chart"].get("status", {}).get("status") == "ready"
+        and main_charts[0]["chart"].get("value") == old["chart"]["value"],
+        "LEGACY_RECOVERY_MAIN_PARTNER_FACTS",
+    )
+    for chart_row in (main_charts[0], old, fresh):
+        validate_bars(candidate, chart_row["chart"])
+    main_meta = main_charts[0].get("meta") or {}
+    need(
+        main_meta.get("identity", {}).get("product") == candidate.product
+        and main_meta["identity"].get("frequency") == "60m"
+        and main_meta["identity"].get("strategy") == "trend"
+        and main_meta["identity"].get("series_kind") == "actual_dominant"
+        and main_meta["identity"].get("profile_id") == "newow_product_trend_60m_v1"
+        and main_meta["identity"].get("formula_versions") == expected["base_identities"]["trend"]["formula_versions"]
+        and instant(main_meta["as_of"]) == instant(candidate.as_of),
+        "LEGACY_RECOVERY_MAIN_IDENTITY",
+    )
+    bars = old["chart"]["value"].get("bars")
+    need(
+        isinstance(bars, list) and bool(bars)
+        and all(
+            all(k in bar and bar[k] is not None for k in (
+                "bar_end", "trading_day", "open", "high", "low", "close", "volume", "open_interest",
+                "physical_contract", "segment_id", "calculation_segment_id", "source_identity",
+                "completed", "observation_eligible",
+            )) for bar in bars
+        ),
+        "LEGACY_RECOVERY_MARKET_FACTS_MISSING",
+    )
+    old_meta, fresh_meta = old.get("meta") or {}, fresh.get("meta") or {}
+    old_token, fresh_token = old_meta.get("snapshot_token"), fresh_meta.get("snapshot_token")
+    need(
+        isinstance(old_token, str) and bool(old_token)
+        and isinstance(fresh_token, str) and bool(fresh_token)
+        and old_token != fresh_token
+        and failed_q["snapshot_token"] == [old_token]
+        and old_meta.get("identity") == fresh_meta.get("identity")
+        and old_meta.get("identity", {}).get("product") == candidate.product
+        and old_meta["identity"].get("frequency") == "60m"
+        and old_meta["identity"].get("strategy") == "oscillation"
+        and old_meta["identity"].get("series_kind") == "actual_dominant"
+        and old_meta["identity"].get("profile_id") == "newow_product_oscillation_60m_v1"
+        and old_meta["identity"].get("formula_versions") == expected["base_identities"]["oscillation"]["formula_versions"]
+        and instant(old_meta["as_of"]) == instant(fresh_meta["as_of"]) == instant(candidate.as_of)
+        and old_meta.get("input_content_sha256") == fresh_meta.get("input_content_sha256"),
+        "LEGACY_RECOVERY_TOKEN_OR_SOURCE",
+    )
+    need(
+        re.fullmatch("[a-f0-9]{64}", str(old_meta.get("input_content_sha256", ""))) is not None
+        and re.fullmatch("[a-f0-9]{64}", str(main_meta.get("input_content_sha256", ""))) is not None,
+        "LEGACY_RECOVERY_INPUT_HASH",
+    )
+    recovered = matching(fresh_index + 1, len(responses), "reference")
+    need(len(recovered) == 1, "LEGACY_RECOVERY_REFERENCE_COUNT")
+    recovered_index, reference = recovered[0]
+    recovered_q = query(reference)
+    need(
+        {k: v for k, v in failed_q.items() if k != "snapshot_token"}
+        == {k: v for k, v in recovered_q.items() if k != "snapshot_token"}
+        and recovered_q.get("snapshot_token") == [fresh_token]
+        and reference.get("meta", {}).get("snapshot_token") == fresh_token
+        and reference["meta"].get("identity") == fresh_meta.get("identity")
+        and instant(reference["meta"]["as_of"]) == instant(candidate.as_of)
+        and re.fullmatch("[a-f0-9]{64}", str(reference["meta"].get("input_content_sha256", ""))) is not None
+        and reference.get("reference", {}).get("delivery") == "delivered"
+        and reference["reference"].get("status", {}).get("status") == "ready",
+        "LEGACY_RECOVERY_REFERENCE_MISMATCH",
+    )
+    value = reference["reference"].get("value") or {}
+    need(
+        value.get("performance_since") == candidate.since
+        and value.get("performance_through") == candidate.through
+        and value.get("actual_available_through") == candidate.through
+        and instant(value["reference_cutoff"]) <= instant(candidate.as_of)
+        and re.fullmatch("[a-f0-9]{64}", str(value.get("reference_input_sha256", ""))) is not None
+        and value["reference_input_sha256"] == reference["meta"]["input_content_sha256"]
+        and value.get("page_parity", True) is True
+        and value.get("executable") is False
+        and value.get("auto_order") is False
+        and isinstance(value.get("items"), list)
+        and isinstance(value.get("curve_trades"), list),
+        "LEGACY_RECOVERY_REFERENCE_FACTS",
+    )
+    latest_bar = old["chart"]["value"]["bars"][-1]
+    need(
+        instant(value["reference_cutoff"]) == instant(latest_bar["bar_end"])
+        and value["actual_available_through"] == latest_bar["trading_day"]
+        and value.get("summary", {}).get("membership_policy") == "entry_in_window_v1"
+        and value["summary"].get("closed_count") == len(value["curve_trades"])
+        and len({t["reference_trade_id"] for t in value["items"]}) == len(value["items"]),
+        "LEGACY_RECOVERY_REFERENCE_RECORDS",
+    )
+    chain = [old, conflict, fresh, reference]
+    need(
+        old_index < index < fresh_index < recovered_index
+        and all(
+            a["xhr_binding"]["completed_order"] < b["xhr_binding"]["started_order"]
+            and a["xhr_binding"]["xhr_sequence"] < b["xhr_binding"]["xhr_sequence"]
+            for a, b in zip(chain, chain[1:])
+        ),
+        "LEGACY_RECOVERY_ORDER",
+    )
+    away = observation.get("away") or {}
+    away_query = parse_qs(urlsplit(away.get("url", "")).query)
+    need(
+        away_query.get("frequency") == ["60m"]
+        and away_query.get("symbol") == [candidate.product]
+        and away.get("mode") == ["双策略"]
+        and type(away.get("observed_at")) is int
+        and away["observed_at"] > 0
+        and away["observed_at"] >= reference["xhr_binding"]["completed_at"]
+        and away.get("scopeBusy") is False
+        and bool(away.get("cards"))
+        and bool(away.get("curves"))
+        and all(c.get("width", 0) > 0 and c.get("height", 0) > 0 for c in away["curves"])
+        and not any(
+            re.search("正在读取|读取中|另一策略参考收益暂不可用|无法对齐|读取失败", s)
+            for s in away.get("statuses", [])
+        ),
+        "LEGACY_RECOVERY_AWAY_DOM",
+    )
+    return True
+
+
 def validate_legacy_capture(
     candidate: Candidate, native: dict, observation: dict, frequency: str, mode: str
 ) -> dict:
@@ -58,9 +274,7 @@ def validate_legacy_capture(
         "LEGACY_CANDIDATE_ORIGIN",
     )
     responses = observation["responses"]
-    need(
-        responses and all(r.get("http") == 200 for r in responses), "LEGACY_HTTP_ERROR"
-    )
+    need(responses, "LEGACY_HTTP_ERROR")
     binding_required = (
         native.get("task_sha256") is not None
         or observation.get("capture_schema") == "newow_legacy_xhr_v1"
@@ -71,6 +285,9 @@ def validate_legacy_capture(
         if binding_required or binding is not None:
             validate_binding(binding, row["url"], row["http"])
             bound_count += 1
+    recovered_away = validate_away_snapshot_recovery(candidate, observation, responses, mode, expected)
+    response_count = len(responses)
+    responses = [r for r in responses if r["http"] == 200]
     strategy = "oscillation" if mode == "oscillation" else "trend"
     cutoff = instant(candidate.as_of)
     bases = expected.get("base_identities", {})
@@ -280,6 +497,7 @@ def validate_legacy_capture(
         near_year_records="PASS",
         switch_return="PASS",
         errors="PASS",
+        away_snapshot_recovery="PASS" if recovered_away else "NOT_OBSERVED",
     )
     auxiliary = observation.get("auxiliary", [])
     need(
@@ -407,9 +625,9 @@ def validate_legacy_capture(
         completed_week_window_warming=warming,
         visual_review="NOT_RUN",
         native_base_formulas_exact=bool(bases),
-        historical_actual_xhr_binding=bound_count == len(responses),
+        historical_actual_xhr_binding=bound_count == response_count,
         historical_unbound_compatibility=not binding_required
-        and bound_count < len(responses),
+        and bound_count < response_count,
         source_DB_not_reverified=True,
     )
 

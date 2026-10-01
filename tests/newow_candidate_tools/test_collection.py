@@ -474,6 +474,41 @@ def test_minute_xhr_binding_excludes_aborted_peer_but_rejects_missing_or_wrong_r
     assert json.loads(result.stdout) == {"success": 2, "missing": True, "mismatch": True}
 
 
+def test_legacy_non_200_response_keeps_actual_xhr_binding_and_detail():
+    """The legacy collector must use the observed response body even for a 409."""
+    import shutil
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node unavailable")
+    legacy = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/newow_candidate_tools/browser/legacy.js"
+    ).read_text()
+    binding = legacy[legacy.index(" const readXHR=async r=>{") : legacy.index(" const cleanupXHR=")]
+    script = r"""
+    const url='http://127.0.0.1:5178/api/v1/market/newow/strategy-detail?product=p&frequency=60m&strategy=oscillation&section=reference';
+    const request={},response={request:()=>request,status:()=>409};
+    const xhrRequests=[{request,id:1,url,method:'GET',done:true}];
+    const xhrWatermark={document_id:'same',sequence:0};
+    globalThis.__p7XHR={document_id:'same',records:[{url,sequence:1,started_order:1,completed_order:2,http:409,
+      evidence_kind:'xhr_response_text_compact',started_at:1,completed_at:2,response_text_chars:80,
+      payload:{detail:{code:'NEWOW_SNAPSHOT_GENERATION_CONFLICT'}}}]};
+    const page={evaluate:async(fn,arg)=>fn(arg),waitForTimeout:async()=>new Promise(resolve=>setTimeout(resolve,1))};
+    let xhrDeadline=Date.now()+100;
+    __BINDING__
+    (async()=>{const body=await observedJSON(response);const bound=xhrBindings.get(request);
+      console.log(JSON.stringify({detail:body.detail.code,http:bound.http,kind:bound.evidence_kind,node:bound.node_request_id}));
+    })().catch(e=>{console.error(e);process.exit(1)});
+    """.replace("__BINDING__", binding)
+    result = subprocess.run([node, "-e", script], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "detail": "NEWOW_SNAPSHOT_GENERATION_CONFLICT", "http": 409,
+        "kind": "xhr_response_text_compact", "node": 1,
+    }
+
+
 def test_minute_away_default_or_full_records_match_actual_dom_and_keep_target_200_gate():
     """Exercise the collector's real terminal and record matching functions."""
     import shutil
