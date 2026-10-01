@@ -705,7 +705,7 @@ def test_ma_candidate_cannot_expand_its_single_product_scope(monkeypatch, raw):
         _intraday_preview_products()
 
 
-@pytest.mark.parametrize('product', ('fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu'))
+@pytest.mark.parametrize('product', ('fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu', 'ps'))
 def test_p7_candidate_eligibility_is_single_product_and_does_not_open_formal(product, monkeypatch):
     from types import SimpleNamespace
     from app.preview import _intraday_preview_products
@@ -726,7 +726,7 @@ def test_p7_candidate_eligibility_is_single_product_and_does_not_open_formal(pro
             _enforce_product_frequency(formal, product, '5m')
 
 
-@pytest.mark.parametrize('raw', ('cf,rb', 'cf,ma', 'cf,cf', 'oi,rb', 'oi,ma', 'oi,oi', 'oi,zz', 'p,rb', 'p,ma', 'p,p', 'p,zz', 'lc,rb', 'lc,ma', 'lc,lc', 'lc,zz', 'fg,rb', 'fg,ma', 'fg,fg', 'fg,zz', 'ao,rb', 'ao,ma', 'ao,ao', 'ao,zz', 'cu,rb', 'cu,ma', 'cu,cu', 'cu,zz'))
+@pytest.mark.parametrize('raw', ('cf,rb', 'cf,ma', 'cf,cf', 'oi,rb', 'oi,ma', 'oi,oi', 'oi,zz', 'p,rb', 'p,ma', 'p,p', 'p,zz', 'lc,rb', 'lc,ma', 'lc,lc', 'lc,zz', 'fg,rb', 'fg,ma', 'fg,fg', 'fg,zz', 'ao,rb', 'ao,ma', 'ao,ao', 'ao,zz', 'cu,rb', 'cu,ma', 'cu,cu', 'cu,zz', 'ps,rb', 'ps,ma', 'ps,ps', 'ps,zz'))
 def test_p7_candidate_rejects_multi_product_preview_scope(monkeypatch, raw):
     from app.preview import _intraday_preview_products
     monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCT', raising=False)
