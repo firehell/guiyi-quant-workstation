@@ -41,6 +41,9 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
+2026-10-01 owner 续交办 **碳酸锂 LC → 玻璃 FG → 氧化铝 AO → 铜 CU**，按此顺序逐品种历史候选闭环。
+当前仅 LC 进入只读准备及准入核对，FG/AO/CU 未启动；窗口沿用 `max(2023-01-01, 权威上市日)..2026-09-24`、既有微秒 as_of，1m仅聚合，四分钟周期×三模式12页面。沿用原生维护、候选构建和独立数据/API/Chrome验收，保持原13与21分母；本轮不推导正式分钟开放、发布、Runtime或交易晋升。
+
 P7B-02 CF **COMPLETED / CANDIDATE_CLOSED，12/12 历史候选页面**。12 owner、48 单元一次维护完成，86 次真实行情请求/352 派生目标；279949 根四频 Bar 完整前缀独立 Decimal 核对通过，897 旧七频文件/56004 旧 Bar/369 日周文件保持。12 保存流 READY、disabled/generation0/complete_window_proven=false，API 12/12；Web singleton 准入修复后一次真实 Chrome 19 场、49 原图逐张 Review，23437 笔 CLOSED 收益和 23473 个 SVG 点独立核算通过。原失败浏览器现场保留，SC ArrowInvalid 根因仍 UNKNOWN；专属 Chrome/API/Web 已停、维护锁0，正式分钟/Runtime/Scope/通知/账户不变。见 [CF处理记录](docs/tasks/cf-candidate-pilot-20260930.md)。独立第二轮固定 13 品种，原 21 分母不变。
 
 P7B-04 P **COMPLETED / CANDIDATE_CLOSED，12/12 历史候选页面**。12 rank1物理owner、48维护单元一次完成，45 READBACK_VERIFIED＋3 NO_GAP、88真实行情请求/360派生目标，无失败重试；906旧文件前像、60246旧Bar及373日周保持，新增397/扩展51/删除0，283612根四频完整前缀独立Decimal核对通过。原生8基础/4融合及最终12完整state/summary独立读回一致，12 READY、disabled/generation0/complete_window_proven=false。前两轮36ed/98ab原生LEGACY_HTTP_ERROR失败现场保留；一次partner409恢复及二次冲突清图修复、实际错误XHR采集与fresh fusion/DOM严格关联通过105项Web定向测试/build、189工具测试及两轴独立Review。最终冻结7f6c8fda：API12/12、152 HTTP200与UTC边界；一次真实Chrome19场、49新原图逐张Review、630索引字节核对、21278笔CLOSED收益与21314 SVG点独立核算、实际取消/超时/409刷新恢复均通过；原生audit为NUMERICAL_PASS_VISUAL_PENDING，独立总验收为REVIEW_COMPLETE_CANDIDATE_CLOSED。本次W1 dual正常切换全200，不声称实测partner409分支。final/postapi/postbrowser来源整文件相同，无重复下载构建；专属API/Web/Chrome退出、精确维护锁0。本任务未修改正式分钟/Runtime/Scope/通知/账户；按owner要求完成P后停止，未启动Y，第二轮固定13、原21分母不变。见 [P处理记录](docs/tasks/p-candidate-pilot-20260930.md)，原始证据在 `.worktrees/p-candidate-pilot/outputs/p-candidate-pilot-20260930/`；已审修复与记录已集成develop，合并后189工具测试、106 Web定向测试及生产build通过。

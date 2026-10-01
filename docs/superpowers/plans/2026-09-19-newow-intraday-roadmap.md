@@ -411,6 +411,10 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 候选保持 disabled/generation=0；正式分钟开放、发布、Runtime、Scope、通知和交易不在本轮。
 全部代码已存在时不为每个品种制造源码修改；实际结果与证据进入对应单品种记录和 STATUS。
 
+owner 于 2026-10-01 续交办四品种，当前执行顺序改为 **LC → FG → AO → CU**。
+四项仍归属下表原有行号，不新增或缩减原 13 品种和原 21 品种分母；其余未开始品种不因本轮自动启动。
+当前仅 LC 进入只读准备，FG/AO/CU 在前项闭环或有证据的安全暂缓、资源释放后再启动。
+
 | 顺序 | 品种 | 代码 | 当前状态 |
 | --- | --- | --- | --- |
 | P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
@@ -423,7 +427,7 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 | P7B-08 | 锡 | SN | NOT_STARTED |
 | P7B-09 | 铝 | AL | NOT_STARTED |
 | P7B-10 | 铜 | CU | NOT_STARTED |
-| P7B-11 | 碳酸锂 | LC | NOT_STARTED |
+| P7B-11 | 碳酸锂 | LC | IN_PROGRESS；2026-10-01 owner四品种串行交办首项，正在核原生上市边界、精确维护计划/前像/预算与singleton候选准入；尚未宣称数据写入或页面闭环 |
 | P7B-12 | 多晶硅 | PS | NOT_STARTED |
 | P7B-13 | 玻璃 | FG | NOT_STARTED |
 
