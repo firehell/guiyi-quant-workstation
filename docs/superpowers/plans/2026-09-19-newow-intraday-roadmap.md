@@ -427,7 +427,7 @@ owner 于 2026-10-01 续交办四品种，当前执行顺序改为 **LC → FG �
 | P7B-08 | 锡 | SN | NOT_STARTED |
 | P7B-09 | 铝 | AL | NOT_STARTED |
 | P7B-10 | 铜 | CU | NOT_STARTED |
-| P7B-11 | 碳酸锂 | LC | IN_PROGRESS；2026-10-01 owner四品种串行交办首项，正在核原生上市边界、精确维护计划/前像/预算与singleton候选准入；尚未宣称数据写入或页面闭环 |
+| P7B-11 | 碳酸锂 | LC | CANDIDATE_CLOSED / DEVELOP_INTEGRATION_PENDING；owner四品种串行首项，de7e68571 singleton准入两轴Review/API109/Web26/build通过；权威上市2023-07-21，12owner/48原生计划、819旧七频前像、87源月/356派生目标预算、scratch及锁0独立fresh preapply通过，冻结plan d8770585；唯一维护48/48完成（41读回＋7无缺口），实际87请求/356派生发布；819旧文件、29997旧Bar、346日周独立保留，179653根四频Bar独立全前缀Decimal通过，8基础/4融合唯一构建并读回、最终12state/summary及4融合依赖独立核对通过，READY/disabled/gen0，API12/12、149 GET/UTC边界及postapi整文件来源一致通过，首轮Chrome首场clock覆盖导致严格110s超时，无seal/PNG，原失败保留，根因15b9e94 Workspace now覆盖，共享候选clock修复71198c1a/104tests/build/双轴Review通过，新source/12state-summary/4依赖独立原生桥接旧de7构建一致，新API12/12、149条件GET及UTC边界通过，新final/postapi/postbrowser整文件一致，19场/49原图/461原生索引文件独立核对，12399 CLOSED/12433 SVG逐值通过，实际cancel/timeout/409恢复通过（DOM201/89、不宣称cancel完整卡身份），最终12state-summary/4依赖及专属资源/锁0读回通过，root最终REVIEW_COMPLETE_CANDIDATE_CLOSED；上市预热PARTIAL/DD不可用/W1震荡0交易保留，develop集成进行中 |
 | P7B-12 | 多晶硅 | PS | NOT_STARTED |
 | P7B-13 | 玻璃 | FG | NOT_STARTED |
 
