@@ -1,6 +1,6 @@
 # AO 氧化铝四周期历史候选安全暂缓
 
-状态：**PARTIAL / DEFERRED_DATA_BLOCKED，0/12 页面候选闭环；允许集成 develop（仅安全暂缓记录）**。本任务只处理 AO，尚未启动 CU。页面窗口为权威上市日 **2023-06-19** 至 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`；Canonical 1m 仅作聚合源，目标仍为 5m/15m/30m/60m × trend/oscillation/dual。冻结候选代码 `93948b7489f1f900f9b190a987007ca59c3af751` 只增加 AO v27 单品种私有预览准入和直接测试；正式分钟、公式、Scope、Runtime、通知和交易均未变。
+状态：**PARTIAL / DEFERRED_DATA_BLOCKED，0/12 页面候选闭环；允许集成 develop（仅已审单品种准入与安全暂缓记录）**。本任务只处理 AO，尚未启动 CU。页面窗口为权威上市日 **2023-06-19** 至 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`；Canonical 1m 仅作聚合源，目标仍为 5m/15m/30m/60m × trend/oscillation/dual。冻结候选代码 `93948b7489f1f900f9b190a987007ca59c3af751` 只增加 AO v27 单品种私有预览准入和直接测试；正式分钟、公式、Scope、Runtime、通知和交易均未变。
 
 原始证据保存在 AO 独立任务工作区 `.worktrees/ao-candidate-pilot/outputs/ao-candidate-pilot-20261001/`，不入 Git；失败请求完整数值、失败 attempt、原生计划、先后七频快照和首次只读审计工具失败记录均保留。以下文件名均相对于该目录。
 
@@ -20,7 +20,7 @@
 
 实际已发布 **55 个派生月 / 46,480 根 Bar**，其中 5m 31,092、15m 10,148、30m 5,240、60m 无新增。任务方原生 `aggregation-partial-native.json` 和独立 `independent-root-partial-data-review.json` 对这些月按相同物理合约 1m、权威 Session `(start,end]` 和 Decimal 200 逐端点、逐字段复算通过。该结论仅覆盖部分已发布前缀，**不证明** AO 22 owner 的四频完整生命周期或任何页面 READY。
 
-失败源 `AO2403/1m/2023-07` 的 active=0、目录空；候选 12 组合仍 0 stream/0 revision，维护锁 granted=0/waiting=0，8012/5178 无监听，没有启动 AO API、Web、Chrome、12 资产构建或浏览器 19 场。失败后账户余量只读样本为 1,052,774,961 bytes；不把差额归为本任务消费。见 `failure-boundary-final.json`、`independent-root-final-native-readback.json`。
+失败源 `AO2403/1m/2023-07` 的 active=0、目录空；候选 12 组合仍 0 stream，维护锁 granted=0/waiting=0，8012/5178 无监听，没有启动 AO API、Web、Chrome、12 资产构建或浏览器 19 场。失败后账户余量只读样本为 1,052,774,961 bytes；不把差额归为本任务消费。见 `failure-boundary-final.json`、`independent-root-final-native-readback.json`。
 
 AO 单品种准入定向 API **50 passed**、Web **26 passed**，worker Web build 通过；独立 Spec 全 API **119 passed**、Web 三组 **122 passed**，Standards/Spec 均无 Confirmed Issue；见 `independent-root-eligibility-code-review.json`。root 只读审计器首次把 `campaign-stopped` 存在条件写反，退出 `STOPPED_TERMINAL`，已保留错误报告并修正后独立审计通过；此错误没有生产写入或维护重试。最终独立 `independent-root-final-safe-defer-review.json` 为 **REVIEW_COMPLETE_SAFE_DEFERRED_DATA_BLOCKED**，仅确认共享数据安全边界与暂缓记录，不代表 AO 候选闭环。
 
