@@ -12,7 +12,7 @@
 
 唯一 maintenance session **exit 1**，`campaign-stopped.json` 为 `AO2403/5m` 的 `ATOMIC_PUBLISH_FAILED → ArrowInvalid`。88 单元严格分类：**9 READBACK_VERIFIED、7 NO_GAP、1 已知失败且有部分成功发布、71 未尝试**。前 16 个完成单元形成 54 个派生月；失败单元在错误前另成功发布 `AO2403/5m/2023-06` 一个派生月，不能称为零提交。失败请求是 `AO2403/1m/2023-07`，其 active 指针前后均为 0、物理目录为空，未生成该请求的 native result。失败单元 attempt 保持 `PENDING / retry_allowed=false`，不复用、不盲重试；未尝试单元无 attempt。唯一成功前缀后没有继续维护或构建资产。见 `independent-root-failure-terminal-review.json`。
 
-失败 PublishRequest 的 **9,765 根原始 CanonicalBar**、全部预期端点、dataset/month、异常类链已排他以 0600 保存于 `campaign/AO2403-5m-failed-publish-payload.json`，SHA `8639c184928e6ea2c8a957ad27bff5c063acfebf5c44198da5ca069e0cc374b0`。无 provider、DB 或 Canonical 重写的离线 Arrow 实际复现，唯一无法表示的字段是第 3254 行 `turnover=1.4551915228366852E-11`，需要 scale 27，当前 Canonical 类型为 `decimal128(38,18)`；错误为 `Rescaling Decimal value would cause data loss`。这确认当前请求数值无法按现有 schema 无损发布，**不证明**其上游浮点噪声成因；该 Bar 的 volume=0 也不能据此把 turnover 改零。未对数值取整、置零、改 schema 或改计划 hash。见 `independent-root-failure-reproduction-review.json`。
+失败 PublishRequest 的 **9,765 根原始 CanonicalBar**、全部预期端点、dataset/month、异常类链已排他以 0600 保存于 `campaign/AO2403-5m-failed-publish-payload.json`，SHA `8639c184928e6ea2c8a957ad27bff5c063acfebf5c44198da5ca069e0cc374b0`。无 provider、DB 或 Canonical 重写的离线 Arrow 实际复现，唯一无法表示的字段是`row_index=3254`（从 0 计数）的 `turnover=1.4551915228366852E-11`，需要 scale 27，当前 Canonical 类型为 `decimal128(38,18)`；错误为 `Rescaling Decimal value would cause data loss`。这确认当前请求数值无法按现有 schema 无损发布，**不证明**其上游浮点噪声成因；该 Bar 的 volume=0 也不能据此把 turnover 改零。未对数值取整、置零、改 schema 或改计划 hash。见 `independent-root-failure-reproduction-review.json`。
 
 ## 已发布范围与安全边界
 
