@@ -1,6 +1,6 @@
 # EG 乙二醇历史页面候选
 
-状态：**证据已齐，待普通合入 develop**。只处理 EG。窗口 2023-01-01 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商上市日为 2018-12-10，页面起点取 2023-01-01。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
+状态：**已普通合入 develop `8871204102f6c6586624e23ae5486640362d10d7`**。只处理 EG。窗口 2023-01-01 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商上市日为 2018-12-10，页面起点取 2023-01-01。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
 
 资格在 `03cfae8844594921909528c10508612769393f38`，API 单品种预览集合和页面 v27 白名单一起提交。原始证据在 `.worktrees/eg-candidate-pilot/outputs/eg-candidate-pilot-20261004/`，成功页面采集在 `page-capture-resume/`，不进入 Git。
 
