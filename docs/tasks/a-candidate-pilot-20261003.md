@@ -1,6 +1,6 @@
 # A 豆一历史页面候选
 
-状态：**页面证据已齐，待普通集成 develop**。只处理 A。窗口 2023-01-01..2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
+状态：**已普通合入 develop `99f6c89e5c51cc172f0540fcb11e740cee206c47`**。只处理 A。窗口 2023-01-01..2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
 
 数据与资产冻结在 `0f3551c458e1f81add3d2f142331f8b7d9244294`。该提交只加了 API 单品种预览资格，页面能力白名单漏了 `a`，第一次 Chrome 采集停在「牛哇开放能力不可用」。白名单和对应 Web 测试补在 `0a0a36f16`，成功采集时预览页面已经按这份未提交源码打开；API 身份仍是前一个 SHA。原始证据在 `.worktrees/a-candidate-pilot/outputs/a-candidate-pilot-20261003/`，页面采集在其子目录 `page-capture/`，不进入 Git。失败的第一次采集留在父目录 `browser/`。
 
