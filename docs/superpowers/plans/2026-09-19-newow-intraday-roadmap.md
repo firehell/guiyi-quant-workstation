@@ -581,6 +581,6 @@ P7 首批 black + steel 正在执行，实际证据见本批任务交接；不�
 
 2026-10-03 起处理此前未入队的品种，A 豆一已普通合入 develop `99f6c89e5`：19 owner / 76 维护单元、80 次真实请求 / 580 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 287712、15m 95904、30m 50056、60m 29236。资产身份 `0f3551c45`，页面白名单 `0a0a36f16`。W1 趋势 44/120 预热、W1 震荡 1 笔 CLOSED 保留。不计入原 13/21 分母。见 [A 记录](../../tasks/a-candidate-pilot-20261003.md)。
 
-同日 B 豆二证据已齐、待普通合入：27 owner / 108 维护单元、268 次真实请求 / 1072 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 416325、15m 138775、30m 72432、60m 42305。资格 `b73b5d9c5`。W1 趋势 44/120 预热、W1 震荡 1 笔 CLOSED 保留。不计入原 13/21 分母。见 [B 记录](../../tasks/b-candidate-pilot-20261003.md)。
+同日 B 豆二已普通合入 develop `9694a75a9`：27 owner / 108 维护单元、268 次真实请求 / 1072 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 416325、15m 138775、30m 72432、60m 42305。资格 `b73b5d9c5`。W1 趋势 44/120 预热、W1 震荡 1 笔 CLOSED 保留。不计入原 13/21 分母。见 [B 记录](../../tasks/b-candidate-pilot-20261003.md)。
 
 本轮新增补充品种：SI 工业硅，**SAFE_DEFERRED_QUOTA_GUARD，0/12**；30主力区段/27物理合约/108维护单元。首单元原生发布成功后账户级delta2576409超过冻结估算1612800停止，归属未知；0campaign完成+1发布后停止+107未尝试，PENDING禁重试。仅新增SI2308/2022-12 1m1575与5m315，旧1257文件及636日周保持，局部独立Decimal200验证通过；private0/锁0，无资产/API/页面验收，不称闭环。资格代码76d23ab4及事实记录已普通合入develop7cb91ff98，328 API/工具、130 Web与生产构建通过，正常push/远端精确读回一致；安全暂缓不变，详见[任务记录](../../tasks/si-candidate-pilot-20261001.md)。不计入原13/21分母，不触碰PS/Y闭环和AO/CU失败现场。

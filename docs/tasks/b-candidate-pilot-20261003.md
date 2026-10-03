@@ -1,6 +1,6 @@
 # B 豆二历史页面候选
 
-状态：**证据已齐，待普通合入 develop**。只处理 B。窗口 2023-01-01..2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
+状态：**已普通合入 develop `9694a75a969d3e8d7906c161efabb31358253701`**。只处理 B。窗口 2023-01-01..2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
 
 资格在 `b73b5d9c587a9d99165393c21c784cd0747b2ae0`，API 单品种预览集合和页面 v27 白名单一起提交。原始证据在 `.worktrees/b-candidate-pilot/outputs/b-candidate-pilot-20261003/`，成功页面采集在 `page-capture-open/`，不进入 Git。第一次采集停在 `page-capture/`：浏览器会话尚未 `open`，首场 `SCENE_INVOCATION_FAILED_NO_REPLAY`，没有成功前缀，不能 `--resume-from`。打开 `b-candidate` 会话后在新目录采完。
 
