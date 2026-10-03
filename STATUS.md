@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-01。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-03。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
@@ -40,6 +40,8 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 历史23项weekly finding与P9阻断未解决；后续分钟持续更新和实时观察另行验收。
 
 ## 当前产品与验证范围
+
+2026-10-03 起按运营清单处理此前未进入分钟候选队列的品种，当前完成到 **豆一 A**。A 的数据、12 条禁用候选流、API 12/12（152 次 GET）和 Chrome 19 场 / 49 张原图已经采完；离线审计为 `NUMERICAL_PASS_VISUAL_PENDING`。独立只读复核四频已发布分区与物理 1m 一致：5m 287712、15m 95904、30m 50056、60m 29236。页面资格补在 `0a0a36f16`，资产和 API 身份仍是 `0f3551c45`。W1 趋势 44/120 预热、W1 震荡仅 1 笔 CLOSED、标记重叠和页头报价不可用保留。正式开放、Runtime、Scope 和交易未改。见 [A 处理记录](docs/tasks/a-candidate-pilot-20261003.md)。下一批仍按同一规则逐个处理，遇到同类发布失败或额度保护就跳过该品种。
 
 2026-10-01 owner 续交办 **碳酸锂 LC → 玻璃 FG → 氧化铝 AO → 铜 CU**，按此顺序逐品种历史候选闭环。
 LC **CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12**：窗口2023-07-21..2026-09-24，48维护单元完成（41读回＋7无缺口），87真实源请求/356派生发布；819旧文件、29997旧Bar及346日周保持，179653根四频Bar独立Decimal核对。12私有流及4融合依赖读回一致，disabled/generation0/complete_window_proven=false。首轮Chrome因Workspace覆盖候选时钟失败，原始证据保留；71198c1a共享候选时钟修复后API12/149条件GET、19场/49原图/461索引、12399 CLOSED/12433 SVG逐值通过，三次fresh来源整文件一致、专属资源退出/维护锁0。上市预热PARTIAL、全窗回撤不可用和W1震荡0交易保留。任务文档a01ce928普通合入develop 2b25cec63；合并态API/工具298、Web130与build通过，普通push/远端读回d2362b0bf一致。见[LC处理记录](docs/tasks/lc-candidate-pilot-20261001.md)，原证据保留在`.worktrees/lc-candidate-pilot/outputs/lc-candidate-pilot-20261001/`。
