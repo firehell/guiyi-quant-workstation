@@ -589,4 +589,6 @@ P7 首批 black + steel 正在执行，实际证据见本批任务交接；不�
 
 同日 EB 苯乙烯已普通合入 develop `64a7c24df`：46 owner / 184 维护单元、484 次真实请求 / 1980 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 684372、15m 228124、30m 119068、60m 69546。资格 `9ef3b5aee`。W1 趋势 43/120 预热、W1 震荡 0 笔 CLOSED 保留。周线双策略首次采集未在时限内稳定，续采后收齐。不计入原 13/21 分母。见 [EB 记录](../../tasks/eb-candidate-pilot-20261003.md)。
 
+同日 EC 欧线集运证据已齐、待普通合入：上市日 2023-08-18 起，17 owner / 68 维护单元、148 次真实请求 / 602 派生月；12 条流 READY 且 disabled/generation0；API 12/12、149 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 159390、15m 53130、30m 28336、60m 17710。资格 `4d19119b8`。震荡上市段 WARMING，W1 趋势 47/120 预热、W1 震荡 2 笔 CLOSED 且历史覆盖不完整。不计入原 13/21 分母。见 [EC 记录](../../tasks/ec-candidate-pilot-20261003.md)。
+
 本轮新增补充品种：SI 工业硅，**SAFE_DEFERRED_QUOTA_GUARD，0/12**；30主力区段/27物理合约/108维护单元。首单元原生发布成功后账户级delta2576409超过冻结估算1612800停止，归属未知；0campaign完成+1发布后停止+107未尝试，PENDING禁重试。仅新增SI2308/2022-12 1m1575与5m315，旧1257文件及636日周保持，局部独立Decimal200验证通过；private0/锁0，无资产/API/页面验收，不称闭环。资格代码76d23ab4及事实记录已普通合入develop7cb91ff98，328 API/工具、130 Web与生产构建通过，正常push/远端精确读回一致；安全暂缓不变，详见[任务记录](../../tasks/si-candidate-pilot-20261001.md)。不计入原13/21分母，不触碰PS/Y闭环和AO/CU失败现场。
