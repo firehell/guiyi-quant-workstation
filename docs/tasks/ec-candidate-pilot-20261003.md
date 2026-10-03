@@ -1,6 +1,6 @@
 # EC 欧线集运历史页面候选
 
-状态：**证据已齐，待普通合入 develop**。只处理 EC。窗口从上市日 2023-08-18 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
+状态：**已普通合入 develop `099afa538a58fbf21a23c39a4848e6b19726c32a`**。只处理 EC。窗口从上市日 2023-08-18 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
 
 资格在 `4d19119b8c1302a2ea804eb8c560bc71928ababb`，API 单品种预览集合和页面 v27 白名单一起提交。原始证据在 `.worktrees/ec-candidate-pilot/outputs/ec-candidate-pilot-20261003/`，页面采集在 `page-capture/`，不进入 Git。第一次采集 19 场收齐。
 
