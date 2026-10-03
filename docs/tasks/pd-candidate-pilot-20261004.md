@@ -1,6 +1,6 @@
 # PD 钯历史页面候选
 
-状态：**证据已齐，待普通合入**。只处理 PD。窗口 2025-11-27 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商上市日与页面起点都是 2025-11-27。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
+状态：**已普通合入 develop `b9d7eb1365e4fc97d5eaeece39b33d1423919fe6`**。只处理 PD。窗口 2025-11-27 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商上市日与页面起点都是 2025-11-27。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
 
 资格在 `3ce872cd0f87e9af6eaa259fc98249ca1eba0a8c`，API 单品种预览集合和页面 v27 白名单一起提交。原始证据在 `.worktrees/pd-candidate-pilot/outputs/pd-candidate-pilot-20261004/`，成功页面采集在 `page-capture/`，不进入 Git。
 
