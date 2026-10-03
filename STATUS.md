@@ -41,7 +41,7 @@ health=ok只证明当前运维检查，不证明首次自然业务、全部Alert
 
 ## 当前产品与验证范围
 
-2026-10-03 起按运营清单处理此前未进入分钟候选队列的品种，当前完成到 **豆二 B**。B 的数据、12 条禁用候选流、API 12/12（152 次 GET）和 Chrome 19 场 / 49 张原图已经采完；离线审计为 `NUMERICAL_PASS_VISUAL_PENDING`。独立只读复核四频已发布分区与物理 1m 一致：5m 416325、15m 138775、30m 72432、60m 42305。资格 `b73b5d9c5` 同时包含 API 与页面白名单。普通合入 develop `9694a75a9`。W1 趋势 44/120 预热、W1 震荡仅 1 笔 CLOSED、标记重叠和 tooltip 压轴保留。正式开放、Runtime、Scope 和交易未改。见 [B 处理记录](docs/tasks/b-candidate-pilot-20261003.md)。豆一 A 已在 develop `99f6c89e5`。下一批仍按同一规则逐个处理，遇到同类发布失败或额度保护就跳过该品种。
+2026-10-03 起按运营清单处理此前未进入分钟候选队列的品种，当前完成到 **纯苯 BZ**。BZ 的窗口从上市日 2025-07-08 起，12 条禁用候选流、API 12/12（152 次 GET）和 Chrome 19 场 / 49 张原图已经采完；离线审计为 `NUMERICAL_PASS_VISUAL_PENDING`。独立只读复核四频已发布分区与物理 1m 一致：5m 109185、15m 36395、30m 18996、60m 11095。资格 `9d8d3507b` 同时包含 API 与页面白名单。震荡上市当日 WARMING，W1 趋势 27/120 预热，W1 震荡 1 笔 CLOSED。正式开放、Runtime、Scope 和交易未改。见 [BZ 处理记录](docs/tasks/bz-candidate-pilot-20261003.md)。豆二 B 已在 develop `9694a75a9`。沥青 BU 在 `BU2307` 5m 遇到 `ArrowInvalid` / `ATOMIC_PUBLISH_FAILED`，未重试，资格未合入。下一批仍按同一规则逐个处理。
 
 2026-10-01 owner 续交办 **碳酸锂 LC → 玻璃 FG → 氧化铝 AO → 铜 CU**，按此顺序逐品种历史候选闭环。
 LC **CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12**：窗口2023-07-21..2026-09-24，48维护单元完成（41读回＋7无缺口），87真实源请求/356派生发布；819旧文件、29997旧Bar及346日周保持，179653根四频Bar独立Decimal核对。12私有流及4融合依赖读回一致，disabled/generation0/complete_window_proven=false。首轮Chrome因Workspace覆盖候选时钟失败，原始证据保留；71198c1a共享候选时钟修复后API12/149条件GET、19场/49原图/461索引、12399 CLOSED/12433 SVG逐值通过，三次fresh来源整文件一致、专属资源退出/维护锁0。上市预热PARTIAL、全窗回撤不可用和W1震荡0交易保留。任务文档a01ce928普通合入develop 2b25cec63；合并态API/工具298、Web130与build通过，普通push/远端读回d2362b0bf一致。见[LC处理记录](docs/tasks/lc-candidate-pilot-20261001.md)，原证据保留在`.worktrees/lc-candidate-pilot/outputs/lc-candidate-pilot-20261001/`。
