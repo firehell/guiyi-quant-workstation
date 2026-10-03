@@ -572,6 +572,15 @@ test('single product candidate keeps its scope separate from historical batch an
   for (const products of [['si', 'ma'], ['si', 'si'], ['si', 'zz']]) {
     await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
   }
+  const aAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['a'] }) })
+  const aState = useNewowCapabilities(async () => aAccepted)
+  await aState.load()
+  assert.deepEqual(aState.openFrequenciesFor('A'), payload.open_frequencies)
+  assert.deepEqual(aState.openFrequenciesFor('ma'), [])
+  assert.equal(aState.isFrequencyOpen('1m' as never, 'a'), false)
+  for (const products of [['a', 'ma'], ['a', 'a'], ['a', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
   for (const products of [['lc', 'ma'], ['lc', 'lc'], ['lc', 'zz']]) {
     await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
   }
