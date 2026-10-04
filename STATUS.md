@@ -6,39 +6,47 @@
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.11.1@0c8089715b1cc8958777f8ee589ba8544fa82f5f**。
-[PR #406](https://github.com/firehell/guiyi-quant-workstation/pull/406)、annotated tag 与非草稿/非预发布
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.1) 已实际读回；main 源码树与独立审查候选
-`faa1eb0a2896c532b0716a6230d7a0c6188f53b6` 完全一致。发布说明见 [v1.11.1](docs/releases/v1.11.1.md)。
+最新正式发布为 **v1.11.2@35217d5ab2c87b9173306d142ccf9f72285a3ec6**。
+[PR #407](https://github.com/firehell/guiyi-quant-workstation/pull/407)、annotated tag 与非草稿/非预发布
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.2) 已实际读回；main 源码树与独立审查候选
+`f262cf10ff29a5335f451c8848825d574868e30f` 完全一致。发布说明见 [v1.11.2](docs/releases/v1.11.2.md)，
+实现、生产恢复和验收见 [盘后修复](docs/tasks/after-market-health-20261004.md)。
 
-本版正式新增此前未发布的P、Y、LC、PS、FG，以及独立补验闭环的A、B、BZ、EB、EC、EG、L、PD、PF、PG、PL、PR、PT、PX，共19品种。
-分钟历史名单为A、AG、AP、AU、B、BZ、C、CF、CJ、EB、EC、EG、FG、HC、I、J、JD、JM、L、LC、LH、M、MA、OI、P、PD、PF、PG、PK、PL、PR、PS、PT、PX、RB、RM、SA、SF、SH、SM、SR、TA、UR、V、Y，共45品种：
+本补丁修复跨 Runtime 的盘后历史证据交接、安装期间 writer 互斥、审计内确定的物理前缀缺口重复计算，
+以及合法部分 planner 结果的保留；不改公式、收益、Scope、通知受众或交易阶段。
+版本依赖冻结、Web build、280项相关回归、159项盘后/晋升/authority回归、29项工程一致性检查、
+Ruff、OpenSpec10项、secret零发现和diff通过；独立Review完成，真实跨Python/Bash的guard fd互斥验证通过。
+
+分钟产品范围沿用v1.11.1：A、AG、AP、AU、B、BZ、C、CF、CJ、EB、EC、EG、FG、HC、I、J、JD、JM、L、LC、LH、M、MA、OI、P、PD、PF、PG、PK、PL、PR、PS、PT、PX、RB、RM、SA、SF、SH、SM、SR、TA、UR、V、Y，共45品种，
 **5m/15m/30m/60m × 趋势/震荡/双策略，540个历史参考页面组合**，固定截至2026-09-24 15:00（北京时间）。
-持续分钟更新、1m页面和分钟主升浪未开放；日周60品种保持。FU、NI、SS、SC、AO、CU、SI、PP、PB、BU、AL、ZN、SN、RS、RU未在本版开放分钟页面。
+持续分钟更新、1m页面和分钟主升浪未开放；日周60品种保持。
+v1.11.1的540组合与独立数值/浏览器验收见[发布记录](docs/releases/v1.11.1.md)，本补丁未重新宣称完整页面验收。
+历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
 
-14品种独审686张原图、7,308份索引SHA、215,585笔CLOSED及216,077个SVG点通过；180来源窗口无漂移，540条保存流disabled/generation0。
-360基础响应及180融合结果的834,443笔CLOSED独立Decimal核算、190份UTC/null/范围拒绝原始响应独审通过。
-共同融合快照恢复两项P1已修正并通过两轴独审；真实PL60m闲置335.6秒后旧token409、一次原窗口重建、新token融合200通过，主图数值不变。
-验证为Newow与工程检查2708通过/1跳过（socket两项宿主定向复核）、候选工具189通过、Web776通过/1跳过、最终浏览器61通过；
-build、冻结lock、OpenSpec10项、secret零发现及diff通过。历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
+**运行版本同步及当前operational health验收已完成；新版本自然业务仍待发生。**
+Market/API/Web/Alert与既有weekly切到linked worktree
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.2`，detached/clean，commit为上述exact tag。
+render、Market preflight（non_trading_interval，60品种）及各既有服务安装exit0；六服务configured/loaded
+root与commit一致，API/Web HTTP200，正式API版本1.11.2，readonly服务检查overall=passed。
+两次现场health整体ok，DB/Redis/Live/after_market均ok；盘后run_state=retained、expected及last_success为2026-09-30。
+9/30原盘后success保留原commit `653e736f5952146a2ea401634d32a605e7b9a0d5`、原文件SHA
+`6ed66b566012bc795ca8c677ab270077abf5f9a9315a218f06066ecf233d988a`，独立保存在`.run/after-market-history.json`；
+新运行根的自然current_run/last_run仍null，没有伪造首跑、手工重跑盘后或覆盖失败记录。
 
-**运行版本同步已完成；自然业务验收仍待完成。** Market/API/Web/Alert与既有weekly已切到
-linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.1`，detached/clean，commit为上述exact tag。
-冻结依赖/build/render和Market preflight（non_trading_interval，60品种）通过；Market三个label、API/Web/log-rotate及weekly安装均exit0。
-正式8000版本1.11.1、capability v29 exact45及HTTP200实际读回；正式PL60m双策略Chrome显示正确历史提示、曲线与50张参考卡。
-切换后正式8000的360基础响应/180融合结果全部重读，覆盖540组合；独立SHA、身份、Decimal及360个完整reference.value与发布前逐值相同。
+本轮当前rank1 D1/W1前缀恢复AG、AU、CU、EC、MA、SN，共68个真实源请求、118分区激活；
+独立六合同replan零目标、1136根D1/240根W1按权威Calendar和Decimal逐周七字段重算无差异，维护锁0。
+最终60合约raw端点48完整；BZ/EG有成交但O/H/L=0的真实源异常，各零发布、禁重试；
+另10个raw缺失对应已有typed quality事实，不作为普通下载缺口重试。目标8品种D1/W1各24 case有界只读复查192秒完成、预算未耗尽，六恢复品种各3策略chart READY；
+完整60消费者与自然业务仍未宣称通过。
 
-2026-10-04 owner明确批准“仅切换既有Alert版本、不新增或补发通知”；宿主审批通过，原安装器 `--confirm-alert-runtime` 实际exit0。
-Alert已running于v1.11.1@0c8089715b1cc8958777f8ee589ba8544fa82f5f，activation=true；既有Rule/Scope/两个收件配置保持，未补发、回放或新增通知。
-切换后实际六服务configured/loaded root与commit一致；readonly服务检查exit0、overall=passed、API health=ok。
-此前宿主拒绝与混合身份3项失败原始记录保留，最新通过证据为 `runtime-confirm-alert-runtime.log` 与两次 `runtime-post-alert-status-*.log`。
-切换前旧API曾显示盘后missed/last_successful_trading_day=null、周检missed及Alert degraded；本次发布不证明这些自然业务证据已修复。
+Alert activation=true、running，既有Rule/Scope与两个收件配置保持，未发送、补发、回放或ack通知。
+Alert组件仍degraded（分钟覆盖unverified），notification_state=provider_accepted、连续失败0；
+9/30较早通知失败诊断保留。weekly组件仍missed，按合同不计入operational整体状态；没有手工重跑或新增任务。
+首根自然completed Bar、Alert覆盖、盘后增量/消费者检查与weekly仍待各自验收，**不声明RUNTIME_READY**。
 
-旧v1.11.0树clean且配置/loaded服务/进程引用均为零；旧盘后JSON逐字节/SHA保留后以非force Git worktree remove退休。
-旧盘后JSON及原始现场已保留于本机 `outputs/release-45-products-20261004/`；没有复制成新运行根的成功状态。
-未手工重跑盘后/周检、回放Event、补发通知或新增后台任务；operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。
-首根自然completed Bar、必要heartbeat、盘后增量/MDS与weekly仍待各自验收，**不声明RUNTIME_READY**。
-历史23项weekly finding与P9阻断未解决；后续分钟持续更新和实时观察另行验收。
+旧v1.11.1树clean且配置/loaded服务/进程引用为零；13个运行配置/marker证据保存后以非force Git worktree remove退休。
+本轮证据保存在 `/Volumes/扩展盘/guiyi-quant-evidence/after-market-health-20261004/`；旧归档引用以任务文档为准。
+operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。历史23项weekly finding与P9阻断仍保留。
 
 ## 当前产品与验证范围
 
