@@ -1,6 +1,7 @@
 """Native formula preparation and bounded GET identity gates."""
 
 from __future__ import annotations
+from datetime import date
 from importlib import import_module
 import inspect
 from pathlib import Path
@@ -80,6 +81,11 @@ def validate_assets(candidate: Candidate, report: dict) -> dict:
         "ASSET_FREQUENCY_MATRIX",
     )
     count = 0
+    segmented = any(
+        "owner_since" in owner or "owner_through" in owner
+        for row in rows for owner in row.get("owners", [])
+    )
+    owner_signature = None
     for row in rows:
         need(
             row.get("prefix_status") == "INPUT_PREFIX_VERIFIED"
@@ -100,10 +106,37 @@ def validate_assets(candidate: Candidate, report: dict) -> dict:
             ),
             "DATA_NOT_READY",
         )
-        need(
-            len({o["contract"] for o in row["owners"]}) == len(row["owners"]),
-            "OWNER_DUPLICATE",
-        )
+        if segmented:
+            signature = []
+            previous_through = None
+            for owner in row["owners"]:
+                since, through = owner.get("owner_since"), owner.get("owner_through")
+                need(
+                    all(isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v)
+                        for v in (since, through)),
+                    "OWNER_SEGMENT_IDENTITY",
+                )
+                try:
+                    start, end = date.fromisoformat(since), date.fromisoformat(through)
+                except ValueError:
+                    raise ValueError("OWNER_SEGMENT_IDENTITY") from None
+                need(
+                    date.fromisoformat(candidate.since) <= start <= end
+                    <= date.fromisoformat(candidate.through)
+                    and (previous_through is None or previous_through < start),
+                    "OWNER_SEGMENT_WINDOW_OR_ORDER",
+                )
+                previous_through = end
+                signature.append((owner["contract"], since, through))
+            need(len(set(signature)) == len(signature), "OWNER_DUPLICATE")
+            need(owner_signature is None or signature == owner_signature,
+                 "OWNER_SEGMENT_FREQUENCIES_DIFFER")
+            owner_signature = signature
+        else:
+            need(
+                len({o["contract"] for o in row["owners"]}) == len(row["owners"]),
+                "OWNER_DUPLICATE",
+            )
         streams = row["streams"]
         need(
             len(streams) == 3
