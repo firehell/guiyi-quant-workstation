@@ -41,8 +41,19 @@ watch(identity, (next, previous) => {
 }, { flush: 'sync' })
 const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency))
 const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : candidatePreviewNow() })
+let fusionRecoveryAttempted = false
+async function recoverFusionSnapshotConflict(token: string): Promise<void> {
+  if (fusionRecoveryAttempted || !dualMode.value || referenceResponse.value?.meta.snapshot_token !== token) return
+  fusionRecoveryAttempted = true
+  const requestedIdentityKey = identityKey.value
+  const restored = await loader.recoverFusionSnapshotConflict(token)
+  if (restored && requestedIdentityKey === identityKey.value) {
+    loadFirstScreenResearch()
+    void loadAuxiliaryForChart()
+  }
+}
 const comparisonSelected = ref(false)
-const comparisonEnabled = computed(() => dualMode.value || comparisonSelected.value)
+const comparisonEnabled = computed(() => (dualMode.value || comparisonSelected.value) && !loader.fusionRecoveryActive.value)
 const comparisonSelection = shallowRef<{ strategy: 'trend' | 'oscillation'; signalId: string } | null>(null)
 const selectedSignalId = ref<string | null>(null)
 const selectedHintId = ref<string | null>(null)
@@ -299,11 +310,12 @@ async function returnToReferenceTrade(): Promise<void> {
   record.scrollIntoView({ behavior: 'smooth', block: 'center' })
   record.focus({ preventScroll: true })
 }
-function refreshCurrent(): void { loader.refreshCurrent(); emit('refresh-current') }
+function refreshCurrent(): void { fusionRecoveryAttempted = false; loader.refreshCurrent(); emit('refresh-current') }
 
 
 watch(selectedAuxiliary, value => rememberNewowUiPreferences(identityKey.value, { auxiliary: value }))
 watch(identityKey, async (_key, previous) => {
+  fusionRecoveryAttempted = false
   if (previous) rememberNewowUiPreferences(previous, { auxiliary: selectedAuxiliary.value, scrollTop: scrollOwner()?.scrollTop ?? 0 })
   restoredScroll = strategySwitching.value
   comparisonSelection.value = null; ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
@@ -458,7 +470,7 @@ onBeforeUnmount(() => {
     </div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
-      <NewowFusionPanel v-if="dualMode && referenceResponse?.value" :key="identityKey" :response="referenceResponse" :ready-to-load="comparison.referenceSettled.value" />
+      <NewowFusionPanel v-if="dualMode && referenceResponse?.value" :key="identityKey" :response="referenceResponse" :ready-to-load="comparison.referenceSettled.value" @snapshot-conflict="recoverFusionSnapshotConflict" />
       <p v-else-if="dualMode" role="status">{{ loader.sections.reference.state.value === 'loading' ? '正在读取双策略参考输入…' : '双策略参考输入暂不可用' }} <button v-if="loader.sections.reference.state.value !== 'loading'" @click="loader.loadReference()">重试</button></p>
       <NewowReferencePanel v-else :key="identityKey" :updating-strategy="strategySwitching" :records-response="recentRecords.response.value" :records-loading="recentRecords.loading.value" :records-error="recentRecords.error.value" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="recentRecords.loadMore" @locate="locateReferenceTrade" />
     </section>

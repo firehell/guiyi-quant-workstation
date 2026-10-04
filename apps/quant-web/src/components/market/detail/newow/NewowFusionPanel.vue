@@ -2,12 +2,14 @@
 import { holdingCurvePlot, holdingCurveWindow, fusionTheoreticalCurve } from '@/utils/newowHoldingCurve'
 import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue'
 import { getNewowFusion, type FusionComparison } from '@/api/newowFusion'
+import { NewowProductRequestError } from '@/api/newowProduct'
 import { closestReferenceCurvePoint, referenceCurveAnchors, closedReferenceCurve, sumReferenceReturns, referenceCurveDrawdown } from '@/utils/newowReferenceCurve'
 import { newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
 import { referencePercentDisplay, referenceTimeDisplay } from '@/utils/newowDetailPresentation'
 import type { NewowProductSectionResponse } from '@/types/newowProduct'
 import { formatMarketDecimal, formatBeijingInstant } from '@/utils/marketDisplay'
 const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'reference'>; readyToLoad?: boolean }>(), { readyToLoad: true })
+const emit = defineEmits<{ 'snapshot-conflict': [token: string] }>()
 const result = ref<FusionComparison | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -29,20 +31,30 @@ async function load() {
   if (!value || props.response.meta.identity.strategy !== 'trend') return
   initialLoadPending.value = false
   const token = ++generation
+  const requestInputKey = inputKey.value
+  const snapshotToken = props.response.meta.snapshot_token
   controller?.abort(); controller = new AbortController()
   loading.value = true; error.value = ''
   const identity = props.response.meta.identity
   try {
     const next = await getNewowFusion({ identity: { product: identity.product, strategy: 'trend', frequency: identity.frequency, seriesKind: 'actual_dominant' }, section: 'reference', asOf: props.response.meta.as_of, snapshotToken: props.response.meta.snapshot_token ?? undefined, performanceSince: value.performance_since, performanceThrough: value.performance_through }, { signal: controller.signal })
-    if (token === generation) {
+    if (token === generation && inputKey.value === requestInputKey) {
       if (next.reference_input_sha256 !== value.reference_input_sha256 || next.reference_cutoff !== value.reference_cutoff) {
         error.value = '融合输入已变化，请刷新当前图表后重试。'
         return
       }
       result.value = next
     }
-  } catch { if (token === generation) error.value = '融合参考读取失败，请重试。' }
-  finally { if (token === generation) loading.value = false }
+  } catch (cause) {
+    if (token === generation && inputKey.value === requestInputKey) {
+      error.value = '融合参考读取失败，请重试。'
+      if (props.readyToLoad && cause instanceof NewowProductRequestError && cause.code === 'NEWOW_SNAPSHOT_GENERATION_CONFLICT'
+        && cause.classification === 'conflict' && snapshotToken) {
+        emit('snapshot-conflict', snapshotToken)
+      }
+    }
+  }
+  finally { if (token === generation && inputKey.value === requestInputKey) loading.value = false }
 }
 function tone(value: string | null) { return value === null ? '' : Number(value) >= 0 ? 'gain' : 'loss' }
 const names = { trend: '趋势', oscillation: '震荡', fusion: '融合' }
@@ -100,17 +112,28 @@ async function loadMore() {
   const current = result.value, value = props.response.value
   if (!props.readyToLoad || !current?.next_cursor || !value || loading.value) return
   const token = generation
+  const requestInputKey = inputKey.value
+  const snapshotToken = props.response.meta.snapshot_token
   const identity = props.response.meta.identity
   loading.value = true; error.value = ''
   try {
     const next = await getNewowFusion({ identity: { product: identity.product, strategy: 'trend', frequency: identity.frequency, seriesKind: 'actual_dominant' }, section: 'reference', asOf: props.response.meta.as_of, snapshotToken: props.response.meta.snapshot_token ?? undefined, performanceSince: value.performance_since, performanceThrough: value.performance_through, fusionBefore: current.next_cursor }, { signal: controller?.signal })
-    if (token !== generation) return
+    if (token !== generation || inputKey.value !== requestInputKey) return
     if (next.reference_revision !== current.reference_revision) throw new Error('fusion revision conflict')
     const existing = new Set(current.items.map(item => item.reference_trade_id))
     if (next.items.some(item => existing.has(item.reference_trade_id))) throw new Error('duplicate fusion page')
     result.value = { ...current, items: [...current.items, ...next.items], next_cursor: next.next_cursor }
-  } catch { if (token === generation) error.value = '记录快照已变化或读取失败，请刷新后重试。' }
-  finally { if (token === generation) loading.value = false }
+  } catch (cause) {
+    if (token === generation && inputKey.value === requestInputKey) {
+      if (cause instanceof NewowProductRequestError && cause.classification === 'conflict') result.value = null
+      error.value = '记录快照已变化或读取失败，请刷新后重试。'
+      if (props.readyToLoad && cause instanceof NewowProductRequestError && cause.code === 'NEWOW_SNAPSHOT_GENERATION_CONFLICT'
+        && cause.classification === 'conflict' && snapshotToken) {
+        emit('snapshot-conflict', snapshotToken)
+      }
+    }
+  }
+  finally { if (token === generation && inputKey.value === requestInputKey) loading.value = false }
 }
 async function locate(id: string) { selected.value = id; await nextTick(); document.getElementById(`fusion-trade-${id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }
 const time = (instant: string) => referenceTimeDisplay(instant, props.response.meta.identity.frequency, [result.value?.reference_cutoff ?? instant])

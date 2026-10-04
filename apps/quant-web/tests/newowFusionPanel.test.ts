@@ -6,9 +6,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
+import { NewowProductRequestError } from '../src/api/newowProduct.ts'
 
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
-const mockUrl = `data:text/javascript;base64,${Buffer.from(`export const calls=[]; export function getNewowFusion(request, options) { return new Promise(resolve => calls.push({request, options, resolve})); }`).toString('base64')}`
+const mockUrl = `data:text/javascript;base64,${Buffer.from(`export const calls=[]; export function getNewowFusion(request, options) { return new Promise((resolve, reject) => calls.push({request, options, resolve, reject})); }`).toString('base64')}`
 const mock = await import(mockUrl)
 async function component(name: string) {
   const source = readFileSync(new URL(`../src/components/market/detail/${name}.vue`, import.meta.url), 'utf8')
@@ -34,28 +35,53 @@ async function workspaceFusionHost(Panel: unknown, setup: () => unknown) {
   assert.deepEqual(compiled.errors, [])
   const code = compiled.code.replace(/from ["']vue["']/g, `from '${import.meta.resolve('vue')}'`)
   const { render } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
-  return defineComponent({ components: { NewowFusionPanel: Panel }, setup, render })
+  return defineComponent({ components: { NewowFusionPanel: Panel }, setup: () => ({ ...(setup() as object), recoverFusionSnapshotConflict: () => {} }), render })
 }
 const input = (product = 'jm') => ({ meta: { identity: { product, strategy: 'trend', frequency: '1d' }, as_of: '2026-09-26T15:00:00Z', snapshot_token: product + '-snapshot' }, value: { performance_since: '2023-01-01', performance_through: '2026-09-24', reference_input_sha256: product, reference_cutoff: '2026-09-24T07:00:00Z', history_coverage: 'FULL' } })
 const output = (version: string, product = 'rb') => ({ reference_model_version: version, reference_input_sha256: product, performance_since: '2023-01-01', performance_through: '2026-09-24', reference_cutoff: '2026-09-24T07:00:00Z', records_truncated: false, groups: ['trend','oscillation','fusion'].map(model => ({ model, closed_count: 0, sum_return_percentage_points: null, open_count: 0, interrupted_count: 0 })), items: [] })
 
+test('fusion generation conflict requests one parent recovery while busy and stale errors do not', async () => {
+  const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
+  const response = ref(input('pl'))
+  const conflicts: string[] = []
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
+    response: response.value, onSnapshotConflict: (token: string) => conflicts.push(token),
+  }) }))
+  app.mount(root)
+  mock.calls[base].reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
+  await nextTick(); await nextTick()
+  assert.deepEqual(conflicts, ['pl-snapshot'])
+  assert.equal(mock.calls.length, base + 1, 'panel must not retry with its stale token')
+  response.value = input('rb'); await nextTick()
+  mock.calls[base + 1].reject(new NewowProductRequestError('NEWOW_SOURCE_BUSY', 'busy'))
+  await nextTick(); await nextTick()
+  assert.deepEqual(conflicts, ['pl-snapshot'], '429 must not rebuild')
+  response.value = input('cu'); await nextTick()
+  response.value = input('ag'); await nextTick()
+  mock.calls[base + 2].reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
+  await nextTick(); await nextTick()
+  assert.deepEqual(conflicts, ['pl-snapshot'], 'superseded request cannot recover old identity')
+  app.unmount()
+})
+
 test('fusion entry loads automatically and drops late results after identity change/unmount', async () => {
   const Panel = await component('newow/NewowFusionPanel')
+  const base = mock.calls.length
   const response = ref(input())
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: response.value }) }))
   app.mount(root)
-  assert.equal(mock.calls.length, 1)
-  assert.equal(mock.calls[0].request.identity.strategy, 'trend')
-  assert.equal(mock.calls[0].request.snapshotToken, 'jm-snapshot')
+  assert.equal(mock.calls.length, base + 1)
+  assert.equal(mock.calls[base].request.identity.strategy, 'trend')
+  assert.equal(mock.calls[base].request.snapshotToken, 'jm-snapshot')
   response.value = input('rb')
   await nextTick()
-  assert.equal(mock.calls[0].options.signal.aborted, true)
-  assert.equal(mock.calls.length, 2)
-  mock.calls[0].resolve(output('old-result'))
+  assert.equal(mock.calls[base].options.signal.aborted, true)
+  assert.equal(mock.calls.length, base + 2)
+  mock.calls[base].resolve(output('old-result'))
   await nextTick(); await nextTick()
   assert.doesNotMatch(nodeText(root), /old-result/)
-  mock.calls[1].resolve(output('current-result'))
+  mock.calls[base + 1].resolve(output('current-result'))
   await nextTick(); await nextTick()
   assert.match(nodeText(root), /current-result/)
   assert.match(nodeText(root), /趋势.*震荡.*融合/)
@@ -63,15 +89,15 @@ test('fusion entry loads automatically and drops late results after identity cha
   response.value = input('cu')
   await nextTick()
   assert.doesNotMatch(nodeText(root), /current-result/)
-  mock.calls[2].resolve(output('changed-input', 'wrong'))
+  mock.calls[base + 2].resolve(output('changed-input', 'wrong'))
   await nextTick(); await nextTick()
   assert.match(nodeText(root), /融合输入已变化/)
   assert.doesNotMatch(nodeText(root), /changed-input/)
   response.value = input('al')
   await nextTick()
   app.unmount()
-  assert.equal(mock.calls[3].options.signal.aborted, true)
-  mock.calls[3].resolve(output('unmounted'))
+  assert.equal(mock.calls[base + 3].options.signal.aborted, true)
+  mock.calls[base + 3].resolve(output('unmounted'))
 })
 
 test('dual tab replaces main rise and emits a presentation identity preserving period', async () => {
