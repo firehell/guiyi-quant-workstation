@@ -28,11 +28,22 @@ def validate_binding(binding: dict, url: str, http: int) -> None:
     )
 
 
-def validate_bars(candidate: Candidate, part: dict) -> list:
+def validate_bars(
+    candidate: Candidate, part: dict, *, frequency: str | None = None,
+    strategy: str | None = None,
+) -> list:
     bars = (part.get("value") or {}).get("bars", [])
+    status = part.get("status", {})
+    legacy_oscillation_warming = (
+        frequency in ("1d", "1w")
+        and strategy == "oscillation"
+        and status.get("status") == "warming"
+        and status.get("evidence_status") == "ACTIVE_CODE_VERIFIED"
+        and status.get("reason_code") == "NEWOW_OSCILLATION_WARMING"
+    )
     need(
         part.get("delivery") == "delivered"
-        and part.get("status", {}).get("status") == "ready"
+        and (status.get("status") == "ready" or legacy_oscillation_warming)
         and isinstance(bars, list)
         and bool(bars),
         "ACTUAL_CHART_NOT_READY",
