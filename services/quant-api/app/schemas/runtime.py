@@ -131,6 +131,17 @@ class RuntimeNewowConsumerCheck(BaseModel):
     run_started_at: str | None = None
 
 
+class RuntimeRetainedAfterMarketSuccess(BaseModel):
+    trading_day: str
+    source_commit: str
+    source_status_sha256: str
+    source_run_started_at: str
+    source_run_finished_at: str
+    source_run_status: str
+    retained_at: str
+    error_code: str | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
 class RuntimeAfterMarketHealth(BaseModel):
     """由本地公开状态文件派生的盘后维护摘要。"""
 
@@ -140,6 +151,8 @@ class RuntimeAfterMarketHealth(BaseModel):
     expected_trading_day: str | None = None
     current_run: RuntimeAfterMarketCurrentRun | None = None
     last_run: RuntimeAfterMarketRun | None = None
+    retained_success: RuntimeRetainedAfterMarketSuccess | None = Field(default=None, exclude_if=lambda value: value is None)
+    retained_failure: RuntimeRetainedAfterMarketSuccess | None = Field(default=None, exclude_if=lambda value: value is None)
     last_interruption: RuntimeAfterMarketInterruption | None = Field(default=None, exclude_if=lambda value: value is None)
     last_successful_trading_day: str | None = None
     last_failure: dict[str, str] | None = None

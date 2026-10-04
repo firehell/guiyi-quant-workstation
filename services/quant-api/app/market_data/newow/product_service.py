@@ -68,6 +68,8 @@ from guiyi_quant.newow.reference_trades import (
 )
 from guiyi_quant.newow.target_absorb_display import calculate_target_absorb
 
+from app.market_data.market_data_service import MarketDataError
+
 from .product_query import NewowProductQuery, ProductReadWindow
 from .product_reader import (
     NewowProductReadCancelled,
@@ -771,6 +773,9 @@ class NewowProductService:
             ResolvedPerformanceWindow,
         ] = {}
         self._reads: dict[tuple[object, ...], ProductReadSet] = {}
+        self._read_input_failures: dict[
+            tuple[int, object], tuple[str, str | None, dict[str, object]]
+        ] = {}
 
     def query(self, request: ProductServiceQuery) -> NewowProductResult:
         if not isinstance(request, ProductServiceQuery):
@@ -1080,10 +1085,30 @@ class NewowProductService:
         if not self._reuse_read_inputs:
             return load()
         with self._read_input_lock:
+            failure_key = (id(cache), key)
+            failure = self._read_input_failures.get(failure_key)
+            if failure is not None:
+                code, reason, context = failure
+                raise MarketDataError(code, reason=reason, context=context)
             cached = cache.get(key)
             if cached is not None:
                 return cached
-            value = load()
+            try:
+                value = load()
+            except MarketDataError as exc:
+                # A bounded readiness audit pins its input identity. Rechecking
+                # the same missing replay prefix for every strategy/section
+                # cannot produce a successful consumer and exhausts its budget.
+                # Keep the exact failure, never memoize cancellation, storage
+                # errors or other failures that may change between reads.
+                if (
+                    exc.code == "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+                    and exc.reason == "REPLAY_PREFIX_MISSING"
+                ):
+                    self._read_input_failures[failure_key] = (
+                        exc.code, exc.reason, dict(exc.context),
+                    )
+                raise
             cache[key] = value
             return value
 

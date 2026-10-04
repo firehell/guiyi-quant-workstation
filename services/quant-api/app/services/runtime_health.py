@@ -761,6 +761,67 @@ def _collect_after_market_health(
     now: datetime,
     configured_enabled: bool,
 ) -> dict[str, Any]:
+    """Keep current failures authoritative and expose retained evidence separately."""
+    result = _collect_current_after_market_health(
+        session, status_path, now=now, configured_enabled=configured_enabled,
+    )
+    if (not configured_enabled or status_path is None
+            or result.get("last_successful_trading_day") is not None):
+        return result
+    from app.market_data.after_market_history import NAME, read_history
+
+    try:
+        history = read_history(status_path.with_name(NAME),
+                               products=load_operational_products(), now=now)
+    except Exception:
+        # A broken retained proof is never interpreted as a historical success.
+        if result.get("run_state") in {"running", "stuck", "failed", "interrupted"}:
+            return result
+        return {**result, "status": RUNTIME_STATUS_DEGRADED, "run_state": "degraded",
+                "error_type": "after_market_history_invalid"}
+    if history is None:
+        return result
+    if (result.get("current_run") is not None
+            or result.get("run_state") not in {"pending", "missed", "completed"}
+            or result.get("last_failure") is not None
+            or (result.get("last_run") or {}).get("status") in {"failed", "interrupted"}):
+        return result
+    day = history["status"]["last_successful_trading_day"]
+    last = history["status"]["last_run"]
+    negative = history["status"].get("last_failure")
+    if negative is not None or last["status"] in {"failed", "interrupted"}:
+        return {**result, "status": RUNTIME_STATUS_DEGRADED,
+                "run_state": "interrupted" if last["status"] == "interrupted" else "failed",
+                "error_type": "after_market_retained_failure",
+                "retained_failure": {"trading_day": negative["trading_day"] if negative else last["trading_day"],
+                    "error_code": negative["error_code"] if negative else last["error_code"],
+                    "source_commit": history["source_commit"],
+                    "source_status_sha256": history["source_status_sha256"],
+                    "source_run_started_at": last["started_at"],
+                    "source_run_finished_at": last["finished_at"],
+                    "source_run_status": last["status"], "retained_at": history["retained_at"]}}
+    result = {**result, "last_successful_trading_day": day,
+              "retained_success": {"trading_day": day, "source_commit": history["source_commit"],
+                  "source_status_sha256": history["source_status_sha256"],
+                  "source_run_started_at": last["started_at"],
+                  "source_run_finished_at": last["finished_at"],
+                  "source_run_status": last["status"], "retained_at": history["retained_at"]}}
+    expected = result.get("expected_trading_day")
+    if expected is not None and day < expected:
+        return {**result, "status": RUNTIME_STATUS_DEGRADED, "run_state": "missed",
+                "error_type": "after_market_run_missed"}
+    return {**result, "status": RUNTIME_STATUS_OK,
+            "run_state": "retained" if result.get("last_run") is None else "completed",
+            "error_type": None, "error_message": None}
+
+
+def _collect_current_after_market_health(
+    session: Session,
+    status_path: Path | None,
+    *,
+    now: datetime,
+    configured_enabled: bool,
+) -> dict[str, Any]:
     """读取盘后运行的公开状态文件；不恢复任何 scheduler/checkpoint 模型。"""
     empty = {
         "configured_enabled": configured_enabled,
@@ -793,7 +854,7 @@ def _collect_after_market_health(
     base: dict[str, object] = {**empty, "expected_trading_day": expected_text}
     if expected_day_error:
         base.update(run_state="degraded", error_type="after_market_expected_day_invalid")
-    if not status_path.exists():
+    if not os.path.lexists(status_path):
         if expected_day_error:
             return {"status": RUNTIME_STATUS_DEGRADED, **base}
         if configured_enabled and due_today:
@@ -810,7 +871,8 @@ def _collect_after_market_health(
             **base,
         }
     try:
-        raw = json.loads(status_path.read_text(encoding="utf-8"))
+        from app.market_data.after_market_history import _bytes
+        raw = json.loads(_bytes(status_path))
     except (OSError, ValueError, TypeError):
         return {
             "status": RUNTIME_STATUS_DEGRADED,

@@ -317,6 +317,47 @@ def test_summarize_readiness_preserves_exact_readonly_warmup_proposal():
     assert report["provider_requests"] == 0 and report["writes"] == 0
 
 
+@pytest.mark.parametrize("repair_status", ["UNSTARTED", "UNKNOWN", "INTEGRITY_ERROR"])
+def test_unverified_repair_retains_product_without_claiming_a_plan(repair_status):
+    report = {
+        "complete": False, "budget_exhausted": repair_status == "UNSTARTED",
+        "cases": [
+            _case("au", strategy, "DATA_UNAVAILABLE", "DATA_UNAVAILABLE", "DATA_UNAVAILABLE", frequency="1d")
+            for strategy in ("trend", "oscillation", "main_rise")
+        ],
+        "repair_targets": [{
+            "symbol": "au", "contract": "AU2612", "frequency": "1d",
+            "through": "2026-09-30", "status": repair_status,
+            "expected_bar_count": None, "provider_request_count": None,
+            "plan_sha256": None,
+        }],
+        "provider_requests": 0, "writes": 0,
+    }
+    result = summarize_readiness(
+        report, products=("au",), frequency="1d",
+        cutoffs={"au": "2026-09-30T07:00:00.000001+00:00"},
+        input_revision="a" * 64,
+    )
+    assert result["status"] == "incomplete"
+    assert result["unverified_products"] == ["au"]
+    assert result["warmup_proposals"] == []
+    assert result["failures"]
+    report["repair_targets"][0]["plan_sha256"] = "b" * 64
+    with pytest.raises(ValueError, match="NEWOW_CONSUMER_AUDIT_INVALID"):
+        summarize_readiness(
+            report, products=("au",), frequency="1d",
+            cutoffs={"au": "2026-09-30T07:00:00.000001+00:00"},
+            input_revision="a" * 64,
+        )
+    report["repair_targets"][0].update(plan_sha256=None, symbol="rb")
+    with pytest.raises(ValueError, match="NEWOW_CONSUMER_AUDIT_INVALID"):
+        summarize_readiness(
+            report, products=("au",), frequency="1d",
+            cutoffs={"au": "2026-09-30T07:00:00.000001+00:00"},
+            input_revision="a" * 64,
+        )
+
+
 def test_bounded_consumer_audits_keep_scopes_and_total_deadline_separate():
     elapsed = [0.0]
     calls = []

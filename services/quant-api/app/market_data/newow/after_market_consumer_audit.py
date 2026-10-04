@@ -456,11 +456,31 @@ def summarize_readiness(
                 "reason": reason if isinstance(reason, str) else status,
             })
 
-    proposals = [_warmup_proposal(row) for row in raw_repairs]
+    proposals = []
+    for row in raw_repairs:
+        if isinstance(row, Mapping) and row.get("status") in {
+            "UNSTARTED", "UNKNOWN", "DATA_UNAVAILABLE", "INTEGRITY_ERROR",
+            "SOURCE_EXCEPTION", "DATA_INTERRUPTED",
+        }:
+            # An interrupted or failed planner has not produced an apply plan.
+            # Preserve the affected product as unverified while still validating
+            # its bounded identity; never discard the completed consumer cases.
+            checked = _warmup_proposal({**row, "status": "REVIEW_REQUIRED"})
+            if checked["product"] not in products or any(
+                checked[field] is not None
+                for field in (
+                    "plan_sha256", "expected_bar_count", "provider_request_count"
+                )
+            ):
+                raise ValueError("NEWOW_CONSUMER_AUDIT_INVALID")
+            invalid_products.add(str(checked["product"]))
+            continue
+        proposals.append(_warmup_proposal(row))
     budget_exhausted = report.get("budget_exhausted") is True
     audited = (
         report.get("complete") is True
         and structurally_complete
+        and not invalid_products
         and not budget_exhausted
         and not failures
         and not proposals
