@@ -50,6 +50,8 @@ operational、Rule/Scope/audience、auto_order=false和reference worker关闭保
 
 ## 当前产品与验证范围
 
+2026-10-04 **RS 油菜籽 CANDIDATE_CLOSED / REVIEW_COMPLETE / DEVELOP_INTEGRATED，12/12**。固定历史候选 `8197ad4d1608ea343b6bfb01936229e244b10862`，窗口2023-01-01..2026-09-24，1m仅聚合。13物理合约/27主力区段（含重入）、52维护单元=43读回+9无缺口，69既有真实源请求/293派生发布；四周期各125物理月、165491根Bar独立核对及912涉及文件SHA通过。12禁用流与108依赖当前只读回读一致。API12/12、149 GET；原失败保留并续采19场/49原图，39090 CLOSED/39114 SVG核算及视觉/独立Review通过。仅修验收工具识别日周合法暖态及同快照独立场伙伴补证，分钟READY和数据/公式/收益不变；工具提交`36ef14f4e`，普通集成`d36bad7f2`，合并态463后端/工具、127 Web回归与build通过。日周价格缺口、重新预热、历史PARTIAL、complete_window_proven=false及密集标签局限保留；历史浏览器证据仅归属冻结候选，不作为新develop完整UI或正式开放证明。当前**历史候选闭环46/60、正式分钟开放45/60**，RS未发布/启用，Runtime/Scope/通知/账户不变；原13/21分母保持。见[RS闭环记录](docs/tasks/rs-candidate-pilot-20261004.md)。原始证据工作树保留，当前RS预览PID均退出、8012/5178无监听；本次接续provider/数据写入0。
+
 2026-10-04 本轮A、B、BZ、EB、EC、EG、L、PD、PF、PG、PL、PR、PT、PX均已 **CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**，并与P、Y、LC、PS、FG正式发布于v1.11.1。
 下列采集阶段的VISUAL_PENDING与失败/续采记录按原事实保留；最新独立闭环证据见各任务的2026-10-04终验段及上述发布说明。原13/21队列分母不变。
 
