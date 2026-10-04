@@ -81,10 +81,10 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v28",
+        "schema_version": "newow_product_capabilities_v29",
         "release_stage": "daily_weekly_intraday_history",
         "open_frequencies": ["5m", "15m", "30m", "60m", "1d", "1w"],
-        "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi".split()),
+        "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px".split()),
         "intraday_as_of": "2026-09-24T07:00:00.000001Z",
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",

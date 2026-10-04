@@ -746,3 +746,23 @@ test('released historical minutes retain daily weekly for other products and rej
     await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...historicalMinutes(), ...mutation }) }))
   }
 })
+
+
+test('v29 released history adds exactly nineteen validated products and preserves the cutoff', async () => {
+  const products = 'rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px'.split(' ').sort()
+  assert.equal(products.length, 45)
+  const payload = { ...historicalMinutes(), schema_version: 'newow_product_capabilities_v29' as const, intraday_products: products }
+  const capability = await getNewowProductCapabilities({ request: async () => payload })
+  const state = useNewowCapabilities(async () => capability)
+  await state.load()
+  for (const product of products) {
+    assert.deepEqual(state.openFrequenciesFor(product), ['5m', '15m', '30m', '60m', '1d', '1w'])
+    assert.equal(state.isFrequencyOpen('1m' as never, product), false)
+  }
+  for (const product of ['fu', 'ni', 'ss', 'sc', 'ao', 'cu', 'si', 'pp', 'pb', 'bu', 'al', 'zn', 'sn', 'rs', 'ru']) {
+    assert.deepEqual(state.openFrequenciesFor(product), ['1d', '1w'])
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: [...products, product].sort() }) }))
+  }
+  await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products.slice(1) }) }))
+  await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_as_of: '2026-09-30T07:00:00.000001Z' }) }))
+})
