@@ -1,6 +1,6 @@
 # PX 对二甲苯历史页面候选
 
-状态：**证据已齐，待普通合入**。只处理 PX。窗口 2023-09-15 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商起点与上市日都是 2023-09-15，页面起点用上市日。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
+状态：**已普通合入 develop `b051262ea16d4592f73a8ce5f8f6f3c2ebfa1604`**。只处理 PX。窗口 2023-09-15 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商起点与上市日都是 2023-09-15，页面起点用上市日。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
 
 资格在 `ac2bf537a0f69e2809dd3c388f42c98e0eb68dc1`，API 单品种预览集合和页面 v27 白名单一起提交。原始证据在 `.worktrees/px-candidate-pilot/outputs/px-candidate-pilot-20261004/`，成功页面采集在 `page-capture-resume-2/`，不进入 Git。
 
