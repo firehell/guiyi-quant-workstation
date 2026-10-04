@@ -245,6 +245,157 @@ def sample(frequency="1w", mode="trend", zero=False):
     return candidate, expected, observation
 
 
+def recovery_sample():
+    candidate, expected, observation = sample(mode="dual")
+    cutoff = candidate.as_of
+    bar = dict(
+        bar_end="2026-09-24T07:00:00+00:00", trading_day="2026-09-24",
+        open="9000", high="9100", low="8900", close="9050", volume="123",
+        open_interest="456", physical_contract="CJ2701", segment_id="segment",
+        calculation_segment_id="segment", source_identity="canonical:cj:60m:CJ2701",
+        completed=True, observation_eligible=True,
+    )
+    chart = dict(delivery="delivered", status=dict(status="ready"), value=dict(
+        **{"from": "2026-06-16", "through": candidate.through}, next_before=None,
+        bars=[bar],
+    ))
+    def url(strategy, section, **extra):
+        return candidate.web_origin + "/api/v1/market/newow/strategy-detail?" + urlencode(dict(
+            product=candidate.product, frequency="60m", strategy=strategy,
+            series_kind="actual_dominant", section=section, as_of=cutoff, **extra,
+        ))
+    def meta(strategy, token, input_hash="d" * 64):
+        return dict(identity=dict(
+            product=candidate.product, frequency="60m", strategy=strategy,
+            series_kind="actual_dominant", profile_id=f"newow_product_{strategy}_60m_v1",
+            formula_versions=expected["rows"]["1w"]["base_identities"][strategy]["formula_versions"],
+        ), as_of=cutoff, snapshot_token=token, input_content_sha256=input_hash)
+    main = dict(phase="away", url=url("trend", "chart"), http=200,
+                meta=meta("trend", "main-token"), chart=deepcopy(chart))
+    old = dict(phase="away", url=url("oscillation", "chart", **{"from": "2026-06-16", "through": candidate.through, "chart_limit": "500"}),
+               http=200, meta=meta("oscillation", "old-token"), chart=deepcopy(chart))
+    conflict = dict(phase="away", url=url("oscillation", "reference", snapshot_token="old-token", history_limit="200"),
+                    http=409, detail={"code": "NEWOW_SNAPSHOT_GENERATION_CONFLICT"})
+    fresh = deepcopy(old); fresh["meta"]["snapshot_token"] = "fresh-token"
+    reference = dict(phase="away", url=url("oscillation", "reference", snapshot_token="fresh-token", history_limit="200"),
+                     http=200, meta=meta("oscillation", "fresh-token", "e" * 64),
+                     reference=dict(delivery="delivered", status=dict(status="ready"), value=dict(
+                         performance_since=candidate.since, performance_through=candidate.through,
+                         actual_available_through=candidate.through, reference_cutoff=bar["bar_end"],
+                         reference_input_sha256="e" * 64, page_parity=True,
+                         executable=False, auto_order=False,
+                         summary=dict(membership_policy="entry_in_window_v1", closed_count=1),
+                         curve_trades=[{"reference_trade_id": "one"}], items=[{"reference_trade_id": "one"}],
+                     )))
+    fusion_trade = dict(
+        reference_trade_id="one", status="CLOSED", statistics_membership="entry_in_window_v1",
+        entry_bar_end="2026-09-23T07:00:00+00:00", entry_trading_day="2026-09-23",
+        exit_bar_end=bar["bar_end"], exit_trading_day=bar["trading_day"],
+        reference_return_pct="1.25",
+    )
+    fusion = dict(
+        product=candidate.product, frequency="60m", reference_revision="a" * 64,
+        reference_input_sha256="d" * 64, reference_cutoff=bar["bar_end"],
+        items=[fusion_trade], record_since="2025-09-24",
+        performance_since=candidate.since, performance_through=candidate.through,
+        reference_model_version=expected["rows"]["1w"]["reference_model_version"],
+        source_profiles=["newow_product_trend_60m_v1", "newow_product_oscillation_60m_v1"],
+        source_formula_versions=expected["rows"]["1w"]["source_formula_versions"],
+        page_parity=True, executable=False, snapshot_schema="newow_fusion_reference_snapshot_v2",
+        groups=[dict(model="fusion", closed_count=1, sum_return_percentage_points="1.25")],
+        curve=[fusion_trade],
+    )
+    fusion_wire = dict(
+        phase="away", url=url("trend", "reference", include_fusion="true",
+                              snapshot_token="main-token", performance_since=candidate.since,
+                              performance_through=candidate.through), http=200,
+        meta=meta("trend", "main-token"),
+        reference=dict(delivery="delivered", status=dict(status="ready"), value=dict(
+            reference_input_sha256="d" * 64, reference_cutoff=bar["bar_end"], fusion=fusion,
+        )),
+    )
+    observation["responses"][4:4] = [main, old, conflict, fresh, reference, fusion_wire]
+    observation["returnFloor"] = 10
+    points, _ = expected_curve(fusion, True)
+    observation["away"] = dict(
+        url=candidate.web_origin + "/market/chart?symbol=cj&frequency=60m&newow_mode=dual",
+        mode=["双策略"], scopeBusy=False, cards=["fusion-trade-one"],
+        curves=[dict(points=" ".join(f"{x},{y}" for x, y in points), width=700, height=140)],
+        statuses=[], all="true",
+        observed_at=10_000,
+    )
+    bind_recovery_rows(observation)
+    return candidate, expected, observation
+
+
+def bind_recovery_rows(observation):
+    for index, row in enumerate(observation["responses"]):
+        row["xhr_binding"] = dict(
+            evidence_kind="xhr_response_text_compact", url=row["url"], http=row["http"],
+            xhr_sequence=index + 1, node_request_id=index + 1,
+            started_order=index * 2 + 1, completed_order=index * 2 + 2,
+            started_at=1000 + index * 2, completed_at=1001 + index * 2,
+            response_text_chars=1000,
+        )
+
+
+def test_exact_bound_partner_recovery_accepts_one_same_window_chain():
+    c, p, o = recovery_sample()
+    report = validate_legacy_capture(c, p, o, "1w", "dual")
+    assert report["checks"]["away_snapshot_recovery"] == "PASS"
+    assert report["historical_actual_xhr_binding"] is True
+
+
+@pytest.mark.parametrize("change", [
+    "missing_binding", "wrong_code", "second_409", "cross_window", "old_token",
+    "wrong_order", "fresh_bar", "main_bar", "wrong_source", "wrong_reference_hash",
+    "away_error", "away_before_reference", "away_missing_time", "away_boolean_time",
+    "away_missing_busy", "away_busy", "away_missing_cards", "wrong_frequency", "wrong_formula",
+    "missing_fresh_reference", "wrong_reference_token", "wrong_both_formula", "away_unrelated_card",
+    "away_invalid_curve", "fusion_before_fresh", "fusion_stale_token", "fusion_wrong_hash",
+])
+def test_partner_recovery_rejects_unproven_chain(change):
+    c, p, o = recovery_sample()
+    rows = o["responses"]
+    main, old, conflict, fresh, reference = rows[4:9]
+    if change == "missing_binding": conflict.pop("xhr_binding")
+    elif change == "wrong_code": conflict["detail"]["code"] = "OTHER_CONFLICT"
+    elif change == "second_409":
+        rows.insert(8, deepcopy(conflict)); bind_recovery_rows(o)
+    elif change == "cross_window":
+        fresh["url"] = fresh["url"].replace("from=2026-06-16", "from=2026-06-17")
+        fresh["xhr_binding"]["url"] = fresh["url"]
+    elif change == "old_token": reference["url"] = reference["url"].replace("fresh-token", "old-token"); reference["xhr_binding"]["url"] = reference["url"]
+    elif change == "wrong_order": fresh["xhr_binding"]["started_order"] = conflict["xhr_binding"]["completed_order"] - 1
+    elif change == "fresh_bar": fresh["chart"]["value"]["bars"][0]["close"] = "9999"
+    elif change == "main_bar": main["chart"]["value"]["bars"][0]["close"] = "9999"
+    elif change == "wrong_source": fresh["meta"]["input_content_sha256"] = "f" * 64
+    elif change == "wrong_reference_hash": reference["reference"]["value"]["reference_input_sha256"] = "f" * 64
+    elif change == "away_error": o["away"]["statuses"] = ["另一策略参考收益暂不可用"]
+    elif change == "away_before_reference": o["away"]["observed_at"] = 1
+    elif change == "away_missing_time": o["away"].pop("observed_at")
+    elif change == "away_boolean_time": o["away"]["observed_at"] = True
+    elif change == "away_missing_busy": o["away"].pop("scopeBusy")
+    elif change == "away_busy": o["away"]["scopeBusy"] = True
+    elif change == "away_missing_cards": o["away"]["cards"] = []
+    elif change == "away_unrelated_card": o["away"]["cards"] = ["fusion-trade-unrelated"]
+    elif change == "away_invalid_curve": o["away"]["curves"][0]["points"] = "0,NaN 712,140"
+    elif change == "wrong_frequency": conflict["url"] = conflict["url"].replace("frequency=60m", "frequency=15m"); conflict["xhr_binding"]["url"] = conflict["url"]
+    elif change == "wrong_formula": fresh["meta"]["identity"]["formula_versions"] = ["changed"]
+    elif change == "wrong_both_formula":
+        main["meta"]["identity"]["formula_versions"] = ["wrong-trend"]
+        old["meta"]["identity"]["formula_versions"] = ["wrong-oscillation"]
+        fresh["meta"]["identity"]["formula_versions"] = ["wrong-oscillation"]
+        rows[9]["reference"]["value"]["fusion"]["source_formula_versions"] = ["wrong-trend", "wrong-oscillation"]
+    elif change == "missing_fresh_reference": rows.pop(8)
+    elif change == "wrong_reference_token": reference["meta"]["snapshot_token"] = "old-token"
+    elif change == "fusion_before_fresh": rows.insert(8, rows.pop(9)); bind_recovery_rows(o)
+    elif change == "fusion_stale_token": rows[9]["url"] = rows[9]["url"].replace("main-token", "stale-token"); rows[9]["xhr_binding"]["url"] = rows[9]["url"]
+    elif change == "fusion_wrong_hash": rows[9]["reference"]["value"]["fusion"]["reference_input_sha256"] = "f" * 64
+    with pytest.raises((ValueError, KeyError, TypeError)):
+        validate_legacy_capture(c, p, o, "1w", "dual")
+
+
 @pytest.mark.parametrize("f", ["1d", "1w"])
 @pytest.mark.parametrize("m", ["trend", "oscillation", "dual"])
 @pytest.mark.parametrize("zero", [False, True])

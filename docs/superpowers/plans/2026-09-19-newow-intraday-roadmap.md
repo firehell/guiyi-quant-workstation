@@ -411,21 +411,27 @@ API/Web/Chrome 后，再启动下一项；不预建 13 个任务或后台监控�
 候选保持 disabled/generation=0；正式分钟开放、发布、Runtime、Scope、通知和交易不在本轮。
 全部代码已存在时不为每个品种制造源码修改；实际结果与证据进入对应单品种记录和 STATUS。
 
+owner 于 2026-10-01 续交办四品种，当前执行顺序改为 **LC → FG → AO → CU**。
+四项仍归属下表原有行号，不新增或缩减原 13 品种和原 21 品种分母；其余未开始品种不因本轮自动启动。
+LC已候选闭环、资源释放并集成推送develop；FG已候选闭环、资源释放并集成develop，通过303 API工具/130 Web/build，普通push/远端8777b167c读回一致；AO唯一维护出现源Decimal无法无损发布，已停批，独立安全暂缓完成、0/12；记录4640ecceb已普通集成develop150ad5e5b、308 API工具/130 Web/build通过，普通push/远端a9a8c2a3e读回一致，CU已安全暂缓0/12、记录ff23a287普通集成developca64b256，313 API工具/130 Web/build及diff/secret通过，普通push/远端1f647ba08读回一致；本轮实际2闭环+2安全暂缓，其余品种不启动；AO/CU实际候选仍阻塞，须先确定无损成交额表示与精确恢复合同。
+
+owner 新交办的本轮优先顺序为 **PS 多晶硅 → Y 豆油 → SI 工业硅**；当前PS历史候选12/12闭环，已普通集成develop054326223并通过318 API/工具、130 Web和生产构建，push与远端精确读回一致；Y历史候选12/12闭环并普通集成develop e04cb424，323 API/工具、130 Web与生产构建通过，push/远端精确读回一致，SI已因账户配额保护安全暂缓0/12。旧AO/CU失败不重试；PS/Y沿用原13行号，SI单列补充，不改变原13/21分母。
+
 | 顺序 | 品种 | 代码 | 当前状态 |
 | --- | --- | --- | --- |
 | P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
 | P7B-02 | 棉花 | CF | CANDIDATE_CLOSED，12/12；见 [CF记录](../../tasks/cf-candidate-pilot-20260930.md) |
 | P7B-03 | 菜籽油 | OI | CLOSED；52/52维护、306621 Bar完整前缀核对；新源12 native rebuild/fresh reader通过，API12/12与152 HTTP200；Chrome19场/49原图/631索引独立核验，21213 CLOSED收益/21249 SVG点无差异；取消恢复通过、source稳定、资源与维护锁0，disabled/generation0；失败证据保留，见[处理记录](../../tasks/oi-candidate-pilot-20260930.md) |
-| P7B-04 | 棕榈油 | P | IN_PROGRESS；36ed8e64准入独立Review通过；12 owner/48维护单元完成、88实际请求/360派生目标；906旧文件/60246旧Bar/373日周保留，新增397/扩展51/删除0；每频141合约月、283612 Bar根Decimal完整前缀核对通过，候选0stream，待原生资产及API/Chrome验收，未启动Y |
-| P7B-05 | 豆油 | Y | NOT_STARTED |
-| P7B-06 | 氧化铝 | AO | NOT_STARTED |
+| P7B-04 | 棕榈油 | P | COMPLETED / CANDIDATE_CLOSED 12/12；12 owner/48单元一次维护、88实际请求/360派生目标；283612 Bar根Decimal完整前缀核对，906旧文件前像/60246旧Bar/373日周保留；12 READY disabled/generation0；7f6c8fda最终API12/152、Chrome19场/49新原图/630索引、21278 CLOSED收益/21314 SVG点独立核验；两旧LEGACY_HTTP_ERROR失败保留，最终native audit与root closeout通过，source三读回一致、专属资源退出/锁0；按owner要求P后停止，未启动Y；已审修复与记录集成develop，189工具/106 Web定向测试及build通过 |
+| P7B-05 | 豆油 | Y | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；冻结0e7aab990双轴134 API/122 Web；页面2023-01-01..2026-09-24，12owner/48unit=45读回+3无缺口，88真实源请求/360派生；904旧bytes/70763旧Bar/371日周与Catalog保持，397新增/51扩展/0删；四频各141物理月、280580 Bar独立Decimal200全字段端点通过。8基础+4融合/current12完整state/summary/4对伙伴READY关闭generation0，complete_window_proven=false；API12/152矩阵GET/UTC7、Chrome19场49新原图/640索引、21759 CLOSED价格回报/21795 SVG独审通过，source三份55b424f6整字节一致；真实abort/timeout0.2534/409/fresh恢复通过（不证明自然TTL或完整卡片身份）、专属3PID退出/端口空闲/锁0。四趋势四震荡分钟FULL，W1转折35/120预热/震荡4交易小样本/OPEN与rollover浮动不计CLOSED保持；native VISUAL_PENDING原件保留、独立最终CLOSED及独审通过。root首次只读PS10owner模板断言失败保留，v2按Y12修正后fresh PASS，不改业务hash/window或重试生产attempt；普通merge e04cb424后323 API/工具、130 Web与build通过，push/远端精确读回一致，无OOS/可执行收益/完整fusion状态机证明；见[Y记录](../../tasks/y-candidate-pilot-20261001.md) |
+| P7B-06 | 氧化铝 | AO | DEFERRED_DATA_BLOCKED / SAFE_DEFERRED，0/12；develop8777b167c→冻结准入93948b748，独审119 API/122 Web；native窗口2023-06-19..2026-09-24、22owner/88单元74缺口+14无缺口，旧161dataset/1158file，154源月/682派生月；整体保守额度不足如实false，逐unit完整预算门禁与fresh preapply通过；唯一维护AO2403/5m失败停批：1m/2023-07 turnover scale27不能无损decimal128(38,18)，payload8639c184原样封存、独立复现通过；16已处理/1已知失败/71未尝试，实际55派生月=完成54+失败unitJune5m1，46新增/9扩展、1158旧bytes/7980旧Bar/544日周保持，46480 Bar独立Decimal200通过；失败July1m active0/目录空，私有0/锁0/端口释放，无asset/API/Chrome；独立安全暂缓Review完成；记录4640ecceb普通集成150ad5e5b、308 API工具/130 Web/build及diff/secret通过，待push读回，禁止重试或归零舍入 |
 | P7B-07 | 锌 | ZN | NOT_STARTED |
 | P7B-08 | 锡 | SN | NOT_STARTED |
 | P7B-09 | 铝 | AL | NOT_STARTED |
-| P7B-10 | 铜 | CU | NOT_STARTED |
-| P7B-11 | 碳酸锂 | LC | NOT_STARTED |
-| P7B-12 | 多晶硅 | PS | NOT_STARTED |
-| P7B-13 | 玻璃 | FG | NOT_STARTED |
+| P7B-10 | 铜 | CU | DEFERRED_DATA_BLOCKED / SAFE_DEFERRED，0/12；冻结准入e81693c7、独审124 API/122 Web；45owner/180单元唯一81392首CU2302/5m源Aug2022 scale24不能无损decimal128(38,18)，payload937bca9a封存；0完成/1knownfailedpartial/179未尝试，7started请求，实际12新增1m+5m各Feb-Jul2022六个月，1952旧bytes/1173日周保持，51360源端点/10272派生Bar独立Decimal200通过；failedsource active0/目录空、private0/锁0/端口释放、最终独立safe-defer通过，禁止重试/roundzero/schema绕过；记录ff23a287普通集成ca64b256、313 API工具/130 Web/build及diff/secret通过，普通push/远端1f647ba08读回一致 |
+| P7B-11 | 碳酸锂 | LC | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；48维护41读回+7无缺口/87请求/356派生；819旧文件29997旧Bar346日周保持，179653 Bar独立Decimal；12 READY disabled/gen0；71198 clock修复后API12/149、Chrome19/49/461索引、12399 CLOSED/12433 SVG通过；source三fresh一致/资源锁0，首失败保留；上市预热PARTIAL/DD不可用/W1震荡0交易保留；任务a01ce928→develop2b25cec63，298 API工具/130 Web/build通过，push读回d2362b0bf；见[LC记录](../../tasks/lc-candidate-pilot-20261001.md) |
+| P7B-12 | 多晶硅 | PS | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；develop739644666→冻结c214b9d5，独审129 API/122 Web；窗口2024-12-26..2026-09-24、10owner/40unit=33读回+7无缺口，68真实源请求/282派生；545旧bytes/24290旧Bar/244日周保持，309新增/41扩展/0删；四频各100物理月、130232 Bar独立Decimal200通过；8基础+4融合/current12完整state/summary/4对依赖READY关闭generation0，complete_window_proven=false。API12/149GET/UTC7、Chrome19场49原图/358索引、6864CLOSED价格回报/6898SVG独审通过，source三份264d9f84整字节一致；原生cancel/timeout0.251/409与fresh恢复通过（不证明TTL/完整卡片身份），专属3PID退出/端口空闲/锁0；四趋势FULL/四震荡PARTIAL和W1转折44/120、震荡0CLOSED指标—保持，未声明OOS或可执行收益；独立最终REVIEW_COMPLETE_CANDIDATE_CLOSED；普通merge054326223后318 API/工具、130 Web与生产构建通过，push/远端精确读回一致 |
+| P7B-13 | 玻璃 | FG | CANDIDATE_CLOSED / DEVELOP_INTEGRATED，12/12；6fd1da613 singleton双轴Review/114API/122Web；窗口2023-01-01..Sept24；12owner/48维护45读回+3无缺口/88请求/360派生，906旧bytes/58989旧Bar/373日周保持，397新增/51扩展/0删；四频各141物理月/284389 Bar独立Decimal；12完整state/summary/4伙伴READY disabled/gen0/completewindowfalse，分钟基础页面覆盖FULL；API12/152/UTC7，Chrome19/49原图/675索引、23557 CLOSED/23593 SVG独审通过，source三fresh443f2a77一致/资源锁0；W1 35/120与震荡11预热区段/1交易及显示、融合、取消TTL局限保留，原生维护/build/API/采集无失败重试；任务b7d204ccd→develop2de2e2f7f，合并态303 API工具/130 Web/build及diff/secret通过，普通push/远端8777b167c读回一致；见[FG记录](../../tasks/fg-candidate-pilot-20261001.md) |
 
 逐项记录完成分子及闭环/部分/暂缓/未开始，总和始终等于 13。仅完成 12/12 且必要
 独立 Review 通过才记 CANDIDATE_CLOSED；安全暂缓只代表本项已处理，不代表闭环。
@@ -572,3 +578,53 @@ git diff --check
 P0–P6 已按依赖连续完成，P2 分初盘/最终复核；所有首轮勾选项以任务记录中的实际证据为准。既有 opaque chart cursor、维护恢复与基础 replay 被复用；融合复用基础保存流而非重复计算两 kernel。P0–P6 首轮实际无数据缺口，因此当时没有 provider 下载、Canonical/Catalog mutation 或全历史补数；8基础/4融合资产仅在隔离 schema 构建。P7 首批的精确缺口维护另见本批任务记录，不能沿用首轮的零缺口结论。fixture E2E 与真实 Chrome 分列，旧7项fixture失败在未修改develop逐项复现，不把旧失败包装成通过。全spec9/10，既有reference-trading段落结构失败单列，本轮Newow spec有效。
 
 P7 首批 black + steel 正在执行，实际证据见本批任务交接；不得按本文件旧基线重新实施 P0–P6。P8发布、P9观察启用、R1/R2因果研究与OOS不属于本轮完成声明。首轮 aef3 版本的100k完整曲线与有限队列有有限样本实测预算，不能代替本批 c576 板块规模验收；SQL/hydrate不保证即时取消，正式扩展前继续验证并发/冷读预算。
+
+2026-10-03 起处理此前未入队的品种，A 豆一已普通合入 develop `99f6c89e5`：19 owner / 76 维护单元、80 次真实请求 / 580 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 287712、15m 95904、30m 50056、60m 29236。资产身份 `0f3551c45`，页面白名单 `0a0a36f16`。W1 趋势 44/120 预热、W1 震荡 1 笔 CLOSED 保留。不计入原 13/21 分母。见 [A 记录](../../tasks/a-candidate-pilot-20261003.md)。
+
+同日 B 豆二已普通合入 develop `9694a75a9`：27 owner / 108 维护单元、268 次真实请求 / 1072 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 416325、15m 138775、30m 72432、60m 42305。资格 `b73b5d9c5`。W1 趋势 44/120 预热、W1 震荡 1 笔 CLOSED 保留。不计入原 13/21 分母。见 [B 记录](../../tasks/b-candidate-pilot-20261003.md)。
+
+同日 BU 沥青在 `BU2307` 5m 遇到 `ArrowInvalid` / `ATOMIC_PUBLISH_FAILED`，`BU2306` 四频已读回，该单元及之后未重试，资格未合入 develop。不计入原 13/21 分母。
+
+同日 BZ 纯苯已普通合入 develop `2750a4263`：上市日 2025-07-08 起，8 owner / 32 维护单元、0 次新源请求 / 60 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 109185、15m 36395、30m 18996、60m 11095。资格 `9d8d3507b`。震荡上市当日 WARMING，W1 趋势 27/120 预热、W1 震荡 1 笔 CLOSED 保留。不计入原 13/21 分母。见 [BZ 记录](../../tasks/bz-candidate-pilot-20261003.md)。
+
+同日 EB 苯乙烯已普通合入 develop `64a7c24df`：46 owner / 184 维护单元、484 次真实请求 / 1980 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 684372、15m 228124、30m 119068、60m 69546。资格 `9ef3b5aee`。W1 趋势 43/120 预热、W1 震荡 0 笔 CLOSED 保留。周线双策略首次采集未在时限内稳定，续采后收齐。不计入原 13/21 分母。见 [EB 记录](../../tasks/eb-candidate-pilot-20261003.md)。
+
+同日 EC 欧线集运已普通合入 develop `099afa538`：上市日 2023-08-18 起，17 owner / 68 维护单元、148 次真实请求 / 602 派生月；12 条流 READY 且 disabled/generation0；API 12/12、149 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 159390、15m 53130、30m 28336、60m 17710。资格 `4d19119b8`。震荡上市段 WARMING，W1 趋势 47/120 预热、W1 震荡 2 笔 CLOSED 且历史覆盖不完整。不计入原 13/21 分母。见 [EC 记录](../../tasks/ec-candidate-pilot-20261003.md)。
+
+同日 EG 乙二醇已普通合入 develop `887120410`：窗口 2023-01-01 起，12 owner、88 次真实请求 / 363 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 续采 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 178620、15m 59540、30m 31076、60m 18150。资格 `03cfae884`。趋势和震荡覆盖 FULL，W1 趋势 47/120 预热、W1 震荡 3 笔已完成且历史覆盖不完整。15 分钟震荡首次采集在切频时遇到快照代际冲突，续采后收齐。不计入原 13/21 分母。见 [EG 记录](../../tasks/eg-candidate-pilot-20261004.md)。
+
+同日 L 塑料已普通合入 develop `fe671d3f8`：窗口 2023-01-01 起，12 owner、88 次真实请求 / 360 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 177102、15m 59034、30m 30812、60m 17996。资格 `93401a410`。趋势和震荡覆盖 FULL，W1 趋势 35/120 预热、W1 震荡 0 笔已完成。不计入原 13/21 分母。见 [L 记录](../../tasks/l-candidate-pilot-20261004.md)。
+
+同日 PB 铅在 `PB2302` 5m 遇到 `ArrowInvalid` / `ATOMIC_PUBLISH_FAILED`，未重试，资格未合入。
+
+同日 PD 钯已普通合入 develop `b9d7eb136`：上市日 2025-11-27 起，4 owner、0 次新源请求 / 60 派生月；12 条流 READY 且 disabled/generation0；API 12/12、149 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 29925、15m 9975、30m 5320、60m 3325。资格 `3ce872cd0`。趋势覆盖 FULL，震荡上市段 PARTIAL，W1 趋势 24/120 预热、W1 震荡 0 笔已完成。不计入原 13/21 分母。见 [PD 记录](../../tasks/pd-candidate-pilot-20261004.md)。
+
+同日 PF 短纤已普通合入 develop `03614a33d`：窗口 2023-01-01 起，40 owner、409 次真实请求 / 1647 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 续采 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 589305、15m 196435、30m 102528、60m 59885。资格 `5b5438261`。趋势和震荡覆盖 FULL，W1 趋势 30/120 预热、W1 震荡 0 笔已完成。60 分钟双策略首次采集在切到 30 分钟时遇到快照代际冲突，续采后收齐。不计入原 13/21 分母。见 [PF 记录](../../tasks/pf-candidate-pilot-20261004.md)。
+
+同日 PG 液化气已普通合入 develop `51b2abac0`：窗口 2023-01-01 起，41 owner、425 次真实请求 / 1743 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 610458、15m 203486、30m 106208、60m 62034。资格 `affe8e452`。趋势和震荡覆盖 FULL，W1 趋势 30/120 预热、W1 震荡 0 笔已完成。不计入原 13/21 分母。见 [PG 记录](../../tasks/pg-candidate-pilot-20261004.md)。
+
+同日 PL 丙烯已普通合入 develop `3591312ef`：上市日 2025-07-22 起，7 owner、41 次真实请求 / 174 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 77871、15m 25957、30m 13548、60m 7913。资格 `06ff38992`。趋势覆盖 FULL，震荡上市日 PARTIAL，W1 趋势 18/120 预热、W1 震荡 1 笔已完成。不计入原 13/21 分母。见 [PL 记录](../../tasks/pl-candidate-pilot-20261004.md)。
+
+同日 PR 瓶片已普通合入 develop `5c9cfb2f7`：上市日 2024-08-30 起，16 owner、140 次真实请求 / 570 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 续采 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 213879、15m 71293、30m 37212、60m 21737。资格 `ba67b8c35`。趋势覆盖 FULL，震荡上市日 PARTIAL，W1 趋势 28/120 预热、W1 震荡 1 笔已完成。聚丙烯 PP 在 `PP2405` 5m 因 `UNIT_FAILED_STOP` / `MARKET_DATA_CONTRACT_INVALID` 跳过，资格未合入。不计入原 13/21 分母。见 [PR 记录](../../tasks/pr-candidate-pilot-20261004.md)。
+
+同日 PT 铂已普通合入 develop `5b0b56cbb`：上市日 2025-11-27 起，4 owner、0 次新源请求 / 40 派生月；12 条流 READY 且 disabled/generation0；API 12/12、149 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 29700、15m 9900、30m 5280、60m 3300。资格 `890edbb34`。趋势覆盖 FULL，震荡上市日 PARTIAL，W1 趋势 40/120 预热、W1 震荡 0 笔已完成。不计入原 13/21 分母。见 [PT 记录](../../tasks/pt-candidate-pilot-20261004.md)。
+
+同日 PX 对二甲苯已普通合入 develop `b051262ea`：上市日 2023-09-15 起，13 owner、100 次真实请求 / 410 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 第二次续采 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 183009、15m 61003、30m 31840、60m 18597。资格 `ac2bf537a`。趋势覆盖 FULL，震荡上市日 PARTIAL，W1 趋势 30/120 预热、W1 震荡 1 笔已完成。不计入原 13/21 分母。见 [PX 记录](../../tasks/px-candidate-pilot-20261004.md)。
+
+本轮新增补充品种：SI 工业硅，**SAFE_DEFERRED_QUOTA_GUARD，0/12**；30主力区段/27物理合约/108维护单元。首单元原生发布成功后账户级delta2576409超过冻结估算1612800停止，归属未知；0campaign完成+1发布后停止+107未尝试，PENDING禁重试。仅新增SI2308/2022-12 1m1575与5m315，旧1257文件及636日周保持，局部独立Decimal200验证通过；private0/锁0，无资产/API/页面验收，不称闭环。资格代码76d23ab4及事实记录已普通合入develop7cb91ff98，328 API/工具、130 Web与生产构建通过，正常push/远端精确读回一致；安全暂缓不变，详见[任务记录](../../tasks/si-candidate-pilot-20261001.md)。不计入原13/21分母，不触碰PS/Y闭环和AO/CU失败现场。
+
+
+## 2026-10-04：14品种独立终验及45品种发布包
+
+A、B、BZ、EB、EC、EG、L、PD、PF、PG、PL、PR、PT、PX 已完成独立终验，
+均为 **CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。原采集的VISUAL_PENDING和失败/续采记录保持；
+19场×14品种的686张原图逐张审查、7,308份索引SHA、215,585笔CLOSED和216,077个SVG点核对通过。
+
+与此前未发布的P、Y、LC、PS、FG共19品种组成v1.11.1包，使正式候选名单从26扩为45、共540个分钟页面组合。
+180来源窗口匹配，540流disabled/generation0；360基础响应及180融合结果的834,443笔CLOSED独立Decimal核算通过。
+190份UTC/null与范围拒绝原始JSON独审通过；共同融合到期修复经两轴独审、776 Web/61浏览器回归及
+PL60m真实335.6秒闲置后409→一次原窗口重建→新token融合200终验通过。
+
+原13/21队列分母保持；本节14品种不挪入原队列，其他失败项不重试。1m仅聚合，持续分钟更新、
+分钟主升浪、Runtime自然验收和因果/OOS均不因历史候选闭环而成立。正式发布及运行身份只看STATUS.md。
+详见[v1.11.1说明](../../releases/v1.11.1.md)与上述14品种任务记录。

@@ -11,6 +11,13 @@ export const candidatePreview = Object.freeze({
   candidateOrigin: import.meta.env?.VITE_PREVIEW_CANDIDATE_ORIGIN || DEFAULT_CANDIDATE_ORIGIN,
 })
 
+export function candidatePreviewNow(
+  preview: Pick<typeof candidatePreview, 'enabled' | 'defaultWeekly' | 'asOf'> = candidatePreview,
+  clock: () => Date = () => new Date(),
+): string | Date {
+  return preview.enabled && !preview.defaultWeekly ? preview.asOf : clock()
+}
+
 export type PreviewIdentityExpected = {
   enabled?: boolean
   codeSha: string

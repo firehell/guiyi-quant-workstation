@@ -76,6 +76,7 @@ const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
   ['newow_product_capabilities_v24', { stage: 'black_steel_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v23', { stage: 'rb_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
   ['newow_product_capabilities_v28', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
+  ['newow_product_capabilities_v29', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
   ['newow_product_capabilities_v22', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
 ])
 
@@ -121,7 +122,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(profile.weeklyProducts ? ['weekly_products'] : []),
-    ...(value.schema_version === 'newow_product_capabilities_v28' ? ['intraday_products', 'intraday_as_of'] : []),
+    ...(['newow_product_capabilities_v28', 'newow_product_capabilities_v29'].includes(value.schema_version) ? ['intraday_products', 'intraday_as_of'] : []),
     ...(['newow_product_capabilities_v24', 'newow_product_capabilities_v26', 'newow_product_capabilities_v27'].includes(value.schema_version) ? ['intraday_products'] : []),
   ]
   if (Object.keys(value).sort().join(',') !== expectedKeys.sort().join(',')) return false
@@ -131,7 +132,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
     const products = value.intraday_products
     const single = value.schema_version === 'newow_product_capabilities_v27'
     const allowed = single
-      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi']
+      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu', 'ps', 'y', 'si', 'a', 'b', 'bz', 'eb', 'ec', 'eg', 'l', 'pd', 'pf', 'pg', 'pl', 'pr', 'pt', 'px']
       : ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
     if (!Array.isArray(products) || products.length === 0 || (single && products.length !== 1)
       || !products.every(item => typeof item === 'string' && allowed.includes(item))
@@ -139,6 +140,9 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   }
   if (value.schema_version === 'newow_product_capabilities_v28'
     && (!sameLiteralArray(value.intraday_products, 'rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi'.split(' ').sort())
+      || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z')) return false
+  if (value.schema_version === 'newow_product_capabilities_v29'
+    && (!sameLiteralArray(value.intraday_products, 'rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px'.split(' ').sort())
       || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z')) return false
   const openFrequencies: readonly string[] = profile.frequencies
   const deferred = (['1w', '60m'] as const).filter(frequency => !openFrequencies.includes(frequency))

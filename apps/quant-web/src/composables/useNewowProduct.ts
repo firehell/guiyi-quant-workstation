@@ -1,7 +1,7 @@
 import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 
 import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
-import { candidatePreview } from '../utils/candidatePreview.ts'
+import { candidatePreviewNow } from '../utils/candidatePreview.ts'
 import { previewInstant } from '../utils/candidatePreviewInstant.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
 import {
@@ -62,8 +62,7 @@ interface ChartLoadOptions {
 export function useNewowProduct(options: UseNewowProductOptions) {
   const fetchSection: FetchSection = options.fetchSection
     ?? ((request, signal) => getNewowProductSection(request, { signal }))
-  const now = options.now ?? (() => candidatePreview.enabled && !candidatePreview.defaultWeekly
-    ? candidatePreview.asOf : new Date())
+  const now = options.now ?? candidatePreviewNow
   const currentIdentity = shallowRef<NewowProductIdentity | null>(null)
   const asOf = shallowRef<string | null>(null)
   const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)
@@ -84,6 +83,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const sectionGenerations = new Map<NewowProductSection, number>()
   const auxiliaryCache = new Map<string, NewowProductSectionResponse<'auxiliary'>>()
   const auxiliaryRebuildAttempts = new Set<string>()
+  const fusionRecoveryActive = shallowRef(false)
+  let fusionRecoverySerial = 0
   let generation = 0
   let disposed = false
   let preservingCurrentChart = false
@@ -109,6 +110,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const stopWatch = watch(identityKey, () => replaceIdentity(), { immediate: true, flush: 'sync' })
 
   function replaceIdentity(): void {
+    cancelFusionRecovery()
     generation += 1
     preservingCurrentChart = false
     resolverController?.abort()
@@ -171,6 +173,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   async function switchToHistorical(): Promise<void> {
     if (disposed || currentIdentity.value === null) return
+    cancelFusionRecovery()
     dailyController?.abort()
     dailyController = null
     resolverController?.abort()
@@ -208,6 +211,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function resetCurrentGeneration(preserveChart: boolean): void {
+    cancelFusionRecovery()
     resolverController?.abort()
     resolverController = null
     dailyController?.abort()
@@ -234,12 +238,14 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   async function loadChart(load: ChartLoadOptions = {}): Promise<void> {
+    cancelFusionRecovery()
     const common = requestCommon('chart')
     if (common === null) return
     await run({ ...common, section: 'chart', ...load })
   }
 
   async function loadAuxiliary(component: NewowAuxiliaryComponent, load: Pick<ChartLoadOptions, 'from' | 'through'> = {}): Promise<void> {
+    if (fusionRecoveryActive.value) return
     const common = requestCommon('auxiliary')
     if (common === null) return
     const request = { ...common, section: 'auxiliary' as const, component, ...load }
@@ -255,6 +261,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   async function loadNextChartPage(): Promise<void> {
+    cancelFusionRecovery()
     const current = resources.chart.data.value
     if (current?.section !== 'chart' || current.value === null || chartWindow === null || current.value.bars.length >= MAX_ACCUMULATED_CHART_ROWS) return
     const common = requestCommon('chart')
@@ -267,6 +274,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   async function loadReference(load: ReferenceLoadOptions = {}): Promise<void> {
+    if (fusionRecoveryActive.value) return
     const common = requestCommon('reference')
     if (common === null) return
     const requestedWindow = load.performanceSince === undefined && load.performanceThrough === undefined
@@ -283,7 +291,67 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     })
   }
 
+  async function recoverFusionSnapshotConflict(rejectedToken: string): Promise<boolean> {
+    if (fusionRecoveryActive.value) return false
+    const reference = resources.reference.data.value
+    const chart = resources.chart.data.value
+    if (!rejectedToken || reference?.section !== 'reference' || reference.value === null
+      || reference.meta.snapshot_token !== rejectedToken || chart?.section !== 'chart' || chart.value === null
+      || chart.meta.snapshot_token !== rejectedToken || chartWindow === null || currentIdentity.value === null
+      || asOf.value === null || reference.meta.as_of !== asOf.value) return false
+    const requestedGeneration = generation
+    const requestedIdentity = currentIdentity.value
+    const requestedAsOf = asOf.value
+    const chartLoad: ChartLoadOptions = acceptedCurrentChartWindow.value
+      ? { chartLimit: chartPageLimit ?? 500 }
+      : { from: chartWindow.from, through: chartWindow.through, chartLimit: chartPageLimit ?? 500 }
+    const referenceLoad = {
+      performanceSince: referenceWindow?.since ?? reference.value.performance_since,
+      performanceThrough: referenceWindow?.through ?? reference.value.performance_through,
+      historyLimit: referencePageLimit ?? 50,
+    }
+    // Fusion is a separate reader of the accepted reference. Revoke the same
+    // shared proof and all late writers before rebuilding its exact chart window.
+    const operation = ++fusionRecoverySerial
+    fusionRecoveryActive.value = true
+    const ownsRecovery = () => fusionRecoveryActive.value && fusionRecoverySerial === operation
+      && !disposed && generation === requestedGeneration && currentIdentity.value === requestedIdentity
+      && asOf.value === requestedAsOf
+    try {
+      resetAll()
+      const common = requestCommon('chart')
+      if (common === null || !ownsRecovery()) return false
+      const chartRequest = run({ ...common, section: 'chart', ...chartLoad }, true)
+      const chartSectionGeneration = sectionGenerations.get('chart')
+      await chartRequest
+      if (!ownsRecovery() || sectionGenerations.get('chart') !== chartSectionGeneration
+        || resources.chart.state.value !== 'ready') return false
+      const token = resources.chart.data.value?.meta.snapshot_token
+      if (!token || token === rejectedToken) {
+        failConflict('reference', 'NEWOW_SNAPSHOT_GENERATION_CONFLICT')
+        return false
+      }
+      const referenceRequest = run({ identity: requestedIdentity, asOf: requestedAsOf, section: 'reference', snapshotToken: token,
+        ...referenceLoad }, true)
+      const referenceSectionGeneration = sectionGenerations.get('reference')
+      await referenceRequest
+      return ownsRecovery() && sectionGenerations.get('reference') === referenceSectionGeneration
+        && resources.reference.state.value === 'ready'
+        && resources.reference.data.value?.meta.snapshot_token === token
+    } finally {
+      if (fusionRecoverySerial === operation) fusionRecoveryActive.value = false
+    }
+  }
+
+  function cancelFusionRecovery(): void {
+    if (!fusionRecoveryActive.value) return
+    ++fusionRecoverySerial
+    fusionRecoveryActive.value = false
+    invalidateSection('reference')
+  }
+
   async function loadNextReferencePage(): Promise<void> {
+    if (fusionRecoveryActive.value) return
     const current = resources.reference.data.value
     if (current?.section !== 'reference' || current.value === null || current.value.next_before === null || referenceWindow === null) return
     const common = requestCommon('reference')
@@ -299,11 +367,13 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   async function loadExplanation(): Promise<void> {
+    if (fusionRecoveryActive.value) return
     const common = requestCommon('explanation')
     if (common !== null) await run({ ...common, section: 'explanation' })
   }
 
   async function loadComparator(): Promise<void> {
+    if (fusionRecoveryActive.value) return
     const common = requestCommon('comparator')
     if (common !== null) await run({ ...common, section: 'comparator' })
   }
@@ -318,7 +388,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
   }
 
-  async function run(initialRequest: NewowProductRequest): Promise<void> {
+  async function run(initialRequest: NewowProductRequest, rebuilt = false): Promise<void> {
     const section = initialRequest.section
     const requestGeneration = generation
     const sectionGeneration = (sectionGenerations.get(section) ?? 0) + 1
@@ -330,7 +400,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     resource.state.value = 'loading'
     resource.error.value = null
     let request = initialRequest
-    let rebuilt = false
     try {
       while (true) {
         inFlightSnapshotTokens.set(section, request.snapshotToken ?? resource.data.value?.meta.snapshot_token ?? undefined)
@@ -672,6 +741,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   function dispose(): void {
     if (disposed) return
+    cancelFusionRecovery()
     disposed = true
     generation += 1
     resolverController?.abort()
@@ -721,8 +791,9 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     historicalError: readonly(historicalError),
     historicalLoading: readonly(historicalLoading),
     sections: resources,
+    fusionRecoveryActive: readonly(fusionRecoveryActive),
     referenceChartCompatible: readonly(referenceChartCompatible),
-    loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
+    loadChart, loadNextChartPage, loadAuxiliary, loadReference, recoverFusionSnapshotConflict, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
   }
 
   function resetAll(): void {

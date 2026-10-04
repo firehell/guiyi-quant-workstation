@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 
 import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
 import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
+import { newowChartSnapshotKey } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
 import type { NewowProductRequest, NewowProductSection, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
 import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts'
@@ -930,6 +931,200 @@ test('reference 409 preserves current chart provenance and first-page budgets', 
   assert.equal(state.historicalChartWindow.value, false)
   state.dispose()
 })
+
+test('fusion 409 rebuilds the accepted chart window and reference with a fresh proof once', async () => {
+  const calls: NewowProductRequest[] = []
+  let charts = 0
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+    calls.push(request)
+    if (request.section === 'chart') return normalizedChart(request, { token: ++charts <= 2 ? 'old-token' : 'fresh-token' })
+    return normalizedReference(request, { token: request.snapshotToken, nextBefore: null })
+  } })
+  await flush()
+  const explicit = { from: '2026-08-14', through: '2026-08-15', chartLimit: 37 }
+  await state.loadChart(explicit)
+  await state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15', historyLimit: 19 })
+  const before = calls.length
+  assert.equal(await state.recoverFusionSnapshotConflict('old-token'), true)
+  const rebuilt = calls.slice(before)
+  assert.deepEqual(rebuilt.map(request => request.section), ['chart', 'reference'])
+  assert.deepEqual([rebuilt[0]!.from, rebuilt[0]!.through, rebuilt[0]!.chartLimit], [explicit.from, explicit.through, 37])
+  assert.equal(rebuilt[0]!.snapshotToken, undefined)
+  assert.equal(rebuilt[1]!.snapshotToken, 'fresh-token')
+  assert.equal(rebuilt[1]!.section === 'reference' && rebuilt[1]!.performanceSince, '2025-01-01')
+  assert.equal(rebuilt[1]!.section === 'reference' && rebuilt[1]!.historyLimit, 19)
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'fresh-token')
+  assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'fresh-token')
+  state.dispose()
+})
+
+test('fusion 409 re-resolves the accepted current viewport without changing its cutoff', async () => {
+  const calls: NewowProductRequest[] = []
+  let charts = 0
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+    calls.push(request)
+    if (request.section === 'chart') return normalizedChart(request, { token: ++charts === 1 ? 'old-token' : 'fresh-token' })
+    return normalizedReference(request, { token: request.snapshotToken, nextBefore: null })
+  } })
+  await flush()
+  await state.loadReference()
+  const before = calls.length
+  assert.equal(state.currentChartWindow.value, true)
+  assert.equal(await state.recoverFusionSnapshotConflict('old-token'), true)
+  const rebuilt = calls.slice(before)
+  assert.deepEqual(rebuilt.map(request => request.section), ['chart', 'reference'])
+  assert.equal(rebuilt[0]!.from, undefined)
+  assert.equal(rebuilt[0]!.through, undefined)
+  assert.equal(rebuilt[0]!.asOf, AS_OF)
+  assert.equal(rebuilt[1]!.snapshotToken, 'fresh-token')
+  assert.equal(state.currentChartWindow.value, true)
+  state.dispose()
+})
+
+test('fusion recovery stops on a second 409 and never sends a third bound request', async () => {
+  const calls: NewowProductRequest[] = []
+  let charts = 0
+  let references = 0
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+    calls.push(request)
+    if (request.section === 'chart') return normalizedChart(request, { token: ++charts === 1 ? 'old-token' : 'fresh-token' })
+    if (++references === 2) throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+    return normalizedReference(request, { token: request.snapshotToken, nextBefore: null })
+  } })
+  await flush()
+  await state.loadReference()
+  assert.equal(await state.recoverFusionSnapshotConflict('old-token'), false)
+  assert.equal(calls.filter(request => request.section === 'chart').length, 2)
+  assert.equal(calls.filter(request => request.section === 'reference').length, 2)
+  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.sections.reference.state.value, 'input_conflict')
+  state.dispose()
+})
+
+test('fusion recovery does not retry a busy chart or read reference without fresh proof', async () => {
+  const calls: NewowProductRequest[] = []
+  let charts = 0
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+    calls.push(request)
+    if (request.section === 'chart') {
+      if (++charts === 2) throw new NewowProductRequestError('NEWOW_SOURCE_BUSY', 'busy')
+      return normalizedChart(request, { token: 'old-token' })
+    }
+    return normalizedReference(request, { token: 'old-token', nextBefore: null })
+  } })
+  await flush()
+  await state.loadReference()
+  assert.equal(await state.recoverFusionSnapshotConflict('old-token'), false)
+  assert.equal(charts, 2)
+  assert.equal(calls.filter(request => request.section === 'reference').length, 1)
+  assert.equal(state.sections.reference.data.value, null)
+  state.dispose()
+})
+
+test('fusion recovery aborts an old chart and cannot load reference after identity switches', async () => {
+  const pending: Pending[] = []
+  const identity = ref<MarketDetailIdentity | null>(newowIdentity('trend', '1d'))
+  const state = useNewowProduct({ identity, now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'old-token' })); await flush()
+  const first = state.loadReference()
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'old-token', nextBefore: null })); await first
+  const recovery = state.recoverFusionSnapshotConflict('old-token')
+  const oldChart = pending[2]!
+  assert.equal(oldChart.request.section, 'chart')
+  assert.equal(oldChart.request.snapshotToken, undefined)
+  identity.value = newowIdentity('oscillation', '60m'); await flush()
+  assert.equal(oldChart.signal.aborted, true)
+  oldChart.resolve(normalizedChart(oldChart.request, { token: 'late-old-token' }))
+  assert.equal(await recovery, false)
+  assert.equal(pending.length, 4, 'stale recovery must not send a reference request')
+  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'fake-new-identity-token' })); await flush()
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'fake-new-identity-token')
+  assert.equal(state.sections.reference.data.value, null)
+  state.dispose()
+})
+
+test('same-identity chart replacement cannot lend its token to an aborted fusion recovery', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'old-token' })); await flush()
+  const first = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15', historyLimit: 19 })
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'old-token', nextBefore: null })); await first
+  const recovery = state.recoverFusionSnapshotConflict('old-token')
+  const oldChart = pending[2]!
+  const replacement = state.loadChart({ from: '2026-08-01', through: '2026-08-15' })
+  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'fake-replacement-token' })); await replacement
+  assert.equal(oldChart.signal.aborted, true)
+  oldChart.resolve(normalizedChart(oldChart.request, { token: 'late-old-token' }))
+  await flush()
+  if (pending[4]) pending[4].resolve(normalizedReference(pending[4].request, { token: 'fake-replacement-token', nextBefore: null }))
+  assert.equal(await recovery, false)
+  assert.equal(pending.length, 4, 'obsolete recovery cannot dispatch the old reference window')
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'fake-replacement-token')
+  state.dispose()
+})
+
+test('obsolete recovery finally cannot clear a newer same-identity recovery lease', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'old-token' })); await flush()
+  const first = state.loadReference()
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'old-token', nextBefore: null })); await first
+  const oldRecovery = state.recoverFusionSnapshotConflict('old-token')
+  const replacement = state.loadChart({ from: '2026-08-01', through: '2026-08-15' })
+  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'fake-replacement-token' })); await replacement
+  const replacementReference = state.loadReference()
+  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'fake-replacement-token', nextBefore: null })); await replacementReference
+  const freshRecovery = state.recoverFusionSnapshotConflict('fake-replacement-token')
+  assert.equal(state.fusionRecoveryActive.value, true)
+  pending[2]!.resolve(normalizedChart(pending[2]!.request, { token: 'late-old-token' }))
+  assert.equal(await oldRecovery, false)
+  assert.equal(state.fusionRecoveryActive.value, true)
+  assert.equal(pending[5]!.signal.aborted, false)
+  pending[5]!.resolve(normalizedChart(pending[5]!.request, { token: 'fresh-token' })); await flush()
+  assert.equal(pending[6]!.request.snapshotToken, 'fresh-token')
+  pending[6]!.resolve(normalizedReference(pending[6]!.request, { token: 'fresh-token', nextBefore: null }))
+  assert.equal(await freshRecovery, true)
+  assert.equal(state.fusionRecoveryActive.value, false)
+  state.dispose()
+})
+
+for (const secondFailure of [null, 'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'NEWOW_SOURCE_BUSY'] as const) {
+  test(`fusion recovery excludes Workspace-style synchronous auto reference (${secondFailure ?? 'success'})`, async () => {
+    const calls: NewowProductRequest[] = []
+    const activeAtChartAcceptance: boolean[] = []
+    let charts = 0
+    let references = 0
+    const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: async request => {
+      calls.push(request)
+      if (request.section === 'chart') return normalizedChart(request, { token: ++charts === 1 ? 'old-token' : `fresh-${charts}` })
+      if (++references === 2 && secondFailure) throw new NewowProductRequestError(secondFailure, secondFailure === 'NEWOW_SOURCE_BUSY' ? 'busy' : 'conflict')
+      return normalizedReference(request, { token: request.snapshotToken, nextBefore: null })
+    } })
+    await flush()
+    await state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15', historyLimit: 19 })
+    const stop = watch(() => {
+      const chart = state.sections.chart.data.value
+      const snapshot = newowChartSnapshotKey(chart)
+      return !snapshot || !chart?.value ? null : JSON.stringify([snapshot, chart.value.chart_from, chart.value.chart_through])
+    }, (proof, previous) => {
+      if (proof === previous || proof === null) return
+      activeAtChartAcceptance.push(state.fusionRecoveryActive.value)
+      if (state.sections.reference.state.value === 'not_requested') void state.loadReference()
+      if (state.sections.explanation.state.value === 'not_requested') void state.loadExplanation()
+      if (state.sections.auxiliary.state.value === 'not_requested') void state.loadAuxiliary('macd')
+    }, { flush: 'sync' })
+    const before = calls.length
+    const recovered = await state.recoverFusionSnapshotConflict('old-token')
+    await flush()
+    assert.equal(recovered, secondFailure === null)
+    assert.deepEqual(calls.slice(before).map(request => request.section), ['chart', 'reference'])
+    assert.equal(calls.at(-1)!.section === 'reference' && calls.at(-1)!.performanceSince, '2025-01-01')
+    assert.equal(charts, 2)
+    assert.equal(references, 2)
+    assert.deepEqual(activeAtChartAcceptance, [true])
+    stop(); state.dispose()
+  })
+}
 
 test('reference 409 preserves the exact explicit historical chart window and limit', async () => {
   const calls: NewowProductRequest[] = []

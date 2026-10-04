@@ -1271,6 +1271,10 @@ Malformed, duplicate, unknown or expanded singleton configurations SHALL fail cl
 Formal capability v28 uses `daily_weekly_intraday_history`, retains all 60 existing D1/W1 products,
 and opens only `5m/15m/30m/60m × trend/oscillation/dual` for the following 26 products:
 `ag ap au c cf cj hc i j jd jm lh m ma oi pk rb rm sa sf sh sm sr ta ur v`.
+Formal capability v29 retains the same historical contract and expands the validated scope to 45 products:
+`a ag ap au b bz c cf cj eb ec eg fg hc i j jd jm l lc lh m ma oi p pd pf pg pk pl pr ps pt px rb rm sa sf sh sm sr ta ur v y`.
+The v28 scope remains its original 26-product wire contract. v29 adds exactly `a b bz eb ec eg fg l lc p pd pf pg pl pr ps pt px y`;
+all other operational products remain daily/weekly only.
 The exact `intraday_as_of` is `2026-09-24T07:00:00.000001Z`. Web SHALL bind minute requests to
 this timestamp and display the historical cutoff in Beijing time. Newow 1m and minute main-rise
 remain closed. Products outside this set retain their existing daily/weekly scope.
