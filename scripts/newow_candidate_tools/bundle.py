@@ -150,7 +150,12 @@ def audit_bundle(candidate: Candidate, store: EvidenceStore) -> dict:
         ),
         "EXACT_NATIVE_BASE_IDENTITIES_REQUIRED",
     )
-    for row in _collection(candidate, store)["rows"]:
+    collection_rows = _collection(candidate, store)["rows"]
+
+    def read_raw(row: dict) -> dict:
+        current = store.reference(row["raw"]["path"])
+        need(all(current[k] == row["raw"][k] for k in ("path", "sha256", "bytes")),
+             "COLLECTION_EVIDENCE_CHANGED")
         raw = store.read(row["raw"]["path"])
         need(
             all(
@@ -168,6 +173,10 @@ def audit_bundle(candidate: Candidate, store: EvidenceStore) -> dict:
             ),
             "RAW_SCENE_IDENTITY",
         )
+        return raw
+
+    for row in collection_rows:
+        raw = read_raw(row)
         observed = raw["observed"]
         f = row["frequency"]
         m = row["mode"]
@@ -179,7 +188,24 @@ def audit_bundle(candidate: Candidate, store: EvidenceStore) -> dict:
                 earlier=validate_earlier(candidate, f, m, observed["earlier_capture"]),
             )
         elif scenario == "legacy":
-            proof = validate_legacy(candidate, expected, f, m, observed)
+            partner_observation = None
+            if m == "dual" and not any(
+                r.get("http") == 200
+                and r.get("meta", {}).get("identity", {}).get("frequency") == f
+                and r.get("meta", {}).get("identity", {}).get("strategy") == "oscillation"
+                and r.get("reference", {}).get("delivery") == "delivered"
+                and (r["reference"].get("value") or {}).get("performance_since") == candidate.since
+                for r in observed["responses"]
+            ):
+                source_row = next(r for r in collection_rows if (
+                    r["scenario"] == "legacy" and r["frequency"] == f
+                    and r["mode"] == "oscillation"
+                ))
+                partner_observation = read_raw(source_row)["observed"]
+            proof = validate_legacy(
+                candidate, expected, f, m, observed,
+                partner_observation=partner_observation,
+            )
         else:
             proof = validate_recovery(candidate, observed)
         rows.append(dict(scenario=scenario, frequency=f, mode=m, checks=proof))

@@ -1,7 +1,7 @@
 """Pure native D1/W1 wire, full curve, empty state and SPA-return validation."""
 
 from __future__ import annotations
-from datetime import timedelta
+from datetime import date, timedelta
 import re
 from urllib.parse import urlsplit, parse_qs
 
@@ -299,7 +299,8 @@ def validate_away_snapshot_recovery(
 
 
 def validate_legacy_capture(
-    candidate: Candidate, native: dict, observation: dict, frequency: str, mode: str
+    candidate: Candidate, native: dict, observation: dict, frequency: str, mode: str,
+    *, partner_observation: dict | None = None,
 ) -> dict:
     """Verify saved real observations; does not certify source DB or visual review."""
     need(
@@ -431,7 +432,10 @@ def validate_legacy_capture(
     charts = [r for r in rows if (r.get("chart") or {}).get("delivery") == "delivered"]
     need(charts, "LEGACY_CHART_MISSING")
     for row in charts:
-        validate_bars(candidate, row["chart"])
+        validate_bars(
+            candidate, row["chart"], frequency=frequency,
+            strategy=row["meta"]["identity"]["strategy"],
+        )
     chart_by_strategy = {
         s: [r for r in charts if r["meta"]["identity"]["strategy"] == s]
         for s in ("trend", "oscillation")
@@ -457,7 +461,57 @@ def validate_legacy_capture(
     ]
     need(references, "LEGACY_REFERENCE_MISSING")
 
-    def reference_valid(row: dict, require_full: bool = False) -> bool:
+    def rewarming_disclosed(value: dict, source: str, source_observation: dict) -> bool:
+        # Compact captures omit coverage_intervals; the rendered coverage is
+        # retained verbatim. Require bounded, ordered physical intervals and
+        # an explicit excluded source-price interval, never just a warming label.
+        prefix = "历史覆盖不完整；仅统计有效区段内已完成的参考交易，跨中断记录不计入收益。"
+        pattern = re.compile(
+            r"(\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2}) · "
+            r"([A-Z]+\d{3,4}) · (有效计算区段|来源价格不可用|重新预热中)"
+        )
+        for phase in ("full", "before", "returned"):
+            statuses = source_observation[phase].get("statuses", [])
+            coverage = [s for s in statuses if s.startswith(prefix)]
+            if len(coverage) != 1 or not any(
+                "当前数据不足" in s for s in statuses
+            ) or not any(
+                "来源价格不可用后，当前策略参考正在重新预热" in s for s in statuses
+            ):
+                return False
+            text = coverage[0][len(prefix):]
+            intervals = list(pattern.finditer(text))
+            if not intervals or "".join(m.group(0) for m in intervals) != text:
+                return False
+            previous = None
+            has_gap = False
+            for match in intervals:
+                since, through, contract, label = match.groups()
+                try:
+                    date.fromisoformat(since)
+                    date.fromisoformat(through)
+                except ValueError:
+                    return False
+                if not (
+                    candidate.since <= since <= through <= value["actual_available_through"]
+                    and (previous is None or previous < since)
+                    and re.fullmatch(re.escape(candidate.product.upper()) + r"\d{3,4}", contract)
+                ):
+                    return False
+                previous = through
+                has_gap |= label == "来源价格不可用"
+            _, tail, contract, label = intervals[-1].groups()
+            if not (
+                has_gap and label == "重新预热中"
+                and tail == value["actual_available_through"]
+                and contract == latest[source]["physical_contract"]
+            ):
+                return False
+        return True
+
+    def reference_valid(
+        row: dict, require_full: bool = False, source_observation: dict | None = None,
+    ) -> bool:
         v = row["reference"]["value"]
         meta = row["meta"]
         s = meta["identity"]["strategy"]
@@ -492,7 +546,17 @@ def validate_legacy_capture(
             "LEGACY_SNAPSHOT_BINDING",
         )
         if v["actual_available_through"] == v["performance_through"]:
-            need(state.get("status") == "ready", "LEGACY_REFERENCE_NOT_READY")
+            need(
+                state.get("status") == "ready" or (
+                    frequency in ("1d", "1w")
+                    and s == "oscillation"
+                    and state.get("status") == "warming"
+                    and state.get("evidence_status") == "ACTIVE_CODE_VERIFIED"
+                    and state.get("reason_code") == "NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING"
+                    and rewarming_disclosed(v, s, source_observation or observation)
+                ),
+                "LEGACY_REFERENCE_NOT_READY",
+            )
         else:
             need(
                 frequency == "1w"
@@ -519,6 +583,7 @@ def validate_legacy_capture(
         and (mode != "dual" or r["reference"]["value"].get("fusion"))
     ]
     need(full, "LEGACY_FULL_WINDOW_MISSING")
+    partner_evidence = "SAME_SCENE"
     if mode == "dual":
         partner = [
             r
@@ -526,6 +591,39 @@ def validate_legacy_capture(
             if r["meta"]["identity"]["strategy"] == "oscillation"
             and reference_valid(r, True)
         ]
+        if not partner and partner_observation is not None:
+            # A separate scene is never represented as a dual-scene XHR.
+            # First verify its complete native wire/DOM/Decimal/return proof.
+            validate_legacy_capture(
+                candidate, native, partner_observation, frequency, "oscillation",
+            )
+            separate_charts = [
+                r for r in partner_observation["responses"]
+                if r.get("http") == 200
+                and r.get("chart", {}).get("delivery") == "delivered"
+                and r["meta"]["identity"]["frequency"] == frequency
+                and r["meta"]["identity"]["strategy"] == "oscillation"
+            ]
+            for chart in chart_by_strategy["oscillation"]:
+                need(any(
+                    r["meta"]["identity"] == chart["meta"]["identity"]
+                    and r["meta"]["snapshot_token"] == chart["meta"]["snapshot_token"]
+                    and r["meta"]["input_content_sha256"] == chart["meta"]["input_content_sha256"]
+                    and r["chart"]["value"] == chart["chart"]["value"]
+                    and (r.get("phase") == "return") == (chart.get("phase") == "return")
+                    for r in separate_charts
+                ), "LEGACY_SEPARATE_PARTNER_SNAPSHOT_MISMATCH")
+            for row in partner_observation["responses"]:
+                if (
+                    row.get("http") == 200
+                    and row.get("reference", {}).get("delivery") == "delivered"
+                    and row["meta"]["identity"]["frequency"] == frequency
+                    and row["meta"]["identity"]["strategy"] == "oscillation"
+                ):
+                    identity(row)
+                    if reference_valid(row, True, partner_observation):
+                        partner.append(row)
+            partner_evidence = "SAME_SNAPSHOT_SEPARATE_SCENE"
         need(partner, "LEGACY_PARTNER_REFERENCE_MISSING")
         trend_versions = next(r["meta"]["identity"]["formula_versions"] for r in full)
         oscillation_versions = next(
@@ -571,6 +669,8 @@ def validate_legacy_capture(
         errors="PASS",
         away_snapshot_recovery="PASS" if recovered_away else "NOT_OBSERVED",
     )
+    if mode == "dual":
+        checks["partner_reference_evidence"] = partner_evidence
     auxiliary = observation.get("auxiliary", [])
     need(
         len(auxiliary) == 2
@@ -705,7 +805,11 @@ def validate_legacy_capture(
 
 
 def validate_legacy(
-    candidate: Candidate, native: dict, frequency: str, mode: str, observation: dict
+    candidate: Candidate, native: dict, frequency: str, mode: str, observation: dict,
+    *, partner_observation: dict | None = None,
 ) -> dict:
     """Bundle-facing argument order; the capture validator is also public."""
-    return validate_legacy_capture(candidate, native, observation, frequency, mode)
+    return validate_legacy_capture(
+        candidate, native, observation, frequency, mode,
+        partner_observation=partner_observation,
+    )

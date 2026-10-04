@@ -584,3 +584,121 @@ def test_new_prepare_cannot_downgrade_by_removing_capture_schema():
         row.pop("xhr_binding")
     with pytest.raises(ValueError):
         validate_legacy_capture(c, p, o, "1w", "trend")
+
+
+def rewarming_sample(frequency="1d", mode="oscillation"):
+    c, p, o = sample(frequency=frequency, mode=mode)
+    for row in o["responses"]:
+        if row["meta"]["identity"]["strategy"] != "oscillation":
+            continue
+        if row.get("chart"):
+            row["chart"]["status"] = dict(
+                status="warming", evidence_status="ACTIVE_CODE_VERIFIED",
+                reason_code="NEWOW_OSCILLATION_WARMING",
+            )
+        if row.get("reference") and mode == "oscillation":
+            row["reference"]["status"] = dict(
+                status="warming", evidence_status="ACTIVE_CODE_VERIFIED",
+                reason_code="NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING",
+            )
+    for phase in ("full", "before", "returned"):
+        o[phase]["statuses"] = [
+            "当前数据不足，待每日增量积累；历史部分仍在预热（2 个区段）",
+            "历史覆盖不完整；仅统计有效区段内已完成的参考交易，跨中断记录不计入收益。"
+            "2023-01-03 → 2026-09-17 · CJ2701 · 有效计算区段"
+            "2026-09-18 → 2026-09-18 · CJ2701 · 来源价格不可用"
+            "2026-09-19 → 2026-09-24 · CJ2701 · 重新预热中",
+            "来源价格不可用后，当前策略参考正在重新预热；历史已验证记录继续展示。",
+        ]
+    return c, p, o
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+@pytest.mark.parametrize("mode", ["oscillation", "dual"])
+def test_native_legacy_current_warming_preserves_history(frequency, mode):
+    c, p, o = rewarming_sample(frequency, mode)
+    report = validate_legacy_capture(c, p, o, frequency, mode)
+    assert report["curve"]["closed_count"] == 1
+
+
+@pytest.mark.parametrize("change", [
+    "chart_reason", "chart_evidence", "reference_reason", "reference_evidence",
+    "missing_coverage", "missing_price_gap", "foreign_contract", "out_of_window",
+    "unbounded_tail", "overlapping_intervals", "missing_return_disclosure",
+    "incomplete_bar", "source_identity", "token", "curve_decimal",
+])
+def test_legacy_warming_cannot_bypass_evidence(change):
+    c, p, o = rewarming_sample()
+    if change.startswith("chart_"):
+        o["responses"][0]["chart"]["status"][
+            "reason_code" if change.endswith("reason") else "evidence_status"
+        ] = "UNKNOWN"
+    elif change.startswith("reference_"):
+        o["responses"][1]["reference"]["status"][
+            "reason_code" if change.endswith("reason") else "evidence_status"
+        ] = "UNKNOWN"
+    elif change == "incomplete_bar":
+        o["responses"][0]["chart"]["value"]["bars"][0]["completed"] = False
+    elif change == "source_identity":
+        o["responses"][0]["chart"]["value"]["bars"][0]["source_identity"] = ""
+    elif change == "token":
+        o["responses"][1]["meta"]["snapshot_token"] = "foreign"
+    elif change == "curve_decimal":
+        o["responses"][1]["reference"]["value"]["summary"]["sum_return_percentage_points"] = "2.50"
+    elif change == "missing_return_disclosure":
+        o["returned"]["statuses"] = []
+    else:
+        old = o["full"]["statuses"][1]
+        replacement = {
+            "missing_coverage": "",
+            "missing_price_gap": old.replace("来源价格不可用", "有效计算区段"),
+            "foreign_contract": old.replace("CJ2701", "RS2701"),
+            "out_of_window": old.replace("2023-01-03", "2022-12-31"),
+            "unbounded_tail": old.replace("2026-09-24", "2026-09-23"),
+            "overlapping_intervals": old.replace("2026-09-19", "2026-09-17"),
+        }[change]
+        o["full"]["statuses"][1] = replacement
+    with pytest.raises(ValueError):
+        validate_legacy_capture(c, p, o, "1d", "oscillation")
+
+
+@pytest.mark.parametrize("frequency", [None, "1m", "5m", "15m", "30m", "60m"])
+def test_minute_chart_still_requires_ready(frequency):
+    from scripts.newow_candidate_tools.wire import validate_bars
+    c, _, o = rewarming_sample()
+    with pytest.raises(ValueError, match="ACTUAL_CHART_NOT_READY"):
+        validate_bars(c, o["responses"][0]["chart"], frequency=frequency, strategy="oscillation")
+
+
+def separate_partner_sample(frequency="1d"):
+    c, p, dual = rewarming_sample(frequency, "dual")
+    _, _, partner = rewarming_sample(frequency, "oscillation")
+    dual["responses"] = [r for r in dual["responses"] if not (
+        r["meta"]["identity"]["strategy"] == "oscillation" and r.get("reference")
+    )]
+    return c, p, dual, partner
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_dual_uses_explicit_same_snapshot_separate_scene(frequency):
+    c, p, dual, partner = separate_partner_sample(frequency)
+    result = validate_legacy_capture(c, p, dual, frequency, "dual", partner_observation=partner)
+    assert result["checks"]["partner_reference_evidence"] == "SAME_SNAPSHOT_SEPARATE_SCENE"
+
+
+@pytest.mark.parametrize("change", ["token", "hash", "physical_bar", "frequency", "code", "curve", "missing_source"])
+def test_separate_partner_must_pass_full_scene_and_exact_snapshot(change):
+    c, p, dual, partner = separate_partner_sample()
+    if change in ("token", "hash", "physical_bar"):
+        charts = [r for r in dual["responses"] if r.get("chart") and r["meta"]["identity"]["strategy"] == "oscillation"]
+        for row in charts:
+            if change == "token": row["meta"]["snapshot_token"] = "different"
+            elif change == "hash": row["meta"]["input_content_sha256"] = "f" * 64
+            else: row["chart"]["value"]["bars"][0]["physical_contract"] = "CJ2609"
+    elif change == "frequency":
+        for row in partner["responses"]: row["meta"]["identity"]["frequency"] = "1w"
+    elif change == "code": partner["identity"]["code_sha"] = "f" * 40
+    elif change == "curve": partner["full"]["curves"][0]["points"] = "0,0"
+    else: partner = None
+    with pytest.raises(ValueError):
+        validate_legacy_capture(c, p, dual, "1d", "dual", partner_observation=partner)
