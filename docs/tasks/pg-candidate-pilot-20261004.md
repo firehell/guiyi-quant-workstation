@@ -1,6 +1,6 @@
 # PG 液化气历史页面候选
 
-状态：**证据已齐，待普通合入**。只处理 PG。窗口 2023-01-01 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商起点 2020-03-30，页面起点 2023-01-01。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
+状态：**已普通合入 develop `51b2abac06811b3d7ea3d3cdaf6d803da8c44ab8`**。只处理 PG。窗口 2023-01-01 到 2026-09-24，`as_of=2026-09-24T07:00:00.000001+00:00`。供应商起点 2020-03-30，页面起点 2023-01-01。Canonical 1m 只作聚合源。候选页面为 5m/15m/30m/60m × trend/oscillation/dual，并查看 D1/W1 六场。候选保持 `enabled=false`、`activation_generation=0`、`complete_window_proven=false`。正式分钟开放、Runtime、Scope、通知和交易未改。
 
 资格在 `affe8e452a126b9fd38d8318b7bc581caf044599`，API 单品种预览集合和页面 v27 白名单一起提交。原始证据在 `.worktrees/pg-candidate-pilot/outputs/pg-candidate-pilot-20261004/`，成功页面采集在 `page-capture/`，不进入 Git。
 
