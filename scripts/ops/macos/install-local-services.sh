@@ -138,6 +138,11 @@ elif [[ "$MODE" == "--confirm-reference-worker" ]]; then
 fi
 
 if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+  if [[ -z "${GUIYI_MARKET_INSTALL_GUARD_FD:-}" ]]; then
+    "$PYTHON_BIN" -m app.market_data.after_market_history --target-root "$PROJECT_ROOT" --install
+    exit $?
+  fi
+  "$PYTHON_BIN" -m app.market_data.after_market_history --target-root "$PROJECT_ROOT" --verify-install-guard
   env -u GUIYI_AFTER_MARKET_STATUS_PATH \
     "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" market-runtime-preflight
 fi
@@ -145,6 +150,12 @@ fi
 if [[ "$PROJECT_ROOT" == /Volumes/* && "${GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD:-0}" != "1" ]]; then
   printf '[install-local-services] ERROR: 项目位于外接卷；请先授予后台进程访问外接卷权限，再显式设置 GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1。\n' >&2
   exit 3
+fi
+
+if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+  # Historical evidence remains separate from the new natural-run status.
+  "$PYTHON_BIN" -m app.market_data.after_market_history \
+    --target-root "$PROJECT_ROOT" --from-supervised --apply
 fi
 
 mkdir -p "$AGENT_DIR" "$RUNTIME_DIR" "$LOG_DIR"

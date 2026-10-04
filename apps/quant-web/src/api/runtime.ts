@@ -74,11 +74,24 @@ export interface RuntimeAfterMarketHealth {
   expected_trading_day: string | null
   current_run: RuntimeAfterMarketCurrentRun | null
   last_run: RuntimeAfterMarketRun | null
+  retained_success?: RuntimeRetainedAfterMarketRun
+  retained_failure?: RuntimeRetainedAfterMarketRun
   last_interruption?: RuntimeAfterMarketInterruption | null
   last_successful_trading_day: string | null
   last_failure: Record<string, string> | null
   error_type: string | null
   error_message: string | null
+}
+
+export interface RuntimeRetainedAfterMarketRun {
+  trading_day: string
+  source_commit: string
+  source_status_sha256: string
+  source_run_started_at: string
+  source_run_finished_at: string
+  source_run_status: string
+  retained_at: string
+  error_code?: string
 }
 
 export interface RuntimeWeeklyAuditHealth {

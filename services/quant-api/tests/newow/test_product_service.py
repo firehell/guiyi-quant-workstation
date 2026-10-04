@@ -163,6 +163,103 @@ def test_readiness_service_reuses_identical_read_inputs_across_sections(product_
     assert len(reader.loads) == 1
 
 
+@pytest.mark.parametrize("reuse", [True, False])
+def test_readiness_reuses_exact_prefix_failure_without_hiding_sections(product_cases, reuse):
+    from app.market_data.market_data_service import MarketDataError
+
+    case = product_cases.primitive_input("trend", "1d")
+    reader = _Reader(case.bars, case.bars[-2].bar.bar_end, case.bars[-1].bar.bar_end)
+    calls = []
+    context = {
+        "symbol": "rb", "contract": "RB2612", "frequency": "1d",
+        "expected_count": 213, "actual_count": 3, "missing_count": 210,
+        "first_missing_day": "2025-11-18",
+        "first_missing_at": "2025-11-18T07:00:00+00:00",
+    }
+
+    def missing(query, as_of):
+        calls.append(query)
+        raise MarketDataError(
+            "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason="REPLAY_PREFIX_MISSING",
+            context=context,
+        )
+
+    reader.load = missing
+    now = case.bars[-1].bar.bar_end
+    service = NewowProductService(
+        lambda _context, _cancelled: reader, now=lambda: now, reuse_read_inputs=reuse,
+    )
+    for strategy, section, component in (
+        ("trend", "chart", None),
+        ("trend", "auxiliary", "macd"),
+        ("oscillation", "chart", None),
+    ):
+        with pytest.raises(MarketDataError) as failure:
+            service.query(ProductServiceQuery(
+                "rb", strategy, "1d", section=section, component=component, as_of=now,
+            ))
+        assert failure.value.code == "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+        assert failure.value.reason == "REPLAY_PREFIX_MISSING"
+        assert failure.value.context == context
+    assert len(calls) == (1 if reuse else 3)
+    with pytest.raises(MarketDataError):
+        service.query(ProductServiceQuery("rb", "trend", "1d", as_of=now - timedelta(microseconds=1)))
+    assert len(calls) == (2 if reuse else 4)
+
+
+@pytest.mark.parametrize("kind", [
+    "cancelled", "unknown", "infrastructure", "other_coverage_failure", "other_code",
+])
+def test_readiness_does_not_cache_transient_read_errors(kind):
+    from app.market_data.market_data_service import MarketDataError
+    from app.market_data.newow.product_reader import NewowProductReadCancelled
+
+    service = NewowProductService(lambda *_args: None, reuse_read_inputs=True)
+    errors = {
+        "cancelled": NewowProductReadCancelled("NEWOW_READ_CANCELLED"),
+        "unknown": RuntimeError("unknown"),
+        "infrastructure": MarketDataError("CANONICAL_READ_FAILED"),
+        "other_coverage_failure": MarketDataError(
+            "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason="REPLAY_ENDPOINTS_MISSING",
+        ),
+        "other_code": MarketDataError("REPLAY_PREFIX_MISSING", reason="REPLAY_PREFIX_MISSING"),
+    }
+    calls = []
+
+    def fail():
+        calls.append(1)
+        raise errors[kind]
+
+    cache = {}
+    for _ in range(2):
+        with pytest.raises(type(errors[kind])):
+            service._cached_read_input(cache, ("same-input",), fail)
+    assert len(calls) == 2
+
+
+def test_readiness_prefix_failure_is_local_to_service_and_read_namespace():
+    from app.market_data.market_data_service import MarketDataError
+
+    service = NewowProductService(lambda *_args: None, reuse_read_inputs=True)
+    calls = []
+
+    def fail():
+        calls.append(1)
+        raise MarketDataError(
+            "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason="REPLAY_PREFIX_MISSING",
+            context={"missing_count": 7},
+        )
+
+    cache, other_cache = {}, {}
+    for selected in (cache, cache, other_cache):
+        with pytest.raises(MarketDataError):
+            service._cached_read_input(selected, ("same-input",), fail)
+    fresh = NewowProductService(lambda *_args: None, reuse_read_inputs=True)
+    with pytest.raises(MarketDataError):
+        fresh._cached_read_input(cache, ("same-input",), fail)
+    assert len(calls) == 3
+
+
 def test_weekly_warming_auxiliary_keeps_chart_snapshot(product_cases):
     case = product_cases.primitive_input("trend", "1w")
     bars = case.bars[:2]

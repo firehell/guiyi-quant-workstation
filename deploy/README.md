@@ -143,6 +143,17 @@ Market 安装固定先加载 idle 的 `com.guiyi.quant-after-market`，再加载
 root 的 `.run`，安装器不复制或改写旧 schema-v5 terminal status；旧 status 仍留在旧 root，作为 D 的不可变
 审计事实。新 writer 首次自然运行才在新 root 建立自己的 status。
 
+health 的跨版本历史证据另存 `.run/after-market-history.json`。Market 安装在只读 preflight 通过后
+从精确旧 authority 保留有界终态摘要和原 commit/hash，不创建新 `after-market-status.json`，也不改
+promotion predicate。历史成功在 API 中标为 `retained_success`，历史失败为 `retained_failure`；
+当前失败、last_failure、卡住和不可读状态始终优先。相同源的重复保留幂等，冲突失败关闭。
+Market 安装器由 Python wrapper 以不创建文件的方式独占旧 writer 既有 OS guard，继承同一 fd
+并校验 inode/uid/锁排他性，从 preflight、证据保留一直持有到服务安装或失败恢复结束。
+guard 忙、缺失或不安全时停止；genuine first-install 没有旧 writer 才不需要该锁。
+旧树退休前仍封存原状态字节；历史证据不是新版本自然验收。首次补回已归档的历史证据使用
+`python -m app.market_data.after_market_history --target-root EXACT_ROOT --source-status EXACT_FILE
+--source-commit EXACT_COMMIT --expected-source-sha256 EXACT_SHA`，默认只读；精确校验后才加 `--apply`。
+
 安装器在 candidate mutation 前只为 shared launcher、log rotator、after-market/Live installed plist 和两者
 loaded/absent 状态保存有界精确前像，不复制或修改 status。此后从 shared launcher/rotator 的 copy/chmod、
 activation marker 准备到 plist/load 的整个 mutation 区间都使用同一个失败恢复出口。部分失败时先按已尝试

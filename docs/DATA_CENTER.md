@@ -448,6 +448,18 @@ expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久�
 `updated_at` age 不超过 2h 为 `degraded/running`，超过 2h 为 `degraded/stuck`。无效、损坏或不可读状态一律 fail-closed 为 degraded。
 与 expected day 匹配的终态失败保持 `failed/failed`，不能由旧成功日覆盖。
 
+跨版本 health 的历史接续使用独立 `.run/after-market-history.json`，保留来源 commit、原状态字节
+SHA、规范化状态摘要及保留时间；它不是新版本的自然任务，也不参与 promotion 的通过条件。
+Market 安装在原 preflight 通过后、服务 mutation 前从精确 supervised authority 保留终态证据；
+当前无状态时可继续转递上次已验证的历史证据。同 root 重装不搬运，首次安装没有历史证据仍为 pending。
+历史文件创建一次、原子发布，冲突或损坏失败关闭；显式 archived 导入必须绑定 source commit 和字节 SHA。
+健康读取验证品种集合与顺序、日期和时间、摘要 hash、自有普通文件；只有历史成功覆盖 expected day、
+且当前没有失败、last_failure、running/stuck/interrupted 或状态异常时，才允许 `ok/retained`。
+新版本的 `last_run/current_run` 原样保留，API 独立公开 `retained_success`；历史失败独立公开
+`retained_failure` 并降级。新版本自己的合法成功替代历史接续，过期历史不能补足更新后的 expected day。
+自然状态和历史证据缺失不能推导 RUNTIME_READY；消费者 incomplete/budget_exhausted 继续公开，
+不能把历史成功或 health=ok 当作消费者完整通过。
+
 盘后失败通知是与 Alert Rule/Application Domain 分离的运维能力。公共手工 `guiyi data after-market`
 不启用该能力；只有受监督自然执行的主业务失败才向 owner 发起最多一次 PushPlus 请求。
 通知使用固定脱敏内容，含 trading day、公开 error code、attempts 与“系统运维提醒，非交易指令”；

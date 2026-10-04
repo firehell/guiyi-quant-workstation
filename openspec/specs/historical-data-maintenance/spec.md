@@ -455,6 +455,25 @@ updated snapshot it MUST be `stuck`. Invalid, unreadable, failed initial/interme
 MUST fail closed with `AFTER_MARKET_PROGRESS_UNAVAILABLE`, never retain an old success as current health.
 A terminal failed result for the expected day MUST remain `status=failed, run_state=failed`.
 
+Runtime promotion SHALL retain bounded historical maintenance evidence separately in
+`.run/after-market-history.json`, with source commit, source byte hash, normalized status digest and retained time.
+It MUST NOT create a natural run or change the existing promotion predicates. Health MAY use a verified retained
+success covering the expected trading day only when the current Runtime has no failure, unresolved last failure,
+unfinished run or invalid state. The API SHALL expose the original source identity as `retained_success`, leaving
+current `last_run/current_run` unchanged; retained failures SHALL remain degraded as `retained_failure` until a
+current valid successful run proves recovery. Scope/order, chronology and owned regular-file integrity MUST fail
+closed. Equivalent retention after an install failure SHALL be idempotent; first-install without evidence stays pending.
+
+#### Scenario: Successful prior Runtime and no new natural run
+
+- **WHEN** the exact prior success covers the expected day and the candidate has no conflicting current evidence
+- **THEN** health exposes `ok/retained` and original source identity without creating `after-market-status.json` or asserting new-version natural acceptance
+
+#### Scenario: Failed run followed by a holiday skip
+
+- **WHEN** the current Runtime retains an unresolved failure and an older Runtime passed the same trading day
+- **THEN** the older success cannot upgrade health or conceal the unresolved failure
+
 Before establishing a run, the writer MUST safely invalidate and sync the same owned regular status file before
 atomically publishing v3. If invalidation cannot produce any durable byte change, startup MUST be rejected before
 a run is established; a file-only reader is not required to claim an unobservable attempt occurred. Progress,
