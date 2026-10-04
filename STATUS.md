@@ -1,45 +1,48 @@
 # 当前状态
 
-更新：2026-10-03。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-04。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.11.0@4fc60acb7f5df229d7a73164980f83e2ca3eeec9**。
-PR #405、annotated tag 与非草稿/非预发布
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.0) 已实际读回；main 源码树与独立审查候选
-`db36f4cb9c85dabbe7f5de4bdac1f72a4081365a` 完全一致。发布说明见 [v1.11.0](docs/releases/v1.11.0.md)。
-汇总日周路径图、持有曲线、融合理论、分页/快照及盘后健康修正；正式开放 AG、AP、AU、C、CF、CJ、HC、I、J、JD、
-JM、LH、M、MA、OI、PK、RB、RM、SA、SF、SH、SM、SR、TA、UR、V 共26品种
-**5m/15m/30m/60m × 趋势/震荡/双策略，312个历史参考页面组合**，固定截至2026-09-24 15:00（北京时间）。
-持续更新尚未开放，1m仅聚合、分钟主升浪不开放，日周60品种保持；FU、NI、SS、SC及本轮冻结时未完成的P不在分钟名单。
+最新正式发布为 **v1.11.1@0c8089715b1cc8958777f8ee589ba8544fa82f5f**。
+[PR #406](https://github.com/firehell/guiyi-quant-workstation/pull/406)、annotated tag 与非草稿/非预发布
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.1) 已实际读回；main 源码树与独立审查候选
+`faa1eb0a2896c532b0716a6230d7a0c6188f53b6` 完全一致。发布说明见 [v1.11.1](docs/releases/v1.11.1.md)。
 
-候选验证：Newow全模块及对应合同检查2477 passed / 1 skipped，Web757 passed / 1 skipped，浏览器61 passed；
-build、冻结lock、OpenSpec、secret scan及最终diff检查通过，独立Review允许发布main/tag。
-22品种来源指纹变化的264项原生刷新全部READBACK_VERIFIED，重算前后数值汇总不变；另4品种复用有效资产。
-最终104来源窗口匹配、312保存流disabled/generation=0，208基础API响应与104融合结果独立核对CLOSED身份、曲线、
-Decimal收益及截止边界通过。历史参考仍page_parity=true/executable=false，不代表因果/OOS、模拟或真实账户收益。
-来源指纹变化仍失败关闭并要求显式原生rebuild，不以本版验收证明未来持续更新。
+本版正式新增此前未发布的P、Y、LC、PS、FG，以及独立补验闭环的A、B、BZ、EB、EC、EG、L、PD、PF、PG、PL、PR、PT、PX，共19品种。
+分钟历史名单为A、AG、AP、AU、B、BZ、C、CF、CJ、EB、EC、EG、FG、HC、I、J、JD、JM、L、LC、LH、M、MA、OI、P、PD、PF、PG、PK、PL、PR、PS、PT、PX、RB、RM、SA、SF、SH、SM、SR、TA、UR、V、Y，共45品种：
+**5m/15m/30m/60m × 趋势/震荡/双策略，540个历史参考页面组合**，固定截至2026-09-24 15:00（北京时间）。
+持续分钟更新、1m页面和分钟主升浪未开放；日周60品种保持。FU、NI、SS、SC、AO、CU、SI、PP、PB、BU、AL、ZN、SN、RS、RU未在本版开放分钟页面。
 
-**现役 Runtime 已切换为 v1.11.0@4fc60acb7f5df229d7a73164980f83e2ca3eeec9**。
-源码根为linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.0`，detached/clean。
-冻结依赖、build、render-only、Market preflight（non_trading_interval，60品种）通过；
-Market/base/Alert/既有weekly安装完成，六服务与weekly root/commit一致、API版本1.11.0、capability v28 exact26、
-HTTP200和readonly runtime health读回通过；正式AG5m双策略真实Chrome历史提示、曲线定位与年度窗口标签正确。
-切换后正式8000端口208基础响应及104融合结果全部重新读回并独立数值校验通过，覆盖312页面组合；连续两次运维检查通过。
-新根盘后pending、weekly not_run；休市Live/Alert coverage仍unverified、Alert组件degraded。
-health=ok只证明当前运维检查，不证明首次自然业务、全部Alert覆盖或RUNTIME_READY。
+14品种独审686张原图、7,308份索引SHA、215,585笔CLOSED及216,077个SVG点通过；180来源窗口无漂移，540条保存流disabled/generation0。
+360基础响应及180融合结果的834,443笔CLOSED独立Decimal核算、190份UTC/null/范围拒绝原始响应独审通过。
+共同融合快照恢复两项P1已修正并通过两轴独审；真实PL60m闲置335.6秒后旧token409、一次原窗口重建、新token融合200通过，主图数值不变。
+验证为Newow与工程检查2708通过/1跳过（socket两项宿主定向复核）、候选工具189通过、Web776通过/1跳过、最终浏览器61通过；
+build、冻结lock、OpenSpec10项、secret零发现及diff通过。历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
 
-旧v1.10.39树clean且配置/loaded服务/进程引用均为零；盘后JSON逐字节及SHA保留后，以非force Git worktree remove退休。
-现在仅保留最新发布树，不删除tag/Release历史、行情、数据库、安全配置、用户outputs或其他任务树。
-未手工重跑盘后/周检、回放Event或补发通知；operational/Rule/Scope/audience及auto_order=false保持，reference worker仍关闭。
-发布、刷新、实际安装、接口/Chrome及退休原始证据保留于本机 `outputs/release-v1.11.0-20260930/`，不提交原始日志。
+**运行切换为PARTIAL / HOST_APPROVAL_BLOCKED。** Market/API/Web与既有weekly已切到
+linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.1`，detached/clean，commit为上述exact tag。
+冻结依赖/build/render和Market preflight（non_trading_interval，60品种）通过；Market三个label、API/Web/log-rotate及weekly安装均exit0。
+正式8000版本1.11.1、capability v29 exact45及HTTP200实际读回；正式PL60m双策略Chrome显示正确历史提示、曲线与50张参考卡。
+切换后正式8000的360基础响应/180融合结果全部重读，覆盖540组合；独立SHA、身份、Decimal及360个完整reference.value与发布前逐值相同。
 
-首根自然completed Bar、盘后增量/MDS与weekly结果仍待验收，**不声明RUNTIME_READY**。
+宿主自动审批拒绝 `--confirm-alert-runtime`：它可能发送真实外部通知，发布授权不足以推导该通知运行授权。
+已向owner请求仅切换既有Alert版本、保持原Rule/Scope/两个收件配置且不补发/回放/新增通知的精确授权；未绕过拒绝、未重试。
+Alert仍running于v1.11.0@4fc60acb7f5df229d7a73164980f83e2ca3eeec9，旧发布树因仍被引用而保留，不能退休。
+实际服务检查因Alert root/commit混合身份overall=failed、3项失败；API公开readonly health=ok不能替代整体运行身份验收。
+切换前旧API曾显示盘后missed/last_successful_trading_day=null、周检missed及Alert degraded；本次发布不证明这些自然业务证据已修复。
+
+旧盘后JSON逐字节/SHA及原始现场已保留于本机 `outputs/release-45-products-20261004/`；没有复制成新运行根的成功状态。
+未手工重跑盘后/周检、回放Event、补发通知或新增后台任务；operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。
+Alert同步、首根自然completed Bar、必要heartbeat、盘后增量/MDS与weekly仍待各自验收，**不声明RUNTIME_READY**。
 历史23项weekly finding与P9阻断未解决；后续分钟持续更新和实时观察另行验收。
 
 ## 当前产品与验证范围
+
+2026-10-04 本轮A、B、BZ、EB、EC、EG、L、PD、PF、PG、PL、PR、PT、PX均已 **CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**，并与P、Y、LC、PS、FG正式发布于v1.11.1。
+下列采集阶段的VISUAL_PENDING与失败/续采记录按原事实保留；最新独立闭环证据见各任务的2026-10-04终验段及上述发布说明。原13/21队列分母不变。
 
 2026-10-04 起按运营清单处理此前未进入分钟候选队列的品种，当前完成到 **对二甲苯 PX**。PX 窗口 2023-09-15 到 2026-09-24，13 个物理 owner，真实源请求 100 次、派生月 410 个。12 条禁用候选流、API 12/12（152 次 GET）和 Chrome 19 场 / 49 张原图已经采完；离线审计为 `NUMERICAL_PASS_VISUAL_PENDING`。独立只读复核四频已发布分区与物理 1m 一致：5m 183009、15m 61003、30m 31840、60m 18597。资格 `ac2bf537a` 同时包含 API 与页面白名单。普通合入 develop `b051262ea`。趋势覆盖 FULL，震荡上市日 PARTIAL，W1 趋势 30/120 预热，W1 震荡 1 笔已完成。正式开放、Runtime、Scope 和交易未改。见 [PX 处理记录](docs/tasks/px-candidate-pilot-20261004.md)。铂 PT 已在 develop `5b0b56cbb`。瓶片 PR 已在 develop `5c9cfb2f7`。丙烯 PL 已在 develop `3591312ef`。液化气 PG 已在 develop `51b2abac0`。短纤 PF 已在 develop `03614a33d`。钯 PD 已在 develop `b9d7eb136`。塑料 L 已在 develop `fe671d3f8`。聚丙烯 PP 在 `PP2405` 5m 遇到 `UNIT_FAILED_STOP`，对应 1m 2023-06 `MARKET_DATA_CONTRACT_INVALID`，未重试，资格 `0e9c2eb50` 未合入。铅 PB 在 `PB2302` 5m 遇到 `ArrowInvalid` / `ATOMIC_PUBLISH_FAILED`，未重试，资格未合入。乙二醇 EG 已在 develop `887120410`。欧线集运 EC 已在 develop `099afa538`。苯乙烯 EB 已在 develop `64a7c24df`。纯苯 BZ 已在 develop `2750a4263`。沥青 BU 在 `BU2307` 5m 遇到 `ArrowInvalid` / `ATOMIC_PUBLISH_FAILED`，未重试，资格未合入。下一批仍按同一规则逐个处理。
 
@@ -118,7 +121,7 @@ P7-04 TA **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual�
 仅交付工程记录；正式分钟、main/tag/release、Runtime/worker/Scope/通知/账户未切换。见 [TA处理记录](docs/tasks/ta-minute-closeout-20260928.md)。其余队列及21分母不变。
 
 - Newow 日周三策略以及日周 CDV2 解释、独立双策略入口已随 v1.10.38 交付；主图、辅助、参考曲线分层；v1.10.39参考记录已扩展为近一年。
-  Newow 60m 未开放，日周解释不构成 StrategyDecision、模型账户或真实交易。
+  Newow四分钟45品种已开放历史参考，持续更新仍关闭；日周解释不构成StrategyDecision、模型账户或真实交易。
 - 正式 60 品种 D1/W1 默认快照、质量断点与预热披露已完成本轮数据/页面验收；不是每个组合均 READY 或盈利的声明。
   来源不足、WARMING、报价不可用及数据中断仍按合同表达。
 - 正式 JM 日线页面主图/辅助/参考收益及双策略入口已读回；普通 74 笔累计 183.66 是页面参考统计，
