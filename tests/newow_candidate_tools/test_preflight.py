@@ -289,3 +289,69 @@ def test_multi_product_preview_cannot_expand_single_product_task(tmp_path):
     ]
     with pytest.raises(ValueError):
         validate_preview(c, p, p)
+
+
+def segmented_assets(c):
+    """Synthetic reentry fixture, not market evidence."""
+    report = assets(c)
+    template = report["rows"][0]["owners"][0]
+    owners = [
+        dict(template, contract="CJ2301", owner_since="2023-01-01", owner_through="2023-01-31"),
+        dict(template, contract="CJ2305", owner_since="2023-02-01", owner_through="2023-02-28"),
+        dict(template, contract="CJ2301", owner_since="2023-03-01", owner_through=c.through),
+    ]
+    for row in report["rows"]:
+        row["owners"] = copy.deepcopy(owners)
+    return report
+
+
+def test_complete_owner_segments_allow_physical_contract_reentry(tmp_path):
+    c = candidate(tmp_path)
+    assert validate_assets(c, segmented_assets(c))["count"] == 12
+
+
+@pytest.mark.parametrize("change", [
+    "missing_since", "missing_through", "nonstring", "null", "compact_date",
+    "invalid_date", "before_window", "after_window", "reversed", "duplicate",
+    "overlap_same_contract", "overlap_other_contract", "unordered", "cross_frequency",
+    "mixed_bare_row", "unique_contract_partial_fields",
+])
+def test_declared_owner_segments_require_full_consistent_identity(tmp_path, change):
+    c = candidate(tmp_path)
+    report = segmented_assets(c)
+    owners = report["rows"][0]["owners"]
+    if change == "missing_since": owners[0].pop("owner_since")
+    elif change == "missing_through": owners[0].pop("owner_through")
+    elif change == "nonstring": owners[0]["owner_since"] = 20230101
+    elif change == "null": owners[0]["owner_through"] = None
+    elif change == "compact_date": owners[0]["owner_since"] = "20230101"
+    elif change == "invalid_date": owners[0]["owner_since"] = "2023-02-30"
+    elif change == "before_window": owners[0]["owner_since"] = "2022-12-31"
+    elif change == "after_window": owners[2]["owner_through"] = "2026-09-25"
+    elif change == "reversed": owners[0]["owner_since"] = "2023-02-01"
+    elif change == "duplicate": owners[2] = copy.deepcopy(owners[0])
+    elif change == "overlap_same_contract": owners[2]["owner_since"] = "2023-01-31"
+    elif change == "overlap_other_contract": owners[1]["owner_since"] = "2023-01-31"
+    elif change == "unordered": owners.reverse()
+    elif change == "cross_frequency": owners[1]["owner_through"] = "2023-02-27"
+    elif change == "mixed_bare_row":
+        for owner in owners:
+            owner.pop("owner_since"); owner.pop("owner_through")
+    else:
+        report = assets(c)
+        report["rows"][0]["owners"][0]["owner_since"] = "2023-01-01"
+    with pytest.raises(ValueError): validate_assets(c, report)
+
+
+def test_bare_duplicate_owner_still_rejected(tmp_path):
+    c = candidate(tmp_path)
+    report = assets(c)
+    for row in report["rows"]:
+        row["owners"].append(copy.deepcopy(row["owners"][0]))
+    with pytest.raises(ValueError, match="OWNER_DUPLICATE"):
+        validate_assets(c, report)
+
+
+def test_unique_bare_owner_reports_remain_compatible(tmp_path):
+    c = candidate(tmp_path)
+    assert validate_assets(c, assets(c))["count"] == 12
