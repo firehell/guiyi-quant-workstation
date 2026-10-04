@@ -1037,8 +1037,8 @@ test('fusion recovery aborts an old chart and cannot load reference after identi
   oldChart.resolve(normalizedChart(oldChart.request, { token: 'late-old-token' }))
   assert.equal(await recovery, false)
   assert.equal(pending.length, 4, 'stale recovery must not send a reference request')
-  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'new-identity-token' })); await flush()
-  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'new-identity-token')
+  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'fake-new-identity-token' })); await flush()
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'fake-new-identity-token')
   assert.equal(state.sections.reference.data.value, null)
   state.dispose()
 })
@@ -1052,14 +1052,14 @@ test('same-identity chart replacement cannot lend its token to an aborted fusion
   const recovery = state.recoverFusionSnapshotConflict('old-token')
   const oldChart = pending[2]!
   const replacement = state.loadChart({ from: '2026-08-01', through: '2026-08-15' })
-  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'replacement-token' })); await replacement
+  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'fake-replacement-token' })); await replacement
   assert.equal(oldChart.signal.aborted, true)
   oldChart.resolve(normalizedChart(oldChart.request, { token: 'late-old-token' }))
   await flush()
-  if (pending[4]) pending[4].resolve(normalizedReference(pending[4].request, { token: 'replacement-token', nextBefore: null }))
+  if (pending[4]) pending[4].resolve(normalizedReference(pending[4].request, { token: 'fake-replacement-token', nextBefore: null }))
   assert.equal(await recovery, false)
   assert.equal(pending.length, 4, 'obsolete recovery cannot dispatch the old reference window')
-  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'replacement-token')
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'fake-replacement-token')
   state.dispose()
 })
 
@@ -1071,10 +1071,10 @@ test('obsolete recovery finally cannot clear a newer same-identity recovery leas
   pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'old-token', nextBefore: null })); await first
   const oldRecovery = state.recoverFusionSnapshotConflict('old-token')
   const replacement = state.loadChart({ from: '2026-08-01', through: '2026-08-15' })
-  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'replacement-token' })); await replacement
+  pending[3]!.resolve(normalizedChart(pending[3]!.request, { token: 'fake-replacement-token' })); await replacement
   const replacementReference = state.loadReference()
-  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'replacement-token', nextBefore: null })); await replacementReference
-  const freshRecovery = state.recoverFusionSnapshotConflict('replacement-token')
+  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'fake-replacement-token', nextBefore: null })); await replacementReference
+  const freshRecovery = state.recoverFusionSnapshotConflict('fake-replacement-token')
   assert.equal(state.fusionRecoveryActive.value, true)
   pending[2]!.resolve(normalizedChart(pending[2]!.request, { token: 'late-old-token' }))
   assert.equal(await oldRecovery, false)
