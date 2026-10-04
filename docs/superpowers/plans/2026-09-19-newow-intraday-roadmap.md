@@ -603,6 +603,6 @@ P7 首批 black + steel 正在执行，实际证据见本批任务交接；不�
 
 同日 PG 液化气已普通合入 develop `51b2abac0`：窗口 2023-01-01 起，41 owner、425 次真实请求 / 1743 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 610458、15m 203486、30m 106208、60m 62034。资格 `affe8e452`。趋势和震荡覆盖 FULL，W1 趋势 30/120 预热、W1 震荡 0 笔已完成。不计入原 13/21 分母。见 [PG 记录](../../tasks/pg-candidate-pilot-20261004.md)。
 
-同日 PL 丙烯证据已齐、待普通合入：上市日 2025-07-22 起，7 owner、41 次真实请求 / 174 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 77871、15m 25957、30m 13548、60m 7913。资格 `06ff38992`。趋势覆盖 FULL，震荡上市日 PARTIAL，W1 趋势 18/120 预热、W1 震荡 1 笔已完成。不计入原 13/21 分母。见 [PL 记录](../../tasks/pl-candidate-pilot-20261004.md)。
+同日 PL 丙烯已普通合入 develop `3591312ef`：上市日 2025-07-22 起，7 owner、41 次真实请求 / 174 派生月；12 条流 READY 且 disabled/generation0；API 12/12、152 GET；Chrome 19 场 49 原图，离线审计 `NUMERICAL_PASS_VISUAL_PENDING`。独立四频前缀 5m 77871、15m 25957、30m 13548、60m 7913。资格 `06ff38992`。趋势覆盖 FULL，震荡上市日 PARTIAL，W1 趋势 18/120 预热、W1 震荡 1 笔已完成。不计入原 13/21 分母。见 [PL 记录](../../tasks/pl-candidate-pilot-20261004.md)。
 
 本轮新增补充品种：SI 工业硅，**SAFE_DEFERRED_QUOTA_GUARD，0/12**；30主力区段/27物理合约/108维护单元。首单元原生发布成功后账户级delta2576409超过冻结估算1612800停止，归属未知；0campaign完成+1发布后停止+107未尝试，PENDING禁重试。仅新增SI2308/2022-12 1m1575与5m315，旧1257文件及636日周保持，局部独立Decimal200验证通过；private0/锁0，无资产/API/页面验收，不称闭环。资格代码76d23ab4及事实记录已普通合入develop7cb91ff98，328 API/工具、130 Web与生产构建通过，正常push/远端精确读回一致；安全暂缓不变，详见[任务记录](../../tasks/si-candidate-pilot-20261001.md)。不计入原13/21分母，不触碰PS/Y闭环和AO/CU失败现场。
