@@ -22,21 +22,22 @@
 验证为Newow与工程检查2708通过/1跳过（socket两项宿主定向复核）、候选工具189通过、Web776通过/1跳过、最终浏览器61通过；
 build、冻结lock、OpenSpec10项、secret零发现及diff通过。历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
 
-**运行切换为PARTIAL / HOST_APPROVAL_BLOCKED。** Market/API/Web与既有weekly已切到
+**运行版本同步已完成；自然业务验收仍待完成。** Market/API/Web/Alert与既有weekly已切到
 linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.1`，detached/clean，commit为上述exact tag。
 冻结依赖/build/render和Market preflight（non_trading_interval，60品种）通过；Market三个label、API/Web/log-rotate及weekly安装均exit0。
 正式8000版本1.11.1、capability v29 exact45及HTTP200实际读回；正式PL60m双策略Chrome显示正确历史提示、曲线与50张参考卡。
 切换后正式8000的360基础响应/180融合结果全部重读，覆盖540组合；独立SHA、身份、Decimal及360个完整reference.value与发布前逐值相同。
 
-宿主自动审批拒绝 `--confirm-alert-runtime`：它可能发送真实外部通知，发布授权不足以推导该通知运行授权。
-已向owner请求仅切换既有Alert版本、保持原Rule/Scope/两个收件配置且不补发/回放/新增通知的精确授权；未绕过拒绝、未重试。
-Alert仍running于v1.11.0@4fc60acb7f5df229d7a73164980f83e2ca3eeec9，旧发布树因仍被引用而保留，不能退休。
-实际服务检查因Alert root/commit混合身份overall=failed、3项失败；API公开readonly health=ok不能替代整体运行身份验收。
+2026-10-04 owner明确批准“仅切换既有Alert版本、不新增或补发通知”；宿主审批通过，原安装器 `--confirm-alert-runtime` 实际exit0。
+Alert已running于v1.11.1@0c8089715b1cc8958777f8ee589ba8544fa82f5f，activation=true；既有Rule/Scope/两个收件配置保持，未补发、回放或新增通知。
+切换后实际六服务configured/loaded root与commit一致；readonly服务检查exit0、overall=passed、API health=ok。
+此前宿主拒绝与混合身份3项失败原始记录保留，最新通过证据为 `runtime-confirm-alert-runtime.log` 与两次 `runtime-post-alert-status-*.log`。
 切换前旧API曾显示盘后missed/last_successful_trading_day=null、周检missed及Alert degraded；本次发布不证明这些自然业务证据已修复。
 
-旧盘后JSON逐字节/SHA及原始现场已保留于本机 `outputs/release-45-products-20261004/`；没有复制成新运行根的成功状态。
+旧v1.11.0树clean且配置/loaded服务/进程引用均为零；旧盘后JSON逐字节/SHA保留后以非force Git worktree remove退休。
+旧盘后JSON及原始现场已保留于本机 `outputs/release-45-products-20261004/`；没有复制成新运行根的成功状态。
 未手工重跑盘后/周检、回放Event、补发通知或新增后台任务；operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。
-Alert同步、首根自然completed Bar、必要heartbeat、盘后增量/MDS与weekly仍待各自验收，**不声明RUNTIME_READY**。
+首根自然completed Bar、必要heartbeat、盘后增量/MDS与weekly仍待各自验收，**不声明RUNTIME_READY**。
 历史23项weekly finding与P9阻断未解决；后续分钟持续更新和实时观察另行验收。
 
 ## 当前产品与验证范围
