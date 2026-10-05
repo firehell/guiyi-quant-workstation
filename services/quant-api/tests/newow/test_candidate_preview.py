@@ -705,7 +705,7 @@ def test_ma_candidate_cannot_expand_its_single_product_scope(monkeypatch, raw):
         _intraday_preview_products()
 
 
-@pytest.mark.parametrize('product', ('fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu', 'ps', 'y', 'si', 'a', 'b', 'bz', 'eb', 'ec', 'eg', 'l', 'pd', 'pf', 'pg', 'pl', 'pr', 'pt', 'px', 'rs'))
+@pytest.mark.parametrize('product', ('fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu', 'ps', 'y', 'si', 'a', 'b', 'bz', 'eb', 'ec', 'eg', 'l', 'pd', 'pf', 'pg', 'pl', 'pr', 'pt', 'px', 'rs', 'sc'))
 def test_p7_candidate_eligibility_is_single_product_and_does_not_open_formal(product, monkeypatch):
     from types import SimpleNamespace
     from app.preview import _intraday_preview_products

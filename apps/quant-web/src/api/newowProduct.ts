@@ -132,7 +132,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
     const products = value.intraday_products
     const single = value.schema_version === 'newow_product_capabilities_v27'
     const allowed = single
-      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu', 'ps', 'y', 'si', 'a', 'b', 'bz', 'eb', 'ec', 'eg', 'l', 'pd', 'pf', 'pg', 'pl', 'pr', 'pt', 'px', 'rs']
+      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu', 'ps', 'y', 'si', 'a', 'b', 'bz', 'eb', 'ec', 'eg', 'l', 'pd', 'pf', 'pg', 'pl', 'pr', 'pt', 'px', 'rs', 'sc']
       : ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
     if (!Array.isArray(products) || products.length === 0 || (single && products.length !== 1)
       || !products.every(item => typeof item === 'string' && allowed.includes(item))

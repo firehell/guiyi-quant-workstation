@@ -5,7 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import (
+    MAX_EMAX,
+    MIN_EMIN,
+    ROUND_DOWN,
+    Context,
+    Decimal,
+    InvalidOperation,
+    localcontext,
+)
 import hashlib
 import json
 import os
@@ -44,6 +52,7 @@ from app.models import Instrument, MainContractMap, TradingCalendar
 
 _SESSION = re.compile(r"(?P<start>\d{1,2}:\d{2})\s*[-~]\s*(?P<end>\d{1,2}:\d{2})")
 WEEKLY_AGGREGATION_VERSION = "exchange-daily-no-trade-v2"
+RQDATA_TURNOVER_NORMALIZATION_VERSION = "rqdata-turnover-truncate-18-v1"
 
 RQDATA_PROVIDER_SETTINGS = frozenset(
     {
@@ -1053,7 +1062,7 @@ def _aggregate_daily_rows(
     first_row = price_source[0]
     last_day, last_row = values[-1]
     turnovers = tuple(
-        _optional_decimal(
+        _optional_turnover(
             _row_value(row, "turnover", "total_turnover", "amount", required=False)
         )
         for row in rows
@@ -1093,7 +1102,7 @@ def _canonical_bar(
         low=_decimal(row, "low"),
         close=_decimal(row, "close"),
         volume=_decimal(row, "volume"),
-        turnover=_optional_decimal(
+        turnover=_optional_turnover(
             _row_value(row, "turnover", "total_turnover", "amount", required=False)
         ),
         open_interest=_optional_decimal(
@@ -1169,6 +1178,30 @@ def _decimal(row: dict[str, Any], field: str) -> Decimal:
     if value is None:
         raise InfrastructureError("RQDATA_DECIMAL_MISSING")
     return value
+
+
+def _optional_turnover(value: Any) -> Decimal | None:
+    """Validate raw turnover before truncating only excess fractional places."""
+    if value is None or pd.isna(value):
+        return None
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise InfrastructureError("RQDATA_TURNOVER_INVALID") from exc
+    if not result.is_finite() or result < 0:
+        raise InfrastructureError("RQDATA_TURNOVER_INVALID")
+    exponent = result.as_tuple().exponent
+    assert isinstance(exponent, int)
+    if exponent >= -18:
+        return result
+    # A fresh context isolates precision, exponent bounds, rounding and traps
+    # from callers. Integer digits are retained; storage still checks 38,18.
+    context = Context(
+        prec=max(38, len(result.as_tuple().digits), result.adjusted() + 19),
+        rounding=ROUND_DOWN, Emax=MAX_EMAX, Emin=MIN_EMIN,
+    )
+    with localcontext(context):
+        return result.quantize(Decimal("1e-18"), rounding=ROUND_DOWN)
 
 
 def _optional_decimal(value: Any) -> Decimal | None:
