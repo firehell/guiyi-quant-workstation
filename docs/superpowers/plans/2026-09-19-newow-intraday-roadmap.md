@@ -419,7 +419,7 @@ owner 新交办的本轮优先顺序为 **PS 多晶硅 → Y 豆油 → SI 工�
 
 | 顺序 | 品种 | 代码 | 当前状态 |
 | --- | --- | --- | --- |
-| P7B-01 | 原油 | SC | DEFERRED_DATA_BLOCKED，0/12；见 [SC记录](../../tasks/sc-candidate-pilot-20260930.md) |
+| P7B-01 | 原油 | SC | CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12；增量差分验收，见 [SC收尾](../../tasks/sc-candidate-closeout-20261005.md)，旧失败原件保持 |
 | P7B-02 | 棉花 | CF | CANDIDATE_CLOSED，12/12；见 [CF记录](../../tasks/cf-candidate-pilot-20260930.md) |
 | P7B-03 | 菜籽油 | OI | CLOSED；52/52维护、306621 Bar完整前缀核对；新源12 native rebuild/fresh reader通过，API12/12与152 HTTP200；Chrome19场/49原图/631索引独立核验，21213 CLOSED收益/21249 SVG点无差异；取消恢复通过、source稳定、资源与维护锁0，disabled/generation0；失败证据保留，见[处理记录](../../tasks/oi-candidate-pilot-20260930.md) |
 | P7B-04 | 棕榈油 | P | COMPLETED / CANDIDATE_CLOSED 12/12；12 owner/48单元一次维护、88实际请求/360派生目标；283612 Bar根Decimal完整前缀核对，906旧文件前像/60246旧Bar/373日周保留；12 READY disabled/generation0；7f6c8fda最终API12/152、Chrome19场/49新原图/630索引、21278 CLOSED收益/21314 SVG点独立核验；两旧LEGACY_HTTP_ERROR失败保留，最终native audit与root closeout通过，source三读回一致、专属资源退出/锁0；按owner要求P后停止，未启动Y；已审修复与记录集成develop，189工具/106 Web定向测试及build通过 |

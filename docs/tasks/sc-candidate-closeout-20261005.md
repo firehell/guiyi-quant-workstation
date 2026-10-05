@@ -1,6 +1,6 @@
 # SC 原油历史候选闭环
 
-当前状态：**PARTIAL，12/12 候选资产完成，最终页面验收进行中**。历史候选总数仍47/60，正式分钟开放45/60。仅处理SC，固定窗口2023-01-01..2026-09-24、as_of=2026-09-24T07:00:00.000001+00:00，1m仅作为聚合源，验收5m/15m/30m/60m×trend/oscillation/dual。工作树`.worktrees/sc-candidate-closeout`；真实原始证据保存于该树`outputs/sc-candidate-closeout-20261005/`，独立Review在主仓同名outputs/review。
+当前状态：**COMPLETED / CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。历史候选总数48/60，正式分钟开放45/60。仅处理SC，固定窗口2023-01-01..2026-09-24、as_of=2026-09-24T07:00:00.000001+00:00，1m仅作为聚合源，验收5m/15m/30m/60m×trend/oscillation/dual。工作树`.worktrees/sc-candidate-closeout`；真实原始证据保存于该树`outputs/sc-candidate-closeout-20261005/`，独立Review在主仓同名outputs/review。
 
 ## 数据恢复和成交额精度
 
@@ -28,13 +28,21 @@ owner明确成交额最多18位小数，重视整数部分。采用`rqdata-turno
 
 采集器另修同URL已取消peer的响应绑定，并保留bounded诊断。原失败记录及日周errors门禁不变。分钟双策略仅严格初始单一partner reference真实abort时允许一次同URL采集补充XHR，标记ui_composable_received=false，不能冒充Vue已消费或页面警告消失。
 
-冻结d656版本真实API12/12通过；fresh Chrome前17场完整数值及46张原图通过，但第18场W1双策略BLOCKED、取消场未采。三个真实initial ERR_ABORTED对应oscillation chart、trend reference、trend MACD，console分别30002/30005/30009ms TIMEOUT；explanation在35465ms实际200。第一轮仅decision_v2超时修复遗漏了日周其余section，故进一步收敛为策略详情入口统一60秒，不修改全局30秒、不改变采集65秒/110秒门禁、不绕过实际错误。失败证据及三次整对象相同的source回读保留；d656专属服务/Chrome已退出，锁0、12流仍disabled/generation0。新增日周三section回归真实RED57pass/1fail，再扩展六Web文件204passed与build通过。后续使用新的冻结代码身份重新运行API和全19场Chrome，不复用旧成功前缀证明新代码。验收包含所有12组合完整CLOSED/曲线/SVG、较早窗口、D1/W1三模式、取消恢复和49原图，W1真实warming与零CLOSED空态须按原生事实披露。当前最终验收尚未完成。
+最终产品修复冻结于`3f1f538c600e1565996ba36617de3bde1152d1ba`。仅Web策略详情入口的默认超时从遗漏日周section的30秒收敛为60秒；保留显式override（含0）、AbortSignal和全局普通请求30秒。与d656相比services/packages/scripts计算子树完全相同，公式、profile、源数据与12资产身份未变。新API12/12通过，152份矩阵GET全部200（128 strategy-detail + 24 identity），另一次启动identity通过守卫但未单独封wire；compact不是全数组或409证据。
+
+owner随后明确只验证修改内容，停止重复整体采集。d656的17场完整数值/46原图保持各自旧code/raw/hash；3f1的完整重采在两场通过后按owner要求精确SIGINT停止，退出130及Chrome关闭原件保留，未把中断当成业务失败或全19通过。最终只补W1 dual与cancel两场，19个唯一场景/49张原图的差分验收完成，**不是同一新code重新跑全19场**。完整33,251笔CLOSED、全部曲线/SVG、稳定ID/价格/Decimal200以及真实取消、客户端超时、错误frequency的HTTP409与fresh snapshot恢复均独立通过。
+
+W1初始及返回两个导航的产品请求均≤60秒，但串行加载链约90秒；原采集器在加载完成前启动按钮65秒等待，返回还继承away绑定deadline。仅任务outputs内的定向renderer修正等待顺序：initial沿用已有110秒绝对截止；return导航单独建立同长度110秒绑定/readiness阶段，非阻塞等待inFlight/bodyReads/DOM三稳后，继续原selectClosed65秒/waitStable65秒。没有加长110常数、修改产品代码、补XHR或放宽错误/ready门禁；全部失败原件保留。最终initial 89,797ms、return 77,849ms，均在各110秒内；三errors空，W1完整5笔CLOSED/7 SVG点逐值通过。cancel原生场景未修改。
+
+新final/postapi源报告全字节相同`60180a528d5384e76905896d2b934f0bc4a4430960428affcc82ed64459eb98d`，除代码身份外与旧d656全对象一致。按owner增量验收要求，末轮未重复完整source前缀扫描；最终仅真实只读回查12候选stream全字段/revision/seq与已封基线相同、全部disabled/generation0、维护锁0。专属API36139/Web36134及8012/5178已退出，Chrome sc-targeted原生关闭成功；正式Runtime、Scope、通知和账户不变。
+
+限制如实保留：5m dual初始partner超时/页面警告及严格补证XHR的ui_composable_received=false，不能冒充Vue消费；legacy compact未交付history_coverage，不能据此宣称FULL；W1 46<120及29区段warming、震荡0 CLOSED显示“—”，OPEN/换月中断排除已完成收益；视口裁切、密集早期标记及辅助短有效历史保持。独立数值/视觉/资源最终报告为主仓outputs/review中的`sc-differential-final-independent-review.json`、`mixed-code-sc-numeric-closeout-review.json`及`mixed-code-sc-visual-closeout-review.json`，全部原始attempt保留。
 
 ## 验证与边界
 
 - 后端新增缓存/服务回归先13项RED，再GREEN；两模块115passed。
-- Web超时回归先RED，再定向68passed，扩展六相关测试文件203passed；vue-tsc、Vite生产build与bundle topology通过，原有动态import提示不阻塞。
+- Web最后遗漏回归真实RED（57通过/1失败），修复后六相关文件204passed；vue-tsc、Vite生产build与bundle topology通过，secret scan 0，diff check通过。未重复已通过的后端整体验证。
 - 全部数据/候选/采集工具与缓存回归最终输出保存在`recovery/closeout-backend-final-regression.log`；最终1018passed，13.21秒；实际输出为准。
-- 独立Review核对高风险精度、forward、全前缀、资产恢复与产品缓存边界。最终页面、source与临时资源退出证据仍需补齐。
+- 独立Review核对精度、forward、前缀、资产恢复、缓存与超时，最终差分19场/49图及精确资源退出全部通过。OpenSpec 10通过/0失败，原件保留。
 
-本任务只证明固定历史窗口候选页面；不证明因果/OOS、完整可执行窗口、正式分钟开放、Runtime promotion、通知或账户交易。唯一最小下一步：按新冻结身份完成真实API/Chrome全矩阵验收和最终source/resource回读后更新完成矩阵并集成develop。
+本任务只证明固定历史窗口候选页面；不证明因果/OOS、完整可执行窗口、正式分钟开放、Runtime promotion、通知或账户交易。验收结论：允许集成develop。此闭环不授权发布main/tag或Runtime promotion。
