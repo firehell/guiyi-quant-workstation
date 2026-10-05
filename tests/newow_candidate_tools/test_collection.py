@@ -395,7 +395,7 @@ def test_actual_observer_legacy_listener_native_zero_and_aux_pipeline():
     globalThis.XMLHttpRequest=FixtureXHR;
     const CONFIG=__CONFIG__,FREQUENCY='1w',ASOF=CONFIG.as_of;let MODE='trend';
     const init=(__OBSERVER__);init(CONFIG);
-    const pending=[],responses=[],bodyErrors=[];const phase='initial';const own=()=>true;const xhrBindings=new WeakMap();
+    const pending=[],responses=[],bodyErrors=[],xhrRequests=[];let pendingBodyReads=0,completedBodyReads=0;const phase='initial';const own=()=>true;const xhrBindings=new WeakMap();
     const observedJSON=async r=>globalThis.__p7XHR.records.find(x=>x.sequence===r.sequence).payload;
     __LISTENER__
     __ZERO__

@@ -1781,3 +1781,120 @@ def test_token_expiring_during_reference_calculation_returns_conflict(product_ca
             as_of=clear.bar_end,
             snapshot_token=chart.meta.snapshot_token,
         ))
+
+
+def test_fresh_cached_read_renews_existing_token_after_actual_authoritative_load(product_cases):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    service, reader, _build, clear = _service(product_cases)
+    clock = [0.0]
+    service._cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=300)
+    request = ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end)
+    first = service.query(request)
+    clock[0] = 299
+    current = service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+    assert len(reader.loads) == 2
+    assert current.meta.snapshot_token == first.meta.snapshot_token
+    assert replace(current, meta=first.meta) == first
+    assert next(iter(service._cache._entries.values())).expires_at == 599
+
+
+@pytest.mark.parametrize('bound', [True, False])
+def test_cache_refresh_race_never_returns_stale_token(product_cases, monkeypatch, bound):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    service, reader, _build, clear = _service(product_cases)
+    clock = [0.0]
+    cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=300)
+    service._cache = cache
+    request = ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end)
+    first = service.query(request)
+    calls = []
+    calculate = service._calculate
+    def counting(*args, **kwargs):
+        calls.append(True)
+        return calculate(*args, **kwargs)
+    monkeypatch.setattr(service, '_calculate', counting)
+    def expire(*_args):
+        clock[0] = 300
+        cache._expire()
+        return False
+    monkeypatch.setattr(cache, 'refresh_verified_token', expire, raising=False)
+    clock[0] = 299
+    if bound:
+        with pytest.raises(NewowProductServiceError, match='NEWOW_SNAPSHOT_GENERATION_CONFLICT'):
+            service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+        assert not calls
+    else:
+        result = service.query(request)
+        assert calls == [True] and result.meta.snapshot_token != first.meta.snapshot_token
+    assert len(reader.loads) == 2
+
+
+def test_cached_metadata_token_mismatch_fails_before_refresh(product_cases, monkeypatch):
+    service, _reader, _build, clear = _service(product_cases)
+    request = ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end)
+    first = service.query(request)
+    get = service._cache.get
+    def raced(*args, **kwargs):
+        value = get(*args, **kwargs)
+        return replace(value, meta=replace(value.meta, snapshot_token='different-token')) if hasattr(value, 'meta') else value
+    monkeypatch.setattr(service._cache, 'get', raced)
+    monkeypatch.setattr(service._cache, 'refresh_verified_token', lambda *_: pytest.fail('mismatch refreshed'), raising=False)
+    with pytest.raises(NewowProductServiceError, match='NEWOW_SNAPSHOT_GENERATION_CONFLICT'):
+        service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+
+
+def test_cancel_after_fresh_cache_lookup_cannot_renew_token(product_cases, monkeypatch):
+    from app.market_data.newow.product_reader import NewowProductReadCancelled
+    service, _reader, _build, clear = _service(product_cases)
+    request = ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end)
+    first = service.query(request)
+    cancelled = [False]
+    service._cancelled = lambda: cancelled[0]
+    get = service._cache.get
+    def cancel_on_get(*args, **kwargs):
+        value = get(*args, **kwargs)
+        cancelled[0] = True
+        return value
+    monkeypatch.setattr(service._cache, 'get', cancel_on_get)
+    monkeypatch.setattr(service._cache, 'refresh_verified_token', lambda *_: pytest.fail('cancel renewed'), raising=False)
+    with pytest.raises(NewowProductReadCancelled):
+        service._query_admitted(replace(request, snapshot_token=first.meta.snapshot_token), clear.bar_end, lambda: cancelled[0])
+
+
+def test_memoized_read_cache_hit_keeps_original_expiry_and_single_read(product_cases, monkeypatch):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    service, reader, _build, clear = _service(product_cases)
+    service._reuse_read_inputs = True
+    clock = [0.0]
+    service._cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=300)
+    request = ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end)
+    first = service.query(request)
+    monkeypatch.setattr(service._cache, 'refresh_verified_token', lambda *_: pytest.fail('memoized input renewed'))
+    clock[0] = 299
+    current = service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+    assert len(reader.loads) == 1
+    assert current.meta.snapshot_token == first.meta.snapshot_token
+    assert next(iter(service._cache._entries.values())).expires_at == 300
+
+
+@pytest.mark.parametrize('race', ['expired', 'replaced_metadata'])
+def test_memoized_cache_hit_cannot_return_expired_or_different_bound_token(product_cases, monkeypatch, race):
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    service, reader, _build, clear = _service(product_cases)
+    service._reuse_read_inputs = True
+    clock = [0.0]
+    service._cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=300)
+    request = ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end)
+    first = service.query(request)
+    get = service._cache.get
+    def raced_get(*args, **kwargs):
+        cached = get(*args, **kwargs)
+        if race == 'expired': clock[0] = 300
+        elif hasattr(cached, 'meta'): cached = replace(cached, meta=replace(cached.meta, snapshot_token='new-generation'))
+        return cached
+    monkeypatch.setattr(service._cache, 'get', raced_get)
+    monkeypatch.setattr(service._cache, 'refresh_verified_token', lambda *_: pytest.fail('memoized input renewed'))
+    clock[0] = 299
+    with pytest.raises(NewowProductServiceError, match='NEWOW_SNAPSHOT_GENERATION_CONFLICT'):
+        service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+    assert len(reader.loads) == 1

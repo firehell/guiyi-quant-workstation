@@ -985,12 +985,31 @@ class NewowProductService:
                 raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
         cached = self._cache.get(common_key, section_key)
         if isinstance(cached, NewowProductResult):
-            validator = getattr(getattr(self._persisted_reference, "__self__", None), "validate_cached_generation", None)
-            if request.section is ProductSection.REFERENCE and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(validator):
-                validator(cached.reference)
-            return replace(
-                cached, meta=replace(cached.meta, read_at=utc_timestamp(self._now()))
-            )
+            self._check_cancelled(cancelled)
+            cached_token = cached.meta.snapshot_token
+            if cached_token and (
+                request.snapshot_token is None or request.snapshot_token == cached_token
+            ):
+                validator = getattr(getattr(self._persisted_reference, "__self__", None), "validate_cached_generation", None)
+                if request.section is ProductSection.REFERENCE and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(validator):
+                    validator(cached.reference)
+                self._check_cancelled(cancelled)
+                # Bounded readiness memoizes inputs for its pinned lifecycle;
+                # those reads may verify compatibility but cannot renew freshness.
+                verified = (
+                    self._cache.token_proof_covers(cached_token, common_key, proof)
+                    if self._reuse_read_inputs else
+                    self._cache.refresh_verified_token(cached_token, common_key, proof)
+                )
+                if verified:
+                    return replace(
+                        cached, meta=replace(cached.meta, read_at=utc_timestamp(self._now()))
+                    )
+            # Fresh authoritative input verification above cannot make a stale
+            # cached generation valid. Bound requests fail; unbound requests
+            # continue through normal calculation and atomic cache admission.
+            if request.snapshot_token is not None:
+                raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
         base = None
         attach_fusion = getattr(getattr(self._persisted_reference, "__self__", None), "attach_cached_fusion", None)
         if request.include_fusion and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(attach_fusion):
