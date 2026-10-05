@@ -326,7 +326,7 @@ export async function getNewowProductSection(
     payload = await transport('/market/newow/strategy-detail', {
       params: buildNewowProductQuery(request),
       signal: options.signal,
-      ...(options.timeout !== undefined ? { timeout: options.timeout } : (['5m', '15m', '30m', '60m'].includes(request.identity.frequency) || (request.section === 'explanation' && request.decisionV2 === true)) ? { timeout: 60000 } : {}),
+      timeout: options.timeout ?? 60000,
     })
   } catch (error) {
     if (error instanceof NewowProductRequestError) throw error

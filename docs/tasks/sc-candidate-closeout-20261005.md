@@ -24,11 +24,11 @@ owner明确成交额最多18位小数，重视整数部分。采用`rqdata-turno
 
 旧323 API12/12通过：152矩阵GET+1身份GET均200；compact摘要只证明该层身份、分页/覆盖与hash，不替代完整曲线、SVG或原生409证据。旧浏览器12分钟及D1三个场景全数值/逐图通过；W1与cancel未完成，不宣称完整闭环。多轮失败及每次封存证据保留。
 
-已定位两处产品问题：日周decision_v2解释沿用30秒，而同一日周背景计算在分钟页已有60秒；缓存命中虽重新校验权威输入，却返回接近过期的旧token，后续融合收到GENERATION_CONFLICT并进入重建。采用同一API入口统一decision_v2默认60秒、保留显式override和AbortSignal；缓存仅在fresh reader/fingerprint/proof完整重验后，对同身份、未过期且覆盖全部输入proof的既有token续现有300秒。普通get不续期，expired/changed/replaced token不能复活，绑定请求仍拒绝冲突；不修改公式、价格、收益或缓存预算。
+已定位两处产品问题：日周decision_v2解释沿用30秒，而同一日周背景计算在分钟页已有60秒；缓存命中虽重新校验权威输入，却返回接近过期的旧token，后续融合收到GENERATION_CONFLICT并进入重建。采用同一API入口统一策略详情所有周期/section默认60秒、保留显式override（含0）和AbortSignal；缓存仅在fresh reader/fingerprint/proof完整重验后，对同身份、未过期且覆盖全部输入proof的既有token续现有300秒。普通get不续期，expired/changed/replaced token不能复活，绑定请求仍拒绝冲突；不修改公式、价格、收益或缓存预算。
 
 采集器另修同URL已取消peer的响应绑定，并保留bounded诊断。原失败记录及日周errors门禁不变。分钟双策略仅严格初始单一partner reference真实abort时允许一次同URL采集补充XHR，标记ui_composable_received=false，不能冒充Vue已消费或页面警告消失。
 
-产品修复将用新的冻结代码身份重新运行API和全19场Chrome，不复用旧323成功前缀来证明新代码。验收包含所有12组合完整CLOSED/曲线/SVG、较早窗口、D1/W1三模式、取消恢复和49原图，W1真实warming与零CLOSED空态须按原生事实披露。当前最终验收尚未完成。
+冻结d656版本真实API12/12通过；fresh Chrome前17场完整数值及46张原图通过，但第18场W1双策略BLOCKED、取消场未采。三个真实initial ERR_ABORTED对应oscillation chart、trend reference、trend MACD，console分别30002/30005/30009ms TIMEOUT；explanation在35465ms实际200。第一轮仅decision_v2超时修复遗漏了日周其余section，故进一步收敛为策略详情入口统一60秒，不修改全局30秒、不改变采集65秒/110秒门禁、不绕过实际错误。失败证据及三次整对象相同的source回读保留；d656专属服务/Chrome已退出，锁0、12流仍disabled/generation0。新增日周三section回归真实RED57pass/1fail，再扩展六Web文件204passed与build通过。后续使用新的冻结代码身份重新运行API和全19场Chrome，不复用旧成功前缀证明新代码。验收包含所有12组合完整CLOSED/曲线/SVG、较早窗口、D1/W1三模式、取消恢复和49原图，W1真实warming与零CLOSED空态须按原生事实披露。当前最终验收尚未完成。
 
 ## 验证与边界
 
