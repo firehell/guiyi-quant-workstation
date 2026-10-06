@@ -633,3 +633,6 @@ PL60m真实335.6秒闲置后409→一次原窗口重建→新token融合200终�
 
 
 2026-10-06 **BU 沥青 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。资格冻结12e97e9c9，5API/1Web/4guard及类型/build通过；保留旧4完成/1失败/115未尝试及1811前像。新forward120/120=111读回+9无缺口、396真实源/1623派生/84成交额18位截断，1811→3697文件、1886新增/133扩展、161272旧Bar/1052日周保持。四频1002052Bar/各484物理月/30owner独审通过；12READY disabled/generation0、趋势震荡覆盖FULL。API12/152保存HTTP200、一次Chrome19场49原图、22179 CLOSED/完整曲线SVG独审通过，无失败重试。专属API/Web/Chrome退出、端口free/锁0，最后仅12状态不重源扫描。当前**历史51/60、正式45/60**；W1真实44/120预热与7/1/10 CLOSED、视口局限保留，无Release/Runtime/通知/交易。见[BU收尾记录](../../tasks/bu-candidate-closeout-20261006.md)。下一项CU铜。 BU作为补充品种，不改变原13/21分母。
+
+
+2026-10-06 **CU 铜 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。沿用已集成 singleton、固定代码9dd8ed32c，无生产源码改动、不重复整体验证。保留旧0完成/1部分失败/179未尝试与原1952immutable，绑定当前1984前像；新forward180/180=174读回+6无缺口、467真实源/1908派生/54成交额18位截断，无失败重试。1984→4147文件、新2163/扩展212、191419旧Bar/1193当前日周保持。四频1489154Bar/各540物理月/45owner独审通过；12READY disabled/generation0、分钟基础覆盖FULL、8融合伙伴一致。API12/152 HTTP200；首场并发验收60003ms超时保留，API结束后独立串行恢复19场49原图，28460 CLOSED/完整曲线SVG及逐图独审通过，原60/65/110门禁不变。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史52/60、正式45/60**；W1真实49/120预热、6/0/8 CLOSED和视口/非冷性能局限保留，无Release/Runtime/通知/交易。见[CU收尾记录](../../tasks/cu-candidate-closeout-20261006.md)。下一项NI镍。 CU作为补充恢复品种，不改变原13/21分母。
