@@ -325,7 +325,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 | P7-07 | 纯碱 | SA | CANDIDATE_CLOSED；12/12，48/48 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/sa-minute-closeout-20260929.md) |
 | P7-08 | 黄金 | AU | CANDIDATE_CLOSED；12/12，88/88 DATA_READY，12 disabled候选资产，API/Chrome/日周与49原图独立Review通过；[处理记录](../../tasks/au-minute-closeout-20260929.md) |
 | P7-09 | 白银 | AG | CANDIDATE_CLOSED；12/12，80/80 DATA_READY，12 disabled候选资产，API/Chrome/日周与61原图独立Review通过；[处理记录](../../tasks/ag-minute-closeout-20260929.md) |
-| P7-10 | 镍 | NI | DEFERRED_DATA_BLOCKED，0/12；首单NI2302/5m原子发布失败停止，14部分分区保留、无重试；[处理记录](../../tasks/ni-minute-closeout-20260929.md) |
+| P7-10 | 镍 | NI | CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12；164单元恢复、407实际源/1703派生，四频1373937Bar独审，API12/152、Chrome19/49、28558 CLOSED数值与退出通过；[恢复收尾](../../tasks/ni-candidate-closeout-20261006.md)，[原始失败记录](../../tasks/ni-minute-closeout-20260929.md)保留 |
 | P7-11 | 硅铁 | SF | COMPLETED，12/12；四输入/八基础/四融合disabled，独立数值及61图Review通过；原生预览/日周边界保留，见[SF处理记录](../../tasks/sf-minute-closeout-20260929.md) |
 | P7-12 | 锰硅 | SM | COMPLETED，12/12；4输入/8基础/4融合disabled，独立数值与61原图Review通过；自身日周/预览边界及失败证据保留，见[SM处理记录](../../tasks/sm-minute-closeout-20260929.md) |
 | P7-13 | 红枣 | CJ | COMPLETED，12/12；4输入/8基础/4融合disabled，独立数值与61原图Review通过；自身日周/预览边界保留，见[CJ处理记录](../../tasks/cj-minute-closeout-20260929.md) |
@@ -636,3 +636,5 @@ PL60m真实335.6秒闲置后409→一次原窗口重建→新token融合200终�
 
 
 2026-10-06 **CU 铜 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。沿用已集成 singleton、固定代码9dd8ed32c，无生产源码改动、不重复整体验证。保留旧0完成/1部分失败/179未尝试与原1952immutable，绑定当前1984前像；新forward180/180=174读回+6无缺口、467真实源/1908派生/54成交额18位截断，无失败重试。1984→4147文件、新2163/扩展212、191419旧Bar/1193当前日周保持。四频1489154Bar/各540物理月/45owner独审通过；12READY disabled/generation0、分钟基础覆盖FULL、8融合伙伴一致。API12/152 HTTP200；首场并发验收60003ms超时保留，API结束后独立串行恢复19场49原图，28460 CLOSED/完整曲线SVG及逐图独审通过，原60/65/110门禁不变。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史52/60、正式45/60**；W1真实49/120预热、6/0/8 CLOSED和视口/非冷性能局限保留，无Release/Runtime/通知/交易。见[CU收尾记录](../../tasks/cu-candidate-closeout-20261006.md)。下一项NI镍。 CU作为补充恢复品种，不改变原13/21分母。
+
+2026-10-07 **NI 镍 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结代码03099ce8，无生产源码改动。保留原0完成/1部分失败/163未尝试与旧539immutable；当前单次诊断9525行/3条超18位成交额ArrowInvalid复现及scratch通过，原失败响应未保存、旧根因UNKNOWN仍保留。新forward164/164=157读回+7无缺口、407实际外部请求（406forward+1诊断单次复用）/1703派生/9截断；1836→3756文件、新1920/扩展190、95303旧Bar/1072日周保持。四频1373937Bar/各491物理月/41owner独审通过；12READY disabled/generation0、8基础FULL、8融合伙伴revision边一致。API12/152 HTTP200结束后一次Chrome19场49原图、28558 CLOSED/28594 SVG点与实际逐图独审通过，无生产重试/重采。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史53/60、正式45/60**；W1真实44/120预热、15/1/17 CLOSED与视口局限保留，未改变Release/Runtime/Scope/通知/交易。见[NI收尾记录](../../tasks/ni-candidate-closeout-20261006.md)。下一项PB铅。 NI仍为P7-10，不改变原13/21分母；后续按PB→SN→AL→ZN→FU逐品种推进。

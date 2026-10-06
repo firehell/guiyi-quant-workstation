@@ -50,6 +50,8 @@ operational、Rule/Scope/audience、auto_order=false和reference worker关闭保
 
 ## 当前产品与验证范围
 
+2026-10-07 **NI 镍 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结代码03099ce8，无生产源码改动。保留原0完成/1部分失败/163未尝试与旧539immutable；当前单次诊断9525行/3条超18位成交额ArrowInvalid复现及scratch通过，原失败响应未保存、旧根因UNKNOWN仍保留。新forward164/164=157读回+7无缺口、407实际外部请求（406forward+1诊断单次复用）/1703派生/9截断；1836→3756文件、新1920/扩展190、95303旧Bar/1072日周保持。四频1373937Bar/各491物理月/41owner独审通过；12READY disabled/generation0、8基础FULL、8融合伙伴revision边一致。API12/152 HTTP200结束后一次Chrome19场49原图、28558 CLOSED/28594 SVG点与实际逐图独审通过，无生产重试/重采。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史53/60、正式45/60**；W1真实44/120预热、15/1/17 CLOSED与视口局限保留，未改变Release/Runtime/Scope/通知/交易。见[NI收尾记录](docs/tasks/ni-candidate-closeout-20261006.md)。下一项PB铅。
+
 2026-10-06 **CU 铜 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。沿用已集成 singleton、固定代码9dd8ed32c，无生产源码改动、不重复整体验证。保留旧0完成/1部分失败/179未尝试与原1952immutable，绑定当前1984前像；新forward180/180=174读回+6无缺口、467真实源/1908派生/54成交额18位截断，无失败重试。1984→4147文件、新2163/扩展212、191419旧Bar/1193当前日周保持。四频1489154Bar/各540物理月/45owner独审通过；12READY disabled/generation0、分钟基础覆盖FULL、8融合伙伴一致。API12/152 HTTP200；首场并发验收60003ms超时保留，API结束后独立串行恢复19场49原图，28460 CLOSED/完整曲线SVG及逐图独审通过，原60/65/110门禁不变。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史52/60、正式45/60**；W1真实49/120预热、6/0/8 CLOSED和视口/非冷性能局限保留，无Release/Runtime/通知/交易。见[CU收尾记录](docs/tasks/cu-candidate-closeout-20261006.md)。下一项NI镍。
 
 2026-10-06 **BU 沥青 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。资格冻结12e97e9c9，5API/1Web/4guard及类型/build通过；保留旧4完成/1失败/115未尝试及1811前像。新forward120/120=111读回+9无缺口、396真实源/1623派生/84成交额18位截断，1811→3697文件、1886新增/133扩展、161272旧Bar/1052日周保持。四频1002052Bar/各484物理月/30owner独审通过；12READY disabled/generation0、趋势震荡覆盖FULL。API12/152保存HTTP200、一次Chrome19场49原图、22179 CLOSED/完整曲线SVG独审通过，无失败重试。专属API/Web/Chrome退出、端口free/锁0，最后仅12状态不重源扫描。当前**历史51/60、正式45/60**；W1真实44/120预热与7/1/10 CLOSED、视口局限保留，无Release/Runtime/通知/交易。见[BU收尾记录](docs/tasks/bu-candidate-closeout-20261006.md)。下一项CU铜。
@@ -114,7 +116,7 @@ P7-12 SM **COMPLETED，12/12 页面闭环**。自身19owner/76依赖全部READY�
 P7-11 SF **COMPLETED，12/12 页面闭环**。自身28owner/112依赖最终全部READY，0源请求/287个5m派生月发布；4输入、8基础、4融合及真实API/Chrome通过。四频完整物理前缀独立重聚合、旧七频文件/行保持、旧9资产仅invalid且历史事实保持；最终12候选disabled、generation=0、complete_window_proven=false。
 独立数值审计PASS，61张原始截图逐张Review无Confirmed Issue；日周6组合保留原生WARMING/零CLOSED空曲线，顶部报价保留预览403边界。授权后经正常宿主复核完成原计划，旧阻断/失败证据保留；预览资源已停止，未自启SM，正式分钟/Runtime/Scope/通知/账户未变。见[SF处理记录](docs/tasks/sf-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
 
-P7-10 NI **DEFERRED_DATA_BLOCKED，0/12候选页面闭环**。自身41owner/164依赖最终7 DATA_READY，零保存资产；首单NI2302/5m第8源请求发生`ATOMIC_PUBLISH_FAILED`（底层`ArrowInvalid`）后停批，无重试/续接。实际新增2022-02..08七个1m及七个5m分区，原525五频分区和首单29七频文件/24日周pointer不变；最早剩余NI2302/1m/2022-09，目录空、锁0，具体原因UNKNOWN。
+2026-09-29 原始 P7-10 NI **DEFERRED_DATA_BLOCKED，0/12候选页面闭环**（原失败记录保留；当前恢复闭环见2026-10-07 NI收尾）。自身41owner/164依赖最终7 DATA_READY，零保存资产；首单NI2302/5m第8源请求发生`ATOMIC_PUBLISH_FAILED`（底层`ArrowInvalid`）后停批，无重试/续接。实际新增2022-02..08七个1m及七个5m分区，原525五频分区和首单29七频文件/24日周pointer不变；最早剩余NI2302/1m/2022-09，目录空、锁0，具体原因UNKNOWN。
 14范围测试、58原生边界测试、scratch与独立只读实际发布/旧bytes核对、12,411根5m逐值重聚合及安全暂缓Review通过；API/Chrome及日周未运行，不宣称候选或共享存储根因已解决。只集成安全暂缓记录，正式分钟/Runtime/Scope/通知/账户未变，未自启SF。见[NI处理记录](docs/tasks/ni-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
 
 P7-09 AG **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。20实际owner、80/80 DATA_READY；149行情源请求/679派生月，930旧文件及479日周pointer保留；776109物理Bar独立重算一致。12候选资产READY、disabled/generation=0，manifest与4融合依赖独立核对通过。
