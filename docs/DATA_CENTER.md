@@ -830,3 +830,12 @@ Market 盘后仍在本地 18:05 自然运行，`RQDATA_NOT_READY` 或
 下一交易日是 2026-10-08，10-10 调休工作日不是交易日；不得用工作日算术替代。
 新服务随已交办的 Market Runtime 安装，schedule-only idle 不算服务失败。
 升级时须显式保留未消费的延后恢复状态，不能以新的空状态丢弃未完成检查。
+
+### PP 单条人工 OHLC 修正（2026-10-08）
+
+owner批准 `pp2405-20230608T210300-high-equals-open-v1`：仅PP2405/1m，
+北京时间2023-06-08 21:03、交易日2023-06-09；原O/H/L/C=6910/6890/6890/6890、
+volume=1、turnover=34525、OI=1684时，仅high改为6910。不是米筐确认的修正。
+精确前像守卫、原始响应封存、不可变Parquet内的人工规则标记与版本合同见
+`openspec/specs/canonical-market-storage/spec.md`。不扩展其他Bar自动修复，
+不放宽OHLC/Session/coverage校验，不改变日周或Runtime。
