@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-04。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-07。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
@@ -49,6 +49,8 @@ Alert组件仍degraded（分钟覆盖unverified），notification_state=provider
 operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。历史23项weekly finding与P9阻断仍保留。
 
 ## 当前产品与验证范围
+
+2026-10-07 **PB 铅 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。singleton资格冻结80cafeb6，6项API定向测试、27项Web测试通过。旧0完成/1部分失败/183未尝试保留，旧after缺失与8项UNKNOWN边界不伪造归因；新forward184/184=180读回+4无缺口、480真实源请求/1976派生/141成交额18位截断。1936→4173文件、新2237/扩展219、194772旧Bar/1193日周保持；四频1519471 Bar、各551物理月/46owner独审通过。12READY disabled/generation0、8基础FULL、8融合伙伴一致；API12/152 HTTP200后一次Chrome19场49原图、33742 CLOSED/33776 SVG点及逐图独审通过。专属资源退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史54/60、正式45/60**；W1真实44/120预热、9/0/11 CLOSED与视口限制保留，无Release/Runtime/Scope/通知/交易。见[PB收尾记录](docs/tasks/pb-candidate-closeout-20261007.md)。下一项SN锡。
 
 2026-10-07 **NI 镍 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结代码03099ce8，无生产源码改动。保留原0完成/1部分失败/163未尝试与旧539immutable；当前单次诊断9525行/3条超18位成交额ArrowInvalid复现及scratch通过，原失败响应未保存、旧根因UNKNOWN仍保留。新forward164/164=157读回+7无缺口、407实际外部请求（406forward+1诊断单次复用）/1703派生/9截断；1836→3756文件、新1920/扩展190、95303旧Bar/1072日周保持。四频1373937Bar/各491物理月/41owner独审通过；12READY disabled/generation0、8基础FULL、8融合伙伴revision边一致。API12/152 HTTP200结束后一次Chrome19场49原图、28558 CLOSED/28594 SVG点与实际逐图独审通过，无生产重试/重采。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史53/60、正式45/60**；W1真实44/120预热、15/1/17 CLOSED与视口局限保留，未改变Release/Runtime/Scope/通知/交易。见[NI收尾记录](docs/tasks/ni-candidate-closeout-20261006.md)。下一项PB铅。
 
