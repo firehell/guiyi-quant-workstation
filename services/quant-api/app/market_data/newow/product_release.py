@@ -14,7 +14,7 @@ INTRADAY_BATCH_PREVIEW_SYMBOLS = frozenset({"rb", "hc", "ss", "i", "j", "jm", "s
 # P7 candidate eligibility only; each non-batch preview selects one product.
 INTRADAY_SINGLE_PREVIEW_SYMBOLS = frozenset({
     "fu", "ma", "ur", "ta", "sh", "v", "sa", "au", "ag", "ni", "sf", "sm",
-    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr", "cf", "oi", "p", "lc", "fg", "ao", "cu", "ps", "y", "si", "a", "b", "bz", "eb", "ec", "eg", "l", "pd", "pf", "pg", "pl", "pr", "pt", "px", "rs", "sc", "ru", "bu", "pb", "sn", "al",
+    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr", "cf", "oi", "p", "lc", "fg", "ao", "cu", "ps", "y", "si", "a", "b", "bz", "eb", "ec", "eg", "l", "pd", "pf", "pg", "pl", "pr", "pt", "px", "rs", "sc", "ru", "bu", "pb", "sn", "al", "zn",
 })
 
 # Released read-only historical scope; no forward stream activation.
