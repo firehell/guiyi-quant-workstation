@@ -22,6 +22,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, DatasetKey, DatasetKind
+from app.market_data.approved_ohlc_correction import approved_policy_for_partition
 from app.market_data.source_quality import (
     NonpositiveCloseFact,
     PriceUnavailableFact,
@@ -143,6 +144,9 @@ class CanonicalMonthlyStore:
         directory_fd = self._directory_fd(directory, create=True)
         try:
             expected = pa.Table.from_pylist([bar.as_record() for bar in request.bars], schema=CANONICAL_SCHEMA)
+            policy = approved_policy_for_partition(request.dataset, request.bars)
+            if policy is not None:
+                expected = expected.replace_schema_metadata({b"guiyi.approved_local_ohlc_policy": json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()})
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
             with os.fdopen(fd, "wb") as stream:
                 pq.write_table(expected, stream, compression="zstd", use_dictionary=False, version="2.6")
