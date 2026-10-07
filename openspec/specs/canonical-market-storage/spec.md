@@ -205,3 +205,27 @@ RQData `1m` session 的首根标签 SHALL 在 adapter 边界减一分钟，转�
 
 - **WHEN** 候选通过批量边界验证但 strict-read 的 hash、schema、rowcount 或 coverage 检查失败
 - **THEN** 既有发布流程仍拒绝提交新 pointer，批量优化不替代其他校验
+
+## Owner-approved single-Bar OHLC correction
+
+For physical PP2405 Canonical 1m only, UTC bar_end=2023-06-08T13:03:00+00:00
+and trading_day=2023-06-09, the owner approved local policy
+`pp2405-20230608T210300-high-equals-open-v1` on 2026-10-08. The exact raw
+O/H/L/C=6910/6890/6890/6890, volume=1, turnover=34525, open_interest=1684
+SHALL change only high to 6910. This is an owner-approved inference, NOT a
+provider-confirmed correction. Raw source evidence MUST remain preserved.
+The raw response fingerprint is
+`cca15848ed35479e39fb848c2dba0c3723ddeea857ac1d7be7ab767d21b01cb5`.
+
+The adapter SHALL bind physical identity, frequency, timestamp, trading day and
+all listed original values before applying this rule. An already matching
+corrected source row is accepted unchanged; other preimage drift at this exact
+identity fails closed. Other timestamps, contracts, frequencies and OHLC errors
+MUST NOT be repaired by this rule. The unscoped CanonicalBar validator remains
+strict. Published immutable PP2405/1m partitions containing this row SHALL
+retain the approved local policy and original/corrected values in Parquet
+metadata `guiyi.approved_local_ohlc_policy`. Its content-addressed file digest
+binds that marker; derived frequencies continue through the single native
+Canonical 1m aggregation chain and source lineage. No DB or Parquet column
+schema migration is introduced. Superseding this rule requires an explicit new
+policy and a separately bounded data revision; never silently overwrite it.
