@@ -316,7 +316,7 @@ P2 的初盘只证明现有可读窗口/元数据，完整依赖结论必须使�
 
 | 任务 | 品种 | 代码 | 本轮初始状态 |
 | --- | --- | --- | --- |
-| P7-01 | 燃料油 | FU | DEFERRED_DATA_BLOCKED，0/12；会话 `01a0e788-a1d4-7b82-9446-b72f5f4815ae`；[处理记录](../../tasks/fu-minute-closeout-20260928.md) |
+| P7-01 | 燃料油 | FU | CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12；冻结083bcb98，84维护=77读回+7无缺口、188实际源/762派生/3条18位截断；1203→2067文件、105959旧Bar/587日周保持，四频527971 Bar/各251月/21owner独审通过。12READY禁用generation0、8基础FULL/21VALID与8融合伙伴边；API12/152、唯一Chrome19场49图、21118 CLOSED/21154 SVG及独审通过。原73+独立tail11、未知单元未写入证明及1086文件归档恢复保留；资源/config精确退出、锁0。W1 46/120/历史20预热、7/1/9 CLOSED保留；历史58/60、正式45/60。旧[暂缓记录](../../tasks/fu-minute-closeout-20260928.md)保持，新[FU收尾记录](../../tasks/fu-candidate-closeout-20261007.md)为当前结论，不改原13/21分母 |
 | P7-02 | 甲醇 | MA | CANDIDATE_CLOSED，12/12；会话 `01a0e7ac-e302-7c61-bf58-828470f9c986`；[处理记录](../../tasks/ma-minute-closeout-20260928.md) |
 | P7-03 | 尿素 | UR | CANDIDATE_CLOSED，12/12；会话 `01a0e81f-3f72-7c11-984a-49d28065be8e`；[处理记录](../../tasks/ur-minute-closeout-20260928.md) |
 | P7-04 | PTA | TA | CANDIDATE_CLOSED，12/12；会话 `01a0e854-76a8-7b12-b6ba-4ce7dc562341`；[处理记录](../../tasks/ta-minute-closeout-20260928.md) |
