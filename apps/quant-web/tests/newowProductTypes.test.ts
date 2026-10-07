@@ -1166,3 +1166,44 @@ test('aggregate minute requests keep the existing timeout and legacy 1m stops be
   }), (error: unknown) => error instanceof NewowProductRequestError && error.code === 'NEWOW_FREQUENCY_NOT_OPEN')
   assert.equal(called, false)
 })
+
+
+test('daily and weekly decision explanations share the bounded background timeout', async () => {
+  for (const frequency of ['1d', '1w'] as const) {
+    const identity = { ...expectedIdentity(), frequency }
+    const signal = new AbortController().signal
+    for (const [decisionV2, explicit, expectedTimeout] of [[true, undefined, 60000], [false, undefined, 60000], [true, 12345, 12345], [false, 0, 0]] as const) {
+      let timeout: number | undefined
+      await assert.rejects(getNewowProductSection({ identity, section: 'explanation', decisionV2, asOf: AS_OF }, {
+        signal, ...(explicit === undefined ? {} : { timeout: explicit }),
+        request: async (_path, config) => { timeout = config.timeout; assert.equal(config.signal, signal); throw new NewowProductRequestError('NEWOW_DATA_UNAVAILABLE', 'unavailable') },
+      }))
+      assert.equal(timeout, expectedTimeout)
+    }
+  }
+})
+
+test('daily and weekly chart reference and auxiliary reads share the strategy detail timeout', async () => {
+  for (const frequency of ['1d', '1w'] as const) {
+    const identity = { ...expectedIdentity(), frequency }
+    const signal = new AbortController().signal
+    for (const section of [
+      { section: 'chart' },
+      { section: 'reference' },
+      { section: 'auxiliary', component: 'macd' },
+    ] as const) {
+      for (const explicit of [undefined, 12345, 0]) {
+        let timeout: number | undefined
+        await assert.rejects(getNewowProductSection({ identity, ...section, asOf: AS_OF }, {
+          signal, ...(explicit === undefined ? {} : { timeout: explicit }),
+          request: async (_path, config) => {
+            timeout = config.timeout
+            assert.equal(config.signal, signal)
+            throw new NewowProductRequestError('NEWOW_DATA_UNAVAILABLE', 'unavailable')
+          },
+        }))
+        assert.equal(timeout, explicit ?? 60000)
+      }
+    }
+  }
+})

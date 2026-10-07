@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 
 import { useNewowCapabilities } from '../src/composables/useNewowCapabilities.ts'
 import { getNewowProductCapabilities } from '../src/api/newowProduct.ts'
@@ -698,6 +699,78 @@ test('single product candidate keeps its scope separate from historical batch an
   for (const products of [['px', 'ma'], ['px', 'px'], ['px', 'zz']]) {
     await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
   }
+  const scAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['sc'] }) })
+  const scState = useNewowCapabilities(async () => scAccepted)
+  await scState.load()
+  assert.deepEqual(scState.openFrequenciesFor('SC'), payload.open_frequencies)
+  assert.deepEqual(scState.openFrequenciesFor('ma'), [])
+  assert.equal(scState.isFrequencyOpen('1m' as never, 'sc'), false)
+  for (const products of [['sc', 'ma'], ['sc', 'sc'], ['sc', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  const pbAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['pb'] }) })
+  const pbState = useNewowCapabilities(async () => pbAccepted)
+  await pbState.load()
+  assert.deepEqual(pbState.openFrequenciesFor('PB'), payload.open_frequencies)
+  assert.deepEqual(pbState.openFrequenciesFor('ma'), [])
+  assert.equal(pbState.isFrequencyOpen('1m' as never, 'pb'), false)
+  for (const products of [['pb', 'ma'], ['pb', 'pb'], ['pb', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  const snAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['sn'] }) })
+  const snState = useNewowCapabilities(async () => snAccepted)
+  await snState.load()
+  assert.deepEqual(snState.openFrequenciesFor('SN'), payload.open_frequencies)
+  assert.deepEqual(snState.openFrequenciesFor('ma'), [])
+  assert.equal(snState.isFrequencyOpen('1m' as never, 'sn'), false)
+  for (const products of [['sn', 'ma'], ['sn', 'sn'], ['sn', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  const alAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['al'] }) })
+  const alState = useNewowCapabilities(async () => alAccepted)
+  await alState.load()
+  assert.deepEqual(alState.openFrequenciesFor('AL'), payload.open_frequencies)
+  assert.deepEqual(alState.openFrequenciesFor('ma'), [])
+  assert.equal(alState.isFrequencyOpen('1m' as never, 'al'), false)
+  for (const products of [['al', 'ma'], ['al', 'al'], ['al', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  const znAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['zn'] }) })
+  const znState = useNewowCapabilities(async () => znAccepted)
+  await znState.load()
+  assert.deepEqual(znState.openFrequenciesFor('ZN'), payload.open_frequencies)
+  assert.deepEqual(znState.openFrequenciesFor('ma'), [])
+  assert.equal(znState.isFrequencyOpen('1m' as never, 'zn'), false)
+  for (const products of [['zn', 'ma'], ['zn', 'zn'], ['zn', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  const buAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['bu'] }) })
+  const buState = useNewowCapabilities(async () => buAccepted)
+  await buState.load()
+  assert.deepEqual(buState.openFrequenciesFor('BU'), payload.open_frequencies)
+  assert.deepEqual(buState.openFrequenciesFor('ma'), [])
+  assert.equal(buState.isFrequencyOpen('1m' as never, 'bu'), false)
+  for (const products of [['bu', 'ma'], ['bu', 'bu'], ['bu', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  const ruAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['ru'] }) })
+  const ruState = useNewowCapabilities(async () => ruAccepted)
+  await ruState.load()
+  assert.deepEqual(ruState.openFrequenciesFor('RU'), payload.open_frequencies)
+  assert.deepEqual(ruState.openFrequenciesFor('ma'), [])
+  assert.equal(ruState.isFrequencyOpen('1m' as never, 'ru'), false)
+  for (const products of [['ru', 'ma'], ['ru', 'ru'], ['ru', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
+  const rsAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['rs'] }) })
+  const rsState = useNewowCapabilities(async () => rsAccepted)
+  await rsState.load()
+  assert.deepEqual(rsState.openFrequenciesFor('RS'), payload.open_frequencies)
+  assert.deepEqual(rsState.openFrequenciesFor('ma'), [])
+  assert.equal(rsState.isFrequencyOpen('1m' as never, 'rs'), false)
+  for (const products of [['rs', 'ma'], ['rs', 'rs'], ['rs', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
   for (const products of [['lc', 'ma'], ['lc', 'lc'], ['lc', 'zz']]) {
     await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
   }
@@ -765,4 +838,67 @@ test('v29 released history adds exactly nineteen validated products and preserve
   }
   await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products.slice(1) }) }))
   await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_as_of: '2026-09-30T07:00:00.000001Z' }) }))
+})
+
+function historicalMinutesV30(): NewowProductCapabilities {
+  return {
+    ...historicalMinutes(), schema_version: 'newow_product_capabilities_v30',
+    intraday_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' '),
+  }
+}
+
+test('v30 released history admits exactly 59 products and freezes its wire identity', async () => {
+  const payload = historicalMinutesV30()
+  assert.equal(payload.intraday_products!.length, 59)
+  const prior45 = 'rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px'.split(' ')
+  assert.deepEqual(payload.intraday_products!.filter(product => !prior45.includes(product)), 'al ao bu cu fu ni pb rs ru sc si sn ss zn'.split(' '))
+  assert.ok(prior45.every(product => payload.intraday_products!.includes(product)))
+  const capability = await getNewowProductCapabilities({ request: async () => payload })
+  assert.ok(Object.isFrozen(capability.intraday_products))
+  assert.ok(Object.isFrozen(capability))
+  for (const mutation of [
+    { intraday_products: [...payload.intraday_products!, 'pp'].sort() },
+    { intraday_products: payload.intraday_products!.slice(1) },
+    { intraday_products: [...payload.intraday_products!].reverse() },
+    { intraday_products: [...payload.intraday_products!.slice(1), 'zn'].sort() },
+    { intraday_products: payload.intraday_products!.map(p => p === 'ss' ? 'SS' : p) },
+    { intraday_as_of: '2026-09-30T07:00:00.000001Z' },
+    { open_frequencies: ['1m', ...payload.open_frequencies] },
+    { release_stage: 'single_product_intraday_candidate' },
+    { extra: 'unexpected' },
+  ]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...historicalMinutesV30(), ...mutation }) }))
+  }
+  for (const version of ['v28', 'v29']) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...historicalMinutesV30(), schema_version: `newow_product_capabilities_${version}` }) }))
+  }
+})
+
+test('v30 per-product frequencies keep PP closed and 1m disabled for every released product', async () => {
+  const payload = historicalMinutesV30()
+  const state = useNewowCapabilities(async () => payload)
+  await state.load()
+  for (const product of payload.intraday_products!) {
+    assert.deepEqual(state.openFrequenciesFor(product.toUpperCase()), ['5m', '15m', '30m', '60m', '1d', '1w'])
+    assert.equal(state.isFrequencyOpen('1m' as never, product), false)
+  }
+  assert.deepEqual(state.openFrequenciesFor('PP'), ['1d', '1w'])
+  assert.deepEqual(state.openFrequenciesFor('zz'), ['1d'])
+  assert.equal(state.isFrequencyOpen('5m', 'pp'), false)
+})
+
+
+test('v30 workspace uses the released history cutoff for minutes only', () => {
+  const source = readFileSync(new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url), 'utf8')
+  const expression = source.match(/const releasedMinuteHistory = computed\(\(\) => (.*)\)/)![1]!
+  const released = new Function('props', 'identity', `return ${expression}`)
+  for (const version of ['v28', 'v29', 'v30']) {
+    for (const frequency of ['5m', '15m', '30m', '60m']) {
+      assert.equal(released({ capabilities: { schema_version: `newow_product_capabilities_${version}` } }, { value: { frequency } }), true)
+    }
+  }
+  for (const frequency of ['1m', '1d', '1w']) {
+    assert.equal(released({ capabilities: historicalMinutesV30() }, { value: { frequency } }), false)
+  }
+  assert.equal(released({ capabilities: { schema_version: 'newow_product_capabilities_v27' } }, { value: { frequency: '5m' } }), false)
 })

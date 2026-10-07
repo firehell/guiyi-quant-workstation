@@ -2840,3 +2840,32 @@ def test_contract_sessions_before_history_floor_reject_missing_metadata(
     with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         coverage.sessions(DatasetKey("contract", "jm", "JM2509", "60m"), 2022, 3)
     session.close()
+
+
+@pytest.mark.parametrize("frequency", ("1m", "1d", "1w"))
+@pytest.mark.parametrize("turnover", ("1.1641532182693481E-10", None, float("nan"), Decimal("NaN")))
+def test_rqdata_all_direct_frequencies_apply_turnover_precision_policy(tmp_path, frequency, turnover):
+    session, _starts = _session(tmp_path)
+    days = (6, 7, 8, 9, 10) if frequency == "1w" else (6,)
+    ends = tuple(datetime(2025, 1, day, 1, 5, tzinfo=UTC) for day in days)
+    rows = [dict(date=date(2025, 1, day), open=100, high=100, low=100, close=100,
+                 volume=1, amount=turnover, open_interest=20)
+            for day in days]
+    if frequency == "1m":
+        rows[0].update(order_book_id="JM2509", datetime=ends[0], trading_date=date(2025, 1, 6))
+        client = FakeClient(pd.DataFrame(rows))
+    else:
+        client = ExchangeDailyClient({"JM2509": pd.DataFrame(rows)})
+    market = RQDataMarketAdapter(session=session, client=client)
+    request = BarFetchRequest(
+        DatasetKey("contract", "jm", "JM2509", frequency),
+        (ends[-1],),
+        expected_trading_days=(date(2025, 1, 6),) if frequency == "1m" else None,
+    )
+    actual = market.fetch_many((request,))[0].bars
+    assert len(actual) == 1
+    if turnover is None or pd.isna(turnover):
+        assert actual[0].turnover is None
+    else:
+        assert actual[0].turnover == Decimal("0.000000000116415321") * len(days)
+    session.close()

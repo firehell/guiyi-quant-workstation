@@ -46,6 +46,30 @@ schema、identity、主键单调唯一、OHLCV、session/frequency、coverage �
 - **WHEN** 候选月未覆盖 TargetWindow 的预期 bars
 - **THEN** 该月不发布，后续 update 将其仍视为待处理目标
 
+### Requirement: RQData turnover fractional precision normalization
+
+RQData ingress SHALL apply `rqdata-turnover-truncate-18-v1` only to `turnover` (including provider aliases
+`total_turnover` and `amount`) before constructing Canonical 1m/1d/1w values. The raw value MUST first be
+finite and nonnegative when present; tiny negative values, present string `"NaN"` and Infinity MUST fail closed
+before normalization. Nullable missing `None` and numeric NaN sentinels SHALL retain the existing missing-value
+semantics (`None`); values already within 18 fractional decimal places SHALL remain unchanged. Excess
+fractional places SHALL be truncated towards zero using `ROUND_DOWN` to 18 places, independently of the
+process Decimal context. Integer digits SHALL remain exact; Canonical `decimal128(38,18)` capacity checks
+remain mandatory. OHLC, volume and open interest SHALL NOT use this normalization and MUST remain losslessly
+representable. W1 turnover SHALL normalize every authoritative D1 source value before exact summation;
+normalizing only the final raw sum is forbidden. Source identity, windows, raw responses and strict no-trade
+recognition SHALL remain unchanged. Existing immutable partitions SHALL NOT be rewritten by readers.
+Maintenance evidence SHALL freeze the code revision, normalization version, raw-response hash and changed
+raw-to-normalized turnover values; this policy does not add a Catalog schema or version table.
+
+#### Scenario: An observed SC turnover has excess fractional places
+- **WHEN** raw turnover is `1.1641532182693481E-10`
+- **THEN** Canonical turnover is `0.000000000116415321`, while the raw response remains retained unchanged
+
+#### Scenario: A negative turnover would truncate to zero
+- **WHEN** raw turnover is negative, even with magnitude below `1e-18`
+- **THEN** ingress rejects it before truncation rather than publishing zero
+
 ### Requirement: Complete-week exchange-daily aggregation excludes strict no-trade prices
 
 `exchange-daily-no-trade-v2` SHALL first prove physical contract lifecycle, Calendar/Session and every expected

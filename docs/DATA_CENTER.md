@@ -74,7 +74,14 @@ canonical/
 
 行字段为 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、`turnover` 和
 `open_interest`。价格和金额用 Decimal，量额聚合必须精确求和且不得继承进程 Decimal context；
-无法无损表示为 Canonical Decimal 的来源必须在发布前拒绝。`bar_end` 是 UTC timestamp，identity 不在行内重复。
+RQData 入口的成交额（turnover/total_turnover/amount）唯一采用 `rqdata-turnover-truncate-18-v1`：
+合法缺失 `None` 和数值 NaN 哨兵维持原 nullable `None` 语义；存在的值先拒绝负数、字符串 `"NaN"`
+与 Infinity，再独立于进程 Decimal context 以 `ROUND_DOWN` 向零截断超出 18 位的小数；
+已有不超过 18 位的值和 `None` 不变，整数位不变。1m/1d/1w 共用该规则，W1 先逐日规范化再精确求和。
+OHLC、volume、open_interest 不截断；规范化后的成交额及其余字段仍必须可无损表示为 Canonical
+`decimal128(38,18)`，否则发布前拒绝。源窗口、raw response、严格无交易日识别和已有不可变文件不变。
+维护 evidence 冻结 code revision、policy version、raw response SHA 和有变化的原值→规范值，不新增 Catalog schema。
+`bar_end` 是 UTC timestamp，identity 不在行内重复。
 
 发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
 校验。新发布文件以实际 Parquet bytes 的全小写 SHA-256 命名为 `part.<sha256>.parquet`，不可变、

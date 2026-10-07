@@ -1,3 +1,5 @@
+import pytest
+
 from app.market_data.newow.snapshot_cache import SnapshotCache
 
 
@@ -198,3 +200,63 @@ def test_oversized_result_does_not_prevent_binding_an_already_saved_proof():
     assert cache.token_proof_covers(token, "facts", proof)
     assert cache.get("facts", ("reference",)) is None
     assert (cache._bytes, cache._entries["facts"].expires_at) == before
+
+
+def test_verified_token_refresh_renews_only_retained_proof_without_mutating_budget():
+    clock = [0.0]
+    cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=300)
+    proof = {'bar|1w|SC2303|owner|end': 'same', 'owner-price-state|1w|SC2303|day': 'owner'}
+    token = cache.put('namespace', ('chart',), {'value': 'unchanged'}, proof=proof)
+    entry = cache._entries['namespace']
+    before = (cache._bytes, dict(entry.values), dict(entry.proof), dict(cache._tokens))
+    clock[0] = 299
+    assert cache.get('namespace', ('chart',)) == {'value': 'unchanged'}
+    assert entry.expires_at == 300  # Ordinary reads still do not renew.
+    assert cache.refresh_verified_token(token, 'namespace', proof)
+    assert entry.expires_at == 599
+    assert (cache._bytes, dict(entry.values), dict(entry.proof), dict(cache._tokens)) == before
+    clock[0] = 599
+    assert not cache.refresh_verified_token(token, 'namespace', proof)
+    assert not cache._entries and not cache._tokens
+
+
+@pytest.mark.parametrize('kind', ['unknown', 'namespace', 'changed', 'additional', 'empty', 'no_shared_bar', 'replaced'])
+def test_verified_refresh_rejects_unproved_identity_without_renewal(kind):
+    clock = [0.0]
+    cache = SnapshotCache(now=lambda: clock[0], ttl_seconds=300)
+    proof = {'bar|1w|SC2303|owner|end': 'same', 'owner-price-state|1w|SC2303|day': 'owner'}
+    token = cache.put('namespace', ('chart',), {'value': 'unchanged'}, proof=proof)
+    requested_token, namespace, supplied = token, 'namespace', dict(proof)
+    if kind == 'unknown': requested_token = 'unknown'
+    if kind == 'namespace': namespace = 'other'
+    if kind == 'changed': supplied[next(iter(proof))] = 'changed'
+    if kind == 'additional': supplied['bar|new'] = 'new'
+    if kind == 'empty': supplied = {}
+    if kind == 'no_shared_bar': supplied = {'owner-price-state|1w|SC2303|day': 'owner'}
+    if kind == 'replaced':
+        assert cache.put('namespace', ('chart',), {'value': 'changed'}, proof={'bar|1w|SC2303|owner|end': 'changed'}) != token
+    entry = cache._entries['namespace']
+    before = (entry.expires_at, cache._bytes, dict(entry.proof), dict(entry.values), dict(cache._tokens))
+    clock[0] = 299
+    assert not cache.refresh_verified_token(requested_token, namespace, supplied)
+    assert (entry.expires_at, cache._bytes, dict(entry.proof), dict(entry.values), dict(cache._tokens)) == before
+
+
+def test_verified_refresh_does_not_cross_expiry_between_validation_and_renewal():
+    cache = SnapshotCache(now=lambda: 0.0, ttl_seconds=300)
+    proof = {'bar|source': 'same'}
+    token = cache.put('namespace', ('chart',), {'value': 1}, proof=proof)
+    times = iter((299.0, 300.0))
+    cache._now = lambda: next(times)
+    assert not cache.refresh_verified_token(token, 'namespace', proof)
+    assert not cache._entries and not cache._tokens
+
+
+@pytest.mark.parametrize('proof', [None, {'bar|source': 1}, {1: 'same'}])
+def test_verified_refresh_rejects_malformed_proof(proof):
+    cache = SnapshotCache()
+    token = cache.put('namespace', ('chart',), {'value': 1}, proof={'bar|source': 'same'})
+    entry = cache._entries['namespace']
+    expiry = entry.expires_at
+    assert not cache.refresh_verified_token(token, 'namespace', proof)
+    assert entry.expires_at == expiry

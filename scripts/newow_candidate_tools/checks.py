@@ -7,6 +7,8 @@ historical helper, dynamic Python source or production resolver is loaded.
 from datetime import datetime, date
 from urllib.parse import urlparse, parse_qs, urlsplit
 import re
+import json
+from hashlib import sha256
 from .context import Candidate, instant, need
 from .audit import section_identity
 from .wire import validate_binding, validate_bars
@@ -22,12 +24,89 @@ CHECKS = (
 )
 
 
+def validate_supplemental_partner(candidate, frequency, mode, observed):
+    """Authenticate one explicitly collected response, never a UI delivery claim."""
+    actions = [a for a in observed.get('actions', []) if isinstance(a, dict) and a.get('kind') == 'supplemental_partner_reference']
+    need(len(actions) <= 1, 'SUPPLEMENT_COUNT')
+    if not actions:
+        return dict(count=0, resolved_failures=[])
+    a = actions[0]
+    need(mode == 'dual' and a.get('source') == 'collector_true_xhr'
+         and a.get('ui_composable_received') is False and a.get('phase') == 'initial'
+         and a.get('status') == 'RESPONSE_BOUND' and a.get('frequency') == frequency
+         and a.get('strategy') in ('trend', 'oscillation')
+         and type(a.get('request_floor')) is int and a['request_floor'] >= 0, 'SUPPLEMENT_ACTION')
+    url, strategy, floor = a['url'], a['strategy'], a['request_floor']
+    q = scoped_url(candidate, url, frequency, 'reference', strategy)
+    need(set(q) == {'product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'history_limit', 'snapshot_token'}
+         and all(len(v) == 1 for v in q.values()) and q['series_kind'] == ['actual_dominant']
+         and q['history_limit'] == ['200'] and q['snapshot_token'] == [a['snapshot_token']], 'SUPPLEMENT_URL')
+    aborted = a['aborted_request']
+    need(type(aborted.get('id')) is int and aborted['id'] > floor and aborted.get('url') == url
+         and aborted.get('method') == 'GET' and aborted.get('phase') == 'seed'
+         and aborted.get('failed') is True and aborted.get('error') == 'net::ERR_ABORTED'
+         and [r for r in observed.get('requestEvidence', []) if r.get('id') == aborted['id']] == [aborted], 'SUPPLEMENT_ABORT')
+    resolved = dict(url=url, error='net::ERR_ABORTED', phase='seed', request_phase='seed')
+    need([f for f in observed.get('failures', []) if f.get('url') == url] == [resolved], 'SUPPLEMENT_FAILURE_BINDING')
+    charts = [r for r in observed.get('responses', []) if r.get('request_id') == a['chart_request_id']]
+    need(len(charts) == 1, 'SUPPLEMENT_CHART_COUNT')
+    chart = charts[0]; meta = chart.get('payload', {}).get('meta', {})
+    scoped_url(candidate, chart['url'], frequency, 'chart', strategy)
+    validate_binding(chart.get('xhr_binding'), chart['url'], 200)
+    section_identity(meta, candidate, frequency, strategy)
+    need(chart.get('http') == 200 and chart.get('row_request') is True and chart.get('request_phase') == 'seed'
+         and floor < chart['request_id'] < aborted['id'] and chart['xhr_binding'] == a['chart_binding']
+         and chart['xhr_binding']['node_request_id'] == chart['request_id']
+         and meta['snapshot_token'] == a['snapshot_token']
+         and (chart['payload'].get('chart') or {}).get('delivery') == 'delivered'
+         and (chart['payload']['chart'].get('status') or {}).get('status') == 'ready'
+         and chart['payload']['chart']['status'].get('evidence_status') == 'ACTIVE_CODE_VERIFIED', 'SUPPLEMENT_CHART')
+    raw = a['response_readback']; text = raw.get('response_text')
+    need(raw.get('evidence_kind') == 'same_xhr_full_response_readback' and raw.get('extra_get') is False
+         and raw.get('http') == 200 and raw.get('url') == url and isinstance(text, str)
+         and raw.get('response_text_chars') == len(text.encode('utf-16-le')) // 2
+         and raw.get('response_text_sha256') == sha256(text.encode()).hexdigest(), 'SUPPLEMENT_RAW')
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        raise ValueError('SUPPLEMENT_RAW_JSON') from None
+    need(parsed == raw.get('payload') and raw.get('payload_sha256') == sha256(json.dumps(parsed, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()).hexdigest(), 'SUPPLEMENT_PAYLOAD_HASH')
+    rows = [r for r in observed.get('responses', []) if r.get('request_id') == raw.get('response_request_id')]
+    need(len(rows) == 1, 'SUPPLEMENT_RESPONSE_COUNT')
+    row = rows[0]; rm = row.get('payload', {}).get('meta', {}); part = parsed.get('reference') or {}
+    validate_binding(raw.get('xhr_binding'), url, 200)
+    section_identity(parsed.get('meta', {}), candidate, frequency, strategy)
+    need(row.get('http') == 200 and row.get('row_request') is True and row.get('url') == url
+         and row.get('request_phase') == 'seed' and row['request_id'] > aborted['id']
+         and raw['xhr_binding'] == row.get('xhr_binding')
+         and raw['xhr_binding']['response_text_chars'] == raw['response_text_chars']
+         and raw['xhr_binding']['node_request_id'] == raw['response_request_id']
+         and parsed['meta'] == rm and rm['snapshot_token'] == a['snapshot_token']
+         and part.get('delivery') == 'delivered' and part.get('status') == row['payload']['reference']['status']
+         and part['status'].get('status') == 'ready' and part['status'].get('evidence_status') == 'ACTIVE_CODE_VERIFIED', 'SUPPLEMENT_RESPONSE_BINDING')
+    requests = [r for r in observed.get('requestEvidence', []) if r.get('id') == row['request_id']]
+    need(len(requests) == 1 and requests[0].get('url') == url and requests[0].get('method') == 'GET'
+         and requests[0].get('phase') == 'seed' and requests[0].get('finished') is True
+         and not requests[0].get('failed'), 'SUPPLEMENT_REQUEST_BINDING')
+    value, compact = part.get('value') or {}, row['payload']['reference'].get('value') or {}
+    need(value.get('reference_input_sha256') == rm['input_content_sha256'] and value.get('executable') is False
+         and value.get('auto_order') is False and all(value.get(k) == compact.get(k) for k in ('items', 'summary', 'reference_input_sha256', 'performance_since', 'performance_through', 'next_before')), 'SUPPLEMENT_REFERENCE_FACTS')
+    trades = value.get('curve_trades')
+    need(isinstance(trades, list), 'SUPPLEMENT_FULL_CURVE_REQUIRED')
+    if 'curve_trades' in compact:
+        need(trades == compact['curve_trades'], 'SUPPLEMENT_FULL_CURVE_CHANGED')
+    else:
+        need(compact.get('curve_trades_summary') == dict(count=len(trades), first=trades[0] if trades else None, last=trades[-1] if trades else None), 'SUPPLEMENT_CURVE_SUMMARY_CHANGED')
+    return dict(count=1, resolved_failures=[resolved], response_request_id=row['request_id'], ui_composable_received=False)
+
+
 def functional_checks(
     candidate: Candidate, frequency: str, mode: str, observed: dict
 ) -> dict:
     CODE = candidate.code_sha
     WEB_CODE = candidate.web_code_sha or CODE
     ASOF = instant(candidate.as_of).isoformat()
+    supplement = validate_supplemental_partner(candidate, frequency, mode, observed)
 
     def before_asof(value):
         try:
@@ -169,7 +248,7 @@ def functional_checks(
         q = parse_qs(urlparse(failure.get("url", "")).query)
         target = (q.get("product", [None])[0], q.get("frequency", [None])[0])
         if target == (product, frequency):
-            return False  # never suppress an own-target error
+            return failure in supplement['resolved_failures']  # only the authenticated exact initial abort
         actions = obs.get("actions", [])
         seed = obs.get("seedIdentity", {})
         if (
@@ -434,7 +513,7 @@ def functional_checks(
         all(v in ("PASS", "NOT_APPLICABLE", "WARMING") for v in checks.values()),
         "FUNCTIONAL_GATE",
     )
-    return dict(status="PASS", checks=checks, reasons=reasons)
+    return dict(status="PASS", checks=checks, reasons=reasons, supplemental_partner=supplement)
 
 
 def process_identities(candidate: Candidate, identities: dict) -> None:

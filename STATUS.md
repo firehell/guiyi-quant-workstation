@@ -1,46 +1,82 @@
 # 当前状态
 
-更新：2026-10-04。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-08。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.11.1@0c8089715b1cc8958777f8ee589ba8544fa82f5f**。
-[PR #406](https://github.com/firehell/guiyi-quant-workstation/pull/406)、annotated tag 与非草稿/非预发布
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.1) 已实际读回；main 源码树与独立审查候选
-`faa1eb0a2896c532b0716a6230d7a0c6188f53b6` 完全一致。发布说明见 [v1.11.1](docs/releases/v1.11.1.md)。
+最新正式发布为 **v1.11.2@35217d5ab2c87b9173306d142ccf9f72285a3ec6**。
+[PR #407](https://github.com/firehell/guiyi-quant-workstation/pull/407)、annotated tag 与非草稿/非预发布
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.2) 已实际读回；main 源码树与独立审查候选
+`f262cf10ff29a5335f451c8848825d574868e30f` 完全一致。发布说明见 [v1.11.2](docs/releases/v1.11.2.md)，
+实现、生产恢复和验收见 [盘后修复](docs/tasks/after-market-health-20261004.md)。
 
-本版正式新增此前未发布的P、Y、LC、PS、FG，以及独立补验闭环的A、B、BZ、EB、EC、EG、L、PD、PF、PG、PL、PR、PT、PX，共19品种。
-分钟历史名单为A、AG、AP、AU、B、BZ、C、CF、CJ、EB、EC、EG、FG、HC、I、J、JD、JM、L、LC、LH、M、MA、OI、P、PD、PF、PG、PK、PL、PR、PS、PT、PX、RB、RM、SA、SF、SH、SM、SR、TA、UR、V、Y，共45品种：
+本补丁修复跨 Runtime 的盘后历史证据交接、安装期间 writer 互斥、审计内确定的物理前缀缺口重复计算，
+以及合法部分 planner 结果的保留；不改公式、收益、Scope、通知受众或交易阶段。
+版本依赖冻结、Web build、280项相关回归、159项盘后/晋升/authority回归、29项工程一致性检查、
+Ruff、OpenSpec10项、secret零发现和diff通过；独立Review完成，真实跨Python/Bash的guard fd互斥验证通过。
+
+分钟产品范围沿用v1.11.1：A、AG、AP、AU、B、BZ、C、CF、CJ、EB、EC、EG、FG、HC、I、J、JD、JM、L、LC、LH、M、MA、OI、P、PD、PF、PG、PK、PL、PR、PS、PT、PX、RB、RM、SA、SF、SH、SM、SR、TA、UR、V、Y，共45品种，
 **5m/15m/30m/60m × 趋势/震荡/双策略，540个历史参考页面组合**，固定截至2026-09-24 15:00（北京时间）。
-持续分钟更新、1m页面和分钟主升浪未开放；日周60品种保持。FU、NI、SS、SC、AO、CU、SI、PP、PB、BU、AL、ZN、SN、RS、RU未在本版开放分钟页面。
+持续分钟更新、1m页面和分钟主升浪未开放；日周60品种保持。
+v1.11.1的540组合与独立数值/浏览器验收见[发布记录](docs/releases/v1.11.1.md)，本补丁未重新宣称完整页面验收。
+历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
 
-14品种独审686张原图、7,308份索引SHA、215,585笔CLOSED及216,077个SVG点通过；180来源窗口无漂移，540条保存流disabled/generation0。
-360基础响应及180融合结果的834,443笔CLOSED独立Decimal核算、190份UTC/null/范围拒绝原始响应独审通过。
-共同融合快照恢复两项P1已修正并通过两轴独审；真实PL60m闲置335.6秒后旧token409、一次原窗口重建、新token融合200通过，主图数值不变。
-验证为Newow与工程检查2708通过/1跳过（socket两项宿主定向复核）、候选工具189通过、Web776通过/1跳过、最终浏览器61通过；
-build、冻结lock、OpenSpec10项、secret零发现及diff通过。历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
+**运行版本同步及当前operational health验收已完成；新版本自然业务仍待发生。**
+Market/API/Web/Alert与既有weekly切到linked worktree
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.2`，detached/clean，commit为上述exact tag。
+render、Market preflight（non_trading_interval，60品种）及各既有服务安装exit0；六服务configured/loaded
+root与commit一致，API/Web HTTP200，正式API版本1.11.2，readonly服务检查overall=passed。
+两次现场health整体ok，DB/Redis/Live/after_market均ok；盘后run_state=retained、expected及last_success为2026-09-30。
+9/30原盘后success保留原commit `653e736f5952146a2ea401634d32a605e7b9a0d5`、原文件SHA
+`6ed66b566012bc795ca8c677ab270077abf5f9a9315a218f06066ecf233d988a`，独立保存在`.run/after-market-history.json`；
+新运行根的自然current_run/last_run仍null，没有伪造首跑、手工重跑盘后或覆盖失败记录。
 
-**运行版本同步已完成；自然业务验收仍待完成。** Market/API/Web/Alert与既有weekly已切到
-linked worktree `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.1`，detached/clean，commit为上述exact tag。
-冻结依赖/build/render和Market preflight（non_trading_interval，60品种）通过；Market三个label、API/Web/log-rotate及weekly安装均exit0。
-正式8000版本1.11.1、capability v29 exact45及HTTP200实际读回；正式PL60m双策略Chrome显示正确历史提示、曲线与50张参考卡。
-切换后正式8000的360基础响应/180融合结果全部重读，覆盖540组合；独立SHA、身份、Decimal及360个完整reference.value与发布前逐值相同。
+本轮当前rank1 D1/W1前缀恢复AG、AU、CU、EC、MA、SN，共68个真实源请求、118分区激活；
+独立六合同replan零目标、1136根D1/240根W1按权威Calendar和Decimal逐周七字段重算无差异，维护锁0。
+最终60合约raw端点48完整；BZ/EG有成交但O/H/L=0的真实源异常，各零发布、禁重试；
+另10个raw缺失对应已有typed quality事实，不作为普通下载缺口重试。目标8品种D1/W1各24 case有界只读复查192秒完成、预算未耗尽，六恢复品种各3策略chart READY；
+完整60消费者与自然业务仍未宣称通过。
 
-2026-10-04 owner明确批准“仅切换既有Alert版本、不新增或补发通知”；宿主审批通过，原安装器 `--confirm-alert-runtime` 实际exit0。
-Alert已running于v1.11.1@0c8089715b1cc8958777f8ee589ba8544fa82f5f，activation=true；既有Rule/Scope/两个收件配置保持，未补发、回放或新增通知。
-切换后实际六服务configured/loaded root与commit一致；readonly服务检查exit0、overall=passed、API health=ok。
-此前宿主拒绝与混合身份3项失败原始记录保留，最新通过证据为 `runtime-confirm-alert-runtime.log` 与两次 `runtime-post-alert-status-*.log`。
-切换前旧API曾显示盘后missed/last_successful_trading_day=null、周检missed及Alert degraded；本次发布不证明这些自然业务证据已修复。
+Alert activation=true、running，既有Rule/Scope与两个收件配置保持，未发送、补发、回放或ack通知。
+Alert组件仍degraded（分钟覆盖unverified），notification_state=provider_accepted、连续失败0；
+9/30较早通知失败诊断保留。weekly组件仍missed，按合同不计入operational整体状态；没有手工重跑或新增任务。
+首根自然completed Bar、Alert覆盖、盘后增量/消费者检查与weekly仍待各自验收，**不声明RUNTIME_READY**。
 
-旧v1.11.0树clean且配置/loaded服务/进程引用均为零；旧盘后JSON逐字节/SHA保留后以非force Git worktree remove退休。
-旧盘后JSON及原始现场已保留于本机 `outputs/release-45-products-20261004/`；没有复制成新运行根的成功状态。
-未手工重跑盘后/周检、回放Event、补发通知或新增后台任务；operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。
-首根自然completed Bar、必要heartbeat、盘后增量/MDS与weekly仍待各自验收，**不声明RUNTIME_READY**。
-历史23项weekly finding与P9阻断未解决；后续分钟持续更新和实时观察另行验收。
+旧v1.11.1树clean且配置/loaded服务/进程引用为零；13个运行配置/marker证据保存后以非force Git worktree remove退休。
+本轮证据保存在 `/Volumes/扩展盘/guiyi-quant-evidence/after-market-health-20261004/`；旧归档引用以任务文档为准。
+operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。历史23项weekly finding与P9阻断仍保留。
 
 ## 当前产品与验证范围
+
+2026-10-08 **SS 不锈钢 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结1517ee6a，无生产源码改动。旧SS2302根因/调用UNKNOWN与SS2303部分提交失败原件保留；10695条SourceBatch隔离复现，15条18位规范化scratch通过，新forward164/164=158读回+6无缺口、413全新源请求/1718派生/142成交额18位截断。1811→3750文件、新1939/扩展192、264717旧Bar/1070日周保持；四频1331405 Bar、各491物理月/41owner独审通过。12READY disabled/generation0、8基础FULL各41VALID区段、8真实融合伙伴边一致；API12/152 HTTP200结束后唯一Chrome19场49原图、31524 CLOSED/31558 SVG与逐图独审通过。专属资源退出、端口free/锁0、临时npm配置exact删除，末轮仅12保存态不重扫源。最终独审通过，允许集成develop；当前**历史59/60、正式45/60**。W1实际44/120、历史40区段预热、10/0/12 CLOSED及零交易“—”/视口限制保留；page_parity=true/executable=false，无Release/Runtime/Scope/通知/交易。见[SS收尾记录](docs/tasks/ss-candidate-closeout-20261008.md)。SS为补充恢复品种，旧13/21分母不变；剩余PP，本次不扩展执行。
+
+2026-10-08 **FU 燃料油 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结083bcb98，无生产源码改动。旧4完成/1失败/79未尝试及旧根因UNKNOWN保留；原forward73完成后宿主中断，未知单元只读证明未写入，新tail独立完成11项，累计84/84=77读回+7无缺口、188实际源请求/762派生/3条成交额18位截断。1203→2067文件、新864/扩展86、105959旧Bar/587日周保持；四频527971 Bar、各251物理月/21owner独审通过。12READY disabled/generation0、8基础FULL各21VALID区段、8真实融合伙伴边一致；API12/152 HTTP200结束后唯一Chrome19场49原图、21118 CLOSED/21154 SVG及逐图独审通过。外部清理线程误归档在途worktree后1086文件精确恢复，原未知attempt和准备失败证据不改写。专属资源退出、端口free/锁0、临时npm配置exact删除，末轮仅12保存态不重扫源。最终独审通过，允许集成develop；当前**历史58/60、正式45/60**。W1实际46/120、历史20区段预热与7/1/9 CLOSED及视口限制保留；page_parity=true/executable=false，无Release/Runtime/Scope/通知/交易。见[FU收尾记录](docs/tasks/fu-candidate-closeout-20261007.md)。剩余PP、SS，本次不扩展执行。
+
+2026-10-07 **ZN 锌 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。singleton资格冻结af1773be，5项API定向测试、27项Web与4项任务guard通过；首nodeid无zn参数未执行，补参数后真实RED/GREEN保留。旧0完成/1失败/183未尝试、oldafter缺失及旧1948→当前1960新增12项UNKNOWN保持；新forward184/184=178读回+6无缺口、478真实源请求/1952派生/128成交额18位截断。1960→4173文件、新2213/扩展217、198088旧Bar/1193日周保持；四频1518501 Bar、各551物理月/46owner独审通过，每周期资产输入另有45边界点。12READY disabled/generation0、8基础FULL各46VALID区段、4融合8真实伙伴边；API12/152 HTTP200后唯一Chrome19场49原图、29463 CLOSED/29497 SVG与逐图独审通过。每chunk npx远端metadata ECONNRESET约71秒，仅ZN临时项目offline配置使用原CLI0.1.22缓存，原capture未重启/无重采，原门禁与fulltransport保持；配置exact SHA删除，专属资源退出/端口free/锁0，末轮只12保存态不重扫源。最终ao独审通过，允许集成develop；当前**历史57/60、正式45/60**。W1实际44/120、历史45区段预热与6/0/9 CLOSED、0笔统计“—”和视口限制保留；page_parity=true/executable=false，无Release/Runtime/Scope/通知/交易。见[ZN收尾记录](docs/tasks/zn-candidate-closeout-20261007.md)。下一项FU。
+
+2026-10-07 **AL 铝 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。singleton资格冻结16a339e0，5项API定向测试、27项Web测试、4项任务guard通过。旧0完成/1失败/183未尝试及旧after缺失UNKNOWN保留；新forward184/184=177读回+7无缺口、484真实源请求/1947派生/2成交额18位截断。1957→4172文件、新2215/扩展216、245980旧Bar/1192日周保持；四频1506803 Bar、各551物理月/46owner独审通过，每周期资产输入另有45个边界点。12READY disabled/generation0、8基础FULL/各46VALID区段、4融合8真实伙伴边一致；API12/152 HTTP200后一次Chrome19场49原图、30474 CLOSED/30508 SVG点与逐图独审通过。专属API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。最终ao独审通过，允许集成develop；当前**历史56/60、正式45/60**。W1实际44/120、历史45区段预热，4/0/8 CLOSED、0笔统计“—”及视口限制保留；page_parity=true/executable=false，无Release/Runtime/Scope/通知/交易。见[AL收尾记录](docs/tasks/al-candidate-closeout-20261007.md)。
+
+2026-10-07 **SN 锡 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。singleton资格冻结58962935，6项API定向测试、27项Web测试通过。旧0完成/1部分失败/179未尝试保留，旧after缺失与32项UNKNOWN新增边界不伪造归因；新forward180/180=174读回+6无缺口、467真实源请求/1908派生/108成交额18位截断。1984→4147文件、新2163/扩展212、106334旧Bar/1193日周保持；四频1510686 Bar、各540物理月/45owner独审通过。12READY disabled/generation0、8基础FULL、8融合伙伴一致；API12/152 HTTP200后一次Chrome19场49原图、28352 CLOSED/28386 SVG点及逐图独审通过。精确退出助手fcwd协议两行修复通过6项定向测试与独审，首guard零信号，最终专属资源退出/端口free/锁0；末轮仅12保存态不重扫源。当前**历史55/60、正式45/60**；W1真实49/120预热、6/0/6 CLOSED与视口限制保留，无Release/Runtime/Scope/通知/交易。见[SN收尾记录](docs/tasks/sn-candidate-closeout-20261007.md)。下一项AL铝。
+
+2026-10-07 **PB 铅 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。singleton资格冻结80cafeb6，6项API定向测试、27项Web测试通过。旧0完成/1部分失败/183未尝试保留，旧after缺失与8项UNKNOWN边界不伪造归因；新forward184/184=180读回+4无缺口、480真实源请求/1976派生/141成交额18位截断。1936→4173文件、新2237/扩展219、194772旧Bar/1193日周保持；四频1519471 Bar、各551物理月/46owner独审通过。12READY disabled/generation0、8基础FULL、8融合伙伴一致；API12/152 HTTP200后一次Chrome19场49原图、33742 CLOSED/33776 SVG点及逐图独审通过。专属资源退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史54/60、正式45/60**；W1真实44/120预热、9/0/11 CLOSED与视口限制保留，无Release/Runtime/Scope/通知/交易。见[PB收尾记录](docs/tasks/pb-candidate-closeout-20261007.md)。下一项SN锡。
+
+2026-10-07 **NI 镍 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结代码03099ce8，无生产源码改动。保留原0完成/1部分失败/163未尝试与旧539immutable；当前单次诊断9525行/3条超18位成交额ArrowInvalid复现及scratch通过，原失败响应未保存、旧根因UNKNOWN仍保留。新forward164/164=157读回+7无缺口、407实际外部请求（406forward+1诊断单次复用）/1703派生/9截断；1836→3756文件、新1920/扩展190、95303旧Bar/1072日周保持。四频1373937Bar/各491物理月/41owner独审通过；12READY disabled/generation0、8基础FULL、8融合伙伴revision边一致。API12/152 HTTP200结束后一次Chrome19场49原图、28558 CLOSED/28594 SVG点与实际逐图独审通过，无生产重试/重采。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史53/60、正式45/60**；W1真实44/120预热、15/1/17 CLOSED与视口局限保留，未改变Release/Runtime/Scope/通知/交易。见[NI收尾记录](docs/tasks/ni-candidate-closeout-20261006.md)。下一项PB铅。
+
+2026-10-06 **CU 铜 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。沿用已集成 singleton、固定代码9dd8ed32c，无生产源码改动、不重复整体验证。保留旧0完成/1部分失败/179未尝试与原1952immutable，绑定当前1984前像；新forward180/180=174读回+6无缺口、467真实源/1908派生/54成交额18位截断，无失败重试。1984→4147文件、新2163/扩展212、191419旧Bar/1193当前日周保持。四频1489154Bar/各540物理月/45owner独审通过；12READY disabled/generation0、分钟基础覆盖FULL、8融合伙伴一致。API12/152 HTTP200；首场并发验收60003ms超时保留，API结束后独立串行恢复19场49原图，28460 CLOSED/完整曲线SVG及逐图独审通过，原60/65/110门禁不变。精确API/Web/Chrome退出、端口free/锁0，末轮仅12保存态不重扫源。当前**历史52/60、正式45/60**；W1真实49/120预热、6/0/8 CLOSED和视口/非冷性能局限保留，无Release/Runtime/通知/交易。见[CU收尾记录](docs/tasks/cu-candidate-closeout-20261006.md)。下一项NI镍。
+
+2026-10-06 **BU 沥青 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。资格冻结12e97e9c9，5API/1Web/4guard及类型/build通过；保留旧4完成/1失败/115未尝试及1811前像。新forward120/120=111读回+9无缺口、396真实源/1623派生/84成交额18位截断，1811→3697文件、1886新增/133扩展、161272旧Bar/1052日周保持。四频1002052Bar/各484物理月/30owner独审通过；12READY disabled/generation0、趋势震荡覆盖FULL。API12/152保存HTTP200、一次Chrome19场49原图、22179 CLOSED/完整曲线SVG独审通过，无失败重试。专属API/Web/Chrome退出、端口free/锁0，最后仅12状态不重源扫描。当前**历史51/60、正式45/60**；W1真实44/120预热与7/1/10 CLOSED、视口局限保留，无Release/Runtime/通知/交易。见[BU收尾记录](docs/tasks/bu-candidate-closeout-20261006.md)。下一项CU铜。
+
+2026-10-06 **RU 橡胶 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。从AO已闭环develop27ebde9a5补RU singleton资格、冻结ce6186722，6API/1Web/4任务守卫及Web类型/build通过。旧4完成/1knownfailed/43unattempted保留，新forward48/48=41读回+7无缺口、78真实源/320派生、1条turnover18位截断；938→1285文件、347新增/51扩展、68981旧Bar/365日周保持，四频277659Bar/各139物理月/12owner独审通过。12READY disabled/generation0、分钟趋势震荡均FULL；APIv2 12/152保存GET、一次Chrome19场49原图、22534 CLOSED/完整曲线SVG独审通过。API原helper ao-键失败现场保留，不计通过；旧raw import失败在读取前、修正后唯一实际核对通过，未重放维护。末轮仅12stream/锁/精确资源读回，API/Web/Chrome退出、端口free/锁0，未重源扫描。当前**历史50/60、正式45/60**；W1预热/0CLOSED及视口局限保留，无Release/Runtime/通知/交易。见[RU收尾记录](docs/tasks/ru-candidate-closeout-20261006.md)。下一项BU沥青。
+
+2026-10-06 **AO 氧化铝 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。沿原油18位成交额截断口径，冻结新forward88/88、154真实源请求/627派生月、19条截断；独立627341派生Bar及22owner/四频233物理月通过，1204旧文件/74711旧Bar/544日周保持。12 READY disabled/generation0，趋势FULL/震荡上市预热PARTIAL保留。API12/152保存GET、一次Chrome19场49原图、28379 CLOSED/全部曲线SVG独立数值与逐图审查通过；无失败重采，无源码改动，不重跑SC整体测试。精确专属API/Web/Chrome退出、端口释放、锁0，末轮只fresh12状态不重扫全源。当前**历史49/60、正式45/60**；旧AO暂缓记录保留，新记录为当前结论，无Release/Runtime/通知/交易。见[AO恢复闭环](docs/tasks/ao-candidate-closeout-20261005.md)。同类恢复顺序AO→RU→BU→CU→NI→PB→SN→AL→ZN→FU；AO/CU/RU/BU/PB/SN/AL/ZN原payload确认成交额精度，NI/FU待定位，PP/SS单列。
+
+2026-10-05 **SC 原油 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。成交额采用最多18位小数向零截断，整数/价格不变；forward184单元=174完成+10无缺口、811源/3341派生，43条截断，四频3,144,831 Bar全前缀独审通过，旧bytes/Bar/日周保持。12资产READY disabled/generation0，5m趋势native单次resume保持原hash/revision。最终产品代码`3f1f538c`，API12/12；按owner只验修改要求，保留d656已通过17场/46原图，只补新W1dual/cancel两场/3原图，差分19场/49图、33,251 CLOSED及全部曲线/SVG/真实409恢复独审通过，不宣称新code重跑全19。策略详情统一60秒、strict fresh-proof续期；task-only等待修正按initial/return各110秒读取阶段后原65秒按钮/稳定门槛，错误标准未放宽。原失败/中断/5mdual补证uiFalse与W1预热限制保留。新final/postapi源整对象相同，末轮不重复全源扫描，仅fresh12候选身份/revision/seq保持、锁0，专属Chrome/API/Web退出。当前**历史48/60、正式45/60**；无新增Runtime/Scope/通知/交易。见[SC闭环记录](docs/tasks/sc-candidate-closeout-20261005.md)。
+
+2026-10-05 **SI 工业硅 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结产品源码`125f3dbfbe79317cf1fee1204e57944a0750dc95`、窗口2023-01-01..2026-09-24、1m仅聚合。旧SI2308/5m额度停止attempt及1源/1派生提交保留，不重试；新冻结107未尝试尾单元=104读回+3无缺口，220源请求/893派生，累计221/894。30主力区段/27物理合约、120依赖DATA_READY；359306根四频全前缀独立Decimal200与Session核对，1259旧bytes/100280旧Bar/636日周保持。12流READY disabled/generation0/complete_window_proven=false；API12/12、149矩阵GET+1身份GET、Chrome19场/49原图、14822 CLOSED/14858 SVG全量独审通过。仅修验收工具合法owner重入的日期身份校验，分钟标准/公式/收益不变；482后端工具、127 Web及build通过。三次源读回整文件一致，专属Chrome/API/Web退出、8012/5178无监听、锁0。日周warming/PARTIAL及原生VISUAL_PENDING原件保持，独立数值与视觉形成候选闭环。当前**历史候选47/60、正式分钟开放45/60**；SI未发布/启用，Runtime/Scope/通知/账户不变，原13/21分母保持。见[SI收尾记录](docs/tasks/si-candidate-closeout-20261004.md)。下方2026-10-01记录为原停止历史，最新闭环以本条为准。
+
+2026-10-04 **RS 油菜籽 CANDIDATE_CLOSED / REVIEW_COMPLETE / DEVELOP_INTEGRATED，12/12**。固定历史候选 `8197ad4d1608ea343b6bfb01936229e244b10862`，窗口2023-01-01..2026-09-24，1m仅聚合。13物理合约/27主力区段（含重入）、52维护单元=43读回+9无缺口，69既有真实源请求/293派生发布；四周期各125物理月、165491根Bar独立核对及912涉及文件SHA通过。12禁用流与108依赖当前只读回读一致。API12/12、149 GET；原失败保留并续采19场/49原图，39090 CLOSED/39114 SVG核算及视觉/独立Review通过。仅修验收工具识别日周合法暖态及同快照独立场伙伴补证，分钟READY和数据/公式/收益不变；工具提交`36ef14f4e`，普通集成`d36bad7f2`，合并态463后端/工具、127 Web回归与build通过。日周价格缺口、重新预热、历史PARTIAL、complete_window_proven=false及密集标签局限保留；历史浏览器证据仅归属冻结候选，不作为新develop完整UI或正式开放证明。当前**历史候选闭环46/60、正式分钟开放45/60**，RS未发布/启用，Runtime/Scope/通知/账户不变；原13/21分母保持。见[RS闭环记录](docs/tasks/rs-candidate-pilot-20261004.md)。原始证据工作树保留，当前RS预览PID均退出、8012/5178无监听；本次接续provider/数据写入0。
 
 2026-10-04 本轮A、B、BZ、EB、EC、EG、L、PD、PF、PG、PL、PR、PT、PX均已 **CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**，并与P、Y、LC、PS、FG正式发布于v1.11.1。
 下列采集阶段的VISUAL_PENDING与失败/续采记录按原事实保留；最新独立闭环证据见各任务的2026-10-04终验段及上述发布说明。原13/21队列分母不变。
@@ -92,7 +128,7 @@ P7-12 SM **COMPLETED，12/12 页面闭环**。自身19owner/76依赖全部READY�
 P7-11 SF **COMPLETED，12/12 页面闭环**。自身28owner/112依赖最终全部READY，0源请求/287个5m派生月发布；4输入、8基础、4融合及真实API/Chrome通过。四频完整物理前缀独立重聚合、旧七频文件/行保持、旧9资产仅invalid且历史事实保持；最终12候选disabled、generation=0、complete_window_proven=false。
 独立数值审计PASS，61张原始截图逐张Review无Confirmed Issue；日周6组合保留原生WARMING/零CLOSED空曲线，顶部报价保留预览403边界。授权后经正常宿主复核完成原计划，旧阻断/失败证据保留；预览资源已停止，未自启SM，正式分钟/Runtime/Scope/通知/账户未变。见[SF处理记录](docs/tasks/sf-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
 
-P7-10 NI **DEFERRED_DATA_BLOCKED，0/12候选页面闭环**。自身41owner/164依赖最终7 DATA_READY，零保存资产；首单NI2302/5m第8源请求发生`ATOMIC_PUBLISH_FAILED`（底层`ArrowInvalid`）后停批，无重试/续接。实际新增2022-02..08七个1m及七个5m分区，原525五频分区和首单29七频文件/24日周pointer不变；最早剩余NI2302/1m/2022-09，目录空、锁0，具体原因UNKNOWN。
+2026-09-29 原始 P7-10 NI **DEFERRED_DATA_BLOCKED，0/12候选页面闭环**（原失败记录保留；当前恢复闭环见2026-10-07 NI收尾）。自身41owner/164依赖最终7 DATA_READY，零保存资产；首单NI2302/5m第8源请求发生`ATOMIC_PUBLISH_FAILED`（底层`ArrowInvalid`）后停批，无重试/续接。实际新增2022-02..08七个1m及七个5m分区，原525五频分区和首单29七频文件/24日周pointer不变；最早剩余NI2302/1m/2022-09，目录空、锁0，具体原因UNKNOWN。
 14范围测试、58原生边界测试、scratch与独立只读实际发布/旧bytes核对、12,411根5m逐值重聚合及安全暂缓Review通过；API/Chrome及日周未运行，不宣称候选或共享存储根因已解决。只集成安全暂缓记录，正式分钟/Runtime/Scope/通知/账户未变，未自启SF。见[NI处理记录](docs/tasks/ni-minute-closeout-20260929.md)；固定21分母及其他队列行不变。
 
 P7-09 AG **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual）。20实际owner、80/80 DATA_READY；149行情源请求/679派生月，930旧文件及479日周pointer保留；776109物理Bar独立重算一致。12候选资产READY、disabled/generation=0，manifest与4融合依赖独立核对通过。

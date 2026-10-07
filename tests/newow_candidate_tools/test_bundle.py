@@ -32,12 +32,12 @@ def test_audit_requires_unmodified_index_and_raw_files(tmp_path):
         audit_bundle(c, store)
 
 
-def complete_index_fixture(tmp_path):
+def complete_index_fixture(tmp_path, candidate_override=None):
     """Synthetic storage fixture; never presented as browser/product evidence."""
     import hashlib
     from scripts.newow_candidate_tools.bundle import SCENES
 
-    c = candidate(tmp_path)
+    c = candidate_override or candidate(tmp_path)
     store = EvidenceStore(tmp_path / "evidence")
     proof = c.proof()
     native = c.proof(
@@ -152,3 +152,50 @@ def test_complete_index_rejects_scene_or_evidence_tamper(tmp_path, change):
     store.path("collection-observations.json").write_text(json.dumps(body))
     with pytest.raises(ValueError):
         build_index(c, store)
+
+
+def separate_scene_bundle_fixture(tmp_path, monkeypatch):
+    """Keep real legacy gates; isolate unrelated minute/cancel fixture data."""
+    import json
+    from test_legacy_checks import sample, rewarming_sample, separate_partner_sample
+    from scripts.newow_candidate_tools import bundle
+
+    c, native, _ = sample()
+    c, store = complete_index_fixture(tmp_path, c)
+    store.path("legacy-expected-identities.json").write_text(json.dumps(native))
+    collection = store.read("collection-observations.json")
+    for row in collection["rows"]:
+        f, m = row["frequency"], row["mode"]
+        if row["scenario"] != "legacy":
+            observed = dict(unit_fixture=True, full_capture={}, earlier_capture={})
+        elif m == "dual": _, _, observed, _ = separate_partner_sample(f)
+        elif m == "oscillation": _, _, observed = rewarming_sample(f, m)
+        else: _, _, observed = sample(f, m)
+        raw = store.read(row["raw"]["path"])
+        raw["observed"] = observed
+        store.path(row["raw"]["path"]).write_text(json.dumps(raw))
+        row["raw"] = store.reference(row["raw"]["path"])
+        cli = store.read(row["cli"]["path"])
+        cli["stdout"] = '### Result\n' + json.dumps(observed) + '\n### End'
+        store.path(row["cli"]["path"]).write_text(json.dumps(cli))
+        row["cli"] = store.reference(row["cli"]["path"])
+    store.path("collection-observations.json").write_text(json.dumps(collection))
+    store.write("evidence-index.json", build_index(c, store))
+    for name in ("functional_checks", "validate_full_capture", "validate_earlier", "validate_recovery"):
+        monkeypatch.setattr(bundle, name, lambda *args: {})
+    return c, store
+
+
+def test_bundle_associates_only_verified_same_snapshot_scene(tmp_path, monkeypatch):
+    c, store = separate_scene_bundle_fixture(tmp_path, monkeypatch)
+    result = audit_bundle(c, store)
+    dual = [r for r in result["rows"] if r["scenario"] == "legacy" and r["mode"] == "dual"]
+    assert len(dual) == 2
+    assert all(r["checks"]["checks"]["partner_reference_evidence"] == "SAME_SNAPSHOT_SEPARATE_SCENE" for r in dual)
+
+
+def test_bundle_rejects_changed_separate_source_bytes(tmp_path, monkeypatch):
+    c, store = separate_scene_bundle_fixture(tmp_path, monkeypatch)
+    store.path("browser/legacy-1d-oscillation.json").write_text('{}')
+    with pytest.raises(ValueError):
+        audit_bundle(c, store)

@@ -62,6 +62,10 @@ python -m scripts.newow_candidate_tools audit --output /private/tmp/cj-candidate
 
 先打开并核对指定 session 的本地 preview tab；`capture` 不代替 `open`。每个场景先在 CLI 会话中保存完整结果，再以不超过 1 Mi UTF-16 字符的块传输；每块校验 session nonce、顺序、字节数及 SHA-256，最终校验完整 JSON 哈希和终态。数组、closed、SVG 点与原生 409 响应均不截断。保存静态资源/实际脚本 SHA、CLI 原始输出、完整结果、传输清单与截图。`collection-start.json` 排他创建；缺块、会话丢失、CLI 部分输出或场景失败立即停止并保留现场，不把半成品计为成功。
 
+分钟双策略首屏只有在两张真实 READY 图、原生身份一致、无在途请求，且恰有一条对应 partner reference GET 的 `net::ERR_ABORTED` 时，才允许采集器在原截止时间内一次补充同 URL 的真实 XHR。补充响应严格绑定原图的 token、公式、输入及 cutoff；记录 `ui_composable_received=false`，不能宣称 Vue 已消费或消除页面警告。已有错误响应、身份不明、第二次缺失或其他失败仍停止。
+
+日周诊断保留每阶段等待条件、在途请求与 body 读取计数。同 URL 的已完成 `net::ERR_ABORTED` 请求不参与成功响应排序绑定，原失败记录仍完整保留；日周数值门禁仍拒绝任何真实请求失败、body 错误或页面异常。
+
 若采集已有连续成功前缀、后续场景阻塞，可在新输出目录重新运行 prepare/preflight，然后显式传 `capture --resume-from /absolute/path/prior-blocked-output`。工具核对同一 Candidate 身份、旧 collection 的连续成功前缀、每个原始文件和截图哈希，逐字节复制成功场景；旧失败场景及其截图仍留在旧目录，新现场从该场景重新采集。新目录输出 `resume-boundary.json`。这不是自动重试；继续前须调查具体失败边界，不能以此重放 native 数据维护或资产构建。其他旧 capture 仍直接拒绝覆盖。
 
 `index` 核验精确 19 场景、声明的原始文件 SHA/大小和截图集合；`audit` 重新计算全部索引并验原始响应、读回、DOM、完整交易 ID、Decimal 累计收益与 SVG 每个点。不同 section 使用各自 input hash，chart/reference 使用相同 snapshot；时点保留微秒。记录请求绑定实际 history_limit/cursor，错误频率 snapshot 必须返回原生 409，恢复必须使用新的正确 token。

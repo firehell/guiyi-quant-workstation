@@ -189,6 +189,39 @@ class SnapshotCache:
             entry = self._entries.get(fact_key)
             return entry is not None and self._proofs_compatible(entry.proof, proof)
 
+    def refresh_verified_token(
+        self, token: str, fact_key: str, proof: Mapping[str, str]
+    ) -> bool:
+        """Renew an existing token only after its retained facts were freshly verified."""
+        if (
+            not self._enabled or not isinstance(token, str) or not token
+            or not isinstance(fact_key, str) or not fact_key
+            or not isinstance(proof, Mapping) or not proof
+            or any(not isinstance(key, str) or not isinstance(value, str)
+                   for key, value in proof.items())
+        ):
+            return False
+        with self._lock:
+            self._expire()
+            if self._tokens.get(token) != fact_key:
+                return False
+            entry = self._entries.get(fact_key)
+            current = self._now()
+            if entry is not None and entry.expires_at <= current:
+                self._drop(fact_key)
+                return False
+            if (
+                entry is None or entry.token != token
+                or not self._proofs_compatible(entry.proof, proof)
+                or any(key not in entry.proof or entry.proof[key] != value
+                       for key, value in proof.items())
+            ):
+                return False
+            # Ordinary cache reads do not renew. No new facts, values or token
+            # are admitted here, and expired generations cannot be revived.
+            entry.expires_at = current + self._ttl
+            return True
+
     def token_proof_covers(
         self, token: str, fact_key: str, proof: dict[str, str]
     ) -> bool:

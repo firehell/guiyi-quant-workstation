@@ -14,11 +14,11 @@ INTRADAY_BATCH_PREVIEW_SYMBOLS = frozenset({"rb", "hc", "ss", "i", "j", "jm", "s
 # P7 candidate eligibility only; each non-batch preview selects one product.
 INTRADAY_SINGLE_PREVIEW_SYMBOLS = frozenset({
     "fu", "ma", "ur", "ta", "sh", "v", "sa", "au", "ag", "ni", "sf", "sm",
-    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr", "cf", "oi", "p", "lc", "fg", "ao", "cu", "ps", "y", "si", "a", "b", "bz", "eb", "ec", "eg", "l", "pd", "pf", "pg", "pl", "pr", "pt", "px",
+    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr", "cf", "oi", "p", "lc", "fg", "ao", "cu", "ps", "y", "si", "a", "b", "bz", "eb", "ec", "eg", "l", "pd", "pf", "pg", "pl", "pr", "pt", "px", "rs", "sc", "ru", "bu", "pb", "sn", "al", "zn",
 })
 
 # Released read-only historical scope; no forward stream activation.
-OPEN_INTRADAY_PRODUCTS = tuple(sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px".split()))
+OPEN_INTRADAY_PRODUCTS = tuple(sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss".split()))
 INTRADAY_HISTORY_AS_OF = datetime(2026, 9, 24, 7, 0, 0, 1, tzinfo=UTC)
 INTRADAY_HISTORY_SCHEMA = "newow_intraday_pilot_20260927"
 INTRADAY_HISTORY_FREQUENCIES = (ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY, ProductFrequency.HOURLY)
@@ -36,8 +36,8 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v29"] = (
-    "newow_product_capabilities_v29"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v30"] = (
+    "newow_product_capabilities_v30"
 )
 RELEASE_STAGE: Literal["daily_weekly_intraday_history"] = "daily_weekly_intraday_history"
 OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)

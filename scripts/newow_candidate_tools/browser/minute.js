@@ -1,6 +1,6 @@
 async page=>{
     let full_capture=null,earlier_capture=null;
-    let phase="seed";let seedIdentity={product:CONFIG.product,frequency:"60m"};const requestPhases=new WeakMap();const requestIds=new WeakMap();const requestRows=new WeakMap();let requestSerial=0;const inFlight=new Set();const navigationInFlight=new Set();let navigationBodyReads=0;const requestEvidence=[];const onRequest=r=>{if(!xhrReady)return;requestPhases.set(r,phase);if(r.url().includes("/newow/strategy-detail")){const entry={id:++requestSerial,url:r.url(),phase};requestIds.set(r,entry.id);requestRows.set(r,entry);requestEvidence.push(entry);navigationInFlight.add(r);if(isObservedRequest(r.url()))inFlight.add(r)}};const onFinished=r=>{inFlight.delete(r);navigationInFlight.delete(r);const entry=requestRows.get(r);if(entry)entry.finished=true};page.on("request",onRequest);page.on("requestfinished",onFinished);const pageErrors=[]; const failures=[]; const onError=e=>pageErrors.push(e?.name??'PAGE_ERROR');const onFailed=r=>{if(!requestPhases.has(r))return;inFlight.delete(r);navigationInFlight.delete(r);const entry=requestRows.get(r);if(entry)entry.failed=true;if(r.url().includes("/newow/strategy-detail"))failures.push({url:r.url(),error:r.failure()?.errorText,phase,request_phase:requestPhases.get(r)??"unknown"})};page.on("pageerror",onError);page.on("requestfailed",onFailed);const safeBodyError=e=>{const names=["Error","SyntaxError","TypeError","TimeoutError","ProtocolError"];const known=["Request content was evicted from inspector cache","No resource with given identifier found","No data found for resource with given identifier","Response body is unavailable for redirect responses","Target page, context or browser has been closed","Target closed","Unexpected end of JSON input","Response has been disposed","Failed to load response data","XHR_REQUEST_IDENTITY_MISSING","XHR_OBSERVER_MISSING","XHR_REQUEST_BINDING_AMBIGUOUS","XHR_CONTENT_TYPE_REJECTED","XHR_RESPONSE_TYPE_REJECTED","XHR_BODY_PARSE_OR_COMPACT_FAILED","XHR_OBSERVER_FAILED","XHR_NO_LOAD_EVENT","XHR_RESPONSE_IDENTITY_MISMATCH","XHR_COMPACT_OBSERVATION_MISSING"];const message=known.find(x=>String(e?.message??"").includes(x))??"BODY_READ_MESSAGE_REDACTED";return {name:names.includes(e?.name)?e.name:"Error",message:message.slice(0,160)}};
+    let phase="seed";let seedIdentity={product:CONFIG.product,frequency:"60m"};const requestPhases=new WeakMap();const requestIds=new WeakMap();const requestRows=new WeakMap();let requestSerial=0;const inFlight=new Set();const navigationInFlight=new Set();let navigationBodyReads=0;const requestEvidence=[];const onRequest=r=>{if(!xhrReady)return;requestPhases.set(r,phase);if(r.url().includes("/newow/strategy-detail")){const entry={id:++requestSerial,url:r.url(),phase,method:r.method()};requestIds.set(r,entry.id);requestRows.set(r,entry);requestEvidence.push(entry);navigationInFlight.add(r);if(isObservedRequest(r.url()))inFlight.add(r)}};const onFinished=r=>{inFlight.delete(r);navigationInFlight.delete(r);const entry=requestRows.get(r);if(entry)entry.finished=true};page.on("request",onRequest);page.on("requestfinished",onFinished);const pageErrors=[]; const failures=[]; const onError=e=>pageErrors.push(e?.name??'PAGE_ERROR');const onFailed=r=>{if(!requestPhases.has(r))return;inFlight.delete(r);navigationInFlight.delete(r);const entry=requestRows.get(r);if(entry){entry.failed=true;entry.error=r.failure()?.errorText};if(r.url().includes("/newow/strategy-detail"))failures.push({url:r.url(),error:r.failure()?.errorText,phase,request_phase:requestPhases.get(r)??"unknown"})};page.on("pageerror",onError);page.on("requestfailed",onFailed);const safeBodyError=e=>{const names=["Error","SyntaxError","TypeError","TimeoutError","ProtocolError"];const known=["Request content was evicted from inspector cache","No resource with given identifier found","No data found for resource with given identifier","Response body is unavailable for redirect responses","Target page, context or browser has been closed","Target closed","Unexpected end of JSON input","Response has been disposed","Failed to load response data","XHR_REQUEST_IDENTITY_MISSING","XHR_OBSERVER_MISSING","XHR_REQUEST_BINDING_AMBIGUOUS","XHR_CONTENT_TYPE_REJECTED","XHR_RESPONSE_TYPE_REJECTED","XHR_BODY_PARSE_OR_COMPACT_FAILED","XHR_OBSERVER_FAILED","XHR_NO_LOAD_EVENT","XHR_RESPONSE_IDENTITY_MISMATCH","XHR_COMPACT_OBSERVATION_MISSING"];const message=known.find(x=>String(e?.message??"").includes(x))??"BODY_READ_MESSAGE_REDACTED";return {name:names.includes(e?.name)?e.name:"Error",message:message.slice(0,160)}};
 const phaseRemaining=deadline=>{const remaining=deadline-Date.now();if(remaining<=0)throw new Error('PHASE_ACTION_DEADLINE');return remaining};
 let lastSettle=null;
 // Parse only query parameters of the task's observed API URLs; no Node URL global.
@@ -11,6 +11,57 @@ const apiParams=url=>{
 };
 const isTargetRequest=(url,frequency=FREQUENCY)=>{if(!url.includes('/newow/strategy-detail'))return false;const q=apiParams(url);return q.get('product')===PRODUCT&&q.get('frequency')===frequency&&(MODE==='dual'?['trend','oscillation']:[MODE==='oscillation'?'oscillation':'trend']).includes(q.get('strategy'))};
 const isObservedRequest=url=>{if(isTargetRequest(url)||isTargetRequest(url,FREQUENCY==='60m'?'30m':'60m'))return true;if(!url.includes('/newow/strategy-detail'))return false;const q=apiParams(url);return q.get('product')===PRODUCT&&['1d','1w'].includes(q.get('frequency'))&&q.get('section')==='explanation'};
+const selectSupplementalPartner=({mode,frequency,after,config,responses,requests,inFlight,pendingReads,identityValid,bodyErrors=[]})=>{
+ if(mode!=='dual'||!identityValid||inFlight!==0||pendingReads!==0||bodyErrors.length)return null;
+ const charts=new Map(),missing=[];
+ const same=(url,strategy,section)=>{const q=apiParams(url);return q.get('product')===config.product&&q.get('frequency')===frequency&&q.get('strategy')===strategy&&q.get('section')===section&&q.get('as_of')?.replace('Z','+00:00')===config.as_of;};
+ for(const strategy of ['trend','oscillation']){
+  const candidates=responses.filter(r=>r.row_request&&r.request_id>after&&same(r.url,strategy,'chart'));
+  if(!candidates.length)return null;
+  const chart=candidates.at(-1),m=chart.payload?.meta,c=chart.payload?.chart;
+  if(chart.http!==200||!chart.xhr_binding||chart.xhr_binding.url!==chart.url||chart.xhr_binding.http!==200||chart.xhr_binding.evidence_kind!=='xhr_response_text_compact'||m?.identity?.product!==config.product||m?.identity?.frequency!==frequency||m?.identity?.strategy!==strategy||m?.as_of?.replace('Z','+00:00')!==config.as_of||!m.snapshot_token||!m.input_content_sha256||c?.delivery!=='delivered'||c?.status?.status!=='ready'||c.status.evidence_status!=='ACTIVE_CODE_VERIFIED'||!c.value)return null;
+  charts.set(strategy,chart);
+  // Any existing response, including an error or stale token, precludes automatic supplementation.
+  if(!responses.some(r=>r.row_request&&r.request_id>after&&same(r.url,strategy,'reference')))missing.push(strategy);
+ }
+ if(missing.length!==1)return null;
+ const strategy=missing[0],chart=charts.get(strategy),token=chart.payload.meta.snapshot_token;
+ const aborted=requests.filter(r=>r.id>after&&r.failed===true&&r.error==='net::ERR_ABORTED'&&r.method==='GET'&&r.phase===chart.request_phase&&same(r.url,strategy,'reference'));
+ if(aborted.length!==1)return null;
+ const original=aborted[0],url=original.url;
+ if(typeof url!=='string'||url.includes('#'))return null;
+ const [path,query]=url.split('?');
+ if(![config.web_origin,config.api_origin].some(origin=>path===origin+'/api/v1/market/newow/strategy-detail')||!query||url.split('?').length!==2)return null;
+ const allowed=['product','strategy','frequency','series_kind','section','as_of','history_limit','snapshot_token'];
+ let keys;
+ try{keys=query.split('&').map(part=>decodeURIComponent(part.split('=',1)[0]));}catch{return null;}
+ if(keys.length!==allowed.length||new Set(keys).size!==keys.length||keys.some(k=>!allowed.includes(k)))return null;
+ const q=apiParams(url);
+ if(q.get('series_kind')!=='actual_dominant'||q.get('history_limit')!=='200'||q.get('snapshot_token')!==token)return null;
+ return {url,strategy,frequency,phase:'initial',request_floor:after,snapshot_token:token,aborted_request:{...original},chart_request_id:chart.request_id,chart_binding:{...chart.xhr_binding}};
+};
+const runSupplementalPartner=async(candidate,state,actions,send)=>{
+ if(!candidate||state.attempted)return false;
+ state.attempted=true;
+ const action={kind:'supplemental_partner_reference',source:'collector_true_xhr',ui_composable_received:false,...candidate,status:'STARTED'};
+ actions.push(action);
+ try{action.response_readback=await send(candidate);action.status='RESPONSE_BOUND';return true;}catch{action.status='FAILED';throw Error('SUPPLEMENTAL_PARTNER_REFERENCE_FAILED');}
+};
+const sendSupplementalXHR=({url,timeout})=>new Promise((resolve,reject)=>{
+ const xhr=new XMLHttpRequest();xhr.open('GET',url,true);xhr.timeout=timeout;
+ xhr.onload=async()=>{
+  if(xhr.status!==200){reject(Error('SUPPLEMENTAL_HTTP_FAILED'));return;}
+  try{const text=xhr.responseText,payload=JSON.parse(text);const hash=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(x=>x.toString(16).padStart(2,'0')).join('');resolve({evidence_kind:'same_xhr_full_response_readback',extra_get:false,http:xhr.status,url:xhr.responseURL,response_text_chars:text.length,response_text_sha256:await hash(text),payload_sha256:await hash(JSON.stringify(payload)),response_text:text,payload});}catch{reject(Error('SUPPLEMENTAL_FULL_BODY_FAILED'));}
+ };
+ xhr.onerror=()=>reject(Error('SUPPLEMENTAL_NETWORK_FAILED'));xhr.onabort=()=>reject(Error('SUPPLEMENTAL_ABORTED'));xhr.ontimeout=()=>reject(Error('SUPPLEMENTAL_TIMEOUT'));xhr.send();
+});
+const bindSupplementalResponse=({rows,evidence,config,frequency,readback})=>{
+ const r=rows[0],m=r?.payload?.meta,part=r?.payload?.reference;
+ if(rows.length!==1||r.http!==200||!r.row_request||!r.xhr_binding||r.url!==evidence.url||r.xhr_binding.url!==r.url||r.xhr_binding.http!==200||r.xhr_binding.evidence_kind!=='xhr_response_text_compact'||m?.identity?.product!==config.product||m?.identity?.frequency!==frequency||m?.identity?.strategy!==evidence.strategy||m?.as_of?.replace('Z','+00:00')!==config.as_of||m?.snapshot_token!==evidence.snapshot_token||!m.input_content_sha256||part?.delivery!=='delivered'||part?.status?.status!=='ready'||part.status.evidence_status!=='ACTIVE_CODE_VERIFIED'||!part.value)throw Error('SUPPLEMENTAL_REFERENCE_BINDING_FAILED');
+ if(readback.http!==200||readback.url!==evidence.url||readback.response_text_chars!==r.xhr_binding.response_text_chars||JSON.stringify(readback.payload.meta)!==JSON.stringify(m)||JSON.stringify(readback.payload.reference?.status)!==JSON.stringify(part.status))throw Error('SUPPLEMENTAL_FULL_BODY_BINDING_FAILED');
+ return {...readback,response_request_id:r.request_id,xhr_binding:{...r.xhr_binding}};
+};
+// End supplemental partner functions.
 const targetTerminal=(after=0,frequency=FREQUENCY)=>{
  const wanted=MODE==='oscillation'?'oscillation':'trend';const strategies=MODE==='dual'?['trend','oscillation']:[wanted];
  const slots=new Map();
@@ -76,6 +127,17 @@ const settleNavigation=async(deadline,after=null,expected={})=>{
       const navigationFloor=requestSerial;
       await page.goto(CONFIG.target_url,{timeout:initialRemaining()});
       await settleNavigation(gateDeadline,navigationFloor,{product:PRODUCT,frequency:FREQUENCY,mode:MODE});
+      const supplementalState={attempted:false};
+      const supplemental=selectSupplementalPartner({mode:MODE,frequency:FREQUENCY,after:navigationFloor,config:CONFIG,responses,requests:requestEvidence,inFlight:navigationInFlight.size,pendingReads:navigationBodyReads,identityValid:identity_valid,bodyErrors:bodyReadErrors});
+      await runSupplementalPartner(supplemental,supplementalState,actions,async evidence=>{
+       const floor=requestSerial;
+       // A real browser XHR: existing Node listeners and XHRObserver bind the response naturally.
+       const readback=await page.evaluate(sendSupplementalXHR,{url:evidence.url,timeout:initialRemaining()});
+       while(navigationInFlight.size||navigationBodyReads){initialRemaining();await page.waitForTimeout(25);}
+       await Promise.all(pending);
+       const rows=responses.filter(r=>r.request_id>floor&&r.url===evidence.url);
+       return bindSupplementalResponse({rows,evidence,config:CONFIG,frequency:FREQUENCY,readback});
+      });
       seedIdentity={product:PRODUCT,frequency:FREQUENCY};
 const recordsMatchDOM=(dom,terminal,after=0,frequency=FREQUENCY)=>{
  if(terminal?.kind!=='ready'||!dom.target||dom.busy||dom.explanationBusy||!dom.curves||!Array.isArray(dom.ids)||new Set(dom.ids).size!==dom.ids.length)return false;

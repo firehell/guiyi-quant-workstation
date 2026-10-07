@@ -30,7 +30,7 @@ async function load() {
   const token = ++generation
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
   try {
-    const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, asOf: props.response.meta.as_of, ...(!context.value.background && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal, ...(context.value.background ? { timeout: 60000 } : {}) })
+    const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, asOf: props.response.meta.as_of, ...(!context.value.background && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal })
     if (next.section !== 'explanation' || !next.value?.decision_v2) throw new Error('missing decision')
     if (token === generation) result.value = next.value.decision_v2
   } catch (failure) {
