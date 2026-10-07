@@ -1,5 +1,7 @@
 # SC 原油历史候选闭环
 
+本地证据归档（2026-10-07）：任务工作树原始输出已移至 `.ai/worktree-cleanup-20261007-233713/sc-candidate-closeout/outputs/sc-candidate-closeout-20261005/`；主仓独立 Review 输出已移至 `.ai/develop-cleanup-20261007/outputs/sc-candidate-closeout-20261005/`。下文命令和原输出路径保留为执行时记录，证据内容未改动。
+
 当前状态：**COMPLETED / CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。历史候选总数48/60，正式分钟开放45/60。仅处理SC，固定窗口2023-01-01..2026-09-24、as_of=2026-09-24T07:00:00.000001+00:00，1m仅作为聚合源，验收5m/15m/30m/60m×trend/oscillation/dual。工作树`.worktrees/sc-candidate-closeout`；真实原始证据保存于该树`outputs/sc-candidate-closeout-20261005/`，独立Review在主仓同名outputs/review。
 
 ## 数据恢复和成交额精度

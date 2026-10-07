@@ -1,5 +1,7 @@
 # SI 工业硅四周期历史候选收尾
 
+本地证据归档（2026-10-07）：任务工作树原始输出已移至 `.ai/worktree-cleanup-20261007-233713/si-candidate-closeout/outputs/si-candidate-closeout-20261004/`；主仓独立 Review 输出已移至 `.ai/develop-cleanup-20261007/outputs/si-candidate-closeout-20261004/`。下文命令和原输出路径保留为执行时记录，证据内容未改动。
+
 状态：COMPLETED / CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12；允许集成 develop。仅 SI，固定页面窗口 2023-01-01..2026-09-24，as_of=2026-09-24T07:00:00.000001+00:00。Canonical 1m 仅聚合；5m/15m/30m/60m × trend/oscillation/dual，共12组合。SI为补充行，原13/21队列分母保持。
 
 数据、资产、API与浏览器产品源码冻结于 `125f3dbfbe79317cf1fee1204e57944a0750dc95`，工作树 `.worktrees/si-candidate-closeout`；原始证据在该树 `outputs/si-candidate-closeout-20261004/`，独立Review在主仓同名outputs/review，不提交原始行情、响应或截图。任务从2026-10-04开始，最终收尾在2026-10-05；正式45品种、Release、持续Runtime、Scope、通知及账户不在本次交付范围。
