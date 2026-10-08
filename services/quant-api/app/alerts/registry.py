@@ -30,6 +30,7 @@ class AlertRuleDefinition:
     event_mode: AlertEventMode
     input_frequencies: tuple[str, ...]
     series_kind: str
+    notification_enabled: bool = True
 
 
 HTDY_RULE = AlertRuleDefinition(
@@ -48,6 +49,7 @@ SUBING_THS_RULE = AlertRuleDefinition(
     event_mode=AlertEventMode.EXACT,
     input_frequencies=("15m",),
     series_kind="actual_dominant",
+    notification_enabled=False,
 )
 
 _DEFINITIONS = (HTDY_RULE, SUBING_THS_RULE)
