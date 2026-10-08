@@ -6,26 +6,22 @@
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.11.2@35217d5ab2c87b9173306d142ccf9f72285a3ec6**。
-[PR #407](https://github.com/firehell/guiyi-quant-workstation/pull/407)、annotated tag 与非草稿/非预发布
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.2) 已实际读回；main 源码树与独立审查候选
-`f262cf10ff29a5335f451c8848825d574868e30f` 完全一致。发布说明见 [v1.11.2](docs/releases/v1.11.2.md)，
-实现、生产恢复和验收见 [盘后修复](docs/tasks/after-market-health-20261004.md)。
+最新正式发布为 **v1.12.0@2a31a76b414ef607488bd2e2e8131a3ee469b003**。
+[PR #408](https://github.com/firehell/guiyi-quant-workstation/pull/408)、annotated tag 与非草稿/非预发布
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.12.0) 已实际读回，远端main、tag peeled commit和Release target一致；main完整树与已验收候选`41eed648be7ef2b9d25d771dae9c0165e32b321a`一致，生产代码与冻结`88aa1a654f235ab5b7d41a9ccc1c538bce163fb6`一致。
+发布说明见[v1.12.0](docs/releases/v1.12.0.md)，实际门禁和边界见[59品种发布验收](docs/tasks/release-59-products-20261008.md)。
 
-本补丁修复跨 Runtime 的盘后历史证据交接、安装期间 writer 互斥、审计内确定的物理前缀缺口重复计算，
-以及合法部分 planner 结果的保留；不改公式、收益、Scope、通知受众或交易阶段。
-版本依赖冻结、Web build、280项相关回归、159项盘后/晋升/authority回归、29项工程一致性检查、
-Ruff、OpenSpec10项、secret零发现和diff通过；独立Review完成，真实跨Python/Bash的guard fd互斥验证通过。
+正式历史分钟范围**59/60**：原45品种新增RS、SI、SC、AO、RU、BU、CU、NI、PB、SN、AL、ZN、FU、SS；**5m/15m/30m/60m × 趋势/震荡/双策略，新增168、合计708组合**。PP尚未闭环，保持日周范围，进行中的PP纠偏不在此tag。固定截至2026-09-24 15:00北京时间，1m仅聚合，分钟主升浪、持续分钟更新及reference worker仍关闭。
+56源窗口/168保存态/112伙伴边fresh只读通过；正式API121请求/168组合/389859 CLOSED完整数值独审通过，108基础FULL/4 PARTIAL保留；真实Chrome13自然响应全200、正式SS/PP过滤及三原图独审通过，30分块完整封存。定向回归、build/typecheck、工程29、OpenSpec10、Ruff/diff/secret通过；失败原件保留，仅补受影响验证，未重下载或重采旧全部页面。
+page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益。
 
-分钟产品范围沿用v1.11.1：A、AG、AP、AU、B、BZ、C、CF、CJ、EB、EC、EG、FG、HC、I、J、JD、JM、L、LC、LH、M、MA、OI、P、PD、PF、PG、PK、PL、PR、PS、PT、PX、RB、RM、SA、SF、SH、SM、SR、TA、UR、V、Y，共45品种，
-**5m/15m/30m/60m × 趋势/震荡/双策略，540个历史参考页面组合**，固定截至2026-09-24 15:00（北京时间）。
-持续分钟更新、1m页面和分钟主升浪未开放；日周60品种保持。
-v1.11.1的540组合与独立数值/浏览器验收见[发布记录](docs/releases/v1.11.1.md)，本补丁未重新宣称完整页面验收。
-历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
+**本次仅RELEASED，未切换Runtime。现役仍为v1.11.2，运行分钟范围45品种。** 新发布树
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.12.0`已exact tag detached/clean准备，未安装服务；仍被服务引用的v1.11.2树保留。任务8013/5179与专属Chrome已退出，临时配置已删除。运行切换及自然业务验收仍是独立未完成事项。
 
-**运行版本同步及当前operational health验收已完成；新版本自然业务仍待发生。**
+以下为现役v1.11.2的既有Runtime读回；不作为v1.12.0的运行证据。
+**v1.11.2运行版本同步及既有operational health验收已完成；自然业务待验收项保持。**
 Market/API/Web/Alert与既有weekly切到linked worktree
-`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.2`，detached/clean，commit为上述exact tag。
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.2`，detached/clean，commit为v1.11.2 exact tag `35217d5ab2c87b9173306d142ccf9f72285a3ec6`。
 render、Market preflight（non_trading_interval，60品种）及各既有服务安装exit0；六服务configured/loaded
 root与commit一致，API/Web HTTP200，正式API版本1.11.2，readonly服务检查overall=passed。
 两次现场health整体ok，DB/Redis/Live/after_market均ok；盘后run_state=retained、expected及last_success为2026-09-30。

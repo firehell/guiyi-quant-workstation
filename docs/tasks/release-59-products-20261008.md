@@ -2,7 +2,7 @@
 
 ## 已验收候选
 
-2026-10-08，RELEASE_CANDIDATE / TEST_COMPLETE / REVIEW_COMPLETE。冻结代码 `88aa1a654f235ab5b7d41a9ccc1c538bce163fb6`，版本1.12.0、capability v30。main/tag/GitHub Release尚未执行；实际发布身份由后续交付记录补充。
+2026-10-08，RELEASED / TEST_COMPLETE / REVIEW_COMPLETE。冻结代码 `88aa1a654f235ab5b7d41a9ccc1c538bce163fb6`，版本1.12.0、capability v30。PR #408实际合入main `2a31a76b414ef607488bd2e2e8131a3ee469b003`，annotated v1.12.0与正式GitHub Release已发布并读回；head文档候选41eed648与main完整tree一致。
 
 新增RS、SI、SC、AO、RU、BU、CU、NI、PB、SN、AL、ZN、FU、SS，正式候选范围45→59，新增168、合计708个5m/15m/30m/60m×趋势/震荡/双策略组合。PP不纳入本版；并行PP纠偏提交不进入本冻结候选。固定截至2026-09-24 15:00北京时间；AO起点2023-06-19，其余新增品种2023-01-01。1m仅聚合，分钟主升浪与持续更新保持关闭。
 
@@ -21,3 +21,9 @@
 证据根：`.worktrees/release-59-products/outputs/release-59-products-20261008/`。登记historical-14-asset-registry.json、fresh-14-source-assets.json、api-full-v3/summary.json、chrome-full-v2/smoke-complete.json、cleanup-exact-result.json及各independent审查报告。原逐品种闭环仍绑定各自exact code；SC差分收尾、SN-v2、legacy预热/零CLOSED/PARTIAL/视口限制保持，不冒充本版重跑全部页面。
 
 page_parity=true/executable=false，仅历史页面参考；不证明因果/OOS、Paper、账户收益、自然Runtime业务或完整融合状态机。此次仅发布，未切换运行；现役仍v1.11.2，保留被服务引用的旧发布树。Scope、operational、Rule/audience、auto_order=false及reference worker关闭保持。
+
+## 真实发布读回
+
+[PR #408](https://github.com/firehell/guiyi-quant-workstation/pull/408) merged，main/tag peeled/Release target均为`2a31a76b414ef607488bd2e2e8131a3ee469b003`；annotated tag对象`e065a8ec47e398c8285397e1ddd3d8f6eb443440`，Release publishedAt=2026-10-07T23:58:18Z、isDraft=false/isPrerelease=false。[正式Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.12.0)。新发布树release-v1.12.0 exact detached/clean已准备；未安装服务或切换运行，旧v1.11.2仍被现役服务引用。
+
+发布后develop同步保留并行PP d2844e32/629303712代码与其恢复待验收边界；这些PP提交不在v1.12.0 tag中。published-release-readback.json与published-worktree-readback.json保存真实身份。下一步是另行交办Runtime切换与相应自然验收，不将本次发布冒充运行完成。
