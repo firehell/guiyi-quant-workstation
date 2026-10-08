@@ -178,7 +178,6 @@ function inspectHolding(event: MouseEvent) {
 
       <p v-if="preset === 'ideal'" class="newow-reference__state">融合理论值 · 回看持有阶段最高价（High）；仅计已完成配对，零费用、零滑点，不代表可执行收益。操盘记录仍显示普通参考价。</p>
       <section v-if="curveMode === 'holding' && preset !== 'ideal' && !holdingPlot.message" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
-        <template>
           <p class="newow-reference__state">逐 Bar 页面参考 = 已完成累计 + 当根持有浮动；中断处断线，不计入已完成收益。</p>
           <div class="newow-reference__plot"><div class="newow-reference__plot-area">
             <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @click="inspectHolding">
@@ -190,7 +189,6 @@ function inspectHolding(event: MouseEvent) {
             <span v-for="level in holdingPlot.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
           <span class="newow-reference__date-tick" data-anchor="start" style="left:0">{{ holdingPlot.points[0]?.trading_day }}</span><span class="newow-reference__date-tick" data-anchor="end" style="left:100%">{{ holdingPlot.points.at(-1)?.trading_day }}</span></div></div>
           <div class="newow-holding-readout" aria-live="polite"><button type="button" aria-label="上一根持有读数" @click="holdingIndex = Math.max(0, (holdingIndex ?? holdingPlot.points.length - 1) - 1)">‹</button><span v-if="holdingReadout">{{ formatBeijingInstant(holdingReadout.bar_end) }} · {{ holdingReadout.physical_contract }} · 已完成 {{ formatMarketDecimal(holdingReadout.closed_return_percentage_points) }} · 浮动 {{ referencePercentDisplay(holdingReadout.floating_return_pct).text }} · 合计 {{ referencePercentDisplay(holdingReadout.marked_return_percentage_points).text }}</span><button type="button" aria-label="下一根持有读数" @click="holdingIndex = Math.min(holdingPlot.points.length - 1, (holdingIndex ?? holdingPlot.points.length - 1) + 1)">›</button></div>
-        </template>
       </section>
 <section v-if="curveMode === 'closed' || preset === 'ideal' || !result.holding_curve" class="newow-reference__curve" aria-label="融合已完成参考交易累计收益曲线">
         <p v-if="curve.message" role="status">{{ curve.message }}{{ result.records_truncated ? '记录已截断，完整统计仍见三组对比。' : '' }}</p>

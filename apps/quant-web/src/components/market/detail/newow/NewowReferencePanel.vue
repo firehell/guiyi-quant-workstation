@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { holdingCurvePlot } from '@/utils/newowHoldingCurve'
 import { computed, nextTick, ref, watch } from 'vue'
-import { closestReferenceCurvePoint, referenceCurveAnchors, newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
+import { closestReferenceCurvePoint, referenceCurveAnchors, referenceCurveDrawdown, newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
@@ -59,8 +59,21 @@ const recordsModel = computed(() => {
 const displayValue = computed(() => props.response?.value ? acceptedPreset.value === 'ideal' ? newowTheoreticalDisplay(props.response.value) : props.response.value : null)
 const displaySummary = computed(() => displayValue.value && props.response ? buildNewowReferencePanelViewModel({ ...props.response, value: displayValue.value }, props.chartResponse, props.crossSectionCompatible).summary : null)
 const curve = computed(() => displayValue.value ? newowReferenceCurve(displayValue.value) : { points: [], message: '理论值所需的完整持仓区段暂不可用。' })
-const maximumDrawdown = computed(() => displayValue.value ? newowReferenceDrawdown(displayValue.value) : null)
-const annualized = computed(() => displayValue.value && model.value ? newowReferenceAnnualized(displayValue.value) : null)
+const maximumDrawdown = computed(() => {
+  if (!displayValue.value) return null
+  if (acceptedPreset.value !== 'ideal' && !holdingPlot.value.message) return referenceCurveDrawdown({ message: null, points: holdingPlot.value.points.map(p => ({ cumulative: p.marked_return_percentage_points! })) }, displayValue.value.history_coverage === 'FULL')
+  return newowReferenceDrawdown(displayValue.value)
+})
+const annualized = computed(() => {
+  if (acceptedPreset.value !== 'ideal' && !holdingPlot.value.message && displayValue.value?.history_coverage === 'FULL') {
+    const points = holdingPlot.value.points
+    const days = (Date.parse(points.at(-1)!.bar_end) - Date.parse(points[0]!.bar_end)) / 86400000
+    const ratio = (100 + Number(points.at(-1)!.marked_return_percentage_points)) / (100 + Number(points[0]!.marked_return_percentage_points))
+    const result = days > 0 && ratio > 0 ? (ratio ** (365 / days) - 1) * 100 : NaN
+    return Number.isFinite(result) ? result : null
+  }
+  return displayValue.value && model.value ? newowReferenceAnnualized(displayValue.value) : null
+})
 const selectedTradeId = ref<string | null>(null)
 const recordElements = new Map<string, HTMLElement>()
 const curvePoints = computed(() => {
@@ -71,7 +84,7 @@ const curvePoints = computed(() => {
   const low = minimum < 0 ? minimum * 1.1 : 0
   const high = maximum > 0 ? maximum * 1.1 : low === 0 ? 1 : 0
   const y = (value: number) => 140 - (value - low) / (high - low) * 140
-  const start = Date.parse(model.value?.performanceWindow.since ?? '')
+  const start = Date.parse(displayValue.value?.coverage_intervals[0]?.since ?? model.value?.performanceWindow.since ?? '')
   const through = model.value?.performanceWindow.through ?? ''
   const availableThrough = model.value?.actualAvailableThrough ?? ''
   const end = Date.parse(through < availableThrough ? through : availableThrough)
@@ -188,9 +201,18 @@ function locateCurvePoint(event: MouseEvent) {
 }
 
 const curveMode = ref<'holding' | 'closed'>('holding')
+const analysisOpen = ref(false)
 const holdingIndex = ref<number | null>(null)
 const holdingPlot = computed(() => holdingCurvePlot(props.response?.value?.holding_curve, props.response?.value?.performance_since ?? '', props.response?.value?.performance_through ?? ''))
-const holdingReadout = computed(() => holdingPlot.value.points[holdingIndex.value ?? holdingPlot.value.points.length - 1] ?? null)
+const holdingReadout = computed(() => holdingIndex.value === null ? null : holdingPlot.value.points[holdingIndex.value] ?? null)
+const holdingTicks = computed(() => {
+  const points = holdingPlot.value.points
+  if (!points.length) return []
+  return Array.from({ length: Math.min(7, points.length) }, (_, i) => {
+    const p = points[Math.round(i * (points.length - 1) / (Math.min(7, points.length) - 1 || 1))]!
+    return { x: p.x, day: p.trading_day, label: p.trading_day.slice(5), anchor: i === 0 ? 'start' : i === Math.min(7, points.length) - 1 ? 'end' : 'middle' }
+  })
+})
 watch(holdingPlot, () => { holdingIndex.value = null })
 function inspectHolding(event: MouseEvent) {
   const bounds = (event.currentTarget as SVGElement).getBoundingClientRect()
@@ -204,11 +226,11 @@ function inspectHolding(event: MouseEvent) {
 
 <template>
   <section class="newow-reference" :aria-busy="loadingPage" aria-labelledby="newow-reference-title">
-    <header class="newow-reference__returns-heading"><strong id="newow-reference-title">策略收益率走势</strong><span class="newow-reference__annualized" title="页面参考年化：按所选统计区间的实际天数，将 1 + 累计参考收益 / 100 折算一年；零费用、零滑点，不代表账户收益。">年化{{ annualized === null ? ' —' : `${annualized.toFixed(1)}%` }}</span></header>
+    <header class="newow-reference__returns-heading"><strong id="newow-reference-title">策略收益率走势</strong><span class="newow-reference__annualized" title="页面参考年化：按所选统计区间的实际天数，将 1 + 累计参考收益 / 100 折算一年；零费用、零滑点，不代表账户收益。">年化{{ annualized === null ? ' —' : `${annualized.toFixed(1)}%` }}</span><button type="button" class="newow-reference__analysis-link" @click="analysisOpen = true">收益分析 ›</button></header>
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
           <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['three_years', '近3年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
-          <button type="button" class="newow-reference__ideal" :disabled="loadingPage || !acceptedAnchor || !availableSince" :aria-pressed="acceptedPreset === 'ideal'" title="全历史回看最优卖出价；不代表可执行收益" @click="usePreset('ideal')">理论值</button>
+          <button type="button" class="newow-reference__ideal" :disabled="loadingPage || !acceptedAnchor || !availableSince || !response?.value?.theoretical" :aria-pressed="acceptedPreset === 'ideal'" title="全历史回看最优卖出价；不代表可执行收益" @click="usePreset('ideal')">理论值</button>
           <button type="button" :disabled="loadingPage || !acceptedAnchor || !availableSince" :aria-pressed="acceptedPreset === 'all' || (acceptedPreset === null && performanceSince === availableSince)" @click="usePreset('all')">全部</button>
         </div>
       </form>
@@ -225,23 +247,23 @@ function inspectHolding(event: MouseEvent) {
     <template v-if="model">
 
       <section v-if="curveMode === 'holding' && acceptedPreset !== 'ideal' && !holdingPlot.message" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
-        <template>
-          <p class="newow-reference__state">逐 Bar 页面参考 = 已完成累计 + 当根持有浮动；中断处断线，不计入已完成收益。</p>
           <div class="newow-reference__plot"><div class="newow-reference__plot-area">
-            <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @click="inspectHolding">
+            <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @mouseleave="holdingIndex = null" @click="inspectHolding">
+              <defs><linearGradient id="newow-holding-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.14" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
+              <polygon v-for="(segment,i) in holdingPlot.segments" :key="`area-${i}`" :points="`${segment.trim().split(' ')[0]?.split(',')[0]},${holdingPlot.zero} ${segment} ${segment.trim().split(' ').at(-1)?.split(',')[0]},${holdingPlot.zero}`" fill="url(#newow-holding-area)" />
+              <line v-if="holdingReadout" :x1="holdingReadout.x" :x2="holdingReadout.x" y1="0" y2="140" stroke="#bbb" stroke-dasharray="3 3" />
               <line v-for="level in holdingPlot.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
               <line x1="0" x2="712" :y1="holdingPlot.zero" :y2="holdingPlot.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
               <polyline v-for="(segment,i) in holdingPlot.segments" :key="i" :points="segment" fill="none" stroke="#ff403a" stroke-width="1.8" />
               <circle v-if="holdingReadout" :cx="holdingReadout.x" :cy="holdingReadout.y" r="3" fill="#ff9500" />
             </svg>
             <span v-for="level in holdingPlot.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
-          <span class="newow-reference__date-tick" data-anchor="start" style="left:0">{{ holdingPlot.points[0]?.trading_day }}</span><span class="newow-reference__date-tick" data-anchor="end" style="left:100%">{{ holdingPlot.points.at(-1)?.trading_day }}</span></div></div>
-          <div class="newow-holding-readout" aria-live="polite"><button type="button" aria-label="上一根持有读数" @click="holdingIndex = Math.max(0, (holdingIndex ?? holdingPlot.points.length - 1) - 1)">‹</button><span v-if="holdingReadout">{{ formatBeijingInstant(holdingReadout.bar_end) }} · {{ holdingReadout.physical_contract }} · 已完成 {{ formatMarketDecimal(holdingReadout.closed_return_percentage_points) }} · 浮动 {{ referencePercentDisplay(holdingReadout.floating_return_pct).text }} · 合计 {{ referencePercentDisplay(holdingReadout.marked_return_percentage_points).text }}</span><button type="button" aria-label="下一根持有读数" @click="holdingIndex = Math.min(holdingPlot.points.length - 1, (holdingIndex ?? holdingPlot.points.length - 1) + 1)">›</button></div>
-        </template>
+          <span v-for="tick in holdingTicks" :key="tick.x" class="newow-reference__date-tick" :data-anchor="tick.anchor" :title="tick.day" :style="{ left: `${tick.x / 712 * 100}%` }">{{ tick.label }}</span></div></div>
+          <div v-if="holdingReadout" class="newow-reference__tooltip" aria-live="polite">{{ formatBeijingInstant(holdingReadout.bar_end) }} · {{ referencePercentDisplay(holdingReadout.marked_return_percentage_points).text }}</div>
       </section>
-<section class="newow-reference__curve" aria-label="已完成参考交易累计收益曲线">
-        <p v-if="(curveMode === 'closed' || acceptedPreset === 'ideal' || !response?.value?.holding_curve) && curve?.message" role="status">{{ curve.message }}</p>
-        <template v-if="!curve.message && (curveMode === 'closed' || acceptedPreset === 'ideal' || !response?.value?.holding_curve)">
+<section class="newow-reference__curve newow-reference__completed" aria-label="已完成参考交易累计收益曲线">
+        <p v-if="(curveMode === 'closed' || acceptedPreset === 'ideal' || !!holdingPlot.message) && curve?.message" role="status">{{ curve.message }}</p>
+        <template v-if="!curve.message && (curveMode === 'closed' || acceptedPreset === 'ideal' || !!holdingPlot.message)">
           <div class="newow-reference__plot">
             <div class="newow-reference__plot-area">
               <svg @click="locateCurvePoint" viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
@@ -250,7 +272,7 @@ function inspectHolding(event: MouseEvent) {
                 <polygon :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero} 712,${curvePoints.zero}`" fill="url(#newow-reference-area)" />
                 <line x1="0" x2="712" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
                 <polyline :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero}`" fill="none" stroke="#ff403a" stroke-width="1.8" />
-                <circle v-for="point in referenceCurveAnchors(curvePoints.points)" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click.stop="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
+                <circle v-for="point in referenceCurveAnchors(curvePoints.points)" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" class="newow-reference__trade-point" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click.stop="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
               </svg>
             <span v-for="level in curvePoints.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
             <span v-for="tick in curvePoints.ticks" :key="tick.x" class="newow-reference__date-tick" :title="tick.day" :data-anchor="tick.anchor" :style="{ left: `${tick.x / 712 * 100}%` }">{{ tick.label }}</span>
@@ -265,7 +287,7 @@ function inspectHolding(event: MouseEvent) {
         <dl class="newow-reference__metrics">
           <div><dt>累计收益</dt><dd title="已完成页面参考交易收益简单累加；零费用、零滑点，不代表账户收益。" :data-direction="referencePercentDisplay(displayValue?.summary.sum_return_percentage_points).direction">{{ referencePercentDisplay(displayValue?.summary.sum_return_percentage_points).text }}</dd></div>
           <div><dt>胜率</dt><dd>{{ displaySummary?.winRateText ?? '—' }}</dd></div>
-          <div><dt>最大回撤</dt><dd class="newow-reference__drawdown" title="页面参考累计曲线回撤：(峰值权益−后续权益)÷峰值权益；以100为起点，仅含已完成交易，不含持仓浮动。">{{ maximumDrawdown === null ? '—' : `${maximumDrawdown}%` }}</dd></div>
+          <div><dt>最大回撤</dt><dd class="newow-reference__drawdown" :title="response?.value?.holding_curve && acceptedPreset !== 'ideal' ? '页面参考回撤，以100为起点，包含持有浮动；不是账户回撤。' : '已完成交易累计回撤，以100为起点，不含持仓浮动。'">{{ maximumDrawdown === null ? '—' : `${maximumDrawdown}%` }}</dd></div>
           <div><dt>交易次数</dt><dd>{{ model.summary.closedCount }}</dd></div>
         </dl>
         <p v-if="response?.status.reason_code" class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>
@@ -276,6 +298,17 @@ function inspectHolding(event: MouseEvent) {
       </section>
 
     </template>
+    <div v-if="analysisOpen" class="newow-reference__analysis-backdrop" @click.self="analysisOpen = false">
+      <section class="newow-reference__analysis-dialog" role="dialog" aria-modal="true" aria-label="收益分析" tabindex="-1" @keydown.esc="analysisOpen = false">
+        <header><strong>收益分析</strong><button type="button" aria-label="关闭收益分析" @click="analysisOpen = false">×</button></header>
+        <p>{{ performanceSince }} 至 {{ performanceThrough }} · {{ response?.meta.identity.product.toUpperCase() }} · {{ response?.meta.identity.frequency }}</p>
+        <dl><div><dt>累计收益</dt><dd>{{ referencePercentDisplay(displayValue?.summary.sum_return_percentage_points).text }}</dd></div><div><dt>胜率</dt><dd>{{ displaySummary?.winRateText ?? '—' }}</dd></div><div><dt>最大回撤</dt><dd>{{ maximumDrawdown === null ? '—' : `${maximumDrawdown}%` }}</dd></div><div><dt>交易次数</dt><dd>{{ model?.summary.closedCount ?? '—' }}</dd></div></dl>
+        <p>收益按已完成页面参考交易简单累加，零手续费、零滑点。持有曲线包含当根收盘价浮动；换月和数据中断处断线。</p>
+        <p>{{ acceptedPreset === 'ideal' || holdingPlot.message ? '当前曲线仅含已完成累计，未包含持仓浮动。' : '最大回撤按持有曲线、以100为起点计算权益比例回撤。' }}期货参考统计保留入场属于窗口的口径；未清仓不计入交易次数。</p>
+        <p>历史页面参考，不代表因果回测或账户收益；历史表现不代表未来收益。</p>
+        <button type="button" @click="analysisOpen = false">知道了</button>
+      </section>
+    </div>
     <template v-if="recordsModel">
       <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>近一年 · 历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">

@@ -98,3 +98,19 @@
 .newow-holding-readout { display:flex; align-items:center; gap:8px; margin:8px 0; font-size:12px; color:#667085; }
 .newow-holding-readout span { flex:1; }
 .newow-holding-readout button { min-width:32px; min-height:32px; border:1px solid #e5e5ea; border-radius:6px; background:#fff; cursor:pointer; }
+.newow-reference__analysis-link { margin-left:auto; min-height:20px !important; padding:0 !important; border:0 !important; background:transparent !important; color:#999 !important; font-size:11px; cursor:pointer; }
+.newow-reference__window { margin:2px 0 0; }
+.newow-reference__plot { height:180px; }
+.newow-reference__curve { position:relative; padding:0; }
+.newow-reference__metrics dd { font-weight:700; }
+.newow-reference__trade-point { opacity:0; }
+.newow-reference__trade-point:hover,.newow-reference__trade-point:focus { opacity:1; }
+.newow-reference__tooltip { position:absolute; right:32px; top:4px; padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fff; color:#666; font-size:11px; pointer-events:none; }
+.newow-reference__analysis-backdrop { position:fixed; inset:0; z-index:1000; background:#0008; display:grid; place-items:center; padding:24px; }
+.newow-reference__analysis-dialog { width:min(400px,100%); max-height:calc(100dvh - 48px); overflow:auto; padding:24px; border-radius:18px; background:#fff; display:grid; gap:16px; font-size:12px; line-height:1.7; }
+.newow-reference__analysis-dialog header { display:flex; align-items:center; justify-content:space-between; font-size:16px; }
+.newow-reference__analysis-dialog header button { border:0; min-height:28px; font-size:20px; }
+.newow-reference__analysis-dialog dl { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+.newow-reference__analysis-dialog dt { color:#999; }
+.newow-reference__analysis-dialog dd { margin:0; font-size:18px; font-weight:700; }
+.newow-reference__analysis-dialog > button { border-radius:22px; background:#007aff; color:white; border:0; cursor:pointer; }

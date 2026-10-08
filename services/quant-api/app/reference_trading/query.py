@@ -425,6 +425,30 @@ class HistoricalReferenceQuery:
             raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
         return page["items"]
 
+    def curve_marks(self, stream_id, *, since, through, cutoff, snapshot_token, budget=200_000):
+        """Complete saved valuations at the exact trade snapshot, without replay."""
+        self._window(since, through, cutoff)
+        if type(budget) is not int or not 1 <= budget <= 200_000:
+            raise QueryConflict("QUERY_INVALID")
+        with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
+            stream = self._resolve(session, stream_id)
+            snapshot, _, _ = self._snapshot(session, stream, since=since, through=through,
+                cutoff=cutoff, encoded=snapshot_token)
+            mark = ReferenceMarkRow
+            conditions = [mark.stream_id == stream_id, mark.revision_id == snapshot.revision_id,
+                mark.batch_seq <= snapshot.seq, mark.trading_day >= since, mark.trading_day <= through]
+            if cutoff is not None:
+                conditions.append(mark.bar_end <= cutoff)
+                if stream.recording_mode == "forward_observation":
+                    conditions.append(mark.observed_at <= cutoff)
+            rows = session.execute(select(mark).where(*conditions).order_by(
+                mark.bar_end, mark.trade_id, mark.batch_seq).limit(budget + 1)).scalars().all()
+            if len(rows) > budget:
+                raise QueryConflict("PRESENTATION_BUDGET_EXCEEDED")
+            return [{"trade_id": row.trade_id, "bar_end": row.bar_end.isoformat(),
+                "trading_day": row.trading_day.isoformat(), "holding_bars": row.holding_bars,
+                "reference_return": str(row.reference_return)} for row in rows]
+
     @staticmethod
     def _boundary_keys(
         session: Session, snapshot: SnapshotIdentity,

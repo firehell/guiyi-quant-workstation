@@ -424,6 +424,11 @@ class PersistedNewowReference:
             "storage_mode": "persisted",
             "allowed_uses": ["page_parity_reference", "research_display"],
         }
+        from app.reference_trading.saved_holding_curve import saved_holding_curve
+        marks = self._query.curve_marks(stream_id, since=since, through=through,
+            cutoff=cutoff, snapshot_token=snapshot)
+        payload["holding_curve"] = saved_holding_curve(curve_items, marks, availability,
+            since.isoformat(), through.isoformat(), cutoff, boundaries)
         if request.include_fusion:
             from app.reference_trading.newow_fusion import PersistedFusionComparison
             payload["fusion_comparison"] = PersistedFusionComparison(self._factory).comparison(
