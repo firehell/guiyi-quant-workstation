@@ -8,7 +8,7 @@ import { createRenderer, nextTick } from 'vue'
 
 const pageUrl = new URL('../src/pages/market/index.vue', import.meta.url)
 
-test('ordinary Market Home product clicks use the discovered weekly Newow identity', async () => {
+test('ordinary Market Home product clicks prefer daily over the first open minute frequency', async () => {
   const pushes: unknown[] = []
   Object.assign(globalThis, { __marketHomeRoutePushes: pushes })
   const Page = await loadPage()
@@ -26,7 +26,7 @@ test('ordinary Market Home product clicks use the discovered weekly Newow identi
       name: 'market-chart',
       query: {
         view: 'newow', symbol: 'ag', strategy: 'trend', series_kind: 'actual_dominant',
-        contract: undefined, frequency: '1w', focus_bar_end: undefined,
+        contract: undefined, frequency: '1d', focus_bar_end: undefined,
       },
     }])
   } finally {
@@ -108,7 +108,7 @@ async function loadPage() {
     import { ref } from '${vueUrl}'
     export function useNewowCapabilities() {
       return {
-        state: ref('ready'), error: ref(null), openFrequencies: ref(['1w']), openFrequenciesFor: () => ['1w'],
+        state: ref('ready'), error: ref(null), openFrequencies: ref(['5m', '1d', '1w']), openFrequenciesFor: () => ['5m', '1d', '1w'],
         load: async () => {},
       }
     }

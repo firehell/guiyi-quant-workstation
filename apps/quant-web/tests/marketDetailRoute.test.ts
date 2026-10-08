@@ -115,7 +115,7 @@ test('switching views restores only active unified view state', () => {
     free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
   }
   assert.deepEqual(resolveViewSwitchIdentity('newow', 'rb', null, restore), {
-    view: 'newow', symbol: 'rb', strategy: 'main_rise', seriesKind: 'actual_dominant', frequency: '1w',
+    view: 'newow', symbol: 'rb', strategy: 'main_rise', seriesKind: 'actual_dominant', frequency: '1d',
   })
   assert.deepEqual(resolveViewSwitchIdentity('free', 'rb', null, restore), {
     view: 'free', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '5m',

@@ -128,7 +128,7 @@ export function resolveViewSwitchIdentity(
     }
     return {
       view, symbol, strategy: restore.newow.strategy,
-      seriesKind: 'actual_dominant', frequency: restore.newow.frequency,
+      seriesKind: 'actual_dominant', frequency: '1d',
     }
   }
   if (view === 'trend') {
