@@ -2450,7 +2450,7 @@ def test_query_hot_path_has_no_digest_manifest_or_gap_dependency() -> None:
 
 
 @pytest.mark.parametrize("limit", [1, 500])
-@pytest.mark.parametrize("frequency", ["1d", "60m", "1w"])
+@pytest.mark.parametrize("frequency", ["1d", "5m", "15m", "30m", "60m", "1w"])
 def test_newow_chart_window_uses_bounded_catalog_queries(session, tmp_path, limit, frequency):
     from sqlalchemy import event
     from guiyi_quant.newow.product_contracts import ProductFrequency
@@ -2495,7 +2495,9 @@ def test_newow_chart_window_uses_bounded_catalog_queries(session, tmp_path, limi
         window = reader.resolve_chart_window("jm", ProductFrequency(frequency), limit, as_of)
     finally:
         event.remove(engine, "before_cursor_execute", count)
-    count_days = (limit + 3) // 4 if frequency == "60m" else limit
+    # The fixture has one uninterrupted 09:00–15:00 Session.
+    bars_per_day = 360 // int(frequency[:-1]) if frequency.endswith("m") else 1
+    count_days = (limit + bars_per_day - 1) // bars_per_day
     if frequency == "1w":
         count_days *= 7
     assert (window.since, window.through) == (days[max(0, len(days) - count_days)], days[-1])
@@ -2902,3 +2904,29 @@ def test_exact_first_partition_bar_is_inclusive_without_changing_strict_prefix(s
     assert result.bars == (first,)
     with pytest.raises(MarketDataError,match="QUERY_WINDOW_EMPTY"):
         service.query_page(SeriesPageQuery("contract","jm","60m",limit=1,contract="JM2509",before=first.bar_end))
+
+
+def test_completed_day_windows_preserve_exact_close_and_prefix(session, tmp_path):
+    days = (date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 6))
+    session.add_all(TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True)
+                    for day in days)
+    session.commit()
+    market = MarketDataService(MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path))
+    start = datetime(2025, 1, 1, 0, tzinfo=UTC)
+    before_close = datetime(2025, 1, 3, 6, 59, tzinfo=UTC)
+    exact_close = datetime(2025, 1, 3, 7, 0, tzinfo=UTC)
+    later = datetime(2025, 1, 6, 7, 0, tzinfo=UTC)
+    prefix = market.completed_trading_day_windows(symbol="jm", start=start, as_of=before_close,
+                                                  latest=days[-1])
+    exact = market.completed_trading_day_windows(symbol="jm", start=start, as_of=exact_close,
+                                                 latest=days[-1])
+    complete = market.completed_trading_day_windows(symbol="jm", start=start, as_of=later,
+                                                    latest=days[-1])
+    assert tuple(day for day, _ in prefix) == days[:1]
+    assert tuple(day for day, _ in exact) == days[:2]
+    assert complete[:1] == prefix
+    assert complete[:2] == exact
+    assert tuple(day for day, _ in complete) == market.completed_trading_days(
+        symbol="jm", start=start, as_of=later, latest=days[-1],
+    )
+    assert all(max(window.end for window in windows) <= exact_close for _, windows in exact)

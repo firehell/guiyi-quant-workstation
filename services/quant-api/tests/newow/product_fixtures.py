@@ -732,6 +732,11 @@ class _PagedMarketData:
         if stage in self.failures:
             raise self.failures[stage]
 
+    def completed_trading_day_windows(self, *, symbol, start, as_of, latest):
+        return tuple((day, self.sessions[day]) for day in self.completed_trading_days(
+            symbol=symbol, start=start, as_of=as_of, latest=latest,
+        ))
+
     def completed_trading_days(self, *, symbol, start, as_of, latest):
         return tuple(
             day

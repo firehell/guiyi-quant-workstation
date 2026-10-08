@@ -538,8 +538,17 @@ class NewowProductReader:
         start_day = self._coverage.product_start(product)
         latest = self._coverage.latest_complete_day((product,))
         start = datetime.combine(start_day, time.min, _SHANGHAI)
-        days = self._market_data.completed_trading_days(
-            symbol=product, start=start, as_of=cutoff, latest=latest
+        intraday = ProductFrequency(frequency) in INTRADAY_PRODUCT_FREQUENCIES
+        completed_windows = (
+            self._market_data.completed_trading_day_windows(
+                symbol=product, start=start, as_of=cutoff, latest=latest,
+            ) if intraday else ()
+        )
+        days = (
+            tuple(day for day, _ in completed_windows) if intraday
+            else self._market_data.completed_trading_days(
+                symbol=product, start=start, as_of=cutoff, latest=latest,
+            )
         )
         self._check_cancelled()
         if not days or any(
@@ -550,12 +559,13 @@ class NewowProductReader:
             days = tuple(day for day in days if day < before)
             if not days:
                 return None
-        if ProductFrequency(frequency) in INTRADAY_PRODUCT_FREQUENCIES:
+        if intraday:
+            sessions_by_day = dict(completed_windows)
             count = 0
             first = days[-1]
             for day in reversed(days):
                 self._check_cancelled()
-                sessions = self._market_data.session_windows(symbol=product, trading_day=day)
+                sessions = sessions_by_day[day]
                 ends = expected_intraday_ends(tuple(sessions), frequency.value)
                 count += sum(end <= cutoff for end in ends)
                 first = day
