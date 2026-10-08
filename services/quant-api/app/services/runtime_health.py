@@ -911,7 +911,15 @@ def _collect_current_after_market_health(
             "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
     if isinstance(public.get("consumer_checks"), Mapping):
-        base["consumer_checks"] = public["consumer_checks"]
+        # A natural receipt describes its frozen input revision. Health does
+        # not rerun the consumer or hash the entire Catalog on every GET.
+        # Preserve the receipt outcome and explicitly withhold current validity.
+        base["consumer_checks"] = {
+            key: {**check, "freshness": "unverified",
+                  "freshness_reason": "INPUT_REVISION_NOT_RECHECKED"}
+            for key, check in public["consumer_checks"].items()
+            if isinstance(check, Mapping)
+        }
     if "last_interruption" in public:
         base["last_interruption"] = public["last_interruption"]
     if expected_day_error:
