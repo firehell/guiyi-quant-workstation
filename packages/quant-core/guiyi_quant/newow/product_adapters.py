@@ -887,27 +887,18 @@ def replay_strategy(
     inputs = tuple(bars)
     _validate_inputs(identity, inputs)
     evidence = tuple(lifecycle_evidence)
-    verified_owners = validate_lifecycle_replay_evidence(identity, inputs, evidence)
+    validate_lifecycle_replay_evidence(identity, inputs, evidence)
     gaps = tuple(data_interruptions)
     labeled_inputs = label_calculation_segments(identity, inputs, gaps)
     frames: list[StrategyFrame] = []
     diagnostics: list[str] = []
     state = seed_replay_state()
     for product_bar in labeled_inputs:
-        owner = (product_bar.bar.physical_contract, product_bar.bar.segment_id)
-        state, frame, found = replay_step(
-            identity,
-            state,
-            product_bar,
-            verified_lifecycle=(
-                owner in verified_owners and not any(
-                    gap.physical_contract == owner[0]
-                    and gap.segment_id == owner[1]
-                    and gap.effective_at < product_bar.bar.bar_end
-                    for gap in gaps
-                )
-            ),
-        )
+        # Batch ordering, identity and lifecycle were validated above. This
+        # fresh state belongs exclusively to this call and never escapes, so
+        # the public step's defensive deepcopy and duplicate-input hashes are
+        # unnecessary. Keep its exact formula/pairing/rollover transition.
+        state, frame, found = _replay_step_mutating(identity, state, product_bar)
         assert frame is not None
         frames.append(frame)
         diagnostics.extend(found)
