@@ -81,3 +81,13 @@ owner明确批准短暂切换至v1.14.3。原子安装器首次在mutation前因
 上述新修复尚未切换Runtime，136条终场精确恢复、实际源读回及完整数据审计仍未完成。后续在独立验证与精确身份检查通过后准备scoped v1.14.5候选；不混入其他线程attack/UI或SuBing0049迁移，不改旧tag/receipt。此处仅记录本检查点，不预写发布或运行成功。
 
 本轮隔离 PostgreSQL实际回归完成：`test_forward_capacity_postgresql.py` 与 `test_newow_worker_recovery.py` 共40 passed（211.42s），仅使用 `guiyi_isolated_newow_20261008`，未写生产库。该结果验证新代码，不代替正式运行读回。
+
+## 完整数据审计与整改（2026-10-09）
+
+原完整审计67分11秒覆盖operational60、七周期、截至10/8的配置历史floor2023-01-01及新上市后范围，并检查Catalog已有physical warm-up月。原结果failed23全部RS W1，不改旧报告；此前单品种0finding进度被误作累计，已纠正。逐40端点/23月/9合约用既有D1整周质量证明全部解释，无未解释缺口。audit-only定点整改后217回归、独立5案例通过；新的RS七周期全范围audit passed/0finding/provider0/applied0。与原其余59品种无finding证据共同完成本次配置域审计闭环，不声明无限上市历史或正常正价W1。
+
+原件与SHA manifest保存在task outputs的data-audit/full-history-manual-20261008T1636Z及rs-audit-remediation-20261008T1645Z。源质量再核验252/257日×7字段无差异；BZ5 fresh结果UNKNOWN，两个响应保存失败attempt未重试，旧typed来源事实保持。没有可证明应该改成正价的Canonical修复目标；下载仅35个未尝试单元的新源核验，无生产行情/DB写入。
+
+最终v1.14.5候选扩大后端2934 passed/111 skipped，候选隔离PG40 passed，Web809 passed/1 skipped及build/typecheck/topology；午夜176+独审46、audit217+独审5，OpenSpec10/10、Ruff/secret0/diff通过。候选只读720 configured/enabled，584 READY/136实际漏记、180 source endpoint READY，混合部署身份诊断正确。PR417仍草稿：宿主明确拒绝ready/main merge，要求此次具体发布批准；尚无新tag/Release/Runtime切换或终场恢复。
+
+最终待发布候选 `1820951bfa8c7cdc234a22cca85d698a3effba60`（PR417），包含本轮审计误判修复；此前34649e4ff为补充修复前检查点。尚未ready/main/tag/Release/Runtime。
