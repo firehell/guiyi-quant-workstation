@@ -839,3 +839,34 @@ volume=1、turnover=34525、OI=1684时，仅high改为6910。不是米筐确认�
 精确前像守卫、原始响应封存、不可变Parquet内的人工规则标记与版本合同见
 `openspec/specs/canonical-market-storage/spec.md`。不扩展其他Bar自动修复，
 不放宽OHLC/Session/coverage校验，不改变日周或Runtime。
+
+
+### 正常交易日日切 metadata 准备
+
+Market Live 的既有前台 poll（包括 CLOSED tick）在开始新交易日订阅前运行正常准备 hook；
+它直接复用 MarketPhaseResolver 的 Calendar/Session 权威，在当前交易或距离开盘 30 分钟内选择
+唯一 trading_day，夜盘使用 Session 所属交易日，不使用本机自然日期推断主力。
+范围固定为 operational 60；已经完整的 Catalog rank1、物理合约身份和 Session 不开启 provider。
+缺失时，在全局 maintenance lease 内先持久化单次 capture 意图，再调用
+MetadataSynchronizer.capture_current_day，冻结 snapshot 和经过共享 exact-diff 校验的 plan，
+随后复核 plan 并使用 preserve_equal 的共享 writer 提交。只允许 equal/insert，冲突 fail-closed；
+不改历史 Canonical、不将 Redis 映射晋升 Catalog，也不调用或放宽 failed/interrupted recovery CLI Gate。
+RQData 尚未发布下一交易日主力或 capture 异常属于真实 source 失败证据，不能依据单元测试判定已可用。
+
+日切 state 固定保存在 `~/Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json`，
+独立于 release 的 `.run`。它绑定 Catalog 连接身份、Canonical root 和 operational products 的摘要，
+索引保留 status、source/plan hash、receipt 和归档引用；passed/blocked 的完整 snapshot、exact plan 与
+receipt 按日写入相邻 `.json.archives` 目录，以 day+content SHA 文件名不可变保留，文件和目录
+fsync 后才替换 index。当前选中日验证 archive hash、大小、Catalog binding 和记录摘要；
+缺失或损坏 fail-closed，不读取所有旧日快照。已有完整 v1 terminal 在 flock 内归档，prepared/inflight
+保持原 attempt；索引提交或 archive fsync 失败仍保留此前完整状态和证据，不重做 source/DB 操作。
+同日 inflight、blocked、未知提交或进程中断需要独立 readback，
+不会因为重启、换 release、已有 Catalog 行或再次 tick 自动重试。维护 lease 忙且尚未捕获 source
+不消耗 attempt。缓存已验证 ready 的全部相关事实 fingerprint；任何 owner、Calendar、Session 或
+合约身份变化触发重新验证。新日 Redis 订阅只能使用已发布 Catalog rank1，并核对已有 Redis 冻结映射，
+冲突禁止订阅。metadata 的 60 品种范围不扩大实际 TRADING phase 的 quote channels。
+
+`build_day_metadata_preparation` 也提供正常单次调用：`tick(now, phase="plan")` 只捕获并冻结计划；
+`tick(now, phase="apply", expected_snapshot_sha256=..., expected_plan_sha256=...)` 必须匹配该 durable
+prepared 记录，在 lease 内复核后提交，无 provider 调用。目标日仍须由当前/即将开盘的权威 Session
+选择；normal 入口不依赖盘后任务失败状态，不接受任意日期或跨 Catalog state。
