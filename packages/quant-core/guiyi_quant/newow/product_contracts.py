@@ -417,11 +417,14 @@ class StrategyAction:
             self, "source_related_marker_ids", _strings(self.source_related_marker_ids)
         )
         if self.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY and (
-            self.identity.strategy is not ProductStrategy.MAIN_RISE
+            self.identity.strategy not in (ProductStrategy.MAIN_RISE, ProductStrategy.TREND)
             or self.kind is not ActionKind.CLEAR
             or self.related_build_id is not None
             or self.sequence != 0
-            or self.source_marker_id is not None
+            or (self.identity.strategy is ProductStrategy.MAIN_RISE
+                and self.source_marker_id is not None)
+            or (self.identity.strategy is ProductStrategy.TREND
+                and self.source_marker_id is None)
             or self.source_related_marker_ids
         ):
             raise ValueError("NEWOW_PRODUCT_INVALID_INITIAL_CLEAR")

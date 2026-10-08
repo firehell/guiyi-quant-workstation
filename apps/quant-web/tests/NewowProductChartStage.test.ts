@@ -44,7 +44,7 @@ test('trend A/B boundaries render as lightweight one-pixel lines above the colum
   const response = chartResponse()
   response.meta.identity.strategy = 'trend'
   response.meta.identity.profile_id = 'newow_product_trend_60m_v1'
-  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
   response.value!.frames[0]!.main_state = 'HOLD'
   response.value!.frames[0]!.main_values = { a: '99', b: '101' }
   response.value!.actions = []
@@ -413,7 +413,7 @@ test('channel primitive replaces strategy-owned data on snapshot pagination and 
     const response = ref<MutableChartResponse | null>(chartResponse())
     response.value!.meta.identity.strategy = 'trend'
     response.value!.meta.identity.profile_id = 'newow_product_trend_60m_v1'
-    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
     response.value!.value!.frames[0]!.main_values = { a: '99', b: '101' }
     response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 110, 90)
     const attached: string[] = []
@@ -695,10 +695,10 @@ function chartResponse(): MutableChartResponse {
   const bars = [bar('2026-08-15T07:00:00Z', '2026-08-15')]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v3',
-      identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'] },
+      schema_version: 'newow_product_detail_v4',
+      identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2'] },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null,
-      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart', status: ready(), value: {
       chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [], bars,
@@ -715,7 +715,7 @@ function strategyResponse(strategy: 'trend' | 'oscillation' | 'main_rise'): Muta
   response.meta.identity.strategy = strategy
   response.meta.identity.profile_id = `newow_product_${strategy}_60m_v1`
   if (strategy === 'trend') {
-    response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
     response.value!.frames[0]!.main_values = { a: '99', b: '101' }
   } else if (strategy === 'main_rise') {
     response.meta.identity.formula_versions = ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']

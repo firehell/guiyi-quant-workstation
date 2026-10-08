@@ -29,7 +29,7 @@ import {
 } from '../src/utils/newowProductViewModel.ts'
 
 const AS_OF = '2026-08-15T07:00:00Z'
-const FORMULAS = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+const FORMULAS = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
 const expected = {
   product: 'jm', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant',
   section: 'chart', asOf: AS_OF,
@@ -707,7 +707,7 @@ test('shared trend explanation context remains valid on oscillation and main-ris
   for (const strategy of ['oscillation', 'main_rise'] as const) {
     const original = explanationWire()
     const formula_versions = strategy === 'oscillation'
-      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
+      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
     const wire = { ...original, meta: { ...original.meta, identity: {
       ...original.meta.identity, strategy, profile_id: `newow_product_${strategy}_1d_v1`, formula_versions,
@@ -809,17 +809,17 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
   const strategy = options.strategy ?? 'trend'
   const frequency = options.frequency ?? '1d'
   const formulas = strategy === 'trend' ? FORMULAS : strategy === 'oscillation'
-    ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
+    ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
   const close = options.close ?? '101.500'
   const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
-      schema_version: 'newow_product_detail_v3',
+      schema_version: 'newow_product_detail_v4',
       identity: { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64),
       data_revision_identity: null, snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+      reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart' as const,
     chart: {
@@ -997,7 +997,7 @@ function comparatorWire() {
 export function referenceItem(id: string, returnPct: string) {
   return {
     reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125',
     status: 'CLOSED', holding_bars: 1, reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null,
@@ -1069,7 +1069,7 @@ test('fusion reference validates independent version and parent snapshot', () =>
   const raw = referenceWire()
   const parent = raw.reference.value!
   const fusion = {
-    reference_model_version: 'newow_dual_fusion_reference_zero_cost_v1',
+    reference_model_version: 'newow_dual_fusion_reference_zero_cost_v2',
     reference_input_sha256: parent.reference_input_sha256,
     reference_cutoff: parent.reference_cutoff,
     performance_since: parent.performance_since,
@@ -1212,8 +1212,36 @@ test('daily and weekly chart reference and auxiliary reads share the strategy de
 
 test('real hourly comparator accepts the explicit canonical V1 identity and rejects a daily policy',()=>{
  const expected={product:'pp',strategy:'oscillation' as const,frequency:'60m' as const,seriesKind:'actual_dominant' as const,section:'comparator' as const,asOf:hourlyComparator.meta.as_of}
- const normalized=normalizeNewowProductResponse(hourlyComparator,expected)
+ const current=structuredClone(hourlyComparator)
+ current.meta.schema_version='newow_product_detail_v4'; current.meta.reference_model_version='newow_marker_reference_zero_cost_v4'
+ current.meta.identity.formula_versions=current.meta.identity.formula_versions.map(v=>v.replace('newow_oscillation_hhv_llv10_page_v1','newow_oscillation_hhv_llv10_page_v2'))
+ current.comparator.value!.result!.identity.formula_versions=current.meta.identity.formula_versions
+ const normalized=normalizeNewowProductResponse(current,expected)
  assert.equal(normalized.section,'comparator')
- const wrong=structuredClone(hourlyComparator);wrong.comparator.value!.result!.identity.input_quality_policy='newow_daily_input_quality_v2'
+ const wrong=structuredClone(current);wrong.comparator.value!.result!.identity.input_quality_policy='newow_daily_input_quality_v2'
  assert.throws(()=>normalizeNewowProductResponse(wrong,expected),/frequency mismatch/)
+})
+
+
+test('rejects retired v3 schema and reference model and missing marker policy', () => {
+  const retired = chartWire(); retired.meta.schema_version = 'newow_product_detail_v3'
+  assert.throws(() => normalizeNewowProductResponse(retired, expected), /schema_version/)
+  const model = chartWire(); model.meta.reference_model_version = 'newow_marker_reference_zero_cost_v3'
+  assert.throws(() => normalizeNewowProductResponse(model, expected), /reference_model_version/)
+  const marker = chartWire(); marker.meta.identity.formula_versions = marker.meta.identity.formula_versions.filter(v => !v.includes('marker_initial_clear'))
+  assert.throws(() => normalizeNewowProductResponse(marker, expected), /formula/)
+})
+
+
+test('accepts trend initial CLEAR only as a standalone eligible display action', () => {
+  const wire = chartWire({strategy: 'trend', actions: [{
+    signal_id: 'trend-initial-clear', kind: 'CLEAR', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14',
+    reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', related_build_id: null,
+    trade_eligibility: 'INITIAL_CLEAR_NO_ENTRY', sequence: 0,
+  }]})
+  wire.chart.value.frames[0]!.action_ids=['trend-initial-clear'];wire.chart.value.frames[0]!.main_state='CLEAR'
+  assert.equal(normalizeNewowProductResponse(wire,expected).value!.actions[0]!.related_build_id,null)
+  const warming=structuredClone(wire);warming.chart.value.bars[0]!.observation_eligible=false
+  assert.throws(()=>normalizeNewowProductResponse(warming,expected),/INITIAL_CLEAR/)
 })

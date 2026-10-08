@@ -58,6 +58,7 @@ _TREND_FORMULAS = frozenset(
     (
         NEWOW_TREND_D1_PAGE_V2.trend_band_formula,
         NEWOW_TREND_D1_PAGE_V2.escape_formula,
+        NEWOW_TREND_D1_PAGE_V2.marker_policy,
     )
 )
 _OSCILLATION_FORMULAS = frozenset(
@@ -311,6 +312,10 @@ def _trend_action(
             if eligibility is TradeEligibility.WARMUP_ONLY
             else _pair_action(pairing, action)
         )
+    if eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY:
+        if marker.related_marker_ids:
+            raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
+        return action
     if len(marker.related_marker_ids) != 1:
         raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
     referenced = pairing.source_builds.get(marker.related_marker_ids[0])
@@ -375,8 +380,26 @@ def _trend_frame(
     actions: tuple[StrategyAction, ...] = ()
     next_state = result.state
     if raw_bar.observation_eligible and result.marker is not None:
-        action = _trend_action(identity, product_bar, result.marker, pairing)
+        qualifies = bool(
+            pairing.initial_clear_possible
+            and pairing.initial_yellow_seen
+            and state.previous_state is TrendBandState.YELLOW
+            and result.point.state is TrendBandState.BLUE
+            and state.last_build_marker_id is None
+            and state.last_build_close is None
+            and not result.marker.related_marker_ids
+            and pairing.eligible_build is None
+            and pairing.prewarm_build is None
+            and not pairing.source_builds
+        )
+        action = _trend_action(
+            identity, product_bar, result.marker, pairing,
+            eligibility=(TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+                         if qualifies else TradeEligibility.ELIGIBLE),
+        )
         actions = (action,)
+        if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY:
+            diagnostics.append("INITIAL_CLEAR_NO_ENTRY")
         if action.trade_eligibility is TradeEligibility.NO_ELIGIBLE_ENTRY:
             diagnostics.append("NO_ELIGIBLE_ENTRY")
     elif not raw_bar.observation_eligible:
@@ -402,16 +425,23 @@ def _trend_frame(
                 )
             else:
                 related = witness.marker.related_marker_ids
-                if (
+                if not related and witness.state.last_build_marker_id is None:
+                    pairing.initial_clear_possible = False
+                elif (
                     len(related) != 1
                     or pairing.prewarm_build is None
                     or pairing.source_builds.get(related[0])
                     != pairing.prewarm_build
                 ):
                     raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
-                _drop_source_build(pairing, pairing.prewarm_build)
-                pairing.prewarm_build = None
+                if pairing.prewarm_build is not None:
+                    _drop_source_build(pairing, pairing.prewarm_build)
+                    pairing.prewarm_build = None
     point = result.point
+    if point.state is TrendBandState.YELLOW and next_state.last_build_marker_id is None:
+        pairing.initial_yellow_seen = True
+    else:
+        pairing.initial_clear_possible = False
     main_state = (
         MainState.BUILD
         if actions

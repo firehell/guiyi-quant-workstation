@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from hashlib import sha256
+import json
+from threading import Lock
 from contextlib import closing
 from datetime import date, datetime, timedelta
 
@@ -20,6 +24,8 @@ class PersistedNewowReference:
     def __init__(self, session_factory) -> None:
         self._factory = session_factory
         self._query = HistoricalReferenceQuery(session_factory)
+        self._page_reads = OrderedDict()
+        self._page_read_lock = Lock()
 
     def _manifest(self, stream_id: str, revision_id: str, seq: int):
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
@@ -33,6 +39,55 @@ class PersistedNewowReference:
             if stream is None or batch is None:
                 raise QueryConflict("SNAPSHOT_CONFLICT")
             return _identity_from_row(stream), dict(batch.dependency_manifest)
+
+    def _page_read(self, request, reader, manifest, resolved):
+        """Decode the authoritative prefix only after saved source proof passes.
+
+        Reuse binds the entire saved manifest and exact cutoff/window; a cache
+        hit still verifies current Canonical evidence. This cache never weakens
+        the independent saved stream revision/seq validation.
+        """
+        from dataclasses import replace
+        from app.market_data.newow.product_query import NewowProductQuery
+        if manifest.get("reader") != "newow_product_reader_intraday_v3":
+            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+        try:
+            start = date.fromisoformat(manifest["query_since"])
+            source_through = date.fromisoformat(manifest["query_through"])
+            source_as_of = datetime.fromisoformat(manifest["query_as_of"])
+            if resolved.actual_through > source_through or resolved.cutoff > source_as_of:
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            def verify():
+                evidence = reader.historical_source_evidence(product=request.product,
+                    frequency=request.frequency.value, since=start,
+                    through=source_through, as_of=source_as_of)
+                verify_saved_compact_source(manifest, evidence)
+                return sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+            source_hash = verify()
+            key = (request.product, request.frequency.value,
+                source_hash, start, source_through, source_as_of,
+                resolved.actual_through, resolved.cutoff)
+            with self._page_read_lock:
+                cached = self._page_reads.get(key)
+                if cached is not None:
+                    self._page_reads.move_to_end(key)
+                    return cached
+            query = NewowProductQuery(request.product, request.strategy, request.frequency,
+                start, resolved.actual_through, start, resolved.actual_through,
+                resolved.cutoff)
+            full = reader.load(query, resolved.cutoff)
+            if not full.replay_bars or full.as_of != resolved.cutoff:
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            if verify() != source_hash:
+                raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+            full = replace(full, reference_source_evidence_sha256=source_hash)
+            with self._page_read_lock:
+                self._page_reads[key] = full
+                while len(self._page_reads) > 4:
+                    self._page_reads.popitem(last=False)
+            return full
+        except (KeyError, TypeError, ValueError) as exc:
+            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
 
     @staticmethod
     def _coverage(points, gaps, since: date, through: date):
@@ -232,6 +287,14 @@ class PersistedNewowReference:
         )
         fusion["fusion_input_sha256"] = fusion["reference_input_sha256"]
         fusion["reference_input_sha256"] = fact_key
+        from guiyi_quant.newow.product_adapters import build_product_identity
+        from app.market_data.newow.page_performance_adapter import project_page_performance
+        _, manifest = self._manifest(*saved)
+        full = self._page_read(request, reader, manifest, resolved)
+        source_identity = build_product_identity(request.product, request.strategy, request.frequency,
+            input_quality_policy=full.input_quality_policy)
+        fusion["page_performance"] = project_page_performance(full, source_identity, resolved, fusion=True)
+        self.validate_cached_generation(delivery)
         return replace(delivery, value=PersistedReferenceSectionValue({**payload, "fusion_comparison": fusion}, saved))
 
     def section(self, request, read, identity, reader, fact_key, _page_identity, resolved):
@@ -449,8 +512,19 @@ class PersistedNewowReference:
             )
             payload["fusion_comparison"]["fusion_input_sha256"] = payload["fusion_comparison"]["reference_input_sha256"]
             payload["fusion_comparison"]["reference_input_sha256"] = fact_key
+        from app.market_data.newow.page_performance_adapter import project_page_performance
+        if minute:
+            full = self._page_read(request, reader, manifest, resolved)
+        else:
+            full = read
+        payload["page_performance"] = project_page_performance(full, identity, resolved)
+        if request.include_fusion:
+            payload["fusion_comparison"]["page_performance"] = project_page_performance(full, identity, resolved, fusion=True)
+        latest = self._query.summary(stream_id, since=since, through=through, cutoff=cutoff)
+        if (latest["revision_id"], latest["seq"]) != (page["revision_id"], page["seq"]):
+            raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         warming = (
-            not resolved.complete or _has_unresolved_tail_gap(read)
+            not resolved.complete or _has_unresolved_tail_gap(full)
             or bool(availability and availability[-1]["value"].get("last_status", availability[-1]["value"]["status"]) != "ready")
         )
         status = FeatureStatus(

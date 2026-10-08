@@ -190,9 +190,9 @@ def test_detail_uses_only_d1_actual_dominant_and_same_contract_prefix() -> None:
     assert result.instrument.product == "rb"
     assert result.instrument.frequency == "1d"
     assert result.instrument.series_kind == "actual_dominant"
-    assert result.instrument.profile_id == "newow_trend_d1_page_v2"
+    assert result.instrument.profile_id == "newow_trend_d1_page_v3"
     assert result.instrument.formula_versions[0] == "newow_trend_band_page_v2"
-    assert "newow_trend_d1_page_v2" in result.calculation_identity
+    assert "newow_trend_d1_page_v3" in result.calculation_identity
     assert "newow_trend_band_page_v2" in result.calculation_identity
     assert [bar.trading_day for bar in result.bars] == [
         _START + timedelta(days=index) for index in range(3, 8)

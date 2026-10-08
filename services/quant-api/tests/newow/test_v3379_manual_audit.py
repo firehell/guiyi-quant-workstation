@@ -222,7 +222,7 @@ def test_main_rise_j_dates_and_reference_prices_same_input(case):
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["name"])
-def test_paired_trend_signal_dates_and_reference_prices_same_input(case):
+def test_all_trend_signal_dates_and_reference_prices_same_input(case):
     state = initial_trend_band_state()
     actual = []
     for i, bar in enumerate(bars(case)):
@@ -236,15 +236,7 @@ def test_paired_trend_signal_dates_and_reference_prices_same_input(case):
                     float(result.marker.price),
                 )
             )
-    # The source emits unpaired initial CLEARs. Do not hide that difference:
-    # the separate test below pins it, while this test compares paired signals.
-    expected = []
-    seen_build = False
-    for s in case["trend"]["signals"]:
-        if s["type"] == "buy":
-            seen_build = True
-        if seen_build:
-            expected.append((s["index"], s["type"], s["price"]))
+    expected = [(r["index"], r["type"], r["price"]) for r in case["trend"]["signals"]]
     assert [(i, kind) for i, kind, _ in actual] == [
         (i, kind) for i, kind, _ in expected
     ]
@@ -253,7 +245,7 @@ def test_paired_trend_signal_dates_and_reference_prices_same_input(case):
     )
 
 
-def test_initial_trend_clear_has_no_local_marker_without_entry():
+def test_initial_trend_clear_has_a_display_marker_without_entry():
     case = CASES[6]
     index = case["trend"]["signals"][0]["index"]
     assert case["trend"]["signals"][0]["type"] == "sell"
@@ -263,7 +255,10 @@ def test_initial_trend_clear_has_no_local_marker_without_entry():
         state = result.state
     assert result.point.state_before.value == "YELLOW"
     assert result.point.state.value == "BLUE"
-    assert result.marker is None
+    assert result.marker is not None
+    assert result.marker.marker_type.value == "CLEAR"
+    assert result.marker.related_marker_ids == ()
+    assert result.marker.price == Decimal(str(case["trend"]["b"][index]))
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["name"])
@@ -286,7 +281,7 @@ def test_ordinary_ai_backtest_summary_same_input(case, strategy):
         assert actual.win_rate == expected["summary"]["accuracy"]
 
 
-def test_chart_same_bar_difference_is_not_ai_difference():
+def test_chart_same_bar_matches_source_without_changing_ai_order():
     case = CASES[4]  # Repeated touching of both channel edges.
     local = [
         {
@@ -297,9 +292,9 @@ def test_chart_same_bar_difference_is_not_ai_difference():
         for bar, step in zip(bars(case), calculate_oscillation_series(bars(case)))
         for s in step.signals
     ]
-    assert local != case["chart"]
+    assert local == case["chart"]
     day = case["bars"][10]["date"]
-    assert [s["type"] for s in local if s["date"] == day] == ["sell", "buy"]
+    assert [s["type"] for s in local if s["date"] == day] == ["sell"]
     assert [s["type"] for s in case["chart"] if s["date"] == day] == ["sell"]
 
 

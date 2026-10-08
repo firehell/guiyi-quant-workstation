@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NewowPagePerformancePanel from './NewowPagePerformancePanel.vue'
 import { holdingCurvePlot } from '@/utils/newowHoldingCurve'
 import { computed, nextTick, ref, watch } from 'vue'
 import { closestReferenceCurvePoint, referenceCurveAnchors, referenceCurveDrawdown, newowReferenceCurve, newowReferenceDrawdown, newowReferenceAnnualized, newowTheoreticalDisplay } from '@/utils/newowReferenceCurve'
@@ -226,6 +227,8 @@ function inspectHolding(event: MouseEvent) {
 
 <template>
   <section class="newow-reference" :aria-busy="loadingPage" aria-labelledby="newow-reference-title">
+    <NewowPagePerformancePanel :value="response?.value?.page_performance" :since="response?.value?.performance_since" :through="response?.value?.performance_through" :floor="availableSince ?? undefined" :loading="loadingPage" @reload="emit('reload', $event)" />
+    <details class="newow-reference__raw-facts"><summary>原始策略 ReferenceTrade 事实与诊断</summary><p>下方记录仅由 BUILD / CLEAR 配对；OPEN 与中断仍保留原始状态，未将页面末根估值改为已完成。</p>
     <header class="newow-reference__returns-heading"><strong id="newow-reference-title">策略收益率走势</strong><span class="newow-reference__annualized" title="页面参考年化：按所选统计区间的实际天数，将 1 + 累计参考收益 / 100 折算一年；零费用、零滑点，不代表账户收益。">年化{{ annualized === null ? ' —' : `${annualized.toFixed(1)}%` }}</span><button type="button" class="newow-reference__analysis-link" @click="analysisOpen = true">收益分析 ›</button></header>
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
@@ -335,6 +338,7 @@ function inspectHolding(event: MouseEvent) {
     </template>
     <p v-if="recordsLoading" role="status">正在读取近一年操盘记录…</p>
     <p v-if="recordsError" role="status">{{ recordsError }} <button @click="emit('load-more')">重试记录</button></p>
+    </details>
   </section>
 </template>
 

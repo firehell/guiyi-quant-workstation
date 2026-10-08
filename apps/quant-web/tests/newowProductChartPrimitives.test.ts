@@ -117,7 +117,7 @@ test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separ
   })), [{
     anchorPrice: '88.125', value: 88.125, confirmedAt: '2026-08-15T08:30:00Z',
     sourceIdentity: 'canonical:jm:JM2601',
-    formulaVersions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'],
+    formulaVersions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2'],
     physicalContract: 'JM2601', segmentId: 'segment-1',
   }])
   assert.notEqual(model.hints[0]!.value, model.actions[1]!.value)
@@ -236,9 +236,9 @@ function chartResponse(
   const keys = strategy === 'trend' ? ['b', 'a']
     : strategy === 'oscillation' ? ['upper', 'lower'] : ['ma35', 'ma45']
   const formulas = strategy === 'trend'
-    ? ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    ? ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
     : strategy === 'oscillation'
-      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
+      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
   const bars = [
     bar('2026-08-14T07:00:00Z', '2026-08-14', '100'),
@@ -246,10 +246,10 @@ function chartResponse(
   ]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v3',
+      schema_version: 'newow_product_detail_v4',
       identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64),
-      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v3',
+      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v4',
       futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart',
