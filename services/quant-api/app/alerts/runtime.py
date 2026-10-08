@@ -117,6 +117,7 @@ def _persist_candidate_and_prepare_notification(
     candidate: AlertObservationCandidate,
     processing_now: datetime,
 ) -> _PreparedEvent:
+    definition = get_alert_rule_definition(rule.rule_code)
     create = AlertEventCreate(
         rule_id=rule.id,
         symbol=symbol,
@@ -126,14 +127,16 @@ def _persist_candidate_and_prepare_notification(
         bar_end=candidate.bar_end,
         result_codes=candidate.observation_types,
         detected_at=processing_now,
-        notification_attempted_at=processing_now,
+        notification_attempted_at=(processing_now if definition.notification_enabled else None),
     )
-    if get_alert_rule_definition(rule.rule_code).event_mode is AlertEventMode.FIRST_SEEN:
+    if definition.event_mode is AlertEventMode.FIRST_SEEN:
         created = service.create_first_seen_observation_event(create)
     else:
         created = service.create_event(create)
     if created is None:
         return _PreparedEvent(False, None, None)
+    if not definition.notification_enabled:
+        return _PreparedEvent(True, None, None)
     taxonomy_entry = taxonomy.get(symbol)
     if taxonomy_entry is None:
         return _PreparedEvent(True, None, NOTIFICATION_PREPARATION_FAILURE)

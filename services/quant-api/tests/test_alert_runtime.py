@@ -1742,3 +1742,95 @@ def test_duplicate_canonical_update_does_not_clear_prior_status_failure(
         assert session.scalar(select(func.count()).select_from(AlertEvent)) == 1
     assert sender.calls == 0
     engine.dispose()
+
+
+@pytest.mark.parametrize("rule_code", [SUBING_THS_ALERT_RULE_CODE, HTDY_ALERT_RULE_CODE])
+def test_signal_only_event_persists_without_notification_and_htdy_still_sends(rule_code):
+    from app.alerts.runtime import _persist_candidate_and_prepare_notification
+    from app.alerts.service import AlertService
+    from app.db.base import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine, tables=[AlertRule.__table__, AlertEvent.__table__])
+    at = datetime(2026, 10, 8, 1, 0, tzinfo=UTC)
+    with OrmSession(engine) as session:
+        rule = AlertRule(rule_code=rule_code, enabled=True,
+                         scope_product_frequencies={"rb": ["15m"]})
+        session.add(rule)
+        session.commit()
+        service = AlertService(session, operational_products=("rb",))
+        candidate = AlertObservationCandidate(
+            contract="RB2610", trading_day=at.date(), bar_end=at,
+            observation_types=("buy",),
+        )
+        kwargs = dict(taxonomy={"rb": SimpleNamespace(name="螺纹钢")}, rule=rule,
+                      symbol="rb", frequency="15m", candidate=candidate, processing_now=at)
+        prepared = _persist_candidate_and_prepare_notification(service, **kwargs)
+        assert prepared.event_created
+        assert prepared.notification_error_type is None
+        event = session.scalars(select(AlertEvent)).one()
+        assert event.result_codes == ["buy"]
+        if rule_code == SUBING_THS_ALERT_RULE_CODE:
+            assert prepared.message is None
+            assert event.notification_attempted_at is None
+        else:
+            assert prepared.message is not None
+            assert event.notification_attempted_at is not None
+        duplicate = _persist_candidate_and_prepare_notification(service, **kwargs)
+        assert not duplicate.event_created
+        assert duplicate.message is None
+        assert session.scalar(select(func.count()).select_from(AlertEvent)) == 1
+    engine.dispose()
+
+
+@pytest.mark.parametrize("rule_code", [SUBING_THS_ALERT_RULE_CODE, HTDY_ALERT_RULE_CODE])
+def test_live_signal_only_persists_event_and_skips_sender(rule_code):
+    at = datetime(2026, 10, 8, 1, 0, tzinfo=UTC)
+    engine = create_engine("sqlite://")
+    AlertRule.__table__.create(engine)
+    AlertEvent.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(AlertRule(rule_code=rule_code, enabled=True,
+                             scope_product_frequencies={"rb": ["15m"]}))
+        session.commit()
+    window = MarketReadWindow(
+        "rb", "actual_dominant", "15m", at.date(), "RB2610", at,
+        (CanonicalBar(at, at.date(), 1, 1, 1, 1, 1, None, None),), ("RB2610",),
+    )
+
+    class Reader:
+        def bars_until(self, *_args, **_kwargs):
+            return window
+
+        def assert_window_current(self, _window):
+            pass
+
+    class Evaluator:
+        def evaluate_candidates(self, *_args):
+            return (AlertObservationCandidate(at, at.date(), "RB2610", ("buy",)),)
+
+    class Sender:
+        calls = 0
+
+        def send(self, _message):
+            self.calls += 1
+            return ProviderAcceptance("accepted")
+
+    sender = Sender()
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine), market_read_factory=lambda _s: Reader(),
+        evaluators={rule_code: Evaluator()}, sender=sender, operational_products=("rb",),
+        taxonomy={"rb": SimpleNamespace(name="螺纹钢")}, clock=lambda: at + timedelta(seconds=1),
+    )
+    payload = dict(bar_end=at.isoformat(), trading_day=at.date().isoformat(),
+                   open="1", high="1", low="1", close="1", volume="1",
+                   turnover=None, open_interest=None)
+    runtime.process_message("live:bar:rb:15m", payload)
+    runtime.process_message("live:bar:rb:15m", payload)
+    with OrmSession(engine) as session:
+        events = session.scalars(select(AlertEvent)).all()
+        assert len(events) == 1
+        assert (events[0].notification_attempted_at is None) == (rule_code == SUBING_THS_ALERT_RULE_CODE)
+    assert sender.calls == (0 if rule_code == SUBING_THS_ALERT_RULE_CODE else 1)
+    assert runtime._current_runtime_status()["notification_error_type"] is None
+    engine.dispose()
