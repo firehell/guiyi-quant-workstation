@@ -10,7 +10,7 @@
 [PR #416](https://github.com/firehell/guiyi-quant-workstation/pull/416) 与
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.3) exact identity 已核对。
 API/Web/logrotate 已切至 v1.14.3，API health HTTP200、实际版本1.14.3；正式发布树 detached/clean。
-当前运行组件版本并不统一：reference worker/weekly audit 为 v1.14.2，Market Live/盘后/late-provider 为 v1.14.0，
+当前运行组件版本并不统一：reference worker为v1.14.3、weekly audit为v1.14.2，Market Live/盘后/late-provider 为 v1.14.0，
 共享 Alert 为 v1.13.0。八个应用 label loaded；schedule-only not_running 不视为故障。
 
 **牛哇60品种×四策略×W1/D1/60m，共720条链路**：历史资产720/720 READY，forward720/720启用并预热。
@@ -24,11 +24,14 @@ v1.14.3正式页面只读验收通过：RB四策略显示10月9日交易日中�
 定向后端42通过/2skip，扩展数据与worker162通过/2skip，typecheck/build/OpenSpec10/Ruff/secret与独立Review通过。
 page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益；auto_order=false。
 
-**PARTIAL：持续记录已自然发生，历史持续刷新尚未修复，不声明RUNTIME_READY。**
-已发布的修复只读取Catalog实际published端点，避免次日预备映射触发MAPPED_CONTRACT_DATASET_MISSING。
-记录服务尚运行v1.14.2；自动审批拒绝短暂停止该进程，等待明确切换授权，现役服务继续运行。
-历史刷新blocked状态仅完成只读扫描，尚未修改；切换后须重新在exclusive锁下核对精确前像、720源身份并保留备份后恢复。
-Market promotion preflight仍阻塞，不能将API/Web切换等同于全Runtime切换。
+**记录服务切换及旧阻塞恢复已完成；自然周期与Canonical核对仍待验收，不声明全Runtime统一就绪。**
+owner明确批准短暂切换后，reference worker已运行v1.14.3@00bc70899，实际PID64434、root/commit一致。
+首安装在变更前因新树缺现役启用标记停止；核对并复制600权限标记后原子安装成功，既有恢复前像保留。
+2026-10-08 22:55:30锁内重新证明720历史来源身份未变，将85条精确MAPPED_CONTRACT_DATASET_MISSING、
+无plan/resume/attempt的旧阻塞项恢复；原始字节0400备份与SHA保留，没有修改DB资产。
+后续自然刷新游标持续前进、routes为空；22:57:17只读生产验收720启用/180观察、180Canonical端点READY、pending捕获0。
+尚未等到新版本首根自然completed端点或完整720刷新轮次；180夜盘Live→Canonical核对仍pending。
+Market promotion preflight仍阻塞，不能将本次记录worker切换等同于全Runtime切换。
 
 **牛哇不推送、不下单；苏冰既有推送继续暂停，15m信号/Event保留；HTDY既有通知保持。**
 共享Alert版本切换也被自动审批拒绝，原因是可能触发既有外部通知；本次没有绕过或新增Rule/Scope/受众。

@@ -36,3 +36,22 @@ Oct9正规Market preparation实际提交60MainMap、5Calendar、225Session，保
 4. 余540自然周期及Live-to-Canonical reconciliation等待业务自然发生；不手工制造收盘或启用额外监控/补发/回填。
 
 证据根：task worktree outputs/newow-realtime-recording-20261008/（迁移备份、history唯一intent/receipt、bootstrap、data-audit、browser-final、candidate-v1143-actual-health.json、refresh-recovery-scan）。主树output/playwright/newow-v1142-readonly-*保留旧bug，修复浏览器证据另有唯一目录。发布PR413/414/415/416及tag/Release保持，不移动旧tag。
+
+## 记录服务批准切换后的验收（2026-10-08）
+
+owner明确批准短暂切换至v1.14.3。原子安装器首次在mutation前因新树缺启用标记退出，旧worker保持运行；
+核对旧标记enabled内容、600权限/501owner后复制到精确发布树，安装器loaded=true/services=1。
+实际reference-worker PID64434，root release-v1.14.3、commit00bc70899一致，未切换Alert或发送通知。
+
+22:55:30锁内校验720历史revision/seq/digest/checkpoint全部与冻结bootstrap来源一致；恢复85条
+精确MAPPED_CONTRACT_DATASET_MISSING且无plan/resume/attempt的旧阻塞记录。0400原始字节备份
+`refresh-recovery-preimage-20261008T145530.json`，前像SHA
+`3f0ae4e5ca686c5bb9fe3badd7abcf903d1ed7b450c6e14dba7b7064a4b3132e`，
+恢复后SHA `cc02e463d504ad34de25d489bf98455645a1bbb4e08f9426383b3684cb7c8a5b`。
+随后自然轮询游标前进，routes为空，没有新增阻塞。原DB资产和失败维护attempt保持。
+
+22:57:17生产只读验收720配置/启用/seed、180自然观察、180Canonical endpoint READY、pending capture0。
+证据 `worker-v1143-post-switch-20261008T145717.json`、`refresh-recovery-applied-20261008T145530.json`
+位于原task outputs目录。首次验收拒绝覆盖既有证据文件，旧证据保留，改用新时间戳文件后成功。
+新版本下一根自然completed端点、完整720刷新轮次以及180夜盘Live→Canonical匹配仍待自然验收。
+本节取代前文“记录worker切换被host阻断”的当前状态；共享Alert切换仍未获准且未执行。
