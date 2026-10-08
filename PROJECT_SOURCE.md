@@ -14,7 +14,7 @@
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页；原研究观察折叠入口移除。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
-- Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与主升浪的并列展示模式，不是第四套公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
+- Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
 - Web 不显示模糊的“全历史策略效果”、账户收益、模拟或真实持仓、订单、成交或已退役策略事件。Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，不属于这些账户/执行事实。
 
 ## Newow 与参考交易

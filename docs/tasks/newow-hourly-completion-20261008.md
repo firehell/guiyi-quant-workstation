@@ -21,4 +21,24 @@
 
 ## 发布与运行
 
-当前待最后候选绑定、集成和发布运行证据。正式状态仍以STATUS.md及现场为准，不提前声明RELEASED或RUNTIME_READY。自然Live/盘后/weekly未发生或证据不足时继续待验收，不手工运行自然业务。
+候选08ef5e4a0通过独立Review后集成develop；PR #412发布v1.13.0@6dc0b81e11450262b5cbb39090c4aa1c85ab138e。annotated tag、peeled commit、远端main及非草稿GitHub Release exact读回一致，发布完整树与候选相同。candidate-binding与delivery-binding分别记录原验证和发布运行身份；代码相同不冒充自然业务相同。
+
+正式根`.worktrees/release-v1.13.0` detached/clean，独立复制依赖并重绑定editable/bin路径，实际typecheck/build/bundle topology通过。render-only与preflight snapshot_ready60/60；base安装exit0。首次Market在mutation前因旧root缺after-market.lock失败，通用错误为AFTER_MARKET_HISTORY_INVALID；原history内容与retain只读独立通过，_guard_fd明确FileNotFoundError。使用既有after_market_recovery_guard初始化空协调锁后，原安装器重新持锁/preflight通过，并按合同实际保留历史到新树；Market、Alert及既有weekly各exit0。不是整个恢复过程只读，不运行自然job，不修改旧history/status，不盲重试。
+
+七应用installed/loaded root/commit一致，实际API1.13.0与Web200；capability v31/60，60品种Alert Rule/Scope前后JSON完全相同。苏冰notification_enabled=false、信号/Event保留，HTDY既有发送保持，原受众与auto_order=false保持。真实正式Chrome PP60m综合决策与六卡AI已读回。
+
+新Runtime health degraded：午休BREAK中Live/Alert coverage unverified，heartbeat新鲜、Alert processing=ok；Live last_bar_at=null。自然completed Live、盘后与weekly验收PARTIAL，不声明RUNTIME_READY、不新增monitor或手工运行job制造证据。schedule-only not_running和weekly not_run不作为业务失败。既有BZ/EG/weekly数据缺口与page-parity不可执行边界保留。
+
+旧v1.12.1 clean、installed/进程引用0；13份.run JSON/plist/marker按SHA保存后non-force移除。候选API8011/Web5178退出；正式root保持exact tag。候选浏览器HMR取消、heavy429、加载态原图、错误selector及比较器身份失败均封存；最终受影响实际读取通过。前轮宿主审批超时未执行的公开下载/候选启动记录保留，本轮恢复后连续完成，不计为数据维护attempt。
+
+最终状态RELEASED；运行切换/页面范围读回通过，独立Review确认；自然验收PARTIAL。唯一最小下一步：只读验收新版本下一次自然completed Live及既有自然业务，不启动新任务、通知或交易。
+
+实际验证入口：
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core python -m pytest -q -p no:cacheprovider --tb=short services/quant-api/tests/newow/test_candidate_preview.py services/quant-api/tests/newow/test_product_service.py services/quant-api/tests/newow/test_product_reader.py services/quant-api/tests/newow/test_product_snapshot_cache.py services/quant-api/tests/newow/test_market_newow_product_api.py services/quant-api/tests/newow/test_cdv2.py services/quant-api/tests/newow/test_cdv2_presentation.py services/quant-api/tests/newow/test_ai_analysis.py services/quant-api/tests/newow/test_cross_period_prices.py services/quant-api/tests/newow/test_page_comparator.py tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py
+node --test apps/quant-web/tests/newow*.test.ts apps/quant-web/tests/Newow*.test.ts apps/quant-web/tests/useNewow*.test.ts
+node apps/quant-web/node_modules/vue-tsc/bin/vue-tsc.js -b apps/quant-web/tsconfig.json
+openspec validate --specs --strict --no-interactive
+python3 scripts/engineering/secret_scan.py --json
+```
+正式build在发布树apps/quant-web执行`node node_modules/vite/bin/vite.js build`与`node scripts/checkProductionBundleTopology.mjs dist`。实际Python为现有venv，Node为/opt/homebrew/bin/node；uv lock使用可写/tmp cache。所有实际输出在`outputs/newow-hourly-20261008/`，不声称中断的全Newow套件通过。
