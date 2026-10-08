@@ -429,6 +429,16 @@ class PersistedNewowReference:
             cutoff=cutoff, snapshot_token=snapshot)
         payload["holding_curve"] = saved_holding_curve(curve_items, marks, availability,
             since.isoformat(), through.isoformat(), cutoff, boundaries)
+        if callable(getattr(reader, "reference_theoretical_bars", None)):
+            from app.reference_trading.saved_theoretical import saved_theoretical
+            member_trades = [t for t in curve_items if since.isoformat() <= t['entry_trading_day'] <= through.isoformat()]
+            theory_bars = reader.reference_theoretical_bars(request.product, request.frequency.value, member_trades, cutoff)
+            if manifest.get("reader") == "newow_product_reader_intraday_v3":
+                verify_saved_compact_source(manifest, reader.historical_source_evidence(
+                    product=request.product, frequency=request.frequency.value,
+                    since=date.fromisoformat(storage_start), through=source_through, as_of=source_as_of))
+            payload["theoretical"] = saved_theoretical(member_trades, marks, theory_bars,
+                request.strategy.value, since.isoformat(), through.isoformat())
         if request.include_fusion:
             from app.reference_trading.newow_fusion import PersistedFusionComparison
             payload["fusion_comparison"] = PersistedFusionComparison(self._factory).comparison(
