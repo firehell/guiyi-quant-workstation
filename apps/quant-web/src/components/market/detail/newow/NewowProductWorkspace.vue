@@ -405,7 +405,6 @@ onBeforeUnmount(() => {
         <strong>{{ dualMode ? '趋势侧策略概览' : '策略概览' }} <small class="newow-summary__scope">页面参考</small></strong>
         <span class="newow-status" :data-state="summary.status.state"><span>{{ ({ BUILD: '▲', HOLD: '✓', CLEAR: '▼', FLAT: '×', UNAVAILABLE: '?' })[summary.status.state] }}</span>{{ summary.status.label }}</span>
         <span class="newow-summary__identity">{{ summaryContract }} · 截至 {{ summaryAsOf }}</span>
-        <button class="newow-summary__evidence" @click="openDialog('explanation')">查看依据</button>
         <button v-if="selectedStrategy === 'oscillation' && sectionOpen('comparator')" class="newow-summary__evidence" @click="openDialog('comparator')">五窗口比较</button>
       </div>
       <div class="newow-summary__facts">
