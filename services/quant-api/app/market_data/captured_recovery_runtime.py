@@ -66,7 +66,7 @@ def _command_result(
 def _read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
     if re.fullmatch(
-        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit)",
+        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker)",
         label,
     ) is None:
         _reject("IDENTITY_UNAVAILABLE")
