@@ -136,3 +136,38 @@ def test_corrupt_saved_trading_day_is_presentation_corruption(day):
         }]}}
     with pytest.raises(PresentationUnavailable, match='PRESENTATION_CORRUPT'):
         ForwardReferenceHealth(factory).read()
+
+
+@pytest.mark.parametrize("enabled,expected_delta,want", [(True,2,"OBSERVATION_LAGGING"),(True,0,"READY"),(False,2,"READY")])
+def test_completed_live_endpoint_exposes_uncaptured_bar_even_when_queue_empty(enabled, expected_delta, want):
+    from datetime import timedelta
+    from test_activation import NOW
+    from app.reference_trading.models import ReferenceStream
+    factory, identity, revision, _ = _active()
+    with factory.begin() as session:
+        stream = session.get(ReferenceStream, identity.stream_id)
+        stream.strategy_code = 'newow_trend'
+        stream.frequency = '60m'
+        stream.enabled = enabled
+        stream.health = 'READY'
+    def endpoints(session, keys, at):
+        return {key: {'expected_through': (NOW+timedelta(seconds=expected_delta)).isoformat(),
+                     'expected_source': 'completed_live', 'endpoint_status': 'READY', 'endpoint_reason': None}
+                for key in keys}
+    item = ForwardReferenceHealth(factory, endpoint_reader=endpoints, now=lambda: NOW+timedelta(seconds=3)).read()['streams'][0]
+    assert item['pending_capture_count'] == 0
+    assert item['status'] == want
+
+
+def test_malformed_completed_live_endpoint_never_displays_ready():
+    from app.reference_trading.models import ReferenceStream
+    factory, identity, revision, _ = _active()
+    with factory.begin() as session:
+        stream=session.get(ReferenceStream,identity.stream_id)
+        stream.strategy_code='newow_trend'
+        stream.frequency='60m'
+        stream.health='READY'
+    def endpoints(session,keys,at):
+        return {key: {'expected_through': None, 'expected_source':'completed_live',
+                     'endpoint_status':'UNKNOWN','endpoint_reason':'LIVE_SOURCE_UNAVAILABLE'} for key in keys}
+    assert ForwardReferenceHealth(factory,endpoint_reader=endpoints).read()['streams'][0]['status']=='SOURCE_UNAVAILABLE'

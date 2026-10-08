@@ -190,3 +190,22 @@ Periodic refresh output MUST retain the display snapshot source: delayed post-cl
 #### Scenario: A late writer publishes after an owner change
 - **WHEN** the bounded refresh or state event proves a new trading day or physical contract
 - **THEN** the socket emits reset before replacement-owner Bars and rejects late old-owner Pub/Sub payloads
+
+
+### Requirement: Runtime health represents loaded deployment identity
+
+A formal Runtime health response SHALL independently verify installed and loaded identities
+for its fixed local services. It SHALL expose matched, mismatch, unknown or proven disabled
+identity diagnostics rather than interpret an absent marker in the API's version tree as
+proof that a service running from another release tree is disabled. Unverified required
+Market identities SHALL make operational health degraded unless it is already failed.
+Optional weekly/reference services and Alert delivery diagnostics SHALL NOT redefine
+Market operational health. Disabled SHALL require explicit loaded-label absence, absent
+installed definition and absent relevant activation marker; permission or identity failures
+SHALL remain unknown. The check SHALL NOT start, stop, promote or send anything.
+
+#### Scenario: API and Market services run from different exact release trees
+- **GIVEN** API v1.14.3 and a verified loaded Market service from v1.14.0
+- **WHEN** the API's local Market activation marker is absent
+- **THEN** health exposes the identity mismatch and unknown Market state with degraded overall
+- **AND** it does not claim disabled Market services with a healthy operational path

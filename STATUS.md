@@ -1,7 +1,7 @@
 # 当前状态
 
-更新：2026-10-08。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
-不再把旧版本“当前状态”按时间堆在本页。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
+更新：2026-10-09。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
 ## Release 与 Runtime
@@ -17,7 +17,11 @@ API/Web/logrotate 已切至 v1.14.3，API health HTTP200、实际版本1.14.3；
 D1/60m最新已完成历史端点为2026-10-08 15:00北京时间，W1为2026-09-30；未完成周不生成正式历史。
 2026-10-08 21:59开始记录，首个22:00夜盘端点已自然观察180/180条（45夜盘品种×四策略），
 180条源哈希与独立60×1m重建一致，17个策略Marker、17个Hint已记录；pending capture/rejection/diagnostic均0。
-其余540条等待各自自然completed端点；seed不计作实时观察。180条Live→Canonical核对仍pending，不能算匹配完成。
+上述计数为22:57验收快照：其余540条当时等待各自自然completed端点，seed不计作实时观察；180条Live→Canonical核对当时pending，不能算匹配完成。
+
+**后续review确认23:00终场漏记136条（34品种×四策略），代码修复已完成、正式读回待验收。**
+因此720配置/历史READY不等于720自然记录完整；22:00成功不能证明23:00覆盖。
+本轮CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE：后端805通过/52跳过、隔离PostgreSQL40通过，两轮独审无Confirmed Issue；Session终场捕获、矩阵v3与部署身份诊断已修复。v1.14.5隔离补丁候选扩大验证中，尚未发布或切换；数据全历史审计进行中，不预记现场恢复完成。
 
 v1.14.3正式页面只读验收通过：RB四策略显示10月9日交易日中的10月8日22:00状态；
 历史窗口与分页快照保持一致，浏览器无错误。Web808通过/1skip，真实隔离PostgreSQL39通过，
@@ -30,8 +34,8 @@ owner明确批准短暂切换后，reference worker已运行v1.14.3@00bc70899，
 2026-10-08 22:55:30锁内重新证明720历史来源身份未变，将85条精确MAPPED_CONTRACT_DATASET_MISSING、
 无plan/resume/attempt的旧阻塞项恢复；原始字节0400备份与SHA保留，没有修改DB资产。
 后续自然刷新游标持续前进、routes为空；22:57:17只读生产验收720启用/180观察、180Canonical端点READY、pending捕获0。
-尚未等到新版本首根自然completed端点或完整720刷新轮次；180夜盘Live→Canonical核对仍pending。
-Market promotion preflight仍阻塞，不能将本次记录worker切换等同于全Runtime切换。
+该22:57检查点尚未等到新版本首根自然completed端点或完整720刷新轮次；180夜盘Live→Canonical核对当时pending。后续23:00缺口见上文，不再将漏记仅归为自然周期未到。
+Market必要身份校验已修复并通过前置验证，但未部署；宿主此前对另一v1.14.4发布动作的授权阻断仍保留。记录worker切换不等于全Runtime统一切换。
 
 **牛哇不推送、不下单；苏冰既有推送继续暂停，15m信号/Event保留；HTDY既有通知保持。**
 共享Alert版本切换也被自动审批拒绝，原因是可能触发既有外部通知；本次没有绕过或新增Rule/Scope/受众。
@@ -40,7 +44,10 @@ Market promotion preflight仍阻塞，不能将本次记录worker切换等同于
 证据位于独立task树的 `outputs/newow-realtime-recording-20261008/`，正式浏览器验收位于
 `output/playwright/newow-v1143-readonly-20261008T1450Z/acceptance-summary.json`。
 
-## 当前产品与验证范围
+## 当前产品范围与历史候选检查点
+
+当前正式范围为60/60；以下逐品种计数、禁用状态、下一品种和旧版本声明只描述各次冻结验收，
+不代表目前运行状态或当前待办。最新持续记录状态与缺口见顶部。
 
 2026-10-08 **PP 聚丙烯 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。owner批准仅PP2405/1m 2023-06-08 21:03 high6890→6910，open保持，原始SHA与本地修正metadata/provider_confirmed=false保留；数据/资产冻结629303712。新forward48/48＝33读回＋15无缺口、63逻辑源＝62真实外部＋1已封存精确复用、263派生；375450 raw逐字段独审仅1值修正。1018→1303文件、新285/扩41、47520旧Bar/373日周保持；四频285055 Bar、各141月/12owner独立Decimal通过。12READY disabled/gen0、8基础FULL、8真实伙伴绑定；后端/前端PP候选资格缺口实际RED/GREEN及250/27测试、build/独审通过，旧启动/首场0图失败保留。compact API bb050869实际12/152全200，最终0cea555a新Chrome19场49原图、21341 CLOSED/21375 SVG及真实409/取消恢复独审通过。专属资源退出、端口free/锁0、末轮12状态保持。当前**历史候选60/60，正式60/60**；W1实际35/120、历史11段预热及12/0/15 CLOSED/视口限制保留。原候选阶段仅集成develop；PP现随v1.13.0正式发布，Scope/通知/交易保持；page_parity=true/executable=false。见[PP收尾记录](docs/tasks/pp-candidate-closeout-20261008.md)。
 
@@ -254,7 +261,7 @@ P0–P6 首轮复用已有Canonical，实际缺口为零，provider/Canonical/Ma
 OpenSpec结构失败单列，没有声明全套通过。详见 [首轮执行与验收](docs/tasks/newow-intraday-pilot-20260927.md)；
 P7 首批 black + steel 八品种已进入隔离历史候选验收；与首轮范围不同，不沿用此处的零缺口结论。
 精确维护、资产、当前 API/浏览器实测与 SS 阻断见 [首批任务记录](docs/tasks/newow-intraday-black-20260927.md)。
-正式分钟入口仍关闭，整个 P7 未完成。
+2026-09-27首批检查点：当时正式分钟入口仍关闭、P7未完成；后续60/60收尾及当前开放见顶部。
 
 ## 统一参考交易与数据恢复未完成项
 
@@ -270,7 +277,7 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
   SOURCE_READY，PL/PX/RS 九条仍为 `REFERENCE_BOUNDARY_CONTEXT_MISSING`。这些是对应旧精确提交的审计，
   当前版本完整矩阵、历史构建与持续更新须重新绑定 exact code/input identity，不能沿用旧结论。
 - 0048 migration及本轮Newow720历史构建、记录worker启用已完成；全局persisted reader与其他P9范围须按各自证据验收，不能由Newow闭环推定完成。
-  Newow持续历史刷新修复尚未切入worker，详见顶部实际运行状态；旧P9未知结果与恢复边界保留。
+  Newow历史刷新修复已切入v1.14.3 worker并恢复85条旧阻塞；后续23:00漏记修复与自然验收见顶部。旧P9未知结果与恢复边界保留。
 - A2611 旧来源请求已按 `SOURCE_RESPONSE_IDENTITY_INVALID` 停止且禁止重试；后续 D1 修复后重审无新恢复目标，
   不是对旧请求的重试。六个 W1 新批次共 64 个 W1 与 64 个 D1 同源上下文目标通过，来源 journal 64 次请求。
 
@@ -290,10 +297,14 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
   跨周期解释保留 bar_end/as_of，不用未来完成周线回填历史决策。
 - 策略公式、页面参考、因果研究、OOS/Walk-forward、Shadow 和账户事实分别验收；解释评分不自动成为执行 Gate。
 
-分钟 P0–P6 已集成并随 v1.10.39 发布源码；P7 首批八品种历史候选正在隔离验收，正式开放及后续批次未执行。
+### 历史规划检查点（2026-09-27，保留原证据身份）
+
+以下两段描述首批验收当时的未完成事项，现已被后续各品种收尾及顶部当前范围取代，不作为新一轮待办。
+
+分钟 P0–P6 当时已集成并随 v1.10.39 发布源码；P7 首批八品种历史候选当时正在隔离验收，正式开放及后续批次尚未执行。
 本批数据/资产/API读回代码冻结 `c576b3614ff79c26ee5a192cb3b0fb1449710240`：28/32 输入 READY、56/64 基础与28/32融合资产独立读回通过；96项真实 API 为84 READY、SS12 BLOCKED。owner 于本轮明确暂缓 SS 数据修复，当前验收范围为 RB、HC、I、J、JM、SF、SM 的84组合；原96项分母保留，SS12记为 `DEFERRED_DATA_BLOCKED`。第一版接受1m加载较慢，性能优化不作为收尾条件；身份、数据质量和页面正确性仍须逐项通过。reference快照恢复修复已集成develop `00cea970e7e87295ddcc89f7937a34430fb64b11`（97项定向测试、构建及独立Review通过）；新隔离页面/API验收实例为同树的 `9dd3714e596c1f5aebd6579b3f583fc2def93fe7`，原c576证据按后端依赖对象一致证明复用、保留原身份。真实页面84组合尚未终验，不能声明当前范围或整个 P7 完成；详见 `docs/tasks/newow-intraday-black-20260927.md`。
 
 ## 唯一下一步
 
-按最新 exact Runtime 版本完成自然 completed Bar、盘后增量/MDS 和 weekly 的证据读回；
+先修复review确认的23:00终场漏记，并对精确恢复范围独立读回；再按实际exact Runtime版本完成自然 completed Bar、盘后增量/MDS和weekly的证据验收；
 期间页面已确认缺口与 P9 未知结果分别按各自合同处理，不制造 Bar、不盲目重试，也不扩大现役运行范围。

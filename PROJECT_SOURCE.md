@@ -23,7 +23,7 @@
 
 - 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 三周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
 - 公共 `ReferenceTrading` canonical 已冻结两种不可混淆的记录口径：`historical_replay` 是可从固定 Canonical 输入和版本重建的研究投影；`forward_observation` 只记录明确启用后实际观察的 completed 输入，默认 FLAT 起点。统一域提供纯 contracts/reducer、checkpoint、历史 plan/build/resume/rebuild、前向 capture/recovery、仓储及 HTTP/Web 查询。worker 与消费者切换受显式启用约束；代码存在不代表生产 migration/bootstrap 或 Runtime 已启用，阶段事实只见 `STATUS.md`；详见 `openspec/specs/reference-trading/spec.md`。
-- Newow 主产品范围为趋势、震荡、主升浪 × `1w/1d/60m` 九个独立组合，全部只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。
+- Newow 主产品范围为趋势、震荡、主升浪 × `1w/1d/60m` 九个独立组合；历史页面与研究计算只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。
 - Newow 详情采用局部白色全宽 Shell、单层策略入口、唯一周期入口、原位展开解释与原生弹窗；K 线、成交量和单一副图共享时间轴。同品种同周期切换 Newow 策略时只替换策略所属图层，加载态清空旧事实但保留兼容窗口元数据，并仅在新时间轴完全兼容时恢复缩放；身份或时间轴不兼容时清空旧图层并重置。默认 MACD 为既有内核的只读显示（12/26/9、sma_window、histogram×2），不声明牛哇 MACD 原站 parity；其他副图替换同一 pane。
 - 日线收盘报价通过有界 `actual_dominant + 1d + limit=2` 独立读取并标记时间/非实时。参考记录随文档纵向滚动，首次可见读取一次、cursor 手动加载更多；解释和独立比较器按需读取。长身份/原始时间仍可在来源和详情中查询，缺失或不兼容证据不填示例值。
 - 主动作只有各策略自己的 `BUILD/CLEAR`；J、D1–D6、4/7/11、阶段、风险和结构信息是 `quantity_effect=none` 的 Hint。无主动作是有效策略结果，不能与 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE` 或照妖镜重绘混写成“无信号”。
@@ -39,10 +39,11 @@ Newow 提供显式历史快照入口：当前数据缺失时可主动选择已�
 ### 分阶段开放边界
 
 分钟 Newow 产品周期为 `5m/15m/30m/60m`，使用同物理合约 Canonical 1m 独立聚合。
-正式历史开放以 capability 的品种名单和精确 `intraday_as_of` 为边界；页面明确历史截止时间，
-持续更新不由历史验收或源码发布自动启用。具体版本与现场范围见 `STATUS.md`。
+正式开放以capability的品种、周期与section为边界；5m/15m/30m历史页面保留精确 `intraday_as_of`，
+60m在v32使用当前已发布completed Canonical截止，页面明确来源与时间。
+持续记录不由历史验收或源码发布自动启用，现场配置与验收见 `STATUS.md`。
 1m仅承担行情事实和聚合输入，Newow的1m页面与策略产品后续单独版本处理；保留通用Market的1m能力。
-当前优先完成RB四周期趋势、震荡及独立双策略参考闭环；实际开放与验收状态见 `STATUS.md`。
+RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当前开放与验收状态见 `STATUS.md`。
 
 九组合是长期允许的产品范围，不要求同一版本同时开放或通过全品种生产验收。
 允许先交付趋势、震荡、主升浪 × `1d` 三组合，再分别验收 `1w` 和 `60m`；
@@ -60,10 +61,12 @@ Newow 提供显式历史快照入口：当前数据缺失时可主动选择已�
 新版综合评分、公式、参考价格和推送不随日周恢复或 60m 开放自动变更。
 
 实际分阶段开放由 `GET /api/v1/market/newow/product-capabilities` 作为 Web 与 typed API 的共同 authority；
-正式 `newow_product_capabilities_v22` 日周版对全部 60 品种开放 `1d` 和 `1w` 的主图、副图、参考交易和独立比较器；
-全部 `60m` 与完整跨周期 explanation 保持显式未开放。此次开放不改变长期九组合范围，
-也不改变旧 `/trend-detail` 固定 D1 兼容合同；具体数据状态、
-发布身份与 Runtime 验收仍只看 `STATUS.md` 和真实 evidence。
+已接受的 `newow_product_capabilities_v32` 使用 `daily_weekly_hourly_current`，对 operational 60 品种开放
+趋势、震荡、主升浪与独立双策略的 `1d/1w/60m` 参考记录；主升浪的 `5m/15m/30m` 不开放。
+`5m/15m/30m` 的既有历史开放继续保留精确历史截止和原资产身份，1m仅作为聚合输入。
+完整 `explanation` section仍显式未开放；独立 `decision_v2` 与分析入口按各自合同读取已完成输入，
+不能据此声称所有解释面板均已开放。旧v22日周限制只属于该历史版本，不约束v32。
+旧 `/trend-detail` 固定 D1 兼容合同不变；当前发布身份、配置和自然运行验收仍只看 `STATUS.md` 与真实 evidence。
 
 ## 指标
 
