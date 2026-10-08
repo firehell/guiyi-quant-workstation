@@ -625,3 +625,16 @@ The source buffer is bounded to 250,000 requested endpoints; larger maintenance 
 #### Scenario: Unknown recovery commit
 - **WHEN** the claimed recovery commit or readback is uncertain
 - **THEN** recovery remains failed/claimed with bounded diagnostics, the original natural failure remains unchanged, and no automatic second recovery occurs
+
+
+### Requirement: Audit respects proven weekly source-quality interruptions
+
+For each missing physical-contract W1 endpoint, read-only audit MUST use the existing authoritative D1 weekly quality proof. Only a complete same-contract Calendar/Session and physically validated union of D1 Bars and typed source-quality facts MAY explain that individual endpoint. This classification MUST NOT create a W1 price Bar, change maintenance targets or plan hashes, or exempt other endpoints in the same month. Missing or invalid D1 proof MUST retain the missing-W1 finding.
+
+#### Scenario: A quality interruption explains one absent week
+- **WHEN** a missing W1 endpoint has a complete validated D1 source-quality interruption proof
+- **THEN** audit SHALL accept the interruption without reporting a missing partition for that endpoint or claiming a normal W1 exists
+
+#### Scenario: Other missing weeks and invalid source context remain findings
+- **WHEN** another week in the same month lacks a complete proof, or its D1 source is incomplete or physically invalid
+- **THEN** audit SHALL retain the missing-W1 finding and SHALL NOT download, mutate, or waive the month
