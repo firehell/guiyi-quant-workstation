@@ -295,3 +295,61 @@ def test_owned_60m_same_day_bars_do_not_use_legacy_d1_day_order(product_cases):
     ]
     assert [bar.bar.bar_end.hour for bar in result.replay_bars[:4]] == [2, 3, 4, 5]
     assert len(replay.frames) == 8
+
+
+@pytest.mark.parametrize("strategy", _STRATEGIES)
+@pytest.mark.parametrize("frequency", ("1d", "1w", "60m"))
+def test_owned_batch_matches_atomic_steps_through_physical_rollover_and_typed_gap(
+    product_cases, strategy, frequency,
+):
+    case = product_cases.primitive_input(strategy, frequency)
+    first = case.bars
+    new_contract = 'RB2605'
+    new_segment = build_segment_id(case.identity.product, new_contract, first[0].bar.bar_end)
+    second = tuple(replace(item, bar=replace(
+        item.bar, physical_contract=new_contract, segment_id=new_segment,
+    )) for item in first)
+    # Rewinding in time is legitimate only across authoritative owner segments.
+    gaps = ()
+    if frequency != '60m':
+        split = len(second) // 2
+        missing = second[split].bar
+        second = (*second[:split], *second[split + 1:])
+        gaps = (DataInterruption(
+            product=case.identity.product, frequency=case.identity.frequency,
+            physical_contract=new_contract, segment_id=new_segment,
+            trading_day=missing.trading_day, effective_at=missing.bar_end,
+            source_identity='market_data_service:typed_quality:proved-gap',
+        ),)
+    inputs = (*first, *second)
+    batch = replay_strategy(case.identity, inputs, data_interruptions=gaps)
+    state = seed_replay_state()
+    frames, diagnostics = [], []
+    for item in label_calculation_segments(case.identity, inputs, gaps):
+        state, frame, found = replay_step(case.identity, state, item)
+        frames.append(frame)
+        diagnostics.extend(found)
+    assert batch.frames == tuple(frames)
+    assert batch.actions == tuple(action for frame in frames for action in frame.actions)
+    assert batch.hints == tuple(hint for frame in frames for hint in frame.hints)
+    assert batch.diagnostics == tuple(dict.fromkeys(diagnostics))
+    assert batch.frames[:len(first)] == replay_strategy(case.identity, first).frames
+
+
+@pytest.mark.parametrize('ordering', ('duplicate', 'older', 'owner_return'))
+def test_batch_rejects_invalid_order_before_any_formula_transition(product_cases, monkeypatch, ordering):
+    import guiyi_quant.newow.product_adapters as module
+    case = product_cases.primitive_input('trend', '1d')
+    if ordering == 'duplicate':
+        inputs = (case.bars[0], case.bars[0])
+    elif ordering == 'older':
+        inputs = (case.bars[1], case.bars[0])
+    else:
+        other = replace(case.bars[0], bar=replace(case.bars[0].bar,
+            physical_contract='RB2605', segment_id='other-owner'))
+        inputs = (case.bars[0], other, case.bars[1])
+    def unexpected(*args, **kwargs):
+        pytest.fail('invalid batch entered the formula transition')
+    monkeypatch.setattr(module, '_replay_step_mutating', unexpected)
+    with pytest.raises(ValueError, match='INPUT_ORDER'):
+        replay_strategy(case.identity, inputs)
