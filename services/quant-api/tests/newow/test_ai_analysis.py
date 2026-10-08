@@ -159,3 +159,17 @@ def test_hourly_cancellation_does_not_return_partial_four_combo_ranking():
     with pytest.raises(NewowProductReadCancelled):
         analyze_product("jm", datetime(2026, 8, 1, tzinfo=UTC), lambda f: Reader(),
             lambda: len(calls) == 2, lambda f: None)
+
+
+@pytest.mark.parametrize("case", json.loads((Path(__file__).parent / "fixtures/hourly-public-oracle.json").read_text())["cases"])
+def test_public_source_six_combo_score_oracle(case):
+    values = []
+    for i, s in enumerate(case["input"]):
+        summary = AnalysisSummary(Decimal(str(s["cumReturn"])), s["accuracy"], Decimal(str(s["maxDrawdown"])), s["tradeCount"], 0, 1, 0)
+        values.append(AnalysisCombo("oscillation" if i % 2 == 0 else "trend", ("1w", "1d", "60m")[i // 2], "2026-04-01", None, 11, None, summary))
+    ranked = rank_combos(values)
+    assert next((i for i, c in enumerate(ranked) if c.is_best), None) == case["best"]
+    for combo, expected in zip(ranked, case["output"]):
+        assert combo.score == (Decimal(str(expected["score"])) if expected["score"] is not None else None)
+        assert combo.is_best == expected["is_best"]
+        assert combo.confidence == expected["confidence"]

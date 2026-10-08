@@ -142,7 +142,7 @@ test('status card has independent folding, preference restore, explanatory expan
   assert.match(nodeText(root),/多周期感知.*日周小时策略状态/)
   const periodRows=findNodes(root,n=>n.props.class==='newow-status-card__period')
   assert.equal(periodRows.length,3)
-  assert.match(nodeText(root),/小时状态单列/)
+  assert.match(nodeText(root),/震荡名称采用周日小时组合/)
   ;(header().props.onClick as Function)(); await nextTick(); app.unmount()
   const second=element('root'), app2=renderer.createApp(defineComponent({setup:()=>()=>h(Card,{decision:null,strategy:'trend',loading:false,error:'读取失败'})}))
   app2.mount(second)

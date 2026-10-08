@@ -15,7 +15,7 @@ function toggle() { collapsed.value=!collapsed.value; try { localStorage.setItem
 watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false})
 </script>
 <template>
- <section class="newow-status-card" aria-label="日周状态摘要" :data-risk="card.risk" :style="{ '--status-color':color }">
+ <section class="newow-status-card" :aria-label="strategy==='oscillation'?'周日小时状态摘要':'日周状态摘要'" :data-risk="card.risk" :style="{ '--status-color':color }">
   <button type="button" class="newow-status-card__header" :aria-expanded="!collapsed" :aria-controls="bodyId" :aria-label="collapsed?'展开状态摘要':'收起状态摘要'" @click="toggle">
    <span v-if="background">日周背景</span>
    <strong>{{ loading?'状态读取中':card.name }}</strong>
@@ -30,6 +30,7 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
    <p v-if="loading" role="status">正在读取同一快照的已完成日线、周线、60分钟…</p>
    <p v-else-if="error" role="alert">{{ error }} <button class="newow-status-card__retry" type="button" @click="emit('retry')">重试</button></p>
    <template v-else>
+    <p v-if="card.matrixLabel">{{ card.matrixLabel }} · 观察粒度 {{ card.granularity }}</p>
     <p class="newow-status-card__advice">{{ card.advice }}</p>
     <template v-if="card.progress">
      <div class="newow-status-card__prices">
@@ -48,7 +49,7 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
       <div v-for="item in [{name:'周线',tag:card.week,fact:card.weekFact},{name:'日线',tag:card.day,fact:card.dayFact},{name:'60分钟',tag:card.hour,fact:card.hourFact}]" :key="item.name" class="newow-status-card__period"><strong>{{ item.name }}</strong><b :data-state="item.tag.state">{{ item.tag.label }}</b><span>{{ decisionFactAge(item.fact) }}</span><span>{{ item.fact?.bar_end?formatBeijingInstant(item.fact.bar_end):'状态未就绪' }} · {{ item.fact?.physical_contract??'—' }}</span></div>
       <p>{{ card.explanation }}</p>
      </template>
-     <p>名称沿用日周摘要，小时状态单列；仅使用同一快照的已完成数据；这是信号机械解释，不代表真实持仓或交易建议。</p>
+     <p>趋势名称保留日周背景，震荡名称采用周日小时组合；仅使用同一快照的已完成数据；这是信号机械解释，不代表真实持仓或交易建议。</p>
      <p v-if="decision">截至 {{ formatBeijingInstant(decision.cdv2.as_of) }} · 价格来自同合约 Canonical 通道；主力状态及未证实的探底试盘分支不作推断。</p>
     </div>
    </template>
