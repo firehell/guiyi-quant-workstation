@@ -373,3 +373,75 @@ def test_apply_rechecks_daily_policy_under_source_lock_before_target_creation():
         bootstrap.apply(plan, expected_plan_hash=plan['plan_hash'], now=NOW)
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(ReferenceStream)) == 1
+
+
+@pytest.mark.parametrize("strategy", ("trend", "oscillation", "main_rise"))
+@pytest.mark.parametrize("tamper", ("receipt", "manifest_tail", "identity", "reason", "nonboundary", "indicator_missing_time", "indicator_bad_value"))
+def test_real_terminal_boundary_can_seed_without_faking_strategy_progress(strategy, tamper):
+    from app.reference_trading.inputs import HistoricalInputBar, _boundary_input
+    from app.reference_trading.service import _newow_step
+    from app.reference_trading.presentation import envelope, presentation_point
+    from app.reference_trading.models import ReferenceBatch
+    from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
+    from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_to_json
+
+    factory, repo, identity, revision, source = setup_source(strategy=strategy, frequency="1w")
+    end = NOW - timedelta(hours=1)
+    boundary = ReferenceBoundary(identity, BoundaryReason.ROLLOVER,
+        source.physical_contract, source.owner_segment_id, source.calculation_segment_id,
+        end, end.date())
+    anchor = HistoricalInputBar(source.computed_through, source.computed_through.date(),
+        source.physical_contract, source.owner_segment_id, source.calculation_segment_id,
+        Decimal("3505"), source.last_fingerprint, None)
+    item = _boundary_input(anchor, boundary)
+    checkpoint, _, _ = _newow_step(identity, source, item)
+    point = presentation_point(kind="boundary", trading_day=end.date(),
+        formula_versions=identity.formula_versions, value={"bar_end":end,
+        "reason":boundary.reason.value,"physical_contract":source.physical_contract,
+        "owner_segment_id":source.owner_segment_id,"calculation_segment_id":source.calculation_segment_id})
+    with factory.begin() as session:
+        rev = session.get(ReferenceRevision, (identity.stream_id, revision))
+        batch = session.get(ReferenceBatch, rev.checkpoint_batch_id)
+        text = adapter_checkpoint_to_json(checkpoint, strategy_schema=batch.strategy_schema)
+        batch.checkpoint_text, batch.post_state_hash = text, sha256(text.encode()).hexdigest()
+        batch.computed_through = end
+        batch.source_evidence = {"last_fingerprint":item.fingerprint,"presentation_v1":envelope([
+            presentation_point(kind="hint", trading_day=end.date(), formula_versions=identity.formula_versions, value=[]),
+            presentation_point(kind="diagnostic", trading_day=end.date(), formula_versions=identity.formula_versions, value={"reason":"NO_TIMED_BAR"}),
+            point])}
+        batch.dependency_manifest = {**batch.dependency_manifest,"input_fingerprints":[source.last_fingerprint,item.fingerprint]}
+        rev.dependency_digest = manifest_sha256(batch.dependency_manifest)
+    service = NewowForwardBootstrap(factory)
+    plan = plan_for(service, identity)
+    result = service.apply(plan, expected_plan_hash=plan["plan_hash"], now=NOW)
+    _, target = repo.load_checkpoint(result["target_stream_id"])
+    assert target.computed_through == end
+    assert target.strategy_state == source.strategy_state
+    assert max(p[0] for p in target.strategy_state.input_progress.values()) == source.computed_through
+    assert target.reference_state.open_trade is None
+    # A forged or unrelated terminal boundary cannot bypass exact proof.
+    with factory.begin() as session:
+        rev = session.get(ReferenceRevision, (identity.stream_id, revision))
+        batch = session.get(ReferenceBatch, rev.checkpoint_batch_id)
+        import copy
+        evidence = copy.deepcopy(batch.source_evidence)
+        manifest = copy.deepcopy(batch.dependency_manifest)
+        if tamper == "receipt":
+            evidence["last_fingerprint"] = "0" * 64
+        elif tamper == "manifest_tail":
+            manifest["input_fingerprints"][-1] = "0" * 64
+        elif tamper == "identity":
+            evidence["presentation_v1"]["points"][-1]["value"]["physical_contract"] = "RB2701"
+        elif tamper == "reason":
+            evidence["presentation_v1"]["points"][-1]["value"]["reason"] = "OBSERVATION_INTERRUPTED"
+        elif tamper == "indicator_missing_time":
+            evidence["presentation_v1"]["points"].insert(0, {"kind":"indicator", "value":{}, "trading_day":end.date().isoformat(), "formula_versions":list(identity.formula_versions)})
+        elif tamper == "indicator_bad_value":
+            evidence["presentation_v1"]["points"].insert(0, {"kind":"indicator", "value":[], "trading_day":end.date().isoformat(), "formula_versions":list(identity.formula_versions)})
+        else:
+            evidence["presentation_v1"]["points"][-1]["kind"] = "indicator"
+        batch.source_evidence, batch.dependency_manifest = evidence, manifest
+        rev.dependency_digest = manifest_sha256(manifest)
+    with pytest.raises(RepositoryConflict, match="BOOTSTRAP_WARMUP_NOT_PROVEN"):
+        with factory() as session:
+            service._source(session, identity.stream_id)

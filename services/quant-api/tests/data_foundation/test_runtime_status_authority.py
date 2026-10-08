@@ -87,8 +87,9 @@ def _installed_market_service(
     return path
 
 
+@pytest.mark.parametrize("label", ["com.guiyi.quant-after-market", "com.guiyi.quant-reference-worker"])
 def test_cli_classifies_market_service_through_shared_launchd_reader(
-    monkeypatch, capsys
+    monkeypatch, capsys, label
 ) -> None:
     import app.market_data.runtime_status_authority as module
 
@@ -101,13 +102,13 @@ def test_cli_classifies_market_service_through_shared_launchd_reader(
     monkeypatch.setattr(module, "_read_launchd_service", read_service)
 
     result = module.main(
-        ["launchd-service-state", "com.guiyi.quant-after-market"]
+        ["launchd-service-state", label]
     )
 
     assert result == 0
     assert capsys.readouterr().out == "absent\n"
     assert observed == [
-        ("com.guiyi.quant-after-market", module.PROJECT_ROOT)
+        (label, module.PROJECT_ROOT)
     ]
 
 

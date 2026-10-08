@@ -41,6 +41,7 @@ _INSTALLABLE_LABELS = {
     *_MARKET_LABELS,
     "com.guiyi.quant-alert",
     "com.guiyi.quant-weekly-audit",
+    "com.guiyi.quant-reference-worker",
 }
 
 

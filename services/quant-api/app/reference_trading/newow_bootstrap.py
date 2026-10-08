@@ -59,6 +59,59 @@ class _BorrowedSession:
         return self.session.begin_nested()
 
 
+def _terminal_boundary_proven(batch, checkpoint):
+    """A reference boundary advances its cursor without inventing a strategy Bar."""
+    from app.reference_trading.inputs import _canonical
+    from app.reference_trading.presentation import require_envelope
+    from guiyi_quant.reference_trading import BoundaryReason
+
+    progress = tuple(checkpoint.strategy_state.input_progress.values())
+    if not progress:
+        return False
+    latest_input = max(item[0] for item in progress)
+    if latest_input >= checkpoint.computed_through or checkpoint.reference_state.open_trade is not None:
+        return False
+    points = require_envelope(batch.source_evidence.get("presentation_v1"))
+    trailing = []
+    for point in points:
+        if not isinstance(point["value"], dict):
+            if point["kind"] not in {"hint", "diagnostic"}:
+                return False
+            continue
+        end_wire = point["value"].get("bar_end")
+        if not isinstance(end_wire, str):
+            if point["kind"] not in {"hint", "diagnostic"}:
+                return False
+            continue  # Diagnostics/hints can have no independently timed Bar.
+        if datetime.fromisoformat(end_wire) > latest_input:
+            trailing.append(point)
+    if not trailing or any(point["kind"] != "boundary" for point in trailing):
+        return False
+    hashes = []
+    previous = latest_input
+    for point in trailing:
+        value = point["value"]
+        end = datetime.fromisoformat(value["bar_end"])
+        if (end <= previous or end > checkpoint.computed_through
+                or value.get("reason") not in {BoundaryReason.ROLLOVER.value, BoundaryReason.DATA_INTERRUPTED.value}
+                or (value.get("physical_contract"), value.get("owner_segment_id"), value.get("calculation_segment_id"))
+                != (checkpoint.physical_contract, checkpoint.owner_segment_id, checkpoint.calculation_segment_id)):
+            return False
+        hashes.append(sha256(_canonical({
+            "kind": "reference_boundary", "stream": checkpoint.stream.stream_id,
+            "reason": value["reason"], "physical_contract": value["physical_contract"],
+            "owner_segment_id": value["owner_segment_id"],
+            "calculation_segment_id": value["calculation_segment_id"],
+            "bar_end": end, "trading_day": datetime.fromisoformat(point["trading_day"]).date(),
+        }).encode()).hexdigest())
+        previous = end
+    fingerprints = batch.dependency_manifest.get("input_fingerprints", [])
+    return (previous == checkpoint.computed_through
+            and hashes[-1] == checkpoint.last_fingerprint
+            and batch.source_evidence.get("last_fingerprint") == checkpoint.last_fingerprint
+            and fingerprints[-len(hashes):] == hashes)
+
+
 class NewowForwardBootstrap:
     def __init__(self, session_factory):
         self._factory = session_factory
@@ -105,8 +158,9 @@ class NewowForwardBootstrap:
         if strategy != "dual_fusion" and (
             not isinstance(checkpoint.strategy_state, ProductReplayState)
             or checkpoint.strategy_state.calculation_segment_id != checkpoint.calculation_segment_id
-            or not any(progress[0] == checkpoint.computed_through
-                       for progress in checkpoint.strategy_state.input_progress.values())
+            or (not any(progress[0] == checkpoint.computed_through
+                        for progress in checkpoint.strategy_state.input_progress.values())
+                and not _terminal_boundary_proven(batch, checkpoint))
         ):
             raise RepositoryConflict("BOOTSTRAP_WARMUP_NOT_PROVEN")
         binding = {"stream_id": stream_id, "revision_id": revision.revision_id,
