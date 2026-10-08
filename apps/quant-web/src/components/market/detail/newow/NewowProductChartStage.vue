@@ -120,6 +120,7 @@ const actionOverlayTop = ref(0)
 const actionOverlayHeight = ref(0)
 const actionOverlayLeft = ref(0)
 const actionOverlayWidth = ref(0)
+const attackOverlays = ref<Array<{ id: string; kind: string; x: number; y: number; height: number; width: number }>>([])
 const positionedActions = ref<PositionedCallout[]>([])
 const positionedComparison = ref<Array<PositionedCallout & { origin: 'trend' | 'oscillation' }>>([])
 const comparisonSwitches = ref<Array<{ x: number; from: 'trend' | 'oscillation'; to: 'trend' | 'oscillation' }>>([])
@@ -257,7 +258,7 @@ watch([() => props.targetPrice, () => props.absorbPrice, () => props.loading, ()
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => { renderMarkers(model.value); scheduleActionProjection() })
 watch([model, allReferenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
-watch(detailLabels, scheduleActionProjection, { flush: 'post' })
+watch([detailLabels, showHints], scheduleActionProjection, { flush: 'post' })
 watch([partnerModel, trendTrack, oscillationTrack, comparisonBackground], () => renderModel(model.value))
 watch([auxiliaryModel, auxiliaryPresentation], () => { cursorRows.value = []; resize() }, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
@@ -438,6 +439,7 @@ function renderMarkers(value: NewowProductChartModel | null): void {
 }
 
 function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
+  attackOverlays.value = []
   if (chart === null || candles === null || container.value === null || value === null) {
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     return
@@ -459,6 +461,21 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   actionOverlayHeight.value = height
   actionOverlayLeft.value = container.value.offsetLeft
   actionOverlayWidth.value = width
+  if (showHints.value && value.identity.strategy === 'oscillation') {
+    const range = scale.getVisibleLogicalRange()
+    const count = Math.max(1, range ? range.to - range.from + 1 : value.bars.length)
+    const barWidth = Math.max(2, Math.min(6, width / count * .6))
+    attackOverlays.value = value.hints.flatMap(hint => {
+      if (!['ZLGJ_BUY', 'ZLGJ_SELL', 'OSCILLATION_J'].includes(hint.kind)) return []
+      const bar = value.bars.find(b => b.barEnd === hint.barEnd && b.physicalContract === hint.physicalContract)
+      if (!bar) return []
+      const x = timeToCoordinate.call(scale, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay))
+      const y = priceToCoordinate.call(candles, hint.kind === 'OSCILLATION_J' ? Number(hint.anchorPrice) : bar.open)
+      const closeY = priceToCoordinate.call(candles, bar.close)
+      if (x == null || y == null || closeY == null || x < 0 || x > width) return []
+      return [{ id: hint.id, kind: hint.kind, x, y: hint.kind === 'OSCILLATION_J' ? y - 12 : Math.min(y, closeY), height: Math.max(1.5, Math.abs(closeY - y)), width: barWidth }]
+    })
+  }
   positionedComparison.value = []
   comparisonSwitches.value = []; comparisonDominant.value = null
   if (comparisonActive.value) {
@@ -491,6 +508,9 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     positionedActions.value = []
     return
   }
+  const breakout = newowOscillationBreakout(value)
+  const breakoutY = breakout ? priceToCoordinate.call(candles, breakout.price) : null
+  const reserved = breakoutY === null ? [] : [{ left: Math.max(0, width - 110), top: breakoutY - 22, width: 110, height: 44 }]
   const actionById = new Map(value.actions.map(action => [action.id, action]))
   positionedActions.value = layoutNiuwaReferenceCallouts(buildNewowActionCallouts(value).flatMap(callout => {
     const action = actionById.get(callout.id)
@@ -508,7 +528,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
       boxHeight: ACTION_LABEL_BOX.height,
       expanded: props.selectedSignalId === callout.id,
     }]
-  }), width, height)
+  }), width, height, reserved)
 }
 
 function scheduleActionProjection(): void {
@@ -723,6 +743,9 @@ defineExpose({ revealSignal, scrollToLatest })
       @wheel="scheduleActionProjection"
       @dblclick="scheduleActionProjection"
     />
+    <div v-if="showHints && attackOverlays.length" class="newow-attack-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="震荡辅助攻击线提示">
+      <span v-for="item in attackOverlays" :key="item.id" :data-hint-kind="item.kind" :style="{ left: `${item.x}px`, top: `${item.y}px`, width: item.kind === 'OSCILLATION_J' ? '12px' : `${item.width}px`, height: item.kind === 'OSCILLATION_J' ? '14px' : `${item.height}px` }" :class="item.kind">{{ item.kind === 'OSCILLATION_J' ? 'J' : '' }}</span>
+    </div>
     <div
       v-if="!comparisonActive && showActions && detailLabels && model?.actions.length"
       class="newow-product-chart-stage__action-callouts"
@@ -828,4 +851,12 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-product-chart-stage__volume-score header { display:flex; justify-content:space-between; align-items:center; }.newow-product-chart-stage__volume-score button { min-height:28px; }
 .newow-product-chart-stage__volume-score p,.newow-product-chart-stage__volume-score small { color:#667085; line-height:1.7; margin:6px 0; }
 .newow-product-chart-stage__volume-score dl { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:8px 0; }.newow-product-chart-stage__volume-score dt { color:#98a2b3; }.newow-product-chart-stage__volume-score dd { margin:4px 0; color:#b77900; }.newow-product-chart-stage__volume-score article { border-top:1px solid #f2f4f7; padding-top:8px; }
+</style>
+
+<style scoped>
+.newow-attack-overlay { position:absolute; pointer-events:none; overflow:hidden; z-index:3; }
+.newow-attack-overlay span { position:absolute; transform:translateX(-50%); box-sizing:border-box; }
+.newow-attack-overlay .ZLGJ_BUY { background:#f00; border:1px solid white; }
+.newow-attack-overlay .ZLGJ_SELL { background:#0f0; border:1px solid white; }
+.newow-attack-overlay .OSCILLATION_J { color:#34c759; text-align:center; font:600 10px -apple-system,sans-serif; }
 </style>

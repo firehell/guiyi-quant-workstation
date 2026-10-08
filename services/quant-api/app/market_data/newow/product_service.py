@@ -1309,6 +1309,9 @@ class NewowProductService:
             lifecycle_evidence=read.lifecycle_evidence,
             data_interruptions=read.data_interruptions,
         )
+        if identity.strategy is ProductStrategy.OSCILLATION:
+            from .oscillation_attack_display import with_attack_hints
+            replay = with_attack_hints(replay)
         frames = tuple(
             frame
             for frame in replay.frames
