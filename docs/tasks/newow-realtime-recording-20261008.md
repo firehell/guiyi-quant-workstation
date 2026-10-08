@@ -34,3 +34,9 @@
 - D1新合约预热期的quality boundary不再投射为旧owner参考中断，raw gap/calculation事实保持；新policy hash绑定基础/双策略，bootstrap及audit拒绝旧D1policy。已完成六品种24日线按新policy重建，B/AO实际重建通过；其他品种串行推进中。
 - 第二轮定向独立Review92 passed/2 PostgreSQL skip，ruff/diff通过，代码允许集成develop。最终720及自然运行验收未完成。
 - 启动只读核对：45品种首夜60m端点22:00，15品种次日10:00；Oct9 MainContractMap尚缺，必须先补权威metadata。不得用昨日owner、回填recording_start或伪造seed watermark。
+
+- 正常日切新增Market Fact Live preparation hook，非交易poll提前30min按既有phase resolver准备；Catalog完整后Live使用同一Catalog rank1。failed recovery Gate保持。单次intent/snapshot/exactplan、全局lease、insert-or-equal、unknownstop及跨release稳定state；逐日不可变proof归档避免整体16MB约五日满，10×3MB证据保留/index<20KB。独立99 passed及Review通过。
+- Oct9正常source计划2f648c39…/e027b40e…实际apply passed：60MainMap新增、5Calendar/225Session新增，15Calendar/225Session equal保持。独立530事实逐值相等、fresh diff新增0、60owner可解析。先前failedRecovery命令在provider初始化前status unsupported正确停止，不弱化它。
+- 候选真实Web发现合法null matrix被前端拒绝并挡历史tab，实际RED→GREEN12；已修复。RB/B/AO36正式组合API+RB12策略周期浏览器历史状态/动作通过，临时服务已退出。
+- 当前v32日周60m解释仍旧固定as-of缺口已修，沿用chart meta.as_of及same-snapshot合同，48相关+17邻接测试/typecheck通过；短分钟及explicit旧asof保持。
+- scoped候选reference模块499 passed/1 skip；此前完整Newow/reference3273 passed/2 skip、Web800 passed/1skip、SuBing/Alert138 passed。release草稿PR#413已建，尚未发布/切换。
