@@ -47,6 +47,7 @@ from app.market_data.metadata import (
 )
 from app.market_data.session_clock import SHANGHAI
 from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.approved_ohlc_correction import correct_approved_minute_row
 from app.models import Instrument, MainContractMap, TradingCalendar
 
 
@@ -289,7 +290,8 @@ class RQDataMarketAdapter:
             if bar_end in expected_by_end:
                 if trading_day != expected_by_end[bar_end]:
                     raise InfrastructureError("RQDATA_SOURCE_TRADING_DAY_MISMATCH")
-                bars.append(_canonical_bar(row, bar_end, trading_day))
+                corrected_row = correct_approved_minute_row(row, key, bar_end, trading_day)
+                bars.append(_canonical_bar(corrected_row, bar_end, trading_day))
         return tuple(sorted(bars, key=lambda item: item.bar_end))
 
     def _daily_bars(

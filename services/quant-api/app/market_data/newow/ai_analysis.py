@@ -1,4 +1,4 @@
-"""Read-only four-combination page analysis via the existing validated reader."""
+"""Read-only six-combination page analysis via the existing validated reader."""
 from datetime import date, datetime
 from itertools import groupby
 from hashlib import sha256
@@ -10,7 +10,7 @@ from .product_query import NewowProductQuery
 from .product_reader import NewowProductReadError
 
 # Public AI fetchKlineForAI's period-specific windows, explicitly exposed in UI.
-STARTS = ((ProductFrequency.WEEKLY, date(2024, 6, 1)), (ProductFrequency.DAILY, date(2025, 9, 1)))
+STARTS = ((ProductFrequency.WEEKLY, date(2024, 6, 1)), (ProductFrequency.DAILY, date(2025, 9, 1)), (ProductFrequency.HOURLY, date(2026, 4, 1)))
 
 
 def analysis_input_sha256(bars, quality_policy):

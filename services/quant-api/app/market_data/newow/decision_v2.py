@@ -2,7 +2,7 @@
 
 from guiyi_quant.newow.composite_explanation import calculate_composite_volatility
 from guiyi_quant.newow.composite_decision_v2 import compute_cdv2
-from guiyi_quant.newow.composite_decision_presentation import describe_daily_weekly_cdv2
+from guiyi_quant.newow.composite_decision_presentation import describe_hourly_cdv2
 from guiyi_quant.newow.cross_period_prices import (
     PriceSource,
     select_cross_period_prices,
@@ -191,7 +191,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             "missing_roles": [f["role"] for f in facts if f["status"] != "ready"],
         }
     )
-    cdv2["presentation"] = describe_daily_weekly_cdv2(
+    cdv2["presentation"] = describe_hourly_cdv2(
         cdv2, states["trend"], states["oscillation"]
     )
     prices = None
@@ -212,7 +212,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
                 category,
             )
 
-        current_bar = daily[-1].bar if daily else anchor.bar
+        current_bar = anchor.bar if identity.frequency is ProductFrequency.HOURLY else daily[-1].bar if daily else anchor.bar
         current = price_fact(
             current_bar.bar.close, current_bar, "canonical_completed_close"
         )
@@ -223,7 +223,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
                 for f in reversed(daily)
                 if f.bar.bar.bar_end < current_bar.bar.bar_end
                 and f.bar.bar.observation_eligible
-                and f.bar.calculation_segment_id == current_bar.calculation_segment_id
+                and f.bar.calculation_segment_id == daily[-1].bar.calculation_segment_id
             ),
             None,
         )
@@ -260,7 +260,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             previous_close=prev,
             daily_signal=states["trend"]["day"],
             weekly_signal=states["trend"]["week"],
-            period="week" if identity.frequency is ProductFrequency.WEEKLY else "day",
+            period="week" if identity.frequency is ProductFrequency.WEEKLY else "best_available" if identity.frequency is ProductFrequency.HOURLY else "day",
             target_daily=day[0],
             cost_daily=day[1],
             target_weekly=week[0],
@@ -268,7 +268,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             weekly_override=week if all(week) else None,
             source_family="canonical_channel",
         )
-        prices["adapter_version"] = "guiyi_canonical_channel_cross_period_v1"
+        prices["adapter_version"] = "guiyi_canonical_channel_cross_period_v2"
         prices["source_note"] = (
             "Canonical HHV10/LLV10; not private batch price facts. Monthly input unavailable."
         )

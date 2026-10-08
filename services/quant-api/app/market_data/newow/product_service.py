@@ -135,7 +135,7 @@ class ProductServiceQuery:
     decision_v2: bool = False
 
     def __post_init__(self) -> None:
-        if self.decision_v2 and (self.section != "explanation" or self.frequency not in ("1d", "1w")):
+        if self.decision_v2 and (self.section != "explanation" or self.frequency not in ("1d", "1w", "60m")):
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.fusion_before is not None and not self.include_fusion:
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
@@ -814,8 +814,7 @@ class NewowProductService:
         cancelled: Callable[[], bool],
     ) -> NewowProductResult:
         context = (
-            (ProductFrequency.DAILY, ProductFrequency.WEEKLY) if request.decision_v2 else LEGACY_PRODUCT_FREQUENCIES
-            if request.section is ProductSection.EXPLANATION
+            LEGACY_PRODUCT_FREQUENCIES if request.section is ProductSection.EXPLANATION
             else ()
         )
         reader = self._reader_factory(context, cancelled)
@@ -1596,7 +1595,7 @@ class NewowProductService:
                     input_quality_policy=read.input_quality_policies_by_frequency.get(main_frequency, InputQualityPolicy.V1)),
                 main_bars, lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(main_frequency, ()),
                 data_interruptions=read.data_interruptions_by_frequency.get(main_frequency, ()),
-            ) if main_bars else None
+            ) if main_bars and main_frequency not in INTRADAY_PRODUCT_FREQUENCIES else None
             addon = build_decision_v2(trend, oscillation, main, read, identity)
             for replays, strategy in ((trend, ProductStrategy.TREND), (oscillation, ProductStrategy.OSCILLATION)):
                 for frequency in LEGACY_PRODUCT_FREQUENCIES:
@@ -1621,7 +1620,7 @@ class NewowProductService:
                 composite.status, composite.evidence_status, composite.reason_code
             )
         if decision_v2:
-            current_missing = f"trend_{'week' if identity.frequency is ProductFrequency.WEEKLY else 'day'}" in addon['cdv2']['missing_roles']
+            current_missing = f"trend_{'week' if identity.frequency is ProductFrequency.WEEKLY else 'm60' if identity.frequency is ProductFrequency.HOURLY else 'day'}" in addon['cdv2']['missing_roles']
             status = FeatureStatus(FeatureRuntimeStatus.WARMING, EvidenceStatus.RESEARCH_EVIDENCE_ONLY, 'NEWOW_CDV2_CURRENT_CONTEXT_UNAVAILABLE') if current_missing else FeatureStatus(FeatureRuntimeStatus.READY, EvidenceStatus.RESEARCH_EVIDENCE_ONLY)
         return SectionDelivery(
             "delivered",

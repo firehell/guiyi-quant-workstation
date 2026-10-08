@@ -1,6 +1,6 @@
 export interface DecisionPriceSource {
   raw: string
-  frequency: '1d' | '1w' | '1M'
+  frequency: '1d' | '1w' | '60m' | '1M'
   bar_end: string
   physical_contract: string
   segment_id: string
@@ -52,7 +52,7 @@ export interface Cdv2 {
   facts: { role: string; state: string | null; age: number; frequency: string; bar_end: string | null; physical_contract: string | null; segment_id: string | null; source_category: string; status: string; reason: string | null }[]
   presentation?: {
     version: string
-    scope: 'daily_weekly'
+    scope: 'daily_weekly' | 'daily_weekly_hourly'
     advice: string
     first_action: { rule_token: string; level: 'ok' | 'warn' | 'violate' | 'unknown'; title: string; detail: string; source_formula_version: string | null }
   }

@@ -10,17 +10,14 @@ export const decisionRoleLabel = (role: string) => roles[role] ?? role
 const stateLabels: Record<string, string> = { buy: '建仓', hold: '持有', sell: '清仓', wait: '空仓' }
 export const decisionStateLabel = (state: string | null | undefined) => stateLabels[state ?? ''] ?? '未知'
 export function decisionFactState(fact: Fact | undefined): string {
-  if (fact?.role.endsWith('_m60')) return '未参与'
   return fact?.status === 'ready' ? decisionStateLabel(fact.state) : '状态不可用'
 }
 export function decisionFactAge(fact: Fact | undefined): string {
-  if (fact?.role.endsWith('_m60')) return '未参与计龄'
   if (fact?.status !== 'ready' || fact.age < 0) return '计龄未知'
-  const unit = fact.frequency === '1w' ? '周K' : fact.frequency === '1d' ? '日K' : ''
+  const unit = fact.frequency === '1w' ? '周K' : fact.frequency === '1d' ? '日K' : fact.frequency === '60m' ? '60分钟K' : ''
   return unit ? `${fact.age} 根${unit}` : '计龄未知'
 }
 export function decisionFactReason(fact: Fact | undefined): string {
-  if (fact?.role.endsWith('_m60')) return '60分钟未参与本卡计算'
   if (fact?.status === 'ready') return '已完成 K 线策略回放'
   return '输入预热、数据或合约上下文不足；不使用其他周期替代'
 }
@@ -30,7 +27,7 @@ const biasLabels: Record<string, string> = {
 // Explain the authoritative reported code; do not reproduce the scoring or mismatch judge in the UI.
 export function decisionResonanceReason(cd: Cdv2): string {
   const reasons: Record<string, string> = {
-    R4: '趋势与震荡基调同向，且各自至少两个明确周期同向；本卡仅为日周确认，不包含60分钟确认。',
+    R4: '趋势与震荡基调同向，且各自至少两个明确周期同向；参与周期以已完成事实列表为准。',
     R3: '趋势与震荡基调同向，但未满足两组内部均至少两个明确周期同向。',
     R2: cd.mismatch ? `命中 ${cd.mismatch} 错配，按现行规则归入 R2。` : '趋势基调中性，震荡节奏有明确方向，按现行规则归入 R2。',
     R1: ['cautious', 'warning'].includes(cd.trend_bias)
@@ -104,7 +101,7 @@ export function decisionDisplay(cd: Cdv2) {
   const direction = w === 'down' && d === 'up' ? { text: '从周线开始下跌，当前为周线下跌中的反弹（背离），勿追涨。', color: colors.warning }
     : w === 'down' ? { text: '从周线开始下跌，大级别趋势向下；观察空仓等待反转。', color: colors.red }
     : w === 'up' && d === 'down' ? { text: '从日线开始回调，周线未转空；等待日线企稳与回补信号。', color: colors.orange }
-    : w === 'up' && d === 'up' ? { text: '日周趋势同向向上；60分钟未参与，尚不能判断小周期启动或回踩。', color: colors.red }
+    : w === 'up' && d === 'up' ? { text: cd.trend_state?.m60 === 'up' ? '日周小时趋势同向向上。' : cd.trend_state?.m60 === 'down' ? '日周趋势向上，小时回调；等待小时企稳。' : '日周趋势向上，小时依据不足。', color: colors.red }
     : { text: '日周趋势依据不足，等待已完成信号明确。', color: colors.gray }
   return { tier, scores, direction, volatility: decisionVolatility(cd),
     exposure: cd.reference_exposure_range || (cd.reference_exposure_cap === 0 ? '0%' : '—'),
@@ -113,6 +110,6 @@ export function decisionDisplay(cd: Cdv2) {
 }
 
 export function decisionContextIdentity(identity: { product: string; strategy: import('../types/newowProduct').NewowProductStrategy; frequency: import('../types/newowProduct').NewowProductFrequency }) {
-  const background = ['5m', '15m', '30m', '60m'].includes(identity.frequency)
-  return { background, identity: { product: identity.product, strategy: identity.strategy, frequency: background ? '1d' as const : identity.frequency, seriesKind: 'actual_dominant' as const } }
+  const background = ['5m', '15m', '30m'].includes(identity.frequency)
+  return { background, identity: { product: identity.product, strategy: identity.strategy, frequency: background ? '60m' as const : identity.frequency, seriesKind: 'actual_dominant' as const } }
 }

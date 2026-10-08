@@ -73,3 +73,16 @@ def test_missing_and_high_volatility_advice_stay_explanatory():
     cd, view = decision(("hold", "hold"), ("hold", "hold"), volatility="high")
     assert "波动率偏高" in view["advice"]
     assert cd["scores"]["volatility"] == -8
+
+
+def test_hourly_first_action_and_missing_input_are_not_confirmation():
+    from guiyi_quant.newow.composite_decision_presentation import describe_hourly_cdv2
+    t = {"week": "hold", "day": "hold", "m60": "hold"}
+    o = {"week": "hold", "day": "hold", "m60": "wait"}
+    cd = compute_cdv2(t, o)
+    view = describe_hourly_cdv2(cd, t, o)
+    assert view["scope"] == "daily_weekly_hourly"
+    assert view["first_action"]["level"] == "warn"
+    o["m60"] = None
+    view = describe_hourly_cdv2(compute_cdv2(t, o), t, o)
+    assert view["first_action"]["level"] == "unknown"

@@ -6,49 +6,34 @@
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.11.2@35217d5ab2c87b9173306d142ccf9f72285a3ec6**。
-[PR #407](https://github.com/firehell/guiyi-quant-workstation/pull/407)、annotated tag 与非草稿/非预发布
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.11.2) 已实际读回；main 源码树与独立审查候选
-`f262cf10ff29a5335f451c8848825d574868e30f` 完全一致。发布说明见 [v1.11.2](docs/releases/v1.11.2.md)，
-实现、生产恢复和验收见 [盘后修复](docs/tasks/after-market-health-20261004.md)。
+最新正式发布及运行版本为 **v1.12.1@412ec4bece20aca5f55439edc9057ebd9c8aee4c**。
+[PR #411](https://github.com/firehell/guiyi-quant-workstation/pull/411)、annotated tag 和
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.12.1) 已读回。
+正式根`.worktrees/release-v1.12.1` detached/clean，7个既有应用label installed/loaded root/commit一致。
 
-本补丁修复跨 Runtime 的盘后历史证据交接、安装期间 writer 互斥、审计内确定的物理前缀缺口重复计算，
-以及合法部分 planner 结果的保留；不改公式、收益、Scope、通知受众或交易阶段。
-版本依赖冻结、Web build、280项相关回归、159项盘后/晋升/authority回归、29项工程一致性检查、
-Ruff、OpenSpec10项、secret零发现和diff通过；独立Review完成，真实跨Python/Bash的guard fd互斥验证通过。
+**苏冰全部推送暂停，保留60品种15m信号与Event；HTDY推送保持原样。**
+registry notification_enabled=false，新苏冰Event通知尝试时间为null，不准备消息、不补发历史。
+203项定向测试、OpenSpec10、Ruff/diff/lock检查、Web typecheck/build和独立Review通过；
+60品种Scope前后精确相同。切换后自然PS2611苏冰15m sell Event #1181于北京时间10:45:08保存，
+notification_attempted_at=null，transport最后尝试时间未增长，实际静默闭环已读回并独审通过。
+API/Web200，Alert processing=ok；既有coverage evaluation_failed及历史通知失败仍保留，
+service health整体degraded，不声明全部60消费者RUNTIME_READY。盘后/weekly自然验收仍单独待证。
+Market首次安装因旧root未初始化协调锁在mutation前停止；精确定位后通过既有锁实现初始化，
+原安装器重新持锁/preflight snapshot_ready、60/60通过。未手工运行自然job、replay或测试推送。
+旧v1.12.0 clean/引用0、13份运行状态封存后non-force退休，未保留旧运行源码。
+见[静默切换记录](docs/tasks/subing-signal-only-20261008.md)，证据`outputs/subing-signal-only-20261008/`。
 
-分钟产品范围沿用v1.11.1：A、AG、AP、AU、B、BZ、C、CF、CJ、EB、EC、EG、FG、HC、I、J、JD、JM、L、LC、LH、M、MA、OI、P、PD、PF、PG、PK、PL、PR、PS、PT、PX、RB、RM、SA、SF、SH、SM、SR、TA、UR、V、Y，共45品种，
-**5m/15m/30m/60m × 趋势/震荡/双策略，540个历史参考页面组合**，固定截至2026-09-24 15:00（北京时间）。
-持续分钟更新、1m页面和分钟主升浪未开放；日周60品种保持。
-v1.11.1的540组合与独立数值/浏览器验收见[发布记录](docs/releases/v1.11.1.md)，本补丁未重新宣称完整页面验收。
-历史参考仍page_parity=true/executable=false，不证明因果/OOS或账户收益。
-
-**运行版本同步及当前operational health验收已完成；新版本自然业务仍待发生。**
-Market/API/Web/Alert与既有weekly切到linked worktree
-`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.2`，detached/clean，commit为上述exact tag。
-render、Market preflight（non_trading_interval，60品种）及各既有服务安装exit0；六服务configured/loaded
-root与commit一致，API/Web HTTP200，正式API版本1.11.2，readonly服务检查overall=passed。
-两次现场health整体ok，DB/Redis/Live/after_market均ok；盘后run_state=retained、expected及last_success为2026-09-30。
-9/30原盘后success保留原commit `653e736f5952146a2ea401634d32a605e7b9a0d5`、原文件SHA
-`6ed66b566012bc795ca8c677ab270077abf5f9a9315a218f06066ecf233d988a`，独立保存在`.run/after-market-history.json`；
-新运行根的自然current_run/last_run仍null，没有伪造首跑、手工重跑盘后或覆盖失败记录。
-
-本轮当前rank1 D1/W1前缀恢复AG、AU、CU、EC、MA、SN，共68个真实源请求、118分区激活；
-独立六合同replan零目标、1136根D1/240根W1按权威Calendar和Decimal逐周七字段重算无差异，维护锁0。
-最终60合约raw端点48完整；BZ/EG有成交但O/H/L=0的真实源异常，各零发布、禁重试；
-另10个raw缺失对应已有typed quality事实，不作为普通下载缺口重试。目标8品种D1/W1各24 case有界只读复查192秒完成、预算未耗尽，六恢复品种各3策略chart READY；
-完整60消费者与自然业务仍未宣称通过。
-
-Alert activation=true、running，既有Rule/Scope与两个收件配置保持，未发送、补发、回放或ack通知。
-Alert组件仍degraded（分钟覆盖unverified），notification_state=provider_accepted、连续失败0；
-9/30较早通知失败诊断保留。weekly组件仍missed，按合同不计入operational整体状态；没有手工重跑或新增任务。
-首根自然completed Bar、Alert覆盖、盘后增量/消费者检查与weekly仍待各自验收，**不声明RUNTIME_READY**。
-
-旧v1.11.1树clean且配置/loaded服务/进程引用为零；13个运行配置/marker证据保存后以非force Git worktree remove退休。
-本轮证据保存在 `/Volumes/扩展盘/guiyi-quant-evidence/after-market-health-20261004/`；旧归档引用以任务文档为准。
-operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。历史23项weekly finding与P9阻断仍保留。
+正式历史分钟仍**59/60**、708组合：5m/15m/30m/60m×趋势/震荡/双策略，固定截至2026-09-24 15:00北京时间；
+PP仍未发布，1m仅聚合、分钟主升浪/持续更新/reference worker关闭、auto_order=false。
+既有页面及数据验收归属[v1.12.0发布验收](docs/tasks/release-59-products-20261008.md)和
+[v1.12.0运行页面验收](docs/tasks/runtime-v1.12.0-20261008.md)，本补丁不重采全部组合或改收益口径。
+page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益。
+旧BZ/EG源异常、10个raw typed quality缺口、历史weekly finding及P9证据限制保留；
+历史盘后证据保存在新树after-market-history及旧运行归档，见[盘后修复记录](docs/tasks/after-market-health-20261004.md)。
 
 ## 当前产品与验证范围
+
+2026-10-08 **PP 聚丙烯 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。owner批准仅PP2405/1m 2023-06-08 21:03 high6890→6910，open保持，原始SHA与本地修正metadata/provider_confirmed=false保留；数据/资产冻结629303712。新forward48/48＝33读回＋15无缺口、63逻辑源＝62真实外部＋1已封存精确复用、263派生；375450 raw逐字段独审仅1值修正。1018→1303文件、新285/扩41、47520旧Bar/373日周保持；四频285055 Bar、各141月/12owner独立Decimal通过。12READY disabled/gen0、8基础FULL、8真实伙伴绑定；后端/前端PP候选资格缺口实际RED/GREEN及250/27测试、build/独审通过，旧启动/首场0图失败保留。compact API bb050869实际12/152全200，最终0cea555a新Chrome19场49原图、21341 CLOSED/21375 SVG及真实409/取消恢复独审通过。专属资源退出、端口free/锁0、末轮12状态保持。当前**历史候选60/60，正式59/60**；W1实际35/120、历史11段预热及12/0/15 CLOSED/视口限制保留。代码已集成develop，不发布PP、不改Runtime/Scope/通知/交易；page_parity=true/executable=false。见[PP收尾记录](docs/tasks/pp-candidate-closeout-20261008.md)。
 
 2026-10-08 **SS 不锈钢 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结1517ee6a，无生产源码改动。旧SS2302根因/调用UNKNOWN与SS2303部分提交失败原件保留；10695条SourceBatch隔离复现，15条18位规范化scratch通过，新forward164/164=158读回+6无缺口、413全新源请求/1718派生/142成交额18位截断。1811→3750文件、新1939/扩展192、264717旧Bar/1070日周保持；四频1331405 Bar、各491物理月/41owner独审通过。12READY disabled/generation0、8基础FULL各41VALID区段、8真实融合伙伴边一致；API12/152 HTTP200结束后唯一Chrome19场49原图、31524 CLOSED/31558 SVG与逐图独审通过。专属资源退出、端口free/锁0、临时npm配置exact删除，末轮仅12保存态不重扫源。最终独审通过，允许集成develop；当前**历史59/60、正式45/60**。W1实际44/120、历史40区段预热、10/0/12 CLOSED及零交易“—”/视口限制保留；page_parity=true/executable=false，无Release/Runtime/Scope/通知/交易。见[SS收尾记录](docs/tasks/ss-candidate-closeout-20261008.md)。SS为补充恢复品种，旧13/21分母不变；剩余PP，本次不扩展执行。
 
@@ -166,7 +151,7 @@ P7-04 TA **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual�
 - v1.10.38 冻结发布验证：前端 691 passed / 1 skipped、后端定向 171 passed、隔离浏览器 6 passed；
   build、Ruff、Newow spec 与独立 Review 通过。工程检查 22 passed / 1 既有截图批准库存失败；
   旧分页 E2E 漂移与全模块测试中断已披露，未声明全量通过。以上仅归属冻结发布候选。
-- 当前持续服务保持既有 operational 集合、Rule/Scope/audience（2）及 transport；reference worker 关闭，
+- 当前持续服务保持既有 operational 集合、Rule/Scope/audience（2）；苏冰只生成信号，HTDY保持推送，reference worker 关闭，
   `auto_order=false`。本页不授权新增数据范围、通知、订单或可选定时任务。
 
 日周数据与验收依据：

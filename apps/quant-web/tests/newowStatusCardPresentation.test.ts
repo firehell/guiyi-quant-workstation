@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import type { NewowDecisionV2 } from '../src/types/newowDecisionV2'
 import { buildStatusCard, statusPriceProgress } from '../src/utils/newowStatusCardPresentation.ts'
 const price = (raw: string, physical_contract = 'JM2701') => ({ raw, display_value:raw, physical_contract, segment_id:'owner', calculation_segment_id:'quality', frequency:'1d' as const, bar_end:'2026-09-24T07:00:00Z', source_identity:'s', source_category:'canonical_channel' })
@@ -41,15 +42,19 @@ test('16 original trend pairs have distinct presentation, unified exposure, bear
  const otherPrices=decision(); for(const v of [otherPrices.prices!.current_price,otherPrices.prices!.status_card.target!,otherPrices.prices!.status_card.absorb!]) v.physical_contract='RB2701'
  assert.equal(buildStatusCard(otherPrices,'trend').progress,null)
 })
-test('oscillation preserves cleared vs idle and excludes hourly even when provided',()=>{
- const a=decision('buy','sell'); const card=buildStatusCard(a,'oscillation')
- assert.equal(card.name,'高位震荡'); assert.equal(card.day.label,'已清仓')
- a.cdv2.facts.push({...a.cdv2.facts[0]!,role:'oscillation_m60',state:'buy'})
- assert.equal(buildStatusCard(a,'oscillation').name,card.name)
- assert.equal(buildStatusCard(decision('wait','wait'),'oscillation').name,'震荡观望')
- assert.equal(buildStatusCard(decision('hold','wait'),'oscillation').name,'震荡整理')
+test('all 27 public oscillation combinations require compatible completed hour facts',()=>{
+ const oracle=JSON.parse(readFileSync(new URL('../../../services/quant-api/tests/newow/fixtures/hourly-public-oracle.json',import.meta.url),'utf8'))
+ const states={holding:'hold',cleared:'sell',idle:'wait'}
+ for(const [key, row] of Object.entries(oracle.matrix) as [string,{label:string;advice:string;granularity:string;risk:string}][]) {
+  const [w,d,h]=key.split('-') as (keyof typeof states)[]
+  const value=decision(states[w!],states[d!]);value.cdv2.facts.push({...value.cdv2.facts[0]!,role:'oscillation_m60',state:states[h!],frequency:'60m'})
+  const card=buildStatusCard(value,'oscillation')
+  assert.equal(card.matrixLabel,row.label);assert.equal(card.advice,row.advice);assert.equal(card.granularity,row.granularity);assert.equal(card.risk,row.risk);assert.equal(card.exposure,'0%–10%')
+ }
+ const value=decision('hold','sell'); assert.equal(buildStatusCard(value,'oscillation').risk,'unknown')
+ value.cdv2.facts.push({...value.cdv2.facts[0]!,role:'oscillation_m60',state:'buy',frequency:'60m'})
+ assert.equal(buildStatusCard(value,'oscillation').name,'震荡上涨')
+ value.cdv2.facts.at(-1)!.physical_contract='JM2609';assert.equal(buildStatusCard(value,'oscillation').risk,'unknown')
+ value.cdv2.facts.at(-1)!.physical_contract='JM2701';value.cdv2.facts.at(-1)!.status='warming';assert.equal(buildStatusCard(value,'oscillation').risk,'unknown')
  assert.equal(buildStatusCard(decision(),'main_rise').risk,'unknown')
- const expected=['震荡上涨','高位震荡','震荡整理','震荡反弹','震荡下跌','震荡观望','震荡试盘','震荡离场','震荡观望']
- let i=0
- for(const w of ['hold','sell','wait']) for(const d of ['hold','sell','wait']) assert.equal(buildStatusCard(decision(w,d),'oscillation').name,expected[i++])
 })

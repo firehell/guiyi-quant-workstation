@@ -91,3 +91,30 @@ def describe_daily_weekly_cdv2(cd, trend, oscillation):
         "advice": advice,
         "first_action": first,
     }
+
+
+def describe_hourly_cdv2(cd, trend, oscillation):
+    """Present all three admitted periods without changing the decision kernel."""
+    view = describe_daily_weekly_cdv2(cd, trend, oscillation)
+    view.update(version="guiyi_cdv2_daily_weekly_hourly_presentation_v1", scope="daily_weekly_hourly")
+    def osc_state(s):
+        return (CompositeStatusState.HOLDING if s in ("buy", "hold") else
+                CompositeStatusState.CLEARED if s in ("sell", "wait") else CompositeStatusState.IDLE)
+    rule = calculate_first_action_principle(
+        trend.get("week"), trend.get("day"), osc_state(oscillation.get("week")),
+        osc_state(oscillation.get("day")), osc_state(oscillation.get("m60")))
+    complete = all(axis.get(p) in ("buy", "hold", "sell", "wait")
+                   for axis in (trend, oscillation) for p in ("week", "day", "m60"))
+    if not complete and rule.level == "ok":
+        view["first_action"] = {"rule_token": "daily_weekly_hourly_inputs_missing", "level": "unknown",
+            "title": "日周小时依据不足 · 等待状态明确",
+            "detail": "部分周期状态不可用，不把缺失视为确认信号。", "source_formula_version": None}
+    else:
+        detail = rule.page_detail.replace("持股", "持有").split("同步确认大盘")[0].rstrip()
+        detail = detail.replace("大盘建仓期可顺势操作，仓位按建议执行。", "参考强度以本卡综合结果为准。")
+        detail = detail.replace("若参与建议仓位 ≤30%", f"若参与，建议仓位参考强度 {cd['reference_exposure_range'] or '0%'}")
+        view["first_action"] = {"rule_token": rule.rule_token, "level": rule.level,
+            "title": rule.page_title.replace("持股", "持有"), "detail": detail,
+            "source_formula_version": rule.page_formula_version}
+    view["advice"] = view["advice"].replace("参与计算的日周信号", "参与计算的日周小时信号").replace("日周信号不足", "日周小时信号不足")
+    return view

@@ -744,6 +744,15 @@ test('single product candidate keeps its scope separate from historical batch an
   for (const products of [['zn', 'ma'], ['zn', 'zn'], ['zn', 'zz']]) {
     await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
   }
+  const ppAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['pp'] }) })
+  const ppState = useNewowCapabilities(async () => ppAccepted)
+  await ppState.load()
+  assert.deepEqual(ppState.openFrequenciesFor('PP'), payload.open_frequencies)
+  assert.deepEqual(ppState.openFrequenciesFor('ma'), [])
+  assert.equal(ppState.isFrequencyOpen('1m' as never, 'pp'), false)
+  for (const products of [['pp', 'ma'], ['pp', 'pp'], ['pp', 'zz']]) {
+    await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: products }) }))
+  }
   const buAccepted = await getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_products: ['bu'] }) })
   const buState = useNewowCapabilities(async () => buAccepted)
   await buState.load()
@@ -901,4 +910,16 @@ test('v30 workspace uses the released history cutoff for minutes only', () => {
     assert.equal(released({ capabilities: historicalMinutesV30() }, { value: { frequency } }), false)
   }
   assert.equal(released({ capabilities: { schema_version: 'newow_product_capabilities_v27' } }, { value: { frequency: '5m' } }), false)
+})
+
+
+test('v31 admits all sixty historical products including PP and preserves cutoff', async () => {
+  const products = [...historicalMinutesV30().intraday_products!, 'pp'].sort()
+  const payload = { ...historicalMinutesV30(), schema_version: 'newow_product_capabilities_v31' as const, intraday_products: products }
+  const capability = await getNewowProductCapabilities({request: async () => payload})
+  assert.equal(capability.intraday_products!.length,60)
+  const state = useNewowCapabilities(async () => capability)
+  await state.load()
+  for (const product of products) assert.deepEqual(state.openFrequenciesFor(product), ['5m','15m','30m','60m','1d','1w'])
+  await assert.rejects(getNewowProductCapabilities({request: async () => ({...payload,intraday_products:products.filter(p=>p!=='pp')})}))
 })

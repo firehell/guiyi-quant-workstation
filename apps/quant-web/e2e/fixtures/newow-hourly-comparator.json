@@ -1,0 +1,965 @@
+{
+  "meta": {
+    "schema_version": "newow_product_detail_v3",
+    "identity": {
+      "product": "pp",
+      "strategy": "oscillation",
+      "frequency": "60m",
+      "series_kind": "actual_dominant",
+      "profile_id": "newow_product_oscillation_60m_v1",
+      "formula_versions": [
+        "newow_hhv_llv_channel_page_v1",
+        "newow_oscillation_hhv_llv10_page_v1"
+      ]
+    },
+    "as_of": "2026-09-24T07:00:00.000001Z",
+    "read_at": "2026-10-08T04:00:15.561453Z",
+    "input_content_sha256": "221e4ecb34b939f9f93f3968b84df9188188279b68b3f26896286a6aafec45ca",
+    "data_revision_identity": null,
+    "snapshot_token": "4-ypaCiTu_Z4A9DI49uRbfCRxTW6oAs3",
+    "reference_model_version": "newow_marker_reference_zero_cost_v3",
+    "futures_adaptation_version": "newow_futures_quality_segment_v3"
+  },
+  "section": "comparator",
+  "chart": {
+    "delivery": "not_requested",
+    "status": null,
+    "value": null
+  },
+  "auxiliary": {
+    "delivery": "not_requested",
+    "status": null,
+    "value": null
+  },
+  "reference": {
+    "delivery": "not_requested",
+    "status": null,
+    "value": null
+  },
+  "explanation": {
+    "delivery": "not_requested",
+    "status": null,
+    "value": null
+  },
+  "comparator": {
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+      "reason_code": null
+    },
+    "value": {
+      "result": {
+        "identity": {
+          "product": "pp",
+          "strategy": "oscillation",
+          "frequency": "60m",
+          "series_kind": "actual_dominant",
+          "profile_id": "newow_product_oscillation_60m_v1",
+          "formula_versions": [
+            "newow_hhv_llv_channel_page_v1",
+            "newow_oscillation_hhv_llv10_page_v1"
+          ],
+          "input_quality_policy": "newow_input_quality_v1"
+        },
+        "status": "ready",
+        "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+        "reason_code": null,
+        "as_of": "2026-09-24T07:00:00.000001Z",
+        "formula_versions": [
+          "newow_hhv_llv_window_optimizer_page_v1",
+          "guiyi_newow_page_comparator_segment_adapter_v1"
+        ],
+        "source_bars": [
+          {
+            "count": 598,
+            "first_trading_day": "2026-04-16",
+            "last_trading_day": "2026-08-19",
+            "first_bar_end": "2026-04-15T14:00:00Z",
+            "last_bar_end": "2026-08-19T07:00:00Z",
+            "source_identities": [
+              "market_data_service:canonical_v2:newow_futures_quality_observation_v2:pp:60m:PP2609"
+            ],
+            "snapshot_kind": "guiyi_completed_owner_segment",
+            "fact_identity_fields": [
+              "product",
+              "physical_contract",
+              "segment_id",
+              "frequency",
+              "bar_end"
+            ]
+          },
+          {
+            "count": 182,
+            "first_trading_day": "2026-08-20",
+            "last_trading_day": "2026-09-24",
+            "first_bar_end": "2026-08-19T14:00:00Z",
+            "last_bar_end": "2026-09-24T07:00:00Z",
+            "source_identities": [
+              "market_data_service:canonical_v2:newow_futures_quality_observation_v2:pp:60m:PP2701"
+            ],
+            "snapshot_kind": "guiyi_completed_owner_segment",
+            "fact_identity_fields": [
+              "product",
+              "physical_contract",
+              "segment_id",
+              "frequency",
+              "bar_end"
+            ]
+          }
+        ],
+        "value": {
+          "segments": [
+            {
+              "physical_contract": "PP2609",
+              "segment_id": "pp:PP2609:2026-04-15T13:00:00+00:00",
+              "frequency": "60m",
+              "authoritative_start_trading_day": "2026-04-16",
+              "authoritative_end_trading_day": "2026-08-19",
+              "source_bars": {
+                "count": 598,
+                "first_trading_day": "2026-04-16",
+                "last_trading_day": "2026-08-19",
+                "first_bar_end": "2026-04-15T14:00:00Z",
+                "last_bar_end": "2026-08-19T07:00:00Z",
+                "source_identities": [
+                  "market_data_service:canonical_v2:newow_futures_quality_observation_v2:pp:60m:PP2609"
+                ],
+                "snapshot_kind": "guiyi_completed_owner_segment",
+                "fact_identity_fields": [
+                  "product",
+                  "physical_contract",
+                  "segment_id",
+                  "frequency",
+                  "bar_end"
+                ]
+              },
+              "as_of": "2026-09-24T07:00:00.000001Z",
+              "in_sample": true,
+              "repainting": false,
+              "repaint_status": {
+                "status": "ready",
+                "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+                "reason_code": null
+              },
+              "input_snapshot_status": {
+                "status": "ready",
+                "evidence_status": "ACTIVE_CODE_VERIFIED",
+                "reason_code": null
+              },
+              "status": {
+                "status": "ready",
+                "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+                "reason_code": null
+              },
+              "results": [
+                {
+                  "window": 10,
+                  "cumulative_return_pct": "-5.317015956821433",
+                  "max_drawdown_pct": "19.155077990047488",
+                  "trade_count": 17,
+                  "win_count": 12,
+                  "loss_count": 5,
+                  "win_rate_pct": "70.58823529411765",
+                  "force_closed_at_end": false,
+                  "score": "0.390073454852482",
+                  "page_display": {
+                    "cumulative_return_pct": "-5.32",
+                    "max_drawdown_pct": "19.16",
+                    "win_rate_pct": "70.6"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-04-17T06:30:00Z",
+                      "entry_price": "8396.0",
+                      "exit_bar_end": "2026-04-22T03:30:00Z",
+                      "exit_price": "8336.0",
+                      "return_pct": "-0.7146260123868509",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-06T14:00:00Z",
+                      "entry_price": "8707.0",
+                      "exit_bar_end": "2026-05-08T15:00:00Z",
+                      "exit_price": "8635.0",
+                      "return_pct": "-0.8269208682669118",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-13T06:30:00Z",
+                      "entry_price": "8770.0",
+                      "exit_bar_end": "2026-05-13T14:00:00Z",
+                      "exit_price": "8865.0",
+                      "return_pct": "1.0832383124287344",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-14T02:00:00Z",
+                      "entry_price": "8731.0",
+                      "exit_bar_end": "2026-05-15T06:30:00Z",
+                      "exit_price": "8785.0",
+                      "return_pct": "0.6184858549994273",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-20T14:00:00Z",
+                      "entry_price": "8944.0",
+                      "exit_bar_end": "2026-05-26T14:00:00Z",
+                      "exit_price": "8597.0",
+                      "return_pct": "-3.8796958855098387",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-27T03:30:00Z",
+                      "entry_price": "8436.0",
+                      "exit_bar_end": "2026-06-01T02:00:00Z",
+                      "exit_price": "8637.0",
+                      "return_pct": "2.382645803698435",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-04T03:30:00Z",
+                      "entry_price": "8685.0",
+                      "exit_bar_end": "2026-06-05T03:30:00Z",
+                      "exit_price": "8771.0",
+                      "return_pct": "0.9902130109383995",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-09T06:30:00Z",
+                      "entry_price": "8714.0",
+                      "exit_bar_end": "2026-06-11T02:00:00Z",
+                      "exit_price": "8772.0",
+                      "return_pct": "0.6655955932981409",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-12T02:00:00Z",
+                      "entry_price": "8575.0",
+                      "exit_bar_end": "2026-06-26T02:00:00Z",
+                      "exit_price": "7232.0",
+                      "return_pct": "-15.661807580174928",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-01T02:00:00Z",
+                      "entry_price": "7249.0",
+                      "exit_bar_end": "2026-07-02T15:00:00Z",
+                      "exit_price": "7236.0",
+                      "return_pct": "-0.1793350807007863",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-09T14:00:00Z",
+                      "entry_price": "7582.0",
+                      "exit_bar_end": "2026-07-13T02:00:00Z",
+                      "exit_price": "7706.0",
+                      "return_pct": "1.63545238723292",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-16T06:30:00Z",
+                      "entry_price": "8065.0",
+                      "exit_bar_end": "2026-07-17T14:00:00Z",
+                      "exit_price": "8244.0",
+                      "return_pct": "2.2194668319900805",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-22T03:30:00Z",
+                      "entry_price": "8300.0",
+                      "exit_bar_end": "2026-07-23T02:00:00Z",
+                      "exit_price": "8395.0",
+                      "return_pct": "1.144578313253012",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-27T02:00:00Z",
+                      "entry_price": "8169.0",
+                      "exit_bar_end": "2026-07-29T02:00:00Z",
+                      "exit_price": "8253.0",
+                      "return_pct": "1.0282776349614395",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-31T02:15:00Z",
+                      "entry_price": "8213.0",
+                      "exit_bar_end": "2026-07-31T14:00:00Z",
+                      "exit_price": "8364.0",
+                      "return_pct": "1.838548642396201",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-08-03T02:00:00Z",
+                      "entry_price": "8215.0",
+                      "exit_bar_end": "2026-08-04T02:15:00Z",
+                      "exit_price": "8398.0",
+                      "return_pct": "2.2276323797930613",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-08-04T14:00:00Z",
+                      "entry_price": "8091.0",
+                      "exit_bar_end": "2026-08-07T02:00:00Z",
+                      "exit_price": "8100.0",
+                      "return_pct": "0.11123470522803114",
+                      "won": true,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                },
+                {
+                  "window": 20,
+                  "cumulative_return_pct": "-1.9340309592703113",
+                  "max_drawdown_pct": "19.775858043427505",
+                  "trade_count": 10,
+                  "win_count": 8,
+                  "loss_count": 2,
+                  "win_rate_pct": "80.0",
+                  "force_closed_at_end": false,
+                  "score": "0.942929013737389",
+                  "page_display": {
+                    "cumulative_return_pct": "-1.93",
+                    "max_drawdown_pct": "19.78",
+                    "win_rate_pct": "80.0"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-04-20T14:00:00Z",
+                      "entry_price": "8134.0",
+                      "exit_bar_end": "2026-04-23T03:30:00Z",
+                      "exit_price": "8333.0",
+                      "return_pct": "2.446520776985493",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-06T14:00:00Z",
+                      "entry_price": "8707.0",
+                      "exit_bar_end": "2026-05-12T02:00:00Z",
+                      "exit_price": "8750.0",
+                      "return_pct": "0.49385551854829446",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-14T07:00:00Z",
+                      "entry_price": "8686.0",
+                      "exit_bar_end": "2026-05-18T02:00:00Z",
+                      "exit_price": "8914.0",
+                      "return_pct": "2.624913654156113",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-22T02:00:00Z",
+                      "entry_price": "8730.0",
+                      "exit_bar_end": "2026-06-01T02:00:00Z",
+                      "exit_price": "8637.0",
+                      "return_pct": "-1.0652920962199313",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-04T14:00:00Z",
+                      "entry_price": "8644.0",
+                      "exit_bar_end": "2026-06-08T02:15:00Z",
+                      "exit_price": "8828.0",
+                      "return_pct": "2.128644146228598",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-09T14:00:00Z",
+                      "entry_price": "8566.0",
+                      "exit_bar_end": "2026-06-29T06:30:00Z",
+                      "exit_price": "7318.0",
+                      "return_pct": "-14.569227177212236",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-01T14:00:00Z",
+                      "entry_price": "7206.0",
+                      "exit_bar_end": "2026-07-03T14:00:00Z",
+                      "exit_price": "7310.0",
+                      "return_pct": "1.443241742991951",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-27T02:00:00Z",
+                      "entry_price": "8169.0",
+                      "exit_bar_end": "2026-07-29T14:00:00Z",
+                      "exit_price": "8279.0",
+                      "return_pct": "1.3465540457828375",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-08-03T02:00:00Z",
+                      "entry_price": "8215.0",
+                      "exit_bar_end": "2026-08-04T03:30:00Z",
+                      "exit_price": "8396.0",
+                      "return_pct": "2.203286670724285",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-08-04T14:00:00Z",
+                      "entry_price": "8091.0",
+                      "exit_bar_end": "2026-08-10T02:00:00Z",
+                      "exit_price": "8173.0",
+                      "return_pct": "1.0134717587442836",
+                      "won": true,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                },
+                {
+                  "window": 24,
+                  "cumulative_return_pct": "-5.864903362815264",
+                  "max_drawdown_pct": "19.856683192214938",
+                  "trade_count": 6,
+                  "win_count": 4,
+                  "loss_count": 2,
+                  "win_rate_pct": "66.66666666666666",
+                  "force_closed_at_end": false,
+                  "score": "0.26119062123731884",
+                  "page_display": {
+                    "cumulative_return_pct": "-5.86",
+                    "max_drawdown_pct": "19.86",
+                    "win_rate_pct": "66.7"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-05-07T02:00:00Z",
+                      "entry_price": "8597.0",
+                      "exit_bar_end": "2026-05-12T02:15:00Z",
+                      "exit_price": "8776.0",
+                      "return_pct": "2.0821216703501224",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-22T02:00:00Z",
+                      "entry_price": "8730.0",
+                      "exit_bar_end": "2026-06-01T02:00:00Z",
+                      "exit_price": "8637.0",
+                      "return_pct": "-1.0652920962199313",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-09T14:00:00Z",
+                      "entry_price": "8566.0",
+                      "exit_bar_end": "2026-06-29T14:00:00Z",
+                      "exit_price": "7308.0",
+                      "return_pct": "-14.685967779593742",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-02T02:00:00Z",
+                      "entry_price": "7107.0",
+                      "exit_bar_end": "2026-07-06T02:15:00Z",
+                      "exit_price": "7326.0",
+                      "return_pct": "3.081468974250739",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-27T02:00:00Z",
+                      "entry_price": "8169.0",
+                      "exit_bar_end": "2026-07-30T06:30:00Z",
+                      "exit_price": "8366.0",
+                      "return_pct": "2.4115558819929",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-08-04T14:00:00Z",
+                      "entry_price": "8091.0",
+                      "exit_bar_end": "2026-08-10T14:00:00Z",
+                      "exit_price": "8278.0",
+                      "return_pct": "2.311209986404647",
+                      "won": true,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                },
+                {
+                  "window": 30,
+                  "cumulative_return_pct": "-6.732630806665035",
+                  "max_drawdown_pct": "19.856683192214938",
+                  "trade_count": 5,
+                  "win_count": 3,
+                  "loss_count": 2,
+                  "win_rate_pct": "60.0",
+                  "force_closed_at_end": false,
+                  "score": "0.11154631628676503",
+                  "page_display": {
+                    "cumulative_return_pct": "-6.73",
+                    "max_drawdown_pct": "19.86",
+                    "win_rate_pct": "60.0"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-05-07T07:00:00Z",
+                      "entry_price": "8589.0",
+                      "exit_bar_end": "2026-05-13T14:00:00Z",
+                      "exit_price": "8865.0",
+                      "return_pct": "3.2134125043660497",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-05-22T02:00:00Z",
+                      "entry_price": "8730.0",
+                      "exit_bar_end": "2026-06-01T02:00:00Z",
+                      "exit_price": "8637.0",
+                      "return_pct": "-1.0652920962199313",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-09T14:00:00Z",
+                      "entry_price": "8566.0",
+                      "exit_bar_end": "2026-07-06T15:00:00Z",
+                      "exit_price": "7370.0",
+                      "return_pct": "-13.962176044828393",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-07-27T02:00:00Z",
+                      "entry_price": "8169.0",
+                      "exit_bar_end": "2026-07-31T14:00:00Z",
+                      "exit_price": "8364.0",
+                      "return_pct": "2.387073081160485",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-08-04T14:00:00Z",
+                      "entry_price": "8091.0",
+                      "exit_bar_end": "2026-08-11T02:00:00Z",
+                      "exit_price": "8309.0",
+                      "return_pct": "2.6943517488567545",
+                      "won": true,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                },
+                {
+                  "window": 52,
+                  "cumulative_return_pct": "-5.93472647791822",
+                  "max_drawdown_pct": "18.64723032069971",
+                  "trade_count": 3,
+                  "win_count": 2,
+                  "loss_count": 1,
+                  "win_rate_pct": "66.66666666666666",
+                  "force_closed_at_end": false,
+                  "score": "0.3100583547862166",
+                  "page_display": {
+                    "cumulative_return_pct": "-5.93",
+                    "max_drawdown_pct": "18.65",
+                    "win_rate_pct": "66.7"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-05-25T03:30:00Z",
+                      "entry_price": "8499.0",
+                      "exit_bar_end": "2026-06-03T03:30:00Z",
+                      "exit_price": "8755.0",
+                      "return_pct": "3.012119072832098",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-06-12T02:00:00Z",
+                      "entry_price": "8575.0",
+                      "exit_bar_end": "2026-07-07T02:00:00Z",
+                      "exit_price": "7401.0",
+                      "return_pct": "-13.690962099125365",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-08-05T14:00:00Z",
+                      "entry_price": "8031.0",
+                      "exit_bar_end": "2026-08-13T06:30:00Z",
+                      "exit_price": "8412.0",
+                      "return_pct": "4.744116548375047",
+                      "won": true,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                }
+              ],
+              "ranked_windows": [
+                20,
+                10,
+                52,
+                24,
+                30
+              ]
+            },
+            {
+              "physical_contract": "PP2701",
+              "segment_id": "pp:PP2701:2026-08-19T13:00:00+00:00",
+              "frequency": "60m",
+              "authoritative_start_trading_day": "2026-08-20",
+              "authoritative_end_trading_day": "2026-09-24",
+              "source_bars": {
+                "count": 182,
+                "first_trading_day": "2026-08-20",
+                "last_trading_day": "2026-09-24",
+                "first_bar_end": "2026-08-19T14:00:00Z",
+                "last_bar_end": "2026-09-24T07:00:00Z",
+                "source_identities": [
+                  "market_data_service:canonical_v2:newow_futures_quality_observation_v2:pp:60m:PP2701"
+                ],
+                "snapshot_kind": "guiyi_completed_owner_segment",
+                "fact_identity_fields": [
+                  "product",
+                  "physical_contract",
+                  "segment_id",
+                  "frequency",
+                  "bar_end"
+                ]
+              },
+              "as_of": "2026-09-24T07:00:00.000001Z",
+              "in_sample": true,
+              "repainting": false,
+              "repaint_status": {
+                "status": "ready",
+                "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+                "reason_code": null
+              },
+              "input_snapshot_status": {
+                "status": "ready",
+                "evidence_status": "ACTIVE_CODE_VERIFIED",
+                "reason_code": null
+              },
+              "status": {
+                "status": "ready",
+                "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+                "reason_code": null
+              },
+              "results": [
+                {
+                  "window": 10,
+                  "cumulative_return_pct": "1.571584670477092",
+                  "max_drawdown_pct": "4.132283156178557",
+                  "trade_count": 5,
+                  "win_count": 3,
+                  "loss_count": 2,
+                  "win_rate_pct": "60.0",
+                  "force_closed_at_end": false,
+                  "score": "1.2746470638531773",
+                  "page_display": {
+                    "cumulative_return_pct": "1.57",
+                    "max_drawdown_pct": "4.13",
+                    "win_rate_pct": "60.0"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-08-25T14:00:00Z",
+                      "entry_price": "7999.0",
+                      "exit_bar_end": "2026-08-28T02:00:00Z",
+                      "exit_price": "7904.0",
+                      "return_pct": "-1.187648456057007",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-03T06:30:00Z",
+                      "entry_price": "8443.0",
+                      "exit_bar_end": "2026-09-03T15:00:00Z",
+                      "exit_price": "8617.0",
+                      "return_pct": "2.060878834537487",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-11T06:30:00Z",
+                      "entry_price": "8877.0",
+                      "exit_bar_end": "2026-09-16T02:00:00Z",
+                      "exit_price": "9098.0",
+                      "return_pct": "2.4895798129998874",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-17T03:30:00Z",
+                      "entry_price": "8872.0",
+                      "exit_bar_end": "2026-09-22T06:30:00Z",
+                      "exit_price": "8595.0",
+                      "return_pct": "-3.1221821460775474",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-22T14:00:00Z",
+                      "entry_price": "8415.0",
+                      "exit_bar_end": "2026-09-24T02:00:00Z",
+                      "exit_price": "8527.0",
+                      "return_pct": "1.3309566250742721",
+                      "won": true,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                },
+                {
+                  "window": 20,
+                  "cumulative_return_pct": "0.5919854409549361",
+                  "max_drawdown_pct": "5.287198812378669",
+                  "trade_count": 3,
+                  "win_count": 1,
+                  "loss_count": 2,
+                  "win_rate_pct": "33.33333333333333",
+                  "force_closed_at_end": false,
+                  "score": "0.8850180106893402",
+                  "page_display": {
+                    "cumulative_return_pct": "0.59",
+                    "max_drawdown_pct": "5.29",
+                    "win_rate_pct": "33.3"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-08-25T14:00:00Z",
+                      "entry_price": "7999.0",
+                      "exit_bar_end": "2026-08-28T14:00:00Z",
+                      "exit_price": "7989.0",
+                      "return_pct": "-0.12501562695336918",
+                      "won": false,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-15T14:00:00Z",
+                      "entry_price": "8906.0",
+                      "exit_bar_end": "2026-09-16T02:00:00Z",
+                      "exit_price": "9098.0",
+                      "return_pct": "2.1558499887716147",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-17T06:30:00Z",
+                      "entry_price": "8757.0",
+                      "exit_bar_end": "2026-09-24T07:00:00Z",
+                      "exit_price": "8631.0",
+                      "return_pct": "-1.4388489208633095",
+                      "won": false,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                },
+                {
+                  "window": 24,
+                  "cumulative_return_pct": "3.9519052178347303",
+                  "max_drawdown_pct": "8.623399955086457",
+                  "trade_count": 2,
+                  "win_count": 1,
+                  "loss_count": 1,
+                  "win_rate_pct": "50.0",
+                  "force_closed_at_end": false,
+                  "score": "1.1698214180652673",
+                  "page_display": {
+                    "cumulative_return_pct": "3.95",
+                    "max_drawdown_pct": "8.62",
+                    "win_rate_pct": "50.0"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-08-26T02:00:00Z",
+                      "entry_price": "7756.0",
+                      "exit_bar_end": "2026-08-31T02:00:00Z",
+                      "exit_price": "8302.0",
+                      "return_pct": "7.039711191335741",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-15T14:00:00Z",
+                      "entry_price": "8906.0",
+                      "exit_bar_end": "2026-09-24T07:00:00Z",
+                      "exit_price": "8631.0",
+                      "return_pct": "-3.0878059735010104",
+                      "won": false,
+                      "synthetic_terminal": false
+                    }
+                  ]
+                },
+                {
+                  "window": 30,
+                  "cumulative_return_pct": "3.9519052178347303",
+                  "max_drawdown_pct": "8.623399955086457",
+                  "trade_count": 2,
+                  "win_count": 1,
+                  "loss_count": 1,
+                  "win_rate_pct": "50.0",
+                  "force_closed_at_end": true,
+                  "score": "1.1698214180652673",
+                  "page_display": {
+                    "cumulative_return_pct": "3.95",
+                    "max_drawdown_pct": "8.62",
+                    "win_rate_pct": "50.0"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-08-26T02:00:00Z",
+                      "entry_price": "7756.0",
+                      "exit_bar_end": "2026-08-31T02:00:00Z",
+                      "exit_price": "8302.0",
+                      "return_pct": "7.039711191335741",
+                      "won": true,
+                      "synthetic_terminal": false
+                    },
+                    {
+                      "entry_bar_end": "2026-09-15T14:00:00Z",
+                      "entry_price": "8906.0",
+                      "exit_bar_end": "2026-09-24T07:00:00Z",
+                      "exit_price": "8631.0",
+                      "return_pct": "-3.0878059735010104",
+                      "won": false,
+                      "synthetic_terminal": true
+                    }
+                  ]
+                },
+                {
+                  "window": 52,
+                  "cumulative_return_pct": "-0.7702920211542883",
+                  "max_drawdown_pct": "5.323062773051276",
+                  "trade_count": 1,
+                  "win_count": 0,
+                  "loss_count": 1,
+                  "win_rate_pct": "0.0",
+                  "force_closed_at_end": true,
+                  "score": "0.641683304886795",
+                  "page_display": {
+                    "cumulative_return_pct": "-0.77",
+                    "max_drawdown_pct": "5.32",
+                    "win_rate_pct": "0.0"
+                  },
+                  "trades": [
+                    {
+                      "entry_bar_end": "2026-09-18T03:30:00Z",
+                      "entry_price": "8698.0",
+                      "exit_bar_end": "2026-09-24T07:00:00Z",
+                      "exit_price": "8631.0",
+                      "return_pct": "-0.7702920211542883",
+                      "won": false,
+                      "synthetic_terminal": true
+                    }
+                  ]
+                }
+              ],
+              "ranked_windows": [
+                10,
+                24,
+                30,
+                20,
+                52
+              ]
+            }
+          ],
+          "default_segment_id": "pp:PP2701:2026-08-19T13:00:00+00:00",
+          "candidate_windows": [
+            10,
+            20,
+            24,
+            30,
+            52
+          ],
+          "page_formula_version": "newow_hhv_llv_window_optimizer_page_v1",
+          "futures_adapter_version": "guiyi_newow_page_comparator_segment_adapter_v1",
+          "page_source_kernel_page_parity": true,
+          "futures_adapter_page_parity": false,
+          "in_sample": true,
+          "executable": false,
+          "input_mode": "guiyi_completed_owner_segment",
+          "subfeatures": [
+            {
+              "name": "offline_page_source_kernel",
+              "status": {
+                "status": "ready",
+                "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+                "reason_code": null
+              },
+              "value": "newow_hhv_llv_window_optimizer_page_v1"
+            },
+            {
+              "name": "guiyi_owner_segment_adapter",
+              "status": {
+                "status": "ready",
+                "evidence_status": "ACTIVE_CODE_VERIFIED",
+                "reason_code": null
+              },
+              "value": "guiyi_newow_page_comparator_segment_adapter_v1"
+            },
+            {
+              "name": "browser_final_kline",
+              "status": {
+                "status": "evidence_required",
+                "evidence_status": "EVIDENCE_REQUIRED",
+                "reason_code": "NEWOW_PAGE_COMPARATOR_BROWSER_INPUT_EVIDENCE_REQUIRED"
+              },
+              "value": null
+            },
+            {
+              "name": "browser_dom_rendering",
+              "status": {
+                "status": "evidence_required",
+                "evidence_status": "EVIDENCE_REQUIRED",
+                "reason_code": "NEWOW_PAGE_COMPARATOR_DOM_EVIDENCE_REQUIRED"
+              },
+              "value": null
+            },
+            {
+              "name": "browser_tie_golden",
+              "status": {
+                "status": "evidence_required",
+                "evidence_status": "EVIDENCE_REQUIRED",
+                "reason_code": "NEWOW_PAGE_COMPARATOR_TIE_EVIDENCE_REQUIRED"
+              },
+              "value": null
+            },
+            {
+              "name": "original_page_futures_owner_behavior",
+              "status": {
+                "status": "evidence_required",
+                "evidence_status": "EVIDENCE_REQUIRED",
+                "reason_code": "NEWOW_PAGE_COMPARATOR_PAGE_FUTURES_EVIDENCE_REQUIRED"
+              },
+              "value": null
+            }
+          ]
+        }
+      },
+      "executable": false,
+      "page_parity": false,
+      "synthetic_terminal_is_reference_exit": false,
+      "allowed_uses": [
+        "in_sample_comparison"
+      ]
+    }
+  }
+}

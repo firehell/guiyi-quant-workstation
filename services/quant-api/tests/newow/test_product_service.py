@@ -1600,8 +1600,8 @@ def test_cdv2_explanation_uses_only_available_context_and_no_hidden_trade_gate(p
     from app.api.market_newow import _product_response
     wire=_product_response(result).model_dump(mode='json')['explanation']['value']['decision_v2']
     assert wire['cdv2']['executable'] is False
-    assert wire['cdv2']['presentation']['version'] == 'guiyi_cdv2_daily_weekly_presentation_v1'
-    assert wire['cdv2']['presentation']['scope'] == 'daily_weekly'
+    assert wire['cdv2']['presentation']['version'] == 'guiyi_cdv2_daily_weekly_hourly_presentation_v1'
+    assert wire['cdv2']['presentation']['scope'] == 'daily_weekly_hourly'
     assert wire['cdv2']['presentation']['first_action']['rule_token']
     assert wire['cdv2']['trend_state']['m60']=='unknown'
     assert 'trend_m60' in wire['cdv2']['missing_roles']
@@ -1898,3 +1898,27 @@ def test_memoized_cache_hit_cannot_return_expired_or_different_bound_token(produ
     with pytest.raises(NewowProductServiceError, match='NEWOW_SNAPSHOT_GENERATION_CONFLICT'):
         service.query(replace(request, snapshot_token=first.meta.snapshot_token))
     assert len(reader.loads) == 1
+
+
+def test_hourly_decision_never_replays_main_rise_and_uses_hourly_readiness(product_cases, monkeypatch):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=120, frequency="60m")
+    from app.market_data.newow import product_service as module
+    original = module.replay_strategy
+    seen = []
+    def replay(identity, *args, **kwargs):
+        seen.append((identity.strategy.value, identity.frequency.value))
+        assert not (identity.strategy.value == "main_rise" and identity.frequency.value == "60m")
+        return original(identity, *args, **kwargs)
+    monkeypatch.setattr(module, "replay_strategy", replay)
+    contexts = []
+    def factory(context, cancelled):
+        contexts.append(context)
+        return reader
+    service = NewowProductService(factory, now=lambda: fake.as_of)
+    result = service.query(ProductServiceQuery("rb", "trend", "60m", section="explanation",
+        decision_v2=True, as_of=fake.as_of))
+    cd = result.explanation.value.decision_v2["cdv2"]
+    assert contexts == [(ProductFrequency.WEEKLY, ProductFrequency.DAILY, ProductFrequency.HOURLY)]
+    assert cd["extra_sources"]["j_reduce"] == "unavailable"
+    assert any(f["role"] == "trend_m60" and f["status"] == "ready" for f in cd["facts"])
+    assert result.explanation.status.status is FeatureRuntimeStatus.READY

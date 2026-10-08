@@ -201,7 +201,7 @@ function normalizeWireIdentity(
   const formulaVersions = stringArray(value.formula_versions, `${field}.formula_versions`)
   if (!sameStrings(formulaVersions, EXPECTED_FORMULAS[strategy])) throw new Error(`${field}.formula_versions is invalid or out of order`)
   const policy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
-    ? literal(value.input_quality_policy, ['newow_daily_input_quality_v2', 'newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    ? literal(value.input_quality_policy, ['newow_input_quality_v1', 'newow_daily_input_quality_v2', 'newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
     : undefined
   if ((policy === 'newow_weekly_input_quality_v2' && frequency !== '1w') ||
       (policy === 'newow_daily_input_quality_v2' && frequency !== '1d')) throw new Error(`${field}.input_quality_policy frequency mismatch`)
@@ -579,7 +579,7 @@ function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta,
   requireExact(value.reference_model_version, meta.reference_model_version, `${field}.reference_model_version`)
   requireExact(value.futures_adaptation_version, meta.futures_adaptation_version, `${field}.futures_adaptation_version`)
   const tradePolicy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
-    ? literal(value.input_quality_policy, ['newow_daily_input_quality_v2', 'newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    ? literal(value.input_quality_policy, ['newow_input_quality_v1', 'newow_daily_input_quality_v2', 'newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
     : undefined
   if (tradePolicy !== meta.identity.input_quality_policy) throw new Error(`${field}.input_quality_policy conflict`)
   const status = literal(value.status, ['OPEN', 'CLOSED', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'], `${field}.status`)
@@ -1078,7 +1078,7 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
       requireNotAfter(instant(fact.bar_end,'price.bar_end'),meta.as_of,'price.bar_end','meta.as_of')
       requireExact(fact.physical_contract,current.physical_contract,'price.contract'); requireExact(fact.segment_id,current.segment_id,'price.segment')
       for (const field of ['source_identity','source_category','calculation_segment_id']) text(fact[field],field)
-      literal(fact.frequency,['1d','1w','1M'] as const,'price.frequency')
+      literal(fact.frequency,['1d','1w','60m','1M'] as const,'price.frequency')
       if (fact.display_value !== undefined) decimal(fact.display_value,'price.display')
     }
     price(current)
@@ -1126,7 +1126,7 @@ function normalizeDailyWeeklyPath(payload: unknown, meta: NewowProductMeta, cd: 
       const p = exactRecord(rawSource,label,keys)
       const amount = decimal(p.raw,`${label}.raw`)
       if (!Number.isFinite(Number(amount)) || Number(amount)<=0) throw new Error(`${label}.raw must be positive finite price`)
-      literal(p.frequency,kind==='current'?['1d','1w'] as const:[frequency],`${label}.frequency`)
+      literal(p.frequency,kind==='current'?['1d','1w','60m'] as const:[frequency],`${label}.frequency`)
       requireNotAfter(instant(p.bar_end,`${label}.bar_end`),meta.as_of,`${label}.bar_end`,'meta.as_of')
       const physical = contract(p.physical_contract,`${label}.physical_contract`)
       if (!physical.startsWith(meta.identity.product.toUpperCase()) || !/^\d+$/.test(physical.slice(meta.identity.product.length))) throw new Error(`${label}.product conflict`)

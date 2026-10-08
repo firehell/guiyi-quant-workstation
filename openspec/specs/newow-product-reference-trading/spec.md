@@ -1303,6 +1303,43 @@ fails closed and requires an explicit native rebuild; a past candidate closure i
 - **AND** the consumer does not recalculate, choose another schema, truncate the window or activate a stream as fallback
 
 
+### Requirement: Sixty-product historical hourly decision and six-combination analysis
+
+Formal capability `newow_product_capabilities_v31` SHALL admit all sixty operational products,
+including PP, for existing historical `5m/15m/30m/60m × trend/oscillation/dual` pages.
+The fixed historical cutoff remains `2026-09-24T07:00:00.000001Z`; 1m is aggregation input only,
+minute main-rise and the continuous reference worker remain closed.
+
+The opt-in `decision_v2` explanation SHALL read completed W1, D1 and 60m through the unified
+reader with independent per-period quality policies and one historical as-of. Requests from
+later daily/weekly charts SHALL cap the explanation cutoff without reusing their later chart
+snapshot token. All sources must match the anchor physical contract and segment; missing,
+warming, interrupted or foreign-owner periods remain unavailable. No minute MAIN_RISE replay
+is allowed; unavailable J inputs SHALL remain unavailable. Existing CDV2 numerical formulas,
+weights, 13 action meanings and first-action priority remain unchanged. Presentation version
+`guiyi_cdv2_daily_weekly_hourly_presentation_v1` exposes hourly states and ages, and never treats
+a missing hourly state as positive confirmation. Daily/weekly path diagrams keep their two
+background periods. Canonical cross-period prices may use completed 60m current close with
+D1/W1 channel targets; this is a futures adapter, not private batch-price parity.
+
+AI response `newow_ai_analysis_v2` SHALL return six distinct trend/oscillation combinations
+across W1/D1/60m, with respective start dates 2024-06-01, 2025-09-01 and 2026-04-01. All six
+share the capped historical snapshot. Original scoring, sample gates, segment terminal
+estimates and stable tie selection remain unchanged. Adoption changes only the visible
+strategy/period. Unavailable combinations stay visible and cannot be recommended.
+
+#### Scenario: Hourly facts participate without opening minute main-rise
+- **GIVEN** completed same-owner D1/W1/60m inputs at the historical cutoff
+- **WHEN** a 60m trend or oscillation decision is requested
+- **THEN** hourly facts, ages and original score contributions are delivered
+- **AND** no minute main-rise kernel is called and no Runtime decision or order is written
+
+#### Scenario: Later daily chart cannot contaminate historical hourly comparison
+- **GIVEN** a daily chart newer than the fixed minute cutoff
+- **WHEN** the cross-period decision or six-combination analysis is requested
+- **THEN** all periods use the capped cutoff and every reported source bar ends at or before it
+- **AND** unavailable periods are explicit rather than substituted or artificially rescored
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

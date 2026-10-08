@@ -11,7 +11,7 @@ export interface AiSummary {
 }
 export interface AiCombo {
   strategy: 'oscillation' | 'trend'
-  frequency: '1w' | '1d'
+  frequency: '1w' | '1d' | '60m'
   since: string
   through: string | null
   source_bars: number
@@ -23,7 +23,7 @@ export interface AiCombo {
   is_best: boolean
 }
 export interface AiAnalysis {
-  schema_version: 'newow_ai_analysis_v1'
+  schema_version: 'newow_ai_analysis_v2'
   product: string
   as_of: string
   formula_version: 'newow_ai_summary_ranking_page_v1'
@@ -42,18 +42,18 @@ const digest = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)
 const day = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\d$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v
 
 export function validateAiAnalysis(value: unknown, product: string, asOf: string): value is AiAnalysis {
-  if (!record(value) || value.schema_version !== 'newow_ai_analysis_v1' || value.product !== product
+  if (!record(value) || value.schema_version !== 'newow_ai_analysis_v2' || value.product !== product
     || typeof value.as_of !== 'string' || previewInstant(asOf) === null || previewInstant(value.as_of) !== previewInstant(asOf)
     || value.formula_version !== 'newow_ai_summary_ranking_page_v1'
     || value.futures_adapter_version !== 'guiyi_newow_ai_segment_valuation_v1'
     || value.page_source_sha256 !== 'b12da74d89a7ac304d7479999d11f13ab53ced834a8472f937d78a0c1bd03709'
     || value.page_kernel_parity !== true || value.page_parity !== false || value.executable !== false
-    || !Array.isArray(value.combos) || value.combos.length !== 4) return false
+    || !Array.isArray(value.combos) || value.combos.length !== 6) return false
   const keys = new Set<string>()
   let best = 0
   for (const c of value.combos) {
-    if (!record(c) || !['oscillation', 'trend'].includes(String(c.strategy)) || !['1w', '1d'].includes(String(c.frequency))
-      || !day(c.since) || c.since !== (c.frequency === '1w' ? '2024-06-01' : '2025-09-01')
+    if (!record(c) || !['oscillation', 'trend'].includes(String(c.strategy)) || !['1w', '1d', '60m'].includes(String(c.frequency))
+      || !day(c.since) || c.since !== (c.frequency === '1w' ? '2024-06-01' : c.frequency === '1d' ? '2025-09-01' : '2026-04-01')
       || !integer(c.source_bars) || typeof c.is_best !== 'boolean') return false
     const key = `${c.strategy}:${c.frequency}`
     if (keys.has(key)) return false
@@ -79,6 +79,7 @@ export function validateAiAnalysis(value: unknown, product: string, asOf: string
 }
 
 export async function getNewowAiAnalysis(product: string, asOf: string, options: { signal?: AbortSignal; request?: Transport } = {}): Promise<AiAnalysis> {
+  asOf = historicalAnalysisAsOf(asOf)
   const transport = options.request ?? (async (path, config) => {
     const { default: request } = await import('./request.ts')
     return request.get<never, unknown>(path, config)
@@ -94,4 +95,10 @@ export async function getNewowAiAnalysis(product: string, asOf: string, options:
   }
   if (!validateAiAnalysis(value, product, asOf)) throw new Error('NEWOW_AI_RESPONSE_INVALID')
   return value
+}
+
+export function historicalAnalysisAsOf(asOf: string): string {
+  const instant = previewInstant(asOf)
+  if (instant === null) return asOf
+  return instant > previewInstant('2026-09-24T07:00:00.000001Z')! ? '2026-09-24T07:00:00.000001Z' : asOf
 }

@@ -11,7 +11,7 @@ test('zero age is valid, weekly age has its own unit, unavailable inputs never a
   assert.equal(decisionFactAge(fact({ age: -1 })), '计龄未知')
   assert.equal(decisionFactAge(fact({ status: 'unavailable' })), '计龄未知')
   assert.equal(decisionFactState(fact({ status: 'unavailable' })), '状态不可用')
-  assert.equal(decisionFactState(fact({ role: 'trend_m60' })), '未参与')
+  assert.equal(decisionFactState(fact({ role: 'trend_m60', frequency: '60m' })), '建仓')
   assert.equal(decisionFactAge(undefined), '计龄未知')
 })
 test('reported mismatch explains its actual daily age source and freshness', () => {
@@ -27,7 +27,7 @@ test('R4 is explained as available two-period agreement rather than full three-p
   const cd = { resonance: 'R4', trend_bias: 'bullish', oscillation_bias: 'bullish' } as Cdv2
   assert.match(decisionResonanceReason(cd), /趋势基调偏多 · 震荡节奏偏多/)
   assert.match(decisionResonanceReason(cd), /至少两个明确周期同向/)
-  assert.match(decisionResonanceReason(cd), /不包含60分钟确认/)
+  assert.match(decisionResonanceReason(cd), /参与周期以已完成事实列表为准/)
   assert.match(decisionResonanceReason({ ...cd, resonance: 'R2', mismatch: 'MM4' }), /命中 MM4/)
   assert.match(decisionResonanceReason({ ...cd, resonance: 'R1', trend_bias: 'bearish' }), /趋势与震荡方向相反/)
   assert.match(decisionResonanceReason({ ...cd, resonance: 'R1', trend_bias: 'warning' }), /趋势处于谨慎／反弹警示/)
@@ -74,8 +74,8 @@ test('minute decision uses a separate completed daily weekly background identity
   const { decisionContextIdentity } = await import('../src/utils/newowDecisionV2Presentation.ts')
   for (const frequency of ['5m', '15m', '30m', '60m'] as const) {
     const context = decisionContextIdentity({ product: 'rb', strategy: 'trend', frequency })
-    assert.equal(context.background, true)
-    assert.equal(context.identity.frequency, '1d')
+    assert.equal(context.background, frequency !== '60m')
+    assert.equal(context.identity.frequency, '60m')
   }
   assert.equal(decisionContextIdentity({ product: 'rb', strategy: 'trend', frequency: '1w' }).identity.frequency, '1w')
 })
