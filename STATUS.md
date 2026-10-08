@@ -6,36 +6,36 @@
 
 ## Release 与 Runtime
 
-最新正式发布及运行版本为 **v1.13.0@6dc0b81e11450262b5cbb39090c4aa1c85ab138e**。
-[PR #412](https://github.com/firehell/guiyi-quant-workstation/pull/412)、annotated tag peeled、远端main和
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.13.0) exact identity一致，
-完整发布树等于已验收候选08ef5e4a0。正式根`.worktrees/release-v1.13.0` detached/clean；
-七个既有应用label installed/loaded root与commit一致，API/Web HTTP200、实际API版本1.13.0。
+最新正式发布为 **v1.14.3@00bc70899a4d8b6a519dd9d443caf6c2d256ac21**，
+[PR #416](https://github.com/firehell/guiyi-quant-workstation/pull/416) 与
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.3) exact identity 已核对。
+API/Web/logrotate 已切至 v1.14.3，API health HTTP200、实际版本1.14.3；正式发布树 detached/clean。
+当前运行组件版本并不统一：reference worker/weekly audit 为 v1.14.2，Market Live/盘后/late-provider 为 v1.14.0，
+共享 Alert 为 v1.13.0。八个应用 label loaded；schedule-only not_running 不视为故障。
 
-**牛哇正式历史分钟60/60品种、720组合**：PP已纳入5m/15m/30m/60m×趋势/震荡/双策略；
-固定截至2026-09-24 15:00北京时间。60m综合决策使用同一快照W1/D1/60m事实、原评分与第一行动原则；
-AI分析六组合、27格三周期震荡状态卡、采纳60m、五窗口比较入口及目标/吸筹已补齐。
-1m仅聚合，分钟主升浪、持续分钟更新及reference worker保持关闭，auto_order=false。
+**牛哇60品种×四策略×W1/D1/60m，共720条链路**：历史资产720/720 READY，forward720/720启用并预热。
+D1/60m最新已完成历史端点为2026-10-08 15:00北京时间，W1为2026-09-30；未完成周不生成正式历史。
+2026-10-08 21:59开始记录，首个22:00夜盘端点已自然观察180/180条（45夜盘品种×四策略），
+180条源哈希与独立60×1m重建一致，17个策略Marker、17个Hint已记录；pending capture/rejection/diagnostic均0。
+其余540条等待各自自然completed端点；seed不计作实时观察。180条Live→Canonical核对仍pending，不能算匹配完成。
 
-候选661项后端通过/1既有skip、390项Newow前端通过，typecheck/build/OpenSpec10/Ruff/diff/secret及独立Review通过。
-真实60品种120小时决策API全200、240小时facts ready；4项日周预热/owner不足明确保留。
-PP四频8基础图表、真实Chrome小时决策/六组合/日线采纳60m/比较器/双策略通过；正式Web六卡实际读回。
-page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益。新公开源快照与旧冻结oracle分别留证。
+v1.14.3正式页面只读验收通过：RB四策略显示10月9日交易日中的10月8日22:00状态；
+历史窗口与分页快照保持一致，浏览器无错误。Web808通过/1skip，真实隔离PostgreSQL39通过，
+定向后端42通过/2skip，扩展数据与worker162通过/2skip，typecheck/build/OpenSpec10/Ruff/secret与独立Review通过。
+page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益；auto_order=false。
 
-**RELEASED / Runtime已切换；自然验收PARTIAL，不声明RUNTIME_READY。**
-切换前Market preflight snapshot_ready60/60；首次Market安装在mutation前因旧root缺after-market.lock停止，
-原历史文件及retain只读校验通过。既有锁实现初始化空协调文件后原安装器重新持锁/preflight通过，
-按合同实际保留协调历史到新树；base/market/alert/weekly安装分别exit0。未手工运行自然job或清除失败。
-新Live/Alert午休BREAK coverage为unverified，Alert processing=ok、heartbeat实际读回；
-盘后/late-provider schedule-only not_running、weekly not_run不当作失败。自然completed Live及受影响自然业务仍待证。
-旧v1.12.1 clean/引用0，13份运行状态按SHA封存后non-force退休；临时API/Web已退出。
+**PARTIAL：持续记录已自然发生，历史持续刷新尚未修复，不声明RUNTIME_READY。**
+已发布的修复只读取Catalog实际published端点，避免次日预备映射触发MAPPED_CONTRACT_DATASET_MISSING。
+记录服务尚运行v1.14.2；自动审批拒绝短暂停止该进程，等待明确切换授权，现役服务继续运行。
+历史刷新blocked状态仅完成只读扫描，尚未修改；切换后须重新在exclusive锁下核对精确前像、720源身份并保留备份后恢复。
+Market promotion preflight仍阻塞，不能将API/Web切换等同于全Runtime切换。
 
-**苏冰全部推送继续暂停，60品种15m信号/Event保留；HTDY既有通知保持。**
-60品种Rule/Scope前后JSON逐条相同，受众与安全通知配置沿用。v1.12.1自然静默闭环为历史证据，
-不冒充本次新版本自然验收。旧BZ/EG源异常、raw typed quality缺口、历史weekly finding与P9限制保留。
-见[小时功能发布记录](docs/tasks/newow-hourly-completion-20261008.md)、[v1.13.0说明](docs/releases/v1.13.0.md)，
-证据`outputs/newow-hourly-20261008/`；既有数据/页面证据见[v1.12.0验收](docs/tasks/release-59-products-20261008.md)，
-静默通知基线见[v1.12.1记录](docs/tasks/subing-signal-only-20261008.md)。
+**牛哇不推送、不下单；苏冰既有推送继续暂停，15m信号/Event保留；HTDY既有通知保持。**
+共享Alert版本切换也被自动审批拒绝，原因是可能触发既有外部通知；本次没有绕过或新增Rule/Scope/受众。
+0048 migration已完成，0049未执行，既有失败attempt和旧证据保留。
+详见[实时记录交付记录](docs/tasks/newow-realtime-recording-20261008.md)，
+证据位于独立task树的 `outputs/newow-realtime-recording-20261008/`，正式浏览器验收位于
+`output/playwright/newow-v1143-readonly-20261008T1450Z/acceptance-summary.json`。
 
 ## 当前产品与验证范围
 
@@ -266,8 +266,8 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
 - 最近一次 600 流只读审计为 `SOURCE_READY=387 / BLOCKED=213`；之后 15 条 W1 流复核中 SC/SI 六条
   SOURCE_READY，PL/PX/RS 九条仍为 `REFERENCE_BOUNDARY_CONTEXT_MISSING`。这些是对应旧精确提交的审计，
   当前版本完整矩阵、历史构建与持续更新须重新绑定 exact code/input identity，不能沿用旧结论。
-- 未完成 0048 migration、剩余历史构建、全局 persisted reader 切换和 reference worker 启用；
-  P9 持久化“统一参考交易”面板的既有 503 未关闭。Newow 页面参考投影不受此结论替代。
+- 0048 migration及本轮Newow720历史构建、记录worker启用已完成；全局persisted reader与其他P9范围须按各自证据验收，不能由Newow闭环推定完成。
+  Newow持续历史刷新修复尚未切入worker，详见顶部实际运行状态；旧P9未知结果与恢复边界保留。
 - A2611 旧来源请求已按 `SOURCE_RESPONSE_IDENTITY_INVALID` 停止且禁止重试；后续 D1 修复后重审无新恢复目标，
   不是对旧请求的重试。六个 W1 新批次共 64 个 W1 与 64 个 D1 同源上下文目标通过，来源 journal 64 次请求。
 
