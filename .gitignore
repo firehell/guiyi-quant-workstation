@@ -107,3 +107,6 @@ secrets/
 
 # TA candidate raw local evidence and market data; never Git payload
 /outputs/ta-minute-closeout-20260928/
+
+# Inspected public source snapshots; commit only owned inputs and numeric witnesses.
+/outputs/newow-manual-v3379-20261008/

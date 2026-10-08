@@ -1,5 +1,31 @@
 # 测试与验证命令
 
+## 牛哇 v3.3.79 手册同输入验证
+
+该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，
+不是本地实现；部分输入为构造边界，不能作为市场/OOS证据。当前结论与来源哈希见
+[v3.3.79手册卷](docs/research/newow-v3.2.82/AUDIT_20261008_V3379.md)。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/newow/test_v3379_manual_audit.py
+```
+
+重建需要单独保留的四份公开源文件、Web已安装的TypeScript依赖及Node；先校验整文件SHA，
+版本变动须另建fixture，不覆盖旧oracle。以下命令不访问网站、数据库、Canonical或Runtime：
+
+```bash
+node tools/build_newow_v3379_audit.mjs \
+  outputs/newow-manual-v3379-20261008/public-source \
+  /private/tmp/newow-v3379-rebuilt.json
+cmp services/quant-api/tests/newow/fixtures/v3379-manual-oracle.json \
+  /private/tmp/newow-v3379-rebuilt.json
+```
+
+固定来源工具仅执行已检查的纯函数与CDV2导出，不执行整页HTML。fixture的通过项含“预期差异存在”，
+不得把pytest总通过数表述为全站parity数。
+
 以下命令区分隔离测试、现场只读和受控操作用法；示例本身不授予生产操作权限。
 授权统一按 `AGENTS.md`：任务内只读诊断和隔离开发预览自主执行；真实 provider、生产写入、发布与 Runtime
 须在明确任务/批次范围内。有效授权可跨会话恢复；批次内不逐命令审批，exact hash、锁和质量校验保持不变。
