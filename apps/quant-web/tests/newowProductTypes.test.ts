@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import hourlyComparator from '../e2e/fixtures/newow-hourly-comparator.json' with { type: 'json' }
 import kernelMacdFixture from '../e2e/fixtures/newow-rich-macd.json' with { type: 'json' }
 import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 
@@ -1206,4 +1207,13 @@ test('daily and weekly chart reference and auxiliary reads share the strategy de
       }
     }
   }
+})
+
+
+test('real hourly comparator accepts the explicit canonical V1 identity and rejects a daily policy',()=>{
+ const expected={product:'pp',strategy:'oscillation' as const,frequency:'60m' as const,seriesKind:'actual_dominant' as const,section:'comparator' as const,asOf:hourlyComparator.meta.as_of}
+ const normalized=normalizeNewowProductResponse(hourlyComparator,expected)
+ assert.equal(normalized.section,'comparator')
+ const wrong=structuredClone(hourlyComparator);wrong.comparator.value!.result!.identity.input_quality_policy='newow_daily_input_quality_v2'
+ assert.throws(()=>normalizeNewowProductResponse(wrong,expected),/frequency mismatch/)
 })

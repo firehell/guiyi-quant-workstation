@@ -599,7 +599,7 @@ def test_intraday_candidate_does_not_implicitly_expand_formal_scope():
     request = SimpleNamespace(state=SimpleNamespace())
     for frequency in ("5m", "15m", "30m", "60m"):
         with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
-            _enforce_product_frequency(request, "pp", frequency)
+            _enforce_product_frequency(request, "zz", frequency)
 
 
 @pytest.mark.parametrize('frequency', ('5m','15m','30m','60m'))
@@ -693,7 +693,7 @@ def test_ma_single_product_candidate_scope_and_formal_boundary(preview, monkeypa
         assert rejected.json()['detail']['code'] == 'PREVIEW_PRODUCT_OUT_OF_SCOPE'
     monkeypatch.delenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS')
     with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
-        _enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), 'pp', '5m')
+        _enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), 'zz', '5m')
 
 
 @pytest.mark.parametrize('raw', ('ma,rb', 'ma,ma', 'ma,ur', 'zz'))

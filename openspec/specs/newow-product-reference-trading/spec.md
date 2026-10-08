@@ -1303,17 +1303,6 @@ fails closed and requires an explicit native rebuild; a past candidate closure i
 - **AND** the consumer does not recalculate, choose another schema, truncate the window or activate a stream as fallback
 
 
-## Intraday pilot contracts (P0–P6 candidate)
-
-The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
-
-#### Frozen intraday reference input evidence
-
-Minute candidate builds may pin a verified input only while holding the authoritative Canonical maintenance lease; no input cache survives lease release or interruption. `newow_product_reader_intraday_v3` stores full input hash/count and an exact frozen source-evidence hash instead of repeating every Bar fingerprint in each batch. Source evidence is obtained through MDS and verifies Catalog-selected Canonical file bytes, quality/coverage metadata, physical contract lifecycle, rank1 ownership and Calendar/Session facts. A saved result is rejected when that evidence or frozen scope changes. Compact hashes do not constitute append-only proof; changed source/cutoff requires an explicit rebuild. Historical page queries validate the saved scope and may read necessary initial-holding facts before the record window, but cannot extend the snapshot cutoff or through day.
-
-Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading_day and a deterministic result revision independently of the limited record list. This changes delivery completeness only; fusion action order, source-price priority, pairing, terminal OPEN semantics and reference model remain unchanged. Page reference remains non-executable.
-
-
 ### Requirement: Sixty-product historical hourly decision and six-combination analysis
 
 Formal capability `newow_product_capabilities_v31` SHALL admit all sixty operational products,
@@ -1350,3 +1339,13 @@ strategy/period. Unavailable combinations stay visible and cannot be recommended
 - **WHEN** the cross-period decision or six-combination analysis is requested
 - **THEN** all periods use the capped cutoff and every reported source bar ends at or before it
 - **AND** unavailable periods are explicit rather than substituted or artificially rescored
+
+## Intraday pilot contracts (P0–P6 candidate)
+
+The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
+
+#### Frozen intraday reference input evidence
+
+Minute candidate builds may pin a verified input only while holding the authoritative Canonical maintenance lease; no input cache survives lease release or interruption. `newow_product_reader_intraday_v3` stores full input hash/count and an exact frozen source-evidence hash instead of repeating every Bar fingerprint in each batch. Source evidence is obtained through MDS and verifies Catalog-selected Canonical file bytes, quality/coverage metadata, physical contract lifecycle, rank1 ownership and Calendar/Session facts. A saved result is rejected when that evidence or frozen scope changes. Compact hashes do not constitute append-only proof; changed source/cutoff requires an explicit rebuild. Historical page queries validate the saved scope and may read necessary initial-holding facts before the record window, but cannot extend the snapshot cutoff or through day.
+
+Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading_day and a deterministic result revision independently of the limited record list. This changes delivery completeness only; fusion action order, source-price priority, pairing, terminal OPEN semantics and reference model remain unchanged. Page reference remains non-executable.
