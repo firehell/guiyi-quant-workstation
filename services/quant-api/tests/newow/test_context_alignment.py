@@ -37,7 +37,7 @@ def _identity(
         frequency=ProductFrequency(frequency),
         formula_versions=(
             "newow_escape_d123_page_v2",
-            "newow_trend_band_page_v2",
+            "newow_trend_band_page_v3",
         ),
     )
 

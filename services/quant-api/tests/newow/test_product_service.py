@@ -569,7 +569,7 @@ def test_trend_chart_delivers_independent_channel_without_changing_strategy_iden
     assert CHANNEL_FORMULA_VERSION not in result.meta.identity.formula_versions
     assert result.meta.identity.formula_versions == (
         "newow_escape_d123_page_v2",
-        "newow_trend_band_page_v2",
+        "newow_trend_band_page_v3",
         "newow_trend_marker_initial_clear_v2",
     )
 

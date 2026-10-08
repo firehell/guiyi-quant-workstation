@@ -154,7 +154,7 @@ def test_walk_forward_uses_training_only_as_warmup_and_scores_test_intents() -> 
     )
 
     assert result.strategy is ResearchStrategy.TREND
-    assert result.signal_formula_versions == ("newow_trend_band_page_v2",)
+    assert result.signal_formula_versions == ("newow_trend_band_page_v3",)
     assert result.closed_trade_count == 1
     assert len(result.folds) == 1
     evaluated = result.folds[0]

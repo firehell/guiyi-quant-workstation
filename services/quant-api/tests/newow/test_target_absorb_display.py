@@ -87,7 +87,7 @@ def _identity(frequency: ProductFrequency) -> ProductIdentity:
         product="rb",
         strategy=ProductStrategy.TREND,
         frequency=frequency,
-        formula_versions=("newow_trend_band_page_v2",),
+        formula_versions=("newow_trend_band_page_v3",),
     )
 
 

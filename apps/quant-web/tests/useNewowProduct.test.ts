@@ -2118,7 +2118,7 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
   const strategy = options.strategy ?? 'trend'
   const frequency = options.frequency ?? '1d'
   const formulas = strategy === 'trend'
-    ? ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
+    ? ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
     : strategy === 'oscillation'
       ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
@@ -2205,7 +2205,7 @@ function auxiliaryWire(request: Extract<NewowProductRequest, { section: 'auxilia
 function referenceItem(id: string, returnPct: string) {
   return {
     reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+    formula_versions: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125', status: 'CLOSED', holding_bars: 1,
     reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null, interrupted_at: null, interruption_reason: null, statistics_membership: 'CLOSED_ENTRY_IN_WINDOW', hint_ids: [],

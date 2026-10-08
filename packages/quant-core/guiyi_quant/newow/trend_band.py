@@ -17,7 +17,7 @@ from .profile import NEWOW_TREND_D1_PAGE_V2, NEWOW_TREND_D1_V1, NewowTrendProfil
 
 
 _CLEANROOM_V1 = NEWOW_TREND_D1_V1.trend_band_formula
-_PAGE_V2 = NEWOW_TREND_D1_PAGE_V2.trend_band_formula
+_PAGE = NEWOW_TREND_D1_PAGE_V2.trend_band_formula
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +38,19 @@ class TrendBandStepResult:
     marker: NewowMainMarker | None
 
 
+def _page_average(values: tuple[float, ...]) -> float:
+    """Mirror calcMAFrom: newest-first, sequential IEEE-754 additions.
+
+    Python 3.12+ sum(float) compensates intermediate rounding and can change
+    close >= B10 at a one-ULP boundary. The public page's exact accumulation
+    order is part of the versioned signal formula, including partial windows.
+    """
+    total = 0.0
+    for value in reversed(values):
+        total += value
+    return total / len(values)
+
+
 def initial_trend_band_state() -> TrendBandStateValue:
     return TrendBandStateValue((), (), None)
 
@@ -45,7 +58,7 @@ def initial_trend_band_state() -> TrendBandStateValue:
 def _typical_price(bar: NewowDailyBar, profile: NewowTrendProfile) -> float | None:
     if not all(value.is_finite() for value in (bar.open, bar.high, bar.low, bar.close)):
         return None
-    if profile.trend_band_formula == _PAGE_V2:
+    if profile.trend_band_formula == _PAGE:
         value = (float(bar.close) + float(bar.high) + float(bar.low)) / 3.0
         return value if isfinite(value) else None
     if profile.trend_band_formula != _CLEANROOM_V1:
@@ -66,13 +79,13 @@ def _typical_price(bar: NewowDailyBar, profile: NewowTrendProfile) -> float | No
 def _valid_state(state: TrendBandStateValue, profile: NewowTrendProfile) -> bool:
     weighted_count = len(state.weighted_window)
     signal_count = len(state.signal_window)
-    if profile.trend_band_formula not in {_CLEANROOM_V1, _PAGE_V2}:
+    if profile.trend_band_formula not in {_CLEANROOM_V1, _PAGE}:
         return False
     if profile.trend_weight_period <= 0 or profile.trend_signal_period <= 0:
         return False
     weighted_limit = (
         profile.trend_signal_period
-        if profile.trend_band_formula == _PAGE_V2
+        if profile.trend_band_formula == _PAGE
         else profile.trend_weight_period
     )
     if weighted_count > weighted_limit or signal_count > profile.trend_signal_period:
@@ -111,7 +124,7 @@ def _valid_state(state: TrendBandStateValue, profile: NewowTrendProfile) -> bool
     ):
         return False
 
-    if profile.trend_band_formula == _PAGE_V2:
+    if profile.trend_band_formula == _PAGE:
         if weighted_count == 0:
             return (
                 signal_count == 0
@@ -125,7 +138,7 @@ def _valid_state(state: TrendBandStateValue, profile: NewowTrendProfile) -> bool
             return False
         expected_state = (
             TrendBandState.YELLOW
-            if state.signal_window[-1] >= sum(state.weighted_window) / weighted_count
+            if state.signal_window[-1] >= _page_average(state.weighted_window)
             else TrendBandState.BLUE
         )
         return state.previous_state is expected_state
@@ -158,8 +171,8 @@ def _marker_id(
     bar: NewowDailyBar, marker_type: NewowMarkerType, profile: NewowTrendProfile
 ) -> str:
     strategy_code = (
-        "newow_trend_page_v2"
-        if profile.trend_band_formula == _PAGE_V2
+        "newow_trend_page_v3"
+        if profile.trend_band_formula == _PAGE
         else "newow_trend_v1"
     )
     value = "|".join(
@@ -313,15 +326,13 @@ def step_trend_band(
 
     weighted_limit = (
         profile.trend_signal_period
-        if profile.trend_band_formula == _PAGE_V2
+        if profile.trend_band_formula == _PAGE
         else profile.trend_weight_period
     )
     weighted_window = (state.weighted_window + (typical,))[-weighted_limit:]
-    if profile.trend_band_formula == _PAGE_V2:
-        a_value = sum(weighted_window[-profile.trend_weight_period :]) / min(
-            len(weighted_window), profile.trend_weight_period
-        )
-        b_value = sum(weighted_window) / len(weighted_window)
+    if profile.trend_band_formula == _PAGE:
+        a_value = _page_average(weighted_window[-profile.trend_weight_period :])
+        b_value = _page_average(weighted_window)
         if not isfinite(a_value) or not isfinite(b_value):
             return _unavailable_result(bar)
         current_state = (

@@ -157,7 +157,7 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 
 | 能力 | 适用策略与周期 | formula identity | evidence status | warming / repaint / as-of 边界 |
 |---|---|---|---|---|
-| 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v2` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
+| 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v3` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
 | 趋势通道圆点 | `trend × 1w/1d/60m`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
 | 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v2` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10；主图 CLEAR 当根不再 BUILD（普通 AI 回测保留独立先清后建） |
 | 主升浪主状态 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
@@ -211,7 +211,7 @@ Session/Calendar 缺失和未知错误 MUST 明确失败。映射缺失只有该
 | 合同 | 当前 page-v2 | 保留的 clean-room v1 身份 |
 |---|---|---|
 | Profile | `newow_trend_d1_page_v2` | `newow_trend_d1_v1` |
-| 趋势公式 | `newow_trend_band_page_v2` | `newow_trend_band_cleanroom_v1` |
+| 趋势公式 | `newow_trend_band_page_v3` | `newow_trend_band_cleanroom_v1` |
 | 典型价 T | `(Close + High + Low) / 3` | `(3*Close + Open + High + Low) / 6` |
 | 趋势线 | `A=MA(T,7)`，`B=MA(T,10)`；不足窗口按已有样本平均 | `B=WMA(T,20)`（新值权重大），`C=MA(B,5)`；不足完整窗口 unavailable |
 | 黄带条件 | `Close >= B` | `B >= C` |
@@ -1344,8 +1344,9 @@ strategy/period. Unavailable combinations stay visible and cannot be recommended
 
 P0 的 active 产品 envelope SHALL 为 `newow_product_detail_v4`，ReferenceTrade model 为
 `newow_marker_reference_zero_cost_v4`，趋势主动作政策为 `newow_trend_marker_initial_clear_v2`，
-profile 为 `newow_trend_d1_page_v3`。这些身份 SHALL 进入缓存、资产、快照和分页身份；旧响应与 token 不得跨版本复用。
+profile 为 `newow_trend_d1_page_v4`。这些身份 SHALL 进入缓存、资产、快照和分页身份；旧响应与 token 不得跨版本复用。
 本节更新此前 v2/v3 envelope 身份，既有 ReferenceTrade 事实合同继续有效。
+趋势 MA7 / B10 SHALL 按公开 calcMAFrom 的最新到最旧顺序，以 binary64 逐次加法累加后除以周期；不得以补偿 sum、Decimal 或重排窗口替换。Close 与 B10 的边界比较保留原式，批量、增量和 checkpoint 重启必须一致。趋势带公式更新为 `newow_trend_band_page_v3`；旧 v2 候选不得复用。
 
 `newow_page_performance_v3379_v1` SHALL 独立返回 ordinary / ideal 的摘要、完整曲线和估值交易，
 绑定来源版本、源码 SHA-256、有序输入 SHA-256 和来源 evidence SHA-256。所有输出

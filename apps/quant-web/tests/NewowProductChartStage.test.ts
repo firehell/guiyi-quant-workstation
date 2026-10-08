@@ -44,7 +44,7 @@ test('trend A/B boundaries render as lightweight one-pixel lines above the colum
   const response = chartResponse()
   response.meta.identity.strategy = 'trend'
   response.meta.identity.profile_id = 'newow_product_trend_60m_v1'
-  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
+  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
   response.value!.frames[0]!.main_state = 'HOLD'
   response.value!.frames[0]!.main_values = { a: '99', b: '101' }
   response.value!.actions = []
@@ -413,7 +413,7 @@ test('channel primitive replaces strategy-owned data on snapshot pagination and 
     const response = ref<MutableChartResponse | null>(chartResponse())
     response.value!.meta.identity.strategy = 'trend'
     response.value!.meta.identity.profile_id = 'newow_product_trend_60m_v1'
-    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
+    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
     response.value!.value!.frames[0]!.main_values = { a: '99', b: '101' }
     response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 110, 90)
     const attached: string[] = []
@@ -715,7 +715,7 @@ function strategyResponse(strategy: 'trend' | 'oscillation' | 'main_rise'): Muta
   response.meta.identity.strategy = strategy
   response.meta.identity.profile_id = `newow_product_${strategy}_60m_v1`
   if (strategy === 'trend') {
-    response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
+    response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
     response.value!.frames[0]!.main_values = { a: '99', b: '101' }
   } else if (strategy === 'main_rise') {
     response.meta.identity.formula_versions = ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
