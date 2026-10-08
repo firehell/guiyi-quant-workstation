@@ -176,7 +176,7 @@ _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
 @router.get("/ai-analysis")
 def newow_ai_analysis(request: Request, product: str = Query(...),
                       as_of: datetime = Query(...), session: Session = Depends(get_db)):
-    """Four page-estimate summaries; no LLM, persistence or Runtime mutation."""
+    """Six page-estimate summaries; no LLM, persistence or Runtime mutation."""
     from time import monotonic
     from guiyi_quant.newow.ai_analysis import PAGE_FORMULA, FUTURES_ADAPTER, PAGE_SOURCE_SHA256
     from app.market_data.newow.ai_analysis import analyze_product
@@ -191,6 +191,9 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     if as_of > now:
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_AS_OF"})
+    # All six combinations use the admitted historical minute cutoff.
+    if getattr(request.state, "candidate_preview_as_of", None) is None:
+        as_of = min(as_of, INTRADAY_HISTORY_AS_OF)
     deadline = monotonic() + 30
     def cancelled():
         if monotonic() >= deadline:
@@ -206,7 +209,7 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
         with _PRODUCT_GATE.acquire(cancelled):
             combos = analyze_product(product, as_of, reader_factory, cancelled,
                                      lambda frequency: _enforce_product_frequency(request, product, frequency))
-        return {"schema_version": "newow_ai_analysis_v1", "product": product,
+        return {"schema_version": "newow_ai_analysis_v2", "product": product,
                 "as_of": _json_value(as_of), "formula_version": PAGE_FORMULA,
                 "futures_adapter_version": FUTURES_ADAPTER, "page_source_sha256": PAGE_SOURCE_SHA256,
                 "page_kernel_parity": True, "page_parity": False, "executable": False,
@@ -734,6 +737,8 @@ def newow_strategy_detail(
         if (getattr(request.state, "candidate_preview_as_of", None) is None
             and ProductFrequency(frequency) in INTRADAY_HISTORY_FREQUENCIES):
             as_of = released_intraday_as_of(as_of)
+        if decision_v2 and section == "explanation" and getattr(request.state, "candidate_preview_as_of", None) is None:
+            as_of = min(as_of or datetime.now(UTC), INTRADAY_HISTORY_AS_OF)
         product_query = ProductServiceQuery(
             product=product,
             strategy=ProductStrategy(strategy),

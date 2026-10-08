@@ -30,7 +30,7 @@ class PriceSource:
             or self.bar_end.utcoffset() is None
         ):
             raise ValueError("NEWOW_PRICE_SOURCE_INVALID")
-        if self.frequency not in ("1d", "1w", "1M") or any(
+        if self.frequency not in ("1d", "1w", "60m", "1M") or any(
             not isinstance(v, str) or not v
             for v in (
                 self.physical_contract,
@@ -103,7 +103,7 @@ def select_cross_period_prices(
             raise ValueError("NEWOW_PRICE_SOURCE_CONFLICT")
 
     validate(current, category="canonical_completed_close")
-    if current.frequency not in ("1d", "1w"):
+    if current.frequency not in ("1d", "1w", "60m"):
         raise ValueError("NEWOW_PRICE_SOURCE_CONFLICT")
     for f, freq in (
         (target_daily, "1d"),

@@ -77,7 +77,7 @@ def bars(frequency, contract="JM2609", segment="owned", eligible=True):
     return tuple(output)
 
 
-def test_reader_scopes_four_combos_one_cutoff_and_omits_nonowned_warmup():
+def test_reader_scopes_six_combos_one_cutoff_and_omits_nonowned_warmup():
     cutoff = datetime(2026, 8, 1, tzinfo=UTC)
     calls = []
     def factory(frequency):
@@ -94,9 +94,9 @@ def test_reader_scopes_four_combos_one_cutoff_and_omits_nonowned_warmup():
                 return SimpleNamespace(replay_bars=(*prefix, *owned), input_quality_policy="test_quality_v1")
         return Reader()
     combos = analyze_product("jm", cutoff, factory, lambda: False, lambda f: None)
-    assert len(combos) == 4 and {c.frequency for c in combos} == {"1w", "1d"}
+    assert len(combos) == 6 and {c.frequency for c in combos} == {"1w", "1d", "60m"}
     assert all(c.source_bars == 15 and len(c.input_sha256) == 64 for c in combos)
-    assert calls == [(ProductFrequency.WEEKLY, date(2024, 6, 1), cutoff), (ProductFrequency.DAILY, date(2025, 9, 1), cutoff)]
+    assert calls == [(ProductFrequency.WEEKLY, date(2024, 6, 1), cutoff), (ProductFrequency.DAILY, date(2025, 9, 1), cutoff), (ProductFrequency.HOURLY, date(2026, 4, 1), cutoff)]
 
 
 def test_ai_input_digest_binds_quality_segmentation_and_policy():
@@ -129,3 +129,33 @@ def test_endpoint_rejects_unknown_duplicate_future_naive_and_hourly_inputs(monke
                 assert response.status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+def test_missing_hourly_keeps_six_cards_without_recommendation_for_hourly():
+    cutoff = datetime(2026, 8, 1, tzinfo=UTC)
+    class Reader:
+        def resolve_performance_window(self, *_args):
+            return SimpleNamespace(actual_through=date(2026, 7, 31))
+        def load(self, query, as_of):
+            return SimpleNamespace(replay_bars=bars(query.frequency), input_quality_policy="test_quality_v1")
+    def admit(f):
+        if f == "60m":
+            raise NewowProductReadError("NEWOW_COMPLETE_PERIOD_MISSING")
+    values = analyze_product("jm", cutoff, lambda f: Reader(), lambda: False, admit)
+    assert len(values) == 6
+    missing = [c for c in values if c.frequency == "60m"]
+    assert len(missing) == 2 and all(c.summary is None and not c.is_best for c in missing)
+
+
+def test_hourly_cancellation_does_not_return_partial_four_combo_ranking():
+    from app.market_data.newow.product_reader import NewowProductReadCancelled
+    calls = []
+    class Reader:
+        def resolve_performance_window(self, *_args):
+            return SimpleNamespace(actual_through=date(2026, 7, 31))
+        def load(self, query, as_of):
+            calls.append(query.frequency)
+            return SimpleNamespace(replay_bars=bars(query.frequency), input_quality_policy="test_quality_v1")
+    with pytest.raises(NewowProductReadCancelled):
+        analyze_product("jm", datetime(2026, 8, 1, tzinfo=UTC), lambda f: Reader(),
+            lambda: len(calls) == 2, lambda f: None)

@@ -41,7 +41,7 @@ function fact(cd:Cdv2|undefined,role:string) { return cd?.facts.find(f=>f.role==
 function signal(f:Cdv2['facts'][number]|undefined):Signal|null { return f?.status==='ready' && ['buy','hold','sell','wait'].includes(f.state??'') ? f!.state as Signal : null }
 export function buildStatusCard(value:NewowDecisionV2|null, strategy:string) {
  const cd=value?.cdv2, axis=strategy==='oscillation'?'oscillation':'trend'
- const wf=fact(cd,axis+'_week'),df=fact(cd,axis+'_day'),w=signal(wf),d=signal(df)
+ const wf=fact(cd,axis+'_week'),df=fact(cd,axis+'_day'),hf=fact(cd,axis+'_m60'),w=signal(wf),d=signal(df),hour=signal(hf)
  const compatible = w!==null && d!==null && !!wf?.physical_contract && !!wf.segment_id && wf.physical_contract===df?.physical_contract && wf.segment_id===df?.segment_id
  const supported=strategy==='trend'||strategy==='oscillation'
  const row:Row = supported && compatible ? (strategy==='oscillation'?OSC[oscState(w!)+'-'+oscState(d!)]:TREND[w+'-'+d])! : ['日周状态不足','unknown',supported?'当前周日策略状态或合约上下文不足，等待已完成数据':'主升浪尚无独立日周摘要输入']
@@ -53,8 +53,8 @@ export function buildStatusCard(value:NewowDecisionV2|null, strategy:string) {
  const current=value?.prices?.current_price
  const priceCompatible=compatible && current?.physical_contract===wf?.physical_contract && current?.segment_id===wf?.segment_id
  const progress=priceCompatible&&supported ? statusPriceProgress(value?.prices??null,risk) : null
- return {name:guard(name),risk,riskLabel:guard(riskLabels[risk]),advice:guard(rawAdvice),week:tag(w),day:tag(d),weekFact:wf,dayFact:df,exposure,progress,
-  explanation: `${guard(name)}，周线${tag(w).label}＋日线${tag(d).label}。${guard(rawAdvice)}。${progress ? '目标价 '+formatMarketDecimal(value?.prices?.status_card.target?.display_value??value?.prices?.status_card.target?.raw)+'，吸筹价 '+formatMarketDecimal(value?.prices?.status_card.absorb?.display_value??value?.prices?.status_card.absorb?.raw)+'。' : '参考价格暂不可用。'}建议仓位参考强度 ${exposure}；仅作日周解释，不代表账户持仓、保证金比例或手数。`}
+ return {name:guard(name),risk,riskLabel:guard(riskLabels[risk]),advice:guard(rawAdvice),week:tag(w),day:tag(d),weekFact:wf,dayFact:df,hour:tag(hour),hourFact:hf,exposure,progress,
+  explanation: `${guard(name)}，周线${tag(w).label}＋日线${tag(d).label}。${guard(rawAdvice)}。${progress ? '目标价 '+formatMarketDecimal(value?.prices?.status_card.target?.display_value??value?.prices?.status_card.target?.raw)+'，吸筹价 '+formatMarketDecimal(value?.prices?.status_card.absorb?.display_value??value?.prices?.status_card.absorb?.raw)+'。' : '参考价格暂不可用。'}建议仓位参考强度 ${exposure}；日周摘要结合小时事实解释，不代表账户持仓、保证金比例或手数。`}
 }
 
 // Bounded decimal lexemes -> scaled integers. No price arithmetic through binary floats.

@@ -10,11 +10,11 @@ const error = ref<string | null>(null)
 let generation = 0
 let pending: AbortController | null = null
 const groups = [{ strategy: 'oscillation', name: '震荡策略', description: '吸筹—拉高' }, { strategy: 'trend', name: '趋势策略', description: '黄蓝带 MA7/MA10' }] as const
-const periods = [{ frequency: '1w', name: '周线' }, { frequency: '1d', name: '日线' }] as const
+const periods = [{ frequency: '1w', name: '周线' }, { frequency: '1d', name: '日线' }, { frequency: '60m', name: '60分钟' }] as const
 const best = computed(() => result.value?.combos.find(c => c.is_best) ?? null)
 const ranked = computed(() => [...(result.value?.combos ?? [])].sort((a, b) => Number(b.score ?? -1) - Number(a.score ?? -1)))
 const strategyName = (c: AiCombo) => c.strategy === 'trend' ? '趋势策略' : '震荡策略'
-const periodName = (c: AiCombo) => c.frequency === '1w' ? '周线' : '日线'
+const periodName = (c: AiCombo) => c.frequency === '1w' ? '周线' : c.frequency === '1d' ? '日线' : '60分钟'
 const signed = (v: string) => `${Number(v) >= 0 ? '+' : '−'}${Math.abs(Number(v)).toFixed(1)}%`
 function combo(strategy: string, frequency: string) { return result.value?.combos.find(c => c.strategy === strategy && c.frequency === frequency) }
 function stop() { ++generation; pending?.abort(); pending = null; loading.value = false; result.value = null; error.value = null }
@@ -41,15 +41,15 @@ onBeforeUnmount(stop)
 </script>
 <template>
   <NewowDetailDialog :open="open" title="AI策略分析推荐" :identity-key="identityKey" variant="ai-analysis" @close="emit('close')">
-    <p class="ai-subtitle">震荡策略 · 趋势策略 × 周线 / 日线 历史回测</p>
+    <p class="ai-subtitle">震荡策略 · 趋势策略 × 周线 / 日线 / 60分钟 历史回测</p>
     <div class="ai-toolbar"><button type="button" class="ai-refresh" :disabled="loading" @click="run">重新回测</button></div>
-    <div v-if="loading" class="ai-loading" role="status"><span class="ai-spinner" />正在回测 2 策略 × 2 周期…</div>
+    <div v-if="loading" class="ai-loading" role="status"><span class="ai-spinner" />正在回测 2 策略 × 3 周期…</div>
     <p v-else-if="error" class="ai-error" role="alert">{{ error }}</p>
     <template v-else-if="result">
       <div v-if="best?.summary" class="ai-banner">
         <div class="ai-banner-title">🎯 综合评分推荐</div>
         <div class="ai-banner-main">建议采用 <strong>{{ strategyName(best) }} · {{ periodName(best) }}</strong></div>
-        <div class="ai-reason">理由：累计收益 <b>{{ signed(best.summary.cumulative_return) }}</b>；四组合综合评分第 1；胜率 <b>{{ best.summary.win_rate }}%</b>；最大回撤 <b>{{ Number(best.summary.max_drawdown).toFixed(1) }}%</b>。<span v-if="best.confidence === 'mid'">样本较少，请谨慎参考。</span></div>
+        <div class="ai-reason">理由：累计收益 <b>{{ signed(best.summary.cumulative_return) }}</b>；六组合综合评分第 1；胜率 <b>{{ best.summary.win_rate }}%</b>；最大回撤 <b>{{ Number(best.summary.max_drawdown).toFixed(1) }}%</b>。<span v-if="best.confidence === 'mid'">样本较少，请谨慎参考。</span></div>
       </div>
       <p v-else class="ai-error" role="status">有效交易样本不足 3 次，暂不推荐策略。</p>
       <section v-for="group in groups" :key="group.strategy" class="ai-group">
@@ -75,7 +75,7 @@ onBeforeUnmount(stop)
           <span class="ai-rank-number">{{ index + 1 }}</span><span class="ai-rank-name">{{ strategyName(item) }} · {{ periodName(item) }}<small v-if="item.score === null"> 样本不足</small></span><b>{{ item.score === null ? '—' : (Number(item.score) * 100).toFixed(1) }}</b>
         </div>
       </div>
-      <details class="ai-method"><summary>评分与统计口径</summary><p>累计收益、收益回撤比、胜率分别归一化后按 40% / 35% / 25% 加权。至少 3 次交易参与排名；不足 10 次评分乘 0.85；推荐同分时交易数较多者优先。</p><p>按物理合约及质量段分别预热和回看，段末按收盘价参考估值；不跨合约配对，不代表清仓或换月成交。回撤为含浮动的累计收益峰值差（百分点），与下方仅已完成参考交易统计不同。60分钟未参与。</p><p>截止快照 {{ result.as_of }}；期末参考估值也计入交易次数和胜率。{{ result.formula_version }}</p></details>
+      <details class="ai-method"><summary>评分与统计口径</summary><p>累计收益、收益回撤比、胜率分别归一化后按 40% / 35% / 25% 加权。至少 3 次交易参与排名；不足 10 次评分乘 0.85；推荐同分时交易数较多者优先。</p><p>按物理合约及质量段分别预热和回看，段末按收盘价参考估值；不跨合约配对，不代表清仓或换月成交。回撤为含浮动的累计收益峰值差（百分点），与下方仅已完成参考交易统计不同。六组合均使用同一历史截止快照。</p><p>截止快照 {{ result.as_of }}；期末参考估值也计入交易次数和胜率。{{ result.formula_version }}</p></details>
     </template>
     <p class="ai-disclaimer">历史页面参考，不含手续费、滑点、涨跌停限制；不构成投资建议，历史表现不代表未来收益。采纳推荐仅切换图表策略与周期。</p>
     <template #footer>

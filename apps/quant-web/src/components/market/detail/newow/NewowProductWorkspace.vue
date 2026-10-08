@@ -39,7 +39,7 @@ const strategySwitching = ref(false)
 watch(identity, (next, previous) => {
   strategySwitching.value = previous.strategy !== next.strategy && isNewowStrategySwitch(previous, next)
 }, { flush: 'sync' })
-const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency))
+const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency))
 const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : candidatePreviewNow() })
 let fusionRecoveryAttempted = false
 async function recoverFusionSnapshotConflict(token: string): Promise<void> {

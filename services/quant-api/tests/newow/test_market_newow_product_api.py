@@ -81,10 +81,10 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v30",
+        "schema_version": "newow_product_capabilities_v31",
         "release_stage": "daily_weekly_intraday_history",
         "open_frequencies": ["5m", "15m", "30m", "60m", "1d", "1w"],
-        "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss".split()),
+        "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss pp".split()),
         "intraday_as_of": "2026-09-24T07:00:00.000001Z",
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
@@ -297,7 +297,7 @@ def test_weekly_snapshot_endpoint_returns_shared_cutoff_and_separate_current_own
     }
 
 
-@pytest.mark.parametrize("frequency", ["60m"])
+@pytest.mark.parametrize("frequency", ["1m"])
 def test_daily_release_rejects_deferred_product_frequencies_before_service(
     monkeypatch, frequency
 ):
@@ -326,7 +326,7 @@ def test_daily_release_rejects_deferred_product_frequencies_before_service(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-@pytest.mark.parametrize("frequency", ["60m"])
+@pytest.mark.parametrize("frequency", ["1m"])
 def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
     monkeypatch, frequency
 ):
@@ -1092,3 +1092,25 @@ def test_all_research_sections_validate_against_explicit_wire_models(product_cas
     assert short_response.auxiliary.status.status == "warming"
     assert short_response.auxiliary.value.segments[0].status.status == "warming"
     assert short_response.auxiliary.value.segments[0].data.enough is False
+
+
+def test_daily_decision_clamps_all_context_to_history_cutoff(monkeypatch):
+    from app.market_data.newow.product_release import INTRADAY_HISTORY_AS_OF
+    captured = []
+    class Captured(Exception):
+        pass
+    class Service:
+        def query(self, query):
+            captured.append(query)
+            raise Captured()
+    monkeypatch.setattr(market_newow, "_build_product_service", lambda *args, **kwargs: Service())
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            client.get('/api/v1/market/newow/strategy-detail',params={
+                'product':'pp','strategy':'trend','frequency':'1d','section':'explanation',
+                'decision_v2':'true','as_of':'2026-10-01T00:00:00Z'})
+        assert len(captured) == 1
+        assert captured[0].as_of == INTRADAY_HISTORY_AS_OF
+    finally:
+        app.dependency_overrides.clear()

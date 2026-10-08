@@ -21,12 +21,13 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
    <strong>{{ loading?'状态读取中':card.name }}</strong>
    <span class="newow-status-card__tag" :data-state="card.week.state">周:{{ card.week.label }}</span>
    <span class="newow-status-card__tag" :data-state="card.day.state">日:{{ card.day.label }}</span>
+   <span class="newow-status-card__tag" :data-state="card.hour.state">时:{{ card.hour.label }}</span>
    <span class="newow-status-card__risk"><i aria-hidden="true" />{{ card.riskLabel }}</span>
    <span class="newow-status-card__exposure">建议仓位 {{ card.exposure }} <small>参考强度</small></span>
    <span class="newow-status-card__arrow" aria-hidden="true" :class="{collapsed}">▾</span>
   </button>
   <div v-show="!collapsed" :id="bodyId" class="newow-status-card__body">
-   <p v-if="loading" role="status">正在读取同一快照的已完成日线、周线…</p>
+   <p v-if="loading" role="status">正在读取同一快照的已完成日线、周线、60分钟…</p>
    <p v-else-if="error" role="alert">{{ error }} <button class="newow-status-card__retry" type="button" @click="emit('retry')">重试</button></p>
    <template v-else>
     <p class="newow-status-card__advice">{{ card.advice }}</p>
@@ -40,14 +41,14 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
     </template>
     <p v-else class="newow-status-card__missing">价格进度暂不可用 · 未替换缺失价格或跨合约计算。</p>
     <button class="newow-status-card__explanation" type="button" :class="{expanded}" :aria-expanded="expanded" :aria-controls="explanationId" :title="expanded?'收起解释':'展开解释'" @click="expanded=!expanded">
-     <span>{{ strategy==='oscillation'?'多周期感知':'AI解读' }}</span><span class="newow-status-card__text">{{ strategy==='oscillation'?'日周策略状态 · 点击展开详情':card.explanation }}</span>
+     <span>{{ strategy==='oscillation'?'多周期感知':'AI解读' }}</span><span class="newow-status-card__text">{{ strategy==='oscillation'?'日周小时策略状态 · 点击展开详情':card.explanation }}</span>
     </button>
     <div v-show="expanded" :id="explanationId" class="newow-status-card__details">
      <template v-if="strategy==='oscillation'">
-      <div v-for="item in [{name:'周线',tag:card.week,fact:card.weekFact},{name:'日线',tag:card.day,fact:card.dayFact}]" :key="item.name" class="newow-status-card__period"><strong>{{ item.name }}</strong><b :data-state="item.tag.state">{{ item.tag.label }}</b><span>{{ decisionFactAge(item.fact) }}</span><span>{{ item.fact?.bar_end?formatBeijingInstant(item.fact.bar_end):'状态未就绪' }} · {{ item.fact?.physical_contract??'—' }}</span></div>
+      <div v-for="item in [{name:'周线',tag:card.week,fact:card.weekFact},{name:'日线',tag:card.day,fact:card.dayFact},{name:'60分钟',tag:card.hour,fact:card.hourFact}]" :key="item.name" class="newow-status-card__period"><strong>{{ item.name }}</strong><b :data-state="item.tag.state">{{ item.tag.label }}</b><span>{{ decisionFactAge(item.fact) }}</span><span>{{ item.fact?.bar_end?formatBeijingInstant(item.fact.bar_end):'状态未就绪' }} · {{ item.fact?.physical_contract??'—' }}</span></div>
       <p>{{ card.explanation }}</p>
      </template>
-     <p>仅使用已完成日周数据，分钟周期未参与；这是信号机械解释，不代表真实持仓或交易建议。</p>
+     <p>名称沿用日周摘要，小时状态单列；仅使用同一快照的已完成数据；这是信号机械解释，不代表真实持仓或交易建议。</p>
      <p v-if="decision">截至 {{ formatBeijingInstant(decision.cdv2.as_of) }} · 价格来自同合约 Canonical 通道；主力状态及未证实的探底试盘分支不作推断。</p>
     </div>
    </template>

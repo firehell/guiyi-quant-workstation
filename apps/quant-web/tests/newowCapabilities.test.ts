@@ -911,3 +911,15 @@ test('v30 workspace uses the released history cutoff for minutes only', () => {
   }
   assert.equal(released({ capabilities: { schema_version: 'newow_product_capabilities_v27' } }, { value: { frequency: '5m' } }), false)
 })
+
+
+test('v31 admits all sixty historical products including PP and preserves cutoff', async () => {
+  const products = [...historicalMinutesV30().intraday_products!, 'pp'].sort()
+  const payload = { ...historicalMinutesV30(), schema_version: 'newow_product_capabilities_v31' as const, intraday_products: products }
+  const capability = await getNewowProductCapabilities({request: async () => payload})
+  assert.equal(capability.intraday_products!.length,60)
+  const state = useNewowCapabilities(async () => capability)
+  await state.load()
+  for (const product of products) assert.deepEqual(state.openFrequenciesFor(product), ['5m','15m','30m','60m','1d','1w'])
+  await assert.rejects(getNewowProductCapabilities({request: async () => ({...payload,intraday_products:products.filter(p=>p!=='pp')})}))
+})
