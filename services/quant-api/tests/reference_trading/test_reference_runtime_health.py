@@ -91,7 +91,7 @@ def test_canonical_endpoint_reader_requires_completed_mds_bar(monkeypatch):
 
     monkeypatch.setattr('app.market_data.composition.build_market_data_service', lambda _: Market())
     values = read_completed_canonical_endpoints(None, [('rb', '1d'), ('rb', '1w'), ('rb', '60m')], NOW)
-    assert len(seen) == 3 and all(request.limit == 1 for request in seen)
+    assert len(seen) == 3 and all(request.limit == 1 and request.before is None for request in seen)
     assert values[('rb', '1d')]['expected_through'] == (NOW - timedelta(seconds=1)).isoformat()
     assert values[('rb', '1w')]['endpoint_reason'] == 'AUTHORITATIVE_ENDPOINT_UNAVAILABLE'
     assert values[('rb', '60m')]['expected_through'] is None
