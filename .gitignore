@@ -110,3 +110,15 @@ secrets/
 
 # Inspected public source snapshots; commit only owned inputs and numeric witnesses.
 /outputs/newow-manual-v3379-20261008/
+
+# Local closeout, recovery and release evidence retained for audit.
+/outputs/fu-candidate-closeout-20261007/
+/outputs/newow-hourly-20261008/
+/outputs/pp-approved-correction-20261008/
+/outputs/pp-root-cause-20261007/
+/outputs/pp-tick-diagnostic-20261008/
+/outputs/release-59-products-20261008/
+/outputs/runtime-v1.12.0-20261008/
+/outputs/ss-candidate-closeout-20261008/
+/outputs/subing-signal-only-20261008/
+/outputs/worktree-cleanup-20261008/
