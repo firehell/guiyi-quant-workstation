@@ -96,6 +96,14 @@ class _LiveStore:
             raise RuntimeError("private cleanup detail")
         self.cleaned.append(trading_day)
 
+    def cleanup_readback(self, trading_day: date) -> dict[str, object]:
+        assert trading_day == _DAY
+        cleaned = trading_day in self.cleaned
+        return {
+            "remaining_bar_keys": 0 if cleaned else 1,
+            "subscription_present": not cleaned,
+        }
+
 
 def _maintenance(status: str) -> MaintenanceResult:
     return MaintenanceResult(

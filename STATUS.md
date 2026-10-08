@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-08。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-09。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
@@ -19,9 +19,11 @@ D1/60m最新已完成历史端点为2026-10-08 15:00北京时间，W1为2026-09-
 180条源哈希与独立60×1m重建一致，17个策略Marker、17个Hint已记录；pending capture/rejection/diagnostic均0。
 上述计数为22:57验收快照：其余540条当时等待各自自然completed端点，seed不计作实时观察；180条Live→Canonical核对当时pending，不能算匹配完成。
 
-**后续review确认23:00终场漏记136条（34品种×四策略），正在修复。**
+**后续review确认23:00终场漏记136条（34品种×四策略），代码修复已完成、正式读回待验收。**
 因此720配置/历史READY不等于720自然记录完整；22:00成功不能证明23:00覆盖。
-本轮代码修复、精确数据恢复及现场读回尚未完成，不预记为已修复或已上线。
+本轮CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE：后端805通过/52跳过、隔离PostgreSQL40通过，两轮独审无Confirmed Issue；Session终场捕获、矩阵v3与部署身份诊断已修复。v1.14.5隔离补丁候选1820951bf已完成扩大验证：后端2934通过/111跳过、候选隔离PG40通过、Web809通过/1跳过及构建、OpenSpec10、secret0、Ruff、独审与preflight60/60通过。PR417仍草稿，宿主拒绝ready/main merge并要求具体发布批准；尚未发布或切换，不预记136条现场恢复完成。
+
+数据配置域审计已闭环：原operational60七频、截至10/8审计67分11秒，23项均RS W1；40个端点均由完整D1 typed质量中断证明。修audit误判后217测试/独审5通过，RS七频新审计0finding/provider0/applied0；原其余59无finding结果和原失败报告保留。范围为2023 floor/新上市后、rank1及已登记physical warm-up，不证明无限历史或正常正价W1。252/257质量日当前RQData七字段一致，BZ5 fresh UNKNOWN且禁重试；旧源质量事实不改。
 
 v1.14.3正式页面只读验收通过：RB四策略显示10月9日交易日中的10月8日22:00状态；
 历史窗口与分页快照保持一致，浏览器无错误。Web808通过/1skip，真实隔离PostgreSQL39通过，
@@ -35,7 +37,7 @@ owner明确批准短暂切换后，reference worker已运行v1.14.3@00bc70899，
 无plan/resume/attempt的旧阻塞项恢复；原始字节0400备份与SHA保留，没有修改DB资产。
 后续自然刷新游标持续前进、routes为空；22:57:17只读生产验收720启用/180观察、180Canonical端点READY、pending捕获0。
 该22:57检查点尚未等到新版本首根自然completed端点或完整720刷新轮次；180夜盘Live→Canonical核对当时pending。后续23:00缺口见上文，不再将漏记仅归为自然周期未到。
-Market promotion preflight仍阻塞，不能将本次记录worker切换等同于全Runtime切换。
+Market必要身份校验已修复并通过前置验证，但未部署；宿主此前对另一v1.14.4发布动作的授权阻断仍保留。记录worker切换不等于全Runtime统一切换。
 
 **牛哇不推送、不下单；苏冰既有推送继续暂停，15m信号/Event保留；HTDY既有通知保持。**
 共享Alert版本切换也被自动审批拒绝，原因是可能触发既有外部通知；本次没有绕过或新增Rule/Scope/受众。

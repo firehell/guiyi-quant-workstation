@@ -396,7 +396,7 @@ def test_status_authority_rejects_loaded_and_installed_root_disagreement(
     monkeypatch.setattr(
         module, "_installed_identity", lambda *args: (installed_root, commit)
     )
-    monkeypatch.setattr(module, "verify_runtime_release_identity", lambda *args: None)
+    monkeypatch.setattr(module, "verify_runtime_release_identity", lambda *args, **kwargs: None)
     monkeypatch.setattr(module, "_verify_after_market_plist", lambda **kwargs: None)
     output = (
         "gui/501/com.guiyi.quant-after-market = {\n"
@@ -423,12 +423,12 @@ def test_status_authority_preserves_loaded_owner_and_rechecks(tmp_path: Path, mo
     commit = "a" * 40
     installed = (root, commit)
     monkeypatch.setattr(module, "_installed_identity", lambda *args: installed)
-    release_checks: list[tuple[Path, str]] = []
+    release_checks: list[tuple[Path, str, bool]] = []
     monkeypatch.setattr(
         module,
         "verify_runtime_release_identity",
-        lambda observed_root, observed_commit: release_checks.append(
-            (observed_root, observed_commit)
+        lambda observed_root, observed_commit, *, require_alert_enabled=True: release_checks.append(
+            (observed_root, observed_commit, require_alert_enabled)
         ),
     )
     monkeypatch.setattr(module, "_verify_after_market_plist", lambda **kwargs: None)
@@ -450,7 +450,7 @@ def test_status_authority_preserves_loaded_owner_and_rechecks(tmp_path: Path, mo
     assert authority.path == root / ".run/after-market-status.json"
     assert authority.mode == "loaded"
     authority.recheck()
-    assert release_checks == [installed, installed]
+    assert release_checks == [(*installed, False), (*installed, False)]
 
 
 def test_status_authority_preserves_genuine_first_install_and_rejects_reappearance(
@@ -494,7 +494,7 @@ def test_genuine_first_install_rejects_any_candidate_status_residue(
     status = candidate / ".run/after-market-status.json"
     status.parent.mkdir(parents=True)
     status.write_bytes(contents)
-    monkeypatch.setattr(module, "_installed_identity", lambda *args: None)
+    monkeypatch.setattr(module, "_installed_identity", lambda *args, **kwargs: None)
 
     with pytest.raises(ValueError):
         module.resolve_market_runtime_status_authority(

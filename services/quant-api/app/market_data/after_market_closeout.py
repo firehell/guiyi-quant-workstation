@@ -122,7 +122,9 @@ def _replace(directory: int, original: bytes, payload: dict[str, Any]) -> None:
             pass
 
 
-def verify_runtime_release_identity(root: Path, commit: str) -> None:
+def verify_runtime_release_identity(
+    root: Path, commit: str, *, require_alert_enabled: bool = True
+) -> None:
     """Require the exact guarded immutable release without changing service state."""
     from app.market_data.captured_recovery_runtime import (
         _read_command, _verify_markers,
@@ -141,7 +143,10 @@ def verify_runtime_release_identity(root: Path, commit: str) -> None:
             or _read_command([*git, "cat-file", "-t", f"refs/tags/{tag}"], root=root) != "tag"
             or _read_command([*git, "rev-parse", f"refs/tags/{tag}^{{commit}}"], root=root) != commit):
         raise ValueError
-    _verify_markers(root)
+    if require_alert_enabled:
+        _verify_markers(root)
+    else:
+        _verify_markers(root, require_alert_enabled=False)
 
 
 def verify_closeout_identity(

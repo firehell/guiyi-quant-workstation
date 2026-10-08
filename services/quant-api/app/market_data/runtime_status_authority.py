@@ -214,7 +214,8 @@ def resolve_market_runtime_status_authority(
         def recheck_loaded() -> None:
             if _installed_identity(home) != installed:
                 raise ValueError
-            verify_runtime_release_identity(root, commit)
+            # Market ownership is independent of the separately installed Alert root.
+            verify_runtime_release_identity(root, commit, require_alert_enabled=False)
             _verify_after_market_plist(root=root, commit=commit, home=home)
             current = service_reader(_LABEL, root=root)
             if current is None:

@@ -1,6 +1,6 @@
 # 2026-10-08 盘后四项修复
 
-状态：数据修复、代码、测试与独立 Review 已完成；Runtime 部署预检阻塞，不能声明新版本自然验收通过。
+状态：数据修复、代码、测试与独立 Review 已完成；Market 部署预检已修复并通过；发布操作被宿主自动审批拒绝，尚未部署，不能声明新版本自然验收通过。
 代码提交 `a39571f5d`、`8c52e2edf`。原自然任务、失败检查与首次预算耗尽记录保留。
 
 ## 实际数据修复与读回
@@ -42,4 +42,10 @@
 
 原件与当前读回保存在 `output/after-market-fix-20261008/`：精确计划、blocked/apply 结果、旧文件指纹、
 独立数值验收、原自然状态、首次 consumer 结果及最终 D1 结果。
-唯一最小下一步：解除正式 Market Runtime 身份/状态预检阻断后部署补丁，按下一次自然任务验收新 Live 证据。
+唯一最小下一步：owner 明确批准 v1.14.4 补丁发布与 Runtime 部署，以解除宿主授权阻断；部署后仍按下一次自然任务验收新 Live 证据。
+
+## Market promotion 必要前置修复
+
+现役 Market v1.14.0 与 Alert v1.13.0 分别安装。loaded Market status authority 错误要求同根 Alert marker，阻断迁移。仅该路径改为检查 Market marker，恢复、closeout 和 stopped-terminal 仍默认要求双 marker；exact Git/tag/plist/loaded identity 检查保持。回归 authority/promotion/recovery 171 passed，closeout/binding/CLI 242 passed；独立 Review 243 passed、无 Confirmed Issue。真实只读 preflight 通过 snapshot_ready，trading_day=2026-10-09，operational_count=snapshot_count=60；旧 v1.14.0 status 不存在不伪造。修复候选以 v1.14.3 为基线，仅携带本任务修复，避开并行未发布策略变更。发布与自然业务仍分别验收。
+
+截至 23:34，必要前置修复已集成并推送 develop `d03d527c1`。v1.14.3 基线补丁候选重新验证数据/Runtime 740 passed、batch/invariant 134 passed；Web typecheck/build 与 release reader 1 passed，OpenSpec 10/10、secret scan 0 findings。741 为较早 develop 合并态，740 为本 scoped release 候选，未混称。候选版本 1.14.4 已本地准备；创建 main 发布 PR 的命令在执行前被宿主自动审批拒绝，理由是修复授权未明确包含发布；没有执行该命令的 commit/push/PR/main/tag/Release，也没有部署。该阻断是 HOST_APPROVAL_BLOCKED，不是数据或 promotion 技术失败。
