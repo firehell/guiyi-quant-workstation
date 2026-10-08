@@ -9,7 +9,7 @@ import json
 
 from app.reference_trading.contracts import PreparedBatch, SourceAction
 from app.reference_trading.inputs import HistoricalInputBar
-from app.reference_trading.presentation import envelope, presentation_point
+from app.reference_trading.presentation import envelope, newow_state_point, presentation_point
 from app.reference_trading.service import NewowHistoricalPayload, _newow_step
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_adapters import (
@@ -143,7 +143,10 @@ def evaluate_newow_capture(token, checkpoint, evidence, *, dependency_manifest):
             prior, boundaries=boundary,
             completed_bar=CompletedReferenceBar(contract, owner, calculation, end, day, product_bar.bar.close),
         )
-        next_state, _frame, _diagnostics = replay_step(identity, seed_replay_state(), product_bar)
+        next_state, frame, _diagnostics = replay_step(identity, seed_replay_state(), product_bar)
+        if frame is None:
+            raise ValueError("NEWOW_DUPLICATE_INPUT")
+        points.append(newow_state_point(identity, frame))
         points.append(presentation_point(
             kind="boundary", trading_day=day, formula_versions=stream.formula_versions,
             value={"bar_end": end, "reason": "ROLLOVER", "observed_at": observed,
@@ -163,10 +166,10 @@ def evaluate_newow_capture(token, checkpoint, evidence, *, dependency_manifest):
         next_checkpoint, sources, transition = _newow_step(
             stream, checkpoint, item, points, observed_at=observed,
         )
-        for point in points:
-            value = point.get("value")
-            if isinstance(value, dict):
-                value["observed_at"] = observed.isoformat()
+    for point in points:
+        value = point.get("value")
+        if isinstance(value, dict):
+            value["observed_at"] = observed.isoformat()
     return PreparedBatch(
         stream.stream_id, token.revision_id, f"forward:{capture['source_key']}",
         token, dependency_manifest, sources, (transition,), next_checkpoint,

@@ -19,6 +19,8 @@
 
 ## Newow 与参考交易
 
+牛哇持续记录覆盖 operational 60 品种 × 趋势/震荡/主升浪/双策略 × 日/周/60m。历史资产由完成的 Canonical 重算；持续观察的60m来自实际捕获的 completed Live，日周来自 completed Canonical。动作、Hint与逐Bar状态独立保存，历史预热不算实际观察，不创建账户事实或发送通知。当前配置和自然验收仍以 `STATUS.md` 及运行读回为准。
+
 - 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 三周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
 - 公共 `ReferenceTrading` canonical 已冻结两种不可混淆的记录口径：`historical_replay` 是可从固定 Canonical 输入和版本重建的研究投影；`forward_observation` 只记录明确启用后实际观察的 completed 输入，默认 FLAT 起点。统一域提供纯 contracts/reducer、checkpoint、历史 plan/build/resume/rebuild、前向 capture/recovery、仓储及 HTTP/Web 查询。worker 与消费者切换受显式启用约束；代码存在不代表生产 migration/bootstrap 或 Runtime 已启用，阶段事实只见 `STATUS.md`；详见 `openspec/specs/reference-trading/spec.md`。
 - Newow 主产品范围为趋势、震荡、主升浪 × `1w/1d/60m` 九个独立组合，全部只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。

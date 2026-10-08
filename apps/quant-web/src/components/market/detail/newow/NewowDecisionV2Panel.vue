@@ -4,12 +4,14 @@ import { ref, computed, watch, onBeforeUnmount, useId } from 'vue'
 import NewowStatusCard from './NewowStatusCard.vue'
 import NewowDailyWeeklyPath from './NewowDailyWeeklyPath.vue'
 import { NewowProductRequestError, getNewowProductSection } from '@/api/newowProduct'
-import type { NewowProductSectionResponse } from '@/types/newowProduct'
+import type { NewowProductSectionResponse, NewowProductFrequency } from '@/types/newowProduct'
 import type { NewowDecisionV2, DecisionPriceSource } from '@/types/newowDecisionV2'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = defineProps<{ response: NewowProductSectionResponse<'chart'> }>()
+const props = defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[] }>()
+const decisionAsOf = computed(() => props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
+  ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
 function preference() {
@@ -22,7 +24,7 @@ function toggleCard() {
   try { localStorage.setItem('guiyi_newow_composite_collapsed', collapsed.value ? '1' : '0') } catch { /* storage is optional */ }
 }
 let generation = 0, controller: AbortController | null = null
-watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token].join('|'), () => {
+watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value].join('|'), () => {
   generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; evidenceExpanded.value = false
   void load()
 }, { immediate: true })
@@ -31,7 +33,7 @@ async function load() {
   const token = ++generation
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
   try {
-    const asOf = historicalAnalysisAsOf(props.response.meta.as_of)
+    const asOf = decisionAsOf.value
     const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, asOf, ...(!context.value.background && asOf === props.response.meta.as_of && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal })
     if (next.section !== 'explanation' || !next.value?.decision_v2) throw new Error('missing decision')
     if (token === generation) result.value = next.value.decision_v2

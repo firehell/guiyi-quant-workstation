@@ -36,7 +36,6 @@ from app.market_data.market_read_service import MarketObservationSnapshot, Marke
 from guiyi_quant.newow.product_adapters import replay_step, seed_replay_state
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency
-from guiyi_quant.newow.product_identity import InputQualityPolicy
 from guiyi_quant.newow.product_identity import (
     REFERENCE_MODEL_VERSION as NEWOW_REFERENCE_MODEL_VERSION,
     futures_adaptation_version,
@@ -81,6 +80,11 @@ def _setup(*, recovery_policy="block", engine=None, strategy="trend", frequency=
     from newow.product_fixtures import ProductCases
 
     case = ProductCases().primitive_input(strategy, frequency)
+    from app.market_data.newow.product_release import candidate_input_quality_policy
+    policy = candidate_input_quality_policy(case.identity.product, frequency, candidate_weekly=False)
+    case = replace(case, identity=build_product_identity(
+        case.identity.product, strategy, frequency, input_quality_policy=policy,
+    ))
     warmup = 50 if strategy == "main_rise" else 0
     seed_state = seed_replay_state()
     for previous in case.bars[:warmup]:
@@ -90,7 +94,7 @@ def _setup(*, recovery_policy="block", engine=None, strategy="trend", frequency=
     observed = bar.bar.bar_end + timedelta(seconds=5)
     identity = StreamIdentity(
         f"newow_{strategy}", case.identity.formula_versions, case.identity.profile_id,
-        NEWOW_REFERENCE_MODEL_VERSION, futures_adaptation_version(frequency), case.identity.product,
+        NEWOW_REFERENCE_MODEL_VERSION, futures_adaptation_version(frequency, policy), case.identity.product,
         frequency, "actual_dominant", RecordingMode.FORWARD_OBSERVATION,
         "completed_canonical_v1",
     )
@@ -125,7 +129,7 @@ def _setup(*, recovery_policy="block", engine=None, strategy="trend", frequency=
                 frequency=ProductFrequency(frequency), as_of=as_of,
                 replay_bars=(bar,),
                 sources={ProductFrequency(frequency): SimpleNamespace(source_identity="owned")},
-                input_quality_policy=InputQualityPolicy.V1,
+                input_quality_policy=policy,
                 data_interruptions_by_frequency={},
             )
 
@@ -716,7 +720,8 @@ from sqlalchemy.orm import sessionmaker
 from app.reference_trading.repository import ReferenceRepository
 from tests.reference_trading.test_newow_worker_recovery import _worker
 
-url, schema, stream_id, observed, crash_at = sys.argv[1:]
+schema, stream_id, observed, crash_at = sys.argv[1:]
+url = os.environ["GUIYI_CRASH_TEST_DATABASE_URL"]
 engine = create_engine(url).execution_options(schema_translate_map={None: schema})
 factory = sessionmaker(engine, expire_on_commit=False)
 repo = ReferenceRepository(
@@ -753,10 +758,13 @@ def test_postgresql_process_crash_preserves_exact_capture_outcome(
     assert captured is not None
     capture_id = repo.capture_forward(captured)
     schema = forward_postgresql.get_execution_options()["schema_translate_map"][None]
+    child_environment = dict(os.environ)
+    child_environment["GUIYI_CRASH_TEST_DATABASE_URL"] = forward_postgresql.url.render_as_string(hide_password=False)
     result = subprocess.run(
-        [sys.executable, "-c", _CRASH_WORKER, str(forward_postgresql.url),
+        [sys.executable, "-c", _CRASH_WORKER,
          schema, identity.stream_id, observed.isoformat(), crash_at],
-        cwd=os.getcwd(), capture_output=True, text=True, check=False, timeout=20,
+        env=child_environment, cwd=os.getcwd(), capture_output=True,
+        text=True, check=False, timeout=20,
     )
     assert result.returncode == expected_exit, result.stderr
     fresh = ReferenceRepository(factory)

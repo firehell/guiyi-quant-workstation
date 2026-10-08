@@ -18,7 +18,7 @@ from app.reference_trading.inputs import HistoricalInputReader
 
 Operation = Literal["build", "advance", "rebuild"]
 _CAPABILITIES = {
-    "newow_dual_fusion": frozenset({"5m", "15m", "30m", "60m"}),
+    "newow_dual_fusion": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
     "newow-trend": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
     "newow-oscillation": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
     "newow-main-rise": frozenset({"1d", "1w", "60m"}),
@@ -56,7 +56,11 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
     if normalized == "newow_dual_fusion":
         from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
         try:
-            return identity == build_fusion_stream_identity(identity.product, identity.frequency)
+            from app.market_data.newow.product_release import candidate_input_quality_policy
+            policy = candidate_input_quality_policy(identity.product, identity.frequency, candidate_weekly=False)
+            return identity == build_fusion_stream_identity(
+                identity.product, identity.frequency, input_quality_policy=policy,
+            )
         except ValueError:
             return False
     if normalized.startswith("newow_"):

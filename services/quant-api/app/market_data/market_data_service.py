@@ -529,6 +529,21 @@ class MarketDataService:
         calendar_since: date | None = None,
     ) -> tuple[date, ...]:
         """Resolve completed days; optionally prove the entire Calendar horizon."""
+        return tuple(day for day, _ in self.completed_trading_day_windows(
+            symbol=symbol, start=start, as_of=as_of, latest=latest,
+            calendar_since=calendar_since,
+        ))
+
+    def completed_trading_day_windows(
+        self,
+        *,
+        symbol: str,
+        start: datetime,
+        as_of: datetime,
+        latest: date,
+        calendar_since: date | None = None,
+    ) -> tuple[tuple[date, tuple[SessionWindow, ...]], ...]:
+        """Retain the authoritative batch Session windows for completed days."""
         if calendar_since is not None:
             if type(calendar_since) is not date or calendar_since > latest:
                 raise MarketDataError("TRADING_CALENDAR_MISSING")
@@ -548,7 +563,7 @@ class MarketDataService:
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
         return tuple(
-            day
+            (day, sessions)
             for day, sessions in windows
             if day <= latest and max(window.end for window in sessions) <= as_of
         )

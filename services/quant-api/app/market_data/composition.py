@@ -324,16 +324,34 @@ def build_live_market_service(session: Session) -> LiveMarketService:
         recovery_sessions_source = coverage_sessions
         recovery_guard_factory = recovery_guard
     rqdata = RQDataClient()
+    from app.market_data.day_preparation import build_day_metadata_preparation
+    products = load_operational_products()
+    preparation = build_day_metadata_preparation(
+        SessionLocal, state_path=Path.home() / "Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json",
+        products=products, canonical_root=canonical_root(),
+    )
+    market_data = build_market_data_service(session)
+
+    class CatalogDominants:
+        def dominant_for_day(self, symbol, trading_day):
+            return market_data.dominant_segment_for_day(symbol, trading_day).contract
+
+    def prepare_trading_day(now):
+        failure = preparation(now)
+        session.rollback()  # See the committed day metadata on the next phase / rank1 read.
+        return failure
+
     return LiveMarketService(
         provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
-        dominant_source=rqdata,
+        dominant_source=CatalogDominants(),
+        prepare_trading_day=prepare_trading_day, authoritative_dominants=True,
         recovery_fetch_factory=recovery_fetch_factory,
         recovery_sessions=recovery_sessions_source,
         coverage_sessions=coverage_sessions,
         recovery_guard_factory=recovery_guard_factory,
         phase_resolver=MarketPhaseResolver(session),
         store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
-        operational_products=load_operational_products(),
+        operational_products=products,
     )
 
 

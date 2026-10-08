@@ -339,3 +339,84 @@ def test_postgresql_long_history_price_rebuild_keeps_past_cutoff(
                 "relation_bytes": {"built": built_bytes, "rebuilt": rebuilt_bytes},
                 "plans": plans,
             }, sort_keys=True), flush=True)
+
+
+@pytest.mark.parametrize('failure', ['SOURCE_BUSY', 'SOURCE_CHANGED', 'manifest_drift'])
+def test_rebuild_preflight_failure_preserves_old_active_revision(failure):
+    from contextlib import contextmanager
+    from sqlalchemy import select, func
+    from app.reference_trading.models import ReferenceRevision
+
+    reader = Reader()
+    repository = _repository()
+    initial = _plan(reader, batch_size=9)
+    HistoricalReferenceService(repository, reader).execute(initial, initial.plan_hash)
+    request = HistoricalReferenceRequest('rebuild', (initial.streams[0].request,), initial.budget, 9)
+    plan = HistoricalReferencePlanner(reader, now=lambda: initial.streams[0].request.as_of).plan(request)
+    stream_id = initial.streams[0].request.identity.stream_id
+    before = repository.read_state(stream_id)
+    with repository._session_factory() as session:
+        count = session.scalar(select(func.count()).select_from(ReferenceRevision))
+
+    @contextmanager
+    def pin(_request):
+        if failure == 'SOURCE_BUSY':
+            raise ValueError('SOURCE_BUSY')
+        yield
+    reader.pin_stream = pin
+    original = reader.load_stream
+    def changed(request, *, expected_source_token):
+        snapshot = original(request, expected_source_token=expected_source_token)
+        if failure == 'SOURCE_CHANGED':
+            return replace(snapshot, source_token='changed_after_plan')
+        if failure == 'manifest_drift':
+            return replace(snapshot, dependency_manifest={'changed': True})
+        return snapshot
+    reader.load_stream = changed
+    result = HistoricalReferenceService(repository, reader).rebuild(plan, plan.plan_hash)
+    assert result.status in {'blocked', 'failed'}
+    assert result.streams[0].reason in {'SOURCE_BUSY', 'SOURCE_CHANGED'}
+    after = repository.read_state(stream_id)
+    assert after.revision_id == before.revision_id
+    assert after.revision_status == 'active'
+    assert after.stream.row_version == before.stream.row_version
+    with repository._session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(ReferenceRevision)) == count
+
+
+def test_rebuild_pins_once_and_reuses_preflight_snapshot_before_mutation():
+    from contextlib import contextmanager
+    reader = Reader()
+    repository = _repository()
+    initial = _plan(reader, batch_size=9)
+    HistoricalReferenceService(repository, reader).execute(initial, initial.plan_hash)
+    request = HistoricalReferenceRequest('rebuild', (initial.streams[0].request,), initial.budget, 9)
+    plan = HistoricalReferencePlanner(reader, now=lambda: initial.streams[0].request.as_of).plan(request)
+    events = []
+    held = [False]
+    @contextmanager
+    def pin(_request):
+        assert not held[0]
+        held[0] = True
+        events.append('pin')
+        try:
+            yield
+        finally:
+            held[0] = False
+            events.append('release')
+    reader.pin_stream = pin
+    original = reader.load_stream
+    def load(request, *, expected_source_token):
+        assert held[0]
+        events.append('load')
+        return original(request, expected_source_token=expected_source_token)
+    reader.load_stream = load
+    invalidate = repository.invalidate_revision
+    def checked_invalidate(*args):
+        assert held[0] and events == ['pin', 'load']
+        events.append('invalidate')
+        return invalidate(*args)
+    repository.invalidate_revision = checked_invalidate
+    result = HistoricalReferenceService(repository, reader).rebuild(plan, plan.plan_hash)
+    assert result.status == 'completed'
+    assert events == ['pin', 'load', 'invalidate', 'release']

@@ -561,7 +561,12 @@ class LiveMarketService:
         recovery_sessions: Callable[[str, date], tuple[SessionWindow, ...]] | None = None,
         coverage_sessions: Callable[[str, date], tuple[SessionWindow, ...]] | None = None,
         recovery_guard_factory: Callable[[str], ContextManager] | None = None,
+        prepare_trading_day: Callable[[datetime], str | None] | None = None,
+        authoritative_dominants: bool = False,
     ) -> None:
+        self._prepare_trading_day = prepare_trading_day
+        self._metadata_preparation_error: str | None = None
+        self._authoritative_dominants = authoritative_dominants
         self._provider_factory = provider_factory
         self._dominant_source = dominant_source
         self._phase_resolver = phase_resolver
@@ -603,8 +608,28 @@ class LiveMarketService:
             from app.market_data.live_recovery import LiveRecoveryWorker
             self._recovery_worker = LiveRecoveryWorker(store, recovery_fetch_factory, clock=self._clock, guard_factory=recovery_guard_factory)
 
+    def _prepare_metadata(self, now: datetime) -> str | None:
+        if self._prepare_trading_day is None:
+            return None
+        failure = self._prepare_trading_day(now)
+        self._metadata_preparation_error = failure
+        if failure is not None:
+            try:
+                self._publish_heartbeat(now, self._phases(now))
+            except Exception:  # noqa: BLE001 - failed readiness must not hide Redis failure
+                self._available = False
+            if not self.rejections or self.rejections[-1] != failure:
+                self._reject(failure)
+        return failure
+
     def reconcile(self, now: datetime) -> str | None:
         """按当前交易日一次性解析 rank1，并与 provider 订阅作差量同步。"""
+        preparation_failure = self._prepare_metadata(now)
+        if preparation_failure is not None:
+            return preparation_failure
+        return self._reconcile_prepared(now)
+
+    def _reconcile_prepared(self, now: datetime) -> str | None:
         phases = self._phases(now)
         trading_days = {
             phase.trading_day
@@ -644,6 +669,13 @@ class LiveMarketService:
                     normalized = normalize_contract_for_symbol(symbol, contract)
                     if normalized is None:
                         return "LIVE_RANK1_CONTRACT_INVALID"
+                    if self._authoritative_dominants:
+                        try:
+                            expected = self._dominant_source.dominant_for_day(symbol, trading_day)
+                        except Exception:
+                            return "LIVE_RANK1_CATALOG_UNAVAILABLE"
+                        if normalized != expected:
+                            return "LIVE_RANK1_CATALOG_CONFLICT"
                     current_contracts[symbol] = normalized
             self._trading_day = trading_day
             self._contracts = current_contracts
@@ -837,6 +869,9 @@ class LiveMarketService:
 
     def poll(self, now: datetime) -> str | None:
         """执行单个前台 poll cycle；TRADING provider 故障固定十秒重试。"""
+        preparation_failure = self._prepare_metadata(now)
+        if preparation_failure is not None:
+            return preparation_failure
         phases = self._phases(now)
         if not any(item.phase is MarketPhase.TRADING for item in phases.values()):
             self.next_provider_retry_at = None
@@ -869,7 +904,7 @@ class LiveMarketService:
                 return "LIVE_REDIS_UNAVAILABLE"
             return None
         try:
-            result = self.reconcile(now)
+            result = self._reconcile_prepared(now)
         except _ProviderUnavailable:
             return self._schedule_provider_retry(now, phases)
         except Exception:  # noqa: BLE001 - Redis is a fail-closed Live boundary
@@ -1106,7 +1141,9 @@ class LiveMarketService:
                 "phase_by_product": {symbol: phase.phase.value for symbol, phase in phases.items()},
                 "coverage_schema_version": 1,
                 "coverage": self._coverage_snapshot(now, phases),
+                "metadata_preparation_error": self._metadata_preparation_error,
                 "available": (self._available and self._provider_available and bar_feed_fresh
+                              and self._metadata_preparation_error is None
                               and counts[MarketPhase.UNKNOWN.value] < len(self._products)),
             }
         )

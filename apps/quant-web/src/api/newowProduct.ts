@@ -78,6 +78,7 @@ const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
   ['newow_product_capabilities_v28', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
   ['newow_product_capabilities_v29', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
   ['newow_product_capabilities_v30', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
+  ['newow_product_capabilities_v32', { stage: 'daily_weekly_hourly_current', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
   ['newow_product_capabilities_v31', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
   ['newow_product_capabilities_v22', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
 ])
@@ -124,7 +125,8 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(profile.weeklyProducts ? ['weekly_products'] : []),
-    ...(['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31'].includes(value.schema_version) ? ['intraday_products', 'intraday_as_of'] : []),
+    ...(['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31', 'newow_product_capabilities_v32'].includes(value.schema_version) ? ['intraday_products', 'intraday_as_of'] : []),
+    ...(value.schema_version === 'newow_product_capabilities_v32' ? ['latest_completed_frequencies', 'strategy_frequencies'] : []),
     ...(['newow_product_capabilities_v24', 'newow_product_capabilities_v26', 'newow_product_capabilities_v27'].includes(value.schema_version) ? ['intraday_products'] : []),
   ]
   if (Object.keys(value).sort().join(',') !== expectedKeys.sort().join(',')) return false
@@ -152,6 +154,15 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   if (value.schema_version === 'newow_product_capabilities_v31'
     && (!sameLiteralArray(value.intraday_products, [...WEEKLY_PRODUCTS_V22].sort())
       || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z')) return false
+  if (value.schema_version === 'newow_product_capabilities_v32') {
+    const strategies = value.strategy_frequencies
+    if (!sameLiteralArray(value.intraday_products, [...WEEKLY_PRODUCTS_V22].sort())
+      || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z'
+      || !sameLiteralArray(value.latest_completed_frequencies, ['1d', '1w', '60m'])
+      || !isRecord(strategies) || Object.keys(strategies).sort().join(',') !== 'dual,main_rise,oscillation,trend'
+      || !sameLiteralArray(strategies.main_rise, ['1d', '1w', '60m'])
+      || !['trend', 'oscillation', 'dual'].every(strategy => sameLiteralArray(strategies[strategy], profile.frequencies))) return false
+  }
   const openFrequencies: readonly string[] = profile.frequencies
   const deferred = (['1w', '60m'] as const).filter(frequency => !openFrequencies.includes(frequency))
   const deferredFrequencies = value.deferred_frequencies
@@ -188,6 +199,11 @@ function freezeProductCapabilities(
   Object.freeze(value.open_frequencies)
   if (value.weekly_products) Object.freeze(value.weekly_products)
   if (value.intraday_products) Object.freeze(value.intraday_products)
+  if (value.latest_completed_frequencies) Object.freeze(value.latest_completed_frequencies)
+  if (value.strategy_frequencies) {
+    for (const frequencies of Object.values(value.strategy_frequencies)) Object.freeze(frequencies)
+    Object.freeze(value.strategy_frequencies)
+  }
   Object.freeze(value.deferred_frequencies)
   Object.freeze(value.open_sections)
   Object.freeze(value.deferred_sections)

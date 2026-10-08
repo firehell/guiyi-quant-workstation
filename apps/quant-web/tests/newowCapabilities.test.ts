@@ -1,3 +1,4 @@
+import { transpileModule, ScriptTarget, ModuleKind } from 'typescript'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
@@ -900,7 +901,8 @@ test('v30 per-product frequencies keep PP closed and 1m disabled for every relea
 test('v30 workspace uses the released history cutoff for minutes only', () => {
   const source = readFileSync(new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url), 'utf8')
   const expression = source.match(/const releasedMinuteHistory = computed\(\(\) => (.*)\)/)![1]!
-  const released = new Function('props', 'identity', `return ${expression}`)
+  const compiled = transpileModule(`function resolve(props, identity) { return ${expression}; }`, { compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.None } }).outputText
+  const released = new Function(`${compiled}; return resolve`)()
   for (const version of ['v28', 'v29', 'v30']) {
     for (const frequency of ['5m', '15m', '30m', '60m']) {
       assert.equal(released({ capabilities: { schema_version: `newow_product_capabilities_${version}` } }, { value: { frequency } }), true)
@@ -922,4 +924,43 @@ test('v31 admits all sixty historical products including PP and preserves cutoff
   await state.load()
   for (const product of products) assert.deepEqual(state.openFrequenciesFor(product), ['5m','15m','30m','60m','1d','1w'])
   await assert.rejects(getNewowProductCapabilities({request: async () => ({...payload,intraday_products:products.filter(p=>p!=='pp')})}))
+})
+
+test('v32 distinguishes current completed scope and strategy support from frozen minutes', async () => {
+  const products = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' ')
+  const frequencies = ['5m', '15m', '30m', '60m', '1d', '1w']
+  const payload = {
+    ...historicalMinutesV30(), schema_version: 'newow_product_capabilities_v32',
+    release_stage: 'daily_weekly_hourly_current', intraday_products: products,
+    latest_completed_frequencies: ['1d', '1w', '60m'],
+    strategy_frequencies: { trend: frequencies, oscillation: frequencies, main_rise: ['1d', '1w', '60m'], dual: frequencies },
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => payload })
+  const state = useNewowCapabilities(async () => accepted)
+  await state.load()
+  assert.deepEqual(state.openFrequenciesFor('PP'), frequencies)
+  assert.equal(state.isStrategyFrequencyOpen('main_rise', '60m', 'pp'), true)
+  assert.equal(state.isStrategyFrequencyOpen('main_rise', '15m', 'pp'), false)
+  assert.equal(state.isStrategyFrequencyOpen('dual', '60m', 'pp'), true)
+  assert.equal(state.isLatestCompletedFrequency('60m'), true)
+  assert.equal(state.isLatestCompletedFrequency('5m'), false)
+  assert.deepEqual(accepted.latest_completed_frequencies, ['1d', '1w', '60m'])
+  assert.equal(Object.isFrozen(accepted.strategy_frequencies?.main_rise), true)
+  await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload,
+    strategy_frequencies: { ...payload.strategy_frequencies, main_rise: frequencies },
+  }) }))
+  await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload,
+    latest_completed_frequencies: ['1d', '1w', '5m'],
+  }) }))
+})
+
+
+test('v32 workspace keeps 5m 15m 30m frozen and reads hourly latest completed', () => {
+  const source = readFileSync(new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url), 'utf8')
+  const expression = source.match(/const releasedMinuteHistory = computed\(\(\) => (.*)\)/)![1]!
+  const compiled = transpileModule(`function resolve(props, identity) { return ${expression}; }`, { compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.None } }).outputText
+  const released = new Function(`${compiled}; return resolve`)()
+  const props = { capabilities: { schema_version: 'newow_product_capabilities_v32', latest_completed_frequencies: ['1d', '1w', '60m'] } }
+  for (const frequency of ['5m', '15m', '30m']) assert.equal(released(props, { value: { frequency } }), true)
+  for (const frequency of ['60m', '1d', '1w']) assert.equal(released(props, { value: { frequency } }), false)
 })

@@ -81,11 +81,18 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v31",
-        "release_stage": "daily_weekly_intraday_history",
+        "schema_version": "newow_product_capabilities_v32",
+        "release_stage": "daily_weekly_hourly_current",
         "open_frequencies": ["5m", "15m", "30m", "60m", "1d", "1w"],
         "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss pp".split()),
         "intraday_as_of": "2026-09-24T07:00:00.000001Z",
+        "latest_completed_frequencies": ["1d", "1w", "60m"],
+        "strategy_frequencies": {
+            "trend": ["5m", "15m", "30m", "60m", "1d", "1w"],
+            "oscillation": ["5m", "15m", "30m", "60m", "1d", "1w"],
+            "main_rise": ["1d", "1w", "60m"],
+            "dual": ["5m", "15m", "30m", "60m", "1d", "1w"],
+        },
         "weekly_products": [
             "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
@@ -1094,8 +1101,7 @@ def test_all_research_sections_validate_against_explicit_wire_models(product_cas
     assert short_response.auxiliary.value.segments[0].data.enough is False
 
 
-def test_daily_decision_clamps_all_context_to_history_cutoff(monkeypatch):
-    from app.market_data.newow.product_release import INTRADAY_HISTORY_AS_OF
+def test_daily_decision_keeps_explicit_completed_context_cutoff(monkeypatch):
     captured = []
     class Captured(Exception):
         pass
@@ -1111,6 +1117,6 @@ def test_daily_decision_clamps_all_context_to_history_cutoff(monkeypatch):
                 'product':'pp','strategy':'trend','frequency':'1d','section':'explanation',
                 'decision_v2':'true','as_of':'2026-10-01T00:00:00Z'})
         assert len(captured) == 1
-        assert captured[0].as_of == INTRADAY_HISTORY_AS_OF
+        assert captured[0].as_of == datetime(2026, 10, 1, tzinfo=UTC)
     finally:
         app.dependency_overrides.clear()

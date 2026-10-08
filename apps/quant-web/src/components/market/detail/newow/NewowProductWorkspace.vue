@@ -23,6 +23,7 @@ import { NEWOW_MAIN_FORCE_STYLE } from './newowMainForceControlPrimitive'
 import { NEWOW_TREND_REVERSAL_STYLE } from './newowTrendReversalPrimitive'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
 import NewowReferencePanel from './NewowReferencePanel.vue'
+import NewowRecordingPanel from './NewowRecordingPanel.vue'
 import NewowFusionPanel from './NewowFusionPanel.vue'
 import NewowFormulaHelp from './NewowFormulaHelp.vue'
 import NewowDetailDialog from './NewowDetailDialog.vue'
@@ -35,11 +36,12 @@ const identityKey = computed(() => [props.identity.view, props.identity.symbol, 
 const dualMode = computed(() => props.identity.newowMode === 'dual')
 const selectedStrategy = computed(() => props.identity.strategy as NewowProductStrategy)
 const strategySwitching = ref(false)
+const recordingOpen = ref(false)
 // Register before the loader so quote listeners see the transition before its invalidation.
 watch(identity, (next, previous) => {
   strategySwitching.value = previous.strategy !== next.strategy && isNewowStrategySwitch(previous, next)
 }, { flush: 'sync' })
-const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency))
+const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31', 'newow_product_capabilities_v32'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency) && !props.capabilities.latest_completed_frequencies?.some(frequency => frequency === identity.value.frequency))
 const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : candidatePreviewNow() })
 let fusionRecoveryAttempted = false
 async function recoverFusionSnapshotConflict(token: string): Promise<void> {
@@ -415,7 +417,7 @@ onBeforeUnmount(() => {
     </section>
 
 
-    <NewowDecisionV2Panel v-if="chartResponse?.value && loader.currentChartWindow.value" :response="chartResponse" />
+    <NewowDecisionV2Panel v-if="chartResponse?.value && loader.currentChartWindow.value" :response="chartResponse" :latest-completed-frequencies="capabilities.latest_completed_frequencies" />
     <div v-else-if="strategySwitching" class="newow-product-workspace__decision-loading" role="status">正在更新策略概览…</div>
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
     <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :reference-trades="chartReferenceCompatible ? [...(chartReferenceResponse?.value?.curve_trades ?? []), ...(chartReferenceResponse?.value?.items ?? [])] : []" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="[...(comparison.reference.value?.value?.curve_trades ?? []), ...(comparison.reference.value?.value?.items ?? [])]" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
@@ -469,6 +471,10 @@ onBeforeUnmount(() => {
       <span v-else-if="loader.dailySnapshot.value?.freshness === 'pending_update'">{{ loader.dailySnapshot.value.expected_trading_day }} 日线待更新，当前显示截至 {{ loader.dailySnapshot.value.available_trading_day }} 的完整日线</span>
       <span v-else-if="loader.weeklySnapshot.value?.freshness === 'pending_update'">{{ loader.weeklySnapshot.value.expected_period_end }} 周线待发布，当前显示截至 {{ loader.weeklySnapshot.value.available_period_end }} 的完整周线</span>
     </div>
+    <section aria-label="牛哇记录入口">
+      <button type="button" :aria-expanded="recordingOpen" @click="recordingOpen = !recordingOpen">{{ recordingOpen ? '收起' : '查看' }}信号与状态记录</button>
+      <NewowRecordingPanel v-if="recordingOpen" :product="identity.symbol" :strategy="dualMode ? 'dual_fusion' : selectedStrategy" :frequency="identity.frequency" />
+    </section>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
       <NewowFusionPanel v-if="dualMode && referenceResponse?.value" :key="identityKey" :response="referenceResponse" :ready-to-load="comparison.referenceSettled.value" @snapshot-conflict="recoverFusionSnapshotConflict" />

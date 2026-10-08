@@ -12,9 +12,10 @@ ForwardEvaluator = Callable[[CheckpointToken, object, dict[str, object]], Prepar
 
 
 class ForwardReferenceService:
-    def __init__(self, repository: ReferenceRepository, evaluator: ForwardEvaluator):
+    def __init__(self, repository: ReferenceRepository, evaluator: ForwardEvaluator, *, commit_guard=None):
         self._repository = repository
         self._evaluator = evaluator
+        self._commit_guard = commit_guard
 
     def process_pending(self, stream_id: str) -> CommitResult | None:
         pending = self._repository.read_pending_capture(stream_id)
@@ -40,7 +41,9 @@ class ForwardReferenceService:
         ):
             raise RepositoryConflict("FORWARD_CAPTURE_CONFLICT")
         try:
-            return self._repository.commit_batch(token, prepared)
+            if self._commit_guard is None:
+                return self._repository.commit_batch(token, prepared)
+            return self._repository.commit_batch(token, prepared, commit_guard=self._commit_guard)
         except Exception as error:
             # The transaction result is uncertain only for connection/commit failures.
             # Read back the exact batch once; never replay an unknown calculation.

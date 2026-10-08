@@ -224,3 +224,54 @@ test('hourly fact colors follow hourly states independently of daily direction',
   assert.ok(rows.filter(n=>nodeText(n).includes('日线')).every(n=>n.props.style.color==='#ff3b30'))
   app.unmount()
 })
+
+test('current capability binds daily weekly hourly decisions to the exact chart cutoff', async () => {
+  const Panel = await component('newow/NewowDecisionV2Panel')
+  for (const frequency of ['1d', '1w', '60m']) {
+    for (const asOf of ['2026-10-08T07:00:00Z', '2026-09-01T07:00:00Z']) {
+      const response = { ...input('rb'), meta: { ...input('rb').meta,
+        identity: { product: 'rb', strategy: 'trend', frequency }, as_of: asOf } }
+      const before = mock.calls.length
+      const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
+        response, latestCompletedFrequencies: ['1d', '1w', '60m'],
+      }) }))
+      app.mount(element('root'))
+      assert.equal(mock.calls[before].request.asOf, asOf)
+      assert.equal(mock.calls[before].request.snapshotToken, 'rb-snapshot')
+      assert.equal(mock.calls[before].request.decisionV2, true)
+      app.unmount()
+    }
+  }
+})
+
+test('legacy capability and short-minute background keep the frozen cutoff and discard later tokens', async () => {
+  const Panel = await component('newow/NewowDecisionV2Panel')
+  for (const frequency of ['1d', '1w', '60m', '5m', '15m', '30m']) {
+    const before = mock.calls.length
+    const response = { ...input(), meta: { ...input().meta, identity: { product: 'jm', strategy: 'trend', frequency } } }
+    const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
+      response, latestCompletedFrequencies: ['5m', '15m', '30m'].includes(frequency) ? ['1d', '1w', '60m'] : undefined,
+    }) }))
+    app.mount(element('root'))
+    assert.equal(mock.calls[before].request.asOf, '2026-09-24T07:00:00.000001Z')
+    assert.equal(mock.calls[before].request.snapshotToken, undefined)
+    app.unmount()
+  }
+})
+
+test('capability cutoff change cancels the old historical decision before loading the chart snapshot', async () => {
+  const Panel = await component('newow/NewowDecisionV2Panel')
+  const latest = ref<string[] | undefined>(undefined), before = mock.calls.length, root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
+    response: input('rb'), latestCompletedFrequencies: latest.value,
+  }) }))
+  app.mount(root)
+  assert.equal(mock.calls[before].request.asOf, '2026-09-24T07:00:00.000001Z')
+  latest.value = ['1d', '1w', '60m']; await nextTick()
+  assert.equal(mock.calls[before].options.signal.aborted, true)
+  assert.equal(mock.calls[before + 1].request.asOf, input('rb').meta.as_of)
+  assert.equal(mock.calls[before + 1].request.snapshotToken, 'rb-snapshot')
+  mock.calls[before].resolve(output()); await nextTick(); await nextTick()
+  assert.doesNotMatch(nodeText(root), /78\s*分/)
+  app.unmount()
+})

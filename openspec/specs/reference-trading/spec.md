@@ -284,3 +284,82 @@ cutoff and statistics window; it SHALL NOT imply a fill, account return, live ob
 - **WHEN** a persisted adapter reads chart facts whose dependency digest does not match the selected snapshot
 - **THEN** the reference section is unavailable with an explicit identity error
 - **AND** old and new facts are not drawn together
+
+
+### Requirement: Authoritative Newow forward health separates seed and observation
+
+The Newow `newow_recording_matrix_v2` SHALL enumerate the sixty-product, four-strategy,
+D1/W1/60m configuration independently of actual observation acceptance. Health SHALL read
+completed published Canonical endpoints through MDS/Catalog once per unique product-period
+and share those facts across strategy routes. `expected_source=canonical_completed` SHALL
+not claim that unconfirmed or unpublished Live input has become Canonical. Missing endpoint
+proof SHALL return UNKNOWN and no fabricated endpoint.
+
+`historical_computed_through` SHALL expose indicator/checkpoint preheating separately from
+`observed_through` and `last_observed_at`. Natural observations SHALL require a committed
+forward calculation with actual observation time at or after recording start; seed and
+observation-gap batches SHALL NOT count. `latest_state_source` SHALL distinguish
+`historical_seed` from `observed`. `configured_count`, `enabled_count`, and `seeded_count`
+SHALL NOT be presented as naturally observed or Runtime accepted counts. Reference trading
+at activation remains FLAT; preheating does not import a historical OPEN or invent a BUILD.
+
+`latest_reconciliation_status` SHALL derive from the latest actual capture. Base captures
+read existing reconciliation records; dual captures derive status through both exact base
+capture stream/revision/hash/source-evidence identities. The reduction SHALL return
+pending, matched, mismatch or not_applicable without inventing a dual Canonical market hash.
+Bulk status reads SHALL share set-based queries across routes.
+
+#### Scenario: Complete configuration has no naturally observed Bar
+- **GIVEN** all 720 routes are configured and their historical indicator seed is ready
+- **WHEN** no new completed observation has been committed after activation
+- **THEN** observed_count is zero even when seeded_count is 720
+- **AND** historical and natural watermarks are displayed separately
+
+#### Scenario: Four strategy routes share one endpoint fact
+- **GIVEN** four strategies for one product-period
+- **WHEN** health constructs their expected watermark
+- **THEN** one bounded MDS endpoint read serves all four routes
+- **AND** source failure remains UNKNOWN rather than a zero-gap or observed-success claim
+
+### Requirement: Daily owner-eligible quality-boundary projection is source-versioned
+
+Newow D1 historical input manifests SHALL include
+`reference_boundary_policy_version=owner_eligible_quality_boundary_v1` in their
+source token and dependency digest, including saved-source dual manifests.
+This corrects reference projection of physical lifecycle warm-up facts without
+changing indicator formulas or the reference model identity. Prior D1 revisions
+SHALL remain immutable; current D1 source assets require new revisions with this
+policy proof. W1 and intraday input-policy scopes SHALL remain unchanged.
+
+Physical D1 quality interruptions SHALL continue to label calculation segments
+and remain in `data_interruptions` provenance. A DATA_INTERRUPTED boundary SHALL
+advance reference state only within its proven rank1 owner interval. The verified
+first observation-eligible Bar MAY associate a segment with that authoritative
+owner interval; the interval, rather than a global reference watermark, determines
+ownership. An owned interruption before the first eligible price Bar SHALL remain
+a reference boundary. Unproven or ambiguous owner context SHALL fail closed;
+ROLLOVER validation SHALL NOT be weakened.
+
+Saved daily fusion sources SHALL verify the current boundary policy against each
+base strategy's own exact source manifest. Missing or different policy proof SHALL
+reject the source rather than silently adopting an old D1 asset.
+
+#### Scenario: A new owner's old physical-prefix quality gap
+
+- **GIVEN** a physical contract's quality gap precedes its verified rank1 owner interval
+- **WHEN** that contract's lifecycle prefix preheats a Newow D1 strategy
+- **THEN** the raw quality gap remains in provenance and calculation-segment resets
+- **AND** it does not create a reference event or rewind the previous owner's reference state
+
+#### Scenario: An interruption during actual ownership
+
+- **GIVEN** a quality interruption is inside the verified owner interval
+- **WHEN** the D1 reference projection consumes it
+- **THEN** the boundary remains eligible for the normal interruption/close rules
+- **AND** an unproven interval cannot be repaired by skipping input behind a global watermark
+
+#### Scenario: A saved daily source has the previous projection policy
+
+- **WHEN** a current dual-source D1 build reads a saved base source without the required policy proof
+- **THEN** it fails with a source snapshot conflict
+- **AND** the previous revision is retained for readback without rewriting its identity or evidence

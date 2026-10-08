@@ -22,11 +22,16 @@ def test_intraday_identity_and_wire_frequency(frequency, strategy):
     assert identity != build_product_identity("rb", strategy, "1d")
 
 
-@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
-def test_intraday_remains_formally_closed_until_pilot_accepted(frequency):
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m"])
+def test_frozen_intraday_does_not_open_latest_completed_lane(frequency):
     with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
         require_open_frequency(ProductFrequency(frequency))
     assert deferred_frequency_reason(ProductFrequency(frequency)) is not None
+
+
+def test_hourly_formal_latest_completed_lane_is_open():
+    require_open_frequency(ProductFrequency.HOURLY)
+    assert deferred_frequency_reason(ProductFrequency.HOURLY) is None
 
 
 def test_readiness_default_does_not_expand_when_frequency_enum_grows():
@@ -53,8 +58,16 @@ def test_intraday_chart_window_counts_authoritative_sessions(
         start = datetime.combine(kwargs["trading_day"], datetime.min.time(), UTC)
         return (SessionWindow(start, start + timedelta(hours=6)),)
 
+    authority_windows = tuple((day, sessions(trading_day=day)) for day in days)
+    batch_calls = []
+    def completed_windows(**kwargs):
+        batch_calls.append(kwargs)
+        return authority_windows
+    def forbidden_single_day(**kwargs):
+        raise AssertionError("Chart must reuse batch authority, never issue per-day reads")
     market = SimpleNamespace(
-        completed_trading_days=lambda **kwargs: days, session_windows=sessions
+        completed_trading_days=lambda **kwargs: days,
+        completed_trading_day_windows=completed_windows, session_windows=forbidden_single_day,
     )
     coverage = SimpleNamespace(
         product_start=lambda product: days[0],
@@ -66,8 +79,13 @@ def test_intraday_chart_window_counts_authoritative_sessions(
     window = reader.resolve_chart_window(
         "rb", ProductFrequency(frequency), limit, cutoff
     )
+    assert len(batch_calls) == 1
     assert window.since == date(2026, 9, expected_since)
     assert window.through == days[-1]
+    older = reader.resolve_older_chart_window("rb", ProductFrequency(frequency), limit, cutoff, days[-1])
+    assert older.through == days[-2]
+    assert older.since < days[-1]
+    assert len(batch_calls) == 2
 
 
 def test_minute_warmup_scope_never_expands_to_other_periods():

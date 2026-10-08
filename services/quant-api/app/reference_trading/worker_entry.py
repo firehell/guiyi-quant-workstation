@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 import signal
 
 from app.core.env import PROJECT_ROOT
 
 
 ACTIVATION_MARKER = PROJECT_ROOT / ".run" / "reference-worker-enabled"
+
+
+def historical_refresh_state_path() -> Path:
+    return Path.home() / "Library/Application Support/GuiyiQuant/newow-historical-refresh-state.json"
 
 
 def require_worker_enabled() -> None:
@@ -79,14 +85,25 @@ def open_forward_worker():
 
             @contextmanager
             def canonical_guard():
+                session.rollback()  # Refresh read-only Catalog state after natural publication.
                 lease = catalog.acquire_maintenance_lock()
                 if lease is None:
                     raise ForwardInputUnavailable("SOURCE_BUSY")
                 try:
                     yield
                 finally:
+                    session.rollback()
                     lease.release()
 
+            from app.reference_trading.newow_fusion_forward import SavedForwardFusionSources
+
+            from app.reference_trading.scheduled_reconciliation import (
+                CompletedCanonicalReader, ScheduledCanonicalReconciliation,
+            )
+            reconciliation = ScheduledCanonicalReconciliation(
+                SessionLocal, CompletedCanonicalReader(market_data, authority.owner_segments),
+                read_guard=canonical_guard,
+            )
             worker = build_forward_reference_worker(
                 repository=repository, market_read=market_read,
                 newow_reader=reader_for,
@@ -94,12 +111,21 @@ def open_forward_worker():
                 expected_endpoints=authority.expected_endpoints,
                 newow_capability_ready=capability_ready,
                 canonical_read_guard=canonical_guard, enabled=True,
+                fusion_sources=SavedForwardFusionSources(SessionLocal),
+                reconciliation_guard=reconciliation.assert_source_allowed,
+                reconciliation_commit_guard=reconciliation.commit_guard,
             )
             wake = ForwardLiveWake(redis, repository, worker, market_data)
+            from app.reference_trading.historical_refresh import build_historical_refresh, RefreshThread
+            refresh = RefreshThread(build_historical_refresh(
+                SessionLocal, state_path=historical_refresh_state_path(),
+            ))
             try:
                 wake.subscribe()
-                yield worker, wake
+                refresh.start()
+                yield worker, wake, reconciliation
             finally:
+                refresh.stop()
                 wake.close()
         finally:
             redis.close()
@@ -114,8 +140,11 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    with open_forward_worker() as (worker, wake):
-        worker.serve(should_stop=lambda: stopped, wait=wake.wait)
+    with open_forward_worker() as (worker, wake, reconciliation):
+        def wait(seconds):
+            reconciliation.tick(now=datetime.now(UTC))
+            wake.wait(seconds)
+        worker.serve(should_stop=lambda: stopped, wait=wait)
     return 0
 
 

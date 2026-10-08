@@ -661,7 +661,10 @@ def test_postgresql_300_mds_retained_worker_five_completed_bars(
                 "actions": actions, "marks": marks, "pending": pending,
             }, sort_keys=True), flush=True)
             read.wave += 1
-        assert read.read_count == 5 * 360
+        # Same-owner Newow reads may be shared within one grouped scheduler unit.
+    # All 1500 calculations above must still commit; reads stay within the
+    # independent-source lower bound and the original no-cache budget.
+    assert 5 * 240 <= read.read_count <= 5 * 360
     print("P8_RETAINED_WORKER_METRIC=" + json.dumps({
         "settled_rss_kib": settled_rss_kib,
         "worker_seconds": wave_seconds,

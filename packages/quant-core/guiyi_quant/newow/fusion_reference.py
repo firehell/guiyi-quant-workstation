@@ -28,25 +28,28 @@ class FusionReferenceReplayState:
     model_version: str = MODEL_VERSION
 
 
-def build_fusion_stream_identity(product: str, frequency: str):
+def build_fusion_stream_identity(
+    product: str, frequency: str, *, recording_mode="historical_replay",
+    observation_policy_version=None, input_quality_policy="newow_input_quality_v1",
+):
     """Independent reference projection identity; never a third base kernel."""
     from .product_adapters import build_product_identity
     from .product_contracts import ProductFrequency, INTRADAY_PRODUCT_FREQUENCIES
     from .product_identity import futures_adaptation_version
     from ..reference_trading import StreamIdentity
     selected = ProductFrequency(frequency)
-    if selected not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE):
+    if selected not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE, ProductFrequency.DAILY, ProductFrequency.WEEKLY):
         raise ValueError("NEWOW_FUSION_FREQUENCY_UNSUPPORTED")
-    trend = build_product_identity(product, ProductStrategy.TREND, selected)
-    oscillation = build_product_identity(product, ProductStrategy.OSCILLATION, selected)
+    trend = build_product_identity(product, ProductStrategy.TREND, selected, input_quality_policy=input_quality_policy)
+    oscillation = build_product_identity(product, ProductStrategy.OSCILLATION, selected, input_quality_policy=input_quality_policy)
     return StreamIdentity(
         strategy_code="newow_dual_fusion",
         formula_versions=trend.formula_versions + oscillation.formula_versions,
         profile_id=f"newow_dual_fusion_{selected.value}_v1",
         reference_model_version=MODEL_VERSION,
-        futures_adaptation_version=futures_adaptation_version(selected.value),
+        futures_adaptation_version=futures_adaptation_version(selected.value, input_quality_policy),
         product=product, frequency=selected.value, series_kind="actual_dominant",
-        recording_mode="historical_replay", observation_policy_version=None,
+        recording_mode=recording_mode, observation_policy_version=observation_policy_version,
     )
 
 

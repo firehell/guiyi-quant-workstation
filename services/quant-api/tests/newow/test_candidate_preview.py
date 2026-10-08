@@ -134,9 +134,9 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
     assert len(response.json()["weekly_products"]) == 60
     assert "au" in response.json()["weekly_products"]
     assert "b" in response.json()["weekly_products"]
-    assert response.json()["deferred_frequencies"] == [
-        {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"}
-    ]
+    # Candidate preview keeps its D1/W1 identity; the active public hourly lane
+    # is no longer release-pending and is not silently added to this wire.
+    assert response.json()["deferred_frequencies"] == []
     assert response.json()["open_sections"] == [
         "chart",
         "auxiliary",
