@@ -609,3 +609,21 @@ def test_scheduled_service_keeps_identity_and_structure_checks(runtime, alterati
     with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
         verify(runtime)
     assert caught.value.code == "CAPTURED_RECOVERY_RUNTIME_SERVICE_IDENTITY_INVALID"
+
+
+def test_market_marker_check_does_not_require_separate_alert_activation(tmp_path):
+    module = importlib.import_module("app.market_data.captured_recovery_runtime")
+    directory = tmp_path / ".run"
+    directory.mkdir(mode=0o700)
+    marker = directory / "market-runtime-enabled"
+    marker.write_text("enabled\n")
+    marker.chmod(0o600)
+    module._verify_markers(tmp_path, require_alert_enabled=False)
+    with pytest.raises(module.CapturedRecoveryRuntimeError):
+        module._verify_markers(tmp_path)
+    marker.chmod(0o644)
+    with pytest.raises(module.CapturedRecoveryRuntimeError):
+        module._verify_markers(tmp_path, require_alert_enabled=False)
+    marker.unlink()
+    with pytest.raises(module.CapturedRecoveryRuntimeError):
+        module._verify_markers(tmp_path, require_alert_enabled=False)

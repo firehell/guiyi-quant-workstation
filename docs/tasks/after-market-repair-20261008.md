@@ -43,3 +43,7 @@
 原件与当前读回保存在 `output/after-market-fix-20261008/`：精确计划、blocked/apply 结果、旧文件指纹、
 独立数值验收、原自然状态、首次 consumer 结果及最终 D1 结果。
 唯一最小下一步：解除正式 Market Runtime 身份/状态预检阻断后部署补丁，按下一次自然任务验收新 Live 证据。
+
+## Market promotion 必要前置修复
+
+现役 Market v1.14.0 与 Alert v1.13.0 分别安装。loaded Market status authority 错误要求同根 Alert marker，阻断迁移。仅该路径改为检查 Market marker，恢复、closeout 和 stopped-terminal 仍默认要求双 marker；exact Git/tag/plist/loaded identity 检查保持。回归 authority/promotion/recovery 171 passed，closeout/binding/CLI 242 passed；独立 Review 243 passed、无 Confirmed Issue。真实只读 preflight 通过 snapshot_ready，trading_day=2026-10-09，operational_count=snapshot_count=60；旧 v1.14.0 status 不存在不伪造。修复候选以 v1.14.3 为基线，仅携带本任务修复，避开并行未发布策略变更。发布与自然业务仍分别验收。
