@@ -9,11 +9,11 @@ export function dailyWeeklyPathGeometry(periods: DailyWeeklyPathPeriod[]) {
   const min = all.length ? Math.min(...all) : 0, max = all.length ? Math.max(...all) : 0
   const point = (source: DecisionPriceSource | null, x: number) => {
     const n = value(source)
-    return n === null ? null : { x, y: max === min ? 130 : 215 - (n - min) / (max - min) * 170 }
+    return n === null ? null : { x, y: max === min ? 200 : 340 - (n - min) / (max - min) * 290 }
   }
   return periods.map(p => ({
-    ...p, label: p.frequency === '1w' ? '周线' : '日线', color: p.frequency === '1w' ? '#a855f7' : '#007aff',
+    ...p, label: p.frequency === '1w' ? '周线' : '日线', color: p.frequency === '1w' ? '#ef365c' : '#ff9500',
     active: p.state === 'buy' || p.state === 'hold',
-    cost: point(p.cost, 110), current: point(p.current, 380), target: point(p.target, 650),
+    cost: point(p.cost, 75), current: point(p.current, 465), target: point(p.target, 715),
   }))
 }

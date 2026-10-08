@@ -18,7 +18,7 @@ test('flat and missing values never fabricate cost, target or price movement', (
   assert.equal(view[0].cost,null)
   assert.equal(view[0].target,null)
   assert.equal(view[0].active,false)
-  assert.equal(view[0].current!.y,130)
+  assert.equal(view[0].current!.y,200)
 })
 test('nonfinite or nonpositive display values are unavailable', () => {
   const view = dailyWeeklyPathGeometry([period('1d','NaN','0')])

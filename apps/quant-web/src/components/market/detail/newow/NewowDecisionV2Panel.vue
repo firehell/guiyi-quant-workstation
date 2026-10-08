@@ -117,7 +117,6 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
             <div class="decision-v2__scroll"><table><thead><tr><th>策略周期</th><th>状态</th><th>信号年龄</th><th>Bar / 合约</th><th>来源</th></tr></thead><tbody><tr v-for="item in dailyWeeklyFacts" :key="item.role"><td>{{ decisionRoleLabel(item.role) }}</td><td>{{ decisionFactState(item.fact) }}</td><td>{{ decisionFactAge(item.fact) }}</td><td>{{ item.fact?.bar_end ? formatBeijingInstant(item.fact.bar_end) : '—' }} / {{ item.fact?.physical_contract || '—' }}</td><td>{{ decisionFactReason(item.fact) }}</td></tr></tbody></table></div>
             <p>额外扣分 {{ cd.cert_extra }}：<span v-for="(score,key) in cd.deductions" :key="key">{{ deductions[key] ?? key }} {{ score }}（{{ cd.extra_sources[key] }}） </span></p>
             <p>确定性轴上限 {{ cd.certainty_cap }}% · 共振轴上限 {{ cd.resonance_cap }}% → 参考强度上限 {{ cd.reference_exposure_cap }}%</p>
-            <NewowDailyWeeklyPath :decision="result" :loading="loading" :error="error" />
             <small>{{ cd.formula_version }}{{ copy ? ' · ' + copy.version : '' }}</small>
           </details>
           <details v-if="prices" class="decision-v2__proof"><summary>目标吸筹价格来源与 1.005 升级规则</summary>
@@ -134,6 +133,7 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
     <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
   <NewowStatusCard :background="context.background" :decision="result" :strategy="response.meta.identity.strategy" :loading="loading" :error="error" @retry="load" />
+  <NewowDailyWeeklyPath :decision="result" :loading="loading" :error="error" />
 </template>
 
 <style scoped>
