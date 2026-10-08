@@ -224,9 +224,8 @@ function inspectHolding(event: MouseEvent) {
     <div v-if="!model && (updatingStrategy || lifecycle === 'loading' || chartLifecycle === 'loading')" class="newow-reference__loading-curve" aria-hidden="true" />
     <template v-if="model">
 
-      <section v-if="curveMode === 'holding' && acceptedPreset !== 'ideal'" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
-        <p v-if="holdingPlot.message" role="status">{{ holdingPlot.message }}</p>
-        <template v-else>
+      <section v-if="curveMode === 'holding' && acceptedPreset !== 'ideal' && !holdingPlot.message" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
+        <template>
           <p class="newow-reference__state">逐 Bar 页面参考 = 已完成累计 + 当根持有浮动；中断处断线，不计入已完成收益。</p>
           <div class="newow-reference__plot"><div class="newow-reference__plot-area">
             <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @click="inspectHolding">

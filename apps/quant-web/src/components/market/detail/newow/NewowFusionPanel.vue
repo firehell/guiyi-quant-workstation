@@ -177,9 +177,8 @@ function inspectHolding(event: MouseEvent) {
       <div class="newow-reference__window"><div class="newow-reference__presets" aria-label="融合参考统计快捷窗口"><button v-for="item in presets" :key="item[0]" :aria-pressed="preset === item[0]" :disabled="loading" @click="preset = item[0]">{{ item[1] }}</button></div></div>
 
       <p v-if="preset === 'ideal'" class="newow-reference__state">融合理论值 · 回看持有阶段最高价（High）；仅计已完成配对，零费用、零滑点，不代表可执行收益。操盘记录仍显示普通参考价。</p>
-      <section v-if="curveMode === 'holding' && preset !== 'ideal'" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
-        <p v-if="holdingPlot.message" role="status">{{ holdingPlot.message }}</p>
-        <template v-else>
+      <section v-if="curveMode === 'holding' && preset !== 'ideal' && !holdingPlot.message" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
+        <template>
           <p class="newow-reference__state">逐 Bar 页面参考 = 已完成累计 + 当根持有浮动；中断处断线，不计入已完成收益。</p>
           <div class="newow-reference__plot"><div class="newow-reference__plot-area">
             <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @click="inspectHolding">
