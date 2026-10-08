@@ -284,3 +284,39 @@ cutoff and statistics window; it SHALL NOT imply a fill, account return, live ob
 - **WHEN** a persisted adapter reads chart facts whose dependency digest does not match the selected snapshot
 - **THEN** the reference section is unavailable with an explicit identity error
 - **AND** old and new facts are not drawn together
+
+
+### Requirement: Authoritative Newow forward health separates seed and observation
+
+The Newow `newow_recording_matrix_v2` SHALL enumerate the sixty-product, four-strategy,
+D1/W1/60m configuration independently of actual observation acceptance. Health SHALL read
+completed published Canonical endpoints through MDS/Catalog once per unique product-period
+and share those facts across strategy routes. `expected_source=canonical_completed` SHALL
+not claim that unconfirmed or unpublished Live input has become Canonical. Missing endpoint
+proof SHALL return UNKNOWN and no fabricated endpoint.
+
+`historical_computed_through` SHALL expose indicator/checkpoint preheating separately from
+`observed_through` and `last_observed_at`. Natural observations SHALL require a committed
+forward calculation with actual observation time at or after recording start; seed and
+observation-gap batches SHALL NOT count. `latest_state_source` SHALL distinguish
+`historical_seed` from `observed`. `configured_count`, `enabled_count`, and `seeded_count`
+SHALL NOT be presented as naturally observed or Runtime accepted counts. Reference trading
+at activation remains FLAT; preheating does not import a historical OPEN or invent a BUILD.
+
+`latest_reconciliation_status` SHALL derive from the latest actual capture. Base captures
+read existing reconciliation records; dual captures derive status through both exact base
+capture stream/revision/hash/source-evidence identities. The reduction SHALL return
+pending, matched, mismatch or not_applicable without inventing a dual Canonical market hash.
+Bulk status reads SHALL share set-based queries across routes.
+
+#### Scenario: Complete configuration has no naturally observed Bar
+- **GIVEN** all 720 routes are configured and their historical indicator seed is ready
+- **WHEN** no new completed observation has been committed after activation
+- **THEN** observed_count is zero even when seeded_count is 720
+- **AND** historical and natural watermarks are displayed separately
+
+#### Scenario: Four strategy routes share one endpoint fact
+- **GIVEN** four strategies for one product-period
+- **WHEN** health constructs their expected watermark
+- **THEN** one bounded MDS endpoint read serves all four routes
+- **AND** source failure remains UNKNOWN rather than a zero-gap or observed-success claim

@@ -23,7 +23,7 @@ export interface AiCombo {
   is_best: boolean
 }
 export interface AiAnalysis {
-  schema_version: 'newow_ai_analysis_v2'
+  schema_version: 'newow_ai_analysis_v2' | 'newow_ai_analysis_v3'
   product: string
   as_of: string
   formula_version: 'newow_ai_summary_ranking_page_v1'
@@ -42,7 +42,7 @@ const digest = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)
 const day = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\d$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v
 
 export function validateAiAnalysis(value: unknown, product: string, asOf: string): value is AiAnalysis {
-  if (!record(value) || value.schema_version !== 'newow_ai_analysis_v2' || value.product !== product
+  if (!record(value) || !['newow_ai_analysis_v2', 'newow_ai_analysis_v3'].includes(String(value.schema_version)) || value.product !== product
     || typeof value.as_of !== 'string' || previewInstant(asOf) === null || previewInstant(value.as_of) !== previewInstant(asOf)
     || value.formula_version !== 'newow_ai_summary_ranking_page_v1'
     || value.futures_adapter_version !== 'guiyi_newow_ai_segment_valuation_v1'
@@ -78,8 +78,8 @@ export function validateAiAnalysis(value: unknown, product: string, asOf: string
   return best === (value.combos.some(c => record(c) && record(c.summary) && Number(c.summary.trade_count) >= 3) ? 1 : 0)
 }
 
-export async function getNewowAiAnalysis(product: string, asOf: string, options: { signal?: AbortSignal; request?: Transport } = {}): Promise<AiAnalysis> {
-  asOf = historicalAnalysisAsOf(asOf)
+export async function getNewowAiAnalysis(product: string, asOf: string, options: { signal?: AbortSignal; request?: Transport; historicalSnapshot?: boolean } = {}): Promise<AiAnalysis> {
+  if (options.historicalSnapshot) asOf = historicalAnalysisAsOf(asOf)
   const transport = options.request ?? (async (path, config) => {
     const { default: request } = await import('./request.ts')
     return request.get<never, unknown>(path, config)

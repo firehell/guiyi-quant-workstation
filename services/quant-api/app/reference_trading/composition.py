@@ -14,7 +14,8 @@ def build_forward_reference_worker(
     *, repository, market_read, newow_reader, owner_segments,
     expected_endpoints, newow_capability_ready,
     canonical_read_guard=None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
-    enabled: bool = False,
+    enabled: bool = False, fusion_sources=None, reconciliation_guard=None,
+    reconciliation_commit_guard=None,
 ):
     """Compose a default-off worker; callers provide authoritative read seams."""
     from app.reference_trading.forward_inputs import (
@@ -24,6 +25,11 @@ def build_forward_reference_worker(
     from app.reference_trading.forward_service import ForwardReferenceService
     from app.reference_trading.htdy import evaluate_htdy_capture
     from app.reference_trading.newow_forward import evaluate_newow_capture
+    from app.reference_trading.newow_fusion_forward import evaluate_fusion_capture
+    from app.reference_trading.input_cache import NewowInputCache
+
+    cache = NewowInputCache()
+    cached_live = cache.live_reader(market_read)
     from app.reference_trading.recovery import (
         capture_observation_gap, evaluate_observation_gap,
     )
@@ -31,13 +37,17 @@ def build_forward_reference_worker(
     from app.reference_trading.subing_forward import evaluate_subing_capture
 
     def service_for(stream_id: str) -> ForwardReferenceService:
+        if reconciliation_guard is not None:
+            reconciliation_guard(stream_id)
         state = repository.read_state(stream_id)
         _, checkpoint = repository.load_checkpoint(stream_id, state.revision_id)
         stream = checkpoint.stream
         if stream is None:
             raise ValueError("FORWARD_CHECKPOINT_INVALID")
         code = stream.strategy_code.replace("-", "_")
-        if code.startswith("newow_"):
+        if code == "newow_dual_fusion":
+            evaluator = evaluate_fusion_capture
+        elif code.startswith("newow_"):
             evaluator = evaluate_newow_capture
         elif code == "subing_reference":
             evaluator = evaluate_subing_capture
@@ -46,6 +56,8 @@ def build_forward_reference_worker(
         else:
             raise ValueError("FORWARD_STRATEGY_UNSUPPORTED")
         def evaluate(token, checkpoint, evidence):
+            if reconciliation_guard is not None:
+                reconciliation_guard(stream_id)
             capture = evidence.get("forward_capture_v1")
             selected = (
                 evaluate_observation_gap
@@ -57,15 +69,17 @@ def build_forward_reference_worker(
                 dependency_manifest=state.dependency_manifest,
             )
 
-        return ForwardReferenceService(repository, evaluate)
+        return ForwardReferenceService(repository, evaluate, commit_guard=reconciliation_commit_guard)
 
     def read_input(stream_id: str, kind: str, event_bar_end: datetime | None):
+        if reconciliation_guard is not None:
+            reconciliation_guard(stream_id)
         context = repository.forward_source_context(stream_id)
         if context is None:
             return None
         (identity, revision_id, generation, recording_start, computed_through,
          recovery_policy, prior_owner_id, prior_calculation_id) = context
-        observed = now()
+        observed = cache.observed_at or now()
         after = (
             computed_through if computed_through is not None
             else recording_start - timedelta(microseconds=1)
@@ -89,10 +103,14 @@ def build_forward_reference_worker(
                     event_bar_end=event_bar_end,
                     **common,
                 )
+            if code == "newow_dual_fusion":
+                if fusion_sources is None:
+                    raise ForwardInputUnavailable("REFERENCE_FUSION_SOURCES_UNAVAILABLE")
+                return fusion_sources(identity, **common)
             if code.startswith("newow_"):
                 if identity.frequency == "60m":
                     return capture_newow_live(
-                        market_read, identity, wake_kind=kind,
+                        cached_live, identity, wake_kind=kind,
                         owner_segments=owner_segments,
                         expected_endpoints=expected_endpoints,
                         event_bar_end=event_bar_end,
@@ -103,7 +121,10 @@ def build_forward_reference_worker(
                         raise ForwardInputUnavailable("CANONICAL_READ_GUARD_MISSING")
                     with canonical_read_guard():
                         return capture_newow_canonical(
-                            newow_reader(identity) if callable(newow_reader) else newow_reader,
+                            cache.canonical_reader(
+                                newow_reader(identity) if callable(newow_reader) else newow_reader,
+                                identity,
+                            ),
                             identity, revision_id=revision_id,
                             generation=generation, after=computed_through,
                             recording_start=recording_start, now=observed,
@@ -124,7 +145,10 @@ def build_forward_reference_worker(
             )
         raise ValueError("FORWARD_STRATEGY_UNSUPPORTED")
 
-    return ForwardReferenceWorker(repository, service_for, read_input, enabled=enabled)
+    return ForwardReferenceWorker(
+        repository, service_for, read_input, enabled=enabled,
+        begin_unit=lambda: cache.begin(now()), end_unit=cache.end,
+    )
 
 
 def build_historical_reference_planner(
@@ -135,7 +159,8 @@ def build_historical_reference_planner(
 
 
 @contextmanager
-def open_historical_reference_components(*, session_factory=None):
+def open_historical_reference_components(*, session_factory=None, cancelled=lambda: False,
+                                         after_batch=None, now=None, reuse_market_inputs=False):
     """Compose P4 from read-only MDS consumers and the P3 repository on demand."""
     from app.db.session import SessionLocal
     from app.market_data.catalog import MarketCatalog
@@ -169,16 +194,21 @@ def open_historical_reference_components(*, session_factory=None):
             finally:
                 lease.release()
 
+        from app.reference_trading.history_input_cache import HistoricalMarketReadCache
+        market_cache = HistoricalMarketReadCache(guard, cancelled=cancelled)
+
         def newow_for(identity):
-            return NewowProductReader(
+            policy = candidate_input_quality_policy(
+                identity.product.lower(), identity.frequency, candidate_weekly=False,
+            )
+            reader = NewowProductReader(
                 market_data,
                 coverage=coverage,
                 active_products=products,
-                input_quality_policy=candidate_input_quality_policy(
-                    identity.product.lower(), identity.frequency,
-                    candidate_weekly=False,
-                ),
+                cancelled=cancelled,
+                input_quality_policy=policy,
             )
+            return market_cache.reader(reader, policy_key=(policy.value, ())) if reuse_market_inputs else reader
 
         from app.reference_trading.newow_fusion import SavedFusionSources
         reader = MarketDataHistoricalInputReader(
@@ -188,12 +218,16 @@ def open_historical_reference_components(*, session_factory=None):
                 coverage=coverage,
                 active_products=products,
             ),
-            read_guard=guard,
+            read_guard=market_cache.guard if reuse_market_inputs else guard,
             pin_verified_inputs=True,
             compact_intraday_inputs=True,
             fusion_sources=SavedFusionSources(factory),
         )
         repository = ReferenceRepository(factory)
-        planner = HistoricalReferencePlanner(reader, repository=repository)
-        service = HistoricalReferenceService(repository, reader)
-        yield planner, service
+        planner = HistoricalReferencePlanner(reader, repository=repository, now=now)
+        service = HistoricalReferenceService(repository, reader, cancelled=cancelled, after_batch=after_batch)
+        if reuse_market_inputs:
+            with market_cache.scope():
+                yield planner, service
+        else:
+            yield planner, service

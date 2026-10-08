@@ -10,6 +10,7 @@ from guiyi_quant.newow.fusion_reference import (
     fusion_trade_id,
 )
 from guiyi_quant.newow.product_adapters import build_product_identity
+from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION
 from guiyi_quant.newow.product_contracts import (
     ProductBar,
     ProductFrequency,
@@ -34,7 +35,19 @@ class FusionHistoricalPayload:
     source_actions: tuple[StrategyAction, ...]
 
 
-def advance_fusion_step(stream, checkpoint, item, presentation):
+def fusion_input_policy(stream):
+    from guiyi_quant.newow.product_identity import InputQualityPolicy, futures_adaptation_version
+
+    for policy in InputQualityPolicy:
+        try:
+            if futures_adaptation_version(stream.frequency, policy) == stream.futures_adaptation_version:
+                return policy
+        except ValueError:
+            continue
+    raise ValueError("REFERENCE_FUSION_STREAM_IDENTITY_CONFLICT")
+
+
+def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=None):
     from app.reference_trading.service import _checkpoint_watermark
 
     if (
@@ -42,7 +55,11 @@ def advance_fusion_step(stream, checkpoint, item, presentation):
         or checkpoint.reference_state is None
     ):
         raise ValueError("REFERENCE_FUSION_CHECKPOINT_INVALID")
-    if stream != build_fusion_stream_identity(stream.product, stream.frequency):
+    if stream != build_fusion_stream_identity(
+        stream.product, stream.frequency, recording_mode=stream.recording_mode,
+        observation_policy_version=stream.observation_policy_version,
+        input_quality_policy=fusion_input_policy(stream),
+    ):
         raise ValueError("REFERENCE_FUSION_STREAM_IDENTITY_CONFLICT")
     prior = checkpoint.reference_state
     if not item.strategy_input:
@@ -81,7 +98,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation):
         item.calculation_segment_id,
     )
     source_identities = {
-        strategy: build_product_identity(stream.product, strategy, bar.frequency)
+        strategy: build_product_identity(stream.product, strategy, bar.frequency, input_quality_policy=fusion_input_policy(stream))
         for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION)
     }
     candidates = []
@@ -196,6 +213,20 @@ def advance_fusion_step(stream, checkpoint, item, presentation):
         boundaries=item.boundaries,
         completed_bar=completed,
     )
+    if presentation is not None:
+        state = ("BUILD" if actions[-1].kind is ActionKind.OPEN_LONG else "CLEAR") if actions else (
+            "HOLD" if transition.state.open_trade else "FLAT")
+        presentation.append(presentation_point(kind="indicator", trading_day=item.trading_day,
+            formula_versions=stream.formula_versions, value={
+                "version":"newow_bar_state_v1", "product":stream.product, "strategy":"dual_fusion",
+                "frequency":stream.frequency, "bar_end":item.bar_end,
+                "physical_contract":item.physical_contract, "segment_id":item.owner_segment_id,
+                "calculation_segment_id":item.calculation_segment_id,
+                "source_identity":bar.bar.source_identity, "source_bar_sha256":bar.source_bar_sha256,
+                "input_quality_policy":fusion_input_policy(stream), "main_state":state,
+                "availability":{"status":"evidence_required", "reason_code":"SOURCE_STATE_NOT_CAPTURED"},
+                "main_values":{}, "action_ids":[action.source_action_id for action in actions], "hint_ids":[],
+            }))
     return (
         AdapterCheckpoint(
             checkpoint.strategy_state,
@@ -207,7 +238,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation):
             stream,
             transition.state,
         ),
-        tuple(SourceAction(action) for action in actions),
+        tuple(SourceAction(action, observed_at) for action in actions),
         transition,
     )
 
@@ -255,13 +286,14 @@ class SavedFusionSources:
         self._persisted = PersistedNewowReference(session_factory)
         self._query = self._persisted._query
 
-    def __call__(self, request, market_manifest):
+    def __call__(self, request, market_manifest, *, source_manifests=None):
         from datetime import date
         from guiyi_quant.newow.product_contracts import ProductFrequency
 
         actions = {}
         dependencies = []
         for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION):
+            expected_manifest = (source_manifests or {}).get(strategy.value, market_manifest)
             streams = self._query.streams(
                 strategy=f"newow_{strategy.value}",
                 product=request.identity.product,
@@ -279,18 +311,15 @@ class SavedFusionSources:
             source_identity, manifest = self._persisted._manifest(
                 stream_id, summary["revision_id"], summary["seq"]
             )
-            for key in (
-                "reader",
-                "query_since",
-                "query_through",
-                "query_as_of",
-                "source_evidence_sha256",
-                "input_count",
-                "quality_policy",
-            ):
-                if manifest.get(key) is None or manifest.get(
-                    key
-                ) != market_manifest.get(key):
+            required = ("reader", "query_since", "quality_policy")
+            shared = (
+                "query_through", "query_as_of", "source_evidence_sha256", "input_count",
+                "input_fingerprints", "calendar_session_effective_fingerprints",
+                "calendar_session_source_evidence", "rank1", "boundaries", "data_interruptions",
+                "lifecycle_owners", "market_source_identity", "input_policy_version",
+            )
+            for key in (*required, *(key for key in shared if key in expected_manifest)):
+                if manifest.get(key) is None or manifest.get(key) != expected_manifest.get(key):
                     raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
             dependencies.append(
                 {
@@ -305,6 +334,7 @@ class SavedFusionSources:
                 request.identity.product,
                 strategy,
                 ProductFrequency(request.identity.frequency),
+                input_quality_policy=fusion_input_policy(request.identity),
             )
             if (
                 source_identity.formula_versions != identity.formula_versions
@@ -318,7 +348,7 @@ class SavedFusionSources:
                 since=date.min,
                 through=request.through,
                 cutoff=request.as_of,
-                input_count=manifest["input_count"],
+                input_count=manifest.get("input_count", len(manifest.get("input_fingerprints", []))),
                 check_cancelled=self._check_cancelled,
             )) as facts:
                 for point in facts:
@@ -382,16 +412,32 @@ class PersistedFusionComparison:
                 or cutoff > source_cutoff
             ):
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
-            proof = reader.historical_source_evidence(
-                product=product,
-                frequency=frequency,
-                since=date.fromisoformat(manifest["query_since"]),
-                through=source_through,
-                as_of=source_cutoff,
-            )
-            verify_saved_compact_source(
-                {**manifest, "reader": "newow_product_reader_intraday_v3"}, proof
-            )
+            source_reader = manifest.get("source_reader", "newow_product_reader_intraday_v3")
+            if source_reader == "newow_product_reader_intraday_v3":
+                proof = reader.historical_source_evidence(
+                    product=product, frequency=frequency,
+                    since=date.fromisoformat(manifest["query_since"]),
+                    through=source_through, as_of=source_cutoff,
+                )
+                verify_saved_compact_source({**manifest, "reader": source_reader}, proof)
+            else:
+                from dataclasses import replace
+                from app.reference_trading.inputs import MarketDataHistoricalInputReader
+                from app.reference_trading.planning import HistoricalStreamRequest
+                from app.reference_trading.source_identity import verify_saved_input_prefix
+                base_identity = build_product_identity(product, ProductStrategy.TREND,
+                    ProductFrequency(frequency), input_quality_policy=fusion_input_policy(identity))
+                source_stream = replace(identity, strategy_code="newow_trend",
+                    formula_versions=base_identity.formula_versions, profile_id=base_identity.profile_id,
+                    reference_model_version=REFERENCE_MODEL_VERSION)
+                source = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None).plan_stream(
+                    HistoricalStreamRequest(source_stream, date.fromisoformat(manifest["query_since"]),
+                        through, cutoff))
+                verify_saved_input_prefix({**manifest, "reader":source_reader,
+                    "formula_versions":list(base_identity.formula_versions),
+                    "reference_model_version":source_stream.reference_model_version},
+                    source.dependency_manifest, through,
+                    frozenset((bar.physical_contract, bar.owner_segment_id) for bar in source.bars if bar.strategy_input))
         except (KeyError, TypeError, ValueError) as error:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from error
         dependencies = manifest.get("source_dependencies")
@@ -492,7 +538,8 @@ class PersistedFusionComparison:
             "curve": curve,
             "source_profiles": [
                 build_product_identity(
-                    product, strategy, ProductFrequency(frequency)
+                    product, strategy, ProductFrequency(frequency),
+                    input_quality_policy=fusion_input_policy(identity),
                 ).profile_id
                 for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION)
             ],

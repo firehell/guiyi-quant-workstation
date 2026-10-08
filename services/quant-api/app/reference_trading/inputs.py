@@ -450,20 +450,38 @@ class MarketDataHistoricalInputReader:
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
         from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
-        from app.reference_trading.newow_fusion import FusionHistoricalPayload
+        from app.reference_trading.newow_fusion import FusionHistoricalPayload, fusion_input_policy
         if not callable(self._fusion_sources) or not self._compact_intraday_inputs:
             raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
-        product = build_product_identity(request.identity.product,ProductStrategy.TREND,ProductFrequency(request.identity.frequency))
-        shadow_identity = replace(request.identity,strategy_code="newow_trend",formula_versions=product.formula_versions,profile_id=product.profile_id,reference_model_version=REFERENCE_MODEL_VERSION,futures_adaptation_version=futures_adaptation_version(request.identity.frequency))
+        policy = fusion_input_policy(request.identity)
+        product = build_product_identity(request.identity.product,ProductStrategy.TREND,ProductFrequency(request.identity.frequency),input_quality_policy=policy)
+        shadow_identity = replace(request.identity,strategy_code="newow_trend",formula_versions=product.formula_versions,profile_id=product.profile_id,reference_model_version=REFERENCE_MODEL_VERSION,futures_adaptation_version=futures_adaptation_version(request.identity.frequency,policy))
         shadow = self._read_newow(replace(request,identity=shadow_identity))
-        actions, dependencies = self._fusion_sources(request,shadow.dependency_manifest)
+        source_manifests = {"trend": shadow.dependency_manifest}
+        if request.identity.frequency in {"1d", "1w"}:
+            oscillator = build_product_identity(request.identity.product,ProductStrategy.OSCILLATION,
+                ProductFrequency(request.identity.frequency),input_quality_policy=policy)
+            oscillator_identity = replace(shadow_identity,strategy_code="newow_oscillation",
+                formula_versions=oscillator.formula_versions,profile_id=oscillator.profile_id)
+            oscillator_snapshot = self._read_newow(replace(request,identity=oscillator_identity))
+            # Boundary fingerprints include the stream identity. Verify each
+            # saved strategy against its own authoritative replay, with common
+            # market lineage still identical under the same maintenance lease.
+            for key in ("calendar_session_effective_fingerprints", "calendar_session_source_evidence",
+                        "rank1", "boundaries", "data_interruptions", "lifecycle_owners",
+                        "market_source_identity", "input_policy_version", "quality_policy"):
+                if oscillator_snapshot.dependency_manifest.get(key) != shadow.dependency_manifest.get(key):
+                    raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
+            source_manifests["oscillation"] = oscillator_snapshot.dependency_manifest
+        actions, dependencies = self._fusion_sources(request,shadow.dependency_manifest,
+            source_manifests=source_manifests)
         bars=[]
         for item in shadow.bars:
             source_actions=tuple(actions.get((item.bar_end,item.physical_contract,item.owner_segment_id,item.calculation_segment_id),())) if item.strategy_input else ()
             payload=FusionHistoricalPayload(item.payload.bar,source_actions) if item.strategy_input else item.payload
             fingerprint=sha256(_canonical([item.fingerprint,[(action.signal_id,str(action.reference_price),action.trade_eligibility.value) for action in source_actions]]).encode()).hexdigest()
             bars.append(replace(item,payload=payload,fingerprint=fingerprint,boundaries=tuple(replace(boundary,stream=request.identity) for boundary in item.boundaries)))
-        manifest={**shadow.dependency_manifest,"reader":"newow_fusion_saved_sources_v1","source_dependencies":dependencies,"formula_versions":list(request.identity.formula_versions),"reference_model_version":request.identity.reference_model_version,"input_sha256":sha256(_canonical([bar.fingerprint for bar in bars]).encode()).hexdigest()}
+        manifest={**shadow.dependency_manifest,"query_through":request.through.isoformat(),"query_as_of":request.as_of.isoformat(),"input_count":len(bars),"source_reader":shadow.dependency_manifest["reader"],"reader":"newow_fusion_saved_sources_v1","source_dependencies":dependencies,"formula_versions":list(request.identity.formula_versions),"reference_model_version":request.identity.reference_model_version,"input_sha256":sha256(_canonical([bar.fingerprint for bar in bars]).encode()).hexdigest()}
         return HistoricalInputSnapshot(request.identity,shadow.storage_start,shadow.completed_through,tuple(bars),manifest,sha256(_canonical(manifest).encode()).hexdigest(),len(_canonical(manifest).encode())+len(bars)*256)
 
     def _read_subing(self, request):

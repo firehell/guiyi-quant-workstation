@@ -22,11 +22,16 @@ def test_intraday_identity_and_wire_frequency(frequency, strategy):
     assert identity != build_product_identity("rb", strategy, "1d")
 
 
-@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
-def test_intraday_remains_formally_closed_until_pilot_accepted(frequency):
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m"])
+def test_frozen_intraday_does_not_open_latest_completed_lane(frequency):
     with pytest.raises(ValueError, match="NEWOW_FREQUENCY_NOT_OPEN"):
         require_open_frequency(ProductFrequency(frequency))
     assert deferred_frequency_reason(ProductFrequency(frequency)) is not None
+
+
+def test_hourly_formal_latest_completed_lane_is_open():
+    require_open_frequency(ProductFrequency.HOURLY)
+    assert deferred_frequency_reason(ProductFrequency.HOURLY) is None
 
 
 def test_readiness_default_does_not_expand_when_frequency_enum_grows():

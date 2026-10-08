@@ -974,6 +974,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v29",
         "newow_product_capabilities_v30",
         "newow_product_capabilities_v31",
+        "newow_product_capabilities_v32",
     ]
     release_stage: Literal[
         "daily",
@@ -986,11 +987,14 @@ class NewowProductCapabilitiesResponse(_Out):
         "black_steel_intraday_candidate",
         "single_product_intraday_candidate",
         "daily_weekly_intraday_history",
+        "daily_weekly_hourly_current",
     ]
     open_frequencies: list[ProductFrequencyValue]
     weekly_products: list[str] | None = None
     intraday_products: list[str] | None = None
     intraday_as_of: datetime | None = None
+    latest_completed_frequencies: list[ProductFrequencyValue] | None = None
+    strategy_frequencies: dict[Literal["trend", "oscillation", "main_rise", "dual"], list[ProductFrequencyValue]] | None = None
     deferred_frequencies: list[DeferredFrequencyOut]
     open_sections: list[
         Literal["chart", "auxiliary", "reference", "explanation", "comparator"]

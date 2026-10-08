@@ -9,6 +9,7 @@ from app.reference_trading.models import (
 )
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
 from app.reference_trading.presentation import envelope, presentation_point
+from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
 from tests.reference_trading.test_repository import (
     _seed_repository,
     _open_batch,
@@ -105,6 +106,26 @@ def test_historical_actions_exceed_web_cap_without_truncation(monkeypatch):
     assert all(
         point["value"]["signal_id"] == f"action-{i}" for i, point in enumerate(points)
     )
+
+
+@pytest.mark.parametrize('fingerprints', (["a" * 64] * 3, ["invalid"] * 3, []))
+def test_daily_saved_action_count_uses_verified_full_input_fingerprints(monkeypatch, fingerprints):
+    query, factory, stream, params = saved_actions(monkeypatch)
+    with factory() as session:
+        batch = session.scalar(select(ReferenceBatch).where(ReferenceBatch.kind == 'calculation'))
+        manifest = dict(batch.dependency_manifest)
+        manifest.pop('input_count')
+        batch.dependency_manifest = {**manifest, 'reader':'newow_product_reader_v2',
+                                     'input_fingerprints':fingerprints}
+        session.commit()
+    params['snapshot_token'] = query.summary(
+        stream.stream_id, since=date(2026,9,19), through=date(2026,9,19),
+    )['snapshot']
+    if fingerprints and all(len(value) == 64 for value in fingerprints):
+        assert len(list(query.historical_actions(stream.stream_id, **params, input_count=3))) == 3
+    else:
+        with pytest.raises(QueryConflict, match='SOURCE_IDENTITY_UNVERIFIED'):
+            list(query.historical_actions(stream.stream_id, **params, input_count=3))
 
 
 @pytest.mark.parametrize("input_count", (True, 0, -1, "3", 3.0))
@@ -253,7 +274,7 @@ def test_saved_fusion_sources_keep_actions_and_dependencies_and_close_on_decode_
         )
     )
     request = SimpleNamespace(
-        identity=SimpleNamespace(product="rb", frequency="1m"),
+        identity=build_fusion_stream_identity('rb', '1m'),
         since=date(2026, 9, 19),
         through=date(2026, 9, 19),
         as_of=datetime(2026, 9, 19, 7, tzinfo=UTC),

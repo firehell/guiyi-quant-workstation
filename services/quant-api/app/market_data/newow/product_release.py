@@ -36,20 +36,21 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v31"] = (
-    "newow_product_capabilities_v31"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v32"] = (
+    "newow_product_capabilities_v32"
 )
-RELEASE_STAGE: Literal["daily_weekly_intraday_history"] = "daily_weekly_intraday_history"
-OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+RELEASE_STAGE: Literal["daily_weekly_hourly_current"] = "daily_weekly_hourly_current"
+OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY)
+# Only these short-minute products retain the immutable v31 historical input boundary.
+FROZEN_INTRADAY_FREQUENCIES = INTRADAY_HISTORY_FREQUENCIES[:-1]
+LATEST_COMPLETED_FREQUENCIES = OPEN_FREQUENCIES
 OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
     "chart",
     "auxiliary",
     "reference",
     "comparator",
 )
-DEFERRED_FREQUENCIES = (
-    (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
-)
+DEFERRED_FREQUENCIES: tuple[tuple[ProductFrequency, str], ...] = ()
 DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
     ("explanation", "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"),
 )
@@ -87,9 +88,7 @@ if (
     != set(OPEN_WEEKLY_PRODUCTS) | set(REMAINING_WEEKLY_V2_PRODUCTS)
 ):
     raise RuntimeError("NEWOW_WEEKLY_PRODUCT_SCOPE_INVALID")
-CANDIDATE_DEFERRED_FREQUENCIES = (
-    (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
-)
+CANDIDATE_DEFERRED_FREQUENCIES: tuple[tuple[ProductFrequency, str], ...] = ()
 AU_PERIOD_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v5"
 AU_PERIOD_PREVIEW_STAGE = "au_daily_weekly_hourly_candidate"
 AU_PERIOD_PREVIEW_FREQUENCIES = (

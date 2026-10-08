@@ -34,10 +34,12 @@ class ForwardReconciler:
         self, session_factory,
         read_canonical: Callable[[dict[str, object]], CanonicalEvidence],
         *, read_guard: Callable[[], AbstractContextManager[object]] = nullcontext,
+        scope_guard=None,
     ) -> None:
         self._factory = session_factory
         self._read_canonical = read_canonical
         self._read_guard = read_guard
+        self._scope_guard = scope_guard
 
     def reconcile(self, capture_id: str, *, now: datetime) -> str:
         if now.tzinfo is None or now.utcoffset() is None:
@@ -47,6 +49,8 @@ class ForwardReconciler:
                 capture = session.get(ReferenceBatch, capture_id)
                 if capture is None or capture.kind != "capture":
                     raise RepositoryConflict("CAPTURE_NOT_FOUND")
+                if self._scope_guard is not None:
+                    self._scope_guard(session, capture)
                 evidence = capture.source_evidence.get("forward_capture_v1")
                 if not isinstance(evidence, dict):
                     raise RepositoryConflict("CAPTURE_CORRUPT")
@@ -64,6 +68,8 @@ class ForwardReconciler:
             "matched" if authoritative.source_sha256 == captured_hash else "mismatch"
         )
         with self._factory() as session, session.begin():
+            if self._scope_guard is not None:
+                self._scope_guard(session, session.get(ReferenceBatch, capture_id))
             existing = session.scalar(select(ReferenceCaptureReconciliation).where(
                 ReferenceCaptureReconciliation.capture_batch_id == capture_id,
                 ReferenceCaptureReconciliation.source_revision == authoritative.source_revision,

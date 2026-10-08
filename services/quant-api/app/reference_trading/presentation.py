@@ -84,3 +84,26 @@ def require_envelope(value: object) -> tuple[dict[str, object], ...]:
     if not all(isinstance(item, dict) for item in points):
         raise PresentationUnavailable("PRESENTATION_CORRUPT")
     return tuple(points)
+
+
+def newow_state_point(identity, frame) -> dict[str, object]:
+    """Persist the kernel state even when the completed Bar has no action."""
+    bar = frame.bar.bar
+    return presentation_point(
+        kind="indicator", trading_day=bar.trading_day,
+        formula_versions=identity.formula_versions,
+        value={
+            "version": "newow_bar_state_v1", "product": identity.product,
+            "strategy": identity.strategy.value, "frequency": identity.frequency.value,
+            "bar_end": bar.bar_end, "physical_contract": bar.physical_contract,
+            "segment_id": bar.segment_id,
+            "calculation_segment_id": frame.bar.calculation_segment_id,
+            "source_identity": bar.source_identity,
+            "source_bar_sha256": frame.bar.source_bar_sha256,
+            "input_quality_policy": identity.input_quality_policy,
+            "main_state": frame.main_state, "availability": frame.availability,
+            "main_values": dict(frame.main_values),
+            "action_ids": [action.signal_id for action in frame.actions],
+            "hint_ids": [hint.hint_id for hint in frame.hints],
+        },
+    )

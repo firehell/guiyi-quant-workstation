@@ -103,7 +103,18 @@ def test_newow_forward_reuses_real_incremental_kernel(strategy, frequency):
     assert prepared.checkpoint.computed_through == bar.bar.bar_end
     assert prepared.input_observed_at == capture.observed_at
     assert prepared.checkpoint.reference_state is not None
-    assert prepared.source_evidence["presentation_v1"]["points"]
+    points = prepared.source_evidence["presentation_v1"]["points"]
+    states = [p["value"] for p in points if p["kind"] == "indicator"]
+    assert len(states) == 1
+    state = states[0]
+    assert state["version"] == "newow_bar_state_v1"
+    assert state["bar_end"] == bar.bar.bar_end.isoformat()
+    assert state["strategy"] == strategy
+    assert state["frequency"] == frequency
+    assert state["observed_at"] == capture.observed_at.isoformat()
+    assert state["source_bar_sha256"] == capture.input_payload["source_bar_sha256"]
+    assert state["main_state"] in {"BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"}
+    assert "availability" in state and "main_values" in state
 
 
 def test_prewarmed_hold_first_clear_has_no_observed_entry():

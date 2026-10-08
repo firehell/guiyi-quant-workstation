@@ -389,6 +389,9 @@ def _newow_step(
     if frame is None:
         raise ValueError("REFERENCE_DUPLICATE_INPUT")
     if presentation is not None:
+        from app.reference_trading.presentation import newow_state_point
+
+        presentation.append(newow_state_point(identity, frame))
         presentation.append(presentation_point(
             kind="availability",
             value={
@@ -657,27 +660,41 @@ class HistoricalReferenceService:
     ) -> BatchReport:
         self._validate_plan(plan, expected_plan_hash, operation="rebuild")
         deadline = self._clock() + plan.budget.max_elapsed_seconds
-        reports: list[StreamBatchReport] = []
-        for item in plan.streams:
-            stream_id = item.request.identity.stream_id
+        reports = tuple(
+            self._isolated_stream(
+                item.request.identity.stream_id,
+                partial(self._rebuild_stream, plan, item, deadline),
+            )
+            for item in plan.streams
+        )
+        return BatchReport(self._overall(reports), reports)
+
+    def _rebuild_stream(self, plan, stream_plan, deadline):
+        stream_id = stream_plan.request.identity.stream_id
+        pin = getattr(self._reader, "pin_stream", None)
+        with pin(stream_plan.request) if callable(pin) else nullcontext():
+            # Acquire and verify the exact frozen source before changing the old
+            # active revision. The same lease and snapshot serve the whole build.
+            snapshot = self._reader.load_stream(
+                stream_plan.request, expected_source_token=stream_plan.source_token,
+            )
+            if not self._snapshot_matches(stream_plan, snapshot):
+                return StreamBatchReport(
+                    stream_id, "blocked", "SOURCE_CHANGED", 0, None, None, None, None,
+                )
             try:
                 current = self._repository.read_state(stream_id)
                 self._repository.invalidate_revision(
-                    stream_id,
-                    current.revision_id,
-                    current.stream.row_version,
+                    stream_id, current.revision_id, current.stream.row_version,
                     "P4_SOURCE_REVISION_REBUILD",
                 )
             except RepositoryConflict as error:
-                reports.append(StreamBatchReport(
+                return StreamBatchReport(
                     stream_id, "blocked", str(error), 0, None, None, None, None,
-                ))
-                continue
-            reports.append(self._isolated_stream(
-                stream_id, partial(self._build_stream, plan, item, None, deadline),
-            ))
-        result = tuple(reports)
-        return BatchReport(self._overall(result), result)
+                )
+            return self._build_stream_from_input(
+                plan, stream_plan, None, deadline, verified_snapshot=snapshot,
+            )
 
     @staticmethod
     def _validate_plan(
@@ -763,7 +780,7 @@ class HistoricalReferenceService:
 
     def _build_stream_from_input(
         self, plan: HistoricalReferencePlan, stream_plan: HistoricalStreamPlan,
-        resume: ResumeToken | None, deadline: float,
+        resume: ResumeToken | None, deadline: float, *, verified_snapshot=None,
     ) -> StreamBatchReport:
         stream = stream_plan.request.identity
         if resume is not None and not self._reader.revalidate(
@@ -773,9 +790,11 @@ class HistoricalReferenceService:
                 stream.stream_id, "blocked", "SOURCE_CHANGED", resume.next_input_index,
                 resume.revision_id, None, resume.last_batch_key, resume,
             )
-        snapshot = self._reader.load_stream(
-            stream_plan.request, expected_source_token=stream_plan.source_token,
-        )
+        snapshot = verified_snapshot
+        if snapshot is None:
+            snapshot = self._reader.load_stream(
+                stream_plan.request, expected_source_token=stream_plan.source_token,
+            )
         if not self._snapshot_matches(stream_plan, snapshot):
             return StreamBatchReport(
                 stream.stream_id, "blocked", "SOURCE_CHANGED",
