@@ -105,7 +105,7 @@ export interface NewowRecordingItem {
   latest_state_source?: 'historical_seed' | 'observed' | null
   latest_reconciliation_status?: 'pending' | 'matched' | 'mismatch' | 'not_applicable' | null
   expected_through?: string | null
-  expected_source?: 'canonical_completed'
+  expected_source?: 'canonical_completed' | 'completed_live'
   endpoint_status?: 'READY' | 'UNKNOWN'
   endpoint_reason?: string | null
   latest_state: NewowRecordedState | null
@@ -114,7 +114,7 @@ export interface NewowRecordingItem {
   [field: string]: unknown
 }
 export interface NewowRecordingMatrix {
-  version: 'newow_recording_matrix_v1' | 'newow_recording_matrix_v2'
+  version: 'newow_recording_matrix_v1' | 'newow_recording_matrix_v2' | 'newow_recording_matrix_v3'
   recording_mode: 'forward_observation'
   expected_count: number
   configured_count: number

@@ -144,6 +144,11 @@ class ForwardReferenceHealth:
                 count, oldest = pending.get(stream.stream_id, (0, None))
                 success, computed, _seq, historical, observed_end, last_observed = calculations.get(stream.stream_id, (None,) * 6)
                 gap = gaps.get(stream.stream_id)
+                endpoint = endpoints.get((stream.product.lower(), stream.frequency), {
+                    "expected_through": None, "expected_source": "canonical_completed",
+                    "endpoint_status": "UNKNOWN", "endpoint_reason": "ENDPOINT_NOT_VERIFIED",
+                })
+                status = _recording_status(stream, endpoint, observed_end) if self._endpoint_reader else stream.health
                 items.append({
                     "stream_id": stream.stream_id, "enabled": stream.enabled,
                     "strategy_code": stream.strategy_code, "product": stream.product,
@@ -157,16 +162,13 @@ class ForwardReferenceHealth:
                     "last_observed_at": _iso(last_observed),
                     "latest_state_source": state_sources.get(stream.stream_id),
                     "latest_observed_trading_day": observed_days.get(stream.stream_id),
-                    **endpoints.get((stream.product.lower(), stream.frequency), {
-                        "expected_through": None, "expected_source": "canonical_completed",
-                        "endpoint_status": "UNKNOWN", "endpoint_reason": "ENDPOINT_NOT_VERIFIED",
-                    }),
+                    **endpoint,
                     "last_success": _iso(success),
                     "latest_reconciliation_status": reconciliation.get(capture_ids.get(stream.stream_id)),
                     "pending_capture_count": count,
                     "oldest_pending_observed_at": _iso(oldest),
                     "reconciliation_mismatch_count": mismatches.get(stream.stream_id, 0),
-                    "status": stream.health, "latest_state": states.get(stream.stream_id),
+                    "status": status, "latest_state": states.get(stream.stream_id),
                 })
             return {"enabled_count": sum(item["enabled"] is True for item in items), "streams": items,
                     "source_endpoints": public_endpoints}
@@ -180,3 +182,68 @@ def stream_time_valid(observed, start):
 
 def _iso(value):
     return value.replace(tzinfo=value.tzinfo or UTC).isoformat() if value is not None else None
+
+
+def _recording_status(stream, endpoint, observed):
+    # A durable queue can be empty because an eligible Bar was never captured.
+    # Compare source completion with actual observations, never the seed watermark.
+    if not stream.enabled or stream.health != "READY":
+        return stream.health
+    if endpoint.get("endpoint_status") != "READY":
+        return "SOURCE_UNAVAILABLE"
+    try:
+        raw = endpoint.get("expected_through")
+        expected = datetime.fromisoformat(raw) if isinstance(raw, str) else None
+        if expected is None or expected.tzinfo is None or stream.recording_start is None:
+            return "SOURCE_UNAVAILABLE"
+        start = stream.recording_start.replace(tzinfo=stream.recording_start.tzinfo or UTC)
+        seen = observed.replace(tzinfo=observed.tzinfo or UTC) if observed else None
+        if expected >= start and (seen is None or seen < expected):
+            return "OBSERVATION_LAGGING"
+    except (TypeError, ValueError):
+        return "SOURCE_UNAVAILABLE"
+    return stream.health
+
+
+def read_completed_recording_endpoints(session, keys, at):
+    """Historical publication and Session completion are separate authorities.
+
+    The H1 expected endpoint comes from the shared recording seam even if Redis
+    omitted a Bar; D1/W1 remain completed Canonical. No provider or write occurs.
+    """
+    from app.market_data.composition import build_market_read_service
+    from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
+    from app.redis_connections import get_redis_connection
+
+    result = read_completed_canonical_endpoints(session, keys, at)
+    hourly = tuple(key for key in keys if key[1] == "60m")
+    if not hourly:
+        return result
+    redis = None
+    try:
+        redis = get_redis_connection()
+        reader = build_market_read_service(session, redis=redis)
+        for key in hourly:
+            prior = result[key]
+            try:
+                end, _day, _contract = reader.newow_completed_observation_endpoint(
+                    SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, key[0], BarFrequency.H1), at,
+                )
+                if end is not None:
+                    if end.tzinfo is None or end > at:
+                        raise ValueError("COMPLETE_PERIOD_INVALID")
+                    published = datetime.fromisoformat(prior["expected_through"]) if prior["expected_through"] else None
+                    if published is None or end > published:
+                        result[key] = {"expected_through": end.isoformat(), "expected_source": "completed_live",
+                            "endpoint_status": "READY", "endpoint_reason": None}
+            except Exception:  # No exception text or alternate source can prove a Session.
+                result[key] = {"expected_through": None, "expected_source": "completed_live",
+                    "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE"}
+    except Exception:
+        for key in hourly:
+            result[key] = {"expected_through": None, "expected_source": "completed_live",
+                "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE"}
+    finally:
+        if redis is not None:
+            redis.close()
+    return result

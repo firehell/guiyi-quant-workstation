@@ -340,3 +340,20 @@ def test_friday_night_remains_unknown_without_next_trading_day_sessions(
     session.commit()
 
     assert MarketPhaseResolver(session).resolve("jm", _now(3, 21)).phase is MarketPhase.UNKNOWN
+
+
+@pytest.mark.parametrize(("symbol", "now", "day"), (
+    ("jm", _now(3, 23, 10), date(2025, 1, 6)),
+    ("ag", _now(4, 2, 40), date(2025, 1, 6)),
+    ("j", _now(6, 10, 20), date(2025, 1, 6)),
+    ("j", _now(6, 15, 10), date(2025, 1, 6)),
+    ("jm", _now(6, 23, 10), date(2025, 1, 7)),
+))
+def test_completed_observation_day_retains_real_session_identity_after_close(session, symbol, now, day):
+    assert MarketPhaseResolver(session).completed_observation_trading_day(symbol, now) == day
+
+
+def test_completed_observation_day_fails_closed_without_next_snapshot(session):
+    session.execute(delete(TradingSession).where(TradingSession.instrument_symbol == "jm"))
+    session.commit()
+    assert MarketPhaseResolver(session).completed_observation_trading_day("jm", _now(6, 23, 10)) is None

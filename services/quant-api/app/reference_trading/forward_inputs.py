@@ -221,7 +221,7 @@ def capture_newow_live(
         SeriesKind.ACTUAL_DOMINANT, identity.product.upper(), BarFrequency.H1,
         limit=2,
     )
-    snapshot = market_read.observation_snapshot(query, after, now)
+    snapshot = market_read.newow_completed_observation_snapshot(query, after, now)
     if snapshot.source == "unavailable":
         raise ForwardInputUnavailable("LIVE_SOURCE_UNAVAILABLE")
     if snapshot.source == "none" or not snapshot.bars:

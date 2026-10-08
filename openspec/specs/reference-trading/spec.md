@@ -363,3 +363,36 @@ reject the source rather than silently adopting an old D1 asset.
 - **WHEN** a current dual-source D1 build reads a saved base source without the required policy proof
 - **THEN** it fails with a source snapshot conflict
 - **AND** the previous revision is retained for readback without rewriting its identity or evidence
+
+
+### Requirement: Newow completed terminal observations and matrix v3
+
+Newow 60m forward recording SHALL read genuine saved completed Live observations after a
+Session closes through the dedicated MarketReadService recording seam. Calendar, Session,
+rank1 physical owner, subscription, typed provenance and exact completed endpoint coverage
+SHALL be proven; closed phase civil date SHALL NOT replace a night Bar's trading day.
+The read SHALL preserve actual observed_at, stable capture identity and completed-only
+ordering. It SHALL NOT change HTDY/SuBing realtime notification eligibility, fabricate
+first_seen or consume preview/display bars. Unknown identity or a missing endpoint SHALL
+fail closed; multiple missed observations retain the existing interruption policy.
+
+The current recording matrix SHALL use newow_recording_matrix_v3. D1/W1 expected endpoints
+SHALL remain Canonical publication endpoints. For 60m the expected endpoint SHALL also
+include authoritative already-completed Session endpoints, even when Redis has not saved
+the corresponding Bar. expected_source=completed_live denotes that observation expectation,
+not proof that Redis contains the Bar. When the expected endpoint is on or after recording_start
+and actual observed progress is behind, READY SHALL be replaced by OBSERVATION_LAGGING;
+a historical seed or empty capture queue SHALL NOT prove observation completeness.
+Unproved endpoint authority SHALL be SOURCE_UNAVAILABLE. Health SHALL remain read-only.
+
+#### Scenario: A completed night terminal Bar is processed after the Session closes
+- **GIVEN** the actual night trading day, rank1 physical owner and saved completed 23:00 Bar are proven
+- **WHEN** Newow reads the next observation at 23:10 after that product's night Session closes
+- **THEN** the saved Bar is captured with its original trading day and actual 23:10 observed_at
+- **AND** existing strict realtime Alert eligibility is unchanged
+
+#### Scenario: An eligible Bar was never captured and the durable queue is empty
+- **GIVEN** Session authority proves a completed 23:00 endpoint after recording_start
+- **AND** actual observations only reach 22:00 and pending_capture_count is zero
+- **WHEN** matrix v3 is read
+- **THEN** the route is OBSERVATION_LAGGING rather than READY

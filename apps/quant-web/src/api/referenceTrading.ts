@@ -60,13 +60,13 @@ export async function getReferencePoints(
 
 export async function getNewowRecordingMatrix(options: ReferenceRequestOptions = {}): Promise<import('../types/referenceTrading.ts').NewowRecordingMatrix> {
   const result = await transport(options)('/reference-trading/newow/matrix', { params: {}, signal: options.signal }) as import('../types/referenceTrading.ts').NewowRecordingMatrix
-  if (!result || !['newow_recording_matrix_v1', 'newow_recording_matrix_v2'].includes(result.version) || result.recording_mode !== 'forward_observation'
+  if (!result || !['newow_recording_matrix_v1', 'newow_recording_matrix_v2', 'newow_recording_matrix_v3'].includes(result.version) || result.recording_mode !== 'forward_observation'
     || !Array.isArray(result.items)) throw new Error('REFERENCE_RESPONSE_INVALID')
-  if (result.version === 'newow_recording_matrix_v2') {
+  if (result.version !== 'newow_recording_matrix_v1') {
     const counts = [result.configured_count, result.enabled_count, result.observed_count, result.seeded_count]
     if (!Number.isSafeInteger(result.expected_count) || result.expected_count < 0
       || counts.some(value => !Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > result.expected_count)
-      || result.items.some(item => !item || item.expected_source !== 'canonical_completed'
+      || result.items.some(item => !item || !(result.version === 'newow_recording_matrix_v3' ? ['canonical_completed', 'completed_live'] : ['canonical_completed']).includes(item.expected_source ?? '')
         || !['READY', 'UNKNOWN'].includes(item.endpoint_status ?? '')
         || ![null, 'historical_seed', 'observed'].includes(item.latest_state_source === undefined ? 'missing' : item.latest_state_source)
         || (item.latest_observed_trading_day !== undefined && item.latest_observed_trading_day !== null
