@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -17,9 +18,20 @@ from app.market_data.market_read_service import MarketReadWindow, MarketReadWind
 
 
 @pytest.mark.parametrize("provider_fails", [False, True])
-@pytest.mark.parametrize("rule_code", ["subing_ths_alert_15m_v1", "htdy_original_15m"])
-def test_recovery_skips_old_and_queued_triggers_new_event_commits_before_one_send(rule_code, provider_fails, tmp_path):
+@pytest.mark.parametrize("rule_code,notification_opt_in", [("subing_ths_alert_15m_v1", False), ("subing_ths_alert_15m_v1", True), ("htdy_original_15m", False)])
+def test_recovery_skips_old_and_queued_triggers_new_event_commits_before_one_send(rule_code, notification_opt_in, provider_fails, tmp_path, monkeypatch):
     from app.market_data.live_recovery_guard import recovery_guard
+    import app.alerts.runtime as runtime_module
+    from app.alerts.registry import get_alert_rule_definition
+
+    # The real SuBing definition remains signal-only. Opt in solely to exercise
+    # the generic one-shot transport boundary with this test's fake sender.
+    assert get_alert_rule_definition("subing_ths_alert_15m_v1").notification_enabled is False
+    if notification_opt_in:
+        def test_definition(code):
+            definition = get_alert_rule_definition(code)
+            return replace(definition, notification_enabled=True) if code == rule_code else definition
+        monkeypatch.setattr(runtime_module, "get_alert_rule_definition", test_definition)
     engine = create_engine("sqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
@@ -52,6 +64,7 @@ def test_recovery_skips_old_and_queued_triggers_new_event_commits_before_one_sen
                     raise AssertionError("recovery entered during Event/send")
             with Session(engine) as session:
                 assert session.scalar(select(func.count()).select_from(AlertEvent)) == 1
+                assert session.scalar(select(AlertEvent)).notification_attempted_at is not None
             sent.append(message)
             if provider_fails:
                 raise NotificationTransportError("NOTIFICATION_TRANSPORT_FAILED")
@@ -79,7 +92,7 @@ def test_recovery_skips_old_and_queued_triggers_new_event_commits_before_one_sen
     trigger(active, end)
     trigger(active, end)
     trigger(runtime(), end)  # restart must not resend an immutable Event
-    if rule_code == "subing_ths_alert_15m_v1":
+    if rule_code == "subing_ths_alert_15m_v1" and not notification_opt_in:
         assert sent == []
         with Session(engine) as session:
             assert session.scalar(select(func.count()).select_from(AlertEvent)) == 1
