@@ -57,7 +57,11 @@ const comparisonEnabled = computed(() => (dualMode.value || comparisonSelected.v
 const comparisonSelection = shallowRef<{ strategy: 'trend' | 'oscillation'; signalId: string } | null>(null)
 const selectedSignalId = ref<string | null>(null)
 const selectedHintId = ref<string | null>(null)
-const selectedAuxiliary = ref<NewowAuxiliaryComponent>(readNewowUiPreferences(identityKey.value).auxiliary ?? 'macd')
+function restoredAuxiliary(): NewowAuxiliaryComponent {
+  const saved = readNewowUiPreferences(identityKey.value).auxiliary
+  return saved && saved !== 'macd' ? saved : 'zhaoyao_mirror'
+}
+const selectedAuxiliary = ref<NewowAuxiliaryComponent>(restoredAuxiliary())
 const dialogKind = ref<'explanation' | 'action' | 'hint' | 'indicator' | 'comparator' | 'cup_handle' | 'formula' | null>(null)
 const locateMessage = ref<string | null>(null)
 const locateRequest = ref(0)
@@ -147,7 +151,7 @@ const summary = computed(() => projectNewowDetail(chartResponse.value, loader.se
   loader.currentChartWindow.value, loader.historicalChartWindow.value))
 const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(currentAuxiliaryResponse.value?.value, chartResponse.value?.value?.bars.at(-1)))
 const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
-const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }, { id: 'trend_reversal', label: '趋势转折' }] as const
+const auxiliaryOptions = [{ id: 'zhaoyao_mirror', label: '主力照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }, { id: 'trend_reversal', label: '趋势转折' }] as const
 const zhaoyaoMirrorLegend = NEWOW_ZHAOYAO_MIRROR_LEGEND
 const upDownEnergyLegend = [
   { label: '上涨', color: NEWOW_UP_DOWN_ENERGY_STYLE.up, marker: 'square' },
@@ -315,7 +319,7 @@ watch(identityKey, async (_key, previous) => {
   if (previous) rememberNewowUiPreferences(previous, { auxiliary: selectedAuxiliary.value, scrollTop: scrollOwner()?.scrollTop ?? 0 })
   restoredScroll = strategySwitching.value
   comparisonSelection.value = null; ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
-  if (!strategySwitching.value) selectedAuxiliary.value = readNewowUiPreferences(identityKey.value).auxiliary ?? 'macd'
+  if (!strategySwitching.value) selectedAuxiliary.value = restoredAuxiliary()
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(loader.historicalSnapshot, async () => {
@@ -405,7 +409,6 @@ onBeforeUnmount(() => {
       <div class="newow-product-workspace__auxiliary-controls">
         <div class="newow-product-workspace__auxiliary-tabs">
           <button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" @click="toggleAuxiliary(option.id)">{{ option.label }}</button>
-          <span v-if="selectedAuxiliary === 'macd'" class="newow-macd-legend"><span>DIF</span> / <span>DEA</span></span>
           <button v-if="identity.strategy === 'trend' && identity.frequency === '1d'" @click="openDialog('cup_handle')">杯柄说明</button><button @click="openDialog('formula')">公式速查</button>
         </div>
       </div>
@@ -427,7 +430,6 @@ onBeforeUnmount(() => {
         <div><span>最新偏离 {{ trendReversalLatest ?? '—' }}</span><span class="newow-trend-reversal-legend__keys"><span v-for="item in trendReversalLegend" :key="item.label" class="newow-mirror-legend__item"><i aria-hidden="true" :class="{ 'newow-trend-reversal-legend__bias': item.label === '偏离' }" :style="item.label === '偏离' ? {} : { backgroundColor: item.color }" />{{ item.label }}</span></span></div>
         <p v-if="trendReversalWarmup !== null" role="status">当前合约计算段仅 {{ trendReversalWarmup }} 根 Bar，未满 120 根；图形为预热参考。</p>
       </div>
-      <span v-if="selectedAuxiliary === 'macd'" class="newow-mirror-legend__title">MACD</span>
         <button class="newow-product-workspace__indicator-help" type="button" @click="openDialog('indicator')">指标解读</button>
       </div>
       <p v-if="currentAuxiliaryError" role="status">{{ newowErrorDisplay(currentAuxiliaryError) }} · 辅助图层不可用 <button @click="loadAuxiliaryForChart()">重试指标</button></p>
@@ -585,7 +587,6 @@ onBeforeUnmount(() => {
 .newow-product-workspace__auxiliary-legend-row > .newow-product-workspace__indicator-help { margin-left:auto; flex-shrink:0; }
 .newow-product-workspace__indicator-help:hover { background:#f2f7ff; }
 .newow-product-workspace__indicator-help:focus-visible { outline:2px solid #1677ff; outline-offset:2px; }
-.newow-macd-legend { padding:0 6px; color:#667085; }.newow-macd-legend span:first-child { color:#ff6b2c; }.newow-macd-legend span:last-child { color:#365af5; }
 .newow-mirror-legend { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; min-height:22px; overflow-x:auto; padding:0 10px; color:#667085; font-size:11px; line-height:16px; white-space:nowrap; background:#fff; }
 .newow-mirror-legend__title { color:#667085; }
 .newow-mirror-legend__item { display:inline-flex; align-items:center; gap:4px; }
