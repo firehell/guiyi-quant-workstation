@@ -65,7 +65,7 @@ class AlertEventCreate:
     bar_end: datetime
     result_codes: tuple[str, ...]
     detected_at: datetime
-    notification_attempted_at: datetime
+    notification_attempted_at: datetime | None
 
 
 class AlertService:
@@ -155,9 +155,10 @@ class AlertService:
         for value in (
             request.bar_end,
             request.detected_at,
-            request.notification_attempted_at,
         ):
             _require_aware(value)
+        if request.notification_attempted_at is not None:
+            _require_aware(request.notification_attempted_at)
         existing = self._event_by_identity(
             rule_id=rule.id,
             symbol=symbol,

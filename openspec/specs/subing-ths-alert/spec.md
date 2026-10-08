@@ -3,8 +3,16 @@
 ## Purpose
 
 定义新的 `subing_ths_alert_15m_v1` 研究观察产品：只对 completed actual_dominant 15m 按
-`subing_ths_15m_v3` 公式创建 immutable AlertEvent、最多尝试一次通知，并由 Market Web 提供人工复核。
+`subing_ths_15m_v3` 公式创建 immutable AlertEvent，并由 Market Web 提供人工复核；当前通知模式见下节。
 它不恢复 `subing_strategy_v1`，不创建持仓或订单，且 `auto_order=false`。
+
+## 当前通知模式
+
+SuBing `subing_ths_alert_15m_v1` 当前仅生成信号与 immutable AlertEvent，
+`notification_enabled=false`；既有 Rule enabled、60 品种 15m Scope 和公式保持不变。
+新 Event 的 `notification_attempted_at` MUST 为 null，不准备消息、不调用 transport，
+不把静默记为通知失败。HTDY 的既有通知继续启用；历史 Event 不改写、不补发。
+本节优先于下文描述 SuBing 通知投递的历史启用合同；恢复发送须由 owner 明确交办。
 
 ## Requirements
 
