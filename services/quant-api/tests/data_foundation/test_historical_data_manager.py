@@ -4520,3 +4520,45 @@ def test_atomic_weekly_unknown_commit_does_not_confirm_candidate_provenance(sess
         manager._execute_contract_weekly_atomic((target,), date(2025, 1, 2))
     assert manager.publication_evidence == []
     assert tuple(session.scalars(select(MarketPartition))) == ()
+
+@pytest.mark.parametrize('case', ['quality_only', 'nonpositive', 'second_week_missing', 'daily_incomplete', 'daily_corrupt'])
+def test_audit_weekly_missing_requires_complete_daily_quality_proof(session, tmp_path, monkeypatch, case):
+    _add_contract(session, symbol='pf', contract='PF2611',
+                  listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))
+    daily = DatasetKey('contract', 'pf', 'PF2611', '1d')
+    weekly = DatasetKey('contract', 'pf', 'PF2611', '1w')
+    days = (*range(6, 11), *range(13, 18))
+    ends = tuple(_daily(day, 100 + day).bar_end for day in days)
+    coverage = FakeCoverage({daily.as_tuple(): ends, weekly.as_tuple(): (ends[4], ends[-1])})
+    coverage.latest_day = date(2025, 1, 17)
+    provider = FakeProvider({})
+    manager = _manager(session, tmp_path, coverage, provider)
+    exception = PriceUnavailableFact(
+        ends[2], date(2025, 1, 8), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        'a' * 64, 'b' * 64, datetime(2026, 9, 17, tzinfo=UTC))
+    if case == 'nonpositive':
+        exception = NonpositiveCloseFact(
+            ends[2], date(2025, 1, 8), *([Decimal(0)] * 6), Decimal(10),
+            'a' * 64, 'b' * 64, datetime(2026, 9, 17, tzinfo=UTC))
+    included = tuple(day for day in days if day != 8 and not (case == 'daily_incomplete' and day == 9))
+    bars = tuple(_daily(day, 100 + day) for day in included)
+    published = manager.store.publish(PublishRequest(daily, 2025, 1, bars,
+        tuple(sorted((*[bar.bar_end for bar in bars], exception.bar_end))),
+        (exception,) if case != 'nonpositive' else (),
+        nonpositive_close=(exception,) if case == 'nonpositive' else ()))
+    manager.catalog.register_partition(published)
+    session.commit()
+    if case == 'daily_corrupt':
+        manager.catalog.all_partitions(daily)[0].file_path.write_bytes(b'invalid daily')
+    expected = (ends[4], ends[-1]) if case == 'second_week_missing' else (ends[4],)
+    monkeypatch.setattr(manager, '_desired_months', lambda *_: ((weekly, 2025, 1, expected, ()),))
+    monkeypatch.setattr(manager.catalog, 'missing_main_map_days', lambda *_: ())
+    result = manager.audit(AuditRequest(('pf',), through=coverage.latest_day))
+    if case in {'quality_only', 'nonpositive'}:
+        assert result.status == 'passed'
+        assert result.findings == ()
+    else:
+        assert any(f.code == 'EXPECTED_PARTITION_MISSING' for f in result.findings)
+    assert provider.calls == []
+    assert manager.catalog.all_partitions(weekly) == ()

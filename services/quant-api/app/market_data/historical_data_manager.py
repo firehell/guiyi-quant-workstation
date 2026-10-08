@@ -1510,7 +1510,26 @@ class HistoricalDataManager(ContractWarmupPlanner):
                                     month,
                                 )
                             )
-                        if classification.missing_mapped:
+                        missing_mapped = classification.missing_mapped
+                        if key.frequency is BarFrequency.W1 and missing_mapped:
+                            fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
+                            daily_key = DatasetKey(
+                                DatasetKind.CONTRACT, key.symbol, key.series_or_contract,
+                                BarFrequency.D1,
+                            )
+                            daily_partitions = self.catalog.all_partitions(daily_key)
+                            unexplained: list[datetime] = []
+                            for week_end in missing_mapped:
+                                try:
+                                    proof = self._weekly_price_interruption(
+                                        key, fact, week_end, daily_partitions,
+                                    )
+                                except (ValueError, StorageError):
+                                    proof = None  # Invalid D1 cannot explain away a W1 gap.
+                                if proof is None:
+                                    unexplained.append(week_end)
+                            missing_mapped = tuple(unexplained)
+                        if missing_mapped:
                             findings.append(
                                 AuditFinding(
                                     "EXPECTED_PARTITION_MISSING",
