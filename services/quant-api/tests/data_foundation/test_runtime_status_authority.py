@@ -87,8 +87,9 @@ def _installed_market_service(
     return path
 
 
+@pytest.mark.parametrize("label", ["com.guiyi.quant-after-market", "com.guiyi.quant-reference-worker"])
 def test_cli_classifies_market_service_through_shared_launchd_reader(
-    monkeypatch, capsys
+    monkeypatch, capsys, label
 ) -> None:
     import app.market_data.runtime_status_authority as module
 
@@ -101,13 +102,13 @@ def test_cli_classifies_market_service_through_shared_launchd_reader(
     monkeypatch.setattr(module, "_read_launchd_service", read_service)
 
     result = module.main(
-        ["launchd-service-state", "com.guiyi.quant-after-market"]
+        ["launchd-service-state", label]
     )
 
     assert result == 0
     assert capsys.readouterr().out == "absent\n"
     assert observed == [
-        ("com.guiyi.quant-after-market", module.PROJECT_ROOT)
+        (label, module.PROJECT_ROOT)
     ]
 
 
@@ -500,3 +501,15 @@ def test_genuine_first_install_rejects_any_candidate_status_residue(
             candidate_root=candidate,
             service_reader=lambda label, **kwargs: None,
         )
+
+
+def test_reference_worker_cli_uses_actual_shared_reader(monkeypatch, capsys):
+    import subprocess
+    import app.market_data.runtime_status_authority as module
+    import app.market_data.captured_recovery_runtime as reader
+    label = "com.guiyi.quant-reference-worker"
+    monkeypatch.setattr(reader, "_read_command", lambda *args, **kwargs: "domain-readable")
+    monkeypatch.setattr(reader, "_command_result", lambda args, **kwargs: subprocess.CompletedProcess(
+        args, 113, "", f'Could not find service "{label}" in domain for user gui: {reader.os.getuid()}\n'))
+    assert module.main(["launchd-service-state", label]) == 0
+    assert capsys.readouterr().out == "absent\n"
