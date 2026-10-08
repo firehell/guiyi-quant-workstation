@@ -76,7 +76,10 @@ def evaluate_observation_gap(token, checkpoint, evidence, *, dependency_manifest
     ):
         raise ValueError("RECOVERY_PROGRESS_CONFLICT")
     code = stream.strategy_code.replace("-", "_")
-    if code.startswith("newow_"):
+    if code == "newow_dual_fusion":
+        from guiyi_quant.newow.fusion_reference import FusionReferenceReplayState
+        strategy, schema = FusionReferenceReplayState(), "newow_dual_fusion_reference_v1"
+    elif code.startswith("newow_"):
         strategy, schema = seed_replay_state(), "newow_product_replay_v1"
     elif code == "subing_reference":
         strategy, schema = seed_subing_forward(), "subing_forward_v1"

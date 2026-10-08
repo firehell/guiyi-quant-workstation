@@ -110,7 +110,7 @@ def test_metadata_failure_keeps_unknown_counts_and_never_invokes_warmup():
     )
 
 
-def test_budget_preserves_open_daily_weekly_cases_and_marks_deferred_scope_unopened():
+def test_budget_preserves_all_open_daily_weekly_hourly_cases():
     module = _audit_module()
     from app.market_data.operational_universe import load_active_products
 
@@ -125,8 +125,8 @@ def test_budget_preserves_open_daily_weekly_cases_and_marks_deferred_scope_unope
     assert len(report["cases"]) == 540
     assert report["complete"] is False
     assert report["budget_exhausted"] is True
-    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 360
-    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 180
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 540
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 0
 
 
 def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_dependencies():
@@ -148,7 +148,7 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
     assert len(report["enumerations"]) == 8
     assert {row["frequency"] for row in report["enumerations"]} == {"1w"}
     assert report["frequency_scope"] == ["1w"]
-    assert report["release_stage"] == "daily_weekly_intraday_history"
+    assert report["release_stage"] == "daily_weekly_hourly_current"
     assert all(
         row["status"] == "UNOPENED"
         for row in report["enumerations"]
@@ -159,8 +159,8 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
         for dependency in report["dependencies"]
         for consumer in dependency["consumers"]
     )
-    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 12
-    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 6
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 18
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 0
 
 
 def test_candidate_weekly_scope_opens_the_versioned_60_products_only():
@@ -395,7 +395,7 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
         module.ReadinessRequest(("rb",), as_of, matrix=True)
     )
     assert len(report["cases"]) == 9
-    assert report["main_ready_count"] == 6
+    assert report["main_ready_count"] == 9
     assert all(
         case["sections"]["explanation"]["status"] == "UNOPENED"
         for case in report["cases"]
@@ -406,7 +406,7 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
         if case["frequency"] == "1d"
     )
     assert all(
-        case["main"]["status"] == "UNOPENED"
+        case["main"]["status"] == "READY"
         for case in report["cases"]
         if case["frequency"] == "60m"
     )
@@ -419,6 +419,10 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
         ("1w", "auxiliary"),
         ("1w", "reference"),
         ("1w", "comparator"),
+        ("60m", "chart"),
+        ("60m", "auxiliary"),
+        ("60m", "reference"),
+        ("60m", "comparator"),
     }
     assert {observed for _, _, observed in seen} == {as_of}
 

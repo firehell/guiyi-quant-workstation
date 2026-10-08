@@ -1340,6 +1340,40 @@ strategy/period. Unavailable combinations stay visible and cannot be recommended
 - **THEN** all periods use the capped cutoff and every reported source bar ends at or before it
 - **AND** unavailable periods are explicit rather than substituted or artificially rescored
 
+### Requirement: Current completed daily weekly hourly product capability
+
+The active formal capability `newow_product_capabilities_v32` SHALL use release stage
+`daily_weekly_hourly_current`. All sixty operational products SHALL support trend, oscillation,
+main-rise and independent dual reference recording at D1/W1/60m. `strategy_frequencies`
+SHALL declare main-rise only at D1/W1/60m; 5m/15m/30m main-rise remains closed and 1m remains
+aggregation input only. `latest_completed_frequencies` SHALL be exactly `1d,1w,60m`.
+
+Formal D1/W1/60m requests SHALL use the requested completed Canonical cutoff through the
+existing Catalog/MainContractMap/MDS reader, with no fixed September 24 cap. Hourly reference
+reads SHALL use current public reference assets rather than the frozen pilot schema; missing
+or stale assets SHALL remain unavailable. Unconfirmed Live input SHALL NOT enter Canonical
+page calculations. The existing v31 wire, source evidence and exact historical cutoff remain
+immutable; formal 5m/15m/30m requests still use that historical cutoff and pilot assets.
+
+Current `decision_v2` requests SHALL use one explicit as-of across D1/W1/60m and retain
+same-owner, segmentation and independent quality-policy checks. Formal AI response
+`newow_ai_analysis_v3` SHALL bind its six existing combinations to that exact requested
+Canonical cutoff. Explicit historical as-of remains supported; v2 candidate/legacy wire and
+historical cutoff helpers remain readable. Existing formulas, scores, sample gates, action
+semantics, page-parity and non-executable boundaries SHALL remain unchanged.
+
+#### Scenario: Current hourly main-rise retains minute boundaries
+- **GIVEN** v32 and verified completed hourly Canonical input for an operational product
+- **WHEN** main-rise 60m is requested after the former fixed cutoff
+- **THEN** the current authoritative input is read with the unchanged main-rise kernel
+- **AND** a 5m/15m/30m main-rise request fails before opening any source reader
+
+#### Scenario: Explicit historical analysis retains source identity
+- **GIVEN** an explicit historical Canonical as-of
+- **WHEN** formal v3 AI or current cross-period decision is requested
+- **THEN** all six combinations or three periods use that exact cutoff
+- **AND** unavailable owner, quality or preheating facts remain explicit without substitution
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

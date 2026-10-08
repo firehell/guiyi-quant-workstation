@@ -10,12 +10,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.db.session import SessionLocal
 from app.reference_trading.presentation import PresentationUnavailable
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
-from app.reference_trading.health import ForwardReferenceHealth
+from app.reference_trading.health import ForwardReferenceHealth, read_completed_canonical_endpoints
 
 
 router = APIRouter(prefix="/api/v1/reference-trading", tags=["reference-trading"])
 _query = HistoricalReferenceQuery(SessionLocal)
-_health = ForwardReferenceHealth(SessionLocal)
+_health = ForwardReferenceHealth(SessionLocal, endpoint_reader=read_completed_canonical_endpoints)
 
 
 def _keys(request: Request, allowed: frozenset[str]) -> None:
@@ -120,3 +120,13 @@ def summary(request: Request, stream_id: str, since: date, through: date,
         stream_id, since=since, through=through, cutoff=cutoff,
         snapshot_token=snapshot,
     ))
+
+
+@router.get("/newow/matrix")
+def newow_matrix(request: Request):
+    _keys(request, frozenset())
+    from app.market_data.operational_universe import load_operational_products
+    from app.reference_trading.recording_matrix import newow_recording_matrix
+
+    products = tuple(product.lower() for product in load_operational_products())
+    return _run(lambda: newow_recording_matrix(products, _health.read(products=products)))

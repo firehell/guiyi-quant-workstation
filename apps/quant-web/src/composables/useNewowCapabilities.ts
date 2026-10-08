@@ -42,7 +42,7 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
   const openFrequenciesFor = (symbol: string): readonly NewowProductFrequency[] => {
     const current = capabilities.value
     const normalized = symbol.toLowerCase()
-    if (current?.schema_version === 'newow_product_capabilities_v28' || current?.schema_version === 'newow_product_capabilities_v29' || current?.schema_version === 'newow_product_capabilities_v30' || current?.schema_version === 'newow_product_capabilities_v31') {
+    if (current?.schema_version === 'newow_product_capabilities_v28' || current?.schema_version === 'newow_product_capabilities_v29' || current?.schema_version === 'newow_product_capabilities_v30' || current?.schema_version === 'newow_product_capabilities_v31' || current?.schema_version === 'newow_product_capabilities_v32') {
       return supportedFrequencies(current.open_frequencies).filter(item =>
         item === '1d' || (item === '1w' ? current.weekly_products?.includes(normalized)
           : current.intraday_products?.includes(normalized)))
@@ -78,6 +78,12 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
   }
   const isFrequencyOpen = (frequency: NewowProductFrequency, symbol = '') =>
     openFrequenciesFor(symbol).includes(frequency)
+  const isStrategyFrequencyOpen = (strategy: 'trend' | 'oscillation' | 'main_rise' | 'dual', frequency: NewowProductFrequency, symbol: string) => {
+    if (!openFrequenciesFor(symbol).includes(frequency)) return false
+    const supported = capabilities.value?.strategy_frequencies?.[strategy]
+    return supported ? supported.includes(frequency) : strategy !== 'main_rise' || frequency === '1d' || frequency === '1w'
+  }
+  const isLatestCompletedFrequency = (frequency: NewowProductFrequency) => capabilities.value?.latest_completed_frequencies?.includes(frequency) === true
   const isSectionOpen = (section: NewowProductSection) => (capabilities.value?.open_sections as readonly string[] | undefined)?.includes(section) === true
   const deferredFrequencyReason = (frequency: NewowProductFrequency) => capabilities.value?.deferred_frequencies.find(item => item.frequency === frequency)?.reason_code ?? null
   const deferredSectionReason = (section: NewowProductSection) => capabilities.value?.deferred_sections.find(item => item.section === section)?.reason_code ?? null
@@ -91,6 +97,8 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
     load,
     isFrequencyOpen,
     isSectionOpen,
+    isStrategyFrequencyOpen,
+    isLatestCompletedFrequency,
     deferredFrequencyReason,
     deferredSectionReason,
   }

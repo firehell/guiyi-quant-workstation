@@ -113,8 +113,6 @@ class HistoricalReferenceQuery:
                 row.frequency in _CAPABILITIES.get(row.strategy_code, ())
                 and _canonical_identity(identity)
             )
-        if row.strategy_code == "newow_dual_fusion":
-            return False
         if row.recording_mode != "forward_observation" or not identity.observation_policy_version:
             return False
         if row.strategy_code == "htdy":
@@ -625,11 +623,16 @@ class HistoricalReferenceQuery:
                 ReferenceBatch.seq <= snapshot.seq,
                 ReferenceBatch.kind.in_(("seed_seal", "calculation")),
             ).order_by(ReferenceBatch.seq.desc()).limit(1))
-            if (
-                not isinstance(manifest, dict)
-                or type(manifest.get("input_count")) is not int
-                or manifest["input_count"] != input_count
-            ):
+            saved_count = manifest.get("input_count") if isinstance(manifest, dict) else None
+            if saved_count is None and isinstance(manifest, dict) and manifest.get("reader") == "newow_product_reader_v2":
+                fingerprints = manifest.get("input_fingerprints")
+                if isinstance(fingerprints, list) and fingerprints and all(
+                    isinstance(value, str) and len(value) == 64
+                    and all(char in "0123456789abcdef" for char in value)
+                    for value in fingerprints
+                ):
+                    saved_count = len(fingerprints)
+            if type(saved_count) is not int or saved_count != input_count:
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
             self._assert_presentations(session, snapshot)
             batches = session.execute(select(ReferenceBatch.source_evidence).where(

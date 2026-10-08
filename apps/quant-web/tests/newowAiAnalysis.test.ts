@@ -40,11 +40,11 @@ test('dialog request/loading/rerun/adopt/error and stale/close/unmount cancellat
   open.value=true;await nextTick();const final=mock.calls.at(-1);app.unmount();assert.equal(final.options.signal.aborted,true)
 })
 
-test('later chart analysis caps every combination to exact microsecond cutoff', async () => {
+test('explicit legacy history analysis preserves exact microsecond cutoff', async () => {
   assert.equal(historicalAnalysisAsOf('2026-10-08T07:00:00Z'),asOf)
   assert.equal(historicalAnalysisAsOf('2026-09-24T07:00:00Z'),'2026-09-24T07:00:00Z')
   let params: unknown
-  await getNewowAiAnalysis('jm','2026-10-08T07:00:00Z',{request:async(_,config)=>{params=config.params;return output()}})
+  await getNewowAiAnalysis('jm','2026-10-08T07:00:00Z',{historicalSnapshot:true,request:async(_,config)=>{params=config.params;return output()}})
   assert.deepEqual(params,{product:'jm',as_of:asOf})
 })
 
@@ -57,4 +57,15 @@ test('equal scores preserve display order while recommendation can prefer more t
   assert.match(text(root),/同分比较交易数/)
   assert.doesNotMatch(text(root),/综合评分第 1/)
   app.unmount()
+})
+
+test('v3 requests latest completed Canonical cutoff and keeps v2 wire readable', async () => {
+  const current = '2026-10-08T07:00:00Z'
+  const payload = { ...output(), schema_version: 'newow_ai_analysis_v3', as_of: current }
+  let params: unknown
+  const accepted = await getNewowAiAnalysis('jm', current, { request: async (_, config) => { params = config.params; return payload } })
+  assert.deepEqual(params, { product: 'jm', as_of: current })
+  assert.equal(accepted.schema_version, 'newow_ai_analysis_v3')
+  assert.equal(validateAiAnalysis(output(), 'jm', asOf), true)
+  assert.equal(validateAiAnalysis({ ...payload, schema_version: 'newow_ai_analysis_v4' }, 'jm', current), false)
 })

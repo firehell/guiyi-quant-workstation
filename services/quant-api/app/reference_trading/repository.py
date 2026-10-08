@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from dataclasses import fields, is_dataclass, replace
 
-from sqlalchemy import and_, func, or_, select, tuple_
+from sqlalchemy import and_, case, func, literal, or_, select, tuple_
 from sqlalchemy.orm import Session, aliased
 
 from guiyi_quant.reference_trading import (
@@ -264,6 +264,58 @@ class ReferenceRepository:
             return tuple(session.scalars(
                 query.order_by(ReferenceStream.stream_id).limit(limit),
             ).all())
+
+    @staticmethod
+    def _forward_work_key_expression():
+        code = func.replace(ReferenceStream.strategy_code, "-", "_")
+        grouped = and_(
+            code.in_(("newow_trend", "newow_oscillation", "newow_main_rise", "newow_dual_fusion")),
+            ReferenceStream.frequency.in_(("1d", "1w", "60m")),
+        )
+        return case((grouped, literal("newow:") + func.lower(ReferenceStream.product)
+                     + literal(":") + ReferenceStream.frequency),
+                    else_=literal("stream:") + ReferenceStream.stream_id)
+
+    def enabled_forward_work_keys(
+        self, *, limit: int = 512, after: str | None = None,
+    ) -> tuple[str, ...]:
+        """Page distinct scheduling keys, rather than truncating a 720-stream scope."""
+        if type(limit) is not int or not 1 <= limit <= 512:
+            raise ValueError("limit must be between 1 and 512")
+        key = self._forward_work_key_expression()
+        query = select(key).where(
+            ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+            ReferenceStream.enabled.is_(True),
+        ).distinct()
+        if after is not None:
+            query = query.where(key > after)
+        with self._session_factory() as session:
+            return tuple(session.scalars(query.order_by(key).limit(limit)).all())
+
+    def forward_work_key(self, stream_id: str) -> str | None:
+        with self._session_factory() as session:
+            return session.scalar(select(self._forward_work_key_expression()).where(
+                ReferenceStream.stream_id == stream_id,
+                ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+                ReferenceStream.enabled.is_(True),
+            ))
+
+    def enabled_forward_work_routes(self, key: str) -> tuple[str, ...]:
+        """One group has at most four active streams, with fusion strictly last."""
+        code = func.replace(ReferenceStream.strategy_code, "-", "_")
+        order = case(
+            (code == "newow_trend", 0), (code == "newow_oscillation", 1),
+            (code == "newow_main_rise", 2), (code == "newow_dual_fusion", 3), else_=0,
+        )
+        with self._session_factory() as session:
+            routes = tuple(session.scalars(select(ReferenceStream.stream_id).where(
+                self._forward_work_key_expression() == key,
+                ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+                ReferenceStream.enabled.is_(True),
+            ).order_by(order, ReferenceStream.stream_id).limit(5)).all())
+        if len(routes) > 4:
+            raise RepositoryConflict("FORWARD_GROUP_SCOPE_EXCEEDED")
+        return routes
 
     def enabled_forward_routes(self, product: str, frequency: str) -> tuple[str, ...]:
         """Bounded routing read; capture still validates activation generation."""
@@ -568,6 +620,7 @@ class ReferenceRepository:
 
     def commit_batch(
         self, expected: CheckpointToken, prepared: PreparedBatch,
+        *, commit_guard=None,
     ) -> CommitResult:
         if not isinstance(expected, CheckpointToken) or not isinstance(prepared, PreparedBatch):
             raise TypeError("expected and prepared have invalid types")
@@ -654,6 +707,8 @@ class ReferenceRepository:
                 expected_strategy_schema=checkpoint_batch.strategy_schema,
             )
             prior_state = persisted_checkpoint.reference_state
+            if commit_guard is not None:
+                commit_guard(session, prepared.stream_id)
             final_state = prepared.checkpoint.reference_state
             if prior_state is None or final_state is None:
                 raise RepositoryConflict("CHECKPOINT_STATE_CONFLICT")

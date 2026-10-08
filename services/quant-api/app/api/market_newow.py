@@ -63,11 +63,12 @@ from app.market_data.newow.product_release import (
     PD_PT_HOURLY_PREVIEW_SCHEMA_VERSION,
     PD_PT_HOURLY_PREVIEW_STAGE,
     PD_PT_HOURLY_PREVIEW_SYMBOLS,
-    OPEN_FREQUENCIES,
     OPEN_INTRADAY_PRODUCTS,
     INTRADAY_HISTORY_AS_OF,
     INTRADAY_HISTORY_SCHEMA,
     INTRADAY_HISTORY_FREQUENCIES,
+    FROZEN_INTRADAY_FREQUENCIES,
+    LATEST_COMPLETED_FREQUENCIES,
     released_intraday_as_of,
     OPEN_WEEKLY_PRODUCTS,
     OPEN_SECTIONS,
@@ -191,9 +192,8 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     if as_of > now:
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_AS_OF"})
-    # All six combinations use the admitted historical minute cutoff.
-    if getattr(request.state, "candidate_preview_as_of", None) is None:
-        as_of = min(as_of, INTRADAY_HISTORY_AS_OF)
+    # v3 binds all six combinations to the requested completed Canonical cutoff.
+    # Candidate previews retain their immutable v2 wire identity.
     deadline = monotonic() + 30
     def cancelled():
         if monotonic() >= deadline:
@@ -209,7 +209,7 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
         with _PRODUCT_GATE.acquire(cancelled):
             combos = analyze_product(product, as_of, reader_factory, cancelled,
                                      lambda frequency: _enforce_product_frequency(request, product, frequency))
-        return {"schema_version": "newow_ai_analysis_v2", "product": product,
+        return {"schema_version": ("newow_ai_analysis_v2" if getattr(request.state, "candidate_preview_as_of", None) is not None else "newow_ai_analysis_v3"), "product": product,
                 "as_of": _json_value(as_of), "formula_version": PAGE_FORMULA,
                 "futures_adapter_version": FUTURES_ADAPTER, "page_source_sha256": PAGE_SOURCE_SHA256,
                 "page_kernel_parity": True, "page_parity": False, "executable": False,
@@ -243,6 +243,15 @@ def _input_quality_policy(
             getattr(request.state, "candidate_preview_as_of", None) is not None
         ),
     )
+
+
+def _require_strategy_frequency(request: Request, strategy: str, frequency: str) -> None:
+    """Keep the immutable minute candidates closed while opening formal hourly main rise."""
+    if strategy != "main_rise":
+        return
+    preview = getattr(request.state, "intraday_preview_products", None) is not None
+    if frequency in ("5m", "15m", "30m") or (frequency == "60m" and preview):
+        raise ValueError("NEWOW_INVALID_QUERY" if preview else "NEWOW_FREQUENCY_NOT_OPEN")
 
 
 def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:
@@ -317,7 +326,7 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
     frequencies = (
         AU_PERIOD_PREVIEW_FREQUENCIES if au_preview else
         HOURLY_PRODUCT_PREVIEW_FREQUENCIES if hourly_preview else
-        CANDIDATE_OPEN_FREQUENCIES if candidate else (*INTRADAY_HISTORY_FREQUENCIES, *OPEN_FREQUENCIES)
+        CANDIDATE_OPEN_FREQUENCIES if candidate else (*INTRADAY_HISTORY_FREQUENCIES, ProductFrequency.DAILY, ProductFrequency.WEEKLY)
     )
     deferred = (
         () if au_preview else
@@ -340,6 +349,13 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
         open_frequencies=[item.value for item in frequencies],
         intraday_products=list(OPEN_INTRADAY_PRODUCTS) if not candidate else None,
         intraday_as_of=INTRADAY_HISTORY_AS_OF if not candidate else None,
+        latest_completed_frequencies=([item.value for item in LATEST_COMPLETED_FREQUENCIES] if not candidate else None),
+        strategy_frequencies=({
+            "trend": [item.value for item in frequencies],
+            "oscillation": [item.value for item in frequencies],
+            "main_rise": [item.value for item in LATEST_COMPLETED_FREQUENCIES],
+            "dual": [item.value for item in frequencies],
+        } if not candidate else None),
         weekly_products=(
             list(CANDIDATE_WEEKLY_PRODUCTS)
             if candidate and not au_preview and not hourly_preview
@@ -393,7 +409,7 @@ def _build_product_service(
     session: Session,
     cancelled: Callable[[], bool] | None = None,
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
-    *, historical_intraday: bool = False,
+    *, historical_intraday: bool = False, current_reference: bool = False,
 ) -> NewowProductService:
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
@@ -413,7 +429,7 @@ def _build_product_service(
     mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
     if mode not in {"legacy", "persisted"}:
         raise ValueError("REFERENCE_READER_MODE_INVALID")
-    if mode == "persisted" or historical_intraday:
+    if mode == "persisted" or historical_intraday or current_reference:
         from app.reference_trading.persisted_newow import PersistedNewowReference
         factory = (sessionmaker(bind=engine.execution_options(
             schema_translate_map={None: INTRADAY_HISTORY_SCHEMA}), autoflush=False)
@@ -547,11 +563,10 @@ def newow_historical_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise":
-            raise ValueError("NEWOW_INVALID_QUERY" if getattr(request.state, "intraday_preview_products", None) is not None else "NEWOW_FREQUENCY_NOT_OPEN")
+        _require_strategy_frequency(request, strategy, frequency)
         policy = _input_quality_policy(request, product, frequency)
         if (getattr(request.state, "candidate_preview_as_of", None) is None
-            and ProductFrequency(frequency) in INTRADAY_HISTORY_FREQUENCIES):
+            and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES):
             now = INTRADAY_HISTORY_AS_OF
         resolver = (
             _build_historical_resolver(session, cancelled, lambda: now)
@@ -649,8 +664,7 @@ def newow_weekly_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise":
-            raise ValueError("NEWOW_INVALID_QUERY" if getattr(request.state, "intraday_preview_products", None) is not None else "NEWOW_FREQUENCY_NOT_OPEN")
+        _require_strategy_frequency(request, strategy, frequency)
         policy = _input_quality_policy(request, product, frequency)
         resolver = (
             _build_weekly_resolver(session, cancelled, lambda: now)
@@ -723,8 +737,7 @@ def newow_strategy_detail(
     product = _normalize_public_product(product)
     try:
         _enforce_product_frequency(request, product, frequency)
-        if frequency in ("5m", "15m", "30m", "60m") and strategy == "main_rise":
-            raise ValueError("NEWOW_INVALID_QUERY" if getattr(request.state, "intraday_preview_products", None) is not None else "NEWOW_FREQUENCY_NOT_OPEN")
+        _require_strategy_frequency(request, strategy, frequency)
         if not (decision_v2 and section == "explanation"):
             require_open_section(section)
 
@@ -735,10 +748,8 @@ def newow_strategy_detail(
                 return False
 
         if (getattr(request.state, "candidate_preview_as_of", None) is None
-            and ProductFrequency(frequency) in INTRADAY_HISTORY_FREQUENCIES):
+            and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES):
             as_of = released_intraday_as_of(as_of)
-        if decision_v2 and section == "explanation" and getattr(request.state, "candidate_preview_as_of", None) is None:
-            as_of = min(as_of or datetime.now(UTC), INTRADAY_HISTORY_AS_OF)
         product_query = ProductServiceQuery(
             product=product,
             strategy=ProductStrategy(strategy),
@@ -763,9 +774,10 @@ def newow_strategy_detail(
         )
         policy = _input_quality_policy(request, product, frequency)
         historical_intraday = (getattr(request.state, "candidate_preview_as_of", None) is None
-                               and ProductFrequency(frequency) in INTRADAY_HISTORY_FREQUENCIES)
+                               and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES)
         service = (_build_product_service(session, cancelled, policy, historical_intraday=True)
                    if historical_intraday else
+                   _build_product_service(session, cancelled, policy, current_reference=True) if frequency == "60m" else
                    _build_product_service(session, cancelled) if policy is InputQualityPolicy.V1
                    else _build_product_service(session, cancelled, policy))
         result = service.query(product_query)

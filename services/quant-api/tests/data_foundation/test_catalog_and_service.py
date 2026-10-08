@@ -2879,3 +2879,26 @@ def test_weekly_identity_conflict_is_not_classified_as_missing_history(session, 
         )
     assert caught.value.code == 'DATASET_OR_PARTITION_MISSING'
     assert caught.value.reason == 'REPLAY_ENDPOINTS_EXTRA'
+
+
+
+def test_exact_first_partition_bar_is_inclusive_without_changing_strict_prefix(session, tmp_path):
+    _add_page_contract(session)
+    session.add(TradingCalendar(exchange_code="DCE",trade_date=date(2025,1,2),is_trading_day=True))
+    session.commit()
+    catalog = MarketCatalog(session,tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract","jm","JM2509","60m")
+    first = _bar(2,100,hour=2)
+    _publish(catalog,store,key,(first,))
+    # Canonical coverage begins at Bar open, so strict partition lookup correctly
+    # includes a partition whose first completed endpoint equals the cursor.
+    assert len(catalog.partitions_before(key,first.bar_end)) == 1
+    service = MarketDataService(catalog,store)
+    proof = service.contract_source_evidence(symbol="jm",contract="JM2509",frequency=BarFrequency.H1,before=first.bar_end)
+    assert len(proof['partitions']) == 1
+    result = service.query_page_inclusive(SeriesPageQuery("contract","jm","60m",limit=1,
+        contract="JM2509",before=first.bar_end))
+    assert result.bars == (first,)
+    with pytest.raises(MarketDataError,match="QUERY_WINDOW_EMPTY"):
+        service.query_page(SeriesPageQuery("contract","jm","60m",limit=1,contract="JM2509",before=first.bar_end))

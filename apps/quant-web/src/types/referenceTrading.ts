@@ -77,3 +77,48 @@ export interface ReferenceIdentity {
   frequency: string
   mode?: ReferenceMode
 }
+
+export type NewowRecordingStrategy = 'trend' | 'oscillation' | 'main_rise' | 'dual_fusion'
+export type NewowRecordingFrequency = '1w' | '1d' | '60m'
+export interface NewowRecordedState {
+  version?: 'newow_bar_state_v1'
+  main_state?: string
+  availability?: { status: string; evidence_status?: string; reason_code?: string | null } | string
+  bar_end?: string
+  observed_at?: string
+  physical_contract?: string
+  main_values?: Record<string, unknown>
+  [field: string]: unknown
+}
+export interface NewowRecordingItem {
+  product: string
+  strategy: NewowRecordingStrategy
+  frequency: NewowRecordingFrequency
+  stream_id: string | null
+  enabled: boolean
+  status: string
+  computed_through: string | null
+  historical_computed_through?: string | null
+  observed_through?: string | null
+  last_observed_at?: string | null
+  latest_state_source?: 'historical_seed' | 'observed' | null
+  latest_reconciliation_status?: 'pending' | 'matched' | 'mismatch' | 'not_applicable' | null
+  expected_through?: string | null
+  expected_source?: 'canonical_completed'
+  endpoint_status?: 'READY' | 'UNKNOWN'
+  endpoint_reason?: string | null
+  latest_state: NewowRecordedState | null
+  recording_start?: string | null
+  pending_capture_count?: number
+  [field: string]: unknown
+}
+export interface NewowRecordingMatrix {
+  version: 'newow_recording_matrix_v1' | 'newow_recording_matrix_v2'
+  recording_mode: 'forward_observation'
+  expected_count: number
+  configured_count: number
+  enabled_count: number
+  observed_count: number
+  seeded_count?: number
+  items: NewowRecordingItem[]
+}
