@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 
 from sqlalchemy import and_, case, func, select
 
@@ -27,7 +27,9 @@ def read_completed_canonical_endpoints(session, keys, at):
         try:
             page = market.query_page(SeriesPageQuery(
                 SeriesKind.ACTUAL_DOMINANT, product, BarFrequency(frequency),
-                before=at + timedelta(microseconds=1), limit=1,
+                # Catalog publication determines this historical endpoint;
+                # prepared Session/MainMap metadata and Live time do not.
+                before=None, limit=1,
             ))
             if not page.bars or page.bars[-1].bar_end > at:
                 value["endpoint_reason"] = "COMPLETE_PERIOD_MISSING"

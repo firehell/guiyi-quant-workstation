@@ -419,3 +419,27 @@ def test_endpoint_preflight_block_is_not_automatically_cleared(tmp_path):
     runner.tick(now=END)
     assert not planner.requests and not service.calls
     assert runner.state.read()['routes'][route().identity.stream_id] == evidence
+
+
+@pytest.mark.parametrize('frequency', ['60m', '1d', '1w'])
+def test_health_reports_published_tail_with_prepared_next_day(tmp_path, monkeypatch, frequency):
+    _, _, factory, _, expected = _published_endpoint_fixture(tmp_path, monkeypatch, frequency)
+    from app.reference_trading.health import read_completed_canonical_endpoints
+    with factory() as session:
+        values = read_completed_canonical_endpoints(session, [('jm', frequency)],
+                                                    datetime(2026, 10, 8, 14, tzinfo=UTC))
+    assert values[('jm', frequency)] == {
+        'expected_through': expected.isoformat(), 'expected_source': 'canonical_completed',
+        'endpoint_status': 'READY', 'endpoint_reason': None}
+
+
+@pytest.mark.parametrize('frequency', ['60m', '1d', '1w'])
+def test_health_rejects_future_published_tail(tmp_path, monkeypatch, frequency):
+    _, _, factory, _, expected = _published_endpoint_fixture(tmp_path, monkeypatch, frequency)
+    from app.reference_trading.health import read_completed_canonical_endpoints
+    with factory() as session:
+        values = read_completed_canonical_endpoints(session, [('jm', frequency)],
+                                                    expected - timedelta(microseconds=1))
+    assert values[('jm', frequency)] == {
+        'expected_through': None, 'expected_source': 'canonical_completed',
+        'endpoint_status': 'UNKNOWN', 'endpoint_reason': 'COMPLETE_PERIOD_MISSING'}
