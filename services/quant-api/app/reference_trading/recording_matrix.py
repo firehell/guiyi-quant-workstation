@@ -31,6 +31,7 @@ def newow_recording_matrix(products, health: dict) -> dict:
                     "computed_through": None, "status": "NOT_CONFIGURED",
                     "historical_computed_through": None, "observed_through": None,
                     "last_observed_at": None, "latest_state_source": None,
+                    "latest_observed_trading_day": None,
                     "latest_reconciliation_status": None,
                     "expected_through": None, "expected_source": "canonical_completed",
                     "endpoint_status": "UNKNOWN", "endpoint_reason": "ENDPOINT_NOT_VERIFIED",
