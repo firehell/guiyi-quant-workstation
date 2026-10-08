@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.alerts.service import (
     AlertConsistencyError,
     AlertEventCreate,
@@ -30,6 +30,7 @@ def session() -> Session:
     )
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with Session(engine) as value:
         value.add(AlertRule(
             rule_code="htdy_original_15m",
@@ -64,7 +65,7 @@ def test_product_rules_exposes_subing_public_name_from_registry(session: Session
 
     assert subing.display_name == "苏冰预警"
     assert subing.kind == "indicator_observation"
-    assert subing.input_frequencies == ("15m",)
+    assert subing.input_frequencies == ("5m", "15m", "30m", "60m", "1d", "1w")
     assert subing.enabled_frequencies == ()
     assert subing.enabled_for_product is False
 

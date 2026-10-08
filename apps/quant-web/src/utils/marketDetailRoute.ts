@@ -24,7 +24,7 @@ import { isHtdyAlertEvent } from './alertRules.ts'
 const SERIES_KINDS = new Set<SeriesKind>(['continuous', 'actual_dominant', 'contract'])
 const FREQUENCIES = new Set<MarketFrequency>(MARKET_FREQUENCIES)
 const NEWOW_FREQUENCY_SET = new Set<MarketFrequency>(NEWOW_FREQUENCIES)
-const SUBING_FREQUENCY_SET = new Set<MarketFrequency>(['15m', '30m', '60m', '1d'])
+const SUBING_FREQUENCY_SET = new Set<MarketFrequency>(['5m', '15m', '30m', '60m', '1d', '1w'])
 const NEWOW_STRATEGY_SET = new Set<string>(NEWOW_STRATEGIES)
 const FIXED_IDENTITIES: Record<Extract<MarketDetailView, 'trend' | 'subing'>, Pick<MarketDetailIdentity, 'seriesKind' | 'frequency'>> = {
   trend: { seriesKind: 'actual_dominant', frequency: '1d' },
@@ -159,7 +159,7 @@ export function marketDetailEventIdentity(event: AlertEvent): MarketDetailIdenti
   }
   return {
     view: 'subing', symbol: event.symbol, seriesKind: 'actual_dominant',
-    frequency: '15m', focusBarEnd: event.bar_end,
+    frequency: event.frequency, focusBarEnd: event.bar_end,
   }
 }
 
@@ -255,7 +255,7 @@ function hasFocus(query: Record<string, unknown>): boolean {
 function allowsFocus(view: MarketDetailView, seriesKind: SeriesKind, frequency: MarketFrequency): boolean {
   return (view === 'free' && seriesKind === 'actual_dominant' && frequency === '15m')
     || (view === 'htdy' && seriesKind === 'actual_dominant')
-    || (view === 'subing' && seriesKind === 'actual_dominant' && frequency === '15m')
+    || (view === 'subing' && seriesKind === 'actual_dominant' && SUBING_FREQUENCY_SET.has(frequency))
     || (view === 'trend' && seriesKind === 'actual_dominant' && frequency === '1d')
     || (view === 'newow' && seriesKind === 'actual_dominant' && NEWOW_FREQUENCY_SET.has(frequency))
 }

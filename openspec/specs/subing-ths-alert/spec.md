@@ -2,14 +2,13 @@
 
 ## Purpose
 
-定义新的 `subing_ths_alert_15m_v1` 研究观察产品：只对 completed actual_dominant 15m 按
-`subing_ths_15m_v3` 公式创建 immutable AlertEvent，并由 Market Web 提供人工复核；当前通知模式见下节。
+定义新的 `subing_ths_alert_15m_v1` 研究观察产品：对 completed actual_dominant 5m/15m/30m/60m/1d/1w 按各周期固定版本公式创建 immutable AlertEvent，并由 Market Web 提供人工复核；当前通知模式见下节。
 它不恢复 `subing_strategy_v1`，不创建持仓或订单，且 `auto_order=false`。
 
 ## 当前通知模式
 
 SuBing `subing_ths_alert_15m_v1` 当前仅生成信号与 immutable AlertEvent，
-`notification_enabled=false`；既有 Rule enabled、60 品种 15m Scope 和公式保持不变。
+`notification_enabled=false`；数学公式和既有品种集合保持不变；0049 仅将已启用苏冰 Scope 的既有品种扩为六周期。
 新 Event 的 `notification_attempted_at` MUST 为 null，不准备消息、不调用 transport，
 不把静默记为通知失败。HTDY 的既有通知继续启用；历史 Event 不改写、不补发。
 本节优先于下文描述 SuBing 通知投递的历史启用合同；恢复发送须由 owner 明确交办。
@@ -19,8 +18,8 @@ SuBing `subing_ths_alert_15m_v1` 当前仅生成信号与 immutable AlertEvent�
 ### Requirement: Identity and input are exact
 
 Rule identity SHALL 为 `subing_ths_alert_15m_v1`，public name SHALL 为“苏冰预警”，kind SHALL 为
-`indicator_observation`，formula version SHALL 为 `subing_ths_15m_v3`。输入 MUST 仅为 operational Scope
-内、由 `MainContractMap rank=1` 证明的 completed `actual_dominant` 15m Bar；preview、未完成 Bar、其它周期、
+`indicator_observation`，formula version SHALL 按周期为 `subing_ths_5m_v1`、`subing_ths_15m_v3`、`subing_ths_30m_v1`、`subing_ths_60m_v1`、`subing_ths_1d_v1`、`subing_ths_1w_v1`。输入 MUST 仅为 operational Scope
+内、由 `MainContractMap rank=1` 证明的 completed `actual_dominant` 六周期 Bar；preview、未完成 Bar、1m、
 continuous 或错误物理合约 MUST fail closed。
 
 #### Scenario: A completed rank1 15m Bar arrives
@@ -80,7 +79,7 @@ version，不得静默修改 `subing_ths_15m_v3`。v3 与 v2 的数学公式相�
 ### Requirement: Warm-up and reconciliation stay within one physical contract
 
 首次观察、重启、漏 Bar 或 rank1 rollover 后，evaluator SHALL 只通过 typed Market read seam 重建当前物理
-合约从上市有效期到 cutoff 的 15m prefix。递归 cursor MUST 以 symbol + physical contract 隔离；换月 MUST
+合约从上市有效期到 cutoff 的对应周期 prefix。递归 cursor MUST 以 symbol + frequency + physical contract 隔离；换月 MUST
 丢弃旧合约状态。中间 Bar 只推进状态，只有当前 trigger cutoff 可返回 Candidate，禁止历史 backfill。
 physical Canonical 的第一页 MUST 从 latest page bootstrap（`before=None`）开始，再严格裁剪为
 `after < bar_end <= cutoff`；这不得放宽 `MarketDataService` 的 identity、coverage 或物理可读性合同。缺少
@@ -542,7 +541,7 @@ OPEN 只用本合约已完成 Bar 标记浮动；中断记录不生成退出价�
 图表 SHALL 显示可避让的白底细边框价格/平仓收益标注，空间不足收起为可交互标记；只锚定匹配的时间与物理合约。
 列表 SHALL 显示方向、状态、合约、开平时间价格、持有 Bar 数和参考收益，点击记录定位对应 Bar。
 历史与实际 Event MUST 分别保留身份、来源和详情；刷新/切换窗口或周期撤销旧参考详情，
-迟到响应不得覆盖新身份。30m、60m、1d 不读取或展示仅支持 15m 的苏冰 Event/Scope/Runtime 事实，
+迟到响应不得覆盖新身份。六周期读取各自 frequency 的持久苏冰 Event/Scope/Runtime 事实，5m/1w 不请求四周期历史参考接口，
 并标为历史研究、本周期未启用预警。
 
 #### Scenario: Historical data is unavailable but actual events exist
@@ -575,3 +574,35 @@ owner segment 身份 SHALL 绑定物理合约与权威 owner 起点；calculatio
 
 - **WHEN** 同一历史前缀之后追加 owner 终点、后续 owner 或有效 Bar
 - **THEN** 已完成 owner/calculation segment、信号和交易身份保持不变
+
+
+### Requirement: Six-period EMA21 alignment is a separate immutable study
+
+原始苏冰 Candidate 不以多周期同向为 Gate。每个新 Event SHALL 在同一事务保存独立的
+`subing_signal_alignments` 记录，policy=`subing_ema21_alignment_v1`。这只是首次检测时
+可读取的 completed 事实，不声称恢复原信号刚结束时的历史发布可见性。`as_of` 为信号
+bar_end，`observed_at` 为首次检测时间；重复和重启 SHALL 不覆盖快照，旧 Event 返回 null。
+
+研究检查固定六周期（包括触发周期），各周期只用同一 physical contract 的完整 EMA21
+生命周期 prefix、sma_window seed 和六位确定性值。各自最新权威已完成端点 MUST 不晚于
+as_of；日周只读 Canonical、周中只允许前一个已完成周。缺尾、缺口、身份冲突或不足预热
+MUST 为 UNKNOWN，不回退较旧端点制造 PASS。BUY 要求六周期 close > EMA21，SELL 要求
+六周期 close < EMA21；相等为 FLAT/FAIL。任一 UNKNOWN 则总结果 UNKNOWN。
+
+快照 SHALL 记录各周期 contract、bar_end、close、ema21、direction、reason 与输入hash；
+存储入口验证方向数值及 PASS/FAIL 与原始信号方向一致。FAIL/UNKNOWN SHALL 仍保存原始
+Event；只有原始行情或公式无法证明才不产生原始 Event。API 历史按 frequency/status
+在数据库分页前过滤；Web 以全部信号或六周期同向展示，不能本地重算覆盖持久结果。
+
+同一 completed 1m 产生多个到期分钟周期时，Live SHALL 先写齐全部派生 Bar，再发布任何
+派生消息，避免首次检查因消息顺序读到未就绪的同端点高周期。无历史 Event 补写或通知发送。
+
+#### Scenario: A sell signal agrees with all six completed EMA21 positions
+
+- **WHEN** 某周期原始 SELL 成立且六周期最新已完成 close 均小于各自 EMA21
+- **THEN** 原始 Event 与 PASS 快照在同一事务保存且不发送通知
+
+#### Scenario: A peer is missing or points the other way
+
+- **WHEN** 原始信号成立但某周期输入无法证明，或已证明的方向不同
+- **THEN** 原始 Event 仍保存并分别记录 UNKNOWN 或 FAIL；重复触发不改首次快照

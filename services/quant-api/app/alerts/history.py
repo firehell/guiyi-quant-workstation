@@ -10,7 +10,7 @@ import json
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.alerts.registry import alert_rule_definitions
 
 
@@ -33,16 +33,23 @@ class AlertHistoryQuery:
     rule_code: str | None
     limit: int
     before: str | None
+    frequency: str | None = None
+    alignment_status: str | None = None
 
     @property
     def identity(self) -> dict[str, object]:
-        return {
+        identity = {
             "start_day": self.start_day.isoformat(),
             "end_day": self.end_day.isoformat(),
             "symbol": self.symbol,
             "rule_code": self.rule_code,
             "limit": self.limit,
         }
+        if self.frequency is not None:
+            identity["frequency"] = self.frequency
+        if self.alignment_status is not None:
+            identity["alignment_status"] = self.alignment_status
+        return identity
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +71,13 @@ def read_alert_history(session: Session, query: AlertHistoryQuery) -> AlertHisto
         filters.append(AlertEvent.symbol == query.symbol)
     if query.rule_code is not None:
         filters.append(AlertRule.rule_code == query.rule_code)
+
+    if query.frequency is not None:
+        filters.append(AlertEvent.frequency == query.frequency)
+    if query.alignment_status is not None:
+        filters.append(AlertEvent.id.in_(select(SubingSignalAlignment.event_id).where(
+            SubingSignalAlignment.status == query.alignment_status,
+        )))
 
     unknown = session.scalar(
         select(AlertEvent.id)

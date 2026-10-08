@@ -20,7 +20,7 @@ test('renders four separate Scope, Runtime, evaluation, and exact Event facts', 
   assert.doesNotMatch(model.facts.map((fact) => fact.value).join(' '), /状态不可判定/)
   assert.equal(model.history[0]?.id, 'subing-event:7')
   assert.match(model.semanticBanner.text, /只来自 AlertEvent/)
-  assert.match(model.disclosureSections[1]?.rows[0]?.value ?? '', /actual_dominant \/ 15m \/ completed_only/)
+  assert.match(model.disclosureSections[1]?.rows[0]?.value ?? '', /actual_dominant \/ 5m、15m、30m、60m、日线、周线 \/ completed_only/)
 })
 
 test('does not turn no Event or an unavailable initial snapshot into a neutral signal', () => {

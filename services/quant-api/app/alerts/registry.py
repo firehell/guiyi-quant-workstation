@@ -42,12 +42,19 @@ HTDY_RULE = AlertRuleDefinition(
     series_kind="actual_dominant",
 )
 
+SUBING_SIGNAL_FREQUENCIES = ("5m", "15m", "30m", "60m", "1d", "1w")
+SUBING_FORMULA_VERSIONS = {
+    "5m": "subing_ths_5m_v1", "15m": "subing_ths_15m_v3",
+    "30m": "subing_ths_30m_v1", "60m": "subing_ths_60m_v1",
+    "1d": "subing_ths_1d_v1", "1w": "subing_ths_1w_v1",
+}
+
 SUBING_THS_RULE = AlertRuleDefinition(
     rule_code=SUBING_THS_ALERT_RULE_CODE,
     display_name="苏冰预警",
     kind=AlertRuleKind.INDICATOR_OBSERVATION,
     event_mode=AlertEventMode.EXACT,
-    input_frequencies=("15m",),
+    input_frequencies=SUBING_SIGNAL_FREQUENCIES,
     series_kind="actual_dominant",
     notification_enabled=False,
 )

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.alerts.current_trading_day import CurrentTradingDayResult, CurrentTradingDayStatus
-from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.api import alerts as alerts_api
 from app.db.session import get_db
 from app.main import app
@@ -67,6 +67,7 @@ def _session_factory() -> sessionmaker[Session]:
     )
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as session:
         session.add_all(

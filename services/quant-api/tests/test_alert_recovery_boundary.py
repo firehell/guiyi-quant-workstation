@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import Session
 
 from app.alerts.evaluators import AlertObservationCandidate
-from app.alerts.models import AlertRule, AlertEvent
+from app.alerts.models import AlertRule, AlertEvent, SubingSignalAlignment
 from app.alerts.notification import ProviderAcceptance, NotificationTransportError
 from app.alerts.runtime import AlertRuntime
 from app.market_data.domain import CanonicalBar
@@ -23,6 +23,7 @@ def test_recovery_skips_old_and_queued_triggers_new_event_commits_before_one_sen
     engine = create_engine("sqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with Session(engine) as session:
         session.add(AlertRule(rule_code=rule_code, enabled=True, scope_product_frequencies={"jm": ["15m"]}))
         session.commit()
@@ -78,5 +79,13 @@ def test_recovery_skips_old_and_queued_triggers_new_event_commits_before_one_sen
     trigger(active, end)
     trigger(active, end)
     trigger(runtime(), end)  # restart must not resend an immutable Event
-    assert len(sent) == 1
-    assert sent[0].bar_end == end
+    if rule_code == "subing_ths_alert_15m_v1":
+        assert sent == []
+        with Session(engine) as session:
+            assert session.scalar(select(func.count()).select_from(AlertEvent)) == 1
+            snapshot = session.scalar(select(SubingSignalAlignment))
+            assert snapshot.status == "UNKNOWN"
+            assert session.scalar(select(AlertEvent)).notification_attempted_at is None
+    else:
+        assert len(sent) == 1
+        assert sent[0].bar_end == end

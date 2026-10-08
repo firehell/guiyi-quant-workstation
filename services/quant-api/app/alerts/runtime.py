@@ -116,6 +116,7 @@ def _persist_candidate_and_prepare_notification(
     frequency: str,
     candidate: AlertObservationCandidate,
     processing_now: datetime,
+    subing_alignment: dict[str, object] | None = None,
 ) -> _PreparedEvent:
     definition = get_alert_rule_definition(rule.rule_code)
     create = AlertEventCreate(
@@ -128,6 +129,7 @@ def _persist_candidate_and_prepare_notification(
         result_codes=candidate.observation_types,
         detected_at=processing_now,
         notification_attempted_at=(processing_now if definition.notification_enabled else None),
+        subing_alignment=subing_alignment,
     )
     if definition.event_mode is AlertEventMode.FIRST_SEEN:
         created = service.create_first_seen_observation_event(create)
@@ -348,6 +350,7 @@ class AlertRuntime:
                                 frequency=trigger.frequency.value,
                                 candidate=candidate,
                                 processing_now=processing_now,
+                                subing_alignment=_alignment_for_candidate(rule, market_read, window, candidate, processing_now),
                             )
                             if prepared.event_created:
                                 event_count += 1
@@ -476,6 +479,7 @@ class AlertRuntime:
                                         frequency=frequency.value,
                                         candidate=candidate,
                                         processing_now=processing_now,
+                                        subing_alignment=_alignment_for_candidate(rule, market_read, window, candidate, processing_now),
                                     )
                                     if prepared.event_created:
                                         event_count += 1
@@ -1096,3 +1100,10 @@ def _validated_candidates(
         seen.add(item.bar_end)
         validated.append(item)
     return tuple(sorted(validated, key=lambda candidate: candidate.bar_end))
+
+
+def _alignment_for_candidate(rule, market_read, window, candidate, processing_now):
+    if rule.rule_code != SUBING_THS_ALERT_RULE_CODE:
+        return None
+    from app.alerts.subing_alignment import build_subing_alignment
+    return build_subing_alignment(market_read, window, direction=candidate.observation_types[0], observed_at=processing_now)

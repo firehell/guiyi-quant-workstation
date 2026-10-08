@@ -3,16 +3,16 @@ import type { ProductAlertStateResponse, ProductAlertRuleState } from '../api/al
 import type { RuntimeHealthResponse } from '../api/runtime.ts'
 import { normalizeRuntimeAlertProjection, type RuntimeAlertProjection } from '../utils/runtimeHealthTypes.ts'
 import { ALERT_RULE_CODES, findAlertRuleByCode } from '../utils/alertRules.ts'
-import type { MarketFrequency } from '../types/market.ts'
+import { SUBING_FREQUENCIES, type MarketFrequency } from '../types/market.ts'
 
 export interface SubingAlertFactsIdentity { symbol: string; frequency: MarketFrequency }
 export interface SubingRuleScopeFact {
   ruleCode: typeof ALERT_RULE_CODES.SUBING_THS
   displayName: string
   symbol: string
-  frequency: '15m'
+  frequency: MarketFrequency
   enabled: boolean
-  enabledFrequencies: readonly ['15m'] | readonly []
+  enabledFrequencies: readonly MarketFrequency[]
 }
 
 export function useSubingAlertFacts(dependencies: {
@@ -56,23 +56,23 @@ export function useSubingAlertFacts(dependencies: {
 }
 
 function ruleScopeText(response: ProductAlertStateResponse, identity: SubingAlertFactsIdentity): SubingRuleScopeFact {
-  if (response.symbol.toLowerCase() !== identity.symbol || identity.frequency !== '15m') throw new Error('product identity mismatch')
+  if (response.symbol.toLowerCase() !== identity.symbol || !(SUBING_FREQUENCIES as readonly string[]).includes(identity.frequency)) throw new Error('product identity mismatch')
   const current = findAlertRuleByCode(response.rules, ALERT_RULE_CODES.SUBING_THS)
   if (!current || !isSubingRule(current)) throw new Error('subing rule mismatch')
-  if (current.enabled_frequencies.some((frequency) => frequency !== '15m') || (current.enabled_for_product !== current.enabled_frequencies.includes('15m'))) throw new Error('subing scope mismatch')
+  if (current.enabled_frequencies.some((frequency) => !(SUBING_FREQUENCIES as readonly string[]).includes(frequency)) || (current.enabled_for_product !== (current.enabled_frequencies.length > 0))) throw new Error('subing scope mismatch')
   return {
     ruleCode: ALERT_RULE_CODES.SUBING_THS,
     displayName: current.display_name,
     symbol: identity.symbol.toLowerCase(),
-    frequency: '15m',
-    enabled: current.enabled_for_product,
-    enabledFrequencies: current.enabled_frequencies.length === 0 ? [] : ['15m'],
+    frequency: identity.frequency,
+    enabled: current.enabled_frequencies.includes(identity.frequency),
+    enabledFrequencies: current.enabled_frequencies,
   }
 }
 
 function isSubingRule(rule: ProductAlertRuleState): boolean {
   return rule.display_name === '苏冰预警'
     && rule.kind === 'indicator_observation'
-    && rule.input_frequencies.length === 1
-    && rule.input_frequencies[0] === '15m'
+    && rule.input_frequencies.length > 0
+    && rule.input_frequencies.every(frequency => (SUBING_FREQUENCIES as readonly string[]).includes(frequency))
 }

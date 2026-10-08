@@ -15,7 +15,7 @@ from app.alerts import evaluators as evaluator_module
 from app.alerts.evaluators import (
     AlertEvaluationError,
     AlertEvaluationSkipped,
-    SubingThs15mEvaluator,
+    SubingThsEvaluator,
 )
 from app.market_data.domain import CanonicalBar
 from app.market_data.market_read_service import (
@@ -429,7 +429,7 @@ def test_subing_evaluator_replays_only_current_contract_and_uses_incremental_cur
             )
 
     reader = Reader()
-    evaluator = SubingThs15mEvaluator()
+    evaluator = SubingThsEvaluator()
     assert evaluator.evaluate_candidates(reader, window) == ()
     assert evaluator.evaluate_candidates(reader, next_window) == ()
     assert reader.afters == [None, window.cutoff]
@@ -448,7 +448,7 @@ def test_subing_missing_physical_history_is_an_evaluation_failure() -> None:
     )
 
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_FAILED"):
-        SubingThs15mEvaluator().evaluate_candidates(Reader(), decision)
+        SubingThsEvaluator().evaluate_candidates(Reader(), decision)
 
 
 def test_subing_history_repair_resumes_at_next_bar_without_old_candidates() -> None:
@@ -500,7 +500,7 @@ def test_subing_history_repair_resumes_at_next_bar_without_old_candidates() -> N
         contract="RS2611",
     )
     reader = Reader()
-    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    evaluator = SubingThsEvaluator(kernel=Kernel())
 
     failed = replace(
         _window(32, contracts=("RS2611",) * 32), symbol="rs", contract="RS2611"
@@ -570,7 +570,7 @@ def test_subing_contract_rollover_discards_the_old_physical_state() -> None:
         contract="RB2610",
     )
     reader = Reader()
-    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    evaluator = SubingThsEvaluator(kernel=Kernel())
 
     assert evaluator.evaluate_candidates(reader, old_contract)[0].contract == "RB2605"
     assert evaluator.evaluate_candidates(reader, new_contract)[0].contract == "RB2610"
@@ -579,7 +579,7 @@ def test_subing_contract_rollover_discards_the_old_physical_state() -> None:
 
 def test_subing_evaluator_rejects_non_15m_actual_dominant_input() -> None:
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
-        SubingThs15mEvaluator().evaluate_candidates(object(), _window(frequency="5m"))
+        SubingThsEvaluator().evaluate_candidates(object(), _window(frequency="1m"))
 
 
 def test_subing_rollover_restarts_with_after_none_and_emits_only_final_candidate() -> None:
@@ -614,7 +614,7 @@ def test_subing_rollover_restarts_with_after_none_and_emits_only_final_candidate
         _window(33), contract="J2509", bar_contracts=("J2509",) * 33
     )
     reader = Reader()
-    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    evaluator = SubingThsEvaluator(kernel=Kernel())
     candidates = evaluator.evaluate_candidates(reader, first)
     assert len(candidates) == 1
     assert candidates[0].bar_end == first.cutoff
@@ -651,7 +651,7 @@ def test_subing_invalid_continuity_break_updates_cursor_without_candidate() -> N
 
     first, second = _window(32), _window(33)
     reader = Reader()
-    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    evaluator = SubingThsEvaluator(kernel=Kernel())
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
         evaluator.evaluate_candidates(reader, first)
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
@@ -685,7 +685,7 @@ def test_subing_failed_cutoff_duplicate_is_typed_skip_not_success() -> None:
             )
 
     reader = Reader()
-    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    evaluator = SubingThsEvaluator(kernel=Kernel())
     window = _window(32)
 
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
@@ -717,7 +717,7 @@ def test_subing_late_old_contract_is_skipped_without_displacing_new_cursor() -> 
                 (window.bars[-1],),
             )
 
-    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    evaluator = SubingThsEvaluator(kernel=Kernel())
     old = replace(_window(32), contract="J2505", bar_contracts=("J2505",) * 32)
     current = replace(_window(34), contract="J2509", bar_contracts=("J2509",) * 34)
     late_old = replace(_window(33), contract="J2505", bar_contracts=("J2505",) * 33)
@@ -727,5 +727,5 @@ def test_subing_late_old_contract_is_skipped_without_displacing_new_cursor() -> 
     with pytest.raises(AlertEvaluationSkipped, match="ALERT_EVALUATION_STALE"):
         evaluator.evaluate_candidates(Reader(), late_old)
 
-    assert evaluator._cursors["j"].contract == "J2509"
-    assert evaluator._cursors["j"].last_bar_end == current.cutoff
+    assert evaluator._cursors[("j", "15m")].contract == "J2509"
+    assert evaluator._cursors[("j", "15m")].last_bar_end == current.cutoff

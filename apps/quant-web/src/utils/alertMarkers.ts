@@ -49,6 +49,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
           label: rising ? 'S↑' : 'S↓',
           tooltip: [
             '苏冰预警',
+            event.subing_alignment?.status === 'PASS' ? '六周期同向' : event.subing_alignment?.status === 'FAIL' ? '未全部同向' : event.subing_alignment?.status === 'UNKNOWN' ? '同向无法判断' : '同向未记录',
             rising ? 'MACD 金叉' : 'MACD 死叉',
             rising ? '收盘价位于 EMA21 上方' : '收盘价位于 EMA21 下方',
             event.contract,
