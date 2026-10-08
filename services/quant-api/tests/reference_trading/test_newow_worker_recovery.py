@@ -218,6 +218,9 @@ def test_postgresql_all_newow_hourly_forward_families(
     )
 
     class MarketRead:
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="realtime", trading_day=bar.trading_day,
@@ -303,6 +306,9 @@ def test_postgresql_subing_forward_capture_to_persisted_readback(
     bar = CanonicalBar(end, end.date(), 3500, 3510, 3490, 3500, 100, None, 200)
 
     class MarketRead:
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="realtime", trading_day=bar.trading_day,
@@ -355,6 +361,9 @@ def test_postgresql_htdy_first_seen_capture_to_persisted_readback(
     )
 
     class MarketRead:
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="realtime", trading_day=end.date(),
@@ -418,6 +427,9 @@ def test_postgresql_htdy_successive_windows_preserve_first_seen_and_reject_repai
     class MarketRead:
         def __init__(self, window):
             self.window = window
+
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
 
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
@@ -529,6 +541,9 @@ def test_postgresql_htdy_actual_buy_then_sell_reverses_durable_trade(
         def __init__(self, window):
             self.window = window
 
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="realtime", trading_day=base.date(),
@@ -605,6 +620,9 @@ def test_postgresql_htdy_actual_same_bar_conflict_stays_pending(
     )
 
     class MarketRead:
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="realtime", trading_day=base.date(),
@@ -817,6 +835,9 @@ def test_newow_hourly_capture_requires_completed_live_and_capability():
     )
 
     class Read:
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="realtime", trading_day=bar.trading_day,
@@ -842,6 +863,9 @@ def test_newow_hourly_capture_requires_completed_live_and_capability():
     assert capture.observed_at == observed
 
     class MissedRead:
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="realtime", trading_day=bar.trading_day,
@@ -858,6 +882,9 @@ def test_newow_hourly_capture_requires_completed_live_and_capability():
         )
 
     class UnavailableRead:
+        def newow_completed_observation_snapshot(self, query, after, now):
+            return self.observation_snapshot(query, after, now)
+
         def observation_snapshot(self, _query, _after, _now):
             return MarketObservationSnapshot(
                 state=None, source="unavailable", trading_day=bar.trading_day,

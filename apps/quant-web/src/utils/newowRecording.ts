@@ -4,7 +4,7 @@ const states: Record<string, string> = { BUILD: '建仓', HOLD: '持有', REDUCE
 export function recordingStatusLabel(status: string): string {
   return ({ not_configured: '未配置', disabled: '未启用', waiting_first_bar: '等待首根已完成 K 线', awaiting_first_bar: '等待首根已完成 K 线',
     waiting: '等待首根已完成 K 线', warming: '预热中', blocked: '记录阻断', ready: '正常记录', observed: '已有记录', stale_invalid: '记录阻断', unavailable: '不可用',
-    observation_interrupted: '观察中断', pending: '等待处理' } as Record<string, string>)[status.toLowerCase()] ?? `待核对（${status}）`
+    observation_interrupted: '观察中断', observation_lagging: '已完成 K 线尚未记录', source_unavailable: '记录来源无法验证', pending: '等待处理' } as Record<string, string>)[status.toLowerCase()] ?? `待核对（${status}）`
 }
 export function recordingStateLabel(state: NewowRecordedState | null): string {
   if (!state) return '尚无已记录状态'

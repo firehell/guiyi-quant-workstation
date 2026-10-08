@@ -10,12 +10,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.db.session import SessionLocal
 from app.reference_trading.presentation import PresentationUnavailable
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
-from app.reference_trading.health import ForwardReferenceHealth, read_completed_canonical_endpoints
+from app.reference_trading.health import ForwardReferenceHealth, read_completed_recording_endpoints
 
 
 router = APIRouter(prefix="/api/v1/reference-trading", tags=["reference-trading"])
 _query = HistoricalReferenceQuery(SessionLocal)
-_health = ForwardReferenceHealth(SessionLocal, endpoint_reader=read_completed_canonical_endpoints)
+_health = ForwardReferenceHealth(SessionLocal, endpoint_reader=read_completed_recording_endpoints)
 
 
 def _keys(request: Request, allowed: frozenset[str]) -> None:

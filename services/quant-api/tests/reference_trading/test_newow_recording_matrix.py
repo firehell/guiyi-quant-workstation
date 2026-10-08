@@ -43,7 +43,7 @@ def test_historical_seed_state_is_not_counted_as_natural_observation():
         'product': 'rb', 'frequency': '60m', 'expected_through': '2026-10-08T07:00:00+00:00',
         'expected_source': 'canonical_completed', 'endpoint_status': 'READY',
     }]})
-    assert report['version'] == 'newow_recording_matrix_v2'
+    assert report['version'] == 'newow_recording_matrix_v3'
     assert report['observed_count'] == 0
     assert report['seeded_count'] == 1
     assert report['configured_count'] == 1
