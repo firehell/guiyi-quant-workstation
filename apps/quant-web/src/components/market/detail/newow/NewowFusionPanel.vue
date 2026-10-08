@@ -176,7 +176,6 @@ function inspectHolding(event: MouseEvent) {
     <template v-if="result">
       <div class="newow-reference__window"><div class="newow-reference__presets" aria-label="融合参考统计快捷窗口"><button v-for="item in presets" :key="item[0]" :aria-pressed="preset === item[0]" :disabled="loading" @click="preset = item[0]">{{ item[1] }}</button></div></div>
 
-      <div v-if="preset !== 'ideal'" class="newow-reference__presets newow-curve-modes" aria-label="参考曲线口径"><button type="button" :disabled="!result.holding_curve" :aria-pressed="curveMode === 'holding' && !!result.holding_curve" @click="curveMode = 'holding'">持有过程</button><button type="button" :aria-pressed="curveMode === 'closed' || !result.holding_curve" @click="curveMode = 'closed'">已完成累计</button><span>{{ result.holding_curve ? '下方统计仅含已完成交易' : '持有过程暂不可用；当前显示已完成累计' }}</span></div>
       <p v-if="preset === 'ideal'" class="newow-reference__state">融合理论值 · 回看持有阶段最高价（High）；仅计已完成配对，零费用、零滑点，不代表可执行收益。操盘记录仍显示普通参考价。</p>
       <section v-if="curveMode === 'holding' && preset !== 'ideal'" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
         <p v-if="holdingPlot.message" role="status">{{ holdingPlot.message }}</p>

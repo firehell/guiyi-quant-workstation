@@ -224,7 +224,6 @@ function inspectHolding(event: MouseEvent) {
     <div v-if="!model && (updatingStrategy || lifecycle === 'loading' || chartLifecycle === 'loading')" class="newow-reference__loading-curve" aria-hidden="true" />
     <template v-if="model">
 
-      <div v-if="acceptedPreset !== 'ideal'" class="newow-reference__presets newow-curve-modes" aria-label="参考曲线口径"><button type="button" :disabled="!response?.value?.holding_curve" :aria-pressed="curveMode === 'holding' && !!response?.value?.holding_curve" @click="curveMode = 'holding'">持有过程</button><button type="button" :aria-pressed="curveMode === 'closed' || !response?.value?.holding_curve" @click="curveMode = 'closed'">已完成累计</button><span>{{ response?.value?.holding_curve ? '下方统计仅含已完成交易' : '持有过程暂不可用；当前显示已完成累计' }}</span></div>
       <section v-if="curveMode === 'holding' && acceptedPreset !== 'ideal'" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
         <p v-if="holdingPlot.message" role="status">{{ holdingPlot.message }}</p>
         <template v-else>
