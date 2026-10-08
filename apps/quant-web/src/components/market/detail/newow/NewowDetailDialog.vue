@@ -80,10 +80,10 @@ footer { justify-content:center; } footer button { width:100%; background:#365af
 .newow-detail-dialog--niuwa-indicator .newow-detail-dialog__body { padding:0 24px; }
 .newow-detail-dialog--niuwa-indicator footer { padding:16px 24px 24px; }
 .newow-detail-dialog--niuwa-indicator footer button { width:108px; min-height:38px; border-radius:999px; background:#0878f9; font-size:14px; font-weight:650; }
-.newow-detail-dialog--ai-analysis { width:min(408px, calc(100vw - 24px)); max-height:80dvh; border:0; border-radius:16px; color:#1c1c1e; box-shadow:0 8px 32px #0003; }
+.newow-detail-dialog--ai-analysis { width:min(520px, calc(100vw - 24px)); max-height:calc(100dvh - 32px); border:0; border-radius:16px; color:#1c1c1e; box-shadow:0 8px 32px #0003; }
 .newow-detail-dialog--ai-analysis::backdrop { background:#0008; }
 .newow-detail-dialog--ai-analysis header { justify-content:center; padding:24px 24px 16px; }
-.newow-detail-dialog--ai-analysis h2 { font-size:16px; font-weight:600; text-align:center; }
+.newow-detail-dialog--ai-analysis h2 { font-size:20px; font-weight:600; text-align:center; }
 .newow-detail-dialog--ai-analysis .newow-detail-dialog__body { padding:0 24px; }
 .newow-detail-dialog--ai-analysis footer { padding:14px 24px 24px; }
 </style>
