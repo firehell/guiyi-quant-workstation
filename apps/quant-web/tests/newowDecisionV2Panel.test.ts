@@ -204,3 +204,23 @@ test('daily weekly path reuses decision snapshot and folds independently with ex
   assert.equal(dashed.length,1)
   app.unmount()
 })
+
+
+test('hourly fact colors follow hourly states independently of daily direction', async () => {
+  const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root')
+  const base=mock.calls.length
+  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input()})}))
+  app.mount(root)
+  const payload=output() as any
+  payload.value.decision_v2.cdv2.trend_state={week:'up',day:'up',m60:'down'}
+  payload.value.decision_v2.cdv2.oscillation_state={week:'holding',day:'holding',m60:'cleared'}
+  for (const f of payload.value.decision_v2.cdv2.facts) if(f.role.endsWith('m60')) {f.status='ready';f.state='wait';f.frequency='60m'}
+  mock.calls[base].resolve(payload); await nextTick(); await nextTick()
+  const states=findNode(root,n=>n.props['aria-label']==='日周小时策略状态与信号年龄')!
+  const rows=findNodes(states,n=>n.type==='article')
+  const hour=rows.filter(n=>nodeText(n).includes('60分钟'))
+  assert.equal(hour.length,2)
+  assert.ok(hour.every(n=>n.props.style.color==='#34c759'))
+  assert.ok(rows.filter(n=>nodeText(n).includes('日线')).every(n=>n.props.style.color==='#ff3b30'))
+  app.unmount()
+})

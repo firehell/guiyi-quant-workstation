@@ -47,3 +47,14 @@ test('later chart analysis caps every combination to exact microsecond cutoff', 
   await getNewowAiAnalysis('jm','2026-10-08T07:00:00Z',{request:async(_,config)=>{params=config.params;return output()}})
   assert.deepEqual(params,{product:'jm',as_of:asOf})
 })
+
+test('equal scores preserve display order while recommendation can prefer more trades', async()=>{
+  const Panel=await component(),root=element('root'),base=mock.calls.length
+  const app=createRenderer(host).createApp(defineComponent({setup:()=>()=>h(Panel,{open:true,product:'jm',asOf,identityKey:'tie'})}))
+  app.mount(root)
+  const value=output();value.combos[1]!.summary.trade_count=20
+  mock.calls[base].resolve(value);await nextTick();await nextTick()
+  assert.match(text(root),/同分比较交易数/)
+  assert.doesNotMatch(text(root),/综合评分第 1/)
+  app.unmount()
+})

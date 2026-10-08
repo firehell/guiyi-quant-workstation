@@ -102,7 +102,7 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
           <section class="decision-v2__states" aria-label="日周小时策略状态与信号年龄">
             <div v-for="axis in (['trend', 'oscillation'] as const)" :key="axis" class="decision-v2__column">
               <header><strong>{{ axis === 'trend' ? '趋势策略' : '震荡策略' }}</strong><b :style="{ color: bias(axis).color }">{{ bias(axis).label }}</b></header>
-              <article v-for="item in dailyWeeklyFacts.filter(item => item.role.startsWith(axis))" :key="item.role" :style="{ color: chipColor(axis, item.role.endsWith('week') ? 'week' : 'day') }">
+              <article v-for="item in dailyWeeklyFacts.filter(item => item.role.startsWith(axis))" :key="item.role" :style="{ color: chipColor(axis, item.role.endsWith('week') ? 'week' : item.role.endsWith('m60') ? 'm60' : 'day') }">
                 <strong>{{ decisionRoleLabel(item.role) }}</strong><b>{{ decisionFactState(item.fact) }}</b><span>{{ decisionFactAge(item.fact) }}</span>
               </article>
             </div>

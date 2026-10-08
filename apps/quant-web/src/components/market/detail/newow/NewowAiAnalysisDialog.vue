@@ -49,7 +49,7 @@ onBeforeUnmount(stop)
       <div v-if="best?.summary" class="ai-banner">
         <div class="ai-banner-title">🎯 综合评分推荐</div>
         <div class="ai-banner-main">建议采用 <strong>{{ strategyName(best) }} · {{ periodName(best) }}</strong></div>
-        <div class="ai-reason">理由：累计收益 <b>{{ signed(best.summary.cumulative_return) }}</b>；六组合综合评分第 1；胜率 <b>{{ best.summary.win_rate }}%</b>；最大回撤 <b>{{ Number(best.summary.max_drawdown).toFixed(1) }}%</b>。<span v-if="best.confidence === 'mid'">样本较少，请谨慎参考。</span></div>
+        <div class="ai-reason">理由：累计收益 <b>{{ signed(best.summary.cumulative_return) }}</b>；六组合综合评分优先推荐（同分比较交易数）；胜率 <b>{{ best.summary.win_rate }}%</b>；最大回撤 <b>{{ Number(best.summary.max_drawdown).toFixed(1) }}%</b>。<span v-if="best.confidence === 'mid'">样本较少，请谨慎参考。</span></div>
       </div>
       <p v-else class="ai-error" role="status">有效交易样本不足 3 次，暂不推荐策略。</p>
       <section v-for="group in groups" :key="group.strategy" class="ai-group">
