@@ -6,7 +6,8 @@ if(sha(html)!=='3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d
 const decl=name=>{const start=html.indexOf(name);const ast=ts.createSourceFile('source.js',html.slice(start),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);return ast.statements[0].getText(ast)};
 const matrix=decl('const AI_ADVICE_MATRIX ='),score=decl('function scoreCombos(');
 const source=JSON.parse(fs.readFileSync('services/quant-api/tests/newow/fixtures/ai-analysis-public-oracle.json'));
-const inputs=source.score_inputs;
+const inputs=[...source.score_inputs,{cumReturn:25.2,accuracy:100,maxDrawdown:0,tradeCount:3},{cumReturn:-5,accuracy:20,maxDrawdown:12,tradeCount:2}];
+if(inputs.length!==6)throw Error('six combinations required');
 const cases=[inputs, inputs.map((_,i)=>({cumReturn:-5,accuracy:0,maxDrawdown:10,tradeCount:i===0?3:i===5?2:10})),inputs.map((_,i)=>({cumReturn:20,accuracy:100,maxDrawdown:0,tradeCount:i===0?9:10})),inputs.map(()=>({cumReturn:0,accuracy:0,maxDrawdown:0,tradeCount:2}))];
 const c=vm.createContext({cases});vm.runInContext(matrix+'\n'+score+`;this.matrix=AI_ADVICE_MATRIX;this.results=cases.map(input=>{const combos=input.map((s,i)=>({index:i,c:{summary:s}}));const best=scoreCombos(combos);return {input,best:best?.index??null,output:combos.map(c=>({score:c.score??null,is_best:c.isBest??false,confidence:c.confidence??null}))}});`,c,{timeout:1000});
 const fixture={source_url:'https://www.v8848.cn/stock_detail.html?code=688702.SH',source_version:'3.3.79',source_sha256:sha(html),matrix_sha256:sha(matrix),score_sha256:sha(score),matrix:c.matrix,cases:c.results};

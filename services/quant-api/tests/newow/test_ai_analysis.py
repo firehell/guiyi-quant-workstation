@@ -163,6 +163,7 @@ def test_hourly_cancellation_does_not_return_partial_four_combo_ranking():
 
 @pytest.mark.parametrize("case", json.loads((Path(__file__).parent / "fixtures/hourly-public-oracle.json").read_text())["cases"])
 def test_public_source_six_combo_score_oracle(case):
+    assert len(case["input"]) == len(case["output"]) == 6
     values = []
     for i, s in enumerate(case["input"]):
         summary = AnalysisSummary(Decimal(str(s["cumReturn"])), s["accuracy"], Decimal(str(s["maxDrawdown"])), s["tradeCount"], 0, 1, 0)
