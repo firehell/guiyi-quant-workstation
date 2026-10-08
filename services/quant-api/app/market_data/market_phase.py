@@ -163,6 +163,36 @@ class MarketPhaseResolver:
                     continue
                 if item.window.start <= local_now:
                     candidates.append((item.window.start, day))
+        if not candidates:
+            # Before a day-only product opens after midnight, current/future
+            # Calendar rows have no started Session. Read the exact previous
+            # trading Calendar fact; never infer a date or use a Redis key.
+            previous = self._session.scalar(select(TradingCalendar).where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date < local_now.date(),
+                TradingCalendar.is_trading_day.is_(True),
+            ).order_by(TradingCalendar.trade_date.desc()).limit(1))
+            if previous is None:
+                return None
+            calendar_count = self._session.scalar(select(func.count()).select_from(TradingCalendar).where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date >= previous.trade_date,
+                TradingCalendar.trade_date <= local_now.date(),
+            ))
+            if calendar_count != (local_now.date() - previous.trade_date).days + 1:
+                return None
+            try:
+                windows = resolved_session_windows_for_trading_day(
+                    self._session, exchange=exchange, symbol=normalized,
+                    trading_day=previous.trade_date,
+                )
+            except SessionClockError:
+                return None
+            for item in windows:
+                if item.is_night and not previous.has_night_session:
+                    continue
+                if item.window.start <= local_now:
+                    candidates.append((item.window.start, previous.trade_date))
         return max(candidates)[1] if candidates else None
 
     def _nearby_calendar_rows(
