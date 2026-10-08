@@ -236,7 +236,7 @@ function chartResponse(
   const keys = strategy === 'trend' ? ['b', 'a']
     : strategy === 'oscillation' ? ['upper', 'lower'] : ['ma35', 'ma45']
   const formulas = strategy === 'trend'
-    ? ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
+    ? ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
     : strategy === 'oscillation'
       ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']

@@ -29,7 +29,7 @@ import {
 } from '../src/utils/newowProductViewModel.ts'
 
 const AS_OF = '2026-08-15T07:00:00Z'
-const FORMULAS = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
+const FORMULAS = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
 const expected = {
   product: 'jm', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant',
   section: 'chart', asOf: AS_OF,
@@ -194,7 +194,7 @@ test('rejects non-finite Decimal text and wrong contract, frequency, formula, so
   assert.throws(() => normalizeNewowProductResponse(frequency, expected), /frequency/)
 
   const formula = chartWire()
-  formula.meta.identity.formula_versions = ['newow_trend_band_page_v2']
+  formula.meta.identity.formula_versions = ['newow_trend_band_page_v3']
   assert.throws(() => normalizeNewowProductResponse(formula, expected), /formula_versions/)
 
   const source = chartWire()

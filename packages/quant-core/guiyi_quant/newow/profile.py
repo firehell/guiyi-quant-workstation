@@ -203,9 +203,9 @@ NEWOW_TREND_D1_V1 = NewowTrendProfile(
 
 NEWOW_TREND_D1_PAGE_V2 = replace(
     NEWOW_TREND_D1_V1,
-    profile_id="newow_trend_d1_page_v3",
+    profile_id="newow_trend_d1_page_v4",
     marker_policy="newow_trend_marker_initial_clear_v2",
-    trend_band_formula="newow_trend_band_page_v2",
+    trend_band_formula="newow_trend_band_page_v3",
     escape_formula="newow_escape_d123_page_v2",
     trend_weight_period=7,
     trend_signal_period=10,

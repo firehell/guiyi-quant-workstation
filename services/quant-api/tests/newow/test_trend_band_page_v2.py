@@ -180,8 +180,8 @@ def _run_page_golden():
 def test_page_v2_has_new_identity_without_rewriting_v1() -> None:
     assert NEWOW_TREND_D1_V1.profile_id == "newow_trend_d1_v1"
     assert NEWOW_TREND_D1_V1.trend_band_formula == "newow_trend_band_cleanroom_v1"
-    assert NEWOW_TREND_D1_PAGE_V2.profile_id == "newow_trend_d1_page_v3"
-    assert NEWOW_TREND_D1_PAGE_V2.trend_band_formula == "newow_trend_band_page_v2"
+    assert NEWOW_TREND_D1_PAGE_V2.profile_id == "newow_trend_d1_page_v4"
+    assert NEWOW_TREND_D1_PAGE_V2.trend_band_formula == "newow_trend_band_page_v3"
     assert NEWOW_TREND_D1_PAGE_V2.trend_weight_period == 7
     assert NEWOW_TREND_D1_PAGE_V2.trend_signal_period == 10
 
@@ -235,7 +235,7 @@ def test_page_v2_emits_frozen_transitions_at_slow_band_price() -> None:
         -0.14239779513090453
     )
     assert all(
-        marker.formula_version == "newow_trend_band_page_v2" for _, _, marker in emitted
+        marker.formula_version == "newow_trend_band_page_v3" for _, _, marker in emitted
     )
 
 

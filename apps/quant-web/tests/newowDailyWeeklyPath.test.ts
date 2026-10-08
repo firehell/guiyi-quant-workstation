@@ -33,7 +33,7 @@ function pathWire() {
   const raw = buildNewowFixtureEnvelopeForTest('explanation','trend','1d') as any
   const source = (frequency: string, amount: string, category: string) => ({ raw:amount, frequency,bar_end:NEWOW_AS_OF, physical_contract:'RB2701',segment_id:'owner',calculation_segment_id:frequency+'-calc',source_identity:'canonical-revision',source_category:category })
   const rows = ['1w','1d'].map(frequency => ({ frequency,state:'hold',status:'ready',reason:null,
-    formula_versions:['newow_escape_d123_page_v2','newow_trend_band_page_v2','newow_trend_marker_initial_clear_v2'],
+    formula_versions:['newow_escape_d123_page_v2','newow_trend_band_page_v3','newow_trend_marker_initial_clear_v2'],
     cost:{...source(frequency,frequency==='1w'?'90':'101','canonical_strategy_build'),entry_marker_id:frequency+'-entry'},
     current:source('1d','110','canonical_completed_close'),target:source(frequency,frequency==='1w'?'160':'125','canonical_channel'),
   }))

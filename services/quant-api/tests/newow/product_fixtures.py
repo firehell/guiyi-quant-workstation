@@ -456,7 +456,7 @@ class ProductCases:
 
     def closed(self, strategy="trend", frequency="1d", entry="100", exit="110"):
         formulas = {
-            "trend": ("newow_trend_band_page_v2",),
+            "trend": ("newow_trend_band_page_v3",),
             "oscillation": (
                 "newow_oscillation_hhv_llv10_page_v1",
                 "newow_hhv_llv_channel_page_v1",

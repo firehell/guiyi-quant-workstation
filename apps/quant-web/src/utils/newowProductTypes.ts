@@ -64,7 +64,7 @@ const FREQUENCIES = NEWOW_PRODUCT_FREQUENCIES
 const RUNTIME_STATUSES = ['ready', 'warming', 'unavailable', 'not_applicable', 'evidence_required'] as const
 const EVIDENCE_STATUSES = ['ACTIVE_CODE_VERIFIED', 'RESEARCH_EVIDENCE_ONLY', 'EVIDENCE_REQUIRED', 'OUT_OF_SCOPE'] as const
 const EXPECTED_FORMULAS: Record<NewowProductStrategy, readonly string[]> = {
-  trend: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2'],
+  trend: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2'],
   oscillation: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2'],
   main_rise: ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1'],
 }

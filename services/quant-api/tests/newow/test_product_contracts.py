@@ -296,7 +296,7 @@ def test_signal_hash_matches_literal_canonical_identity(product_cases):
     # SHA-256 of the nine specified identity fields, independently encoded as
     # sorted compact JSON; catches adding price/profile/viewport or changing encoding.
     assert product_cases.closed().entry.signal_id == (
-        "22c014979750b8e28939089ffe4886cb1c95b2f59e34d8fdcc8d2f79bb3117a1"
+        "ee52a7004362c4efb25dbe8c8d507ef6105d8fc6e1e8d7bff5f46cab823e961b"
     )
 
 
@@ -539,7 +539,7 @@ def test_initial_clear_action_and_frame_enforce_layered_invariants(product_cases
         {"source_marker_id": "owned:marker"},
         {"source_related_marker_ids": ("owned:related",)},
         {"identity": product_cases.initial_clear_input().identity.__class__(
-            "rb", "trend", "1d", ("newow_trend_band_page_v2",)
+            "rb", "trend", "1d", ("newow_trend_band_page_v3",)
         )},
     ):
         with pytest.raises(ValueError, match="INVALID_INITIAL_CLEAR"):
