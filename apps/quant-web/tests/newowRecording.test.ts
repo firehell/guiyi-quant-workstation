@@ -93,3 +93,19 @@ test('historical warm-up state is never labelled as a natural observation', asyn
     latest_state: { main_state: 'HOLD', availability: { status: 'ready' } },
     latest_state_source: 'historical_seed', observed_through: null }), '等待首根已完成 K 线')
 })
+
+
+test('matrix v2 accepts all 720 genuinely unconfigured positions with explicit null state source', async () => {
+  // Product scope and nullable row shape captured from the candidate API on 2026-10-08.
+  const products = ["a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu", "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps", "pt", "px", "rb", "rm", "rs", "ru", "sa", "sc", "sf", "sh", "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn"]
+  const row = {"product": "a", "strategy": "trend", "frequency": "1w", "stream_id": null, "enabled": false, "latest_state": null, "computed_through": null, "status": "NOT_CONFIGURED", "historical_computed_through": null, "observed_through": null, "last_observed_at": null, "latest_state_source": null, "latest_reconciliation_status": null, "expected_through": "2026-09-30T07:00:00+00:00", "expected_source": "canonical_completed", "endpoint_status": "READY", "endpoint_reason": null}
+  const items = products.flatMap(product => ['1w', '1d', '60m'].flatMap(frequency =>
+    ['trend', 'oscillation', 'main_rise', 'dual_fusion'].map(strategy => ({ ...row, product, frequency, strategy }))))
+  const response = { version: 'newow_recording_matrix_v2', recording_mode: 'forward_observation',
+    expected_count: 720, configured_count: 0, enabled_count: 0, seeded_count: 0, observed_count: 0, items }
+  const decoded = await getNewowRecordingMatrix({ request: async () => response })
+  assert.equal(decoded.items.length, 720)
+  assert.ok(decoded.items.every(item => item.latest_state_source === null && item.stream_id === null))
+  const { latest_state_source, ...missingSource } = row
+  await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, items: [missingSource] }) }), /REFERENCE_RESPONSE_INVALID/)
+})

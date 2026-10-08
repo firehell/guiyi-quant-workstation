@@ -993,6 +993,7 @@ def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready(mon
                 "last_observed_bar_end": bar.bar_end.isoformat(),
                 "first_missing_bar_end": None, "state": "ok",
             }},
+            "metadata_preparation_error": None,
             "available": True,
         }
     ]
@@ -2021,3 +2022,41 @@ def test_same_endpoint_derived_bars_are_all_written_before_first_publication() -
         store.put_bar(day, 'j', '1m', bar, contract='J2505')
     service._derive('j', bar, window, contract='J2505')
     assert checked == list(frequencies)
+
+
+def test_day_preparation_runs_on_closed_tick_and_blocks_before_provider():
+    module = importlib.import_module("app.market_data.live_market")
+    client = FakeLiveClient()
+    dominants = FakeDominants({})
+    phases = FakePhases({"j": ProductMarketPhase("j", MarketPhase.CLOSED, None, None, None)})
+    calls = []
+    service = module.LiveMarketService(
+        provider_factory=lambda: module.RQDataLiveProvider(client), dominant_source=dominants,
+        phase_resolver=phases, store=module.RedisLiveStore(FakeRedis()), operational_products=("j",),
+        prepare_trading_day=lambda now: calls.append(now) or "METADATA_PREPARATION_READBACK_REQUIRED",
+    )
+    now = datetime(2026, 10, 8, 12, 30, tzinfo=UTC)
+    assert service.poll(now) == "METADATA_PREPARATION_READBACK_REQUIRED"
+    assert calls == [now]
+    assert service._metadata_preparation_error == "METADATA_PREPARATION_READBACK_REQUIRED"
+    assert service.rejections == ["METADATA_PREPARATION_READBACK_REQUIRED"]
+    assert dominants.calls == []
+    assert client.subscribed == []
+
+
+def test_frozen_redis_rank1_cannot_override_published_catalog():
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC))
+    fake = FakeRedis()
+    store = module.RedisLiveStore(fake)
+    store.set_subscriptions(day, {"j": "J2505"})
+    client = FakeLiveClient()
+    service = module.LiveMarketService(
+        provider_factory=lambda: module.RQDataLiveProvider(client),
+        dominant_source=FakeDominants({("j", day): "J2509"}),
+        phase_resolver=FakePhases({"j": _phase("j", day, window)}), store=store,
+        operational_products=("j",), authoritative_dominants=True,
+    )
+    assert service.reconcile(datetime(2025, 1, 2, 1, 1, tzinfo=UTC)) == "LIVE_RANK1_CATALOG_CONFLICT"
+    assert client.subscribed == []

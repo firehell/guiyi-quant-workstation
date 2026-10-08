@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 import signal
 
 from app.core.env import PROJECT_ROOT
 
 
 ACTIVATION_MARKER = PROJECT_ROOT / ".run" / "reference-worker-enabled"
+
+
+def historical_refresh_state_path() -> Path:
+    return Path.home() / "Library/Application Support/GuiyiQuant/newow-historical-refresh-state.json"
 
 
 def require_worker_enabled() -> None:
@@ -113,7 +118,7 @@ def open_forward_worker():
             wake = ForwardLiveWake(redis, repository, worker, market_data)
             from app.reference_trading.historical_refresh import build_historical_refresh, RefreshThread
             refresh = RefreshThread(build_historical_refresh(
-                SessionLocal, state_path=PROJECT_ROOT / ".run" / "newow-historical-refresh-state.json",
+                SessionLocal, state_path=historical_refresh_state_path(),
             ))
             try:
                 wake.subscribe()

@@ -67,7 +67,7 @@ export async function getNewowRecordingMatrix(options: ReferenceRequestOptions =
       || counts.some(value => !Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > result.expected_count)
       || result.items.some(item => !item || item.expected_source !== 'canonical_completed'
         || !['READY', 'UNKNOWN'].includes(item.endpoint_status ?? '')
-        || ![null, 'historical_seed', 'observed'].includes(item.latest_state_source ?? 'missing')
+        || ![null, 'historical_seed', 'observed'].includes(item.latest_state_source === undefined ? 'missing' : item.latest_state_source)
         || (item.latest_reconciliation_status !== undefined
           && ![null, 'pending', 'matched', 'mismatch', 'not_applicable'].includes(item.latest_reconciliation_status))
         || ![item.expected_through, item.observed_through, item.historical_computed_through, item.last_observed_at]

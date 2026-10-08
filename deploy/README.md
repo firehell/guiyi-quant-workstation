@@ -238,3 +238,12 @@ Market 盘后仍在本地 18:05 自然运行，`RQDATA_NOT_READY` 或
 下一交易日是 2026-10-08，10-10 调休工作日不是交易日；不得用工作日算术替代。
 新服务随已交办的 Market Runtime 安装，schedule-only idle 不算服务失败。
 升级时须显式保留未消费的延后恢复状态，不能以新的空状态丢弃未完成检查。
+
+### 持续记录的跨版本恢复状态
+
+Market正常日切准备与Newow历史刷新分别使用既有稳定运行目录
+`~/Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json`和
+`~/Library/Application Support/GuiyiQuant/newow-historical-refresh-state.json`，不放在release `.run`中。
+对应独立锁、0600文件、原子提交及fsync保持；切换版本、退休worktree不得删除或重新初始化。
+`inflight/blocked`仍须读回，不因新版本重新消费provider或重建资产；不兼容状态版本须显式迁移或阻断。
+本次首次启用没有旧运行状态需迁移，initial历史receipt继续保留在任务证据目录。
