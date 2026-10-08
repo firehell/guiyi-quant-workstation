@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager, nullcontext
 import fcntl
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 import json
 import os
 import tempfile
@@ -28,6 +28,7 @@ from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
 from guiyi_quant.newow.product_contracts import ProductStrategy
 from app.market_data.newow.product_release import candidate_input_quality_policy
 from scripts.reference_trading_p9_manifest import _newow
+from scripts.newow_history_window import new_plan_since
 
 
 def _read_json(path):
@@ -152,6 +153,7 @@ def main(argv=None):
     parser.add_argument('--as-of', required=True)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--strategy', action='append', choices=('trend','oscillation','main_rise','dual_fusion'))
+    parser.add_argument('--frequency', action='append', choices=('1w', '1d', '60m'))
     args = parser.parse_args(argv)
     products = validate_product_scope(load_operational_products(), load_active_products())
     if args.product not in products or args.output_root.is_symlink():
@@ -166,7 +168,9 @@ def main(argv=None):
     failures = []
     selected = tuple(strategy for strategy in ('trend', 'oscillation', 'main_rise', 'dual_fusion')
                      if not args.strategy or strategy in args.strategy)
-    cells = [(frequency, strategy) for frequency in ('1w', '1d', '60m') for strategy in selected]
+    frequencies = tuple(frequency for frequency in ('1w', '1d', '60m')
+                        if not args.frequency or frequency in args.frequency)
+    cells = [(frequency, strategy) for frequency in frequencies for strategy in selected]
     with product_apply_lock(out) if args.apply else nullcontext():
         # Validate all earlier intents before opening any mutating service. A
         # missing receipt in any selected cell stops the entire product apply.
@@ -200,7 +204,7 @@ def main(argv=None):
                         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=15):
                             existing = session.scalar(select(ReferenceStream).where(ReferenceStream.stream_id == identity.stream_id))
                             operation = 'rebuild' if existing and existing.active_revision_id else 'build'
-                        since = date(2025, 9, 25) if frequency == '60m' else date(2023, 1, 1)
+                        since = new_plan_since(identity, planner._reader._newow_for(identity).historical_storage_start)
                         request = HistoricalStreamRequest(identity, since, cutoff.date(), cutoff)
                         plan = planner.plan(HistoricalReferenceRequest(
                             operation, (request,), WorkBudget(1, 500_000, 1800, 512_000_000),

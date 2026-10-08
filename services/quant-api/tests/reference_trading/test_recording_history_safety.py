@@ -184,7 +184,11 @@ def test_plan_cli_has_no_intent_receipt_or_mutating_service(tmp_path, monkeypatc
         rebuild = execute
     @contextmanager
     def components(**kwargs):
-        yield Planner(), NoMutation()
+        from types import SimpleNamespace
+        planner = Planner()
+        planner._reader = SimpleNamespace(_newow_for=lambda identity: SimpleNamespace(
+            historical_storage_start=lambda product: date(2000, 1, 1)))
+        yield planner, NoMutation()
     class Session:
         def scalar(self, statement):
             return None

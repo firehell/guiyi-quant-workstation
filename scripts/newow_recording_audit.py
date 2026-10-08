@@ -50,10 +50,12 @@ def audit_history(session, products, *, at):
     expected = formal_identities(products)
     s, r, b = ReferenceStream, ReferenceRevision, ReferenceBatch
     with readonly_transaction(session, timeout_seconds=30):
-        # No dependency_manifest, checkpoint_text, strategy state or replay data.
+        # Only the explicit boundary-policy JSON scalar; no full manifest,
+        # checkpoint_text, strategy state or replay data.
         rows = session.execute(select(
             s, r.revision_id, r.status, r.last_seq, b.batch_id, b.seq,
             b.computed_through, b.kind, b.strategy_schema,
+            b.dependency_manifest['reference_boundary_policy_version'].as_string(),
         ).outerjoin(r, (r.stream_id == s.stream_id) & (r.revision_id == s.active_revision_id))
           .outerjoin(b, (b.stream_id == r.stream_id) & (b.revision_id == r.revision_id)
                      & (b.batch_id == r.checkpoint_batch_id))
@@ -65,14 +67,15 @@ def audit_history(session, products, *, at):
                     'stream_id': identity.stream_id, 'registered': False, 'active_revision_id': None,
                     'revision_status': None, 'health': None, 'latest_seq': None, 'revision_seq': None,
                     'checkpoint_seq': None, 'computed_through': None, 'strategy_schema': None,
+                    'reference_boundary_policy_version': None,
                     'status': 'NOT_REGISTERED'}
             row = stored.get(identity.stream_id)
             if row is not None:
-                stream, revision_id, revision_status, revision_seq, batch_id, seq, computed, kind, schema = row
+                stream, revision_id, revision_status, revision_seq, batch_id, seq, computed, kind, schema, boundary_policy = row
                 item.update(registered=True, active_revision_id=stream.active_revision_id,
                             revision_status=revision_status, health=stream.health, latest_seq=stream.latest_seq,
                             revision_seq=revision_seq, checkpoint_seq=seq, computed_through=_time(computed),
-                            strategy_schema=schema, status='READY')
+                            strategy_schema=schema, reference_boundary_policy_version=boundary_policy, status='READY')
                 if (_identity_from_row(stream) != identity
                         or stream.identity_hash != identity.stream_id.removeprefix('reference-stream:')):
                     item['status'] = 'IDENTITY_CONFLICT'
@@ -90,6 +93,10 @@ def audit_history(session, products, *, at):
                     item['status'] = 'FUTURE_CHECKPOINT'
                 elif stream.health != 'READY':
                     item['status'] = 'HEALTH_NOT_READY'
+                elif frequency == '1d':
+                    from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+                    if boundary_policy != NEWOW_D1_REFERENCE_BOUNDARY_POLICY:
+                        item['status'] = 'BOUNDARY_POLICY_STALE'
             items.append(item)
     def summarize(values):
         return {'expected_count': len(values), 'registered_count': sum(item['registered'] for item in values),

@@ -320,3 +320,46 @@ Bulk status reads SHALL share set-based queries across routes.
 - **WHEN** health constructs their expected watermark
 - **THEN** one bounded MDS endpoint read serves all four routes
 - **AND** source failure remains UNKNOWN rather than a zero-gap or observed-success claim
+
+### Requirement: Daily owner-eligible quality-boundary projection is source-versioned
+
+Newow D1 historical input manifests SHALL include
+`reference_boundary_policy_version=owner_eligible_quality_boundary_v1` in their
+source token and dependency digest, including saved-source dual manifests.
+This corrects reference projection of physical lifecycle warm-up facts without
+changing indicator formulas or the reference model identity. Prior D1 revisions
+SHALL remain immutable; current D1 source assets require new revisions with this
+policy proof. W1 and intraday input-policy scopes SHALL remain unchanged.
+
+Physical D1 quality interruptions SHALL continue to label calculation segments
+and remain in `data_interruptions` provenance. A DATA_INTERRUPTED boundary SHALL
+advance reference state only within its proven rank1 owner interval. The verified
+first observation-eligible Bar MAY associate a segment with that authoritative
+owner interval; the interval, rather than a global reference watermark, determines
+ownership. An owned interruption before the first eligible price Bar SHALL remain
+a reference boundary. Unproven or ambiguous owner context SHALL fail closed;
+ROLLOVER validation SHALL NOT be weakened.
+
+Saved daily fusion sources SHALL verify the current boundary policy against each
+base strategy's own exact source manifest. Missing or different policy proof SHALL
+reject the source rather than silently adopting an old D1 asset.
+
+#### Scenario: A new owner's old physical-prefix quality gap
+
+- **GIVEN** a physical contract's quality gap precedes its verified rank1 owner interval
+- **WHEN** that contract's lifecycle prefix preheats a Newow D1 strategy
+- **THEN** the raw quality gap remains in provenance and calculation-segment resets
+- **AND** it does not create a reference event or rewind the previous owner's reference state
+
+#### Scenario: An interruption during actual ownership
+
+- **GIVEN** a quality interruption is inside the verified owner interval
+- **WHEN** the D1 reference projection consumes it
+- **THEN** the boundary remains eligible for the normal interruption/close rules
+- **AND** an unproven interval cannot be repaired by skipping input behind a global watermark
+
+#### Scenario: A saved daily source has the previous projection policy
+
+- **WHEN** a current dual-source D1 build reads a saved base source without the required policy proof
+- **THEN** it fails with a source snapshot conflict
+- **AND** the previous revision is retained for readback without rewriting its identity or evidence

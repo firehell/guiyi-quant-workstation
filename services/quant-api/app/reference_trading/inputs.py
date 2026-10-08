@@ -16,6 +16,8 @@ from typing import Callable, Protocol
 
 from guiyi_quant.reference_trading import ReferenceBoundary, StreamIdentity
 
+NEWOW_D1_REFERENCE_BOUNDARY_POLICY = "owner_eligible_quality_boundary_v1"
+
 
 @dataclass(frozen=True, slots=True)
 class HistoricalInputBar:
@@ -202,6 +204,37 @@ def _boundary_fingerprint(
             "trading_day": boundary.trading_day,
         },
     }).encode()).hexdigest()
+
+
+def _daily_owner_reference_boundaries(boundaries, labeled_bars, owners):
+    """Separate physical warm-up quality facts from authoritative owner events."""
+    from guiyi_quant.reference_trading import BoundaryReason
+
+    first_eligible = {}
+    known_owners = {(item.bar.physical_contract, item.bar.segment_id) for item in labeled_bars}
+    for item in labeled_bars:
+        if item.bar.observation_eligible:
+            key = (item.bar.physical_contract, item.bar.segment_id)
+            first_eligible[key] = min(first_eligible.get(key, item.bar.trading_day), item.bar.trading_day)
+    result = []
+    for boundary in boundaries:
+        if boundary.reason is not BoundaryReason.DATA_INTERRUPTED:
+            result.append(boundary)
+            continue
+        key = (boundary.physical_contract, boundary.owner_segment_id)
+        candidates = [owner for owner in owners if owner.contract == boundary.physical_contract]
+        first = first_eligible.get(key)
+        if first is not None:
+            candidates = [owner for owner in candidates if owner.start_trading_day <= first <= owner.end_trading_day]
+        if key not in known_owners or len(candidates) != 1:
+            raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+        owner = candidates[0]
+        if boundary.trading_day < owner.start_trading_day:
+            continue  # Raw quality facts still split the indicator lifecycle.
+        if boundary.trading_day > owner.end_trading_day:
+            raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+        result.append(boundary)
+    return result
 
 
 def _insert_boundaries(
@@ -469,7 +502,8 @@ class MarketDataHistoricalInputReader:
             # market lineage still identical under the same maintenance lease.
             for key in ("calendar_session_effective_fingerprints", "calendar_session_source_evidence",
                         "rank1", "boundaries", "data_interruptions", "lifecycle_owners",
-                        "market_source_identity", "input_policy_version", "quality_policy"):
+                        "market_source_identity", "input_policy_version", "quality_policy",
+                        "reference_boundary_policy_version"):
                 if oscillator_snapshot.dependency_manifest.get(key) != shadow.dependency_manifest.get(key):
                     raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
             source_manifests["oscillation"] = oscillator_snapshot.dependency_manifest
@@ -732,6 +766,8 @@ class MarketDataHistoricalInputReader:
                     and not eligible_before(boundary)
                 ):
                     raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+        if frequency is ProductFrequency.DAILY:
+            boundaries = _daily_owner_reference_boundaries(boundaries, labeled_bars, read.owners)
         bars = _insert_boundaries(bars, tuple(boundaries))
         metadata_reader = getattr(newow_reader, "historical_metadata_evidence", None)
         if not callable(metadata_reader):
@@ -778,6 +814,8 @@ class MarketDataHistoricalInputReader:
             "formula_versions": list(request.identity.formula_versions),
             "reference_model_version": request.identity.reference_model_version,
         }
+        if frequency is ProductFrequency.DAILY:
+            manifest["reference_boundary_policy_version"] = NEWOW_D1_REFERENCE_BOUNDARY_POLICY
         if self._compact_intraday_inputs and frequency.value in {"1m", "5m", "15m", "30m", "60m"}:
             evidence = newow_reader.historical_source_evidence(
                 product=query.product, frequency=frequency.value,

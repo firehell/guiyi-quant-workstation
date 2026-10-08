@@ -312,6 +312,11 @@ class SavedFusionSources:
                 stream_id, summary["revision_id"], summary["seq"]
             )
             required = ("reader", "query_since", "quality_policy")
+            if request.identity.frequency == "1d":
+                from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+                if expected_manifest.get("reference_boundary_policy_version") != NEWOW_D1_REFERENCE_BOUNDARY_POLICY:
+                    raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
+                required = (*required, "reference_boundary_policy_version")
             shared = (
                 "query_through", "query_as_of", "source_evidence_sha256", "input_count",
                 "input_fingerprints", "calendar_session_effective_fingerprints",

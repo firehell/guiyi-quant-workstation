@@ -92,6 +92,10 @@ class NewowForwardBootstrap:
                 or batch.post_state_hash != sha256(batch.checkpoint_text.encode()).hexdigest()
                 or manifest_sha256(batch.dependency_manifest) != revision.dependency_digest):
             raise RepositoryConflict("BOOTSTRAP_HISTORY_CHECKPOINT_INVALID")
+        if identity.frequency == "1d":
+            from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+            if batch.dependency_manifest.get("reference_boundary_policy_version") != NEWOW_D1_REFERENCE_BOUNDARY_POLICY:
+                raise RepositoryConflict("BOOTSTRAP_HISTORY_BOUNDARY_POLICY_CONFLICT")
         checkpoint = adapter_checkpoint_from_json(batch.checkpoint_text, expected_stream=identity,
             expected_strategy_schema=batch.strategy_schema)
         if (checkpoint.computed_through is None or checkpoint.reference_state is None
@@ -236,6 +240,8 @@ class NewowForwardBootstrap:
             try:
                 identity, source, schema, historical_manifest, binding = self._source(session, plan["source"]["stream_id"], lock=True)
             except (RepositoryConflict, ValueError) as error:
+                if str(error) == "BOOTSTRAP_HISTORY_BOUNDARY_POLICY_CONFLICT":
+                    raise
                 raise RepositoryConflict("BOOTSTRAP_SOURCE_DRIFT") from error
             if (plan.get("product"), plan.get("strategy"), plan.get("frequency")) != (
                 identity.product, identity.strategy_code.replace("-", "_").removeprefix("newow_"), identity.frequency
