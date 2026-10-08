@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 import fcntl
 import json
 import os
@@ -327,7 +327,12 @@ def build_historical_refresh(session_factory, *, state_path):
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             page = build_market_data_service(session).query_page(SeriesPageQuery(
                 SeriesKind.ACTUAL_DOMINANT, route.identity.product, BarFrequency(route.identity.frequency),
-                before=now + timedelta(microseconds=1), limit=1,
+                # Discover the Catalog-published tail, rather than requiring
+                # historical coverage through wall-clock Live time. Prepared
+                # Calendar/Session/MainMap facts do not publish Canonical bars.
+                # _tick separately rejects a future endpoint; the planner then
+                # validates the complete prefix through this exact endpoint.
+                before=None, limit=1,
             ))
             if not page.bars:
                 raise ValueError('AUTHORITATIVE_ENDPOINT_UNAVAILABLE')

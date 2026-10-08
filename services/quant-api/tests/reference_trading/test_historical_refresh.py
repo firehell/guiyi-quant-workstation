@@ -295,3 +295,151 @@ def test_endpoint_reads_share_product_frequency_and_idle_scan_is_bounded(tmp_pat
     assert len(calls) <= 11
     assert len(set(calls)) == len(calls)
     assert not planner.requests and not service.calls
+
+
+def _published_endpoint_fixture(tmp_path, monkeypatch, frequency, *, published_day=8):
+    """Real Catalog/Canonical with Oct 9 owner/session ready before publication."""
+    from datetime import time
+    from decimal import Decimal
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.db.base import Base
+    from app.market_data.catalog import MarketCatalog
+    from app.market_data.domain import CanonicalBar, DatasetKey
+    from app.market_data.market_data_service import MarketDataService
+    from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+    from app.models import Exchange, Instrument, Contract, TradingCalendar, TradingSession
+    from app.reference_trading.historical_refresh import build_historical_refresh
+    import app.market_data.composition as composition
+    import app.reference_trading.newow_bootstrap as bootstrap
+
+    engine = create_engine('sqlite+pysqlite:///:memory:')
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine)
+    store = CanonicalMonthlyStore(tmp_path / 'canonical')
+    with factory.begin() as session:
+        session.add_all([
+            Exchange(code='DCE', name='DCE'),
+            Instrument(symbol='jm', name='JM', exchange_code='DCE', is_active=True),
+            Contract(contract_code='JM2701', instrument_symbol='jm', exchange_code='DCE',
+                     listed_date=date(2026, 9, 1), expired_date=date(2027, 1, 31), provider='rqdata'),
+            TradingSession(exchange_code='DCE', instrument_symbol='jm', session_name='day',
+                           start_time=time(9), end_time=time(10), effective_from=date(2026, 9, 1), is_active=True),
+            TradingSession(exchange_code='DCE', instrument_symbol='jm', session_name='night',
+                           start_time=time(21), end_time=time(22), effective_from=date(2026, 9, 1), is_active=True),
+        ])
+        days = [date(2026, 9, 28) + timedelta(days=index) for index in range(12)]
+        session.add_all([TradingCalendar(exchange_code='DCE', trade_date=day,
+                                        is_trading_day=day.weekday() < 5) for day in days])
+        catalog = MarketCatalog(session, store.root)
+        catalog.upsert_main_contracts(tuple(('jm', day, 'JM2701') for day in days if day.weekday() < 5))
+        day = date(2026, 10, 2 if frequency == '1w' else published_day)
+        end = datetime.combine(day, time(2), tzinfo=UTC)
+        ends = (end - timedelta(hours=12), end) if frequency == '60m' else (end,)
+        bars = tuple(CanonicalBar(at, day, Decimal(100), Decimal(101), Decimal(99), Decimal(100),
+                                  Decimal(1), Decimal(10), Decimal(20)) for at in ends)
+        partition = store.publish(PublishRequest(DatasetKey('contract', 'jm', 'JM2701', frequency),
+                                                 2026, 10, bars, ends))
+        catalog.register_partition(partition)
+    monkeypatch.setattr(bootstrap, 'validate_product_scope', lambda *_args: ('jm',))
+    monkeypatch.setattr(composition, 'build_market_data_service',
+                        lambda session: MarketDataService(MarketCatalog(session, store.root), store))
+    runner = build_historical_refresh(factory, state_path=tmp_path / 'refresh.json')
+    identity = _newow('jm', ProductStrategy.TREND, frequency, forward=False)
+    item = RefreshRoute(identity, date(2026, 9, 28), end - timedelta(days=1))
+    return runner, item, factory, store, end
+
+
+@pytest.mark.parametrize('frequency', ['60m', '1d', '1w'])
+def test_refresh_discovers_published_endpoint_despite_prepared_next_day_metadata(tmp_path, monkeypatch, frequency):
+    runner, item, factory, store, expected = _published_endpoint_fixture(tmp_path, monkeypatch, frequency)
+    now = datetime(2026, 10, 8, 14, tzinfo=UTC)  # Oct 9 night Session already started.
+    endpoint, trading_day = runner._endpoint(item, now)
+    assert endpoint == expected
+    assert trading_day == expected.date()
+    # The normal strict wall-clock query still refuses unpublished coverage.
+    if frequency == '60m':
+        from app.market_data.composition import build_market_data_service
+        from app.market_data.domain import SeriesPageQuery
+        from app.market_data.market_data_service import MarketDataError
+        with factory() as session, pytest.raises(MarketDataError, match='MAPPED_CONTRACT_DATASET_MISSING'):
+            build_market_data_service(session).query_page(SeriesPageQuery(
+                'actual_dominant', 'jm', frequency, before=now + timedelta(microseconds=1), limit=1))
+
+
+def test_refresh_future_published_endpoint_fails_before_planning(tmp_path, monkeypatch):
+    runner, item, *_ = _published_endpoint_fixture(tmp_path, monkeypatch, '60m', published_day=9)
+    runner._routes = lambda: (item,)
+    calls = []
+    runner._components = lambda **kwargs: calls.append(kwargs)
+    runner.tick(now=datetime(2026, 10, 8, 14, tzinfo=UTC))
+    assert not calls
+    assert runner.state.read()['routes'][item.identity.stream_id] == {
+        'status': 'blocked', 'reason': 'AUTHORITATIVE_ENDPOINT_UNAVAILABLE'}
+
+
+def test_published_endpoint_does_not_authorize_missing_middle_history(tmp_path, monkeypatch):
+    runner, item, factory, store, latest = _published_endpoint_fixture(tmp_path, monkeypatch, '60m', published_day=9)
+    from app.market_data.composition import build_market_data_service
+    from app.market_data.domain import SeriesQuery
+    from app.market_data.market_data_service import MarketDataError
+    assert runner._endpoint(item, latest + timedelta(hours=1))[0] == latest
+    with factory() as session, pytest.raises(MarketDataError, match='MAPPED_CONTRACT_DATASET_MISSING'):
+        build_market_data_service(session).query(SeriesQuery(
+            'actual_dominant', 'jm', '60m', datetime(2026, 10, 8, 1, tzinfo=UTC), latest))
+
+
+@pytest.mark.parametrize('frequency', ['60m', '1d', '1w'])
+def test_refresh_advances_discovery_only_after_catalog_publication(tmp_path, monkeypatch, frequency):
+    runner, item, factory, store, old_end = _published_endpoint_fixture(tmp_path, monkeypatch, frequency)
+    from app.market_data.catalog import MarketCatalog
+    from app.market_data.domain import DatasetKey
+    from app.market_data.storage import PublishRequest
+    key = DatasetKey('contract', 'jm', 'JM2701', frequency)
+    with factory() as session:
+        catalog = MarketCatalog(session, store.root)
+        old = store.read_catalog_partition(catalog.all_partitions(key)[0])
+    endpoint = datetime(2026, 10, 9, 2, tzinfo=UTC)
+    ends = (endpoint - timedelta(hours=12), endpoint) if frequency == '60m' else (endpoint,)
+    new = tuple(replace(old[-1], bar_end=at, trading_day=date(2026, 10, 9)) for at in ends)
+    published = store.publish(PublishRequest(key, 2026, 10, old + new,
+                                             tuple(bar.bar_end for bar in old + new)))
+    # An immutable file alone is not the active Catalog publication.
+    assert runner._endpoint(item, endpoint + timedelta(minutes=1))[0] == old_end
+    with factory.begin() as session:
+        MarketCatalog(session, store.root).register_partition(published)
+    assert runner._endpoint(item, endpoint + timedelta(minutes=1)) == (endpoint, date(2026, 10, 9))
+
+
+def test_endpoint_preflight_block_is_not_automatically_cleared(tmp_path):
+    runner, planner, service = setup(tmp_path, [('completed', None, False)])
+    evidence = {'status': 'blocked', 'reason': 'MAPPED_CONTRACT_DATASET_MISSING'}
+    runner.state.write({'version': 'newow_historical_refresh_v1', 'cursor': '',
+                        'routes': {route().identity.stream_id: evidence}})
+    runner.tick(now=END)
+    assert not planner.requests and not service.calls
+    assert runner.state.read()['routes'][route().identity.stream_id] == evidence
+
+
+@pytest.mark.parametrize('frequency', ['60m', '1d', '1w'])
+def test_health_reports_published_tail_with_prepared_next_day(tmp_path, monkeypatch, frequency):
+    _, _, factory, _, expected = _published_endpoint_fixture(tmp_path, monkeypatch, frequency)
+    from app.reference_trading.health import read_completed_canonical_endpoints
+    with factory() as session:
+        values = read_completed_canonical_endpoints(session, [('jm', frequency)],
+                                                    datetime(2026, 10, 8, 14, tzinfo=UTC))
+    assert values[('jm', frequency)] == {
+        'expected_through': expected.isoformat(), 'expected_source': 'canonical_completed',
+        'endpoint_status': 'READY', 'endpoint_reason': None}
+
+
+@pytest.mark.parametrize('frequency', ['60m', '1d', '1w'])
+def test_health_rejects_future_published_tail(tmp_path, monkeypatch, frequency):
+    _, _, factory, _, expected = _published_endpoint_fixture(tmp_path, monkeypatch, frequency)
+    from app.reference_trading.health import read_completed_canonical_endpoints
+    with factory() as session:
+        values = read_completed_canonical_endpoints(session, [('jm', frequency)],
+                                                    expected - timedelta(microseconds=1))
+    assert values[('jm', frequency)] == {
+        'expected_through': None, 'expected_source': 'canonical_completed',
+        'endpoint_status': 'UNKNOWN', 'endpoint_reason': 'COMPLETE_PERIOD_MISSING'}

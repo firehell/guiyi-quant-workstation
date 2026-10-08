@@ -109,3 +109,24 @@ test('matrix v2 accepts all 720 genuinely unconfigured positions with explicit n
   const { latest_state_source, ...missingSource } = row
   await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, items: [missingSource] }) }), /REFERENCE_RESPONSE_INVALID/)
 })
+
+test('saved trading day extends the night observation window without guessing a future session', () => {
+  const now = new Date('2026-10-08T14:00:00Z')
+  assert.deepEqual(newowRecordingWindow(now, '2026-10-09'), { since: '2026-07-10', through: '2026-10-09' })
+  for (const day of [null, undefined, '2026-10-08', '2026-09-30', '2026-02-30', '2026-10-09T00:00:00Z']) {
+    assert.deepEqual(newowRecordingWindow(now, day), { since: '2026-07-10', through: '2026-10-08' })
+  }
+})
+
+test('matrix accepts a persisted observed trading day and rejects malformed calendar dates', async () => {
+  const row = { product: 'rb', strategy: 'trend', frequency: '60m', stream_id: 'forward', enabled: true, status: 'READY',
+    computed_through: '2026-10-08T14:00:00Z', historical_computed_through: '2026-10-08T07:00:00Z',
+    observed_through: '2026-10-08T14:00:00Z', last_observed_at: '2026-10-08T14:13:07Z', latest_state: null, latest_state_source: 'observed',
+    latest_observed_trading_day: '2026-10-09', expected_through: '2026-10-08T14:00:00Z', expected_source: 'canonical_completed', endpoint_status: 'READY' }
+  const response = { version: 'newow_recording_matrix_v2', recording_mode: 'forward_observation', expected_count: 720,
+    configured_count: 720, enabled_count: 720, seeded_count: 720, observed_count: 180, items: [row] }
+  assert.equal(await getNewowRecordingMatrix({ request: async () => response }), response)
+  for (const day of ['2026-02-30', '2026-10-09T00:00:00Z', 20261009, 'unknown']) {
+    await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, items: [{ ...row, latest_observed_trading_day: day }] }) }), /REFERENCE_RESPONSE_INVALID/)
+  }
+})
