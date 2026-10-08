@@ -745,6 +745,10 @@ def test_partial_install_restore_reaches_real_stopped_authority_and_preflight(
         '  printf \'%s\\n\' "$state"\n'
         "  exit 0\n"
         "fi\n"
+        'if [ "$1" = -m ] && [ "$2" = app.market_data.after_market_history ] '
+        '&& [ "$5" = --verify-install-guard ]; then\n'
+        '  touch "$HOME/install-guard-verified"; exit 0\n'
+        "fi\n"
         'case "$*" in\n'
         '  "-m app.market_data.runtime_status_authority verify-restored-loaded-service "*) exit 0 ;;\n'
         "esac\n"
@@ -768,6 +772,10 @@ def test_partial_install_restore_reaches_real_stopped_authority_and_preflight(
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "POSTGRES_PASSWORD": "fixture-only",
             "GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256": terminal_sha256,
+            # This fixture exercises the installer inside its supervised stage.
+            # The outer history supervisor is covered by its own guard tests;
+            # the fake Python below cannot execute that delegation.
+            "GUIYI_MARKET_INSTALL_GUARD_FD": "fixture-supervised-stage",
         },
         capture_output=True,
         text=True,
@@ -775,6 +783,7 @@ def test_partial_install_restore_reaches_real_stopped_authority_and_preflight(
     )
 
     assert result.returncode == 1
+    assert (target.home / "install-guard-verified").exists()
     assert "previous market authority restored" in result.stderr
     monkeypatch.setattr(authority_module, "_account_home", lambda: target.home)
     checks = []
