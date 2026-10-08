@@ -593,7 +593,7 @@ def test_contract_warmup_parser_requires_apply_hash_and_rejects_abbreviations() 
             parser.parse_args(missing)
 
 
-@pytest.mark.parametrize("frequency", ("1d", "1w", "15m", "30m", "60m"))
+@pytest.mark.parametrize("frequency", ("1m", "5m", "15m", "30m", "60m", "1d", "1w"))
 def test_contract_warmup_parser_accepts_bounded_scope(frequency) -> None:
     parser = build_parser()
     common = [
@@ -605,7 +605,7 @@ def test_contract_warmup_parser_accepts_bounded_scope(frequency) -> None:
 
     assert parsed.frequency == frequency
     with pytest.raises(CliUsageError):
-        parser.parse_args([*common, "--frequency", "1m"])
+        parser.parse_args([*common, "--frequency", "2m"])
 
 
 def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload() -> None:
