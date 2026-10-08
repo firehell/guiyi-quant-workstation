@@ -11,7 +11,7 @@
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.12.0) 已实际读回，远端main、tag peeled commit和Release target一致；main完整树与已验收候选`41eed648be7ef2b9d25d771dae9c0165e32b321a`一致，生产代码与冻结`88aa1a654f235ab5b7d41a9ccc1c538bce163fb6`一致。
 发布说明见[v1.12.0](docs/releases/v1.12.0.md)，实际门禁和边界见[59品种发布验收](docs/tasks/release-59-products-20261008.md)。
 
-正式历史分钟范围**59/60**：原45品种新增RS、SI、SC、AO、RU、BU、CU、NI、PB、SN、AL、ZN、FU、SS；**5m/15m/30m/60m × 趋势/震荡/双策略，新增168、合计708组合**。PP尚未闭环，保持日周范围，进行中的PP纠偏不在此tag。固定截至2026-09-24 15:00北京时间，1m仅聚合，分钟主升浪、持续分钟更新及reference worker仍关闭。
+正式历史分钟范围**59/60**：原45品种新增RS、SI、SC、AO、RU、BU、CU、NI、PB、SN、AL、ZN、FU、SS；**5m/15m/30m/60m × 趋势/震荡/双策略，新增168、合计708组合**。PP未纳入此tag，正式保持日周范围；后续历史候选闭环见下文。固定截至2026-09-24 15:00北京时间，1m仅聚合，分钟主升浪、持续分钟更新及reference worker仍关闭。
 56源窗口/168保存态/112伙伴边fresh只读通过；正式API121请求/168组合/389859 CLOSED完整数值独审通过，108基础FULL/4 PARTIAL保留；真实Chrome13自然响应全200、正式SS/PP过滤及三原图独审通过，30分块完整封存。定向回归、build/typecheck、工程29、OpenSpec10、Ruff/diff/secret通过；失败原件保留，仅补受影响验证，未重下载或重采旧全部页面。
 page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益。
 
@@ -23,6 +23,8 @@ page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益�
 **首根自然completed Live Bar、Alert分钟覆盖、盘后维护、weekly与完整60消费者业务仍待各自验收，不声明RUNTIME_READY。** 当前weekly=not_run，idle调度不误计失败；没有手工运行、replay、通知补发或新增任务。旧BZ/EG源异常、10个raw typed quality缺口、历史weekly finding及P9证据限制仍保留，本轮切换不冒称已修复。历史盘后证据保存在新树after-market-history及旧运行归档；历史详情见[盘后修复记录](docs/tasks/after-market-health-20261004.md)。
 
 ## 当前产品与验证范围
+
+2026-10-08 **PP 聚丙烯 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。owner批准仅PP2405/1m 2023-06-08 21:03 high6890→6910，open保持，原始SHA与本地修正metadata/provider_confirmed=false保留；数据/资产冻结629303712。新forward48/48＝33读回＋15无缺口、63逻辑源＝62真实外部＋1已封存精确复用、263派生；375450 raw逐字段独审仅1值修正。1018→1303文件、新285/扩41、47520旧Bar/373日周保持；四频285055 Bar、各141月/12owner独立Decimal通过。12READY disabled/gen0、8基础FULL、8真实伙伴绑定；后端/前端PP候选资格缺口实际RED/GREEN及250/27测试、build/独审通过，旧启动/首场0图失败保留。compact API bb050869实际12/152全200，最终0cea555a新Chrome19场49原图、21341 CLOSED/21375 SVG及真实409/取消恢复独审通过。专属资源退出、端口free/锁0、末轮12状态保持。当前**历史候选60/60，正式59/60**；W1实际35/120、历史11段预热及12/0/15 CLOSED/视口限制保留。代码已集成develop，不发布PP、不改Runtime/Scope/通知/交易；page_parity=true/executable=false。见[PP收尾记录](docs/tasks/pp-candidate-closeout-20261008.md)。
 
 2026-10-08 **SS 不锈钢 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结1517ee6a，无生产源码改动。旧SS2302根因/调用UNKNOWN与SS2303部分提交失败原件保留；10695条SourceBatch隔离复现，15条18位规范化scratch通过，新forward164/164=158读回+6无缺口、413全新源请求/1718派生/142成交额18位截断。1811→3750文件、新1939/扩展192、264717旧Bar/1070日周保持；四频1331405 Bar、各491物理月/41owner独审通过。12READY disabled/generation0、8基础FULL各41VALID区段、8真实融合伙伴边一致；API12/152 HTTP200结束后唯一Chrome19场49原图、31524 CLOSED/31558 SVG与逐图独审通过。专属资源退出、端口free/锁0、临时npm配置exact删除，末轮仅12保存态不重扫源。最终独审通过，允许集成develop；当前**历史59/60、正式45/60**。W1实际44/120、历史40区段预热、10/0/12 CLOSED及零交易“—”/视口限制保留；page_parity=true/executable=false，无Release/Runtime/Scope/通知/交易。见[SS收尾记录](docs/tasks/ss-candidate-closeout-20261008.md)。SS为补充恢复品种，旧13/21分母不变；剩余PP，本次不扩展执行。
 
