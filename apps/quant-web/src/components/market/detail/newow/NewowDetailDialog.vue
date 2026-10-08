@@ -65,25 +65,29 @@ onBeforeUnmount(() => { ++generation; closing = true; dialog.value?.close(); unl
   </dialog>
 </template>
 <style scoped>
-.newow-detail-dialog { width:min(480px, calc(100vw - 32px)); box-sizing:border-box; margin:auto; max-height:calc(100dvh - 48px); padding:0; border:1px solid #ebedf0; border-radius:12px; background:#fff; color:#20242b; box-shadow:0 24px 70px #0003; }
-.newow-detail-dialog--wide { width:min(920px, calc(100vw - 32px)); }
+.newow-detail-dialog { width:min(400px, calc(100vw - 32px)); box-sizing:border-box; margin:auto; max-height:calc(100dvh - 48px); padding:0; border:1px solid #ebedf0; border-radius:12px; background:#fff; color:#20242b; box-shadow:0 24px 70px #0003; }
+.newow-detail-dialog--wide { width:min(640px, calc(100vw - 32px)); }
 .newow-detail-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }
 .newow-detail-dialog::backdrop { background:#17202c66; }
 header, footer { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; flex-shrink:0; }
 h2 { margin:0; font-size:18px; }
 .newow-detail-dialog__body { padding:0 20px; min-height:0; overflow:auto; overflow-wrap:anywhere; }
 button { min-height:44px; min-width:44px; border:0; border-radius:7px; background:#f3f4f6; color:#667085; cursor:pointer; }
-footer { justify-content:center; } footer button { width:100%; background:#365af5; color:#fff; }
+footer { justify-content:center; } footer button { width:108px; background:#007aff; color:#fff; border-radius:999px; font-size:14px; }
 .newow-detail-dialog--niuwa-indicator { width:min(360px, calc(100vw - 24px)); max-height:calc(100dvh - 24px); border:0; border-radius:22px; color:#373b42; }
 .newow-detail-dialog--niuwa-indicator header { justify-content:center; padding:24px 24px 14px; }
 .newow-detail-dialog--niuwa-indicator h2 { font-size:17px; font-weight:750; line-height:1.35; text-align:center; }
 .newow-detail-dialog--niuwa-indicator .newow-detail-dialog__body { padding:0 24px; }
 .newow-detail-dialog--niuwa-indicator footer { padding:16px 24px 24px; }
-.newow-detail-dialog--niuwa-indicator footer button { width:108px; min-height:38px; border-radius:999px; background:#0878f9; font-size:14px; font-weight:650; }
-.newow-detail-dialog--ai-analysis { width:min(520px, calc(100vw - 24px)); max-height:calc(100dvh - 32px); border:0; border-radius:16px; color:#1c1c1e; box-shadow:0 8px 32px #0003; }
+.newow-detail-dialog--niuwa-indicator footer button { width:108px; min-height:38px; border-radius:999px; background:#007aff; font-size:14px; font-weight:650; }
+.newow-detail-dialog--ai-analysis { width:min(360px, calc(100vw - 24px)); max-height:calc(100dvh - 48px); border:0; border-radius:16px; color:#1c1c1e; box-shadow:0 8px 32px #0003; }
 .newow-detail-dialog--ai-analysis::backdrop { background:#0008; }
 .newow-detail-dialog--ai-analysis header { justify-content:center; padding:24px 24px 16px; }
-.newow-detail-dialog--ai-analysis h2 { font-size:20px; font-weight:600; text-align:center; }
+.newow-detail-dialog--ai-analysis h2 { font-size:16px; font-weight:600; text-align:center; }
 .newow-detail-dialog--ai-analysis .newow-detail-dialog__body { padding:0 24px; }
 .newow-detail-dialog--ai-analysis footer { padding:14px 24px 24px; }
+</style>
+
+<style scoped>
+.newow-detail-dialog--ai-analysis footer :deep(.ai-primary) { background:#007aff; }
 </style>
