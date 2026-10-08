@@ -174,6 +174,11 @@ def test_cached_base_fusion_requires_exact_saved_generation(monkeypatch, changed
     from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
     saved = PersistedNewowReference(lambda: None)
     saved._query = SimpleNamespace(summary=lambda *a, **kw: {'revision_id': 'revision', 'seq': 8 if changed else 7})
+    saved._manifest = lambda *_: (None, {})
+    saved._page_read = lambda *_: SimpleNamespace(input_quality_policy=None)
+    saved.validate_cached_generation = lambda *_: None
+    monkeypatch.setattr('guiyi_quant.newow.product_adapters.build_product_identity', lambda *_a, **_kw: None)
+    monkeypatch.setattr('app.market_data.newow.page_performance_adapter.project_page_performance', lambda *_a, **_kw: {'strategy': 'fusion'})
     monkeypatch.setattr(PersistedFusionComparison, 'comparison', lambda *_a, **_kw: {'reference_input_sha256': 'fusion-source', 'items': []})
     payload = {'items': [{'reference_trade_id': 'base'}]}
     delivery = SectionDelivery('delivered', None, PersistedReferenceSectionValue(payload, ("stream", "revision", 7)))
@@ -231,3 +236,64 @@ def test_hot_fusion_cache_validates_real_payload_shape_and_all_generations(chang
     else:
         with pytest.raises(QueryConflict, match='SOURCE_GENERATION_CONFLICT'):
             saved.validate_cached_generation(delivery)
+
+
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m"))
+def test_saved_fusion_accepts_real_trend_initial_clear_and_matches_core_after_restart(frequency):
+    from datetime import timedelta
+    from newow.product_fixtures import ProductCases
+    from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
+    from guiyi_quant.newow.product_contracts import ProductFrequency, TradeEligibility
+    from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_from_json, adapter_checkpoint_to_json
+    from app.reference_trading.newow_fusion import FusionHistoricalPayload
+
+    cases = ProductCases()
+    base = cases.main_rise_lifecycle_input((Decimal("100"),) * 12, "60m")
+    start = base.bars[0].bar.bar_end
+    bars = []
+    for index, item in enumerate(base.bars):
+        high, low, close = ("102", "98", "100") if index < 9 else ("100", "80", "100") if index == 9 else ("95", "85", "90")
+        bars.append(replace(item, frequency=ProductFrequency(frequency), bar=replace(
+            item.bar, bar_end=start + timedelta(minutes=int(frequency[:-1]) * index),
+            trading_day=start.date(), open=Decimal(close), high=Decimal(high), low=Decimal(low), close=Decimal(close),
+        )))
+    bars = tuple(bars)
+    evidence = cases.synthetic_lifecycle_evidence(bars)
+    trend = replay_strategy(build_product_identity("rb", "trend", frequency), bars, lifecycle_evidence=(evidence,))
+    osc = replay_strategy(build_product_identity("rb", "oscillation", frequency), bars, lifecycle_evidence=(evidence,))
+    assert len(trend.actions) == 1
+    clear = trend.actions[0]
+    assert clear.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    assert clear.related_build_id is None and clear.bar_end == bars[10].bar.bar_end
+    assert [action.kind.value for action in osc.actions] == ["BUILD"]
+    assert osc.actions[0].bar_end == bars[9].bar.bar_end
+    assert ReferenceTradeProjector().project(trend, (), bars[-1].bar.bar_end).trades == ()
+    window = PerformanceWindow(bars[0].bar.trading_day, bars[-1].bar.trading_day, bars[-1].bar.bar_end)
+    core = fusion_reference_comparison(trend, osc, (), (), window)
+    assert core["reference_model_version"] == "newow_dual_fusion_reference_zero_cost_v2"
+    expected = [trade for trade in core["items"] if trade["status"] == "CLOSED"]
+    assert len(expected) == 1 and expected[0]["exit_source"] == "trend"
+    assert expected[0]["exit_bar_end"] == clear.bar_end.isoformat()
+    stream = build_fusion_stream_identity("rb", frequency)
+    checkpoint, schema = _seed_checkpoint(stream)
+    inputs = tuple(HistoricalInputBar(
+        item.bar.bar_end, item.bar.trading_day, item.bar.physical_contract, item.bar.segment_id,
+        item.calculation_segment_id, item.bar.close, f"{index:064x}",
+        FusionHistoricalPayload(item, tuple(action for action in (*trend.actions, *osc.actions) if action.bar_end == item.bar.bar_end)),
+    ) for index, item in enumerate(bars))
+    points = []
+    final, _, transitions, schema = _advance_batch(stream, checkpoint, inputs, points)
+    native = [trade for transition in transitions for trade in transition.changed_trades if trade.status.value == "CLOSED"]
+    assert len(native) == 1
+    assert native[0].exit_bar_end == clear.bar_end < bars[-1].bar.bar_end
+    assert native[0].reference_return == Decimal(expected[0]["reference_return_pct"])
+    assert native[0].holding_bars == expected[0]["holding_bars"]
+    assert final.reference_state.open_trade is None
+    assert {point["value"]["public_trade_id"] for point in points if point["kind"] == "trade_identity"} == {expected[0]["reference_trade_id"]}
+    first, _, _, schema = _advance_batch(stream, checkpoint, inputs[:10], [])
+    assert first.reference_state.open_trade is not None
+    restored = adapter_checkpoint_from_json(adapter_checkpoint_to_json(first, strategy_schema=schema), expected_stream=stream, expected_strategy_schema=schema)
+    resumed, _, _, _ = _advance_batch(stream, restored, inputs[10:], [])
+    assert resumed == final

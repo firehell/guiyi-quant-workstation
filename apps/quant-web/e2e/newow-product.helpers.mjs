@@ -499,20 +499,20 @@ function envelope(url, section, strategy, frequency, options) {
 function meta(url, strategy, frequency, section, options) {
   const revision = typeof options.revision === 'function' ? options.revision({ url, section, strategy, frequency }) : options.revision || 'fixture-revision-1'
   return {
-    schema_version: 'newow_product_detail_v3',
+    schema_version: 'newow_product_detail_v4',
     identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) },
     as_of: url.searchParams.get('as_of') || NEWOW_AS_OF,
     read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: section === 'chart' && url.searchParams.has('snapshot_token') && url.searchParams.has('from') && !url.searchParams.has('chart_before') ? 'f'.repeat(64) : HASH[section] || HASH.chart,
     data_revision_identity: revision, snapshot_token: options.tokenlessSections?.includes(section) ? null : `snapshot:${strategy}:${frequency}:${revision}`,
-    reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    reference_model_version: 'newow_marker_reference_zero_cost_v4',
     futures_adaptation_version: frequency === '1w'
       ? 'newow_futures_weekly_quality_segment_v1' : 'newow_futures_quality_segment_v3',
   }
 }
 
 function formulas(strategy) {
-  if (strategy === 'trend') return ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
-  if (strategy === 'oscillation') return ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
+  if (strategy === 'trend') return ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2']
+  if (strategy === 'oscillation') return ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
   return ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
 }
 
@@ -677,7 +677,7 @@ function referenceValue(url, strategy, frequency, options) {
 function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, entrySignalId, entrySequence, entryPrice, exitSignalId, exitPrice, markOwner, markPrice, membership = 'entry_in_window_v1') {
   return {
     reference_trade_id: tradeId, product: 'rb', strategy_code: strategy, frequency, physical_contract: entry.physical_contract, segment_id: entry.segment_id, calculation_segment_id: entry.calculation_segment_id,
-    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v4',
     futures_adaptation_version: frequency === '1w'
       ? 'newow_futures_weekly_quality_segment_v1' : 'newow_futures_quality_segment_v3',
     entry_signal_id: entrySignalId, entry_sequence: entrySequence, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: entryPrice,

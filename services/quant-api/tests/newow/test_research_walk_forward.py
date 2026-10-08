@@ -187,7 +187,7 @@ def _dual_action_bars() -> tuple[NewowResearchBar, ...]:
     )
 
 
-def test_replay_preserves_same_bar_clear_then_build() -> None:
+def test_replay_preserves_chart_clear_without_same_bar_rebuild() -> None:
     intents, _ = build_strategy_intents_from_replay_segments(
         _replay(_dual_action_bars()),
         ResearchStrategy.OSCILLATION,
@@ -195,7 +195,6 @@ def test_replay_preserves_same_bar_clear_then_build() -> None:
     assert [(intent.action, intent.signal_bar_end.day) for intent in intents] == [
         ("BUILD", 10),
         ("CLEAR", 11),
-        ("BUILD", 11),
     ]
 
 
@@ -211,7 +210,7 @@ def test_replay_still_rejects_overlapping_physical_owners() -> None:
         )
 
 
-def test_walk_forward_executes_same_bar_clear_then_build_at_next_open() -> None:
+def test_walk_forward_executes_chart_clear_without_rebuild_at_next_open() -> None:
     bars = _dual_action_bars()
     result = run_fixed_formula_walk_forward(
         bars,
@@ -235,7 +234,6 @@ def test_walk_forward_executes_same_bar_clear_then_build_at_next_open() -> None:
     ] == [
         ("BUILD", 10, 11),
         ("CLEAR", 11, 12),
-        ("BUILD", 11, 12),
     ]
 
 
@@ -286,7 +284,7 @@ def test_walk_forward_clears_training_position_state_before_oscillation_test() -
 
     backtest = result.folds[0].backtest
     assert result.signal_formula_versions == (
-        "newow_oscillation_hhv_llv10_page_v1",
+        "newow_oscillation_hhv_llv10_page_v2",
         "newow_hhv_llv_channel_page_v1",
     )
     assert backtest.fills == ()

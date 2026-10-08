@@ -12,7 +12,7 @@ from .models import NewowDailyBar
 
 
 CHANNEL_FORMULA_VERSION = "newow_hhv_llv_channel_page_v1"
-OSCILLATION_FORMULA_VERSION = "newow_oscillation_hhv_llv10_page_v1"
+OSCILLATION_FORMULA_VERSION = "newow_oscillation_hhv_llv10_page_v2"
 _OSCILLATION_PERIOD = 10
 
 
@@ -213,7 +213,7 @@ def step_oscillation(
         if holding and bar.high >= channel.upper:
             signals.append(_signal(bar, channel, volumes, OscillationAction.CLEAR))
             holding = False
-        if not holding and bar.low <= channel.lower:
+        elif not holding and bar.low <= channel.lower:
             signals.append(_signal(bar, channel, volumes, OscillationAction.BUILD))
             holding = True
     next_state = OscillationState(

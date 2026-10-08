@@ -20,7 +20,7 @@ EvidenceStatusValue = Literal[
     "OUT_OF_SCOPE",
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
-ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v3"]
+ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v4"]
 FuturesAdaptationVersionValue = Literal[
     "newow_futures_quality_segment_v3",
     "newow_futures_daily_quality_segment_v4",
@@ -56,7 +56,7 @@ class ProductIdentityOut(_Out):
 
 
 class ProductMetaOut(_Out):
-    schema_version: Literal["newow_product_detail_v3"]
+    schema_version: Literal["newow_product_detail_v4"]
     identity: ProductIdentityOut
     as_of: datetime
     read_at: datetime
@@ -318,7 +318,64 @@ class HoldingCurveOut(_Out):
     points: list[HoldingCurvePointOut]
 
 
+class _PageOut(_Out):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class PagePerformanceSummaryOut(_PageOut):
+    cumReturn: str
+    accuracy: int
+    maxDrawdown: str
+    tradeCount: int
+
+
+class PagePerformanceTradeOut(_PageOut):
+    buyDate: str
+    buyPrice: str
+    sellDate: str
+    sellPrice: str
+    pct: str
+    forceClose: bool
+    segment_id: str
+    buyBarIsLive: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+class PagePerformanceResultOut(_PageOut):
+    period: ProductFrequencyValue
+    summary: PagePerformanceSummaryOut
+    dates: list[str]
+    equity: list[str]
+    trades: list[PagePerformanceTradeOut]
+    segment_ids: list[str]
+    trading_days: list[str]
+
+    @model_validator(mode="after")
+    def aligned_arrays(self):
+        if len({len(self.dates), len(self.equity), len(self.segment_ids), len(self.trading_days)}) != 1:
+            raise ValueError("page performance arrays are misaligned")
+        if self.summary.tradeCount != len(self.trades):
+            raise ValueError("page performance trade count is inconsistent")
+        return self
+
+
+class PagePerformanceOut(_PageOut):
+    version: Literal["newow_page_performance_v3379_v1"]
+    source_version: Literal["3.3.79"]
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    page_parity: Literal[True]
+    executable: Literal[False]
+    strategy: Literal["trend", "oscillation", "main_rise", "fusion"]
+    segment_count: int
+    ordinary: PagePerformanceResultOut | None
+    ideal: PagePerformanceResultOut | None
+    ordinary_interrupted_count: int
+    ideal_open_count: int
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_evidence_sha256: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class FusionComparisonOut(_Out):
+    page_performance: PagePerformanceOut
     holding_curve: HoldingCurveOut | None = Field(default=None, exclude_if=lambda value: value is None)
     theoretical: "TheoreticalReferenceOut | None" = Field(default=None, exclude_if=lambda value: value is None)
     fusion_input_sha256: str | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -362,6 +419,7 @@ class TheoreticalReferenceOut(_Out):
 
 
 class ReferenceValueOut(_Out):
+    page_performance: PagePerformanceOut
     holding_curve: HoldingCurveOut | None = Field(default=None, exclude_if=lambda value: value is None)
     theoretical: TheoreticalReferenceOut | None = Field(default=None, exclude_if=lambda value: value is None)
     performance_since: date

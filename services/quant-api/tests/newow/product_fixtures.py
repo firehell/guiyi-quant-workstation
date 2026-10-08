@@ -43,8 +43,10 @@ from guiyi_quant.newow.product_contracts import (
     StrategyAction,
     StrategyFrame,
     StrategyReplay,
+    TradeEligibility,
 )
 from guiyi_quant.newow.product_identity import build_segment_id
+from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 from guiyi_quant.newow.trend_band import initial_trend_band_state, step_trend_band
 
@@ -103,6 +105,7 @@ def _action(
     related_build_id: str | None = None,
     source_marker_id: str | None = None,
     source_related_marker_ids: tuple[str, ...] = (),
+    trade_eligibility: TradeEligibility = TradeEligibility.ELIGIBLE,
 ) -> StrategyAction:
     return StrategyAction(
         identity=identity,
@@ -117,6 +120,7 @@ def _action(
         related_build_id=related_build_id,
         source_marker_id=source_marker_id,
         source_related_marker_ids=source_related_marker_ids,
+        trade_eligibility=trade_eligibility,
     )
 
 
@@ -141,7 +145,7 @@ def _trend_oracle(
         if result.marker is not None:
             marker = result.marker
             related = None
-            if marker.marker_type == "CLEAR":
+            if marker.marker_type == "CLEAR" and marker.related_marker_ids:
                 assert len(marker.related_marker_ids) == 1
                 related = source_builds[marker.related_marker_ids[0]].signal_id
             action = _action(
@@ -153,6 +157,9 @@ def _trend_oracle(
                 related_build_id=related,
                 source_marker_id=marker.marker_id,
                 source_related_marker_ids=marker.related_marker_ids,
+                trade_eligibility=(TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+                                   if marker.marker_type == "CLEAR" and not marker.related_marker_ids
+                                   else TradeEligibility.ELIGIBLE),
             )
             if action.kind is ActionKind.BUILD:
                 source_builds[marker.marker_id] = action
@@ -377,32 +384,7 @@ class ProductCases:
 
     def primitive_input(self, strategy: str, frequency: str) -> PrimitiveInput:
         """Owned synthetic OHLC with enough turns to exercise every active wrapper."""
-        formulas = {
-            "trend": (
-                "newow_trend_band_page_v2",
-                "newow_escape_d123_page_v2",
-            ),
-            "oscillation": (
-                "newow_oscillation_hhv_llv10_page_v1",
-                "newow_hhv_llv_channel_page_v1",
-            ),
-            "main_rise": tuple(
-                getattr(MAIN_RISE_PAGE_V1, name)
-                for name in (
-                    "band_formula",
-                    "j_reduce_formula",
-                    "escape_formula",
-                    "buy_formula",
-                    "magic11_formula",
-                )
-            ),
-        }
-        identity = ProductIdentity(
-            "rb",
-            ProductStrategy(strategy),
-            ProductFrequency(frequency),
-            formulas[strategy],
-        )
+        identity = build_product_identity("rb", strategy, frequency)
         segment = build_segment_id("rb", "RB2710", datetime(2026, 1, 1, tzinfo=UTC))
         bars = []
         for index in range(90):

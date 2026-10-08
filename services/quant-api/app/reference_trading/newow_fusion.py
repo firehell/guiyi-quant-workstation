@@ -100,6 +100,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation):
         if action.trade_eligibility in (
             TradeEligibility.ELIGIBLE,
             TradeEligibility.NO_ELIGIBLE_ENTRY,
+            TradeEligibility.INITIAL_CLEAR_NO_ENTRY,
         ):
             candidates.append(action)
     candidates.sort(

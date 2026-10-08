@@ -1,3 +1,4 @@
+import { normalizePagePerformance } from './newowPagePerformance.ts'
 import {
   NEWOW_PRODUCT_FREQUENCIES,
   NEWOW_PRODUCT_STRATEGIES,
@@ -63,8 +64,8 @@ const FREQUENCIES = NEWOW_PRODUCT_FREQUENCIES
 const RUNTIME_STATUSES = ['ready', 'warming', 'unavailable', 'not_applicable', 'evidence_required'] as const
 const EVIDENCE_STATUSES = ['ACTIVE_CODE_VERIFIED', 'RESEARCH_EVIDENCE_ONLY', 'EVIDENCE_REQUIRED', 'OUT_OF_SCOPE'] as const
 const EXPECTED_FORMULAS: Record<NewowProductStrategy, readonly string[]> = {
-  trend: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2'],
-  oscillation: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'],
+  trend: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2', 'newow_trend_marker_initial_clear_v2'],
+  oscillation: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2'],
   main_rise: ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1'],
 }
 const DECIMAL = /^[+-]?(?:(?:0|[1-9]\d*)(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
@@ -150,7 +151,7 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
     'schema_version', 'identity', 'as_of', 'read_at', 'input_content_sha256', 'data_revision_identity',
     'snapshot_token', 'reference_model_version', 'futures_adaptation_version',
   ])
-  requireExact(value.schema_version, 'newow_product_detail_v3', 'meta.schema_version')
+  requireExact(value.schema_version, 'newow_product_detail_v4', 'meta.schema_version')
   const normalizedIdentity = normalizeWireIdentity(value.identity, 'meta.identity', expected)
   requireExact(expected.seriesKind, 'actual_dominant', 'expected.seriesKind')
   const asOf = instant(value.as_of, 'meta.as_of')
@@ -159,7 +160,7 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const inputHash = sha256(value.input_content_sha256, 'meta.input_content_sha256')
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
-  requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v3', 'meta.reference_model_version')
+  requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v4', 'meta.reference_model_version')
   const adaptationVersion = normalizedIdentity.frequency === '1w'
     ? (
       normalizedIdentity.input_quality_policy === 'newow_weekly_input_quality_v2'
@@ -171,10 +172,10 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
       : 'newow_futures_quality_segment_v3'
   requireExact(value.futures_adaptation_version, adaptationVersion, 'meta.futures_adaptation_version')
   return {
-    schema_version: 'newow_product_detail_v3',
+    schema_version: 'newow_product_detail_v4',
     identity: normalizedIdentity,
     as_of: asOf, read_at: readAt, input_content_sha256: inputHash, data_revision_identity: revision,
-    snapshot_token: token, reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    snapshot_token: token, reference_model_version: 'newow_marker_reference_zero_cost_v4',
     futures_adaptation_version: adaptationVersion,
   }
 }
@@ -371,8 +372,8 @@ function validateChartRelationships(
     if (!sameStrings(frame.action_ids, expectedActions)) throw new Error('frame.action_ids conflict with chart actions')
     if (!sameStrings(frame.hint_ids, expectedHints)) throw new Error('frame.hint_ids conflict with chart hints')
     const initialClears = actions.filter((action) => action.bar_end === frame.bar_end && action.trade_eligibility === 'INITIAL_CLEAR_NO_ENTRY')
-    if (initialClears.length > 0 && (strategy !== 'main_rise' || frame.main_state !== 'CLEAR' || expectedActions.length !== 1 || !barByEnd.get(frame.bar_end)!.observation_eligible)) {
-      throw new Error('INITIAL_CLEAR_NO_ENTRY conflicts with its main-rise CLEAR frame')
+    if (initialClears.length > 0 && (!['main_rise', 'trend'].includes(strategy) || frame.main_state !== 'CLEAR' || expectedActions.length !== 1 || !barByEnd.get(frame.bar_end)!.observation_eligible)) {
+      throw new Error('INITIAL_CLEAR_NO_ENTRY conflicts with its initial CLEAR frame')
     }
   }
 }
@@ -436,7 +437,7 @@ function normalizeAction(
   const eligibility = literal(value.trade_eligibility, ['ELIGIBLE', 'WARMUP_ONLY', 'NO_ELIGIBLE_ENTRY', 'INITIAL_CLEAR_NO_ENTRY'], `${field}.trade_eligibility`)
   const sequence = count(value.sequence, `${field}.sequence`)
   if (eligibility === 'INITIAL_CLEAR_NO_ENTRY'
-    && (strategy !== 'main_rise' || kind !== 'CLEAR' || relatedBuildId !== null || sequence !== 0)) {
+    && (!['main_rise', 'trend'].includes(strategy) || kind !== 'CLEAR' || relatedBuildId !== null || sequence !== 0)) {
     throw new Error(`${field} has an invalid INITIAL_CLEAR_NO_ENTRY contract`)
   }
   return {
@@ -474,6 +475,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     'history_coverage', 'unavailable_days', 'coverage_intervals',
     'summary', 'items', 'next_before', 'executable', 'auto_order', 'allowed_uses',
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'curve_trades') ? ['curve_trades'] : []),
+    ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'page_performance') ? ['page_performance'] : []),
     ...(hasStorageMode ? ['storage_mode'] : []),
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'fusion_comparison') ? ['fusion_comparison'] : []),
     ...(Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'theoretical') ? ['theoretical'] : []),
@@ -514,6 +516,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
   requireExact(value.executable, false, 'reference.executable')
   requireExact(value.auto_order, false, 'reference.auto_order')
   return {
+    page_performance: normalizePagePerformance(value.page_performance, meta.identity.strategy, meta.as_of, meta.identity.frequency),
     performance_since: performanceSince, performance_through: performanceThrough,
     actual_available_through: day(value.actual_available_through, 'reference.actual_available_through'),
     reference_cutoff: referenceCutoff,
@@ -986,7 +989,7 @@ function deepFreeze<T>(value: T): T {
 
 function normalizeFusion(payload: unknown, since: string, through: string, hash: unknown, cutoff: unknown): import('../api/newowFusion').FusionComparison {
   const value = record(payload, 'fusion')
-  requireExact(value.reference_model_version, 'newow_dual_fusion_reference_zero_cost_v1', 'fusion.version')
+  requireExact(value.reference_model_version, 'newow_dual_fusion_reference_zero_cost_v2', 'fusion.version')
   requireExact(value.page_parity, true, 'fusion.parity')
   requireExact(value.executable, false, 'fusion.executable')
   requireExact(value.performance_since, since, 'fusion.since')
@@ -1037,6 +1040,7 @@ function normalizeFusion(payload: unknown, since: string, through: string, hash:
     const normalized = normalizeTheoretical({...theory,model_version:'newow_hindsight_peak_reference_v1'})!
     value.theoretical = {...normalized,model_version:'newow_dual_fusion_hindsight_peak_high_v1'}
   }
+  value.page_performance = normalizePagePerformance(value.page_performance, 'fusion', String(cutoff), typeof value.frequency === 'string' ? value.frequency : undefined)
   return value as unknown as import('../api/newowFusion').FusionComparison
 }
 

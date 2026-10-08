@@ -166,6 +166,7 @@ def _marker_id(
         (
             strategy_code,
             profile.trend_band_formula,
+            *((profile.marker_policy,) if profile.marker_policy != "newow_trend_marker_policy_v1" else ()),
             bar.physical_contract,
             marker_type.value,
             bar.bar_end.isoformat(),
@@ -204,6 +205,7 @@ def _marker(
                 "signal_close": bar.close,
                 "marker_price": signal_price,
                 "reference_basis": reference_basis,
+                "marker_policy": profile.marker_policy,
                 "reference_change_pct": None,
             },
             formula_version=profile.trend_band_formula,
@@ -233,6 +235,7 @@ def _marker(
             "signal_close": bar.close,
             "marker_price": signal_price,
             "reference_basis": reference_basis,
+            "marker_policy": profile.marker_policy,
             "reference_change_pct": reference_change_pct,
         },
         formula_version=profile.trend_band_formula,
@@ -347,9 +350,12 @@ def step_trend_band(
                     signal_price,
                     "trend_slow_band",
                 )
-            elif state.last_build_marker_id is not None:
+            elif (
+                state.last_build_marker_id is not None
+                or profile.marker_policy == "newow_trend_marker_initial_clear_v2"
+            ):
                 reference_change_pct = _clear_reference_change_pct(signal_price, state)
-                if reference_change_pct is None:
+                if state.last_build_marker_id is not None and reference_change_pct is None:
                     return _unavailable_result(bar)
                 transition = TrendTransition.CLEAR
                 marker = _marker(

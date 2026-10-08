@@ -61,6 +61,8 @@ class NewowTrendProfile:
     cup_post_breakout_archive_bars: int
     cup_recent_terminal_ids_limit: int
 
+    marker_policy: str = "newow_trend_marker_policy_v1"
+
     def __post_init__(self) -> None:
         numeric_values = tuple(
             getattr(self, field.name)
@@ -201,7 +203,8 @@ NEWOW_TREND_D1_V1 = NewowTrendProfile(
 
 NEWOW_TREND_D1_PAGE_V2 = replace(
     NEWOW_TREND_D1_V1,
-    profile_id="newow_trend_d1_page_v2",
+    profile_id="newow_trend_d1_page_v3",
+    marker_policy="newow_trend_marker_initial_clear_v2",
     trend_band_formula="newow_trend_band_page_v2",
     escape_formula="newow_escape_d123_page_v2",
     trend_weight_period=7,

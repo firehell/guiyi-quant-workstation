@@ -15,7 +15,7 @@ async function component(name: string) {
   const source = readFileSync(new URL(`../src/components/market/detail/${name}.vue`, import.meta.url), 'utf8')
   const { descriptor } = parse(source)
   const compiled = compileScript(descriptor, { id: 'dual-test', inlineTemplate: true })
-  const code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+  let code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
     .replace(/from ['"]@\/api\/newowFusion['"]/g, `from '${mockUrl}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
@@ -25,6 +25,15 @@ async function component(name: string) {
       }
       throw new Error(specifier)
     })
+  if (code.includes('./NewowPagePerformancePanel.vue')) {
+    const childSource = readFileSync(new URL('../src/components/market/detail/newow/NewowPagePerformancePanel.vue', import.meta.url), 'utf8')
+    const child = compileScript(parse(childSource).descriptor, {id: 'page-performance-test', inlineTemplate:true})
+    const childCode = ts.transpileModule(child.content, {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText
+      .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
+      .replace(/from ['"]@\/([^'"]+)['"]/g, (_match,specifier:string)=>`from '${pathToFileURL(resolve(sourceRoot, `${specifier}.ts`)).href}'`)
+    const childUrl = `data:text/javascript;base64,${Buffer.from(childCode).toString('base64')}`
+    code = code.replace(/from ['"]\.\/NewowPagePerformancePanel\.vue['"]/g, `from '${childUrl}'`)
+  }
   return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default
 }
 async function workspaceFusionHost(Panel: unknown, setup: () => unknown) {

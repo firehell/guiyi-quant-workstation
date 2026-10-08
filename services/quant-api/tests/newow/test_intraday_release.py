@@ -8,7 +8,7 @@ from app.api import market_newow
 from app.main import app
 
 
-PRODUCTS = sorted('rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss'.split())
+PRODUCTS = sorted('rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss pp'.split())
 
 
 def test_formal_capability_has_exact_historical_scope():
@@ -16,9 +16,9 @@ def test_formal_capability_has_exact_historical_scope():
         response = client.get('/api/v1/market/newow/product-capabilities')
     data = response.json()
     assert response.status_code == 200
-    assert data['schema_version'] == 'newow_product_capabilities_v30'
+    assert data['schema_version'] == 'newow_product_capabilities_v31'
     assert data['intraday_products'] == PRODUCTS
-    assert len(PRODUCTS) == 59
+    assert len(PRODUCTS) == 60
     assert data['intraday_as_of'] == '2026-09-24T07:00:00.000001Z'
     assert data['open_frequencies'] == ['5m', '15m', '30m', '60m', '1d', '1w']
     assert len(data['weekly_products']) == 60
@@ -31,9 +31,9 @@ def test_formal_minutes_admit_only_closed_products(product, frequency):
     market_newow._enforce_product_frequency(request, product, frequency)
 
 
-@pytest.mark.parametrize('product', ['pp'])
+@pytest.mark.parametrize('product', ['unknown-product'])
 @pytest.mark.parametrize('frequency', ['1m', '5m', '15m', '30m', '60m'])
-def test_unclosed_products_and_one_minute_fail_closed(product, frequency):
+def test_unknown_products_and_one_minute_fail_closed(product, frequency):
     with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
         market_newow._enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), product, frequency)
 

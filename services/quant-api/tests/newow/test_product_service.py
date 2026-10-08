@@ -133,7 +133,10 @@ def _service(product_cases, frequency="1d"):
             ),
         )
     replay = replay_strategy(case.identity, case.bars)
-    build, clear = replay.actions[:2]
+    build = next(action for action in replay.actions
+                 if action.kind is ActionKind.BUILD and action.trade_eligibility is TradeEligibility.ELIGIBLE)
+    clear = next(action for action in replay.actions
+                 if action.kind is ActionKind.CLEAR and action.related_build_id == build.signal_id)
     reader = _Reader(case.bars, build.bar_end, clear.bar_end)
     now = clear.bar_end.replace(year=2027)
     service = NewowProductService(lambda _context, _cancelled: reader, now=lambda: now)
@@ -567,6 +570,7 @@ def test_trend_chart_delivers_independent_channel_without_changing_strategy_iden
     assert result.meta.identity.formula_versions == (
         "newow_escape_d123_page_v2",
         "newow_trend_band_page_v2",
+        "newow_trend_marker_initial_clear_v2",
     )
 
 

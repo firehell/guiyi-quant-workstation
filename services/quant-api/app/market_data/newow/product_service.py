@@ -29,6 +29,7 @@ from guiyi_quant.newow.product_adapters import (
 )
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 
+from .page_performance_adapter import project_page_performance
 from .product_macd import MACD_CACHE_IDENTITY, calculate_macd_display
 from guiyi_quant.newow.product_contracts import (
     DataInterruption,
@@ -89,7 +90,7 @@ from .source_facts import (
 )
 
 
-SCHEMA_VERSION = "newow_product_detail_v3"
+SCHEMA_VERSION = "newow_product_detail_v4"
 _K = TypeVar("_K")
 _V = TypeVar("_V")
 
@@ -244,6 +245,7 @@ class ReferenceSectionValue:
     fusion_comparison: dict[str, object] | None = None
     theoretical: dict[str, object] | None = None
     holding_curve: dict[str, object] | None = None
+    page_performance: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -911,6 +913,18 @@ class NewowProductService:
             history_limit=request.history_limit,
             history_before=request.history_before,
         )
+        if (request.section is ProductSection.REFERENCE
+                and self._persisted_reference is None
+                and callable(getattr(reader, "historical_storage_start", None))):
+            # Page exit-window membership needs the source's complete observation
+            # history, independently of the selected display/statistics window.
+            storage_start = reader.historical_storage_start(request.product)
+            low_query = replace(low_query, since=storage_start,
+                performance_since=storage_start,
+                through=resolved.actual_through,
+                performance_through=resolved.actual_through,
+                as_of=resolved.cutoff)
+            read_as_of = resolved.cutoff
         read = self._cached_read_input(
             self._reads,
             self._market_read_key(low_query, read_as_of, policy),
@@ -1498,6 +1512,7 @@ class NewowProductService:
                 PerformanceWindow(resolved.requested_since, resolved.requested_through, resolved.cutoff),
             )
             fusion["reference_input_sha256"] = fact_key
+            fusion["page_performance"] = project_page_performance(read, identity, resolved, fusion=True, replays=replays)
         from guiyi_quant.newow.theoretical_reference import theoretical_reference
         theoretical = theoretical_reference(summary.closed_trades, tuple(frame.bar for frame in replay.frames))
         from guiyi_quant.newow.holding_reference import holding_reference_curve, reference_trade_rows
@@ -1521,6 +1536,7 @@ class NewowProductService:
             fusion,
             theoretical,
             holding_curve,
+            project_page_performance(read, identity, resolved),
         )
         status = (
             _ready()
