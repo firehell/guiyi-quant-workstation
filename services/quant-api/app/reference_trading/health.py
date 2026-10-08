@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime
 
 from sqlalchemy import and_, case, func, select
 
@@ -27,7 +27,9 @@ def read_completed_canonical_endpoints(session, keys, at):
         try:
             page = market.query_page(SeriesPageQuery(
                 SeriesKind.ACTUAL_DOMINANT, product, BarFrequency(frequency),
-                before=at + timedelta(microseconds=1), limit=1,
+                # Catalog publication determines this historical endpoint;
+                # prepared Session/MainMap metadata and Live time do not.
+                before=None, limit=1,
             ))
             if not page.bars or page.bars[-1].bar_end > at:
                 value["endpoint_reason"] = "COMPLETE_PERIOD_MISSING"
@@ -112,6 +114,7 @@ class ForwardReferenceHealth:
             reconciliation = capture_reconciliation_statuses(session, tuple(capture_ids.values()))
             states = {}
             state_sources = {}
+            observed_days = {}
             starts = {stream.stream_id: stream.recording_start for stream in streams}
             for batch in session.scalars(select(b).join(
                 latest, (b.stream_id == latest.c.stream_id) & (b.seq == latest.c.seq),
@@ -119,13 +122,23 @@ class ForwardReferenceHealth:
                 presentation = batch.source_evidence.get("presentation_v1")
                 if presentation is not None:
                     points = require_envelope(presentation)
-                    states[batch.stream_id] = next((
-                        point["value"] for point in reversed(points)
+                    state_point = next((
+                        point for point in reversed(points)
                         if point.get("kind") == "indicator" and isinstance(point.get("value"), dict)
                         and point["value"].get("version") == "newow_bar_state_v1"
                     ), None)
-                    if states[batch.stream_id] is not None:
+                    states[batch.stream_id] = state_point["value"] if state_point else None
+                    if state_point is not None:
                         state_sources[batch.stream_id] = "observed" if batch.observed_at is not None and stream_time_valid(batch.observed_at, starts[batch.stream_id]) else "historical_seed"
+                        if state_sources[batch.stream_id] == "observed":
+                            day = state_point.get("trading_day")
+                            from app.reference_trading.presentation import PresentationUnavailable
+                            try:
+                                if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day:
+                                    raise ValueError
+                            except ValueError as error:
+                                raise PresentationUnavailable("PRESENTATION_CORRUPT") from error
+                            observed_days[batch.stream_id] = day
             items = []
             for stream in streams:
                 count, oldest = pending.get(stream.stream_id, (0, None))
@@ -143,6 +156,7 @@ class ForwardReferenceHealth:
                     "observed_through": _iso(observed_end),
                     "last_observed_at": _iso(last_observed),
                     "latest_state_source": state_sources.get(stream.stream_id),
+                    "latest_observed_trading_day": observed_days.get(stream.stream_id),
                     **endpoints.get((stream.product.lower(), stream.frequency), {
                         "expected_through": None, "expected_source": "canonical_completed",
                         "endpoint_status": "UNKNOWN", "endpoint_reason": "ENDPOINT_NOT_VERIFIED",

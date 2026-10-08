@@ -101,6 +101,7 @@ export interface NewowRecordingItem {
   historical_computed_through?: string | null
   observed_through?: string | null
   last_observed_at?: string | null
+  latest_observed_trading_day?: string | null
   latest_state_source?: 'historical_seed' | 'observed' | null
   latest_reconciliation_status?: 'pending' | 'matched' | 'mismatch' | 'not_applicable' | null
   expected_through?: string | null

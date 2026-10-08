@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.reference_trading.health import ForwardReferenceHealth
 from app.reference_trading.repository import ReferenceRepository
 from test_forward_capture import _active, _capture
@@ -89,8 +91,48 @@ def test_canonical_endpoint_reader_requires_completed_mds_bar(monkeypatch):
 
     monkeypatch.setattr('app.market_data.composition.build_market_data_service', lambda _: Market())
     values = read_completed_canonical_endpoints(None, [('rb', '1d'), ('rb', '1w'), ('rb', '60m')], NOW)
-    assert len(seen) == 3 and all(request.limit == 1 for request in seen)
+    assert len(seen) == 3 and all(request.limit == 1 and request.before is None for request in seen)
     assert values[('rb', '1d')]['expected_through'] == (NOW - timedelta(seconds=1)).isoformat()
     assert values[('rb', '1w')]['endpoint_reason'] == 'AUTHORITATIVE_ENDPOINT_UNAVAILABLE'
     assert values[('rb', '60m')]['expected_through'] is None
     assert values[('rb', '60m')]['endpoint_reason'] == 'COMPLETE_PERIOD_MISSING'
+
+
+@pytest.mark.parametrize("mode", ("observed", "historical_seed", "before_start"))
+def test_observed_trading_day_comes_from_saved_state_point(mode):
+    from datetime import UTC, datetime, date
+    from test_activation import NOW
+    from app.reference_trading.models import ReferenceBatch
+    from app.reference_trading.presentation import envelope, presentation_point
+    factory, identity, revision, _ = _active()
+    end = datetime(2026, 10, 8, 14, tzinfo=UTC)
+    with factory.begin() as session:
+        batch = session.query(ReferenceBatch).filter_by(revision_id=revision, kind='seed_seal').one()
+        batch.kind = 'calculation'
+        batch.computed_through = end
+        batch.observed_at = datetime(2026, 10, 8, 14, 11, tzinfo=UTC) if mode == 'observed' else NOW if mode == 'before_start' else None
+        batch.source_evidence = {'presentation_v1': envelope([presentation_point(
+            kind='indicator', trading_day=date(2026, 10, 9), formula_versions=identity.formula_versions,
+            value={'version': 'newow_bar_state_v1', 'bar_end': end, 'main_state': 'HOLD'},
+        )])}
+    item = ForwardReferenceHealth(factory).read()['streams'][0]
+    assert item['latest_observed_trading_day'] == ('2026-10-09' if mode == 'observed' else None)
+
+
+@pytest.mark.parametrize("day", ("2026-02-30", "not-a-day"))
+def test_corrupt_saved_trading_day_is_presentation_corruption(day):
+    from datetime import timedelta
+    from test_activation import NOW
+    from app.reference_trading.models import ReferenceBatch
+    from app.reference_trading.presentation import PresentationUnavailable
+    factory, identity, revision, _ = _active()
+    with factory.begin() as session:
+        batch = session.query(ReferenceBatch).filter_by(revision_id=revision, kind='seed_seal').one()
+        batch.kind = 'calculation'
+        batch.observed_at = NOW + timedelta(seconds=2)
+        batch.source_evidence = {'presentation_v1': {'version': 'presentation_v1', 'points': [{
+            'kind': 'indicator', 'trading_day': day,
+            'value': {'version': 'newow_bar_state_v1'},
+        }]}}
+    with pytest.raises(PresentationUnavailable, match='PRESENTATION_CORRUPT'):
+        ForwardReferenceHealth(factory).read()
