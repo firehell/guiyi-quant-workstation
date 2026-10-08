@@ -2027,3 +2027,18 @@ def test_frozen_redis_rank1_cannot_override_published_catalog():
     )
     assert service.reconcile(datetime(2025, 1, 2, 1, 1, tzinfo=UTC)) == "LIVE_RANK1_CATALOG_CONFLICT"
     assert client.subscribed == []
+
+
+def test_cleanup_readback_counts_exact_day_namespace_without_mutation():
+    fake = FakeRedis()
+    store = _store(fake)
+    day = date(2025, 1, 2)
+    following = date(2025, 1, 3)
+    store.put_bar(day, "RB", "1m", _bar(1), contract="RB2505")
+    store.set_subscriptions(day, {"rb": "RB2505"})
+    store.put_bar(following, "RB", "1m", _bar(1), contract="RB2505")
+    assert store.cleanup_readback(day) == {"remaining_bar_keys": 1, "subscription_present": True}
+    assert fake.delete_calls == []
+    store.cleanup_trading_day(day)
+    assert store.cleanup_readback(day) == {"remaining_bar_keys": 0, "subscription_present": False}
+    assert store.cleanup_readback(following) == {"remaining_bar_keys": 1, "subscription_present": False}

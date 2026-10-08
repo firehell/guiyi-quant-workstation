@@ -48,6 +48,7 @@ class DatabaseCoverageSource:
         *,
         history_floor_path: Path | None = None,
         now: Callable[[], datetime] | None = None,
+        reuse_session_windows: bool = False,
     ) -> None:
         self.session = session
         self.starts = _load_product_starts(product_starts_path)
@@ -58,6 +59,11 @@ class DatabaseCoverageSource:
         )
         self.history_floor = _load_history_floor(floor_path)
         self._now = now or (lambda: datetime.now(SHANGHAI))
+        # Opt-in only for a bounded, read-only Catalog snapshot. Never share
+        # this instance across transactions or with maintenance writers.
+        self._session_window_cache: dict[tuple[str, date], tuple[SessionWindow, ...]] | None = (
+            {} if reuse_session_windows else None
+        )
 
     def product_start(self, symbol: str) -> date:
         """品种有效维护起点：provider 窗口起点与 active history floor 的较大值。"""
@@ -389,14 +395,23 @@ class DatabaseCoverageSource:
         if not days:
             return ()
         exchange = self._exchange(key.symbol)
+        cache = self._session_window_cache
+        missing = days if cache is None else tuple(
+            day for day in days if (key.symbol, day) not in cache
+        )
         batch = SessionWindowBatch(
             self.session,
             exchange=exchange,
             symbol=key.symbol,
-            trading_days=days,
-        )
+            trading_days=missing,
+        ) if missing else None
         try:
-            sessions_by_day = {day: batch.windows(day) for day in days}
+            fresh = {day: batch.windows(day) for day in missing} if batch else {}
+            if cache is not None:
+                cache.update({(key.symbol, day): windows for day, windows in fresh.items()})
+                sessions_by_day = {day: cache[key.symbol, day] for day in days}
+            else:
+                sessions_by_day = fresh
         except SessionClockError as exc:
             raise InfrastructureError(exc.code) from exc
         if key.frequency in INTRADAY_FREQUENCIES:

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -194,6 +195,8 @@ class AfterMarketUpdater:
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
         self._failure_context = None
+        self._live_evidence: dict[str, object] | None = None
+        self._historical_publications: list[dict[str, object]] | None = None
         with self.recovery_guard_factory():
             result = self._run_guarded()
         if self.consumer_audit is not None:
@@ -431,6 +434,10 @@ class AfterMarketUpdater:
         *,
         attempt: int,
     ) -> str | None:
+        self._live_evidence = None
+        self._historical_publications = None
+        self._current.pop("live_evidence", None)
+        self._current.pop("historical_publications", None)
         try:
             if self.rqdata is None:
                 if self.rqdata_factory is None:
@@ -538,6 +545,13 @@ class AfterMarketUpdater:
                 detail_code="UNEXPECTED_UPDATE_EXCEPTION", exception_type=type(exc).__name__,
             )
             return "UPDATE_FAILED"
+        publications = getattr(self.manager, "publication_evidence", None)
+        if publications is not None:
+            validated = _public_historical_publications(publications, products)
+            if validated is None or len(validated) != result.applied:
+                return "UPDATE_FAILED"
+            self._historical_publications = validated
+            self._current["historical_publications"] = validated
         if result.status not in {"passed", "noop"}:
             error_code = _public_maintenance_failure_code(result.stop_reason)
             _diagnostic_warning(
@@ -563,9 +577,8 @@ class AfterMarketUpdater:
                 }
             )
             self._stage("live_reconciliation")
-            if not _rank1_matches_live_snapshot(
-                self.manager, self.live_store, products, trading_day
-            ):
+            snapshot = self.live_store.subscriptions(trading_day)
+            if not _rank1_matches_snapshot(self.manager, snapshot, products, trading_day):
                 _diagnostic_warning(
                     "after_market_attempt_failed stage=live_reconciliation attempt=%s "
                     "detail_code=LIVE_DOMINANT_MISMATCH",
@@ -574,8 +587,45 @@ class AfterMarketUpdater:
                     detail_code="LIVE_DOMINANT_MISMATCH",
                 )
                 return "LIVE_DOMINANT_MISMATCH"
+            normalized_snapshot = {key.strip().lower(): value.strip().upper()
+                                   for key, value in snapshot.items()}
+            self._live_evidence = {
+                "trading_day": trading_day.isoformat(),
+                "run_started_at": self._run_started_at,
+                "attempt": attempt,
+                "scope_sha256": _evidence_hash(list(products)),
+                "snapshot_sha256": _evidence_hash(normalized_snapshot),
+                # Equality was checked against formal Catalog rank1 above.
+                "formal_rank1_sha256": _evidence_hash(normalized_snapshot),
+                "rank1_matches_snapshot": True,
+                "reconciled_at": _local_timestamp(self.now()).isoformat(),
+                "code_commit": _local_code_commit(),
+                "cleanup_verified": False,
+                "cleanup_checked_at": None,
+                "remaining_bar_keys": None,
+                "subscription_present": None,
+                "canonical_live_exclusion": (
+                    "historical_publications_recorded" if self._historical_publications
+                    else "no_publication" if self._historical_publications == [] else "not_verified"
+                ),
+            }
+            self._current["live_evidence"] = self._live_evidence
+            # Preserve the reconciliation before destroying its Redis source.
             self._stage("live_cleanup")
             self.live_store.cleanup_trading_day(trading_day)
+            readback = self.live_store.cleanup_readback(trading_day)
+            remaining = readback["remaining_bar_keys"]
+            present = readback["subscription_present"]
+            if type(remaining) is not int or remaining < 0 or type(present) is not bool:
+                raise ValueError("LIVE_CLEANUP_READBACK_INVALID")
+            self._live_evidence.update(
+                cleanup_verified=remaining == 0 and present is False,
+                cleanup_checked_at=_local_timestamp(self.now()).isoformat(),
+                remaining_bar_keys=remaining, subscription_present=present,
+            )
+            self._persist_progress()
+            if not self._live_evidence["cleanup_verified"]:
+                return "UPDATE_FAILED"
         except Exception as exc:  # noqa: BLE001 - catalog/Redis detail stays private
             if self._progress_failed:
                 raise _ProgressPersistenceError() from None
@@ -633,6 +683,9 @@ class AfterMarketUpdater:
                     if result.error_code == "CALENDAR_NIGHT_AUTHORITY_MISSING" else None
                 ),
                 "failure_notification": None,
+                **({"live_evidence": self._live_evidence} if getattr(self, "_live_evidence", None) is not None else {}),
+                **({"historical_publications": self._historical_publications}
+                   if getattr(self, "_historical_publications", None) is not None else {}),
             },
             "last_successful_trading_day": _public_trading_day(
                 previous.get("last_successful_trading_day")
@@ -1028,6 +1081,9 @@ def _invalidate_status_before_run(path: Path) -> dict[str, Any]:
 
 
 def _atomic_write_status(path: Path, payload: Mapping[str, object]) -> None:
+    content = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+    if len(content.encode("utf-8")) > 1024 * 1024:
+        raise ValueError("AFTER_MARKET_STATUS_TOO_LARGE")
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent,
@@ -1037,10 +1093,15 @@ def _atomic_write_status(path: Path, payload: Mapping[str, object]) -> None:
     temporary_path = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+            stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary_path, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     except BaseException:
         temporary_path.unlink(missing_ok=True)
         raise
@@ -1107,7 +1168,9 @@ def _rank1_matches_snapshot(
     products: tuple[str, ...], trading_day: date,
 ) -> bool:
     """Compare already-read subscription facts; callers own observation timing."""
-    if snapshot is None:
+    if (not isinstance(snapshot, Mapping) or len(snapshot) != len(products)
+            or any(not isinstance(key, str) or not isinstance(value, str)
+                   or not key.strip() or not value.strip() for key, value in snapshot.items())):
         return False
     live = {
         symbol.strip().lower(): contract.strip().upper()
@@ -1129,6 +1192,88 @@ def _rank1_matches_snapshot(
             return False
         formal[symbol] = contract.strip().upper()
     return live == formal
+
+
+def _public_historical_publications(
+    value: object, products: tuple[str, ...] | list[str],
+) -> list[dict[str, object]] | None:
+    if not isinstance(value, list) or len(value) > 1024:
+        return None
+    public = []
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != {"dataset", "year", "month", "file_name", "provenance"}:
+            return None
+        key, year, month = item["dataset"], item["year"], item["month"]
+        provenance, file_name = item["provenance"], item["file_name"]
+        if (not isinstance(key, list) or len(key) != 4 or not all(isinstance(part, str) for part in key)
+                or key[0] not in {"continuous", "contract"} or key[1] not in products
+                or re.fullmatch(r"[A-Z0-9_]{1,32}", key[2]) is None
+                or key[3] not in {"1m", "5m", "15m", "30m", "60m", "1d", "1w"}
+                or type(year) is not int or not 1990 <= year <= 2200
+                or type(month) is not int or not 1 <= month <= 12
+                or not isinstance(file_name, str)
+                or re.fullmatch(r"part\.[0-9a-f]{64}\.parquet", file_name) is None
+                or not isinstance(provenance, Mapping)
+                or set(provenance) != {"version", "input_source", "input_sha256"}
+                or type(provenance["version"]) is not int or provenance["version"] != 1
+                or not isinstance(provenance["input_source"], str)
+                or provenance["input_source"] not in {"rqdata", "historical_provider", "canonical_1m"}
+                or not isinstance(provenance["input_sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", provenance["input_sha256"]) is None):
+            return None
+        public.append({"dataset": list(key), "year": year, "month": month,
+                       "file_name": file_name, "provenance": dict(provenance)})
+    if len(json.dumps(public, separators=(",", ":")).encode("ascii")) > 256 * 1024:
+        return None
+    return public
+
+
+def _evidence_hash(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=True).encode("ascii")).hexdigest()
+
+
+def _public_live_evidence(
+    value: object, day: str, started: str, products: list[str], attempt: int | None,
+) -> dict[str, object] | None:
+    """Project only bounded evidence, bound to this run; old statuses remain valid."""
+    fields = {"trading_day", "run_started_at", "attempt", "scope_sha256", "snapshot_sha256",
+              "formal_rank1_sha256", "rank1_matches_snapshot", "reconciled_at", "code_commit",
+              "cleanup_verified", "cleanup_checked_at", "remaining_bar_keys",
+              "subscription_present", "canonical_live_exclusion"}
+    if not isinstance(value, Mapping) or set(value) != fields:
+        return None
+    if (value["trading_day"] != day or value["run_started_at"] != started
+            or type(value["attempt"]) is not int or value["attempt"] != attempt
+            or value["scope_sha256"] != _evidence_hash(products)
+            or value["rank1_matches_snapshot"] is not True
+            or not isinstance(value["canonical_live_exclusion"], str)
+            or value["canonical_live_exclusion"] not in {
+                "not_verified", "historical_publications_recorded", "no_publication"}
+            or type(value["cleanup_verified"]) is not bool):
+        return None
+    for key in ("scope_sha256", "snapshot_sha256", "formal_rank1_sha256"):
+        if not isinstance(value[key], str) or re.fullmatch(r"[0-9a-f]{64}", value[key]) is None:
+            return None
+    if value["snapshot_sha256"] != value["formal_rank1_sha256"]:
+        return None
+    commit = value["code_commit"]
+    if commit is not None and (not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None):
+        return None
+    reconciled = _public_timestamp(value["reconciled_at"])
+    checked = _public_timestamp(value["cleanup_checked_at"])
+    if reconciled is None or datetime.fromisoformat(reconciled) < datetime.fromisoformat(started):
+        return None
+    if checked is None:
+        if (value["cleanup_checked_at"] is not None or value["cleanup_verified"]
+                or value["remaining_bar_keys"] is not None or value["subscription_present"] is not None):
+            return None
+    elif (datetime.fromisoformat(checked) < datetime.fromisoformat(reconciled)
+          or type(value["remaining_bar_keys"]) is not int or value["remaining_bar_keys"] < 0
+          or type(value["subscription_present"]) is not bool
+          or value["cleanup_verified"] != (value["remaining_bar_keys"] == 0 and value["subscription_present"] is False)):
+        return None
+    return dict(value)
 
 
 def _public_trading_day(value: object) -> str | None:
@@ -1510,6 +1655,23 @@ def _public_last_run(
         ):
             return None
         public["failure_notification"] = failure_notification
+    if "historical_publications" in value:
+        publications = _public_historical_publications(value["historical_publications"], normalized_products)
+        if publications is None:
+            return None
+        public["historical_publications"] = publications
+    if "live_evidence" in value:
+        evidence = _public_live_evidence(value["live_evidence"], trading_day, started_at,
+                                         normalized_products, attempts)
+        if evidence is None:
+            return None
+        if status == "passed" and not evidence["cleanup_verified"]:
+            return None
+        source_state = evidence["canonical_live_exclusion"]
+        if ((source_state == "historical_publications_recorded" and not public.get("historical_publications"))
+                or (source_state == "no_publication" and public.get("historical_publications") != [])):
+            return None
+        public["live_evidence"] = evidence
     return public
 
 
@@ -1562,6 +1724,17 @@ def _public_current_run(value: object, *, schema_version: int = 2) -> dict[str, 
         if progress is None:
             return None
         public.update(progress)
+        if "historical_publications" in value:
+            publications = _public_historical_publications(value["historical_publications"], normalized_products)
+            if publications is None:
+                return None
+            public["historical_publications"] = publications
+        if "live_evidence" in value:
+            evidence = _public_live_evidence(value["live_evidence"], scheduled_date,
+                                             started_at, normalized_products, value["attempt"])
+            if evidence is None:
+                return None
+            public["live_evidence"] = evidence
     return public
 
 

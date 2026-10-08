@@ -1086,6 +1086,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         self._ready_batches: dict[BarFetchRequest, BarBatch] | None = None
         # 同进程内已同步过的 (products, through) 不再重复拉 metadata，减少 RQData 调用。
         self._metadata_watermarks: set[tuple[tuple[str, ...], date]] = set()
+        self.publication_evidence: list[dict[str, object]] = []
         self._observer: MaintenanceObserver | None = None
         self._progress_counts: dict[str, int] = {}
         self._source_cache: dict[tuple[DatasetKey, int, int, str], tuple[CanonicalBar, ...]] | None = None
@@ -1103,6 +1104,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
             raise ValueError("DAILY_UPDATE_SINCE_UNSUPPORTED")
         self._observer = observer
         self._progress_counts = {}
+        self.publication_evidence = []
         try:
             return self._update(request, before_apply=before_apply)
         finally:
@@ -1362,6 +1364,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         before_apply: Callable[[], None] | None = None,
     ) -> ContractWarmupResult:
         """规划或执行单一真实合约的默认七周期或显式频率 warm-up。"""
+        self.publication_evidence = []
         plan, _targets = self._contract_warmup_plan(request)
         if not request.apply:
             return ContractWarmupResult(
@@ -2760,6 +2763,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         item.key, item.year, item.month, bars, publish_expected,
                         tuple(fact for fact in exceptions if isinstance(fact, PriceUnavailableFact)),
                         tuple(fact for fact in exceptions if isinstance(fact, NonpositiveCloseFact)),
+                        publication_provenance=self._fetched_provenance(item, (batch,), exceptions),
                     ))))
             for item, partition in candidates:
                 failure_target = item
@@ -2791,6 +2795,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
             except Exception:
                 pass
             raise StorageError("COMMIT_OUTCOME_UNKNOWN") from exc
+        for item, partition in candidates:
+            self._record_publication(partition, item)
         return MaintenanceResult(
             action="contract_warmup", status="passed", through=through,
             planned=len(targets), applied=len(targets), blocked=0,
@@ -2884,9 +2890,28 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 publish_expected,
                 tuple(fact for fact in exceptions if isinstance(fact, PriceUnavailableFact)),
                 tuple(fact for fact in exceptions if isinstance(fact, NonpositiveCloseFact)),
+                publication_provenance=self._fetched_provenance(target, batches, exceptions),
             )
         )
         self._commit_partition(partition, target)
+
+    def _fetched_provenance(self, target, batches, exceptions) -> dict[str, object]:
+        return {
+            "version": 1,
+            "input_source": ("rqdata" if type(self.provider).__module__ == "app.market_data.rqdata_adapter"
+                             and type(self.provider).__name__ == "RQDataMarketAdapter" else "historical_provider"),
+            "input_sha256": _historical_inputs_sha256({
+                "existing": [bar.as_record() for bar in target.existing],
+                "existing_source_quality": [fact.to_record()
+                    for row in self.catalog.all_partitions(target.key)
+                    if (row.year, row.month) == (target.year, target.month)
+                    for fact in row.source_quality],
+                "merged_source_quality": [fact.to_record() for fact in exceptions],
+                "batches": [{"bars": [bar.as_record() for bar in batch.bars],
+                             "source_quality": [fact.to_record() for fact in batch.price_unavailable]}
+                            for batch in batches],
+            }),
+        }
 
     def _merged_fetched_bars(
         self,
@@ -3056,6 +3081,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     target.month,
                     bars,
                     target.expected,
+                    publication_provenance={"version": 1, "input_source": "canonical_1m",
+                                            "input_sha256": _historical_inputs_sha256(
+                                                [bar.as_record() for bar in source])},
                 )
             )
             self._commit_partition(partition, target)
@@ -3078,6 +3106,16 @@ class HistoricalDataManager(ContractWarmupPlanner):
             except Exception:
                 pass
             raise StorageError("COMMIT_OUTCOME_UNKNOWN") from exc
+
+        self._record_publication(partition, target)
+
+    def _record_publication(self, partition, target) -> None:
+        provenance = getattr(partition, "publication_provenance", None)
+        if provenance is not None:
+            self.publication_evidence.append({
+                "dataset": [target.key.kind.value, target.key.symbol, target.key.series_or_contract, target.key.frequency.value], "year": target.year, "month": target.month,
+                "file_name": partition.parquet_path.name, "provenance": dict(provenance),
+            })
 
     def _strict_verify(self, target: _Target) -> None:
         """发布后经 MarketDataService 读回，确保消费者路径与 expected 完全一致（fail-closed）。"""
@@ -3334,3 +3372,9 @@ def _release_maintenance_lease(lease: MaintenanceLease) -> None:
     except Exception:
         if getattr(pending, "code", None) != "COMMIT_OUTCOME_UNKNOWN":
             raise
+
+
+def _historical_inputs_sha256(value: object) -> str:
+    """Digest actual input values, keeping decimal text and exact endpoint identities."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     default=str).encode("utf-8")).hexdigest()
