@@ -36,6 +36,9 @@ def setup_source(engine=None, *, strategy="trend", frequency="1d"):
         series_kind='actual_dominant', recording_mode='historical_replay', observation_policy_version=None)
     stored = repo.ensure_stream(identity)
     manifest = {'source': 'verified-historical-fixture'}
+    if frequency == '1d':
+        from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+        manifest['reference_boundary_policy_version'] = NEWOW_D1_REFERENCE_BOUNDARY_POLICY
     revision = repo.create_revision(identity.stream_id, stored.row_version, manifest_sha256(manifest))
     from guiyi_quant.newow.models import NewowDailyBar
     from guiyi_quant.newow.product_contracts import ProductBar
@@ -166,7 +169,7 @@ def test_existing_partial_candidate_is_recovered_without_another_revision():
     plan = plan_for(service, identity)
     target = replace(identity, recording_mode=RecordingMode.FORWARD_OBSERVATION, observation_policy_version=POLICY)
     stored = repo.ensure_stream(target)
-    manifest = {'source': 'verified-historical-fixture', 'forward_bootstrap_v1': {
+    manifest = {**repo.read_state(identity.stream_id).dependency_manifest, 'forward_bootstrap_v1': {
         'plan_hash': plan['plan_hash'], 'source': plan['source'],
         'recording_start': plan['recording_start'], 'policy': POLICY}}
     candidate = repo.create_revision(target.stream_id, stored.row_version, manifest_sha256(manifest))
@@ -267,20 +270,27 @@ def test_short_main_rise_warming_checkpoint_is_not_rejected(frequency):
     assert checkpoint.reference_state.open_trade is None
 
 
-def test_dual_fusion_uses_its_own_schema_and_flat_reference_state():
+def setup_fusion_source():
     from app.market_data.newow.product_release import candidate_input_quality_policy
     from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity, FusionReferenceReplayState
     factory, repo, _, _, _ = setup_source()
     identity = build_fusion_stream_identity('rb', '1d',
         input_quality_policy=candidate_input_quality_policy('rb', '1d', candidate_weekly=False))
     stored = repo.ensure_stream(identity)
-    manifest = {'source': 'verified-fusion-fixture'}
+    from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+    manifest = {'source': 'verified-fusion-fixture',
+                'reference_boundary_policy_version': NEWOW_D1_REFERENCE_BOUNDARY_POLICY}
     revision = repo.create_revision(identity.stream_id, stored.row_version, manifest_sha256(manifest))
     source = AdapterCheckpoint(FusionReferenceReplayState(), NOW - timedelta(days=1),
         'f' * 64, 'RB2610', 'owner', 'calc', identity, ReferenceState.flat(identity))
     repo.stage_seed_chunk(revision, SeedChunk('seed', 0, 1, sha256(b'seed').hexdigest(), 'seed'))
     repo.seal_seed(revision, manifest, source, 'newow_dual_fusion_reference_v1')
     repo.publish_revision(identity.stream_id, revision, stored.row_version, manifest_sha256(manifest))
+    return factory, repo, identity, revision, source
+
+
+def test_dual_fusion_uses_its_own_schema_and_flat_reference_state():
+    factory, repo, identity, revision, source = setup_fusion_source()
     service = NewowForwardBootstrap(factory)
     plan = plan_for(service, identity)
     assert plan['strategy_schema'] == 'newow_dual_fusion_reference_v1'
@@ -321,3 +331,45 @@ def test_bootstrap_apply_binds_declared_product_to_locked_source_identity():
         service.apply(wrong, expected_plan_hash=wrong['plan_hash'], now=NOW)
     with factory() as session:
         assert session.get(ReferenceStream, plan['target_stream_id']) is None
+
+
+@pytest.mark.parametrize('strategy', ['trend', 'oscillation', 'main_rise', 'dual_fusion'])
+@pytest.mark.parametrize('old_policy', [None, 'legacy_boundary_v0'])
+def test_daily_old_hash_bound_boundary_policy_rejected_without_target_mutation(strategy, old_policy):
+    from app.reference_trading.models import ReferenceBatch
+    factory, repo, identity, revision, source = (setup_fusion_source() if strategy == 'dual_fusion'
+                                               else setup_source(strategy=strategy))
+    with factory.begin() as session:
+        rev = session.get(ReferenceRevision, (identity.stream_id, revision))
+        batch = session.get(ReferenceBatch, rev.checkpoint_batch_id)
+        manifest = dict(batch.dependency_manifest)
+        if old_policy is None:
+            manifest.pop('reference_boundary_policy_version', None)
+        else:
+            manifest['reference_boundary_policy_version'] = old_policy
+        batch.dependency_manifest = manifest
+        rev.dependency_digest = manifest_sha256(manifest)
+    with pytest.raises(RepositoryConflict, match='BOOTSTRAP_HISTORY_BOUNDARY_POLICY_CONFLICT'):
+        plan_for(NewowForwardBootstrap(factory), identity)
+    with factory() as session:
+        expected_count = 2 if strategy == 'dual_fusion' else 1
+        assert session.scalar(select(func.count()).select_from(ReferenceStream)) == expected_count
+        assert session.scalar(select(func.count()).select_from(ReferenceRevision)) == expected_count
+
+
+def test_apply_rechecks_daily_policy_under_source_lock_before_target_creation():
+    from app.reference_trading.models import ReferenceBatch
+    factory, repo, identity, revision, source = setup_source()
+    bootstrap = NewowForwardBootstrap(factory)
+    plan = plan_for(bootstrap, identity)
+    with factory.begin() as session:
+        rev = session.get(ReferenceRevision, (identity.stream_id, revision))
+        batch = session.get(ReferenceBatch, rev.checkpoint_batch_id)
+        manifest = dict(batch.dependency_manifest)
+        manifest.pop('reference_boundary_policy_version', None)
+        batch.dependency_manifest = manifest
+        rev.dependency_digest = manifest_sha256(manifest)
+    with pytest.raises(RepositoryConflict, match='BOOTSTRAP_HISTORY_BOUNDARY_POLICY_CONFLICT'):
+        bootstrap.apply(plan, expected_plan_hash=plan['plan_hash'], now=NOW)
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(ReferenceStream)) == 1

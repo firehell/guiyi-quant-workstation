@@ -29,3 +29,8 @@
 - 第二轮Review发现history receipt落盘前中断可重复rebuild，已补唯一durable intent、file/directory fsync、product flock和未知结果阻断；定向独立Review50 passed/7 skipped，允许继续串行初始化。
 - 通用rebuild改先pin/验证frozen snapshot再invalidate，SOURCE_BUSY/SOURCE_CHANGED保留旧active；42 passed/5 skipped。
 - Runtime仍未启用。剩余验收风险是历史回放持全局维护锁，需要实测持锁时长与取消/调度边界，不以提前释放锁削弱一致性。
+
+- 历史执行补充唯一durable intent及product flock，未知提交不重试。新上市品种仅新计划使用权威product_start，不缩掉上市后缺口。B旧失败候选仅精确invalidate，17批次/50动作/23交易/82 marks完整保持。
+- D1新合约预热期的quality boundary不再投射为旧owner参考中断，raw gap/calculation事实保持；新policy hash绑定基础/双策略，bootstrap及audit拒绝旧D1policy。已完成六品种24日线按新policy重建，B/AO实际重建通过；其他品种串行推进中。
+- 第二轮定向独立Review92 passed/2 PostgreSQL skip，ruff/diff通过，代码允许集成develop。最终720及自然运行验收未完成。
+- 启动只读核对：45品种首夜60m端点22:00，15品种次日10:00；Oct9 MainContractMap尚缺，必须先补权威metadata。不得用昨日owner、回填recording_start或伪造seed watermark。
