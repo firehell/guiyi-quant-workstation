@@ -15,34 +15,12 @@
 56源窗口/168保存态/112伙伴边fresh只读通过；正式API121请求/168组合/389859 CLOSED完整数值独审通过，108基础FULL/4 PARTIAL保留；真实Chrome13自然响应全200、正式SS/PP过滤及三原图独审通过，30分块完整封存。定向回归、build/typecheck、工程29、OpenSpec10、Ruff/diff/secret通过；失败原件保留，仅补受影响验证，未重下载或重采旧全部页面。
 page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益。
 
-**本次仅RELEASED，未切换Runtime。现役仍为v1.11.2，运行分钟范围45品种。** 新发布树
-`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.12.0`已exact tag detached/clean准备，未安装服务；仍被服务引用的v1.11.2树保留。任务8013/5179与专属Chrome已退出，临时配置已删除。运行切换及自然业务验收仍是独立未完成事项。
+**Runtime已切换v1.12.0，运行页面范围59品种；PAGE_SCOPE_VERIFIED / REVIEW_COMPLETE。**
+正式根`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.12.0` exact `2a31a76b414ef607488bd2e2e8131a3ee469b003`，detached/clean。7个既有应用label（API/Web/Live/after-market/late-provider-recovery/Alert/weekly）installed/loaded root与commit一致；base/market/alert/weekly四次既有安装各exit0。Market内guard/preflight为before_first_session、2026-10-08、60品种/snapshot0，通过并保留旧盘后历史。
+实际8000版本1.12.0/capability v30精确59、新增14品种各5m正式chart READY；5173一次真实Chrome13自然响应全200，正式SS主图/累计曲线、PP日周过滤和三原图独审通过。服务health API/Web200、Runtime ok/overall passed。既有Rule/Scope、受众2、auto_order=false、reference worker关闭保持；1m仅聚合、分钟主升浪和持续更新未开放。
+旧v1.11.2树clean/引用0、15份运行JSON/plist/marker已保存后non-force退休，未保留回滚源码；退休后service/history读回仍passed。详情见[Runtime切换记录](docs/tasks/runtime-v1.12.0-20261008.md)，证据`outputs/runtime-v1.12.0-20261008/`。
 
-以下为现役v1.11.2的既有Runtime读回；不作为v1.12.0的运行证据。
-**v1.11.2运行版本同步及既有operational health验收已完成；自然业务待验收项保持。**
-Market/API/Web/Alert与既有weekly切到linked worktree
-`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.11.2`，detached/clean，commit为v1.11.2 exact tag `35217d5ab2c87b9173306d142ccf9f72285a3ec6`。
-render、Market preflight（non_trading_interval，60品种）及各既有服务安装exit0；六服务configured/loaded
-root与commit一致，API/Web HTTP200，正式API版本1.11.2，readonly服务检查overall=passed。
-两次现场health整体ok，DB/Redis/Live/after_market均ok；盘后run_state=retained、expected及last_success为2026-09-30。
-9/30原盘后success保留原commit `653e736f5952146a2ea401634d32a605e7b9a0d5`、原文件SHA
-`6ed66b566012bc795ca8c677ab270077abf5f9a9315a218f06066ecf233d988a`，独立保存在`.run/after-market-history.json`；
-新运行根的自然current_run/last_run仍null，没有伪造首跑、手工重跑盘后或覆盖失败记录。
-
-本轮当前rank1 D1/W1前缀恢复AG、AU、CU、EC、MA、SN，共68个真实源请求、118分区激活；
-独立六合同replan零目标、1136根D1/240根W1按权威Calendar和Decimal逐周七字段重算无差异，维护锁0。
-最终60合约raw端点48完整；BZ/EG有成交但O/H/L=0的真实源异常，各零发布、禁重试；
-另10个raw缺失对应已有typed quality事实，不作为普通下载缺口重试。目标8品种D1/W1各24 case有界只读复查192秒完成、预算未耗尽，六恢复品种各3策略chart READY；
-完整60消费者与自然业务仍未宣称通过。
-
-Alert activation=true、running，既有Rule/Scope与两个收件配置保持，未发送、补发、回放或ack通知。
-Alert组件仍degraded（分钟覆盖unverified），notification_state=provider_accepted、连续失败0；
-9/30较早通知失败诊断保留。weekly组件仍missed，按合同不计入operational整体状态；没有手工重跑或新增任务。
-首根自然completed Bar、Alert覆盖、盘后增量/消费者检查与weekly仍待各自验收，**不声明RUNTIME_READY**。
-
-旧v1.11.1树clean且配置/loaded服务/进程引用为零；13个运行配置/marker证据保存后以非force Git worktree remove退休。
-本轮证据保存在 `/Volumes/扩展盘/guiyi-quant-evidence/after-market-health-20261004/`；旧归档引用以任务文档为准。
-operational、Rule/Scope/audience、auto_order=false和reference worker关闭保持。历史23项weekly finding与P9阻断仍保留。
+**首根自然completed Live Bar、Alert分钟覆盖、盘后维护、weekly与完整60消费者业务仍待各自验收，不声明RUNTIME_READY。** 当前weekly=not_run，idle调度不误计失败；没有手工运行、replay、通知补发或新增任务。旧BZ/EG源异常、10个raw typed quality缺口、历史weekly finding及P9证据限制仍保留，本轮切换不冒称已修复。历史盘后证据保存在新树after-market-history及旧运行归档；历史详情见[盘后修复记录](docs/tasks/after-market-health-20261004.md)。
 
 ## 当前产品与验证范围
 
