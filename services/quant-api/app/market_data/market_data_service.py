@@ -123,6 +123,11 @@ class MarketDataService:
     def __init__(self, catalog: MarketCatalog, store: CanonicalMonthlyStore) -> None:
         self.catalog = catalog
         self.store = store
+        self.replay_coverage: DatabaseCoverageSource | None = None
+        self._weekly_replay_cache: dict[tuple[object, ...], tuple[tuple[CanonicalBar, ...], tuple[WeeklySourceInterruption, ...]]] = {}
+        self._weekly_replay_cache_symbol: str | None = None
+        self._daily_replay_cache: dict[tuple[object, ...], tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]] = {}
+        self._daily_replay_cache_symbol: str | None = None
 
     def contract_source_evidence(
         self, *, symbol: str, contract: str, frequency: BarFrequency,
@@ -933,6 +938,26 @@ class MarketDataService:
         self, *, symbol: str, contract: str, through: date, cutoff: datetime,
         union: bool, since: date | None,
     ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
+        if self.replay_coverage is None:
+            return self._read_contract_replay_quality_union(
+                symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+                union=union, since=since,
+            )
+        if self._daily_replay_cache_symbol != symbol:
+            self._daily_replay_cache.clear()
+            self._daily_replay_cache_symbol = symbol
+        key = (symbol, contract, through, cutoff, union, since)
+        if key not in self._daily_replay_cache:
+            self._daily_replay_cache[key] = self._read_contract_replay_quality_union(
+                symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+                union=union, since=since,
+            )
+        return self._daily_replay_cache[key]
+
+    def _read_contract_replay_quality_union(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+        union: bool, since: date | None,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
         try:
             fact = self.catalog.contract_fact(symbol, contract)
         except CatalogError as exc:
@@ -990,6 +1015,30 @@ class MarketDataService:
         return bars, exceptions
 
     def query_contract_weekly_replay_quality(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+        classification_version: str = WEEKLY_SOURCE_CLASSIFICATION_VERSION,
+        since: date | None = None,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[WeeklySourceInterruption, ...]]:
+        # Only the bounded read-only audit opts into this immutable snapshot.
+        # Both display and reference reads request the same physical prefixes;
+        # retain exact successes for one product, never failures or other windows.
+        if self.replay_coverage is None:
+            return self._query_contract_weekly_replay_quality(
+                symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+                classification_version=classification_version, since=since,
+            )
+        if self._weekly_replay_cache_symbol != symbol:
+            self._weekly_replay_cache.clear()
+            self._weekly_replay_cache_symbol = symbol
+        key = (symbol, contract, through, cutoff, classification_version, since)
+        if key not in self._weekly_replay_cache:
+            self._weekly_replay_cache[key] = self._query_contract_weekly_replay_quality(
+                symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+                classification_version=classification_version, since=since,
+            )
+        return self._weekly_replay_cache[key]
+
+    def _query_contract_weekly_replay_quality(
         self, *, symbol: str, contract: str, through: date, cutoff: datetime,
         classification_version: str = WEEKLY_SOURCE_CLASSIFICATION_VERSION,
         since: date | None = None,
@@ -1198,7 +1247,7 @@ class MarketDataService:
             fact = self.catalog.contract_fact(symbol, contract)
             if not fact.listed_date <= trading_day < fact.expired_date:
                 raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
-            coverage = DatabaseCoverageSource(
+            coverage = self.replay_coverage or DatabaseCoverageSource(
                 self.catalog.session,
                 PROJECT_ROOT / "data/universe/product_window_starts.csv",
             )

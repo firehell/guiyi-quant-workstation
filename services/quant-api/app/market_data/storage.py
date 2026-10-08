@@ -6,7 +6,7 @@ an explicitly selected offline repair shadow; normal publication never replaces.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
@@ -56,6 +56,7 @@ class PublishRequest:
     expected_bar_ends: tuple[datetime, ...]
     price_unavailable: tuple[PriceUnavailableFact, ...] = ()
     nonpositive_close: tuple[NonpositiveCloseFact, ...] = ()
+    publication_provenance: Mapping[str, object] | None = None
 
     @property
     def source_quality(self) -> tuple[SourceQualityFact, ...]:
@@ -77,6 +78,7 @@ class PublishedPartition:
     source_coverage_end: datetime | None = None
     source_quality: tuple[SourceQualityFact, ...] = ()
     source_quality_sha256: str | None = None
+    publication_provenance: Mapping[str, object] | None = None
 
 
 PartitionBoundaryValidator = Callable[[DatasetKey, tuple[CanonicalBar | SourceQualityFact, ...]], bool]
@@ -139,6 +141,7 @@ class CanonicalMonthlyStore:
 
     def _publish(self, request: PublishRequest, *, legacy_shadow: bool) -> PublishedPartition:
         self._validate(request)
+        provenance = _validated_publication_provenance(request.publication_provenance)
         directory = self._month_directory(request.dataset, request.year, request.month)
         temporary = f"part.{uuid.uuid4().hex}.tmp"
         directory_fd = self._directory_fd(directory, create=True)
@@ -147,6 +150,24 @@ class CanonicalMonthlyStore:
             policy = approved_policy_for_partition(request.dataset, request.bars)
             if policy is not None:
                 expected = expected.replace_schema_metadata({b"guiyi.approved_local_ohlc_policy": json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()})
+            if provenance is not None:
+                # Adding metadata cannot bypass an existing corrupted immutable
+                # candidate containing the exact same unannotated market values.
+                legacy_buffer = pa.BufferOutputStream()
+                pq.write_table(expected, legacy_buffer, compression="zstd", use_dictionary=False, version="2.6")
+                legacy_payload = legacy_buffer.getvalue().to_pybytes()
+                legacy_name = f"part.{hashlib.sha256(legacy_payload).hexdigest()}.parquet"
+                try:
+                    existing_candidate = self._read_bytes(directory_fd, legacy_name)
+                except FileNotFoundError:
+                    existing_candidate = None
+                if existing_candidate is not None and existing_candidate != legacy_payload:
+                    raise StorageError("IMMUTABLE_PARTITION_CONFLICT")
+                metadata = dict(expected.schema.metadata or {})
+                metadata[b"guiyi.historical_provenance"] = json.dumps(
+                    provenance, sort_keys=True, separators=(",", ":")
+                ).encode("ascii")
+                expected = expected.replace_schema_metadata(metadata)
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
             with os.fdopen(fd, "wb") as stream:
                 pq.write_table(expected, stream, compression="zstd", use_dictionary=False, version="2.6")
@@ -154,7 +175,7 @@ class CanonicalMonthlyStore:
                 os.fsync(stream.fileno())
             payload = self._read_bytes(directory_fd, temporary)
             physical = pq.ParquetFile(pa.BufferReader(payload)).read()
-            if not physical.equals(expected, check_metadata=False):
+            if not physical.equals(expected, check_metadata=True):
                 raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
             name = "part.parquet" if legacy_shadow else f"part.{hashlib.sha256(payload).hexdigest()}.parquet"
             if legacy_shadow:
@@ -178,6 +199,7 @@ class CanonicalMonthlyStore:
                 _utc(request.expected_bar_ends[-1]),
                 exceptions,
                 _quality_sha256(exceptions) if exceptions else None,
+                provenance,
             )
         except StorageError:
             raise
@@ -242,6 +264,29 @@ class CanonicalMonthlyStore:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 raise StorageError("PARTITION_UNREADABLE")
             return stream.read()
+
+    def read_publication_provenance(self, partition: CatalogPartitionLike) -> dict[str, object] | None:
+        """Independently read provenance from verified Catalog-selected immutable bytes.
+
+        Missing metadata means unknown legacy provenance; it is never synthesized.
+        """
+        fingerprint = self.verified_partition_fingerprint(partition)
+        directory = self._month_directory(partition.dataset, partition.year, partition.month)
+        fd = self._directory_fd(directory, create=False)
+        try:
+            payload = self._read_bytes(fd, partition.file_path.name)
+        finally:
+            os.close(fd)
+        if hashlib.sha256(payload).hexdigest() != fingerprint:
+            raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
+        metadata = pq.ParquetFile(pa.BufferReader(payload)).schema_arrow.metadata or {}
+        raw = metadata.get(b"guiyi.historical_provenance")
+        if raw is None:
+            return None
+        try:
+            return _validated_publication_provenance(json.loads(raw))
+        except (ValueError, TypeError, UnicodeError):
+            raise StorageError("PUBLICATION_PROVENANCE_INVALID") from None
 
     def verified_partition_fingerprint(self, partition: CatalogPartitionLike) -> str:
         """Verify immutable Canonical bytes and Catalog quality without decoding Bars."""
@@ -412,3 +457,16 @@ def _utc(value: object) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise StorageError("EXPECTED_BAR_END_INVALID")
     return value.astimezone(UTC)
+
+
+def _validated_publication_provenance(value: Mapping[str, object] | None) -> dict[str, object] | None:
+    if value is None:
+        return None
+    if (not isinstance(value, Mapping) or set(value) != {"version", "input_source", "input_sha256"}
+            or type(value["version"]) is not int or value["version"] != 1
+            or not isinstance(value["input_source"], str)
+            or value["input_source"] not in {"rqdata", "historical_provider", "canonical_1m"}
+            or not isinstance(value["input_sha256"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", value["input_sha256"]) is None):
+        raise StorageError("PUBLICATION_PROVENANCE_INVALID")
+    return dict(value)

@@ -88,6 +88,18 @@ def test_manager_publishes_exact_d1_exception_without_a_fabricated_bar(
     target = _Target(key, 2025, 1, (first, last), (first, last), ())
     manager._publish_fetched_partition(target, (BarBatch((valid,), (exception,)),))
     partition = manager.catalog.all_partitions(key)[0]
+    provenance = manager.store.read_publication_provenance(partition)
+    # With identical prices and provider batch, changing only retained typed
+    # evidence must change the independently persisted input identity.
+    from dataclasses import replace
+    retained = _Target(key, 2025, 1, (first, last), (), (valid,))
+    first_identity = manager._fetched_provenance(retained, (BarBatch(()),), (exception,))
+    second_identity = manager._fetched_provenance(
+        retained, (BarBatch(()),), (replace(exception, response_sha256="c" * 64),))
+    assert first_identity["input_sha256"] != second_identity["input_sha256"]
+    assert provenance["input_source"] == "historical_provider"
+    assert manager.publication_evidence[0]["provenance"] == provenance
+    assert manager.publication_evidence[0]["file_name"] == partition.file_path.name
     assert manager.store.read_catalog_partition_quality(partition) == (
         (valid,), (exception,),
     )
@@ -1124,6 +1136,14 @@ def test_contract_warmup_apply_publishes_only_exact_family_and_derives_from_1m(
     assert result.readonly is False
     assert result.plan == dry_run.plan
     assert result.applied == 7
+    assert len(manager.publication_evidence) == 7
+    assert {item["provenance"]["input_source"] for item in manager.publication_evidence} == {
+        "historical_provider", "canonical_1m"}
+    for item in manager.publication_evidence:
+        key = DatasetKey(*item["dataset"])
+        row = next(row for row in manager.catalog.all_partitions(key)
+                   if row.year == item["year"] and row.month == item["month"])
+        assert manager.store.read_publication_provenance(row) == item["provenance"]
     assert result.blocked == result.failed == 0
     assert result.provider_requests == 3
     assert provider.calls == [
@@ -1957,6 +1977,11 @@ def test_contract_warmup_explicit_weekly_groups_cross_month_daily_companions(
 
     assert result.status == "passed"
     assert result.applied == result.provider_requests == 3
+    assert len(manager.publication_evidence) == 3
+    for item in manager.publication_evidence:
+        row = next(row for row in manager.catalog.all_partitions(DatasetKey(*item["dataset"]))
+                   if (row.year, row.month) == (item["year"], item["month"]))
+        assert manager.store.read_publication_provenance(row) == item["provenance"]
     assert provider.batch_calls == [(daily, daily, weekly)]
     stored_daily = (
         *_read_committed_month(manager, daily, 2025, 3),
@@ -4479,3 +4504,19 @@ def test_legacy_pointer_transitions_only_on_success(session, tmp_path, monkeypat
     assert (current.file_path == legacy.parquet_path) == fail_before_commit
     assert _read_committed_month(manager, key, 2025, 1) == ((old,) if fail_before_commit else (new,))
     assert manager.store.read_catalog_partition(old_pointer) == (old,)
+
+
+def test_atomic_weekly_unknown_commit_does_not_confirm_candidate_provenance(session, tmp_path, monkeypatch):
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    bar = _daily(2, 100)
+    manager = _manager(session, tmp_path, FakeCoverage({key.as_tuple(): (bar.bar_end,)}),
+                       FakeProvider({key.as_tuple(): (bar,)}))
+    target = _Target(key, 2025, 1, (bar.bar_end,), (bar.bar_end,), ())
+    # This boundary test isolates transaction outcome, not weekly parity semantics.
+    monkeypatch.setattr(manager, "_require_contract_weekly_daily_parity", lambda paired: None)
+    monkeypatch.setattr(manager, "_require_contract_weekly_candidate_closure", lambda paired: None)
+    monkeypatch.setattr(session, "commit", lambda: (_ for _ in ()).throw(SQLAlchemyError("unknown commit")))
+    with pytest.raises(StorageError, match="COMMIT_OUTCOME_UNKNOWN"):
+        manager._execute_contract_weekly_atomic((target,), date(2025, 1, 2))
+    assert manager.publication_evidence == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()

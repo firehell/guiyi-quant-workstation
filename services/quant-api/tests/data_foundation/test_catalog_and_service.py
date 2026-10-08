@@ -2930,3 +2930,62 @@ def test_completed_day_windows_preserve_exact_close_and_prefix(session, tmp_path
         symbol="jm", start=start, as_of=later, latest=days[-1],
     )
     assert all(max(window.end for window in windows) <= exact_close for _, windows in exact)
+
+
+def test_weekly_replay_snapshot_cache_is_exact_bounded_and_never_caches_failure(monkeypatch):
+    market = MarketDataService(object(), object())
+    calls = []
+    output = ((), ())
+    def read(**kwargs):
+        calls.append(kwargs)
+        if kwargs['contract'] == 'FAIL':
+            raise MarketDataError('PARTITION_INTEGRITY_INVALID')
+        return output
+    monkeypatch.setattr(market, '_query_contract_weekly_replay_quality', read)
+    args = dict(symbol='jm', contract='JM2505', through=date(2025, 1, 10),
+                cutoff=datetime(2025, 1, 10, 7, tzinfo=UTC))
+    market.query_contract_weekly_replay_quality(**args)
+    market.query_contract_weekly_replay_quality(**args)
+    assert len(calls) == 2  # Every ordinary API read still validates storage.
+    market.replay_coverage = object()  # Audit-local immutable snapshot opt-in.
+    market.query_contract_weekly_replay_quality(**args)
+    market.query_contract_weekly_replay_quality(**args)
+    assert len(calls) == 3
+    market.query_contract_weekly_replay_quality(**args, since=date(2025, 1, 6))
+    assert len(calls) == 4
+    market.query_contract_weekly_replay_quality(**args, classification_version='other')
+    assert len(calls) == 5
+    market.query_contract_weekly_replay_quality(**{**args, 'symbol': 'sc'})
+    market.query_contract_weekly_replay_quality(**args)
+    assert len(calls) == 7  # Product change releases the earlier physical prefix.
+    for _ in range(2):
+        with pytest.raises(MarketDataError):
+            market.query_contract_weekly_replay_quality(**{**args, 'contract': 'FAIL'})
+    assert len(calls) == 9
+
+
+def test_daily_snapshot_cache_keeps_quality_union_and_window_distinct(monkeypatch):
+    market = MarketDataService(object(), object())
+    calls = []
+    def read(**kwargs):
+        calls.append(kwargs)
+        if kwargs['contract'] == 'FAIL':
+            raise MarketDataError('CONTRACT_REPLAY_COVERAGE_UNAVAILABLE', reason='REPLAY_PREFIX_MISSING')
+        return (), ()
+    monkeypatch.setattr(market, '_read_contract_replay_quality_union', read)
+    args = dict(symbol='jm', contract='JM2505', through=date(2025, 1, 10),
+                cutoff=datetime(2025, 1, 10, 7, tzinfo=UTC))
+    for _ in range(2):
+        market.query_contract_replay_quality_union(**args)
+    assert len(calls) == 2
+    market.replay_coverage = object()
+    for _ in range(2):
+        market.query_contract_replay_quality_union(**args)
+    assert len(calls) == 3
+    market.query_contract_replay_quality(**args)
+    market.query_contract_replay_quality_union(**args, since=date(2025, 1, 6))
+    assert len(calls) == 5
+    for _ in range(2):
+        with pytest.raises(MarketDataError):
+            market.query_contract_replay_quality_union(**{**args, 'contract': 'FAIL'})
+    assert len(calls) == 7

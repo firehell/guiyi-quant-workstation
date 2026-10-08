@@ -243,6 +243,13 @@ class RedisLiveStore:
         keys.append(self._subscription_key(trading_day))
         self._redis.delete(*keys)
 
+    def cleanup_readback(self, trading_day: date) -> dict[str, object]:
+        """Read the exact day namespace after cleanup; never infer deletion from DEL."""
+        return {
+            "remaining_bar_keys": len(self._bar_keys_for_trading_day(trading_day)),
+            "subscription_present": self._redis.get(self._subscription_key(trading_day)) is not None,
+        }
+
     def publish_bar(
         self,
         symbol: str,

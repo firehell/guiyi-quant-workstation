@@ -383,3 +383,32 @@ def test_compact_fingerprint_rejects_minute_source_quality_facts(tmp_path, diges
         store.verified_partition_fingerprint(
             replace(partition, source_quality=(fact,), source_quality_sha256=digest)
         )
+
+
+def test_historical_provenance_is_bound_to_immutable_physical_bytes(tmp_path):
+    from dataclasses import replace
+    import json
+    provenance = {"version": 1, "input_source": "canonical_1m", "input_sha256": "a" * 64}
+    store = CanonicalMonthlyStore(tmp_path)
+    request = replace(_request((_bar(1), _bar(2))), publication_provenance=provenance)
+    published = store.publish(request)
+    physical = json.loads(pq.read_schema(published.parquet_path).metadata[b"guiyi.historical_provenance"])
+    assert physical == provenance
+    assert published.publication_provenance == provenance
+    assert store.read_publication_provenance(_partition(published)) == provenance
+    assert store.read_catalog_partition(_partition(published)) == request.bars
+    legacy = store.publish(_request(request.bars))
+    assert b"guiyi.historical_provenance" not in (pq.read_schema(legacy.parquet_path).metadata or {})
+    assert legacy.parquet_path != published.parquet_path
+    assert store.read_publication_provenance(_partition(legacy)) is None
+
+
+@pytest.mark.parametrize("provenance", [
+    {"version": 1, "input_source": "live", "input_sha256": "a" * 64},
+    {"version": 1, "input_source": "canonical_1m", "input_sha256": "bad"},
+    {"version": 1, "input_source": "canonical_1m", "input_sha256": "a" * 64, "secret": "forbidden"},
+])
+def test_provenance_rejects_unbounded_or_live_sources(tmp_path, provenance):
+    from dataclasses import replace
+    with pytest.raises(StorageError, match="PUBLICATION_PROVENANCE_INVALID"):
+        CanonicalMonthlyStore(tmp_path).publish(replace(_request((_bar(1),)), publication_provenance=provenance))

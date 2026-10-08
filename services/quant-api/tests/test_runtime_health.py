@@ -1408,6 +1408,9 @@ def test_after_market_health_exposes_weekly_consumer_check_without_promoting_it(
     after_market = payload["components"]["after_market"]
     assert after_market["status"] == "ok"
     assert after_market["consumer_checks"]["newow_w1"]["status"] == "incomplete"
+    assert after_market["consumer_checks"]["newow_w1"]["freshness"] == "unverified"
+    assert after_market["consumer_checks"]["newow_w1"]["freshness_reason"] == "INPUT_REVISION_NOT_RECHECKED"
+    assert "freshness" not in json.loads(status_path.read_text())["consumer_checks"]["newow_w1"]
 
 
 def test_after_market_health_preserves_consumer_check_on_failed_run(
