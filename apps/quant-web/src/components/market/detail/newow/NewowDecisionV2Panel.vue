@@ -63,40 +63,36 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
   <section class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
-        <strong>综合决策 <small>{{ context.background ? "日周小时背景" : "日周小时" }}</small></strong>
-        <template v-if="cd && view">
-          <span class="decision-v2__score-wrap"><span class="decision-v2__score-track" role="progressbar" aria-label="综合决策确定性评分" :aria-valuenow="cd.total" :aria-valuemin="0" :aria-valuemax="100"><i :style="{ width: cd.total + '%' }" /></span><b>{{ cd.total }} 分</b></span>
-          <span class="decision-v2__badge">{{ view.tier.label }}</span>
-          <span class="decision-v2__tag" :style="{ color: view.resonance.color }">共振 {{ cd.resonance }}</span>
-          <span v-if="view.mismatch" class="decision-v2__tag decision-v2__tag--mismatch">错配 {{ cd.mismatch }}</span>
-          <span class="decision-v2__basis" :title="'截至 ' + formatBeijingInstant(cd.as_of)">收盘终值 · 已完成日周小时 K 线</span>
-        </template>
+        <strong>综合决策</strong>
+        <span v-if="cd" class="decision-v2__action" :class="{ flat: cd.action.includes('空') || cd.action.includes('清') }">{{ cd.action === '清/空仓' ? '空仓' : cd.action }}</span>
         <span v-else class="decision-v2__basis">{{ loading ? '读取中…' : '综合依据待就绪' }}</span>
         <span class="decision-v2__arrow" :class="{ collapsed }" aria-hidden="true">▾</span>
       </button>
-      <button type="button" class="decision-v2__refresh" aria-label="刷新综合决策" title="刷新综合决策" :disabled="loading" @click="load">↻</button>
     </div>
     <p v-if="loading" class="decision-v2__message" role="status">正在读取同一快照的已完成日周小时策略…</p>
     <p v-else-if="error" class="decision-v2__message" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
     <div v-show="!collapsed" :id="bodyId" class="decision-v2__body">
       <template v-if="cd && view">
+        <p class="decision-v2__headline">{{ dailyWeeklyFacts.filter(item => item.role.startsWith('trend')).map(item => `${item.role.endsWith('week') ? '周' : item.role.endsWith('m60') ? '60分' : '日'} ${decisionFactState(item.fact)}`).join(' / ') }}</p>
+        <p class="decision-v2__interpretation">{{ view.direction.text }}</p>
         <section v-if="copy" class="decision-v2__first-action" :data-level="copy.first_action.level" aria-label="第一行动原则">
           <b>{{ { ok:'遵守', warn:'提示', violate:'警示', unknown:'待确认' }[copy.first_action.level] }}</b>
-          <div><strong>{{ copy.first_action.title }}</strong><p>{{ copy.first_action.detail }}</p></div>
+          <div><strong>{{ copy.first_action.title }}</strong></div>
         </section>
         <p v-if="missingDailyWeekly.length" class="decision-v2__missing">日周小时输入不可用：{{ missingDailyWeekly.map(decisionRoleLabel).join('、') }}；缺失不当作空仓，不使用其他周期替代。</p>
         <section v-if="view.mismatch" class="decision-v2__mismatch" aria-label="错配期提示" :style="{ '--mismatch-color': view.mismatch.color }">
           <div><strong>{{ view.mismatch.name }}</strong><b>{{ cd.action }}</b></div>
           <p><b>{{ view.mismatch.ageLabel }}</b> {{ view.mismatch.detail }}</p>
         </section>
+        <button type="button" class="decision-v2__detail-toggle" :aria-label="evidenceExpanded ? '收起综合依据' : '展开综合依据'" :aria-expanded="evidenceExpanded" :aria-controls="evidenceId" @click="evidenceExpanded = !evidenceExpanded">{{ evidenceExpanded ? '收起依据' : '展开依据' }} <span aria-hidden="true">{{ evidenceExpanded ? '▴' : '▾' }}</span></button>
+        <div v-show="evidenceExpanded" :id="evidenceId" class="decision-v2__evidence">
+          <div class="decision-v2__fact-line"><strong>可靠性档位</strong><span class="decision-v2__badge">{{ view.tier.label }}</span></div>
+          <div class="decision-v2__fact-line"><strong>建议仓位（跨策略综合上限）</strong><span>{{ view.exposure }} · 页面参考强度</span></div>
+          <div class="decision-v2__fact-line"><strong>共振级别</strong><span class="decision-v2__tag" :style="{ color: view.resonance.color }">{{ view.resonance.name }} {{ cd.resonance }}</span><span v-if="view.mismatch" class="decision-v2__tag decision-v2__tag--mismatch">{{ view.mismatch.name }}</span></div>
         <div class="decision-v2__scores" aria-label="综合决策五项评分">
           <div v-for="score in view.scores" :key="score.key" class="decision-v2__score"><b :style="{ color: score.color }">{{ score.value ?? '—' }}</b><small>{{ score.label }}</small></div>
         </div>
-        <div class="decision-v2__resonance" aria-label="共振与错配依据" :style="{ '--resonance-color': view.resonance.color }">
-          <strong>{{ view.resonance.name }}</strong><span class="decision-v2__dots" aria-hidden="true">{{ view.resonance.dots }}</span><p>{{ view.resonance.description }}</p>
-        </div>
-        <button type="button" class="decision-v2__detail-toggle" :aria-label="evidenceExpanded ? '收起综合依据' : '展开综合依据'" :aria-expanded="evidenceExpanded" :aria-controls="evidenceId" @click="evidenceExpanded = !evidenceExpanded">{{ evidenceExpanded ? '收起依据' : '展开依据 · 波动率 / 日周小时状态 / 方向判读' }} <span aria-hidden="true">{{ evidenceExpanded ? '▴' : '▾' }}</span></button>
-        <div v-show="evidenceExpanded" :id="evidenceId" class="decision-v2__evidence">
+
           <div v-if="view.volatility" class="decision-v2__volatility">
             <strong>波动率</strong><div class="decision-v2__vol-track"><i :style="{ left: view.volatility.position + '%', background: view.volatility.color }" /></div><b :style="{ color: view.volatility.color }">{{ view.volatility.value }}%</b><span class="decision-v2__vol-tag" :data-level="view.volatility.level">{{ view.volatility.label }}</span>
           </div>
@@ -110,13 +106,18 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
             </div>
           </section>
           <div class="decision-v2__direction" :style="{ borderLeftColor: view.direction.color }"><strong>方向</strong><p :style="{ color: view.direction.color }">{{ view.direction.text }}</p></div>
-          <p>沿用原版权重，日周小时共同参与；缺失不补分、不归一化。确定性表示信号明确性，不是胜率。</p>
-          <p>错配依据：{{ decisionMismatchReason(cd) }}</p>
+        <div class="decision-v2__resonance" aria-label="共振与错配依据" :style="{ '--resonance-color': view.resonance.color }">
+          <strong>{{ view.resonance.name }}</strong><span class="decision-v2__dots" aria-hidden="true">{{ view.resonance.dots }}</span><p>{{ view.resonance.description }}</p>
+        </div>
           <details class="decision-v2__proof"><summary>数据来源、信号计龄与参考强度</summary>
+                      <p>沿用原版权重，日周小时共同参与；缺失不补分、不归一化。确定性表示信号明确性，不是胜率。</p>
+          <p>错配依据：{{ decisionMismatchReason(cd) }}</p>
+            <p v-if="copy">{{ copy.first_action.detail }}</p>
             <p>信号年龄为距最近一次策略动作的已完成 K 线数；0根表示本周期当前 Bar 发生动作，日K与周K分别计龄。</p>
             <div class="decision-v2__scroll"><table><thead><tr><th>策略周期</th><th>状态</th><th>信号年龄</th><th>Bar / 合约</th><th>来源</th></tr></thead><tbody><tr v-for="item in dailyWeeklyFacts" :key="item.role"><td>{{ decisionRoleLabel(item.role) }}</td><td>{{ decisionFactState(item.fact) }}</td><td>{{ decisionFactAge(item.fact) }}</td><td>{{ item.fact?.bar_end ? formatBeijingInstant(item.fact.bar_end) : '—' }} / {{ item.fact?.physical_contract || '—' }}</td><td>{{ decisionFactReason(item.fact) }}</td></tr></tbody></table></div>
             <p>额外扣分 {{ cd.cert_extra }}：<span v-for="(score,key) in cd.deductions" :key="key">{{ deductions[key] ?? key }} {{ score }}（{{ cd.extra_sources[key] }}） </span></p>
             <p>确定性轴上限 {{ cd.certainty_cap }}% · 共振轴上限 {{ cd.resonance_cap }}% → 参考强度上限 {{ cd.reference_exposure_cap }}%</p>
+            <NewowDailyWeeklyPath :decision="result" :loading="loading" :error="error" />
             <small>{{ cd.formula_version }}{{ copy ? ' · ' + copy.version : '' }}</small>
           </details>
           <details v-if="prices" class="decision-v2__proof"><summary>目标吸筹价格来源与 1.005 升级规则</summary>
@@ -126,21 +127,17 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
             <small>{{ prices.formula_version }} · {{ prices.guard_status }}</small>
           </details>
         </div>
-        <section class="decision-v2__conclusion" aria-label="综合决策结论" :class="{ 'decision-v2__conclusion--high': cd.total >= 80 }">
-          <header><strong>{{ cd.action }}</strong><span class="decision-v2__badge">{{ view.tier.label }}</span><span class="decision-v2__exposure">建议仓位 {{ view.exposure }}</span></header>
-          <p>{{ copy?.advice ?? '操作说明暂不可用，仍可查看日周小时状态和评分依据。' }}</p>
-        </section>
         <p class="decision-v2__compliance">本结论基于策略信号的机械判定，仅供参考，不构成投资建议。</p>
       </template>
+      <details v-show="evidenceExpanded" class="decision-v2__proof"><summary>更新综合数据</summary><button type="button" class="decision-v2__refresh" aria-label="刷新综合决策" :disabled="loading" @click="load">刷新综合决策</button></details>
     </div>
-    <p class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
+    <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
-  <NewowDailyWeeklyPath :decision="result" :loading="loading" :error="error" />
   <NewowStatusCard :background="context.background" :decision="result" :strategy="response.meta.identity.strategy" :loading="loading" :error="error" @retry="load" />
 </template>
 
 <style scoped>
-.decision-v2 { margin:8px 0; background:#fff; border-bottom:1px solid #f0f0f0; color:#1c1c1e; }
+.decision-v2 { margin:8px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:#1c1c1e; }
 .decision-v2__header { display:flex; align-items:center; gap:6px; padding:9px 14px; }
 button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid #007aff; outline-offset:2px; } button:disabled { cursor:wait; opacity:.5; }
 .decision-v2__toggle { display:flex; align-items:center; gap:7px; flex:1; min-width:0; border:0; padding:0; background:transparent; color:inherit; text-align:left; flex-wrap:wrap; }
@@ -187,4 +184,23 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 .decision-v2__missing { color:#94611b; }
 @media(max-width:600px) { .decision-v2__score-wrap { min-width:80px; } .decision-v2__basis { flex-basis:100%; } .decision-v2__states { grid-template-columns:1fr; } .decision-v2__resonance { flex-wrap:wrap; } .decision-v2__resonance p { flex-basis:100%; } .decision-v2__conclusion strong { font-size:17px; } .decision-v2__exposure { margin-left:0; flex-basis:100%; } .decision-v2__score small { font-size:10px; } .decision-v2__first-action { padding:8px; } }
 @media(prefers-reduced-motion:reduce) { .decision-v2__score-track i,.decision-v2__arrow { transition:none; } }
+</style>
+
+<style scoped>
+.decision-v2__header { padding:12px 14px; min-height:44px; box-sizing:border-box; }
+.decision-v2__toggle { flex-wrap:nowrap; min-height:24px; }
+.decision-v2__action { margin-left:auto; font-size:20px; font-weight:700; color:#ff3b30; }
+.decision-v2__action.flat { color:#20c64a; }
+.decision-v2__arrow { margin-left:2px; }
+.decision-v2__headline { text-align:center; color:#24262d; font-size:16px; padding:4px 0 8px; }
+.decision-v2__interpretation { color:#24262d; font-size:12px; }
+.decision-v2__fact-line { display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:#8e8e93; font-size:12px; }
+.decision-v2__first-action { border-left-width:4px; padding:8px 10px; }
+.decision-v2__first-action strong { font-size:12px; }
+.decision-v2__first-action p { font-size:11px; }
+.decision-v2__scores { padding:8px 0; background:#f0f1f8; }
+.decision-v2__score b { font-size:18px; }
+.decision-v2__volatility,.decision-v2__column,.decision-v2__direction,.decision-v2__resonance { background:#f0f1f8; }
+.decision-v2__detail-toggle { padding:4px 0; }
+.decision-v2__body { gap:7px; }
 </style>

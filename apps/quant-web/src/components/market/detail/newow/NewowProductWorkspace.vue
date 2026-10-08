@@ -8,10 +8,10 @@ import { useNewowComparison } from '@/composables/useNewowComparison'
 import { useNewowRecentReference } from '@/composables/useNewowRecentReference'
 import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
-import type { NewowAuxiliaryComponent, NewowProductAction, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
+import type { NewowAuxiliaryComponent, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
-import { describeNewowState, projectNewowAuxiliaryReadiness, projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
-import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, describeNewowProductAction, newowChartSnapshotKey, newowInitialClearLabel } from './newowProductChartPrimitives'
+import { describeNewowState, projectNewowAuxiliaryReadiness, projectNewowDetail, newowDisplayLabel, shortNewowTime } from '@/utils/newowDetailPresentation'
+import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, describeNewowProductAction, newowChartSnapshotKey } from './newowProductChartPrimitives'
 import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
@@ -87,7 +87,6 @@ const selectedAction = computed(() => {
   return chartModel.value?.actions.find(action => action.id === selectedSignalId.value) ?? null
 })
 const selectedActionDescription = computed(() => selectedAction.value === null ? null : describeNewowProductAction(selectedAction.value))
-const summaryActionLabel = (action: NewowProductAction) => newowInitialClearLabel(action.trade_eligibility) ?? newowDisplayLabel(action.kind)
 const referenceResponse = computed(() => (
   loader.sections.reference.data.value?.section === 'reference'
     ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
@@ -197,9 +196,6 @@ const niuwaIndicatorTitles: Partial<Record<NewowAuxiliaryComponent, string>> = {
 }
 const isNiuwaIndicatorDialog = computed(() => dialogKind.value === 'indicator' && selectedAuxiliary.value in niuwaIndicatorTitles)
 const dialogTitle = computed(() => isNiuwaIndicatorDialog.value ? `${niuwaIndicatorTitles[selectedAuxiliary.value]} · 指标解读` : ({ explanation: '策略解释', action: '历史主动作事实', hint: '历史过程提示', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明', formula: '公式速查' }[dialogKind.value ?? 'explanation']))
-const summaryContract = computed(() => chartResponse.value?.value?.bars.at(-1)?.physical_contract ?? '物理合约不可用')
-const summaryAsOf = computed(() => shortNewowTime(chartResponse.value?.meta.as_of))
-const openReferenceText = computed(() => summary.value.openReference ? '未清仓页面参考交易' : chartReferenceResponse.value?.status.status === 'ready' ? '当前无未清仓页面参考交易' : loader.sections.reference.state.value === 'not_requested' ? '参考交易尚未读取' : '参考交易当前不可用')
 const featureStateText = (section: NewowProductSection) => !sectionOpen(section) ? '当前发布阶段未开放' : loader.sections[section].state.value === 'loading' ? '正在读取' : '证据不足或当前不可用'
 async function loadExplanation() { if (sectionOpen('explanation') && loader.sections.explanation.state.value === 'not_requested') await loader.loadExplanation() }
 async function loadAuxiliaryForChart(component: NewowAuxiliaryComponent = selectedAuxiliary.value) {
@@ -400,22 +396,6 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="newow-product-workspace" data-detail-workspace="newow" :data-strategy="identity.strategy" :data-frequency="identity.frequency" :data-chart-state="loader.sections.chart.state.value" :data-auxiliary-state="loader.sections.auxiliary.state.value">
-    <section class="newow-summary" aria-label="策略概览">
-      <div class="newow-summary__main">
-        <strong>{{ dualMode ? '趋势侧策略概览' : '策略概览' }} <small class="newow-summary__scope">页面参考</small></strong>
-        <span class="newow-status" :data-state="summary.status.state"><span>{{ ({ BUILD: '▲', HOLD: '✓', CLEAR: '▼', FLAT: '×', UNAVAILABLE: '?' })[summary.status.state] }}</span>{{ summary.status.label }}</span>
-        <span class="newow-summary__identity">{{ summaryContract }} · 截至 {{ summaryAsOf }}</span>
-        <button v-if="selectedStrategy === 'oscillation' && sectionOpen('comparator')" class="newow-summary__evidence" @click="openDialog('comparator')">五窗口比较</button>
-      </div>
-      <div class="newow-summary__facts">
-        <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口最近主动作' : '已读取窗口最近主动作' }} <button v-if="summary.latestAction" :title="summary.latestAction.bar_end" @click="selectSignal(summary.latestAction.signal_id)">{{ summaryActionLabel(summary.latestAction) }} · {{ formatMarketDecimal(summary.latestAction.reference_price) }} · {{ shortNewowTime(summary.latestAction.bar_end) }}</button><template v-else>—</template></span>
-        <span>当前参考交易 {{ openReferenceText }}</span>
-        <span>参考浮动 <span class="newow-return-badge" :data-direction="referencePercentDisplay(summary.openReference?.mark_change_pct).direction">{{ referencePercentDisplay(summary.openReference?.mark_change_pct).text }}</span> · {{ shortNewowTime(summary.openReference?.mark_bar_end) }}</span>
-        <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
-      </div>
-    </section>
-
-
     <NewowDecisionV2Panel v-if="chartResponse?.value && loader.currentChartWindow.value" :response="chartResponse" :latest-completed-frequencies="capabilities.latest_completed_frequencies" />
     <div v-else-if="strategySwitching" class="newow-product-workspace__decision-loading" role="status">正在更新策略概览…</div>
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
