@@ -33,7 +33,7 @@ def _run(args: list[str], **factories):
 def test_parser_exposes_only_active_runtime_domains_and_commands() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
-    assert set(domain_action.choices) == {"data", "runtime"}
+    assert set(domain_action.choices) == {"data", "runtime", "reference"}
     runtime_parser = domain_action.choices["runtime"]
     command_action = next(
         action for action in runtime_parser._actions if action.dest == "runtime_command"
@@ -48,6 +48,16 @@ def test_parser_exposes_only_active_runtime_domains_and_commands() -> None:
         "subing-readiness",
         "recover-live-captured",
     }
+
+    reference_action = next(action for action in domain_action.choices["reference"]._actions
+                            if action.dest == "reference_command")
+    assert set(reference_action.choices) == {"plan", "build", "advance", "rebuild", "resume"}
+    for command in ("build", "advance", "rebuild", "resume"):
+        arguments = ["reference", command, "--plan", "frozen.json", "--expected-plan-hash", "exact-hash"]
+        if command == "resume":
+            arguments.extend(["--resume-token", "exact-resume"])
+        assert parser.parse_args(arguments).apply is False
+        assert parser.parse_args([*arguments, "--apply"]).apply is True
 
 
 def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
