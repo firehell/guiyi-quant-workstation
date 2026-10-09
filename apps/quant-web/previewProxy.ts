@@ -13,6 +13,7 @@ const candidatePaths = new Set([
   '/api/v1/market/newow/strategy-detail', '/api/v1/market/newow/historical-snapshot',
   '/api/v1/market/newow/daily-snapshot',
   '/api/v1/market/newow/weekly-snapshot',
+  '/api/v1/market/newow/experiments',
   '/api/v1/market/newow/home-cards',
 ])
 

@@ -867,6 +867,62 @@ def newow_strategy_detail(
         raise HTTPException(status_code=status, detail=detail) from exc
 
 
+@router.get("/experiments")
+def newow_experiments(
+    request: Request,
+    product: str = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"] = Query(...),
+    kind: Literal["osc-test", "osc-test2", "osc-test3", "osc-test4"] = Query(...),
+    as_of: datetime | None = Query(None),
+    from_: date | None = Query(None, alias="from"),
+    through: date | None = Query(None),
+    chart_limit: int = Query(500, ge=11, le=2000),
+    all_history: bool = Query(False),
+    session: Session = Depends(get_db),
+):
+    """Public experiments, calculated read-only from existing completed inputs."""
+    from app.market_data.newow.experiments import ExperimentQuery, NewowExperimentService
+    from guiyi_quant.newow.oscillation_experiments import ExperimentKind
+    allowed = {"product", "frequency", "kind", "as_of", "from", "through", "chart_limit", "all_history"}
+    if (set(request.query_params) - allowed
+        or any(len(request.query_params.getlist(key)) != 1 for key in request.query_params)
+        or (as_of is not None and (as_of.utcoffset() is None or as_of.astimezone(UTC) > datetime.now(UTC)))):
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
+    try:
+        _enforce_product_frequency(request, product, frequency)
+        policy = _input_quality_policy(request, product, frequency)
+        preview_as_of = getattr(request.state, "candidate_preview_as_of", None)
+        if preview_as_of is not None:
+            if as_of is not None and as_of > preview_as_of:
+                raise ValueError("NEWOW_INVALID_AS_OF")
+            as_of = as_of or preview_as_of
+        if (getattr(request.state, "candidate_preview_as_of", None) is None
+            and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES):
+            as_of = released_intraday_as_of(as_of)
+        def cancelled():
+            try:
+                return from_thread.run(request.is_disconnected)
+            except RuntimeError:
+                return False
+        reader = NewowProductReader(
+            build_market_data_service(session), coverage=build_database_coverage_source(session),
+            active_products=load_active_products(), input_quality_policy=policy, cancelled=cancelled,
+        )
+        with _PRODUCT_GATE.acquire(cancelled):
+            result = NewowExperimentService(reader, cancelled=cancelled).query(ExperimentQuery(
+                product, ProductFrequency(frequency), ExperimentKind(kind), as_of, from_, through, chart_limit, all_history,
+            ))
+        return result
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        raise HTTPException(status_code=503, detail={"code": "NEWOW_DATA_UNAVAILABLE"}) from None
+    except Exception as exc:
+        status, detail = public_product_error(exc, context={"symbol": product, "frequency": frequency})
+        raise HTTPException(status_code=status, detail=detail) from exc
+
+
 def _status(value) -> dict[str, object] | None:
     if value is None:
         return None

@@ -1464,6 +1464,34 @@ The page SHALL use `newow_basis_decision_v3379_v1` as the shared source of actio
 - **AND** a different dominant snapshot cannot be mixed with the explanation snapshot.
 
 
+### Requirement: Independent four public oscillation experiments
+The page SHALL provide a T menu for `osc-test`, `osc-test2`, `osc-test3` and `osc-test4` with separate versioned experiment identity. These SHALL remain page-parity, non-executable projections and SHALL NOT expand the formal trend/oscillation/main-rise strategy registry, Recording scope or Runtime subscription.
+The channel SHALL require ten bars. Tests 1–3 SHALL use a 7% stop and test 4 a 12% stop, checked before other exits; stop reference is min(stop, open). Test 2 SHALL retain entry-bar HHV10 as its target and use max(target, open) on target exit. Test 3 SHALL gate entry on the previous MA10 being strictly above the earlier MA10, using partial windows for the MA. Test 4 SHALL refresh its stored Close on a fresh HHV hit before checking a subsequent-bar confirmation against the older reference; confirmation reference is min(stored reference, open).
+
+#### Scenario: Main chart and ordinary reference intentionally diverge
+- **WHEN** tests 1–3 clear on a non-stop HHV or fixed-target event and also touch LLV on that bar
+- **THEN** the main chart SHALL prohibit same-bar re-entry while the ordinary page reference SHALL allow it
+- **AND** stop exits and test-4 confirmed exits SHALL prohibit same-bar re-entry in both paths
+- **AND** terminal ordinary Close valuation SHALL NOT create a CLEAR Marker or an executable fill.
+
+#### Scenario: Theoretical mode uses the public base oscillation path
+- **WHEN** any experiment switches to theoretical value
+- **THEN** the page SHALL use the independent base oscillation ideal path without experiment stop, fixed target, MA gate or delayed-exit options
+- **AND** the displayed curve, summary and records SHALL use that same mode and identify this base ideal interpretation.
+
+#### Scenario: Futures owner and completed snapshot boundaries
+- **WHEN** an existing verified completed MDS snapshot is read for an experiment
+- **THEN** physical contract and calculation-segment boundaries SHALL reset its state and prevent cross-owner pairing
+- **AND** ordinary terminal valuation SHALL apply only to the eligible final segment, with interrupted open references excluded from realized results
+- **AND** warmup bars SHALL contribute to windows; marker-state warmup and page-reference eligible trading SHALL retain their separate existing semantics
+- **AND** missing inputs SHALL remain unavailable, never trigger download, asset construction or cross-frequency fallback.
+
+#### Scenario: Experiment selection invalidates former display facts
+- **WHEN** symbol, period, formal strategy or experiment selection changes
+- **THEN** pending requests SHALL be cancelled and stale or mismatched experiment responses SHALL be rejected
+- **AND** base strategy state, reference history and experimental results SHALL NOT be displayed under each other's identity.
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

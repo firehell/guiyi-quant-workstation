@@ -31,11 +31,15 @@ import NewowDetailDialog from './NewowDetailDialog.vue'
 import NewowCupFactsPanel from './NewowCupFactsPanel.vue'
 import NewowPublicPatternsPanel from './NewowPublicPatternsPanel.vue'
 import type { PatternChoice } from '@/utils/newowPatternDisplay'
+import NewowExperimentPanel from './NewowExperimentPanel.vue'
+import {EXPERIMENT_OPTIONS,type ExperimentKind} from '@/utils/newowExperiments'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities }>()
 const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': []; 'analysis-as-of': [asOf: string | null] }>()
 const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
+const experimentKind=ref<ExperimentKind|null>(null)
+watch([identityKey,()=>props.identity.newowMode],()=>{experimentKind.value=null},{flush:'sync'})
 const dualMode = computed(() => props.identity.newowMode === 'dual')
 const selectedStrategy = computed(() => props.identity.strategy as NewowProductStrategy)
 const strategySwitching = ref(false)
@@ -412,6 +416,9 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="newow-product-workspace" data-detail-workspace="newow" :data-strategy="identity.strategy" :data-frequency="identity.frequency" :data-chart-state="loader.sections.chart.state.value" :data-auxiliary-state="loader.sections.auxiliary.state.value">
+    <div class="newow-experiment-controls"><label>T · 震荡实验 <select v-model="experimentKind" aria-label="震荡实验策略"><option :value="null">基础策略</option><option v-for="option in EXPERIMENT_OPTIONS" :key="option.kind" :value="option.kind">{{option.label}}</option></select></label></div>
+    <NewowExperimentPanel v-if="experimentKind" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null"><template #frequency><slot name="chart-frequency" /></template></NewowExperimentPanel>
+    <template v-else>
     <NewowDecisionV2Panel v-if="chartResponse?.value && loader.currentChartWindow.value" :response="chartResponse" :display-strategy="dualMode ? 'dual' : selectedStrategy" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" />
     <div v-else-if="strategySwitching" class="newow-product-workspace__decision-loading" role="status">正在更新策略概览…</div>
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
@@ -570,9 +577,11 @@ onBeforeUnmount(() => {
       <button v-if="dialogKind === 'explanation' && loader.sections.explanation.error.value" @click="loader.loadExplanation">重试解释</button>
       <button v-if="dialogKind === 'comparator' && loader.sections.comparator.error.value" @click="loader.loadComparator">重试比较器</button>
     </NewowDetailDialog>
+    </template>
   </section>
 </template>
 <style scoped>
+.newow-experiment-controls{padding:4px 10px;font-size:12px;color:#667085}.newow-experiment-controls select{margin-left:8px;padding:4px;border:1px solid #e5e7eb;border-radius:6px;background:#fff}
 .newow-product-workspace { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; gap:3px; }
 .newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:#667085; }
 .newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:#fff; color:#667085; min-height:32px; padding:0 12px; cursor:pointer; }
