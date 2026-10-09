@@ -4,17 +4,55 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## Develop 牛哇两个 P2
+
+2026-10-09：七类公开回看形态（杯柄、浅碟、双底、平台、递升、盘整、窄幅）与独立60分钟嵌套路径已完成实现、测试及独立Review。
+形态单独版本化，按完整已加载同合约区段识别，支持默认最佳、绘制、清除和取消旧Worker；page-parity/repainting/non-executable，不改变正式策略信号。
+路径v2包含W1/D1/60m独立成本和目标来源；缺成本不造完整路径，目标保留期货HHV10适配身份，不声称还原私有价格。
+后端Newow3009 passed/1 skipped、Web959 passed/2 skipped、原JS同输入117 passed及额外48组独审对照、build/typecheck、OpenSpec10/10与secret/diff通过，Chrome实际交互通过。
+详见[两个P2交付及公式边界](docs/tasks/newow-p2-20261009.md)。未加入四测试、未构建参考资产、未发布或切换Runtime。
+
+## Develop 牛哇页面一致性 P0
+
+2026-10-09：已有趋势、震荡、主升浪及融合的两个P0已集成develop，主图Marker与独立普通/理论收益投影修正通过测试和独立Review；四个测试策略未加入。
+当前代码详情schema/reference身份v4、页面收益投影v2；旧分钟参考资产不能作为新身份的验收证据，预览60m明确NOT_BUILT。本次未重建资产、未发布或切换Runtime。
+最终相关后端479 passed、Web835 passed/1 skipped、build通过，后续合并断言定向81 passed；公开JS冻结实际输入19 owner逐值通过，不能替代720组合候选验收。
+详见[本次P0交付](docs/tasks/newow-p0-current-20261009.md)。下一步为按新身份构建并验收参考资产，运行版本与自然验收仍按下文既有证据。
+
+## Live 健康修复候选
+
+v1.14.7 修复 BREAK 冷重启未恢复冻结合约身份的问题；71 Live 与185健康/切换回归、独立 Review 通过，生产只读60/60覆盖核实正常。新版本现场切换验收尚未完成。详见 [发布说明](docs/releases/v1.14.7.md)。
+
 ## Develop 短分钟持续记录候选
 
 2026-10-09：5m/15m/30m趋势、震荡、独立双策略的持续记录实现已通过测试与独立Review，
 目标范围1260路、360调度key，capability v33/matrix v4；短分钟主升浪保持关闭。
 reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web53 passed与build、
 OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
-未发布/切换Runtime，当前实际仍如下v1.14.5的720路。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
+代码与Runtime已切至v1.14.6，当前实际仍为720路，新540路未构建/启用。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
+最新源码发布为 **v1.14.6@5b6f1cd49c14066b3c97766c18a9d65a24c6a1fd**，
+[PR #419](https://github.com/firehell/guiyi-quant-workstation/pull/419) 已合并，annotated tag 与
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.6) 精确身份一致。
+Web824 passed/1 skipped、本次变更后端985 passed/27 skipped，typecheck/build/topology、版本一致性、
+OpenSpec10/10、锁文件、secret0与diff通过；最终独立Review无发布阻断。
+2026-10-09中午已完成**0049生产迁移与v1.14.6 Runtime切换**。苏冰原60品种扩为六周期静默记录，
+HTDY规则不变；原1291条Event前后SHA一致，研究快照表初始0。owner明确取消完整备份，临时pg_dump已停止并删除未完成文件。
+API/Web/logrotate、Market Live/盘后/late-provider、既有reference worker、Alert与周审计均绑定
+`.worktrees/release-v1.14.6` detached/clean，commit与tag一致；API/Web及消息接口HTTP200，六项运行身份matched。
+切换前后Market preflight均snapshot_ready 60/60；Web构建通过，迁移/苏冰定向18 passed/3 skipped、Runtime防护71 passed，现场独立Review通过。
+Newow矩阵1260应有、720配置/启用、240有观察，新增540全部NOT_CONFIGURED且未启用；auto_order=false。
+
+**整体RUNTIME_READY仍未证实**：12:14健康degraded，Live午休BREAK60/订阅0/coverage unverified，
+Alert保留11:30既有HTDY notification_transport_failed、连续失败2次及evaluation_lagging；未补发通知或清除失败事实。
+新版首根自然completed Bar、苏冰六周期快照及Live→Canonical仍待自然验收，周审计not_run。
+现场证据在`output/newow-v1146-runtime-20261009/`，详见[发布与切换记录](docs/releases/v1.14.6.md)。
+
+### 历史 v1.14.5 切换与恢复证据
+
+此前运行版本为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
 [PR #417](https://github.com/firehell/guiyi-quant-workstation/pull/417) 已合并，annotated tag与
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.5) 精确身份一致。
 2026-10-09 08:39–08:41，API/Web/logrotate、Market Live/盘后/late-provider及reference worker已完成正式切换。

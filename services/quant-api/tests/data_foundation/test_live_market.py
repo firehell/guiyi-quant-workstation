@@ -2075,3 +2075,58 @@ def test_cleanup_readback_counts_exact_day_namespace_without_mutation():
     store.cleanup_trading_day(day)
     assert store.cleanup_readback(day) == {"remaining_bar_keys": 0, "subscription_present": False}
     assert store.cleanup_readback(following) == {"remaining_bar_keys": 1, "subscription_present": False}
+
+@pytest.mark.parametrize("entrypoint", ["poll", "reconcile"])
+@pytest.mark.parametrize("has_bar", [True, False])
+def test_break_restart_restores_frozen_identity_and_checks_real_coverage(entrypoint, has_bar):
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    fake = FakeRedis()
+    store = module.RedisLiveStore(fake)
+    store.set_subscriptions(day, {"j": "J2505"})
+    if has_bar:
+        store.put_bar(day, "j", "1m", _bar(1), contract="J2505")
+    frozen = dict(fake.values)
+    published = list(fake.published)
+    service = module.LiveMarketService(
+        provider_factory=lambda: pytest.fail("BREAK restart must not create provider"),
+        dominant_source=FakeDominants({("j", day): "J2505"}),
+        phase_resolver=FakePhases({"j": _phase("j", day, None, MarketPhase.BREAK)}),
+        store=store, operational_products=("j",), authoritative_dominants=True,
+        coverage_sessions=lambda _symbol, _day: (window,),
+    )
+    assert getattr(service, entrypoint)(window.end + timedelta(minutes=10)) is None
+    heartbeat = json.loads(fake.values["live:heartbeat"])
+    assert heartbeat["coverage"]["j"]["state"] == ("ok" if has_bar else "lagging")
+    assert heartbeat["coverage"]["j"]["contract"] == "J2505"
+    assert all(fake.values[key] == value for key, value in frozen.items())
+    assert fake.published == published
+
+@pytest.mark.parametrize("snapshot, expected", [
+    (None, None),
+    ({"j": "J2509"}, "LIVE_RANK1_CATALOG_CONFLICT"),
+    ({"j": "J888"}, "LIVE_RANK1_CONTRACT_INVALID"),
+    ({"rb": "RB2505"}, "LIVE_RANK1_CONTRACT_INVALID"),
+])
+def test_break_restart_missing_or_invalid_snapshot_never_fabricates_identity(snapshot, expected):
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    fake = FakeRedis()
+    store = module.RedisLiveStore(fake)
+    if snapshot:
+        store.set_subscriptions(day, snapshot)
+    before = dict(fake.values)
+    service = module.LiveMarketService(
+        provider_factory=lambda: pytest.fail("BREAK must not create provider"),
+        dominant_source=FakeDominants({("j", day): "J2505"}),
+        phase_resolver=FakePhases({"j": _phase("j", day, None, MarketPhase.BREAK)}),
+        store=store, operational_products=("j",), authoritative_dominants=True,
+    )
+    assert service.poll(datetime(2025, 1, 2, 4, tzinfo=UTC)) == expected
+    assert service._contracts == {}
+    assert all(fake.values[key] == value for key, value in before.items())
+    assert fake.published == []
+    if snapshot is None:
+        assert store.subscriptions(day) is None
+        assert json.loads(fake.values["live:heartbeat"])["coverage"]["j"]["state"] == "unverified"
