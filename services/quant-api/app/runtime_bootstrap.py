@@ -133,7 +133,7 @@ class BootstrapBackend:
     def registry_exists(self):
         from app.runtime_handover import _read
         journal = _read(runtime_directory() / 'topology-bootstrap.json')
-        if journal and journal.get('phase') not in ('switched', 'precondition_blocked'):
+        if journal is not None and journal.get('phase') not in ('switched', 'precondition_blocked'):
             raise BootstrapError('BOOTSTRAP_RECOVERY_READBACK_REQUIRED')
         return read_bindings() is not None
 

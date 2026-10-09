@@ -84,7 +84,7 @@ class ScheduledBackend:
     def freeze(self, binding):
         from app.runtime_handover import _read
         prior = _read(runtime_directory() / f"{binding.service}.scheduled-update.json")
-        if prior and prior.get("phase") not in ("switched", "scheduled_busy", "precondition_blocked"):
+        if prior is not None and prior.get("phase") not in ("switched", "scheduled_busy", "precondition_blocked"):
             raise ScheduledUpdateError("SCHEDULED_RECOVERY_READBACK_REQUIRED")
         from app.market_data.closeout_binding import _snapshot
         from app.runtime_bindings import authorized_program_arguments
