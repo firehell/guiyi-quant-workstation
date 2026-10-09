@@ -136,9 +136,10 @@ async function loadPage() {
     .replace(/from ['"]vue-router['"]/g, `from '${routerModule}'`)
     .replace(/from ['"]naive-ui['"]/g, `from '${naiveModule}'`)
     .replace(/from ['"]@\/components\/market\/([^'"]+\.vue)['"]/g, (_match, file: string) => (
-      `from '${file === 'MarketHomeHeader.vue' ? headerComponent : file === 'MarketHomeTable.vue' || file === 'MarketHomeMobileList.vue' ? productComponent : plainComponent}'`
+      `from '${file === 'MarketHomeHeader.vue' ? headerComponent : file === 'MarketHomeStrategyCards.vue' ? productComponent : plainComponent}'`
     ))
     .replace(/from ['"]@\/api\/(?:market|alerts|runtime)['"]/g, `from '${apiModule}'`)
+    .replace(/from ['"]@\/api\/newowMessages['"]/g, `from '${new URL('../src/api/newowMessages.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/composables\/useMarketHome['"]/g, `from '${homeModule}'`)
     .replace(/from ['"]@\/composables\/useMarketHomeLive['"]/g, `from '${liveModule}'`)
     .replace(/from ['"]@\/composables\/useNewowCapabilities['"]/g, `from '${capabilitiesModule}'`)

@@ -265,6 +265,9 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => candidateV9,
   }), candidateV9)
+  const candidateV34 = { ...candidateV9, schema_version: 'newow_product_capabilities_v34', deferred_frequencies: [] }
+  assert.deepEqual(await getNewowProductCapabilities({ request: async () => candidateV34 }), candidateV34)
+  await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...candidateV9, deferred_frequencies: [] }) }), /NEWOW_RESPONSE_INVALID/)
   await assert.rejects(
     getNewowProductCapabilities({
       request: async () => ({

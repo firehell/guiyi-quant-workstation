@@ -47,7 +47,7 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
         item === '1d' || (item === '1w' ? current.weekly_products?.includes(normalized)
           : current.intraday_products?.includes(normalized)))
     }
-    if (current?.schema_version === 'newow_product_capabilities_v4'
+    if (current?.schema_version === 'newow_product_capabilities_v34' || current?.schema_version === 'newow_product_capabilities_v4'
       || current?.schema_version === 'newow_product_capabilities_v9'
       || current?.schema_version === 'newow_product_capabilities_v8'
       || current?.schema_version === 'newow_product_capabilities_v10'

@@ -197,7 +197,7 @@ onBeforeUnmount(() => {
       <p v-else-if="home.overview.stale.value" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />
       <template v-else>
-        <MarketHomeStrategyCards :rows="rows" :authority="home.overview.data.value?.target_as_of ?? ''" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart" />
+        <MarketHomeStrategyCards :rows="rows" :authority="`${home.overview.data.value?.target_as_of ?? ''}|${home.overview.updatedAt?.value ?? ''}`" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart" />
         <p v-if="!rows.length && home.overview.data.value" class="market-home-empty">当前{{ sector ? productSectorLabel(sector) : '快照' }}暂无可用品种。<span v-if="selectedSector">可用 {{ selectedSector.participant_count }} / 总数 {{ selectedSector.active_count }}；缺失品种不生成行情行。</span></p>
       </template>
       </section>

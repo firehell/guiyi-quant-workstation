@@ -128,7 +128,7 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
     response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
-    assert response.json()["schema_version"] == "newow_product_capabilities_v9"
+    assert response.json()["schema_version"] == "newow_product_capabilities_v34"
     assert response.json()["release_stage"] == "daily_weekly_candidate"
     assert response.json()["open_frequencies"] == ["1d", "1w"]
     assert len(response.json()["weekly_products"]) == 60

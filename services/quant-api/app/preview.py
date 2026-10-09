@@ -33,6 +33,7 @@ PREVIEW_PATHS = frozenset(
         "/api/v1/market/newow/historical-snapshot",
         "/api/v1/market/newow/daily-snapshot",
         "/api/v1/market/newow/weekly-snapshot",
+        "/api/v1/market/newow/home-cards",
     }
 )
 _SUBING_REFERENCE_PATH = re.compile(
@@ -168,6 +169,8 @@ def create_preview_app(
             values = dict(query)
             intraday_products = _intraday_preview_products()
             hourly_products = _hourly_preview_products()
+            if raw_path == '/api/v1/market/newow/home-cards' and (intraday_products or hourly_products or os.getenv('GUIYI_AU_PERIOD_PREVIEW') == '1'):
+                return JSONResponse(status_code=403, content={'detail': {'code': 'PREVIEW_PRODUCT_OUT_OF_SCOPE'}})
             au_period_preview = (
                 os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1" and hourly_products is None
             )
