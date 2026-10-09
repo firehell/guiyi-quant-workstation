@@ -9,6 +9,18 @@
 2026-10-09：XP1独立周期冲突及周/日basis联动已完成测试和独立Review。综合动作、强度、理由、冲突及状态立场/进度共享页面判定；融合复用主图兼容/主导来源，旧评分与策略信号不变。四测试未加入。
 后端218 passed、Web1013 passed/1 skipped、冻结原JS及typecheck/build、独审64定向通过。详见[P1口径交付及公式表](docs/tasks/newow-p1-basis-20261009.md)。本次仅develop交付，未发布或切换Runtime。
 
+## 每日增量稳定性补丁 v1.14.8 已发布并切换
+
+最新发布与现役 Runtime 为 **v1.14.8@3e1838e60ca95095137c5736f289b89a5f67a2ea**，
+[PR #421](https://github.com/firehell/guiyi-quant-workstation/pull/421)、annotated tag及GitHub Release身份一致。
+仅在v1.14.7上叠加本次必要补丁，develop的未发布Newow改动不在现役版本中。
+盘后容量写前预估、可信提交前缀、进度日志和全部状态reader已修复；源码895 passed、独立Review259 passed、
+独立发布环境追加804 passed，Web build/版本测试、OpenSpec10/10、Ruff、secret/diff通过。
+现有API/Web/Market/Alert/reference/weekly及日志轮转已切换；API/Web200、业务服务身份matched、DB/Redis/Live正常。
+10/9 failed/UPDATE_FAILED原始字节未变并保留为retained_failure，因此health仍degraded；未伪造新自然成功状态。
+今日独立只读60×七频420分区完整、daily-recovery noop，未重复下载或发布；通知失败不影响增量结果。
+下一次自然盘后仍待验收，不能宣布RUNTIME_READY。见[修复任务](docs/tasks/after-market-stability-20261009.md)及[补丁说明](docs/releases/v1.14.8.md)。
+
 ## Develop 牛哇两个 P2
 
 2026-10-09：七类公开回看形态（杯柄、浅碟、双底、平台、递升、盘整、窄幅）与独立60分钟嵌套路径已完成实现、测试及独立Review。
@@ -36,7 +48,7 @@ reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web
 OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
 代码与Runtime已切至v1.14.7，当前实际仍为720路，新540路未构建/启用。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
 
-## Release 与 Runtime
+## 历史 Release 与 Runtime 检查点（现役见上文 v1.14.8）
 
 最新正式发布及Runtime为 **v1.14.7@d957d62d363777be7091673256e8cde394153faa**，
 [PR #420](https://github.com/firehell/guiyi-quant-workstation/pull/420)、annotated tag 与 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.7) 精确一致。
