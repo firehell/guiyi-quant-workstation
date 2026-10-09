@@ -17,7 +17,7 @@
 目标范围1260路、360调度key，capability v33/matrix v4；短分钟主升浪保持关闭。
 reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web53 passed与build、
 OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
-代码随v1.14.6发布，未切换Runtime，当前实际仍如下v1.14.5的720路。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
+代码与Runtime已切至v1.14.6，当前实际仍为720路，新540路未构建/启用。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
 
 ## Release 与 Runtime
 
@@ -26,10 +26,21 @@ OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.6) 精确身份一致。
 Web824 passed/1 skipped、本次变更后端985 passed/27 skipped，typecheck/build/topology、版本一致性、
 OpenSpec10/10、锁文件、secret0与diff通过；最终独立Review无发布阻断。
-这是源码发布，**正式Runtime仍为v1.14.5**。部署新版API前须完成0049迁移；新增540路记录未生产构建或启用，
-未切换Runtime、推送或订单。详见[发布记录](docs/releases/v1.14.6.md)。
+2026-10-09中午已完成**0049生产迁移与v1.14.6 Runtime切换**。苏冰原60品种扩为六周期静默记录，
+HTDY规则不变；原1291条Event前后SHA一致，研究快照表初始0。owner明确取消完整备份，临时pg_dump已停止并删除未完成文件。
+API/Web/logrotate、Market Live/盘后/late-provider、既有reference worker、Alert与周审计均绑定
+`.worktrees/release-v1.14.6` detached/clean，commit与tag一致；API/Web及消息接口HTTP200，六项运行身份matched。
+切换前后Market preflight均snapshot_ready 60/60；Web构建通过，迁移/苏冰定向18 passed/3 skipped、Runtime防护71 passed，现场独立Review通过。
+Newow矩阵1260应有、720配置/启用、240有观察，新增540全部NOT_CONFIGURED且未启用；auto_order=false。
 
-当前运行版本为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
+**整体RUNTIME_READY仍未证实**：12:14健康degraded，Live午休BREAK60/订阅0/coverage unverified，
+Alert保留11:30既有HTDY notification_transport_failed、连续失败2次及evaluation_lagging；未补发通知或清除失败事实。
+新版首根自然completed Bar、苏冰六周期快照及Live→Canonical仍待自然验收，周审计not_run。
+现场证据在`output/newow-v1146-runtime-20261009/`，详见[发布与切换记录](docs/releases/v1.14.6.md)。
+
+### 历史 v1.14.5 切换与恢复证据
+
+此前运行版本为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
 [PR #417](https://github.com/firehell/guiyi-quant-workstation/pull/417) 已合并，annotated tag与
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.5) 精确身份一致。
 2026-10-09 08:39–08:41，API/Web/logrotate、Market Live/盘后/late-provider及reference worker已完成正式切换。
