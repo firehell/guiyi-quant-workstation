@@ -508,6 +508,40 @@ as success. Any unhandled after-market execution exception at the CLI or supervi
 - **WHEN** the old summary was durably invalidated but the initial atomic v3 write fails
 - **THEN** readers observe invalid/unknown state rather than the old passed result, and no Calendar/provider work starts
 
+### Requirement: After-market evidence capacity is shared across the complete readback chain
+
+After-market publication evidence MUST support up to 8192 confirmed publications and 4 MiB compact JSON.
+The writer and all status readers, including health, recovery, closeout and promotion authority, MUST share
+16 MiB status and 32 MiB retained-history limits. Unrelated configuration, heartbeat and recovery-state readers
+MUST retain their existing smaller bounds. Existing schemas remain readable; oversized or malformed evidence
+MUST fail closed and MUST NOT be truncated or silently replaced with a successful result.
+
+The maintainer MUST freeze the exact update plan under the maintenance lock and account for W1 companion D1
+publications before market-Bar provider access or Canonical publication. The existing bounded current-day metadata synchronization remains a prerequisite for resolving that plan. Preflight MUST cover the entire bounded status,
+including the previous run, current progress and consumer audit. Confirmed publication evidence MUST be retained
+in progress and failed terminal states. Explicit interrupted closeout MUST carry only original-run publication
+and Live evidence from the validated public current run; closeout checks MUST NOT synthesize original-run cleanup
+evidence. Progress is not a recovery checkpoint and MUST NOT authorize repeated provider requests or publications. File and replacement-directory sync requirements remain unchanged.
+
+Notification failure, provider rejection, malformed notification result or notification-diagnostic persistence failure
+MUST NOT change the historical maintenance outcome, last successful day or trigger a maintenance rerun.
+Notification diagnostics remain separate and MUST NOT claim successful delivery without evidence.
+
+#### Scenario: Normal Friday or cross-month publication volume exceeds the old summary bound
+
+- **WHEN** an otherwise valid maintenance plan includes Friday W1 companion D1 publications or cross-month targets
+- **THEN** evidence within the shared limits survives terminal publication, next-run startup, health, recovery and cross-version retention without repeated data work
+
+#### Scenario: Evidence plan exceeds the supported bounded capacity
+
+- **WHEN** frozen publication or complete-state estimates exceed their shared limits
+- **THEN** maintenance fails explicitly before market-Bar provider access and Canonical writes; no confirmed evidence is truncated
+
+#### Scenario: Notification fails after successful incremental maintenance
+
+- **WHEN** data maintenance has durably passed and a notification or its diagnostic write fails
+- **THEN** the maintenance result and last successful day remain unchanged, with no new data retry or notification retry
+
 ### Requirement: Weekly operational full-history audit remains optional and read-only
 
 The weekly adapter MUST select the exact ordered `operational_products.txt` scope with identity

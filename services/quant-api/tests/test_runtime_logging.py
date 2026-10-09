@@ -10,6 +10,66 @@ from app.alerts.registry import HTDY_ALERT_RULE_CODE
 from app.alerts.runtime import AlertRuntime
 
 
+@pytest.mark.parametrize("count", [30, 960, 8192])
+def test_publication_receipts_do_not_hide_bounded_progress(count):
+    from app.runtime_logging import _SafeFormatter
+    publication = {"dataset": ["contract", "au", "AU2612", "1m"], "year": 2026,
+                   "month": 10, "file_name": "part." + "a" * 64 + ".parquet",
+                   "provenance": {"version": 1, "input_source": "rqdata",
+                                  "input_sha256": "b" * 64}}
+    progress = {
+        "scheduled_date": "2026-10-09", "started_at": "2026-10-09T18:05:00+08:00",
+        "products": ["au"], "stage": "publishing", "attempt": 1,
+        "updated_at": "2026-10-09T18:06:00+08:00",
+        "stage_started_at": "2026-10-09T18:06:00+08:00",
+        "current_symbol": "au", "current_partition": None,
+        "counters": {"publishing": {"completed": count}}, "stage_durations": {},
+        "elapsed_seconds": 60., "retry_at": None,
+    }
+    record = logging.LogRecord("app.test", logging.INFO, "", 0, "AFTER_MARKET_PROGRESS", (), None)
+    record.diagnostic_fields = {"progress": {**progress, "historical_publications": [publication] * count}}
+    content = _SafeFormatter().format(record)
+    assert json.loads(content).get("progress") == progress
+    assert len(content) < 8192
+    assert "input_sha256" not in content
+
+
+def test_publication_evidence_failure_keeps_explicit_log_stage():
+    from app.runtime_logging import _SafeFormatter
+    record = logging.LogRecord("app.test", logging.WARNING, "", 0,
+                               "AFTER_MARKET_ATTEMPT_FAILED", (), None)
+    record.diagnostic_fields = {"stage": "publication_evidence",
+                                "detail_code": "PUBLICATION_EVIDENCE_COUNT_MISMATCH"}
+    payload = json.loads(_SafeFormatter().format(record))
+    assert payload["stage"] == "publication_evidence"
+    assert payload["detail_code"] == "PUBLICATION_EVIDENCE_COUNT_MISMATCH"
+
+
+def test_progress_emission_does_not_revalidate_full_publication_evidence(caplog, monkeypatch):
+    from app.market_data.after_market import AfterMarketUpdater
+    updater = object.__new__(AfterMarketUpdater)
+    updater._current = {
+        "scheduled_date": "2026-10-09", "started_at": "2026-10-09T18:05:00+08:00",
+        "products": ["au"], "stage": "publishing", "attempt": 1,
+        "updated_at": "2026-10-09T18:06:00+08:00",
+        "stage_started_at": "2026-10-09T18:06:00+08:00",
+        "current_symbol": "au", "current_partition": None,
+        "counters": {"publishing": {"completed": 960}}, "stage_durations": {},
+        "elapsed_seconds": 60., "retry_at": None,
+        # This untrusted body is neither a log field nor a log validity gate.
+        "historical_publications": [{"invalid": True}] * 960,
+    }
+    logger = logging.getLogger("app.market_data.after_market")
+    monkeypatch.setattr(logger, "disabled", False)
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        updater._log_progress()
+    records = [record for record in caplog.records if record.msg == "AFTER_MARKET_PROGRESS"]
+    assert len(records) == 1
+    progress = records[0].diagnostic_fields["progress"]
+    assert progress["counters"]["publishing"]["completed"] == 960
+    assert "historical_publications" not in progress
+
+
 def test_after_market_structured_progress_reopens_rotated_log_and_bounds_fields(tmp_path):
     from app.runtime_logging import runtime_diagnostic_handler
     path = tmp_path / "after-market.log"

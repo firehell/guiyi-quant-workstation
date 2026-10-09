@@ -1193,7 +1193,9 @@ def _empty_display_snapshot(state: MarketReadState) -> MarketDisplaySnapshot:
 
 def _load_after_market_status(path: Path) -> Mapping[str, object]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        from app.market_data.after_market_history import _bytes
+
+        payload = json.loads(_bytes(path))
     except (OSError, TypeError, ValueError):
         payload = {}
     return MappingProxyType(public_after_market_status(payload))

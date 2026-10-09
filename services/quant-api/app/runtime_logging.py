@@ -13,6 +13,18 @@ import stat
 import sys
 
 
+def _progress_diagnostic(value: object) -> dict | None:
+    """Keep logs constant-sized; full run evidence belongs to the status file."""
+    from collections.abc import Mapping
+    from app.market_data.after_market import _public_current_run
+
+    if not isinstance(value, Mapping):
+        return None
+    bounded = {key: item for key, item in value.items()
+               if key not in {"historical_publications", "live_evidence"}}
+    return _public_current_run(bounded, schema_version=3)
+
+
 class _SafeFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         code = getattr(record, "diagnostic_code", record.msg)
@@ -26,9 +38,8 @@ class _SafeFormatter(logging.Formatter):
         fields = getattr(record, "diagnostic_fields", {})
         if isinstance(fields, dict):
             if code == "AFTER_MARKET_PROGRESS":
-                from app.market_data.after_market import _public_current_run
                 try:
-                    progress = _public_current_run(fields.get("progress"), schema_version=3)
+                    progress = _progress_diagnostic(fields.get("progress"))
                     if progress is not None and len(json.dumps(progress, ensure_ascii=True)) <= 8192:
                         payload["progress"] = progress
                 except (ValueError, TypeError, OverflowError):
@@ -53,7 +64,7 @@ class _SafeFormatter(logging.Formatter):
                     continue
                 if key in {"stage", "detail_code"}:
                     from app.market_data.after_market import _AFTER_MARKET_STAGES, _PUBLIC_ERROR_CODES
-                    allowed = (_AFTER_MARKET_STAGES | {"metadata_readiness", "canonical_update", "canonical_update_result"}
+                    allowed = (_AFTER_MARKET_STAGES | {"metadata_readiness", "canonical_update", "canonical_update_result", "publication_evidence"}
                                if key == "stage" else _PUBLIC_ERROR_CODES | {
                                    "RQDATA_READY_RESPONSE_INVALID", "UNEXPECTED_PROVIDER_EXCEPTION",
                                    "UNEXPECTED_UPDATE_EXCEPTION", "UNEXPECTED_LIVE_EXCEPTION"})

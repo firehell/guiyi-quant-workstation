@@ -78,7 +78,7 @@ class _Manager:
         self.metadata = _Metadata()
         self.catalog = _Catalog(trading_day)
 
-    def update(self, request, *, before_apply=None, observer=None):
+    def update(self, request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         if before_apply is not None:
             before_apply()
         self.calls.append(request)
@@ -1181,7 +1181,7 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(
         results=[],
     )
 
-    def fail_update(_request, *, before_apply=None, observer=None):
+    def fail_update(_request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         raise RuntimeError("credential-secret-provider-message")
 
     manager.update = fail_update
@@ -1209,7 +1209,7 @@ def test_calendar_night_authority_missing_is_stable_public_code_without_retry(
         results=[],
     )
 
-    def fail_update(_request, *, before_apply=None, observer=None):
+    def fail_update(_request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         raise ValueError("CALENDAR_NIGHT_AUTHORITY_MISSING")
 
     manager.update = fail_update
@@ -1233,7 +1233,7 @@ def test_calendar_authority_failure_records_bounded_exchange_day_and_reason(tmp_
         tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[],
     )
 
-    def fail_update(_request, *, before_apply=None, observer=None):
+    def fail_update(_request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         raise CalendarNightAuthorityError(
             "DCE", date(2026, 9, 28), "SESSION_COVERAGE_INCOMPLETE"
         )
@@ -1266,7 +1266,7 @@ def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
         results=[],
     )
 
-    def fail_update(_request, *, before_apply=None, observer=None):
+    def fail_update(_request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         raise InfrastructureError("NEXT_TRADING_SESSION_NOT_READY")
 
     manager.update = fail_update
@@ -1411,7 +1411,7 @@ def test_process_interruption_preserves_unfinished_current_run(tmp_path) -> None
         results=[],
     )
 
-    def interrupt(_request, *, before_apply=None, observer=None):
+    def interrupt(_request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         raise SimulatedProcessInterruption
 
     manager.update = interrupt
@@ -1692,7 +1692,7 @@ def test_daily_progress_persists_stage_changes_throttles_counts_and_omits_unknow
     ticks = [0.0]
     updater.monotonic = lambda: ticks[0]
 
-    def update(request, *, before_apply=None, observer=None):
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         assert request.mode == "daily"
         assert observer is not None
         for phase, state, count, elapsed, tick in [
@@ -1737,7 +1737,7 @@ def test_progress_persistence_failure_stops_before_live_and_notification(tmp_pat
 
     monkeypatch.setattr(after_market, "_atomic_write_status", write)
 
-    def update(request, *, before_apply=None, observer=None):
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
         observer(MaintenanceProgressEvent("publishing", "started", "au", None,
                                           None, None, 0, None, 0.))
         pytest.fail("must stop at progress persistence failure")
@@ -2146,7 +2146,7 @@ def test_oversized_status_never_replaces_previous_file(tmp_path):
     path = tmp_path / "status.json"
     path.write_text("previous")
     with pytest.raises(ValueError, match="AFTER_MARKET_STATUS_TOO_LARGE"):
-        module._atomic_write_status(path, {"padding": "x" * (1024 * 1024)})
+        module._atomic_write_status(path, {"padding": "x" * module.MAX_STATUS_BYTES})
     assert path.read_text() == "previous"
 
 
@@ -2191,13 +2191,9 @@ def test_largest_allowed_publication_summary_preserves_next_run_history(tmp_path
     publication = {"dataset": ["contract", "ag", "AG2610", "1m"], "year": 2026, "month": 8,
                    "file_name": "part." + "a" * 64 + ".parquet",
                    "provenance": {"version": 1, "input_source": "rqdata", "input_sha256": "b" * 64}}
-    largest = []
-    for count in range(1, 1026):
-        candidate = [publication] * count
-        if module._public_historical_publications(candidate, _ACTIVE_PRODUCTS) is None:
-            break
-        largest = candidate
-    assert largest
+    largest = [_capacity_publication()] * module.MAX_PUBLICATIONS
+    assert module._public_historical_publications(largest, _ACTIVE_PRODUCTS) == largest
+    assert module._public_historical_publications(largest + [publication], _ACTIVE_PRODUCTS) is None
     status["last_run"]["historical_publications"] = largest
     from app.market_data.newow.after_market_consumer_audit import CONSUMER_SECTIONS
     check = {
@@ -2214,3 +2210,185 @@ def test_largest_allowed_publication_summary_preserves_next_run_history(tmp_path
     updater._write_current_run(datetime(2026, 8, 11, 18, 5, tzinfo=module.SHANGHAI), _ACTIVE_PRODUCTS)
     restarted = module._load_status(updater.status_path)
     assert restarted["last_run"]["historical_publications"] == largest
+    consumer_bytes = len(json.dumps(status["consumer_checks"], separators=(",", ":")).encode("ascii"))
+    assert consumer_bytes < 4 * 1024 * 1024
+    updater.now = lambda: datetime(2026, 8, 11, 18, 5, tzinfo=module.SHANGHAI)
+    updater._preflight_publication_capacity(module.MAX_PUBLICATIONS, module.MAX_PUBLICATION_BYTES)
+    updater._observe_publications(largest)
+    updater._persist_progress()
+    current = module._load_status(updater.status_path)
+    assert current["current_run"]["historical_publications"] == largest
+    assert current["last_run"]["historical_publications"] == largest
+    assert public_after_market_status(current)
+
+
+def _capacity_publication(symbol="ag"):
+    return {"dataset": ["contract", symbol, "A" * 32, "60m"], "year": 2200, "month": 12,
+            "file_name": "part." + "a" * 64 + ".parquet",
+            "provenance": {"version": 1, "input_source": "historical_provider", "input_sha256": "b" * 64}}
+
+
+@pytest.mark.parametrize("count", [960, 1920, 8192])
+def test_normal_friday_and_backlog_publication_scale_survives_next_run(tmp_path, count):
+    from app.market_data import after_market as module
+    updater, manager, _, _, _, _ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed", applied=count)])
+    manager.publication_evidence = [_capacity_publication()] * count
+    assert updater.run().status == "passed"
+    assert len(module._load_status(updater.status_path)["last_run"]["historical_publications"]) == count
+    updater._write_current_run(datetime(2026, 8, 11, 18, 5, tzinfo=module.SHANGHAI), _ACTIVE_PRODUCTS)
+    assert len(module._load_status(updater.status_path)["last_run"]["historical_publications"]) == count
+
+
+def test_publication_capacity_rejected_before_provider_or_publication(tmp_path):
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[])
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
+        before_daily_apply(8193, 3_000_000)
+        pytest.fail("capacity preflight must stop this execution")
+    manager.update = update
+    result = updater.run()
+    assert result.error_code == "PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED"
+    assert live.cleaned == []
+
+
+def test_commit_unknown_retains_confirmed_prefix_without_cleanup(tmp_path):
+    from app.market_data.storage import StorageError
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[])
+    manager.publication_evidence = []
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
+        manager.publication_evidence.append(_capacity_publication())
+        publication_observer(manager.publication_evidence)
+        raise StorageError("COMMIT_OUTCOME_UNKNOWN")
+    manager.update = update
+    result = updater.run()
+    assert result.error_code == "COMMIT_OUTCOME_UNKNOWN"
+    assert _status(updater.status_path)["last_run"]["historical_publications"] == manager.publication_evidence
+    assert live.cleaned == []
+
+
+def test_load_status_rejects_oversized_input_before_parsing(tmp_path, monkeypatch):
+    from app.market_data import after_market as module
+    monkeypatch.setattr(module, "MAX_STATUS_BYTES", 100)
+    path = tmp_path / "status.json"
+    path.write_text('{"padding":"' + "x" * 101 + '"}')
+    monkeypatch.setattr(module.json, "loads", lambda _: pytest.fail("oversized input must not be parsed"))
+    assert module._load_status(path) == {}
+
+
+def test_success_is_independent_of_unavailable_notification_transport(tmp_path):
+    updater, _, _, _, notices, _ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")],
+        notification_error=NotificationTransportError("ALERT_NOTIFICATION_TRANSPORT_FAILED"))
+    assert updater.run().status == "passed"
+    status = _status(updater.status_path)
+    assert status["last_successful_trading_day"] == "2026-08-10"
+    assert status["last_run"]["failure_notification"] is None
+    assert notices == []
+
+
+def test_notification_status_failure_preserves_primary_failure_and_success_day(tmp_path, monkeypatch):
+    updater, _, _, _, notices, _ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[False, False], results=[],
+        notification_error=NotificationTransportError("ALERT_NOTIFICATION_TRANSPORT_FAILED"))
+    updater.status_path.write_text(json.dumps({"last_successful_trading_day": "2026-08-07"}))
+    def reject_notification(_):
+        raise OSError("persistence unavailable")
+    monkeypatch.setattr(updater, "_write_failure_notification", reject_notification)
+    result = updater.run()
+    status = _status(updater.status_path)
+    assert result.error_code == "RQDATA_NOT_READY"
+    assert status["last_run"]["error_code"] == "RQDATA_NOT_READY"
+    assert status["last_successful_trading_day"] == "2026-08-07"
+    assert len(notices) == 1
+
+
+def test_keyboard_interruption_flushes_confirmed_prefix_without_terminal_success(tmp_path):
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[])
+    manager.publication_evidence = []
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
+        for _ in range(2):
+            manager.publication_evidence.append(_capacity_publication())
+            publication_observer(manager.publication_evidence)
+        raise KeyboardInterrupt
+    manager.update = update
+    with pytest.raises(KeyboardInterrupt):
+        updater.run()
+    status = _status(updater.status_path)
+    assert status["last_run"] is None
+    assert len(status["current_run"]["historical_publications"]) == 2
+    assert live.cleaned == []
+
+
+def test_publication_progress_failure_stops_before_later_commit_or_cleanup(tmp_path, monkeypatch):
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[])
+    manager.publication_evidence = []
+    committed = []
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
+        manager.publication_evidence.append(_capacity_publication())
+        committed.append(1)
+        publication_observer(manager.publication_evidence)
+        committed.append(2)
+    manager.update = update
+    from app.market_data import after_market as module
+    original = module._atomic_write_status
+    def reject_prefix(path, payload):
+        if payload.get("current_run", {}).get("historical_publications"):
+            raise OSError("persistence unavailable")
+        return original(path, payload)
+    monkeypatch.setattr(module, "_atomic_write_status", reject_prefix)
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    assert committed == [1]
+    assert live.cleaned == []
+
+
+@pytest.mark.parametrize("mutation,exception", [("append_invalid", False), ("nested_invalid", False),
+    ("nested_valid", False), ("append_invalid", True)])
+def test_invalid_manager_evidence_preserves_detached_confirmed_prefix(tmp_path, mutation, exception):
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[])
+    manager.publication_evidence = []
+    expected = _capacity_publication()
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
+        manager.publication_evidence.append(_capacity_publication())
+        publication_observer(manager.publication_evidence)
+        if mutation == "append_invalid":
+            manager.publication_evidence.append({"invalid": True})
+        elif mutation == "nested_invalid":
+            manager.publication_evidence[0]["provenance"]["input_sha256"] = "invalid"
+            manager.publication_evidence[0]["dataset"][1] = "bad"
+        else:
+            manager.publication_evidence[0]["provenance"]["input_sha256"] = "c" * 64
+        if exception:
+            raise RuntimeError("target failed")
+        return _result("passed", applied=len(manager.publication_evidence))
+    manager.update = update
+    result = updater.run()
+    assert result.error_code == "PUBLICATION_EVIDENCE_INVALID"
+    status = public_after_market_status(_status(updater.status_path))
+    assert status["last_run"]["historical_publications"] == [expected]
+    assert live.cleaned == []
+
+
+def test_unknown_commit_remains_primary_when_manager_evidence_is_invalid(tmp_path, caplog):
+    from app.market_data.storage import StorageError
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[])
+    manager.publication_evidence = []
+    def update(request, *, before_apply=None, observer=None, before_daily_apply=None, publication_observer=None):
+        manager.publication_evidence.append(_capacity_publication())
+        publication_observer(manager.publication_evidence)
+        manager.publication_evidence.append({"invalid": True})
+        raise StorageError("COMMIT_OUTCOME_UNKNOWN")
+    manager.update = update
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+    result = updater.run()
+    status = public_after_market_status(_status(updater.status_path))
+    assert result.error_code == "COMMIT_OUTCOME_UNKNOWN"
+    assert status["last_run"]["historical_publications"] == [_capacity_publication()]
+    assert "PUBLICATION_EVIDENCE_INVALID" in caplog.text
+    assert live.cleaned == []
