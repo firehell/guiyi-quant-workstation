@@ -28,10 +28,11 @@ def pg_factory(isolated_postgres_engine):  # noqa: F811
     with isolated_postgres_engine.begin() as connection:
         connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
         connection.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
+        connection.exec_driver_sql("CREATE TABLE alert_events (id integer PRIMARY KEY)")
         ops = Operations(MigrationContext.configure(connection))
         root = Path(__file__).resolve().parents[1] / 'alembic' / 'versions'
         for name in ('20260919_0047_reference_trading.py', '20260923_0048_reference_forward.py',
-                     '20261009_0050_newow_notifications.py'):
+                     '20261009_0050_newow_notifications.py', '20261009_0051_observation_handover.py'):
             spec = importlib.util.spec_from_file_location('newow_test_migration', root / name)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
@@ -92,7 +93,7 @@ def test_claim_committed_before_provider_and_unknown_not_retried(pg_factory):
             self.calls += 1
             raise TimeoutError('outcome unknown')
     transport = Transport()
-    dispatcher = NewowNotificationDispatcher(pg_factory, transport=transport, topic_hash='topic-hash')
+    dispatcher = NewowNotificationDispatcher(pg_factory, transport=transport, topic_hash='topic-hash', clock=lambda: NOW + timedelta(minutes=6))
     assert dispatcher.tick()['attempted'] == 1
     assert dispatcher.tick()['attempted'] == 0
     _batch(pg_factory, 'b2', 's1')
@@ -112,8 +113,8 @@ def test_concurrent_dispatchers_send_once(pg_factory):
             assert release.wait(timeout=10)
             return ProviderAcceptance(reference='private-receipt')
     transport = Transport()
-    first = NewowNotificationDispatcher(pg_factory, transport=transport, topic_hash='topic-hash')
-    second = NewowNotificationDispatcher(pg_factory, transport=transport, topic_hash='topic-hash')
+    first = NewowNotificationDispatcher(pg_factory, transport=transport, topic_hash='topic-hash', clock=lambda: NOW + timedelta(minutes=6))
+    second = NewowNotificationDispatcher(pg_factory, transport=transport, topic_hash='topic-hash', clock=lambda: NOW + timedelta(minutes=6))
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(first.tick)
         assert entered.wait(timeout=10)
@@ -135,7 +136,51 @@ def test_late_commit_with_older_timestamp_discovered(pg_factory):
     class Transport:
         def send(self, _delivery):
             return ProviderAcceptance()
-    dispatcher = NewowNotificationDispatcher(pg_factory, transport=Transport(), topic_hash='topic-hash')
+    dispatcher = NewowNotificationDispatcher(pg_factory, transport=Transport(), topic_hash='topic-hash', clock=lambda: NOW + timedelta(minutes=6))
     assert dispatcher.tick()['attempted'] == 1
     _batch(pg_factory, 'late', 'late-signal', processed=NOW+timedelta(minutes=6))
     assert dispatcher.tick()['attempted'] == 1
+
+
+def test_expired_observation_persists_without_provider_attempt(pg_factory):
+    _enable(pg_factory)
+    _batch(pg_factory, "expired", "expired-signal")
+    class Transport:
+        def send(self, _delivery):
+            raise AssertionError("expired observation must not reach provider")
+    dispatcher = NewowNotificationDispatcher(pg_factory, transport=Transport(), topic_hash="topic-hash",
+        clock=lambda: NOW + timedelta(minutes=6, seconds=31))
+    assert dispatcher.tick()["attempted"] == 0
+    with pg_factory() as session:
+        row = session.scalar(select(NewowNotificationDelivery).where(NewowNotificationDelivery.signal_id == "expired-signal"))
+        assert row.status == "EXPIRED_NO_SEND"
+        assert row.attempted_at is None
+    assert dispatcher.tick()["attempted"] == 0
+
+
+def test_handover_migration_round_trip_preserves_old_delivery(pg_factory):
+    _enable(pg_factory)
+    _batch(pg_factory, 'old', 'old-signal')
+    class Transport:
+        def send(self, _delivery):
+            return ProviderAcceptance('accepted')
+    NewowNotificationDispatcher(pg_factory, transport=Transport(), topic_hash='topic-hash',
+        clock=lambda: NOW + timedelta(minutes=6)).tick()
+    with pg_factory() as session:
+        engine = session.get_bind()
+        original = session.scalar(select(NewowNotificationDelivery).where(NewowNotificationDelivery.signal_id == 'old-signal'))
+        identity, attempted = original.delivery_id, original.attempted_at
+    with engine.begin() as connection:
+        schema = connection.get_execution_options()['schema_translate_map'][None]
+        connection.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
+        root = Path(__file__).resolve().parents[1] / 'alembic' / 'versions'
+        spec = importlib.util.spec_from_file_location('handover_round_trip', root / '20261009_0051_observation_handover.py')
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.downgrade()
+        migration.upgrade()
+    with pg_factory() as session:
+        row = session.get(NewowNotificationDelivery, identity)
+        assert row.attempted_at == attempted
+        assert row.status == 'PROVIDER_ACCEPTED'

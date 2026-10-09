@@ -4,6 +4,14 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## 盘中连续交接工程候选
+
+三包代码与独立Review已完成，支持逐服务身份/选择性计划、独立market-feed及持久观察链路、Alert/Reference协作交接和30秒过期不发送。
+联合500项与扩展706项通过（扩展44项可选条件skip，不计通过），OpenSpec11/secret0/Ruff/Mypy及diff检查通过。
+本任务尚未创建正式tag/Release、执行0051生产迁移或切换Runtime；现役v1.14.9与既有Scope不变。
+休息段首次迁移、自然盘中业务切换及60品种/720流连续性验收待执行，不能据工程测试声明RUNTIME_READY。
+见[实现与验收边界](docs/tasks/intraday-runtime-handover-20261009.md)。
+
 ## Newow 四策略三周期 Topic 动作推送已启用
 
 现役发布与Runtime为 **v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e**，

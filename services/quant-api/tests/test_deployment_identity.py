@@ -104,3 +104,49 @@ def test_first_install_explicit_absence_and_real_marker(tmp_path, marker):
     assert result["services"]["alert"]["status"] == (
         "unknown" if marker == "alert-runtime-enabled" else "disabled")
     assert result["status"] == ("unknown" if marker else "matched")
+
+
+def test_registered_mixed_roots_are_matched_and_generation_is_required(tmp_path, monkeypatch):
+    from app.runtime_bindings import BindingRegistry, ServiceBinding, write_bindings
+    monkeypatch.setattr("app.services.deployment_identity.verify_release", lambda *args: None)
+    home = tmp_path / "home"
+    directory = home / "Library/LaunchAgents"
+    directory.mkdir(parents=True)
+    roots = {name: tmp_path / name for name in ("api", "web", "live")}
+    for root in roots.values():
+        root.mkdir()
+    contracts = {key: "c" * 64 for key in ("db", "live", "input", "formula", "reference", "launcher")}
+    bindings = {name: ServiceBinding(name, str(root), "v1.2.3", "a" * 40, 2, True, contracts)
+                for name, root in roots.items()}
+    write_bindings(BindingRegistry(1, bindings), home=home, expected_sha256=None)
+    outputs = {}
+    for service, root in roots.items():
+        label = f"com.guiyi.quant-{service}"
+        args = ("/bin/bash", str(home / "Library/Application Support/GuiyiQuant/run-local-service.sh"), service)
+        env = {"GUIYI_PROJECT_ROOT": str(root), "GUIYI_RUNTIME_COMMIT": "a" * 40,
+               "GUIYI_RUNTIME_GENERATION": "2", "GUIYI_RUNTIME_TAG": "v1.2.3"}
+        payload = {"Label": label, "WorkingDirectory": str(home if service in {"api", "web"} else root),
+                   "ProgramArguments": list(args), "EnvironmentVariables": env}
+        (directory / f"{label}.plist").write_bytes(plistlib.dumps(payload))
+        outputs[label] = (f"{label} = {{\n state = running\n pid = 42\n working directory = {payload['WorkingDirectory']}\n"
+                         + " arguments = {\n" + "\n".join(args) + "\n }\n environment = {\n"
+                         + "\n".join(f" {key} => {value}" for key, value in env.items()) + "\n }\n}")
+    result = deployment_identity_health(root=roots["api"], commit="a" * 40, home=home,
+                                       service_reader=lambda label, **_: outputs[label])
+    assert result["status"] == "matched"
+    assert result["services"]["live_market"]["runtime_root"] == str(roots["live"])
+    outputs["com.guiyi.quant-live"] = outputs["com.guiyi.quant-live"].replace("GENERATION => 2", "GENERATION => 1")
+    result = deployment_identity_health(root=roots["api"], commit="a" * 40, home=home,
+                                       service_reader=lambda label, **_: outputs[label])
+    assert result["status"] == "unknown"
+
+
+def test_damaged_registry_is_unknown_without_legacy_fallback(tmp_path):
+    from app.runtime_bindings import registry_path
+    path = registry_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text("{}")
+    path.chmod(0o600)
+    result = deployment_identity_health(root=tmp_path, commit="a" * 40, home=tmp_path,
+                                       service_reader=lambda *args, **kwargs: None)
+    assert result["status"] == "unknown"

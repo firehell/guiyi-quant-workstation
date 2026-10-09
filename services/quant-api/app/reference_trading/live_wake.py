@@ -37,35 +37,75 @@ class ForwardLiveWake:
             if isinstance(message, dict) and message.get("type") == "pmessage":
                 self._on_message(message.get("channel"), message.get("data"))
 
-    def _on_message(self, raw_channel: object, raw_data: object) -> None:
+    def _on_message(self, raw_channel: object, raw_data: object) -> bool:
         try:
             channel = raw_channel.decode() if isinstance(raw_channel, bytes) else raw_channel
             data = raw_data.decode() if isinstance(raw_data, bytes) else raw_data
             if not isinstance(channel, str) or not isinstance(data, str):
-                return
+                return False
             prefix = f"{LIVE_BAR_CHANNEL_PREFIX}:"
             if not channel.startswith(prefix):
-                return
+                return False
             product, frequency = channel[len(prefix):].split(":", 1)
             if product != product.lower():
-                return
+                return False
             BarFrequency(frequency)
             payload = json.loads(data)
             if not isinstance(payload, dict):
-                return
+                return False
             end = datetime.fromisoformat(payload["bar_end"])
             day = date.fromisoformat(payload["trading_day"])
             contract = payload["contract"]
             if (end.tzinfo is None or end.utcoffset() is None
                     or normalize_contract_for_symbol(product, contract) != contract):
-                return
+                return False
             owner = self._market_data.dominant_segment_for_day(product, day)
             if owner.contract != contract:
-                return
+                return False
         except (AttributeError, KeyError, TypeError, ValueError, MarketDataError):
-            return
+            return False
         for stream_id in self._repository.enabled_forward_routes(product, frequency):
             self._worker.wake(stream_id, kind="live_event", bar_end=end)
 
+        return True
+
     def close(self) -> None:
         self._pubsub.close()
+
+
+class StreamForwardLiveWake(ForwardLiveWake):
+    """Do not acknowledge a durable observation until every route is committed."""
+    def __init__(self, redis, repository, worker, market_data):
+        super().__init__(redis, repository, worker, market_data)
+        from app.market_data.observation_stream import ObservationStream
+        self._stream = ObservationStream(redis, kind="completed")
+
+    def subscribe(self):
+        for day in self._stream.days():
+            self._stream.cursor("reference", day)
+
+    def wait(self, seconds):
+        for day in self._stream.days():
+            cursor = self._stream.cursor("reference", day)
+            for observation in self._stream.read("reference", day, count=1):
+                if observation.notification_eligible:
+                    confirmed = getattr(observation, "confirmed_at", None)
+                    if confirmed is None:
+                        raise RuntimeError("REFERENCE_COMPLETED_TIME_MISSING")
+                    self._worker.source_observed_at = confirmed
+                    self._worker.raw_received_at = observation.source_observed_at
+                    try:
+                        if not self._on_message(observation.channel, json.dumps(observation.data)):
+                            raise RuntimeError("REFERENCE_BUFFER_IDENTITY_INVALID")
+                        while self._worker.health().pending_keys:
+                            self._worker.assert_owned()
+                            self._worker.run_round()
+                            if self._worker.health().blocked:
+                                raise RuntimeError("REFERENCE_BUFFER_PROCESSING_BLOCKED")
+                    finally:
+                        self._worker.source_observed_at = None
+                        self._worker.raw_received_at = None
+                self._stream.ack("reference", day, expected_cursor=cursor, next_id=observation.stream_id)
+                return
+        from time import sleep
+        sleep(min(seconds, 1))

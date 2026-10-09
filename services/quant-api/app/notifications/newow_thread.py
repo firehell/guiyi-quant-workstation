@@ -13,14 +13,19 @@ class NotificationThread:
         self._dispatcher = dispatcher
         self._interval = interval_seconds
         self._stop = Event()
+        if hasattr(dispatcher, "should_stop"):
+            existing_stop = dispatcher.should_stop
+            dispatcher.should_stop = lambda: self._stop.is_set() or existing_stop()
         self._thread = Thread(target=self._run, name="newow-notification", daemon=True)
 
     def start(self):
         self._thread.start()
 
-    def stop(self):
+    def stop(self, *, timeout_seconds=None):
+        """Only return drained when all claimed provider calls have finished."""
         self._stop.set()
-        self._thread.join(timeout=5)
+        self._thread.join(timeout=timeout_seconds)
+        return not self._thread.is_alive()
 
     def is_alive(self):
         return self._thread.is_alive()
@@ -32,4 +37,6 @@ class NotificationThread:
             except Exception:
                 # Provider/DB exceptions may contain secrets. Never log their text.
                 logger.error("NEWOW_NOTIFICATION_TICK_FAILED")
+                self._stop.set()
+                return  # Unknown ownership/commit outcome must never be retried.
             self._stop.wait(self._interval)

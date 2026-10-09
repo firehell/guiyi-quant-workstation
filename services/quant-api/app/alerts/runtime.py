@@ -117,8 +117,13 @@ def _persist_candidate_and_prepare_notification(
     candidate: AlertObservationCandidate,
     processing_now: datetime,
     subing_alignment: dict[str, object] | None = None,
+    source_observed_at: datetime | None = None,
+    source_observation_id: str | None = None,
 ) -> _PreparedEvent:
     definition = get_alert_rule_definition(rule.rule_code)
+    if source_observed_at is not None and processing_now < source_observed_at:
+        raise ValueError("ALERT_SOURCE_TIME_INVALID")
+    expired = source_observed_at is not None and (processing_now - source_observed_at).total_seconds() > 30
     create = AlertEventCreate(
         rule_id=rule.id,
         symbol=symbol,
@@ -128,7 +133,11 @@ def _persist_candidate_and_prepare_notification(
         bar_end=candidate.bar_end,
         result_codes=candidate.observation_types,
         detected_at=processing_now,
-        notification_attempted_at=(processing_now if definition.notification_enabled else None),
+        notification_attempted_at=(processing_now if definition.notification_enabled and not expired else None),
+        source_observed_at=source_observed_at,
+        source_observation_id=source_observation_id,
+        processing_mode="handover_buffer" if source_observation_id else None,
+        notification_status="EXPIRED_NO_SEND" if expired else None,
         subing_alignment=subing_alignment,
     )
     if definition.event_mode is AlertEventMode.FIRST_SEEN:
@@ -137,7 +146,7 @@ def _persist_candidate_and_prepare_notification(
         created = service.create_event(create)
     if created is None:
         return _PreparedEvent(False, None, None)
-    if not definition.notification_enabled:
+    if not definition.notification_enabled or expired:
         return _PreparedEvent(True, None, None)
     taxonomy_entry = taxonomy.get(symbol)
     if taxonomy_entry is None:
@@ -175,7 +184,13 @@ class AlertRuntime:
         clock: Callable[[], datetime] | None = None,
         stop_requested: Callable[[], bool] | None = None,
         live_processing_guard: Callable[[str], AbstractContextManager] | None = None,
+        assert_owned: Callable[[], None] | None = None,
+        mark_ready: Callable[[], None] | None = None,
     ) -> None:
+        self.assert_owned = assert_owned or (lambda: None)
+        self.mark_ready = mark_ready or (lambda: None)
+        self._source_observed_at = None
+        self._source_observation_id = None
         self._recovery_guard_enabled = live_processing_guard is not None
         self._live_processing_guard = live_processing_guard or (lambda symbol: nullcontext())
         self._session_factory = session_factory
@@ -214,7 +229,18 @@ class AlertRuntime:
                     next_heartbeat = now + _HEARTBEAT_INTERVAL
                 runtime_message = self.message_source.get_message(timeout_seconds=1.0)
                 if runtime_message is not None:
-                    self.process_message(*runtime_message)
+                    envelope = getattr(self.message_source, "current_observation", None)
+                    self._source_observed_at = envelope.source_observed_at if envelope else None
+                    self._source_observation_id = envelope.observation_id if envelope else None
+                    success = self.process_message(*runtime_message)
+                    if envelope is not None:
+                        if success is False:
+                            raise RuntimeError("ALERT_BUFFER_PROCESSING_FAILED")
+                        getattr(self.message_source, "ack_current")()
+                    self._source_observed_at = None
+                    self._source_observation_id = None
+                if self._current_runtime_status().get("processing_error_type") is None:
+                    self.mark_ready()
         finally:
             self.message_source.close()
 
@@ -251,36 +277,39 @@ class AlertRuntime:
         payload: object,
         *,
         emit_events: bool = True,
-    ) -> None:
+    ) -> bool | None:
         live = _parse_live_bar_trigger(channel, payload)
         if live is not None:
             if emit_events:
-                self._process_live(live)
-            return
+                return self._process_live(live)
+            return None
         canonical = _parse_canonical_updated_trigger(channel, payload)
         if canonical is not None and emit_events:
             self._process_canonical_updated(canonical)
+        return False if self._source_observation_id else None
 
-    def _process_live(self, trigger: _LiveBarTrigger) -> None:
+    def _process_live(self, trigger: _LiveBarTrigger) -> bool | None:
         if trigger.symbol not in self._operational_products:
-            return
+            return None
         guard_entered = False
         processing_completed = False
         try:
             with self._live_processing_guard(trigger.symbol):
                 guard_entered = True
-                self._process_live_guarded(trigger)
+                success = self._process_live_guarded(trigger)
                 processing_completed = True
+                return success
         except Exception:
             if not guard_entered or processing_completed:
                 _LOGGER.warning("ALERT_RECOVERY_GUARD_UNAVAILABLE")
             else:
                 _LOGGER.warning("ALERT_PROCESSING_FAILED")
             self._record_processing_result(processing_now=self._aware_now(), bar_at=trigger.bar.bar_end, failed=True)
+            return False
 
-    def _process_live_guarded(self, trigger: _LiveBarTrigger) -> None:
+    def _process_live_guarded(self, trigger: _LiveBarTrigger) -> bool | None:
         if trigger.symbol not in self._operational_products:
-            return
+            return None
         processing_now = self._aware_now()
         messages: list[AlertNotificationMessage] = []
         event_count = 0
@@ -330,6 +359,8 @@ class AlertRuntime:
                             event_frequency=trigger.frequency,
                             event_bar=trigger.bar,
                         ):
+                            if self._source_observation_id:
+                                raise MarketReadWindowError("ALERT_BUFFER_WINDOW_CONFLICT")
                             continue
                         market_read.assert_window_current(window)
                         if not window.notification_eligible:
@@ -342,6 +373,7 @@ class AlertRuntime:
                         market_read.assert_window_current(window)
                         rule_event_created = False
                         for candidate in candidates:
+                            self.assert_owned()
                             prepared = _persist_candidate_and_prepare_notification(
                                 service,
                                 taxonomy=self._taxonomy,
@@ -350,6 +382,8 @@ class AlertRuntime:
                                 frequency=trigger.frequency.value,
                                 candidate=candidate,
                                 processing_now=processing_now,
+                                source_observed_at=self._source_observed_at,
+                                source_observation_id=self._source_observation_id,
                                 subing_alignment=_alignment_for_candidate(rule, market_read, window, candidate, processing_now),
                             )
                             if prepared.event_created:
@@ -408,6 +442,7 @@ class AlertRuntime:
             )
         if not failed or messages:
             self._send_messages_once(messages, processing_now=processing_now)
+        return not failed
 
     def _process_canonical_updated(self, trigger: _CanonicalUpdatedTrigger) -> None:
         processing_now = self._aware_now()
@@ -471,6 +506,7 @@ class AlertRuntime:
                                 )
                                 rule_event_created = False
                                 for candidate in candidates:
+                                    self.assert_owned()
                                     prepared = _persist_candidate_and_prepare_notification(
                                         service,
                                         taxonomy=self._taxonomy,
@@ -574,10 +610,28 @@ class AlertRuntime:
         processing_now: datetime,
     ) -> None:
         for message in messages:
+            send_now = self._aware_now()
+            if self._source_observed_at is not None and send_now < self._source_observed_at:
+                raise ValueError("ALERT_SOURCE_TIME_INVALID")
+            if self._source_observed_at is not None and (send_now - self._source_observed_at).total_seconds() > 30:
+                from app.alerts.models import AlertEvent
+                self.assert_owned()
+                with self._session_factory() as session:
+                    event = session.scalar(select(AlertEvent).join(AlertRule).where(
+                        AlertRule.rule_code == message.rule_code, AlertEvent.symbol == message.symbol,
+                        AlertEvent.frequency == message.frequency, AlertEvent.bar_end == message.bar_end,
+                        AlertEvent.source_observation_id == self._source_observation_id))
+                    if event is None:
+                        raise RuntimeError("ALERT_EXPIRY_EVENT_MISSING")
+                    event.notification_status = "EXPIRED_NO_SEND"
+                    event.notification_attempted_at = None
+                    session.commit()
+                continue
             self._update_runtime_status(
                 last_transport_attempt_at=_iso_timestamp(processing_now)
             )
             try:
+                self.assert_owned()
                 acceptance = self._sender.send(message)
             except NotificationTransportError as exc:
                 self._record_notification_failure(
