@@ -109,7 +109,7 @@ test('fusion entry loads automatically and drops late results after identity cha
   mock.calls[base + 3].resolve(output('unmounted'))
 })
 
-test('dual tab replaces main rise and emits a presentation identity preserving period', async () => {
+test('dual and main rise tabs emit their distinct identities preserving legal periods', async () => {
   const Nav = await component('MarketDetailViewNav')
   const root = element('root')
   let selected: unknown
@@ -119,14 +119,19 @@ test('dual tab replaces main rise and emits a presentation identity preserving p
   app.mount(root)
   const dual = findNode(root, n => n.type === 'button' && nodeText(n).trim() === '双策略')!
   assert.ok(dual)
-  assert.doesNotMatch(nodeText(root), /主升浪/)
+  assert.match(nodeText(root), /主升浪/)
   const labels = findNodes(root, n => n.type === 'button').map(n => nodeText(n).trim())
-  assert.deepEqual(labels.slice(0, 5), ['震荡策略', '趋势策略', '双策略', '✨AI分析', '火天大有'])
+  assert.deepEqual(labels.slice(0, 5), ['震荡策略', '趋势策略', '双策略', '✨AI分析', '主升浪'])
   ;(findNode(root, n => n.type === 'button' && nodeText(n).trim() === '✨AI分析')!.props.onClick as Function)()
   assert.equal(aiRequests, 1)
   assert.equal(selected, undefined)
   ;(dual.props.onClick as Function)()
   assert.deepEqual(selected, { ...identity, strategy: 'trend', newowMode: 'dual' })
+  ;(findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='主升浪')!.props.onClick as Function)()
+  assert.deepEqual(selected,{...identity,strategy:'main_rise'})
+  identity.frequency='5m'
+  ;(findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='主升浪')!.props.onClick as Function)()
+  assert.deepEqual(selected,{...identity,strategy:'main_rise',frequency:'1d'})
   app.unmount()
 })
 

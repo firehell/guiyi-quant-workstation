@@ -42,7 +42,8 @@ test('page records show latest three, expand and collapse, reset mode/window wit
  const value=ref({strategy:'trend',ordinary:model,ideal:{...model,trades:trades.slice(0,4)},ordinary_interrupted_count:0,ideal_open_count:0})
  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{value:value.value,since:'2025-09-30',through:'2026-09-30'})}));app.mount(root);await nextTick()
  const cards=()=>findNodes(root,n=>n.type==='article')
- assert.equal(cards().length,3);assert.match(nodeText(cards()[0]),/2026-09-05.*3100.12.*3200.00/)
+ assert.equal(cards().length,3);assert.match(nodeText(cards()[0]),/09-05.*3100.12.*3200.00/)
+ assert.equal(findNodes(cards()[0],n=>n.type==='time')[0]?.props.datetime,'2026-09-05')
  const more=()=>findNode(root,n=>n.type==='button'&&nodeText(n).includes('查看全部'))!
  ;(more().props.onClick as Function)();await nextTick();assert.equal(cards().length,5)
  const collapse=findNode(root,n=>n.type==='button'&&nodeText(n)==='收起')!

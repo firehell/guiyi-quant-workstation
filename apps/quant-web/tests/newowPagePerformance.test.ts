@@ -30,13 +30,13 @@ test('ordinary/theoretical toggle changes independent curve summary and estimate
  const Panel=await panel(),root=element('root')
  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{value:normalizePagePerformance(payload(),'trend'),since:'2026-01-01',through:'2026-01-02'})}))
  app.mount(root)
- assert.match(nodeText(root),/末根估值平仓/)
+ assert.match(nodeText(root),/持仓参考中/)
  assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/2/)
  const ordinary=findNode(root,n=>n.type==='polyline')!.props.points
  const button=findNode(root,n=>n.type==='button'&&nodeText(n)==='理论值')!
  ;(button.props.onClick as Function)();await nextTick()
- assert.match(nodeText(root),/页面清仓参考/)
- assert.doesNotMatch(nodeText(root),/末根估值平仓/)
+ assert.match(nodeText(root),/日K/)
+ assert.doesNotMatch(nodeText(root),/持仓参考中/)
  assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/9/)
  assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/单笔最大亏损/)
  assert.doesNotMatch(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/页面回撤/)
@@ -87,4 +87,28 @@ test('full-history page curve accepts 200000 points and preserves owner breaks',
  assert.equal(parts.map(part => part.trim().split(' ').length).reduce((a,b) => a+b, 0), size)
  assert.match(parts[0]!, /^0,140 /)
  assert.ok(parts[1]!.includes('712,'))
+})
+
+test('compact plot aligns grid and date axes while separate owners stay disconnected', async () => {
+ const Panel = await panel(), root = element('root')
+ const value = normalizePagePerformance(payload(), 'trend')!
+ const split = {...value, ordinary: {...value.ordinary!, segment_ids:['one','two','two']}}
+ const app = createRenderer(nodeOperations()).createApp(Panel, {value:split,since:'2026-01-01',through:'2026-01-03'})
+ app.mount(root)
+ assert.equal(findNodes(root,n=>n.type==='line').length,5)
+ assert.equal(findNodes(root,n=>n.type==='path').length,2)
+ assert.equal(findNodes(root,n=>n.type==='polyline').length,2)
+ assert.match(nodeText(root),/01-01/)
+ assert.doesNotMatch(nodeText(root),/2026-01-01/)
+ assert.equal(findNodes(root,n=>n.type==='button' && nodeText(n)==='普通值').length,0)
+ const analysis = findNode(root,n=>n.type==='button' && nodeText(n)==='收益分析 ›')!
+ ;(analysis.props.onClick as Function)();await nextTick()
+ assert.match(nodeText(findNode(root,n=>n.props.role==='dialog')!),/普通值/)
+ const theory = findNode(root,n=>n.type==='button' && nodeText(n)==='理论值')!
+ ;(theory.props.onClick as Function)();await nextTick()
+ assert.match(nodeText(findNode(root,n=>n.props.role==='dialog')!),/理论值/)
+ assert.equal(findNodes(root,n=>n.type==='path').length,1)
+ const drawdown = findNode(root,n=>n.type==='dd' && n.props.class==='newow-reference__drawdown')!
+ assert.equal(nodeText(drawdown),'0.00%')
+ app.unmount()
 })

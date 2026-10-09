@@ -38,20 +38,20 @@ function fact(cd:Cdv2|undefined,role:string) { return cd?.facts.find(f=>f.role==
 function signal(f:Cdv2['facts'][number]|undefined):Signal|null { return f?.status==='ready' && ['buy','hold','sell','wait'].includes(f.state??'') ? f!.state as Signal : null }
 export function buildStatusCard(value:NewowDecisionV2|null, strategy:string, basisDecision?:ReturnType<typeof deriveBasisDecision>) {
  const cd=value?.cdv2, axis=basisDecision?.directionFact.role.startsWith('oscillation')||strategy==='oscillation'?'oscillation':'trend'
- const wf=fact(cd,axis+'_week'),df=fact(cd,axis+'_day'),hf=fact(cd,axis+'_m60'),w=signal(wf),d=signal(df),hour=signal(hf)
+ const supported=strategy==='trend'||strategy==='oscillation'||!!basisDecision
+ const wf=supported?fact(cd,axis+'_week'):undefined,df=supported?fact(cd,axis+'_day'):undefined,hf=supported?fact(cd,axis+'_m60'):undefined,w=signal(wf),d=signal(df),hour=signal(hf)
  const pairCompatible = w!==null && d!==null && !!wf?.physical_contract && !!wf.segment_id && wf.physical_contract===df?.physical_contract && wf.segment_id===df?.segment_id
  const compatible=pairCompatible && (strategy!=='oscillation' || (hour!==null && hf?.physical_contract===wf?.physical_contract && hf?.segment_id===wf?.segment_id))
  const key=w!==null&&d!==null&&hour!==null?`${oscState(w)}-${oscState(d)}-${oscState(hour)}`:null
  const matrix=key?OSCILLATION_MATRIX[key as keyof typeof OSCILLATION_MATRIX]:null
- const supported=strategy==='trend'||strategy==='oscillation'||!!basisDecision
- const row:Row = supported && compatible ? (axis==='oscillation'&&matrix&&w&&d&&hour ? [oscillationDirection(oscState(w),oscState(d),oscState(hour)),matrix.risk,matrix.advice] : TREND[w+'-'+d])! : [strategy==='oscillation'?'周日小时状态不足':'日周状态不足','unknown',supported?'当前策略状态或合约上下文不足，等待已完成数据':'主升浪尚无独立日周摘要输入']
+ const row:Row = supported && compatible ? (axis==='oscillation'&&matrix&&w&&d&&hour ? [oscillationDirection(oscState(w),oscState(d),oscState(hour)),matrix.risk,matrix.advice] : TREND[w+'-'+d])! : [strategy==='oscillation'?'周日小时状态不足':'日周状态不足','unknown',supported?'当前策略状态或合约上下文不足，等待已完成数据':strategy==='dual'?'双策略主导策略或周期摘要尚未就绪':'主升浪尚无独立日周摘要输入']
  const [name,legacyRisk,legacyAdvice]=row
  const risk=basisDecision?.stance.risk ?? legacyRisk
  const rawAdvice=basisDecision?.reason ?? legacyAdvice
  const bear=cd?.trend_bias==='bearish'
  const guard=(s:string)=>bear?s.replace(/加仓/g,'持仓').replace(/建仓/g,'持仓'):s
  const tag=(s:Signal|null)=>({state:s??'unknown',label:s===null?'未就绪':strategy==='oscillation'?({holding:'持有',cleared:'已清仓',idle:'待信号'}[oscState(s)]):signalLabels[s]})
- const exposure=cd?(cd.reference_exposure_range || (cd.reference_exposure_cap===0?'0%':'—')):'—'
+ const exposure=supported&&cd?(cd.reference_exposure_range || (cd.reference_exposure_cap===0?'0%':'—')):'—'
  const current=value?.prices?.current_price
  const priceCompatible=compatible && current?.physical_contract===wf?.physical_contract && current?.segment_id===wf?.segment_id
  const progress=priceCompatible&&supported ? statusPriceProgress(value?.prices??null,risk) : null

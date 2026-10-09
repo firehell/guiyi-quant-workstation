@@ -36,6 +36,7 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
   { value: 'oscillation', label: '震荡策略' },
   { value: 'trend', label: '趋势策略' },
   { value: 'dual', label: '双策略' },
+  { value: 'main_rise', label: '主升浪' },
   { value: 'htdy', label: '火天大有' },
   { value: 'subing', label: '苏冰预警' },
   { value: 'free', label: '自由看盘' },
@@ -60,9 +61,10 @@ watch(() => props.identity, (identity) => {
 function chooseView(view: AnalysisChoice) {
   if (view === 'trend' || view === 'oscillation' || view === 'main_rise' || view === 'dual') {
     const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
-    const frequency = props.identity.view === 'newow'
+    const preferredFrequency = props.identity.view === 'newow'
       ? props.identity.frequency
       : (restored.frequency === '1m' || props.newowFrequencies.includes(restored.frequency)) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
+    const frequency = view === 'main_rise' && ['5m', '15m', '30m'].includes(preferredFrequency) ? '1d' : preferredFrequency
     emit('select', {
       view: 'newow', symbol: props.identity.symbol, strategy: view === 'dual' ? 'trend' : view,
       ...(view === 'dual' ? { newowMode: 'dual' as const } : {}),

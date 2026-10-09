@@ -66,3 +66,12 @@ test('basis reason retains DN build wording despite legacy bearish guard',()=>{
  const basis=deriveBasisDecision(value,'trend','week')!;assert.equal(basis.row,'DN')
  const card=buildStatusCard(value,'trend',basis);assert.equal(card.advice,basis.reason);assert.match(card.explanation,/暂不建仓/);assert.equal(card.riskLabel,'空仓防御')
 })
+
+test('unavailable dual and main rise summaries do not borrow trend facts or exposure',()=>{
+ for(const strategy of ['dual','main_rise']) {
+  const card=buildStatusCard(decision(),strategy)
+  assert.equal(card.week.state,'unknown');assert.equal(card.day.state,'unknown');assert.equal(card.hour.state,'unknown')
+  assert.equal(card.weekFact,undefined);assert.equal(card.progress,null);assert.equal(card.exposure,'—')
+  assert.match(card.advice,strategy==='dual'?/双策略/:/主升浪/)
+ }
+})
