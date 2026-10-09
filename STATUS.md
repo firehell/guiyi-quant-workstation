@@ -10,11 +10,19 @@
 目标范围1260路、360调度key，capability v33/matrix v4；短分钟主升浪保持关闭。
 reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web53 passed与build、
 OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
-未发布/切换Runtime，当前实际仍如下v1.14.5的720路。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
+代码随v1.14.6发布，未切换Runtime，当前实际仍如下v1.14.5的720路。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
+最新源码发布为 **v1.14.6@5b6f1cd49c14066b3c97766c18a9d65a24c6a1fd**，
+[PR #419](https://github.com/firehell/guiyi-quant-workstation/pull/419) 已合并，annotated tag 与
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.6) 精确身份一致。
+Web824 passed/1 skipped、本次变更后端985 passed/27 skipped，typecheck/build/topology、版本一致性、
+OpenSpec10/10、锁文件、secret0与diff通过；最终独立Review无发布阻断。
+这是源码发布，**正式Runtime仍为v1.14.5**。部署新版API前须完成0049迁移；新增540路记录未生产构建或启用，
+未切换Runtime、推送或订单。详见[发布记录](docs/releases/v1.14.6.md)。
+
+当前运行版本为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
 [PR #417](https://github.com/firehell/guiyi-quant-workstation/pull/417) 已合并，annotated tag与
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.5) 精确身份一致。
 2026-10-09 08:39–08:41，API/Web/logrotate、Market Live/盘后/late-provider及reference worker已完成正式切换。

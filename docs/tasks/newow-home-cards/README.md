@@ -13,7 +13,7 @@
 验证：
 
 - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/newow/test_product_service.py services/quant-api/tests/newow/test_market_newow_product_api.py services/quant-api/tests/newow/test_candidate_preview.py`：397 passed。
-- 在 `apps/quant-web` 执行 `npm run build` 和 `node --test tests/marketHome*.test.ts tests/newowHomeCards.test.ts tests/candidatePreview.test.ts tests/newowProductTypes.test.ts tests/newowCapabilities.test.ts`：构建通过、171 passed。
+- 在 `apps/quant-web` 执行 `npm run build` 和 `node --test tests/marketHome*.test.ts tests/newowHomeCards.test.ts tests/candidatePreview.test.ts tests/newowProductTypes.test.ts tests/newowCapabilities.test.ts tests/newowExplanationPanel.test.ts`：构建通过、180 passed（包含并发远端集成后的相关回归）。
 - secret scan：0 findings；独立审查允许集成 develop。
 - 只读真实 RB/I 接口返回200，四组日周事实 ready；黑色系5张卡片完成真实页面读取，包含 SF 日线建仓/周线清仓。桌面和390px手机无横向溢出，独立周期切换、图表导航和返回恢复通过。
 
