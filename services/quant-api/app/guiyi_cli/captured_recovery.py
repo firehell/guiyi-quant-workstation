@@ -58,8 +58,9 @@ def read_captured_file(path: Path, *, max_bytes: int = 512 * 1024) -> bytes:
 
 def _after_market_preflight(trading_day) -> None:
     from app.market_data.after_market import public_after_market_status
+    from app.market_data.after_market_limits import MAX_STATUS_BYTES
     try:
-        raw = json.loads(read_captured_file(PROJECT_ROOT / '.run' / 'after-market-status.json'))
+        raw = json.loads(read_captured_file(PROJECT_ROOT / '.run' / 'after-market-status.json', max_bytes=MAX_STATUS_BYTES))
         public = public_after_market_status(raw)
         if not public or public.get('schema_version') not in {2, 3, 4, 5} or 'current_run' not in raw:
             raise ValueError
