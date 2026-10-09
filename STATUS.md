@@ -4,6 +4,14 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## Develop 牛哇两个 P2
+
+2026-10-09：七类公开回看形态（杯柄、浅碟、双底、平台、递升、盘整、窄幅）与独立60分钟嵌套路径已完成实现、测试及独立Review。
+形态单独版本化，按完整已加载同合约区段识别，支持默认最佳、绘制、清除和取消旧Worker；page-parity/repainting/non-executable，不改变正式策略信号。
+路径v2包含W1/D1/60m独立成本和目标来源；缺成本不造完整路径，目标保留期货HHV10适配身份，不声称还原私有价格。
+后端Newow3009 passed/1 skipped、Web959 passed/2 skipped、原JS同输入117 passed及额外48组独审对照、build/typecheck、OpenSpec10/10与secret/diff通过，Chrome实际交互通过。
+详见[两个P2交付及公式边界](docs/tasks/newow-p2-20261009.md)。未加入四测试、未构建参考资产、未发布或切换Runtime。
+
 ## Develop 牛哇页面一致性 P0
 
 2026-10-09：已有趋势、震荡、主升浪及融合的两个P0已集成develop，主图Marker与独立普通/理论收益投影修正通过测试和独立Review；四个测试策略未加入。
