@@ -4,6 +4,13 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## 每日增量稳定性补丁候选 v1.14.8
+
+盘后发布证据容量、写前预估、可信提交前缀、进度日志和全部状态reader已修复并通过独立Review。
+仅在v1.14.7上叠加本次必要补丁；候选精确回归895 passed、Web版本测试通过，发布与Runtime切换尚待现场证据。
+10/9自然任务仍保留failed/UPDATE_FAILED；独立只读60×七频420分区完整、daily-recovery noop，因此未重复下载或发布。
+通知失败不影响增量结果；下一次自然盘后验收待发生。见[修复任务](docs/tasks/after-market-stability-20261009.md)及[补丁说明](docs/releases/v1.14.8.md)。
+
 ## Develop 牛哇两个 P2
 
 2026-10-09：七类公开回看形态（杯柄、浅碟、双底、平台、递升、盘整、窄幅）与独立60分钟嵌套路径已完成实现、测试及独立Review。
