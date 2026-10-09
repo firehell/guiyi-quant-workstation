@@ -5,6 +5,8 @@ protocol inside one locked transaction; historical reference positions never car
 """
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import FREQUENCIES, strategies_for, recording_route_supported
+
 from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -24,7 +26,6 @@ from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint
 POLICY = "completed_observation_v1"
 SCHEMAS = {"trend": "newow_product_replay_v1", "oscillation": "newow_product_replay_v1",
            "main_rise": "newow_product_replay_v1", "dual_fusion": "newow_dual_fusion_reference_v1"}
-FREQUENCIES = ("1w", "1d", "60m")
 
 
 def _json(value):
@@ -124,7 +125,7 @@ class NewowForwardBootstrap:
         identity = _identity_from_row(row)
         strategy = identity.strategy_code.replace("-", "_").removeprefix("newow_")
         if (identity.recording_mode is not RecordingMode.HISTORICAL_REPLAY
-                or strategy not in SCHEMAS or identity.frequency not in FREQUENCIES
+                or strategy not in SCHEMAS or not recording_route_supported(strategy, identity.frequency)
                 or not _canonical_identity(identity)):
             raise RepositoryConflict("BOOTSTRAP_HISTORY_IDENTITY_INVALID")
         if row.active_revision_id is None:
@@ -195,20 +196,23 @@ class NewowForwardBootstrap:
                 "target_row_version": None if target is None else target.row_version,
                 "strategy_schema": schema, "recording_start": start.isoformat(),
                 "expires_at": expiry.isoformat(), "host": host, "environment": environment,
-                "budget": {"max_pending_keys": 180, "max_units_per_round": 32},
+                "budget": {"max_pending_keys": 360, "max_units_per_round": 32},
                 "recovery_policy": recovery_policy}
             return {**payload, "plan_hash": _hash(payload)}
 
-    def plan_scope(self, operational, active, *, selected_products=None, **options) -> dict:
+    def plan_scope(self, operational, active, *, selected_products=None, selected_frequencies=None, **options) -> dict:
         products = validate_product_scope(operational, active)
         selected = tuple(product.lower() for product in (selected_products or products))
         if not selected or len(set(selected)) != len(selected) or not set(selected) <= set(products):
             raise ValueError("BOOTSTRAP_PRODUCT_SCOPE_INVALID")
+        frequencies = tuple(selected_frequencies or FREQUENCIES)
+        if not frequencies or len(set(frequencies)) != len(frequencies) or not set(frequencies) <= set(FREQUENCIES):
+            raise ValueError("BOOTSTRAP_FREQUENCY_SCOPE_INVALID")
         with self._factory() as session:
             rows = session.scalars(select(ReferenceStream).where(
                 ReferenceStream.recording_mode == RecordingMode.HISTORICAL_REPLAY.value,
                 ReferenceStream.product.in_(selected),
-                ReferenceStream.frequency.in_(FREQUENCIES),
+                ReferenceStream.frequency.in_(frequencies),
             )).all()
             routes, invalid = {}, set()
             for row in rows:
@@ -222,8 +226,8 @@ class NewowForwardBootstrap:
                         invalid.add(key)
         items = []
         for product in selected:
-            for frequency in FREQUENCIES:
-                for strategy in SCHEMAS:
+            for frequency in frequencies:
+                for strategy in strategies_for(frequency):
                     item = {"product": product, "strategy": strategy, "frequency": frequency}
                     sources = routes.get((product, strategy, frequency), ())
                     if len(sources) != 1:
@@ -238,7 +242,7 @@ class NewowForwardBootstrap:
                         items.append({**item, "status": "blocked", "reason": reason, "plan": None})
                     else:
                         items.append({**item, "status": "ready", "reason": None, "plan": plan})
-        result = {"version": "newow_forward_bootstrap_scope_v1", "products": list(products),
+        result = {"version": "newow_forward_bootstrap_scope_v2", "frequencies": list(frequencies), "products": list(products),
                   "selected_products": list(selected), "expected_count": len(items), "items": items}
         return {**result, "plan_hash": _hash(result)}
 

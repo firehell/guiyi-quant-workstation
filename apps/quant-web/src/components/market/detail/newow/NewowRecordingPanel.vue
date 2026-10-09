@@ -6,11 +6,13 @@ import { newowRecordingWindow, newowRecordingIdentity, recordingPointLabel, reco
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 const props = defineProps<{ product: string; strategy: string; frequency: string }>()
 const strategies = [{ value: 'trend', label: '趋势' }, { value: 'oscillation', label: '震荡' }, { value: 'main_rise', label: '主升浪' }, { value: 'dual_fusion', label: '双策略' }]
-const frequencies = [{ value: '1w', label: '周线' }, { value: '1d', label: '日线' }, { value: '60m', label: '60 分钟' }]
+const frequencies = [{ value: '1w', label: '周线' }, { value: '1d', label: '日线' }, { value: '60m', label: '60 分钟' }, { value: '30m', label: '30 分钟' }, { value: '15m', label: '15 分钟' }, { value: '5m', label: '5 分钟' }]
 const mode = ref<ReferenceMode>('forward_observation')
 const product = ref(props.product.toLowerCase())
 const strategy = ref<NewowRecordingStrategy>(strategies.some(item => item.value === props.strategy) ? props.strategy as NewowRecordingStrategy : 'trend')
 const frequency = ref<NewowRecordingFrequency>(frequencies.some(item => item.value === props.frequency) ? props.frequency as NewowRecordingFrequency : '60m')
+const availableFrequencies = computed(() => strategy.value === 'main_rise' ? frequencies.filter(item => ['1d', '1w', '60m'].includes(item.value)) : frequencies)
+watch(strategy, () => { if (!availableFrequencies.value.some(item => item.value === frequency.value)) frequency.value = '60m' })
 const matrix = ref<NewowRecordingMatrix | null>(null)
 const streams = ref<ReferenceStreamInfo[]>([])
 const selectedStream = ref('')
@@ -92,12 +94,12 @@ onBeforeUnmount(() => { generation += 1; controller?.abort() })
   <section class="newow-recording" aria-label="牛哇信号与状态记录">
     <header><h2>信号与状态记录</h2><button type="button" :disabled="loading" @click="refresh">刷新记录</button></header>
     <p>记录已完成 K 线的策略状态和信号；不代表账户成交，此处不发送通知。</p>
-    <p v-if="matrix">60 品种 · 四策略 · 三周期：应有 {{ matrix.expected_count }} 组，已配置 {{ matrix.configured_count }}，已启用 {{ matrix.enabled_count }}，已完成历史预热 {{ matrix.seeded_count }}，已有实际观察记录 {{ matrix.observed_count }}。</p>
+    <p v-if="matrix">各品种已开放策略与周期：应有 {{ matrix.expected_count }} 组，已配置 {{ matrix.configured_count }}，已启用 {{ matrix.enabled_count }}，已完成历史预热 {{ matrix.seeded_count }}，已有实际观察记录 {{ matrix.observed_count }}。</p>
     <nav aria-label="记录模式"><button type="button" :aria-pressed="mode === 'forward_observation'" @click="mode = 'forward_observation'">持续观察</button><button type="button" :aria-pressed="mode === 'historical_replay'" @click="mode = 'historical_replay'">历史回放</button></nav>
     <div class="filters">
       <label>品种 <select v-model="product"><option v-for="item in products" :key="item" :value="item">{{ item.toUpperCase() }}</option></select></label>
       <label>策略 <select v-model="strategy"><option v-for="item in strategies" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
-      <label>周期 <select v-model="frequency"><option v-for="item in frequencies" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
+      <label>周期 <select v-model="frequency"><option v-for="item in availableFrequencies" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
     </div>
     <p v-if="loading" role="status">正在读取已保存记录…</p><p v-if="error" role="status">{{ error }}</p>
     <template v-if="mode === 'forward_observation'">

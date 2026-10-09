@@ -97,5 +97,5 @@ def test_invalid_frequency_fails_before_database_or_components(tmp_path, monkeyp
     monkeypatch.setattr(script, 'load_active_products', forbidden)
     monkeypatch.setattr(script, 'open_historical_reference_components', forbidden)
     with pytest.raises(SystemExit) as error:
-        script.main(['--product', 'rb', '--output-root', str(tmp_path), '--as-of', END.isoformat(), '--frequency', '5m'])
+        script.main(['--product', 'rb', '--output-root', str(tmp_path), '--as-of', END.isoformat(), '--frequency', '1m'])
     assert error.value.code == 2

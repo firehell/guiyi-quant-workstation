@@ -5,6 +5,8 @@ Unknown commits and interrupted processes require readback instead of blind retr
 """
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES, recording_route_supported
+
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
@@ -24,7 +26,6 @@ from app.reference_trading.service import ResumeToken
 
 VERSION = 'newow_historical_refresh_v1'
 STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion')
-FREQUENCIES = ('1w', '1d', '60m')
 BUDGET = WorkBudget(1, 500_000, 1800, 512_000_000)
 
 
@@ -62,7 +63,7 @@ class RefreshStateStore:
         value = json.loads(self.path.read_text(encoding='utf-8'))
         if (not isinstance(value, dict) or set(value) != {'version', 'cursor', 'routes'}
                 or value['version'] != VERSION or not isinstance(value['cursor'], str)
-                or not isinstance(value['routes'], dict) or len(value['routes']) > 720):
+                or not isinstance(value['routes'], dict) or len(value['routes']) > MAX_ROUTES):
             raise ValueError('REFRESH_STATE_INVALID')
         for stream_id, item in value['routes'].items():
             if (not isinstance(stream_id, str) or not isinstance(item, dict)
@@ -129,7 +130,7 @@ class HistoricalRefresh:
                 item.update(status='blocked', reason='REFRESH_READBACK_REQUIRED')
         self.state.write(state)
         routes = sorted(self._routes(), key=lambda route: route.key)
-        if len(routes) > 720:
+        if len(routes) > MAX_ROUTES:
             raise ValueError('REFRESH_SCOPE_INVALID')
         ids = [route.identity.stream_id for route in routes]
         offset = ids.index(state['cursor']) + 1 if state['cursor'] in ids else 0
@@ -292,7 +293,7 @@ def build_historical_refresh(session_factory, *, state_path):
                 ReferenceStream.frequency.in_(FREQUENCIES),
             )).all()
             identities = [_identity_from_row(row) for row in rows
-                          if _strategy(_identity_from_row(row)) in STRATEGIES]
+                          if recording_route_supported(_strategy(_identity_from_row(row)), row.frequency)]
         historical = [replace(identity, recording_mode=RecordingMode.HISTORICAL_REPLAY,
                               observation_policy_version=None) for identity in identities]
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):

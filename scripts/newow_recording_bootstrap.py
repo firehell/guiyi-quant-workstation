@@ -17,6 +17,7 @@ from app.db.url import normalize_database_url
 from app.market_data.operational_universe import load_active_products, load_operational_products
 from app.reference_trading.newow_bootstrap import NewowForwardBootstrap, _hash, validate_product_scope
 from app.reference_trading.repository import RepositoryConflict
+from app.reference_trading.recording_scope import FREQUENCIES, strategies_for
 from scripts.newow_weekly_recovery import load_private_readonly_settings
 
 
@@ -28,15 +29,19 @@ def _instant(value):
 
 
 def apply_product(service, scope_plan, *, product, expected_plan_hash, now, on_progress=None):
-    if (scope_plan.get("version") != "newow_forward_bootstrap_scope_v1"
+    if (scope_plan.get("version") not in {"newow_forward_bootstrap_scope_v1", "newow_forward_bootstrap_scope_v2"}
             or scope_plan.get("plan_hash") != expected_plan_hash
             or _hash({key: value for key, value in scope_plan.items() if key != "plan_hash"}) != expected_plan_hash):
         raise RepositoryConflict("PLAN_HASH_CONFLICT")
     product = product.lower()
     items = [item for item in scope_plan["items"] if item["product"] == product]
-    expected = {(strategy, frequency) for strategy in ("trend", "oscillation", "main_rise", "dual_fusion")
-                for frequency in ("1w", "1d", "60m")}
-    if (len(items) != 12 or {(item["strategy"], item["frequency"]) for item in items} != expected
+    frequencies = scope_plan.get("frequencies", ["1w", "1d", "60m"])
+    if (not isinstance(frequencies, list) or not frequencies
+            or any(not isinstance(frequency, str) for frequency in frequencies)
+            or len(set(frequencies)) != len(frequencies) or not set(frequencies) <= set(FREQUENCIES)):
+        raise RepositoryConflict("BOOTSTRAP_FREQUENCY_SCOPE_INVALID")
+    expected = {(strategy, frequency) for frequency in frequencies for strategy in strategies_for(frequency)}
+    if (len(items) != len(expected) or {(item["strategy"], item["frequency"]) for item in items} != expected
             or any(item["status"] != "ready" or not item.get("plan") for item in items)):
         raise RepositoryConflict("BOOTSTRAP_PRODUCT_NOT_READY")
     for item in items:
@@ -46,7 +51,7 @@ def apply_product(service, scope_plan, *, product, expected_plan_hash, now, on_p
         ):
             raise RepositoryConflict("BOOTSTRAP_PRODUCT_PLAN_IDENTITY_CONFLICT")
     order = {strategy: index for index, strategy in enumerate(("trend", "oscillation", "main_rise", "dual_fusion"))}
-    periods = {frequency: index for index, frequency in enumerate(("1w", "1d", "60m"))}
+    periods = {frequency: index for index, frequency in enumerate(FREQUENCIES)}
     items.sort(key=lambda item: (periods[item["frequency"]], order[item["strategy"]]))
     # Each period's three base streams are initialized before fusion.
     results = []
@@ -81,6 +86,7 @@ def main(argv=None):
     parser.add_argument("--project-env", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--product", action="append")
+    parser.add_argument("--frequency", action="append", choices=FREQUENCIES)
     parser.add_argument("--recording-start")
     parser.add_argument("--expires-at")
     parser.add_argument("--host", default="local")
@@ -126,7 +132,7 @@ def main(argv=None):
             result = apply_product(service, plan, product=args.product[0],
                 expected_plan_hash=args.expected_plan_hash, now=lambda: datetime.now(UTC), on_progress=progress)
         else:
-            result = service.plan_scope(operational, active, selected_products=args.product,
+            result = service.plan_scope(operational, active, selected_products=args.product, selected_frequencies=args.frequency,
                 recording_start=_instant(args.recording_start), expires_at=_instant(args.expires_at),
                 host=args.host, environment=args.environment, recovery_policy=args.recovery_policy,
                 now=datetime.now(UTC))

@@ -251,3 +251,22 @@ def test_invalid_group_routes_do_not_stop_other_work_keys():
     worker.run_round()
     assert seen == list(repository.groups["newow:p001:60m"])
     assert worker.health().blocked == (("newow:p000:60m", "ValueError"),)
+
+def test_1260_routes_share_360_keys_and_keep_fusion_after_base_without_starvation():
+    from app.reference_trading.recording_scope import FREQUENCIES, strategies_for
+    repository = GroupedRepository(count=0)
+    repository.groups = {
+        f"newow:p{product:03}:{frequency}": tuple(f"{product:03}-{frequency}-{strategy}" for strategy in strategies_for(frequency))
+        for product in range(60) for frequency in sorted(FREQUENCIES)
+    }
+    seen = []
+    worker = ForwardReferenceWorker(repository, lambda _: _Service(), lambda sid, *_: seen.append(sid), enabled=True)
+    worker.scan()
+    assert worker.health().pending_keys == 360
+    for _ in range(40):
+        worker.run_round()
+    assert len(seen) == len(set(seen)) == 1260
+    assert worker.health().pending_keys == 0
+    for routes in repository.groups.values():
+        positions = [seen.index(sid) for sid in routes]
+        assert positions == sorted(positions)

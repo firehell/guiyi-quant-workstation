@@ -79,7 +79,7 @@ export interface ReferenceIdentity {
 }
 
 export type NewowRecordingStrategy = 'trend' | 'oscillation' | 'main_rise' | 'dual_fusion'
-export type NewowRecordingFrequency = '1w' | '1d' | '60m'
+export type NewowRecordingFrequency = '1w' | '1d' | '60m' | '5m' | '15m' | '30m'
 export interface NewowRecordedState {
   version?: 'newow_bar_state_v1'
   main_state?: string
@@ -114,7 +114,7 @@ export interface NewowRecordingItem {
   [field: string]: unknown
 }
 export interface NewowRecordingMatrix {
-  version: 'newow_recording_matrix_v1' | 'newow_recording_matrix_v2' | 'newow_recording_matrix_v3'
+  version: 'newow_recording_matrix_v1' | 'newow_recording_matrix_v2' | 'newow_recording_matrix_v3' | 'newow_recording_matrix_v4'
   recording_mode: 'forward_observation'
   expected_count: number
   configured_count: number

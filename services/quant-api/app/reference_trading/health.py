@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES, FREQUENCIES
+
 from datetime import UTC, date, datetime
 
 from sqlalchemy import and_, case, func, select
@@ -54,9 +56,9 @@ class ForwardReferenceHealth:
             ).order_by(ReferenceStream.stream_id)).all()
             keys = {(stream.product.lower(), stream.frequency) for stream in streams
                     if stream.strategy_code.replace("-", "_").startswith("newow_")
-                    and stream.frequency in {"1d", "1w", "60m"}}
+                    and stream.frequency in FREQUENCIES}
             keys.update((product.lower(), frequency) for product in products
-                        for frequency in ("1d", "1w", "60m"))
+                        for frequency in FREQUENCIES)
             endpoints = self._endpoint_reader(session, tuple(sorted(keys)), self._now()) if self._endpoint_reader and keys else {}
             public_endpoints = [{"product": product, "frequency": frequency, **value}
                                 for (product, frequency), value in sorted(endpoints.items())]
@@ -216,7 +218,7 @@ def read_completed_recording_endpoints(session, keys, at):
     from app.redis_connections import get_redis_connection
 
     result = read_completed_canonical_endpoints(session, keys, at)
-    hourly = tuple(key for key in keys if key[1] == "60m")
+    hourly = tuple(key for key in keys if key[1] in LIVE_FREQUENCIES)
     if not hourly:
         return result
     redis = None
@@ -227,7 +229,7 @@ def read_completed_recording_endpoints(session, keys, at):
             prior = result[key]
             try:
                 end, _day, _contract = reader.newow_completed_observation_endpoint(
-                    SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, key[0], BarFrequency.H1), at,
+                    SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, key[0], BarFrequency(key[1])), at,
                 )
                 if end is not None:
                     if end.tzinfo is None or end > at:

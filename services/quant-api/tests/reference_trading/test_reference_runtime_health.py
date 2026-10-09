@@ -65,7 +65,7 @@ def test_health_reads_endpoint_keys_once_and_exposes_seed_without_observation():
         return {key: {'expected_through': NOW.isoformat(), 'expected_source': 'canonical_completed', 'endpoint_status': 'READY'} for key in keys}
     health = ForwardReferenceHealth(factory, endpoint_reader=endpoints, now=lambda: NOW).read(products=('rb',))
     assert len(calls) == 1
-    assert set(calls[0]) == {('rb', '1d'), ('rb', '1w'), ('rb', '60m')}
+    assert set(calls[0]) == {('rb', frequency) for frequency in ('1d', '1w', '60m', '5m', '15m', '30m')}
     item = health['streams'][0]
     assert item['expected_through'] == NOW.isoformat()
     assert item['historical_computed_through'] == NOW.isoformat()

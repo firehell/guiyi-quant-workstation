@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
@@ -91,7 +93,7 @@ def evaluate_newow_capture(token, checkpoint, evidence, *, dependency_manifest):
         )
         or proof.get("expected_endpoints") != [end.isoformat()]
         or capture.get("source_kind") not in {"completed_live", "canonical_completed"}
-        or frequency is ProductFrequency.HOURLY and capture.get("source_kind") != "completed_live"
+        or frequency.value in LIVE_FREQUENCIES and capture.get("source_kind") != "completed_live"
         or frequency in {ProductFrequency.DAILY, ProductFrequency.WEEKLY}
         and capture.get("source_kind") != "canonical_completed"
     ):

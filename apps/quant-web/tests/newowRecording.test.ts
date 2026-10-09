@@ -143,3 +143,15 @@ test('v3 accepts completed Live endpoint and labels uncaptured observation lag',
   assert.equal(recordingItemStatus(row), '已完成 K 线尚未记录')
   await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, version: 'newow_recording_matrix_v2' }) }), /REFERENCE_RESPONSE_INVALID/)
 })
+
+
+test('v4 accepts the expanded 1260-stream matrix and completed short-minute Live source', async () => {
+  const items = ['5m', '15m', '30m'].map(frequency => ({ product: 'rb', strategy: 'trend', frequency, stream_id: frequency, enabled: true,
+    status: 'OBSERVATION_LAGGING', latest_state: null, latest_state_source: null, computed_through: null,
+    observed_through: null, historical_computed_through: null, last_observed_at: null,
+    expected_through: '2026-10-09T02:00:00Z', expected_source: 'completed_live', endpoint_status: 'READY' }))
+  const response = { version: 'newow_recording_matrix_v4', recording_mode: 'forward_observation', expected_count: 1260,
+    configured_count: 1260, enabled_count: 1260, observed_count: 0, seeded_count: 1260, items }
+  assert.equal(await getNewowRecordingMatrix({ request: async () => response }), response)
+  await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, items: [{ ...items[0], expected_source: 'unconfirmed_live' }] }) }), /REFERENCE_RESPONSE_INVALID/)
+})

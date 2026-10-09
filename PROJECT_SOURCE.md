@@ -19,7 +19,7 @@
 
 ## Newow 与参考交易
 
-牛哇持续记录覆盖 operational 60 品种 × 趋势/震荡/主升浪/双策略 × 日/周/60m。历史资产由完成的 Canonical 重算；持续观察的60m来自实际捕获的 completed Live，日周来自 completed Canonical。动作、Hint与逐Bar状态独立保存，历史预热不算实际观察，不创建账户事实或发送通知。当前配置和自然验收仍以 `STATUS.md` 及运行读回为准。
+牛哇持续记录范围为 operational 60 品种 × 日/周/60m 四策略，加上5m/15m/30m趋势、震荡和双策略，共1260路；短分钟主升浪保持关闭。历史资产由完成的 Canonical 重算；持续观察的四分钟周期来自实际捕获的 completed Live，日周来自 completed Canonical。动作、Hint与逐Bar状态独立保存，历史预热不算实际观察，不创建账户事实或发送通知。当前配置和自然验收仍以 `STATUS.md` 及运行读回为准。
 
 - 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 三周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
 - 公共 `ReferenceTrading` canonical 已冻结两种不可混淆的记录口径：`historical_replay` 是可从固定 Canonical 输入和版本重建的研究投影；`forward_observation` 只记录明确启用后实际观察的 completed 输入，默认 FLAT 起点。统一域提供纯 contracts/reducer、checkpoint、历史 plan/build/resume/rebuild、前向 capture/recovery、仓储及 HTTP/Web 查询。worker 与消费者切换受显式启用约束；代码存在不代表生产 migration/bootstrap 或 Runtime 已启用，阶段事实只见 `STATUS.md`；详见 `openspec/specs/reference-trading/spec.md`。
@@ -39,8 +39,8 @@ Newow 提供显式历史快照入口：当前数据缺失时可主动选择已�
 ### 分阶段开放边界
 
 分钟 Newow 产品周期为 `5m/15m/30m/60m`，使用同物理合约 Canonical 1m 独立聚合。
-正式开放以capability的品种、周期与section为边界；5m/15m/30m历史页面保留精确 `intraday_as_of`，
-60m在v32使用当前已发布completed Canonical截止，页面明确来源与时间。
+正式开放以capability的品种、周期与section为边界；v33六周期页面使用当前已发布completed Canonical截止，
+显式历史as_of仍受快照身份校验，旧v31/v32固定截止证据保持原身份；页面明确来源与时间。
 持续记录不由历史验收或源码发布自动启用，现场配置与验收见 `STATUS.md`。
 1m仅承担行情事实和聚合输入，Newow的1m页面与策略产品后续单独版本处理；保留通用Market的1m能力。
 RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当前开放与验收状态见 `STATUS.md`。

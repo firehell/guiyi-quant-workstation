@@ -65,6 +65,9 @@ def open_forward_worker():
                 try:
                     frequency = ProductFrequency(identity.frequency)
                     require_open_frequency(frequency)
+                    from app.reference_trading.recording_scope import recording_route_supported
+                    if not recording_route_supported(identity.strategy_code, identity.frequency):
+                        return False
                     if frequency is ProductFrequency.WEEKLY:
                         require_open_weekly_product(identity.product)
                 except ValueError:

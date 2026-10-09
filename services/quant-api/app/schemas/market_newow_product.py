@@ -974,7 +974,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v29",
         "newow_product_capabilities_v30",
         "newow_product_capabilities_v31",
-        "newow_product_capabilities_v32",
+        "newow_product_capabilities_v32", "newow_product_capabilities_v33",
     ]
     release_stage: Literal[
         "daily",
@@ -987,7 +987,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "black_steel_intraday_candidate",
         "single_product_intraday_candidate",
         "daily_weekly_intraday_history",
-        "daily_weekly_hourly_current",
+        "daily_weekly_hourly_current", "daily_weekly_intraday_current",
     ]
     open_frequencies: list[ProductFrequencyValue]
     weekly_products: list[str] | None = None

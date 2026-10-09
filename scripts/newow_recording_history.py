@@ -19,6 +19,7 @@ from app.reference_trading.composition import open_historical_reference_componen
 from app.reference_trading.models import ReferenceStream
 from app.reference_trading.repository import ReferenceRepository
 from app.reference_trading.newow_bootstrap import validate_product_scope
+from app.reference_trading.recording_scope import FREQUENCIES, strategies_for
 from app.reference_trading.planning import (
     HistoricalReferenceRequest, HistoricalStreamRequest, WorkBudget,
     plan_from_dict, plan_to_dict,
@@ -153,7 +154,7 @@ def main(argv=None):
     parser.add_argument('--as-of', required=True)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--strategy', action='append', choices=('trend','oscillation','main_rise','dual_fusion'))
-    parser.add_argument('--frequency', action='append', choices=('1w', '1d', '60m'))
+    parser.add_argument('--frequency', action='append', choices=FREQUENCIES)
     args = parser.parse_args(argv)
     products = validate_product_scope(load_operational_products(), load_active_products())
     if args.product not in products or args.output_root.is_symlink():
@@ -168,9 +169,10 @@ def main(argv=None):
     failures = []
     selected = tuple(strategy for strategy in ('trend', 'oscillation', 'main_rise', 'dual_fusion')
                      if not args.strategy or strategy in args.strategy)
-    frequencies = tuple(frequency for frequency in ('1w', '1d', '60m')
+    frequencies = tuple(frequency for frequency in FREQUENCIES
                         if not args.frequency or frequency in args.frequency)
-    cells = [(frequency, strategy) for frequency in frequencies for strategy in selected]
+    cells = [(frequency, strategy) for frequency in frequencies for strategy in selected
+             if strategy in strategies_for(frequency)]
     with product_apply_lock(out) if args.apply else nullcontext():
         # Validate all earlier intents before opening any mutating service. A
         # missing receipt in any selected cell stops the entire product apply.

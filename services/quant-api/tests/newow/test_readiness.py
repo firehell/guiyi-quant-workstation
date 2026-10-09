@@ -148,7 +148,7 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
     assert len(report["enumerations"]) == 8
     assert {row["frequency"] for row in report["enumerations"]} == {"1w"}
     assert report["frequency_scope"] == ["1w"]
-    assert report["release_stage"] == "daily_weekly_hourly_current"
+    assert report["release_stage"] == "daily_weekly_intraday_current"
     assert all(
         row["status"] == "UNOPENED"
         for row in report["enumerations"]

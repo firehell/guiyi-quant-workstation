@@ -850,7 +850,7 @@ class MarketReadService:
 
     def _newow_completed_identity(self, identity: SeriesPageQuery, now: datetime) -> tuple[date, str]:
         if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
-                or identity.frequency is not BarFrequency.H1
+                or identity.frequency not in {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
                 or identity.symbol not in self._operational_products
                 or now.tzinfo is None or now.utcoffset() is None):
             raise ValueError("NEWOW_COMPLETED_OBSERVATION_IDENTITY_INVALID")
@@ -863,7 +863,7 @@ class MarketReadService:
     def newow_completed_observation_endpoint(
         self, identity: SeriesPageQuery, now: datetime,
     ) -> tuple[datetime | None, date, str]:
-        """Session expected H1 completion, independent of Redis Bar presence.
+        """Session expected intraday completion, independent of Redis Bar presence.
 
         Missing Calendar/Session/rank1 raises; no due endpoint alone returns None.
         """
@@ -881,13 +881,13 @@ class MarketReadService:
     def newow_completed_observation_snapshot(
         self, identity: SeriesPageQuery, after: datetime | None, now: datetime,
     ) -> MarketObservationSnapshot:
-        """Newow recording only: read saved completed H1 even after Session close.
+        """Newow recording only: read saved completed intraday bars even after Session close.
 
         This does not change strict realtime Alert or Web display eligibility.
         Observation time remains the caller's actual read time.
         """
         if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
-                or identity.frequency is not BarFrequency.H1
+                or identity.frequency not in {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
                 or now.tzinfo is None or now.utcoffset() is None
                 or after is not None and (after.tzinfo is None or after.utcoffset() is None or after > now)):
             raise ValueError("NEWOW_COMPLETED_OBSERVATION_IDENTITY_INVALID")
