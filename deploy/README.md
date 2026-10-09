@@ -54,8 +54,14 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 - [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market/Alert、默认未安装的 weekly audit/reference worker 与日志轮转模板；验证命令见
   `TESTING.md`。
-- API 与 Alert 模板只共享一个 Git 外 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`；PushPlus token 与 Topic code
+- API、Alert 与 Reference worker 模板只共享一个 Git 外 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`；PushPlus token 与 Topic code
   不进入 plist、仓库或状态输出。
+
+Newow 动作通知由 Reference worker 生命周期内的独立 Delivery 线程消费已提交 forward 动作，
+默认关闭；四策略×1w/1d/60m 的启用边界、Scope、Topic fingerprint 与 one-shot claim 保存在
+0050 新建通知表。启用后只发送新的 BUILD/REDUCE/CLEAR，失败和未知不补发，不改旧 Alert Scope。
+停止发送使用通知 policy disabled，不删除 claim；provider accepted 不证明 Topic 成员实际收到。
+合同见 [Newow 动作通知](../openspec/specs/newow-action-notifications/spec.md)。
 - [`deploy/frp/`](frp/)：FRPC/FRPS 隧道配置与分段验收。
 - [`deploy/nginx/`](nginx/)：腾讯云 HTTPS/Basic Auth 反代模板。
 

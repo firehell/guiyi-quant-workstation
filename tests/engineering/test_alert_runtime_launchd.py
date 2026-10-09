@@ -31,6 +31,17 @@ def test_alert_launchd_render_only_is_default_closed_and_has_one_config_path(
     assert not any("OPENCLAW" in key or "CLAWBOT" in key for key in payload["EnvironmentVariables"])
 
 
+def test_reference_worker_receives_shared_notification_config_path(tmp_path):
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    _run(repo, home, fake_bin, "--render-only", extra_env={NOTIFICATION_CONFIG_ENV: str(config)})
+    path = repo / ".run/launchd/com.guiyi.quant-reference-worker.plist"
+    payload = plistlib.loads(path.read_bytes())
+    assert payload["EnvironmentVariables"][NOTIFICATION_CONFIG_ENV] == str(config)
+    assert not (repo / ".run/reference-worker-enabled").exists()
+
+
 def test_market_and_alert_confirmation_modes_write_only_their_own_marker(
     tmp_path: Path,
 ) -> None:
