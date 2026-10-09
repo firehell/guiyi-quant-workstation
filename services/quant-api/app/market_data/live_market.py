@@ -636,31 +636,16 @@ class LiveMarketService:
             return preparation_failure
         return self._reconcile_prepared(now)
 
-    def _reconcile_prepared(self, now: datetime) -> str | None:
-        phases = self._phases(now)
-        trading_days = {
-            phase.trading_day
-            for phase in phases.values()
-            if phase.phase is MarketPhase.TRADING and phase.trading_day is not None
-        }
-        if not trading_days:
-            self.next_provider_retry_at = None
-            self._sync_provider_channels(
-                self._channels_in_session_grace(now),
-                create_if_missing=False,
-            )
-            self._publish_heartbeat(now, phases)
-            return None
-        if len(trading_days) != 1:
+    def _restore_break_identity(self, phases: Mapping[str, ProductMarketPhase]) -> str | None:
+        days = {item.trading_day for item in phases.values()
+                if item.phase is MarketPhase.BREAK and item.trading_day is not None}
+        if len(days) > 1:
             return "LIVE_TRADING_DAY_INCONSISTENT"
-        trading_day = next(iter(trading_days))
-        assert trading_day is not None
-        active_symbols = tuple(
-            symbol
-            for symbol in self._products
-            if phases[symbol].phase is MarketPhase.TRADING
-            and phases[symbol].trading_day == trading_day
-        )
+        if days:
+            return self._restore_frozen_day(next(iter(days)))
+        return None
+
+    def _restore_frozen_day(self, trading_day: date) -> str | None:
         if trading_day != self._trading_day:
             self._coverage_session_cache = {
                 key: value for key, value in self._coverage_session_cache.items()
@@ -686,8 +671,40 @@ class LiveMarketService:
                     current_contracts[symbol] = normalized
             self._trading_day = trading_day
             self._contracts = current_contracts
-        else:
-            current_contracts = dict(self._contracts)
+        return None
+
+    def _reconcile_prepared(self, now: datetime) -> str | None:
+        phases = self._phases(now)
+        trading_days = {
+            phase.trading_day
+            for phase in phases.values()
+            if phase.phase is MarketPhase.TRADING and phase.trading_day is not None
+        }
+        if not trading_days:
+            failure = self._restore_break_identity(phases)
+            if failure is not None:
+                return failure
+            self.next_provider_retry_at = None
+            self._sync_provider_channels(
+                self._channels_in_session_grace(now),
+                create_if_missing=False,
+            )
+            self._publish_heartbeat(now, phases)
+            return None
+        if len(trading_days) != 1:
+            return "LIVE_TRADING_DAY_INCONSISTENT"
+        trading_day = next(iter(trading_days))
+        assert trading_day is not None
+        active_symbols = tuple(
+            symbol
+            for symbol in self._products
+            if phases[symbol].phase is MarketPhase.TRADING
+            and phases[symbol].trading_day == trading_day
+        )
+        failure = self._restore_frozen_day(trading_day)
+        if failure is not None:
+            return failure
+        current_contracts = dict(self._contracts)
         # Freeze one complete operational-universe rank1 snapshot for the day.
         # Provider channels remain phase-scoped below; the snapshot is also the
         # immutable reconciliation input consumed by the after-market runner.
@@ -883,6 +900,9 @@ class LiveMarketService:
         if not any(item.phase is MarketPhase.TRADING for item in phases.values()):
             self.next_provider_retry_at = None
             try:
+                failure = self._restore_break_identity(phases)
+                if failure is not None:
+                    return self._reject(failure)
                 self._drain_session_grace(now)
                 self.flush_due(now, phases=phases)
                 if self._last_flush_failed:
