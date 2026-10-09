@@ -967,6 +967,7 @@ class LiveMarketService:
         *,
         contract: str,
     ) -> None:
+        publications: list[tuple[BarFrequency, CanonicalBar]] = []
         for frequency in (BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1):
             bucket = bucket_window_for_bar(session, frequency, bar.bar_end)
             if bar.bar_end != bucket.end:
@@ -999,6 +1000,10 @@ class LiveMarketService:
                 derived,
                 contract=contract,
             )
+            publications.append((frequency, derived))
+        # Cross-period consumers may run immediately after the first message.
+        # Make every due completed observation readable before exposing any.
+        for frequency, derived in publications:
             self._store.publish_bar(symbol, frequency, derived, contract=contract)
 
     def _phases(self, now: datetime) -> dict[str, ProductMarketPhase]:

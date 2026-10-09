@@ -84,3 +84,16 @@ test('daily weekly waiting and historical seeds do not infer a future trading da
     app.unmount()
   }
 })
+
+test('short minute props select their saved forward stream and display observed K state', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-08T14:15:00Z') })
+  for (const frequency of ['5m', '15m', '30m']) {
+    mock.setMatrix({items:[{product:'rb',strategy:'trend',frequency,stream_id:frequency,enabled:true,status:'READY',latest_state_source:'observed',latest_observed_trading_day:'2026-10-09',latest_state:null}],expected_count:1260})
+    const root=element('root'), app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{product:'RB',strategy:'trend',frequency})}))
+    app.mount(root); await settle()
+    assert.equal(mock.calls[0].id,frequency)
+    assert.match(nodeText(root),/1260/)
+    assert.match(nodeText(root),/2026-10-08 22:00 北京时间/)
+    app.unmount()
+  }
+})

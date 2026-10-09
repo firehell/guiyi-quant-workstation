@@ -24,14 +24,15 @@ export function holdingCurvePlot(curve: HoldingCurve | null | undefined, since: 
   if (!curve || curve.model_version !== 'newow_reference_marked_curve_v1' || !curve.page_parity || curve.executable) return empty('逐 Bar 持有过程暂不可用。')
   const source = curve.points.filter(p => p.trading_day >= since && p.trading_day <= through)
   const points = source.filter(p => p.marked_return_percentage_points !== null)
-  const start = Date.parse(since), end = Date.parse(through) + 86400000
+  const first = points[0], last = points.at(-1)
+  const start = first ? Date.parse(first.bar_end) : NaN, end = last ? Date.parse(last.bar_end) : NaN
   if (!points.length) return empty('该窗口暂无有效持有过程。')
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || points.some((p,i) => !Number.isFinite(Number(p.marked_return_percentage_points)) || !Number.isFinite(Date.parse(p.bar_end)) || (i > 0 && p.bar_end <= points[i-1]!.bar_end))) return empty('持有过程事实不完整，暂不绘制曲线。')
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start || points.some((p,i) => !Number.isFinite(Number(p.marked_return_percentage_points)) || !Number.isFinite(Date.parse(p.bar_end)) || (i > 0 && p.bar_end <= points[i-1]!.bar_end))) return empty('持有过程事实不完整，暂不绘制曲线。')
   let low = 0, high = 0
   for (const p of points) { low = Math.min(low,Number(p.marked_return_percentage_points)); high = Math.max(high,Number(p.marked_return_percentage_points)) }
   low *= 1.1; high = high * 1.1 || (low < 0 ? 0 : 1)
   const y = (value: number) => 140 - (value-low)/(high-low)*140
-  const plotted = points.map(p => ({...p,x: Math.max(0,Math.min(712,(Date.parse(p.bar_end)+8*3600000-start)/(end-start)*712)), y:y(Number(p.marked_return_percentage_points))}))
+  const plotted = points.map(p => ({...p,x: Math.max(0,Math.min(712,(end === start ? 1 : (Date.parse(p.bar_end)-start)/(end-start))*712)), y:y(Number(p.marked_return_percentage_points))}))
   const segments: string[] = []
   let owner = ''
   const breaks = new Set(source.filter(p=>p.marked_return_percentage_points===null).map(p=>p.bar_end))

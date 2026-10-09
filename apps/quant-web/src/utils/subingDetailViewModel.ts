@@ -31,9 +31,9 @@ export function buildSubingDetailViewModel(input: {
     : `${input.rule.symbol.toUpperCase()} ${input.rule.frequency} ${input.rule.enabled ? '已启用' : '未启用'} · 只读展示`
   const evaluationAt = input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null
   const history = [...exactEvents].sort((left, right) => Date.parse(right.detected_at) - Date.parse(left.detected_at)).map((event) => ({
-    id: `subing-event:${event.id}`, label: event.result_codes[0] === 'buy' ? 'S↑ 多头预警' : 'S↓ 空头预警', occurredAt: event.detected_at,
+    id: `subing-event:${event.id}`, label: `${event.result_codes[0] === 'buy' ? 'S↑ 多头预警' : 'S↓ 空头预警'} · ${event.subing_alignment?.status === 'PASS' ? '六周期同向' : event.subing_alignment?.status === 'FAIL' ? '未全部同向' : event.subing_alignment?.status === 'UNKNOWN' ? '无法判断' : '未记录'}`, occurredAt: event.detected_at,
     timeLabel: formatBeijingInstant(event.detected_at), source: 'alert_event' as const, barEnd: event.bar_end, contract: event.contract,
-    markerType: event.result_codes[0] === 'buy' ? 'S↑' : 'S↓', formulaVersion: 'subing_ths_15m_v3', notificationAttemptedAt: event.notification_attempted_at,
+    markerType: event.result_codes[0] === 'buy' ? 'S↑' : 'S↓', formulaVersion: event.formula_version ?? '未记录', notificationAttemptedAt: event.notification_attempted_at,
   }))
   return {
     view: 'subing', identity: input.identity, asOf: latest?.detected_at ?? input.header.asOf,
@@ -46,7 +46,7 @@ export function buildSubingDetailViewModel(input: {
     ],
     disclosureSections: [
       { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${formatBeijingInstant(latest.bar_end)} · ${latest.contract}`, source: 'alert_event' }] : [] },
-      { id: 'subing-formula', title: '触发口径', summary: 'subing_ths_15m_v3', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 15m / completed_only · MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
+      { id: 'subing-formula', title: '触发口径', summary: latest?.formula_version ?? '未记录', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 5m、15m、30m、60m、日线、周线 / completed_only · MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
       { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: runtimeTone(input.runtime, input.runtimeUnavailable), rows: runtimeRows(input.runtime) },
     ], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
   }
@@ -80,6 +80,6 @@ function runtimeRows(runtime: RuntimeAlertProjection | null) {
     { label: 'Rule 最近 Event', value: formatBeijingInstant(rule.last_event_at), source: 'runtime' as const },
     { label: 'Rule 最近失败', value: formatBeijingInstant(rule.last_failure_at), source: 'runtime' as const },
     { label: 'Rule 错误类型', value: rule.error_type ?? '—', source: 'runtime' as const },
-    { label: '通知说明', value: '仅展示已保存 Event 与尝试时间；不表示外部送达。', source: 'runtime' as const },
+    { label: '通知说明', value: '六周期静默记录；同向判断读取信号当时保存的快照。', source: 'runtime' as const },
   ]
 }

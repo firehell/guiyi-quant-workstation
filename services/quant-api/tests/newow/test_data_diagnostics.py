@@ -95,6 +95,7 @@ def test_replay_authority_preserves_missing_invalid_and_unknown(source, reason):
             raise InfrastructureError(source)
 
     service = object.__new__(MarketDataService)
+    service.replay_coverage = None
     service.catalog = Catalog()
     with pytest.raises(MarketDataError) as raised:
         service.expected_contract_replay_endpoints(
@@ -331,6 +332,7 @@ def test_quality_replay_preserves_bounded_gap_diagnostic(indices, reason, recove
     from app.market_data.newow.readiness import _failure
 
     service = object.__new__(MarketDataService)
+    service.replay_coverage = None
     service.catalog = SimpleNamespace(contract_fact=lambda *_args: SimpleNamespace(
         listed_date=DAY - timedelta(days=10), expired_date=DAY + timedelta(days=10),
     ))

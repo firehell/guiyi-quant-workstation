@@ -1991,6 +1991,39 @@ def test_provider_retry_deadline_prevents_factory_subscribe_and_listen_before_te
     assert replacement.subscribed == ["bar_J2505"] and replacement.listen_calls == 1
 
 
+def test_same_endpoint_derived_bars_are_all_written_before_first_publication() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(datetime(2025, 1, 2, 1, tzinfo=UTC),
+                           datetime(2025, 1, 2, 2, tzinfo=UTC))
+    frequencies = ('5m', '15m', '30m', '60m')
+    checked = []
+
+    class InspectingStore(module.RedisLiveStore):
+        def publish_bar(self, symbol, frequency, bar, *, contract):
+            # Simulate an immediate cross-period reader at the first publication.
+            for target in frequencies:
+                assert self.bars_after(day, symbol, target, None)[-1].bar_end == window.end
+            checked.append(str(frequency))
+            return super().publish_bar(symbol, frequency, bar, contract=contract)
+
+    store = InspectingStore(FakeRedis())
+    service = _live_service(
+        client=FakeLiveClient(), dominants=FakeDominants({('j', day): 'J2505'}),
+        phases=FakePhases({'j': _phase('j', day, window)}), store=store, products=('j',),
+    )
+    for index in range(1, 61):
+        bar = CanonicalBar(
+            bar_end=window.start + timedelta(minutes=index), trading_day=day,
+            open=Decimal(index), high=Decimal(index + 2), low=Decimal(index - 1),
+            close=Decimal(index + 1), volume=Decimal(index),
+            turnover=Decimal(index * 10), open_interest=Decimal(index * 100),
+        )
+        store.put_bar(day, 'j', '1m', bar, contract='J2505')
+    service._derive('j', bar, window, contract='J2505')
+    assert checked == list(frequencies)
+
+
 def test_day_preparation_runs_on_closed_tick_and_blocks_before_provider():
     module = importlib.import_module("app.market_data.live_market")
     client = FakeLiveClient()

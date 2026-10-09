@@ -99,7 +99,8 @@ def test_terminal_completed_read_uses_session_day_not_closed_civil_day_and_prese
         "wrong_owner",
     ],
 )
-def test_terminal_completed_read_rejects_unproven_saved_bar(defect):
+@pytest.mark.parametrize("frequency", [BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1])
+def test_terminal_completed_read_rejects_unproven_saved_bar(defect, frequency):
     from dataclasses import replace
 
     store = Store()
@@ -127,7 +128,7 @@ def test_terminal_completed_read_rejects_unproven_saved_bar(defect):
     assert (
         service(store, market)
         .newow_completed_observation_snapshot(
-            query(), END - timedelta(hours=1), END + timedelta(minutes=10)
+            query(frequency), END - timedelta(hours=1), END + timedelta(minutes=10)
         )
         .source
         == "unavailable"
@@ -137,7 +138,7 @@ def test_terminal_completed_read_rejects_unproven_saved_bar(defect):
 def test_terminal_reader_does_not_open_other_strategy_frequencies():
     with pytest.raises(ValueError):
         service().newow_completed_observation_snapshot(
-            query(BarFrequency.M15), None, END
+            query(BarFrequency.M1), None, END
         )
 
 
@@ -173,3 +174,10 @@ def test_expected_endpoint_rejects_unknown_session_instead_of_canonical_fallback
     s._phase_resolver.completed_observation_trading_day = lambda *args: None
     with pytest.raises(ValueError, match="NEWOW_SESSION_DAY_UNAVAILABLE"):
         s.newow_completed_observation_endpoint(query(), END)
+
+@pytest.mark.parametrize("frequency", [BarFrequency.M5, BarFrequency.M15, BarFrequency.M30])
+def test_short_minute_completed_terminal_observation_and_due_endpoint(frequency):
+    reader = service()
+    got = reader.newow_completed_observation_snapshot(query(frequency), END - timedelta(hours=1), END + timedelta(minutes=1))
+    assert got.source == "realtime" and got.bars == (BAR,)
+    assert reader.newow_completed_observation_endpoint(query(frequency), END + timedelta(minutes=1)) == (END, DAY, "RB2611")

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol
 
-from app.alerts.registry import HTDY_RULE, SUBING_THS_RULE
+from app.alerts.registry import HTDY_RULE, SUBING_THS_RULE, SUBING_FORMULA_VERSIONS
 from app.market_data.domain import CanonicalBar, INTRADAY_FREQUENCIES
 from app.market_data.market_read_service import (
     CurrentContractReplayWindow,
@@ -171,15 +171,15 @@ class HtdyOriginalEvaluator:
         )
 
 
-class SubingThs15mEvaluator:
+class SubingThsEvaluator:
     """Forward-only, same-physical-contract adapter around the S1 authority."""
 
-    formula_version = "subing_ths_15m_v3"
+    formula_versions = SUBING_FORMULA_VERSIONS
 
     def __init__(self, *, kernel: SubingThs15mKernel | None = None) -> None:
         self._kernel = kernel or SubingThs15mKernel()
-        self._cursors: dict[str, _SubingCursor] = {}
-        self._latest_windows: dict[str, _SubingWindowIdentity] = {}
+        self._cursors: dict[tuple[str, str], _SubingCursor] = {}
+        self._latest_windows: dict[tuple[str, str], _SubingWindowIdentity] = {}
 
     def evaluate_candidates(
         self,
@@ -192,7 +192,8 @@ class SubingThs15mEvaluator:
             trading_day=window.trading_day,
             contract=window.contract,
         )
-        previous = self._latest_windows.get(window.symbol)
+        key = (window.symbol, window.frequency)
+        previous = self._latest_windows.get(key)
         if previous is not None:
             if identity.cutoff < previous.cutoff:
                 raise AlertEvaluationSkipped("ALERT_EVALUATION_STALE")
@@ -200,7 +201,7 @@ class SubingThs15mEvaluator:
                 if identity != previous:
                     raise AlertEvaluationError("ALERT_EVALUATION_INPUT_INVALID")
                 raise AlertEvaluationSkipped("ALERT_EVALUATION_DUPLICATE")
-        cursor = self._cursors.get(window.symbol)
+        cursor = self._cursors.get(key)
         after = cursor.last_bar_end if cursor is not None and cursor.contract == window.contract else None
         try:
             replay = market_read.current_contract_replay_window(window, after=after)
@@ -212,12 +213,12 @@ class SubingThs15mEvaluator:
         for bar in replay.bars:
             state, final = self._kernel.step(state, float(bar.close), bar_end=bar.bar_end.isoformat())
         if replay.bars:
-            self._cursors[window.symbol] = _SubingCursor(
+            self._cursors[key] = _SubingCursor(
                 contract=window.contract,
                 last_bar_end=replay.bars[-1].bar_end,
                 state=state,
             )
-            self._latest_windows[window.symbol] = identity
+            self._latest_windows[key] = identity
         if final is None:
             return ()
         if not final.valid:
@@ -242,7 +243,7 @@ class SubingThs15mEvaluator:
     def _validate_window(window: MarketReadWindow) -> None:
         if (
             window.series_kind != SUBING_THS_RULE.series_kind
-            or window.frequency != "15m"
+            or window.frequency not in SUBING_THS_RULE.input_frequencies
             or not window.bars
             or window.bars[-1].bar_end != window.cutoff
             or len(window.bar_contracts) != len(window.bars)

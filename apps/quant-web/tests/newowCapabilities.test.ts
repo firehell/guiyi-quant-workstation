@@ -963,4 +963,25 @@ test('v32 workspace keeps 5m 15m 30m frozen and reads hourly latest completed', 
   const props = { capabilities: { schema_version: 'newow_product_capabilities_v32', latest_completed_frequencies: ['1d', '1w', '60m'] } }
   for (const frequency of ['5m', '15m', '30m']) assert.equal(released(props, { value: { frequency } }), true)
   for (const frequency of ['60m', '1d', '1w']) assert.equal(released(props, { value: { frequency } }), false)
+  const currentProps = { capabilities: { schema_version: 'newow_product_capabilities_v33', latest_completed_frequencies: ['1d', '1w', '60m', '5m', '15m', '30m'], intraday_as_of: null } }
+  for (const frequency of ['5m', '15m', '30m', '60m', '1d', '1w']) assert.equal(released(currentProps, { value: { frequency } }), false)
+})
+
+
+test('v33 opens current completed short minutes without a historical cutoff', async () => {
+  const frequencies = ['5m', '15m', '30m', '60m', '1d', '1w']
+  const payload = { ...historicalMinutesV30(), schema_version: 'newow_product_capabilities_v33',
+    release_stage: 'daily_weekly_intraday_current', intraday_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' '), intraday_as_of: null,
+    latest_completed_frequencies: ['1d', '1w', '60m', '5m', '15m', '30m'],
+    strategy_frequencies: { trend: frequencies, oscillation: frequencies, main_rise: ['1d', '1w', '60m'], dual: frequencies },
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => payload })
+  const state = useNewowCapabilities(async () => accepted)
+  await state.load()
+  for (const frequency of ['5m', '15m', '30m'] as const) {
+    assert.equal(state.isLatestCompletedFrequency(frequency), true)
+    assert.equal(state.isStrategyFrequencyOpen('trend', frequency, 'pp'), true)
+    assert.equal(state.isStrategyFrequencyOpen('main_rise', frequency, 'pp'), false)
+  }
+  await assert.rejects(getNewowProductCapabilities({ request: async () => ({ ...payload, intraday_as_of: '2026-09-24T07:00:00.000001Z' }) }))
 })

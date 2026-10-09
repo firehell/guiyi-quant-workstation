@@ -6,6 +6,7 @@ import MarketHomeHeader from '@/components/market/MarketHomeHeader.vue'
 import { normalizeProductOptions } from '@/utils/productSearch'
 import { productSectorLabel } from '@/utils/productDirectory'
 import MarketHomeLegend from '@/components/market/MarketHomeLegend.vue'
+import { newowMessageChartQuery, type NewowMessage } from '@/api/newowMessages'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
 import MarketHomeMobileList from '@/components/market/MarketHomeMobileList.vue'
 import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.vue'
@@ -68,7 +69,8 @@ async function refreshAll() {
 }
 
 function openProduct(item: MarketHomeRow) {
-  const frequency = newowCapabilities.openFrequenciesFor(item.symbol)[0]
+  const frequencies = newowCapabilities.openFrequenciesFor(item.symbol)
+  const frequency = frequencies.includes('1d') ? '1d' : frequencies[0]
   if (newowCapabilities.state.value !== 'ready' || !frequency) {
     navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
     return
@@ -81,9 +83,11 @@ function openProduct(item: MarketHomeRow) {
   })
 }
 
+function openNewowEvent(event: NewowMessage) { rememberPageState(); void router.push({ name: 'market-chart', query: newowMessageChartQuery(event) }) }
 function openEvent(event: AlertEvent) { rememberPageState(); void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
 function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
-  const frequency = newowCapabilities.openFrequenciesFor(symbol)[0] ?? null
+  const frequencies = newowCapabilities.openFrequenciesFor(symbol)
+  const frequency = frequencies.includes('1d') ? '1d' : frequencies[0] ?? null
   if (view === 'newow' && (newowCapabilities.state.value !== 'ready' || frequency === null)) {
     navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
     return
@@ -191,6 +195,6 @@ onBeforeUnmount(() => {
       </template>
       </section>
     </template>
-    <MarketHomeMessages v-else :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" />
+    <MarketHomeMessages v-else :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" @open-newow="openNewowEvent" />
   </div>
 </template>

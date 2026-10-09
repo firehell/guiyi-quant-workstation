@@ -1,7 +1,8 @@
 """Presentation bounds for new exact plans, clamped only to authoritative listing."""
 from datetime import date
 
-FLOORS = {'1d': date(2023, 1, 1), '1w': date(2023, 1, 1), '60m': date(2025, 9, 25)}
+FLOORS = {'1d': date(2023, 1, 1), '1w': date(2023, 1, 1), '60m': date(2025, 9, 25),
+          '5m': date(2025, 9, 25), '15m': date(2025, 9, 25), '30m': date(2025, 9, 25)}
 
 
 def new_plan_since(identity, historical_storage_start):

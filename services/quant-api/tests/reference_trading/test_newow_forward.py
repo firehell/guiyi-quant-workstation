@@ -73,6 +73,7 @@ def case_identity_policy(_stream):
 
 @pytest.mark.parametrize("strategy,frequency", [
     ("trend", "1d"), ("oscillation", "1w"), ("main_rise", "60m"),
+    ("trend", "5m"), ("oscillation", "15m"), ("trend", "30m"),
 ])
 def test_newow_forward_reuses_real_incremental_kernel(strategy, frequency):
     from newow.product_fixtures import ProductCases
@@ -87,7 +88,7 @@ def test_newow_forward_reuses_real_incremental_kernel(strategy, frequency):
     )
     bar = case.bars[0]
     capture = _capture(stream, bar)
-    if frequency == "60m":
+    if frequency in {"5m", "15m", "30m", "60m"}:
         from dataclasses import replace
 
         capture = replace(capture, source_kind="completed_live")

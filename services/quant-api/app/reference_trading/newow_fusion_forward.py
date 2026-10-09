@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+
 from datetime import date
 from decimal import Decimal
 from hashlib import sha256
@@ -81,7 +83,7 @@ def _validated_sources(stream, dependencies):
             _timestamp(capture.get("observed_at")),
         )
         source = (
-            "completed_live" if stream.frequency == "60m" else "canonical_completed"
+            "completed_live" if stream.frequency in LIVE_FREQUENCIES else "canonical_completed"
         )
         if (
             capture.get("eligibility") != "completed_observation"

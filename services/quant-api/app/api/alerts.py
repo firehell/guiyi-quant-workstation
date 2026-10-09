@@ -22,9 +22,10 @@ from app.alerts.history import (
     AlertHistoryQuery,
     read_alert_history,
 )
-from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.alerts.registry import (
     SUBING_THS_ALERT_RULE_CODE,
+    SUBING_FORMULA_VERSIONS,
     get_alert_rule_definition,
 )
 from app.alerts.service import (
@@ -156,6 +157,8 @@ def alert_event_history(
     rule_code: str | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=100),
     before: str | None = Query(default=None),
+    frequency: Literal["1m", "5m", "15m", "30m", "60m", "1d", "1w"] | None = Query(default=None),
+    alignment_status: Literal["PASS", "FAIL", "UNKNOWN"] | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> AlertEventHistoryResponse:
     if start_day > end_day or (end_day - start_day).days >= 366:
@@ -214,6 +217,8 @@ def alert_event_history(
                 rule_code=parsed_rule_code,
                 limit=limit,
                 before=before,
+                frequency=frequency,
+                alignment_status=alignment_status,
             ),
         )
         items = _event_outs(session, page.items)
@@ -330,10 +335,13 @@ def _event_outs(session: Session, events: tuple[AlertEvent, ...]) -> list[AlertE
     rule_codes = {rule_id: rule_code for rule_id, rule_code in rows}
     if len(rule_codes) != len(rule_ids):
         raise _invalid_event_facts()
-    return [_event_out(event, rule_codes[event.rule_id]) for event in events]
+    alignments = {row.event_id: row.snapshot for row in session.scalars(
+        select(SubingSignalAlignment).where(SubingSignalAlignment.event_id.in_([event.id for event in events]))
+    )}
+    return [_event_out(event, rule_codes[event.rule_id], alignments.get(event.id)) for event in events]
 
 
-def _event_out(event: AlertEvent, rule_code: str) -> AlertEventOut:
+def _event_out(event: AlertEvent, rule_code: str, alignment: dict | None = None) -> AlertEventOut:
     try:
         parsed_rule_code = _RULE_CODE.validate_python(rule_code)
         result_codes = _RESULT_CODES.validate_python(event.result_codes)
@@ -343,27 +351,33 @@ def _event_out(event: AlertEvent, rule_code: str) -> AlertEventOut:
         if not result_codes or len(result_codes) != len(set(result_codes)):
             raise ValueError("result_codes")
         if parsed_rule_code == SUBING_THS_ALERT_RULE_CODE and (
-            event.frequency != "15m" or len(result_codes) != 1
+            len(result_codes) != 1
         ):
             raise ValueError("subing_event_facts")
     except (KeyError, ValidationError, ValueError) as exc:
         raise _invalid_event_facts() from exc
-    return AlertEventOut(
-        id=event.id,
-        rule_code=parsed_rule_code,
-        symbol=event.symbol,
-        contract=event.contract,
-        trading_day=event.trading_day,
-        frequency=event.frequency,
-        bar_end=_utc(event.bar_end),
-        result_codes=result_codes,
-        detected_at=_utc(event.detected_at),
-        notification_attempted_at=(
-            _utc(event.notification_attempted_at)
-            if event.notification_attempted_at is not None
-            else None
-        ),
-    )
+    try:
+        return AlertEventOut(
+            id=event.id,
+            formula_version=(SUBING_FORMULA_VERSIONS.get(event.frequency)
+                             if parsed_rule_code == SUBING_THS_ALERT_RULE_CODE else None),
+            subing_alignment=alignment,
+            rule_code=parsed_rule_code,
+            symbol=event.symbol,
+            contract=event.contract,
+            trading_day=event.trading_day,
+            frequency=event.frequency,
+            bar_end=_utc(event.bar_end),
+            result_codes=result_codes,
+            detected_at=_utc(event.detected_at),
+            notification_attempted_at=(
+                _utc(event.notification_attempted_at)
+                if event.notification_attempted_at is not None
+                else None
+            ),
+        )
+    except (ValidationError, ValueError) as exc:
+        raise _invalid_event_facts() from exc
 
 
 def _invalid_event_facts() -> HTTPException:

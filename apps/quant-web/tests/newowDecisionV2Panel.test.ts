@@ -76,7 +76,7 @@ test('daily/weekly card exposes states, ages and two-period R4 scope; refresh an
   app.unmount()
 })
 
-test('composite card keeps scored header, five components, first action and independently folded evidence', async () => {
+test('composite card keeps compact action header and places scores inside independently folded evidence', async () => {
   const stored = new Map<string,string>()
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>stored.get(k)??null,setItem:(k:string,v:string)=>stored.set(k,v)}})
   const Panel = await component('newow/NewowDecisionV2Panel')
@@ -94,7 +94,7 @@ test('composite card keeps scored header, five components, first action and inde
   const body=findNode(root,n=>n.props.class==='decision-v2__body')!
   assert.equal(header().props['aria-expanded'],false)
   assert.equal(body.style.display,'none')
-  assert.match(nodeText(header()),/综合决策.*65 分.*中等确定性.*共振 R2.*错配 MM4/)
+  assert.match(nodeText(header()),/综合决策.*回补窗口·分批建仓/)
   ;(header().props.onClick as Function)(); await nextTick()
   assert.equal(header().props['aria-expanded'],true); assert.notEqual(body.style.display,'none')
   assert.equal(stored.get('guiyi_newow_composite_collapsed'),'0')

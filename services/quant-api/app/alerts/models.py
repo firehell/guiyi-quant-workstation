@@ -86,3 +86,20 @@ class AlertEvent(Base):
         DateTime(timezone=True), default=utc_now, nullable=False
     )
     rule: Mapped[AlertRule] = relationship(back_populates="events")
+    subing_alignment: Mapped[SubingSignalAlignment | None] = relationship(
+        back_populates="event", uselist=False, cascade="save-update, merge",
+    )
+
+
+class SubingSignalAlignment(Base):
+    """First-detection EMA21 research snapshot; never replaces the raw Event."""
+    __tablename__ = "subing_signal_alignments"
+    __table_args__ = (
+        CheckConstraint("status IN ('PASS','FAIL','UNKNOWN')", name="ck_subing_alignment_status"),
+        Index("ix_subing_alignment_status", "status", "event_id"),
+    )
+    event_id: Mapped[int] = mapped_column(ForeignKey("alert_events.id", ondelete="RESTRICT"), primary_key=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    event: Mapped[AlertEvent] = relationship(back_populates="subing_alignment")

@@ -968,6 +968,25 @@ class NewowProductReader:
                 output.append(point)
         return output
 
+    def reference_theoretical_bars(self, product, frequency, trades, cutoff):
+        """Read only closed-trade physical windows through the common MDS entry."""
+        from app.market_data.domain import ContractTradingDayQuery
+        windows = {}
+        for trade in trades:
+            if trade['status'] != 'CLOSED':
+                continue
+            contract = trade['physical_contract']
+            start, stop = date.fromisoformat(trade['entry_trading_day']), date.fromisoformat(trade['exit_trading_day'])
+            old = windows.get(contract, (start, stop))
+            windows[contract] = (min(old[0], start), max(old[1], stop))
+        result = {}
+        for contract, (start, stop) in windows.items():
+            self._check_cancelled()
+            series = self._market_data.query_contract_trading_days(
+                ContractTradingDayQuery(product, contract, BarFrequency(frequency), start, stop))
+            result[contract] = tuple(bar for bar in series.bars if bar.bar_end <= cutoff)
+        return result
+
     def load_reference_scope(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
         """Read saved-projection provenance; never decode a strategy warmup prefix."""
         from hashlib import sha256

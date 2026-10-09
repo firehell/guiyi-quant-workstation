@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.alerts.registry import (
     AlertRuleDefinition,
     get_alert_rule_definition,
@@ -66,6 +66,7 @@ class AlertEventCreate:
     result_codes: tuple[str, ...]
     detected_at: datetime
     notification_attempted_at: datetime | None
+    subing_alignment: dict[str, object] | None = None
 
 
 class AlertService:
@@ -201,6 +202,27 @@ class AlertService:
             detected_at=request.detected_at,
             notification_attempted_at=request.notification_attempted_at,
         )
+        if request.subing_alignment is not None:
+            from app.alerts.registry import SUBING_THS_ALERT_RULE_CODE
+            from app.schemas.alerts import SubingAlignmentOut
+            if rule.rule_code != SUBING_THS_ALERT_RULE_CODE:
+                raise AlertConsistencyError()
+            try:
+                alignment = SubingAlignmentOut.model_validate(request.subing_alignment)
+                if (alignment.as_of != request.bar_end or alignment.observed_at != request.detected_at
+                        or any(item.contract != contract for item in alignment.periods)):
+                    raise ValueError("alignment identity")
+                if alignment.status != "UNKNOWN":
+                    expected = "LONG" if result_codes == ("buy",) else "SHORT"
+                    matches = all(item.direction == expected for item in alignment.periods)
+                    if matches != (alignment.status == "PASS"):
+                        raise ValueError("alignment status")
+            except ValueError:
+                raise AlertConsistencyError() from None
+            event.subing_alignment = SubingSignalAlignment(
+                policy_version=alignment.policy_version, status=alignment.status,
+                snapshot=alignment.model_dump(mode="json"),
+            )
         self._session.add(event)
         try:
             self._session.commit()

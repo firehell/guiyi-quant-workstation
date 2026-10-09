@@ -85,7 +85,7 @@ test('Newow defaults, serializes, and switches with one route identity authority
     free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
   }
   assert.deepEqual(resolveViewSwitchIdentity('newow', 'ag', null, restore), {
-    view: 'newow', symbol: 'ag', strategy: 'oscillation', seriesKind: 'actual_dominant', frequency: '60m',
+    view: 'newow', symbol: 'ag', strategy: 'oscillation', seriesKind: 'actual_dominant', frequency: '1d',
   })
 })
 
@@ -174,13 +174,14 @@ test('all RB four-period trend oscillation and dual routes are explicit identiti
   }
 })
 
-test('legacy Newow 1m preference retains its rejected identity while Market 1m stays usable', () => {
+test('Newow entry defaults to daily despite a legacy 1m preference while explicit 1m stays rejected', () => {
   const preferences = loadMarketDetailPreferences(storage({ [MARKET_DETAIL_PREFERENCES_KEY]: JSON.stringify({
     version: 2, newow: { strategy: 'trend', frequency: '1m' }, free: { frequency: '1m' },
   }) }))
   const restored = resolveViewSwitchIdentity('newow', 'rb', null, preferences)
-  assert.equal(restored.frequency, '1m')
-  assert.equal(parseMarketDetailRoute(serializeMarketDetailIdentity(restored)).kind, 'invalid')
+  assert.equal(restored.frequency, '1d')
+  assert.equal(parseMarketDetailRoute(serializeMarketDetailIdentity(restored)).kind, 'valid')
+  assert.equal(parseMarketDetailRoute({ view: 'newow', symbol: 'rb', frequency: '1m' }).kind, 'invalid')
   assert.equal(preferences.free.frequency, '1m')
   assert.equal(parseMarketDetailRoute({ view: 'free', symbol: 'rb', series_kind: 'actual_dominant', frequency: '1m' }).kind, 'valid')
 })

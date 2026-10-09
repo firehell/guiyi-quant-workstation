@@ -1,9 +1,10 @@
 """Complete Newow observation matrix; missing records remain explicitly unknown."""
 
+from app.reference_trading.recording_scope import FREQUENCIES, strategies_for, recording_route_supported
+
 from app.reference_trading.query import QueryConflict
 
 STRATEGIES = ("trend", "oscillation", "main_rise", "dual_fusion")
-FREQUENCIES = ("1w", "1d", "60m")
 
 
 def newow_recording_matrix(products, health: dict) -> dict:
@@ -14,7 +15,7 @@ def newow_recording_matrix(products, health: dict) -> dict:
             continue
         strategy = code.removeprefix("newow_")
         key = (item["product"], strategy, item["frequency"])
-        if key[0] not in products or strategy not in STRATEGIES or key[2] not in FREQUENCIES:
+        if key[0] not in products or strategy not in STRATEGIES or not recording_route_supported(strategy, key[2]):
             continue
         if key in routes:
             raise QueryConflict("NEWOW_RECORDING_IDENTITY_CONFLICT")
@@ -23,7 +24,7 @@ def newow_recording_matrix(products, health: dict) -> dict:
     items = []
     for product in products:
         for frequency in FREQUENCIES:
-            for strategy in STRATEGIES:
+            for strategy in strategies_for(frequency):
                 item = routes.get((product, strategy, frequency))
                 items.append({
                     "product": product, "strategy": strategy, "frequency": frequency,
@@ -38,7 +39,7 @@ def newow_recording_matrix(products, health: dict) -> dict:
                     **endpoints.get((product, frequency), {}), **(item or {}),
                 })
     return {
-        "version": "newow_recording_matrix_v3", "recording_mode": "forward_observation",
+        "version": "newow_recording_matrix_v4", "recording_mode": "forward_observation",
         "expected_count": len(items), "configured_count": len(routes),
         "enabled_count": sum(item["enabled"] is True for item in items),
         "observed_count": sum(item["observed_through"] is not None for item in items),

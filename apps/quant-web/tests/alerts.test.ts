@@ -24,13 +24,13 @@ describe('two-Rule Alert presentation', () => {
 })
 
 describe('persistent Alert markers', () => {
-  test('uses both rules only for actual-dominant 15m', () => {
+  test('uses both rules for six SuBing actual-dominant periods', () => {
     assert.deepEqual(markerRuleCodes('actual_dominant', '15m'), [
       ALERT_RULE_CODES.HTDY,
       ALERT_RULE_CODES.SUBING_THS,
     ])
-    assert.deepEqual(markerRuleCodes('actual_dominant', '5m'), [ALERT_RULE_CODES.HTDY])
-    assert.deepEqual(markerRuleCodes('actual_dominant', '1d'), [ALERT_RULE_CODES.HTDY])
+    assert.deepEqual(markerRuleCodes('actual_dominant', '5m'), [ALERT_RULE_CODES.HTDY, ALERT_RULE_CODES.SUBING_THS])
+    assert.deepEqual(markerRuleCodes('actual_dominant', '1d'), [ALERT_RULE_CODES.HTDY, ALERT_RULE_CODES.SUBING_THS])
     assert.deepEqual(markerRuleCodes('continuous', '15m'), [])
   })
 

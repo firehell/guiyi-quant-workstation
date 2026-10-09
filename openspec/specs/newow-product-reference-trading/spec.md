@@ -1340,20 +1340,25 @@ strategy/period. Unavailable combinations stay visible and cannot be recommended
 - **THEN** all periods use the capped cutoff and every reported source bar ends at or before it
 - **AND** unavailable periods are explicit rather than substituted or artificially rescored
 
-### Requirement: Current completed daily weekly hourly product capability
+### Requirement: Current completed daily weekly intraday product capability
 
-The active formal capability `newow_product_capabilities_v32` SHALL use release stage
-`daily_weekly_hourly_current`. All sixty operational products SHALL support trend, oscillation,
+The active formal capability `newow_product_capabilities_v33` SHALL use release stage
+`daily_weekly_intraday_current`. All sixty operational products SHALL support trend, oscillation,
 main-rise and independent dual reference recording at D1/W1/60m. `strategy_frequencies`
 SHALL declare main-rise only at D1/W1/60m; 5m/15m/30m main-rise remains closed and 1m remains
-aggregation input only. `latest_completed_frequencies` SHALL be exactly `1d,1w,60m`.
+aggregation input only. `latest_completed_frequencies` SHALL be exactly `1d,1w,60m,5m,15m,30m`.
+Trend, oscillation and independent dual SHALL additionally support continuous recording
+at 5m/15m/30m, giving 21 routes per product and 1260 routes overall.
 
-Formal D1/W1/60m requests SHALL use the requested completed Canonical cutoff through the
-existing Catalog/MainContractMap/MDS reader, with no fixed September 24 cap. Hourly reference
+Formal D1/W1/60m/5m/15m/30m requests SHALL use the requested completed Canonical cutoff through the
+existing Catalog/MainContractMap/MDS reader, with no fixed September 24 cap. Intraday reference
 reads SHALL use current public reference assets rather than the frozen pilot schema; missing
 or stale assets SHALL remain unavailable. Unconfirmed Live input SHALL NOT enter Canonical
 page calculations. The existing v31 wire, source evidence and exact historical cutoff remain
-immutable; formal 5m/15m/30m requests still use that historical cutoff and pilot assets.
+immutable; v33 formal short-minute requests use current primary historical assets.
+The v33 `intraday_as_of` SHALL be null; explicit historical requests still bind one
+completed Canonical as-of. Completed Live observation remains separately labelled and
+SHALL NOT be substituted into historical page calculations.
 
 Current `decision_v2` requests SHALL use one explicit as-of across D1/W1/60m and retain
 same-owner, segmentation and independent quality-policy checks. Formal AI response
@@ -1363,7 +1368,7 @@ historical cutoff helpers remain readable. Existing formulas, scores, sample gat
 semantics, page-parity and non-executable boundaries SHALL remain unchanged.
 
 #### Scenario: Current hourly main-rise retains minute boundaries
-- **GIVEN** v32 and verified completed hourly Canonical input for an operational product
+- **GIVEN** v33 and verified completed hourly Canonical input for an operational product
 - **WHEN** main-rise 60m is requested after the former fixed cutoff
 - **THEN** the current authoritative input is read with the unchanged main-rise kernel
 - **AND** a 5m/15m/30m main-rise request fails before opening any source reader

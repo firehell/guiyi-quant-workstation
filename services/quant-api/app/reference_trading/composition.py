@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -108,7 +110,7 @@ def build_forward_reference_worker(
                     raise ForwardInputUnavailable("REFERENCE_FUSION_SOURCES_UNAVAILABLE")
                 return fusion_sources(identity, **common)
             if code.startswith("newow_"):
-                if identity.frequency == "60m":
+                if identity.frequency in LIVE_FREQUENCIES:
                     return capture_newow_live(
                         cached_live, identity, wake_kind=kind,
                         owner_segments=owner_segments,

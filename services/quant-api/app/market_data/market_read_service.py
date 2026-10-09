@@ -382,6 +382,21 @@ class MarketReadService:
 
     def assert_window_current(self, window: MarketReadWindow) -> None:
         """Prove no recovery/physical-owner change since this Alert window was read."""
+        if window.frequency in {BarFrequency.D1.value, BarFrequency.W1.value}:
+            try:
+                page = self.history_page(SeriesPageQuery(
+                    series_kind=SeriesKind.ACTUAL_DOMINANT, symbol=window.symbol,
+                    frequency=BarFrequency(window.frequency),
+                    before=window.cutoff + timedelta(microseconds=1), limit=1,
+                ))
+                owners = tuple(segment.contract for segment in page.resolved_contract_segments
+                               if segment.start_trading_day <= window.trading_day <= segment.end_trading_day)
+                if (not window.bars or page.bars != window.bars[-1:]
+                        or owners != (window.contract,) or window.bars[-1].bar_end != window.cutoff):
+                    raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+            except MarketDataError as exc:
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
+            return
         current = self._read_recovery_state(window.trading_day, window.symbol, window.contract)
         if current != window.recovery_state:
             raise MarketReadWindowError("MARKET_READ_RECOVERY_CHANGED")
@@ -436,7 +451,7 @@ class MarketReadService:
             cutoff=cutoff,
             after=normalized_after,
         )
-        live = self._verified_live_bars(
+        live = () if frequency in {BarFrequency.D1, BarFrequency.W1} else self._verified_live_bars(
             trading_day=decision_window.trading_day,
             symbol=decision_window.symbol,
             frequency=frequency,
@@ -478,6 +493,54 @@ class MarketReadService:
             cutoff=cutoff,
             after=normalized_after,
             bars=bars,
+        )
+
+    def subing_direction_window(
+        self, decision: MarketReadWindow, frequency: BarFrequency,
+    ) -> CurrentContractReplayWindow:
+        """Read the full physical EMA prefix at the last authoritative completed endpoint."""
+        _current_contract_replay_frequency(decision)
+        if frequency not in {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30,
+                             BarFrequency.H1, BarFrequency.D1, BarFrequency.W1}:
+            raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        self.assert_window_current(decision)
+        try:
+            expected = self._market_data.expected_contract_replay_endpoints(
+                symbol=decision.symbol, contract=decision.contract, frequency=frequency,
+                trading_day=decision.trading_day, cutoff=decision.cutoff, after=None,
+            )
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE") from exc
+        if not expected:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        cutoff, endpoint_day = expected[-1]
+        canonical = self._current_contract_history(
+            symbol=decision.symbol, frequency=frequency, contract=decision.contract,
+            cutoff=cutoff, after=None,
+        )
+        live = () if frequency in {BarFrequency.D1, BarFrequency.W1} else self._verified_live_bars(
+            trading_day=decision.trading_day, symbol=decision.symbol, frequency=frequency,
+            cutoff=cutoff, contract=decision.contract,
+        )
+        merged = {bar.bar_end: bar for bar in canonical}
+        for bar in live:
+            if bar.bar_end in merged and merged[bar.bar_end] != bar:
+                raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE")
+            merged[bar.bar_end] = bar
+        bars = tuple(merged[end] for end in sorted(merged))
+        if not bars or bars[-1].bar_end != cutoff:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        try:
+            self._market_data.validate_contract_replay_coverage(
+                symbol=decision.symbol, contract=decision.contract, frequency=frequency,
+                trading_day=endpoint_day, cutoff=cutoff, after=None, bars=bars,
+            )
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE") from exc
+        self.assert_window_current(decision)
+        return CurrentContractReplayWindow(
+            symbol=decision.symbol, frequency=frequency.value, trading_day=endpoint_day,
+            contract=decision.contract, cutoff=cutoff, after=None, bars=bars,
         )
 
     def _current_contract_history(
@@ -787,7 +850,7 @@ class MarketReadService:
 
     def _newow_completed_identity(self, identity: SeriesPageQuery, now: datetime) -> tuple[date, str]:
         if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
-                or identity.frequency is not BarFrequency.H1
+                or identity.frequency not in {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
                 or identity.symbol not in self._operational_products
                 or now.tzinfo is None or now.utcoffset() is None):
             raise ValueError("NEWOW_COMPLETED_OBSERVATION_IDENTITY_INVALID")
@@ -800,7 +863,7 @@ class MarketReadService:
     def newow_completed_observation_endpoint(
         self, identity: SeriesPageQuery, now: datetime,
     ) -> tuple[datetime | None, date, str]:
-        """Session expected H1 completion, independent of Redis Bar presence.
+        """Session expected intraday completion, independent of Redis Bar presence.
 
         Missing Calendar/Session/rank1 raises; no due endpoint alone returns None.
         """
@@ -818,13 +881,13 @@ class MarketReadService:
     def newow_completed_observation_snapshot(
         self, identity: SeriesPageQuery, after: datetime | None, now: datetime,
     ) -> MarketObservationSnapshot:
-        """Newow recording only: read saved completed H1 even after Session close.
+        """Newow recording only: read saved completed intraday bars even after Session close.
 
         This does not change strict realtime Alert or Web display eligibility.
         Observation time remains the caller's actual read time.
         """
         if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
-                or identity.frequency is not BarFrequency.H1
+                or identity.frequency not in {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
                 or now.tzinfo is None or now.utcoffset() is None
                 or after is not None and (after.tzinfo is None or after.utcoffset() is None or after > now)):
             raise ValueError("NEWOW_COMPLETED_OBSERVATION_IDENTITY_INVALID")
@@ -1074,7 +1137,7 @@ def _current_contract_replay_frequency(
         frequency = BarFrequency(decision_window.frequency)
     except ValueError as exc:
         raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED") from exc
-    if frequency not in INTRADAY_FREQUENCIES:
+    if frequency not in INTRADAY_FREQUENCIES | {BarFrequency.D1, BarFrequency.W1}:
         raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
     if (
         decision_window.cutoff.tzinfo is None

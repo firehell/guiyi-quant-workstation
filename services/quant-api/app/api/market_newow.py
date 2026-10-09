@@ -15,6 +15,7 @@ from collections.abc import Callable, Mapping
 
 from anyio import from_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainMarker
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import InputQualityPolicy
@@ -69,6 +70,7 @@ from app.market_data.newow.product_release import (
     INTRADAY_HISTORY_FREQUENCIES,
     FROZEN_INTRADAY_FREQUENCIES,
     LATEST_COMPLETED_FREQUENCIES,
+    MAIN_RISE_FREQUENCIES,
     released_intraday_as_of,
     OPEN_WEEKLY_PRODUCTS,
     OPEN_SECTIONS,
@@ -301,7 +303,7 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
     "/product-capabilities", response_model=NewowProductCapabilitiesResponse,
     response_model_exclude_none=True,
 )
-def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse:
+def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse | JSONResponse:
     """Return the single public scope used by clients for this staged release."""
     if getattr(request.state, "intraday_preview_products", None) is not None:
         batch = getattr(request.state, "intraday_preview_batch", False)
@@ -333,7 +335,7 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
         HOURLY_PRODUCT_PREVIEW_DEFERRED if hourly_preview else
         CANDIDATE_DEFERRED_FREQUENCIES if candidate else ()
     )
-    return NewowProductCapabilitiesResponse(
+    capability = NewowProductCapabilitiesResponse(
         schema_version=(
             AU_PERIOD_PREVIEW_SCHEMA_VERSION if au_preview else
             PD_PT_HOURLY_PREVIEW_SCHEMA_VERSION if pd_pt_preview else
@@ -348,12 +350,12 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
         ),
         open_frequencies=[item.value for item in frequencies],
         intraday_products=list(OPEN_INTRADAY_PRODUCTS) if not candidate else None,
-        intraday_as_of=INTRADAY_HISTORY_AS_OF if not candidate else None,
+        intraday_as_of=None,
         latest_completed_frequencies=([item.value for item in LATEST_COMPLETED_FREQUENCIES] if not candidate else None),
         strategy_frequencies=({
             "trend": [item.value for item in frequencies],
             "oscillation": [item.value for item in frequencies],
-            "main_rise": [item.value for item in LATEST_COMPLETED_FREQUENCIES],
+            "main_rise": [item.value for item in MAIN_RISE_FREQUENCIES],
             "dual": [item.value for item in frequencies],
         } if not candidate else None),
         weekly_products=(
@@ -371,6 +373,12 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
             for section, reason in DEFERRED_SECTIONS
         ],
     )
+
+    # Formal v33 explicitly publishes a null historical cap; older preview
+    # contracts continue omitting their absent optional fields.
+    if not candidate:
+        return JSONResponse(content=capability.model_dump(mode="json"))
+    return capability
 
 
 @router.get("/trend-detail", response_model=NewowTrendDetailResponse)
@@ -777,7 +785,7 @@ def newow_strategy_detail(
                                and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES)
         service = (_build_product_service(session, cancelled, policy, historical_intraday=True)
                    if historical_intraday else
-                   _build_product_service(session, cancelled, policy, current_reference=True) if frequency == "60m" else
+                   _build_product_service(session, cancelled, policy, current_reference=True) if frequency in {"5m", "15m", "30m", "60m"} else
                    _build_product_service(session, cancelled) if policy is InputQualityPolicy.V1
                    else _build_product_service(session, cancelled, policy))
         result = service.query(product_query)

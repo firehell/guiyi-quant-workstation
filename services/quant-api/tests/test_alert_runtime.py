@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session as OrmSession
 from app.alerts.evaluators import (
     AlertEvaluationError,
     AlertObservationCandidate,
-    SubingThs15mEvaluator,
+    SubingThsEvaluator,
 )
-from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.alerts.notification import (
     ALERT_AUDIENCE_OWNER,
     ALERT_NOTIFICATION_POLICIES,
@@ -688,7 +688,7 @@ def test_subing_duplicate_after_failed_cutoff_does_not_clear_rule_health() -> No
     runtime = AlertRuntime(
         session_factory=Session,
         market_read_factory=lambda _session: MarketRead(),
-        evaluators={SUBING_THS_ALERT_RULE_CODE: SubingThs15mEvaluator(kernel=Kernel())},
+        evaluators={SUBING_THS_ALERT_RULE_CODE: SubingThsEvaluator(kernel=Kernel())},
         sender=object(),  # type: ignore[arg-type]
         operational_products=("rb",),
         taxonomy={},
@@ -859,7 +859,7 @@ def test_subing_event_persistence_failure_is_not_retried_by_duplicate() -> None:
         session_factory=Session,
         market_read_factory=lambda _session: MarketRead(),
         evaluators={
-            SUBING_THS_ALERT_RULE_CODE: SubingThs15mEvaluator(kernel=Kernel())
+            SUBING_THS_ALERT_RULE_CODE: SubingThsEvaluator(kernel=Kernel())
         },
         sender=object(),  # type: ignore[arg-type]
         operational_products=("rb",),
@@ -1101,6 +1101,7 @@ def test_event_commit_then_status_failure_keeps_event_and_blocks_sender(
     engine = create_engine("sqlite+pysqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with OrmSession(engine) as session:
         session.add(
             AlertRule(
@@ -1211,6 +1212,7 @@ def test_canonical_event_commit_then_status_failure_blocks_sender(
     engine = create_engine("sqlite+pysqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with OrmSession(engine) as session:
         session.add(
             AlertRule(
@@ -1376,6 +1378,7 @@ def test_canonical_status_failure_discards_only_its_unapproved_message() -> None
     engine = create_engine("sqlite+pysqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with OrmSession(engine) as session:
         session.add(
             AlertRule(
@@ -1486,6 +1489,7 @@ def test_canonical_typed_evaluation_failure_preserves_history_and_can_recover(
     engine = create_engine("sqlite+pysqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with OrmSession(engine) as session:
         session.add(
             AlertRule(
@@ -1571,6 +1575,7 @@ def test_duplicate_canonical_update_neither_recommits_nor_resends(
     engine = create_engine("sqlite+pysqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with OrmSession(engine) as session:
         session.add(
             AlertRule(
@@ -1652,6 +1657,7 @@ def test_duplicate_canonical_update_does_not_clear_prior_status_failure(
     engine = create_engine("sqlite+pysqlite:///:memory:")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with OrmSession(engine) as session:
         session.add(
             AlertRule(
@@ -1751,7 +1757,7 @@ def test_signal_only_event_persists_without_notification_and_htdy_still_sends(ru
     from app.db.base import Base
 
     engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine, tables=[AlertRule.__table__, AlertEvent.__table__])
+    Base.metadata.create_all(engine, tables=[AlertRule.__table__, AlertEvent.__table__, SubingSignalAlignment.__table__])
     at = datetime(2026, 10, 8, 1, 0, tzinfo=UTC)
     with OrmSession(engine) as session:
         rule = AlertRule(rule_code=rule_code, enabled=True,
@@ -1789,6 +1795,7 @@ def test_live_signal_only_persists_event_and_skips_sender(rule_code):
     engine = create_engine("sqlite://")
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     with OrmSession(engine) as session:
         session.add(AlertRule(rule_code=rule_code, enabled=True,
                              scope_product_frequencies={"rb": ["15m"]}))

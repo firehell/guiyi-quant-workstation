@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+
 from datetime import date, datetime
 
 from guiyi_quant.newow.product_identity import (
@@ -33,7 +35,7 @@ class ForwardMarketAuthority:
         if owner_start > bar_end:
             raise ForwardInputUnavailable("OWNER_IDENTITY_CONFLICT")
         code = identity.strategy_code.replace("-", "_")
-        if code.startswith("newow_") and identity.frequency == "60m":
+        if code.startswith("newow_") and identity.frequency in LIVE_FREQUENCIES:
             owner_id = build_segment_id(product, contract, owner_start)
             return owner_id, build_calculation_segment_id(owner_id)
         if code == "subing_reference" and identity.frequency in {"15m", "30m", "60m"}:

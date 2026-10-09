@@ -1,5 +1,6 @@
 import type {
   AlertEvent,
+  SubingAlignment,
   CurrentAlertEventsResponse,
   MarketFrequency,
   MarketHomeOverviewResponse,
@@ -109,7 +110,7 @@ export function normalizeAlertEvent(payload: unknown, index = 0): AlertEvent {
   const value = record(payload, `items[${index}]`)
   const frequency = literal(value.frequency, [...MARKET_FREQUENCIES], 'frequency')
   const facts = normalizeAlertEventFacts(field(value, 'rule_code'), frequency, array(value.result_codes, 'result_codes'))
-  return { id: positiveId(value.id), rule_code: facts.ruleCode, symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency, bar_end: instant(value.bar_end, 'bar_end'), result_codes: facts.resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at') } as AlertEvent
+  return { id: positiveId(value.id), rule_code: facts.ruleCode, symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency, bar_end: instant(value.bar_end, 'bar_end'), result_codes: facts.resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at'), formula_version: value.formula_version == null ? null : text(value.formula_version, 'formula_version'), subing_alignment: normalizeSubingAlignment(value.subing_alignment) } as AlertEvent
 }
 
 function record(value: unknown, field: string): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field} must be an object`); return value as Record<string, unknown> }
@@ -125,3 +126,20 @@ function day(value: unknown, field: string): string { if (typeof value !== 'stri
 function nullableDay(value: unknown, field: string): string | null { return value === null ? null : day(value, field) }
 function instant(value: unknown, field: string): string { if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) throw new Error(`${field} must be an ISO instant with timezone`); day(value.slice(0, 10), field); if (!Number.isFinite(Date.parse(value))) throw new Error(`${field} must be an ISO instant with timezone`); return value }
 function nullableInstant(value: unknown, field: string): string | null { return value === null ? null : instant(value, field) }
+
+export function normalizeSubingAlignment(payload: unknown): SubingAlignment | null {
+  if (payload == null) return null
+  const value = record(payload, 'subing_alignment')
+  const frequencies = ['5m', '15m', '30m', '60m', '1d', '1w'] as const
+  const decimal = (value: unknown): string | null => {
+    if (value === null) return null
+    if (typeof value !== 'string' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) throw new Error('alignment decimal invalid')
+    return value
+  }
+  const periods = array(value.periods, 'periods').map(item => {
+    const row = record(item, 'alignment period')
+    return { frequency: literal(row.frequency, frequencies, 'frequency'), contract: text(row.contract, 'contract'), bar_end: nullableInstant(row.bar_end, 'bar_end'), close: decimal(row.close), ema21: decimal(row.ema21), direction: literal(row.direction, ['LONG', 'SHORT', 'FLAT', 'UNKNOWN'] as const, 'direction'), reason: row.reason === null ? null : text(row.reason, 'reason') }
+  })
+  if (periods.length !== 6 || new Set(periods.map(row => row.frequency)).size !== 6) throw new Error('alignment periods invalid')
+  return { policy_version: text(value.policy_version, 'policy_version'), as_of: instant(value.as_of, 'as_of'), observed_at: instant(value.observed_at, 'observed_at'), status: literal(value.status, ['PASS', 'FAIL', 'UNKNOWN'] as const, 'status'), periods }
+}

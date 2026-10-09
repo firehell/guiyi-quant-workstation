@@ -13,7 +13,7 @@ from app.alerts.current_trading_day import (
     CurrentTradingDayResult,
     CurrentTradingDayStatus,
 )
-from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.api import alerts as alerts_api
 from app.db.session import get_db
 from app.main import app
@@ -57,7 +57,7 @@ def test_product_alert_state_exposes_subing_public_name() -> None:
         "rule_code": "subing_ths_alert_15m_v1",
         "display_name": "苏冰预警",
         "kind": "indicator_observation",
-        "input_frequencies": ["15m"],
+        "input_frequencies": ["5m", "15m", "30m", "60m", "1d", "1w"],
         "enabled_frequencies": [],
         "enabled_for_product": False,
     }
@@ -125,6 +125,7 @@ def test_event_range_returns_typed_htdy_event() -> None:
     assert set(item) == {
         "id", "rule_code", "symbol", "contract", "trading_day", "frequency",
         "bar_end", "result_codes", "detected_at", "notification_attempted_at",
+        "formula_version", "subing_alignment",
     }
 
 
@@ -200,7 +201,7 @@ def test_event_range_rejects_global_frequency_not_supported_by_specific_rule() -
             params={
                 "symbol": "jm",
                 "rule_code": "subing_ths_alert_15m_v1",
-                "frequency": "5m",
+                "frequency": "1m",
                 "start": (BAR_END - timedelta(minutes=1)).isoformat(),
                 "end": (BAR_END + timedelta(minutes=1)).isoformat(),
             },
@@ -227,6 +228,8 @@ def test_event_range_returns_actual_subing_rule_fact() -> None:
     assert response.json()["items"] == [
         {
             "id": event_id,
+            "formula_version": "subing_ths_15m_v3",
+            "subing_alignment": None,
             "rule_code": "subing_ths_alert_15m_v1",
             "symbol": "jm",
             "contract": "JM2609",
@@ -379,6 +382,7 @@ def session_factory() -> sessionmaker[Session]:
     )
     AlertRule.__table__.create(engine)
     AlertEvent.__table__.create(engine)
+    SubingSignalAlignment.__table__.create(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as session:
         session.add(AlertRule(

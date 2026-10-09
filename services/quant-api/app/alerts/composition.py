@@ -11,7 +11,7 @@ from typing import Any
 
 from redis.exceptions import WatchError
 
-from app.alerts.evaluators import HtdyOriginalEvaluator, SubingThs15mEvaluator
+from app.alerts.evaluators import HtdyOriginalEvaluator, SubingThsEvaluator
 from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
 from app.alerts.notification_composition import build_notification_sender_from_env
 from app.alerts.runtime import (
@@ -184,7 +184,7 @@ def build_alert_runtime() -> AlertRuntime:
         market_read_factory=build_market_read_service,
         evaluators={
             HTDY_ALERT_RULE_CODE: HtdyOriginalEvaluator(),
-            SUBING_THS_ALERT_RULE_CODE: SubingThs15mEvaluator(),
+            SUBING_THS_ALERT_RULE_CODE: SubingThsEvaluator(),
         },
         sender=build_notification_sender_from_env(),
         operational_products=operational_products,

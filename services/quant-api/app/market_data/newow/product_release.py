@@ -36,13 +36,14 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v32"] = (
-    "newow_product_capabilities_v32"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v33"] = (
+    "newow_product_capabilities_v33"
 )
-RELEASE_STAGE: Literal["daily_weekly_hourly_current"] = "daily_weekly_hourly_current"
-OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY)
+RELEASE_STAGE: Literal["daily_weekly_intraday_current"] = "daily_weekly_intraday_current"
+OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY, ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY)
 # Only these short-minute products retain the immutable v31 historical input boundary.
-FROZEN_INTRADAY_FREQUENCIES = INTRADAY_HISTORY_FREQUENCIES[:-1]
+FROZEN_INTRADAY_FREQUENCIES = ()
+MAIN_RISE_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY)
 LATEST_COMPLETED_FREQUENCIES = OPEN_FREQUENCIES
 OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
     "chart",
@@ -163,7 +164,7 @@ def require_open_section(section: ProductSectionName) -> None:
 def deferred_frequency_reason(frequency: ProductFrequency) -> str | None:
     """Return the public staged-release reason without opening data readers."""
     selected = ProductFrequency(frequency)
-    if selected in (ProductFrequency.MINUTE, ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY):
+    if selected is ProductFrequency.MINUTE:
         return "NEWOW_INTRADAY_RELEASE_PENDING"
     return next(
         (reason for item, reason in DEFERRED_FREQUENCIES if item == selected), None

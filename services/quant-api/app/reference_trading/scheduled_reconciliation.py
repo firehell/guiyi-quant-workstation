@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+
 from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
@@ -33,7 +35,7 @@ class CompletedCanonicalReader:
         payload, proof = evidence["input_payload"], evidence["source_proof"]
         if (
             evidence.get("source_kind") != "completed_live"
-            or proof.get("frequency") != "60m"
+            or proof.get("frequency") not in LIVE_FREQUENCIES
         ):
             raise RepositoryConflict("RECONCILIATION_SOURCE_UNSUPPORTED")
         raw = payload["bar"]
@@ -47,7 +49,7 @@ class CompletedCanonicalReader:
         day = date.fromisoformat(raw["trading_day"])
         product, contract = payload["product"].lower(), payload["contract"]
         identity = SimpleNamespace(
-            product=product, frequency="60m", strategy_code="newow_trend"
+            product=product, frequency=proof["frequency"], strategy_code="newow_trend"
         )
         if self._owner_segments(identity, contract, day, end) != (
             proof["owner_segment_id"],
@@ -56,14 +58,14 @@ class CompletedCanonicalReader:
             raise RepositoryConflict("RECONCILIATION_OWNER_CONFLICT")
         try:
             source = self._market.contract_source_evidence(
-                symbol=product, contract=contract, frequency=BarFrequency.H1, before=end
+                symbol=product, contract=contract, frequency=BarFrequency(proof["frequency"]), before=end
             )
         except MarketDataError as error:
             if error.code != "PHYSICAL_DATA_MISSING":
                 raise
             return CanonicalEvidence(
                 "unpublished:"
-                + manifest_sha256([product, contract, "60m", end.isoformat()]),
+                + manifest_sha256([product, contract, proof["frequency"], end.isoformat()]),
                 None,
             )
         revision = "canonical:" + manifest_sha256(source)
@@ -78,7 +80,7 @@ class CompletedCanonicalReader:
             SeriesPageQuery(
                 SeriesKind.CONTRACT,
                 product,
-                BarFrequency.H1,
+                BarFrequency(proof["frequency"]),
                 limit=1,
                 contract=contract,
                 before=end,
@@ -269,7 +271,7 @@ class ScheduledCanonicalReconciliation:
                 .where(
                     ReferenceStream.enabled.is_(True),
                     ReferenceStream.recording_mode == "forward_observation",
-                    ReferenceStream.frequency == "60m",
+                    ReferenceStream.frequency.in_(LIVE_FREQUENCIES),
                     ReferenceStream.strategy_code.in_(
                         ("newow_trend", "newow_oscillation", "newow_main_rise")
                     ),

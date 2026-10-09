@@ -100,3 +100,13 @@ test('Niuwa density layout omits crowded text then restores it on zoom without m
   assert.equal(zoomed.length, points.length)
   assert.deepEqual(dense, layoutNiuwaReferenceCallouts(points, 500, 300))
 })
+
+test('Niuwa callouts preserve their anchors while avoiding a breakout price label', () => {
+  const area = { left: 390, top: 128, width: 110, height: 44 }
+  const result = layoutNiuwaReferenceCallouts([{ x: 455, y: 150, callout: callout('breakout'), boxWidth: 96, boxHeight: 30 }], 500, 300, [area])
+  assert.equal(result.length, 1)
+  const placed = result[0]!
+  assert.equal(placed.x, 455)
+  assert.equal(placed.y, 150)
+  assert.ok(placed.left + placed.width < area.left || placed.left > area.left + area.width || placed.top + placed.height < area.top || placed.top > area.top + area.height)
+})

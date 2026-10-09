@@ -200,7 +200,7 @@ def test_plan_cli_has_no_intent_receipt_or_mutating_service(tmp_path, monkeypatc
     monkeypatch.setattr(script, 'open_historical_reference_components', components)
     assert script.main(['--product', 'rb', '--output-root', str(tmp_path), '--as-of', END.isoformat(),
                         '--strategy', 'trend']) == 0
-    assert len(list((tmp_path / 'rb').glob('*-plan.json'))) == 3
+    assert len(list((tmp_path / 'rb').glob('*-plan.json'))) == 6
     assert not list((tmp_path / 'rb').glob('*-intent.json'))
     assert not list((tmp_path / 'rb').glob('*-receipt.json'))
     assert calls == []

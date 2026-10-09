@@ -148,7 +148,7 @@ function clamp(value: number, minimum: number, maximum: number): number {
 export function matchesReferenceBar(callout: Pick<KlineReferenceCallout, 'time' | 'physicalContract'>, bar: { time: string; physicalContract?: string }): boolean { return bar.physicalContract === callout.physicalContract && Date.parse(bar.time) === Date.parse(callout.time) }
 
 /** Public Niuwa four-direction search: redraw visible labels on zoom; never merge signal facts. */
-export function layoutNiuwaReferenceCallouts(points: readonly ProjectedCallout[], width: number, height: number): PositionedCallout[] {
+export function layoutNiuwaReferenceCallouts(points: readonly ProjectedCallout[], width: number, height: number, reserved: readonly Rectangle[] = []): PositionedCallout[] {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 4 || height <= 4) return []
   const placed: PositionedCallout[] = []
   const directions = [[0, -1], [0.7, -0.7], [0, 1], [-0.7, -0.7]] as const
@@ -168,6 +168,7 @@ export function layoutNiuwaReferenceCallouts(points: readonly ProjectedCallout[]
         const top = clamp(point.y + dy * distance - boxHeight / 2, 2, height - boxHeight - 2)
         const rectangle = { left, top, width: boxWidth, height: boxHeight }
         if (placed.some(other => rectanglesOverlap(rectangle, other, 8))) continue
+        if (reserved.some(area => rectanglesOverlap(rectangle, area, 3))) continue
         if (point.candle && rectanglesOverlap(rectangle, point.candle, 3)) continue
         const score = Math.hypot(left + boxWidth / 2 - point.x, top + boxHeight / 2 - point.y)
         if (score < bestDistance) { bestDistance = score; best = rectangle }

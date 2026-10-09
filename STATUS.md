@@ -1,54 +1,51 @@
 # 当前状态
 
-更新：2026-10-08。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-09。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## Develop 短分钟持续记录候选
+
+2026-10-09：5m/15m/30m趋势、震荡、独立双策略的持续记录实现已通过测试与独立Review，
+目标范围1260路、360调度key，capability v33/matrix v4；短分钟主升浪保持关闭。
+reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web53 passed与build、
+OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
+未发布/切换Runtime，当前实际仍如下v1.14.5的720路。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
+
 ## Release 与 Runtime
 
-最新正式发布为 **v1.14.3@00bc70899a4d8b6a519dd9d443caf6c2d256ac21**，
-[PR #416](https://github.com/firehell/guiyi-quant-workstation/pull/416)、annotated tag 与
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.3) 已读回。
-API/Web/reference worker运行v1.14.3；Market/盘后/late recovery仍v1.14.0，weekly v1.14.2，Alert v1.13.0。
-本树为隔离修复候选，未发布、未切换Runtime；不同组件不能冒称同一运行版本。
+最新正式发布为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
+[PR #417](https://github.com/firehell/guiyi-quant-workstation/pull/417) 已合并，annotated tag与
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.5) 精确身份一致。
+2026-10-09 08:39–08:41，API/Web/logrotate、Market Live/盘后/late-provider及reference worker已完成正式切换。
+发布树 `.worktrees/release-v1.14.5` detached/clean，API实际1.14.5/HTTP200、Web HTTP200，核心DB/Redis/Market health为ok。
+Alert保留v1.13.0、weekly audit保留v1.14.2，身份诊断明确mismatch；旧服务检查脚本因此overall failed/3项，不能宣称所有组件统一就绪。
+本轮未切换Alert、未执行0049 migration、未新增推送或订单；auto_order=false。
 
-**牛哇60品种×四策略×W1/D1/60m，共720条链路**：历史资产720/720 READY，forward720/720启用并预热。
-D1/60m最新已完成历史端点为2026-10-08 15:00北京时间，W1为2026-09-30；未完成周不生成正式历史。
-2026-10-08 21:59开始记录，首个22:00夜盘端点已自然观察180/180条（45夜盘品种×四策略），
-180条源哈希与独立60×1m重建一致，17个策略Marker、17个Hint已记录；pending capture/rejection/diagnostic均0。
-上述计数为22:57验收快照：其余540条当时等待各自自然completed端点，seed不计作实时观察；180条Live→Canonical核对当时pending，不能算匹配完成。
+**原136条终场遗漏已恢复，整体自然验收仍待完成。** 独立生产只读核对34品种×四策略的23:00 calculation全部存在，
+真实observed_at为10/9 08:41:09–08:44:03；既有worker正常扫描完成，未手动job/replay/backfill或伪造昨日首次观察。
+08:44:31矩阵720 configured/enabled/READY，180 source endpoint READY、pending capture0；自然观察仍180条，
+其余540条尚待自身自然周期。READY表示当前预期端点无落后，不等于720均有自然观察。
+Live→Canonical核对仍pending；新版本上线后的首根自然completed Bar及日/周自然闭环尚未发生，**不声明整体RUNTIME_READY**。
+历史D1/60m已完成端点10/8 15:00、W1为9/30，未完成周不生成正式历史；page_parity=true/executable=false。
 
-**后续review确认23:00终场漏记136条（34品种×四策略），正在修复。**
-因此720配置/历史READY不等于720自然记录完整；22:00成功不能证明23:00覆盖。
-本轮代码修复、精确数据恢复及现场读回尚未完成，不预记为已修复或已上线。
+修复及验证完成：后端2934 passed/111 skipped，真实隔离PG40 passed，Web809 passed/1 skipped及typecheck/build/topology，
+午夜176+独审46、audit217+独审5、OpenSpec10/10、Ruff/secret0/diff通过。正式发布树Web重新构建通过、Market preflight60/60通过，现场身份与136恢复独立验收通过。
+首次Market安装在变更前因旧v1.14.0缺after-market.lock停止；历史JSON只读校验通过后用既有guard初始化600锁文件，原安装器持锁/历史保留/原子切换通过，没有绕过校验。
 
-v1.14.3正式页面只读验收通过：RB四策略显示10月9日交易日中的10月8日22:00状态；
-历史窗口与分页快照保持一致，浏览器无错误。Web808通过/1skip，真实隔离PostgreSQL39通过，
-定向后端42通过/2skip，扩展数据与worker162通过/2skip，typecheck/build/OpenSpec10/Ruff/secret与独立Review通过。
-page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益；auto_order=false。
+配置域数据审计已闭环：operational60七频、截至10/8、2023 floor/新上市后及已登记physical warm-up。
+原23项RS W1告警逐40端点由完整D1 typed质量周中断证明；修audit误判后RS七频新审计0finding/provider0/applied0，原报告保留。
+252/257质量日当前RQData七字段一致；BZ5 fresh UNKNOWN且禁重试，旧源质量事实保持，不声明无限历史或正常正价W1。
 
-**记录服务切换及旧阻塞恢复已完成；自然周期与Canonical核对仍待验收，不声明全Runtime统一就绪。**
-owner明确批准短暂切换后，reference worker已运行v1.14.3@00bc70899，实际PID64434、root/commit一致。
-首安装在变更前因新树缺现役启用标记停止；核对并复制600权限标记后原子安装成功，既有恢复前像保留。
-2026-10-08 22:55:30锁内重新证明720历史来源身份未变，将85条精确MAPPED_CONTRACT_DATASET_MISSING、
-无plan/resume/attempt的旧阻塞项恢复；原始字节0400备份与SHA保留，没有修改DB资产。
-后续自然刷新游标持续前进、routes为空；22:57:17只读生产验收720启用/180观察、180Canonical端点READY、pending捕获0。
-该22:57检查点尚未等到新版本首根自然completed端点或完整720刷新轮次；180夜盘Live→Canonical核对当时pending。后续23:00缺口见上文，不再将漏记仅归为自然周期未到。
-Market必要身份校验已在候选修复并通过前置验证，尚未部署；记录worker切换不等于全Runtime统一切换。
-
-**牛哇不推送、不下单；苏冰既有推送继续暂停，15m信号/Event保留；HTDY既有通知保持。**
-共享Alert版本切换也被自动审批拒绝，原因是可能触发既有外部通知；本次没有绕过或新增Rule/Scope/受众。
-0048 migration已完成，0049未执行，既有失败attempt和旧证据保留。
-详见[实时记录交付记录](docs/tasks/newow-realtime-recording-20261008.md)，
-证据位于独立task树的 `outputs/newow-realtime-recording-20261008/`，正式浏览器验收位于
-`output/playwright/newow-v1143-readonly-20261008T1450Z/acceptance-summary.json`。
+详见[实时记录交付](docs/tasks/newow-realtime-recording-20261008.md)与[发布记录](docs/releases/v1.14.5.md)。
+本轮现场与旧树归档证据在 `output/newow-v1145-release-20261009/`；此前完整数据证据保留在原task outputs。
 
 ## 当前产品范围与历史候选检查点
 
 当前正式范围为60/60；以下逐品种计数、禁用状态、下一品种和旧版本声明只描述各次冻结验收，
 不代表目前运行状态或当前待办。最新持续记录状态与缺口见顶部。
 
-2026-10-08 **PP 聚丙烯 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。owner批准仅PP2405/1m 2023-06-08 21:03 high6890→6910，open保持，原始SHA与本地修正metadata/provider_confirmed=false保留；数据/资产冻结629303712。新forward48/48＝33读回＋15无缺口、63逻辑源＝62真实外部＋1已封存精确复用、263派生；375450 raw逐字段独审仅1值修正。1018→1303文件、新285/扩41、47520旧Bar/373日周保持；四频285055 Bar、各141月/12owner独立Decimal通过。12READY disabled/gen0、8基础FULL、8真实伙伴绑定；后端/前端PP候选资格缺口实际RED/GREEN及250/27测试、build/独审通过，旧启动/首场0图失败保留。compact API bb050869实际12/152全200，最终0cea555a新Chrome19场49原图、21341 CLOSED/21375 SVG及真实409/取消恢复独审通过。专属资源退出、端口free/锁0、末轮12状态保持。当前**历史候选60/60，正式59/60**；W1实际35/120、历史11段预热及12/0/15 CLOSED/视口限制保留。代码已集成develop，不发布PP、不改Runtime/Scope/通知/交易；page_parity=true/executable=false。见[PP收尾记录](docs/tasks/pp-candidate-closeout-20261008.md)。
+2026-10-08 **PP 聚丙烯 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。owner批准仅PP2405/1m 2023-06-08 21:03 high6890→6910，open保持，原始SHA与本地修正metadata/provider_confirmed=false保留；数据/资产冻结629303712。新forward48/48＝33读回＋15无缺口、63逻辑源＝62真实外部＋1已封存精确复用、263派生；375450 raw逐字段独审仅1值修正。1018→1303文件、新285/扩41、47520旧Bar/373日周保持；四频285055 Bar、各141月/12owner独立Decimal通过。12READY disabled/gen0、8基础FULL、8真实伙伴绑定；后端/前端PP候选资格缺口实际RED/GREEN及250/27测试、build/独审通过，旧启动/首场0图失败保留。compact API bb050869实际12/152全200，最终0cea555a新Chrome19场49原图、21341 CLOSED/21375 SVG及真实409/取消恢复独审通过。专属资源退出、端口free/锁0、末轮12状态保持。当前**历史候选60/60，正式60/60**；W1实际35/120、历史11段预热及12/0/15 CLOSED/视口限制保留。原候选阶段仅集成develop；PP现随v1.13.0正式发布，Scope/通知/交易保持；page_parity=true/executable=false。见[PP收尾记录](docs/tasks/pp-candidate-closeout-20261008.md)。
 
 2026-10-08 **SS 不锈钢 CANDIDATE_CLOSED / REVIEW_COMPLETE，12/12**。冻结1517ee6a，无生产源码改动。旧SS2302根因/调用UNKNOWN与SS2303部分提交失败原件保留；10695条SourceBatch隔离复现，15条18位规范化scratch通过，新forward164/164=158读回+6无缺口、413全新源请求/1718派生/142成交额18位截断。1811→3750文件、新1939/扩展192、264717旧Bar/1070日周保持；四频1331405 Bar、各491物理月/41owner独审通过。12READY disabled/generation0、8基础FULL各41VALID区段、8真实融合伙伴边一致；API12/152 HTTP200结束后唯一Chrome19场49原图、31524 CLOSED/31558 SVG与逐图独审通过。专属资源退出、端口free/锁0、临时npm配置exact删除，末轮仅12保存态不重扫源。最终独审通过，允许集成develop；当前**历史59/60、正式45/60**。W1实际44/120、历史40区段预热、10/0/12 CLOSED及零交易“—”/视口限制保留；page_parity=true/executable=false，无Release/Runtime/Scope/通知/交易。见[SS收尾记录](docs/tasks/ss-candidate-closeout-20261008.md)。SS为补充恢复品种，旧13/21分母不变；剩余PP，本次不扩展执行。
 
@@ -276,7 +273,7 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
   SOURCE_READY，PL/PX/RS 九条仍为 `REFERENCE_BOUNDARY_CONTEXT_MISSING`。这些是对应旧精确提交的审计，
   当前版本完整矩阵、历史构建与持续更新须重新绑定 exact code/input identity，不能沿用旧结论。
 - 0048 migration及本轮Newow720历史构建、记录worker启用已完成；全局persisted reader与其他P9范围须按各自证据验收，不能由Newow闭环推定完成。
-  Newow历史刷新修复已切入v1.14.3 worker并恢复85条旧阻塞；后续23:00漏记修复与自然验收见顶部。旧P9未知结果与恢复边界保留。
+  2026-10-08历史检查点：v1.14.3 worker恢复85条旧阻塞；当前worker已为v1.14.5，136条23:00遗漏已恢复，自然验收见顶部。旧P9未知结果与恢复边界保留。
 - A2611 旧来源请求已按 `SOURCE_RESPONSE_IDENTITY_INVALID` 停止且禁止重试；后续 D1 修复后重审无新恢复目标，
   不是对旧请求的重试。六个 W1 新批次共 64 个 W1 与 64 个 D1 同源上下文目标通过，来源 journal 64 次请求。
 
@@ -305,5 +302,5 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
 
 ## 唯一下一步
 
-先修复review确认的23:00终场漏记，并对精确恢复范围独立读回；再按实际exact Runtime版本完成自然 completed Bar、盘后增量/MDS和weekly的证据验收；
-期间页面已确认缺口与 P9 未知结果分别按各自合同处理，不制造 Bar、不盲目重试，也不扩大现役运行范围。
+按已部署v1.14.5完成下一根自然completed Bar、其余日/周路由及Live→Canonical核对的只读验收；
+不手工触发任务、不制造Bar、不盲目重试，也不扩大现役运行范围。

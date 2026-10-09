@@ -47,13 +47,13 @@ test('roundtrips a completed Newow focus through the unified route', () => {
   assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(identity)), { kind: 'valid', identity })
 })
 
-test('SuBing research routes accept only four actual dominant periods', () => {
-  for (const frequency of ['15m', '30m', '60m', '1d']) {
+test('SuBing persisted signal routes accept six actual dominant periods', () => {
+  for (const frequency of ['5m', '15m', '30m', '60m', '1d', '1w']) {
     const parsed = parseMarketDetailRoute({ view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', frequency })
     assert.equal(parsed.kind, 'valid')
     if (parsed.kind === 'valid') assert.equal(parsed.identity.frequency, frequency)
   }
-  for (const frequency of ['1m', '5m', '1w']) {
+  for (const frequency of ['1m']) {
     assert.equal(parseMarketDetailRoute({ view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', frequency }).kind, 'invalid')
   }
 })
@@ -115,7 +115,7 @@ test('switching views restores only active unified view state', () => {
     free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
   }
   assert.deepEqual(resolveViewSwitchIdentity('newow', 'rb', null, restore), {
-    view: 'newow', symbol: 'rb', strategy: 'main_rise', seriesKind: 'actual_dominant', frequency: '1w',
+    view: 'newow', symbol: 'rb', strategy: 'main_rise', seriesKind: 'actual_dominant', frequency: '1d',
   })
   assert.deepEqual(resolveViewSwitchIdentity('free', 'rb', null, restore), {
     view: 'free', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '5m',

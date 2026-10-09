@@ -1,5 +1,6 @@
 import {
   MARKET_FREQUENCIES,
+  SUBING_FREQUENCIES,
   type AlertEvent,
   type AlertDirection,
   type AlertRuleCode,
@@ -46,7 +47,7 @@ export const ALERT_RULE_PRESENTATIONS: readonly AlertRulePresentation[] = [{
   shortLabel: '苏冰预警',
   resultNoun: '预警',
   markerTone: 'directional',
-  persistentFrequencies: ['15m'],
+  persistentFrequencies: SUBING_FREQUENCIES,
 }]
 
 export function getAlertRulePresentation(ruleCode: string): AlertRulePresentation | null {
@@ -142,7 +143,7 @@ export function normalizeAlertEventFacts(
   if (ruleCode === ALERT_RULE_CODES.HTDY) {
     return { ruleCode, resultCodes: directions }
   }
-  if (ruleCode === ALERT_RULE_CODES.SUBING_THS && frequency === '15m' && directions.length === 1) {
+  if (ruleCode === ALERT_RULE_CODES.SUBING_THS && (SUBING_FREQUENCIES as readonly string[]).includes(frequency) && directions.length === 1) {
     return { ruleCode, resultCodes: directions as ['buy'] | ['sell'] }
   }
   throw new Error('rule_code is invalid')

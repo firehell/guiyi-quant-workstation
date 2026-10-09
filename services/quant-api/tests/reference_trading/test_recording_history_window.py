@@ -75,7 +75,7 @@ def test_frozen_plan_bytes_are_not_adjusted_by_new_listing_floor(tmp_path, monke
     monkeypatch.setattr(script, 'load_operational_products', lambda: ('ao',))
     monkeypatch.setattr(script, 'validate_product_scope', lambda *args: ('ao',))
     assert script.main(['--product', 'ao', '--output-root', str(tmp_path), '--as-of', END.isoformat(),
-                        '--strategy', 'trend']) == 0
+                        '--strategy', 'trend', '--frequency', '1w', '--frequency', '1d', '--frequency', '60m']) == 0
     assert all(file.read_bytes() == content for file, content in before.items())
 
 
@@ -105,6 +105,6 @@ def test_new_script_plans_pass_authoritative_listing_boundary_to_original_planne
     monkeypatch.setattr(script, 'load_operational_products', lambda: ('ao',))
     monkeypatch.setattr(script, 'validate_product_scope', lambda *args: ('ao',))
     assert script.main(['--product', 'ao', '--output-root', str(tmp_path), '--as-of', END.isoformat(),
-                        '--strategy', 'trend']) == 0
+                        '--strategy', 'trend', '--frequency', '1w', '--frequency', '1d', '--frequency', '60m']) == 0
     assert [request.streams[0].since for request in requests] == [date(2023, 6, 19), date(2023, 6, 19), date(2025, 9, 25)]
     assert start_calls == ['ao', 'ao', 'ao']

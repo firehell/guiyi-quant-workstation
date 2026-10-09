@@ -2,6 +2,8 @@
 """Read-only exact-identity historical recording readback; no market/full replay reads."""
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import FREQUENCIES, strategies_for
+
 import argparse
 from collections import Counter
 from datetime import UTC, datetime
@@ -20,7 +22,6 @@ from guiyi_quant.newow.product_contracts import ProductStrategy
 from scripts.reference_trading_p9_manifest import _newow
 
 STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion')
-FREQUENCIES = ('1w', '1d', '60m')
 
 
 def formal_identities(products):
@@ -28,7 +29,7 @@ def formal_identities(products):
     for product in products:
         for frequency in FREQUENCIES:
             policy = candidate_input_quality_policy(product, frequency, candidate_weekly=False)
-            for strategy in STRATEGIES:
+            for strategy in strategies_for(frequency):
                 identity = (build_fusion_stream_identity(product, frequency, input_quality_policy=policy)
                             if strategy == 'dual_fusion' else _newow(product, ProductStrategy(strategy), frequency, forward=False))
                 result.append((product, strategy, frequency, identity))

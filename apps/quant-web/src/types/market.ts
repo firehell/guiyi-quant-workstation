@@ -225,7 +225,9 @@ export interface HtdyAlertEvent extends AlertEventCommon {
 
 export interface SubingThsAlertEvent extends AlertEventCommon {
   rule_code: SubingThsAlertRuleCode
-  frequency: '15m'
+  frequency: SubingFrequency
+  formula_version?: string | null
+  subing_alignment?: SubingAlignment | null
   result_codes: ['buy'] | ['sell']
 }
 
@@ -318,4 +320,14 @@ export interface HoverKlineContext {
   atr?: number | null
   marker?: KlineMarker | null
   cursorPrice?: number | null
+}
+
+export const SUBING_FREQUENCIES = ['5m', '15m', '30m', '60m', '1d', '1w'] as const
+export type SubingFrequency = typeof SUBING_FREQUENCIES[number]
+export interface SubingAlignment {
+  policy_version: string
+  as_of: string
+  observed_at: string
+  status: 'PASS' | 'FAIL' | 'UNKNOWN'
+  periods: { frequency: SubingFrequency; contract: string; bar_end: string | null; close: string | null; ema21: string | null; direction: 'LONG' | 'SHORT' | 'FLAT' | 'UNKNOWN'; reason: string | null }[]
 }
