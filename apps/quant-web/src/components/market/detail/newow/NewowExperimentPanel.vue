@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
+import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, visibleBuildStop } from '@/utils/newowVisualOverlays'
 import {newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
 import {createChart,CandlestickSeries,LineSeries,createSeriesMarkers,type IChartApi,type UTCTimestamp,type ISeriesMarkersPluginApi,type Time,type IPriceLine} from 'lightweight-charts'
@@ -8,6 +10,8 @@ import {formatMarketDecimal,formatMarketPercent} from '@/utils/marketDisplay'
 import {formatChartTimeInShanghai} from '@/utils/barTime'
 const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null}>()
 const data=shallowRef<ExperimentDetail|null>(null),loading=ref(false),error=ref<string|null>(null),container=ref<HTMLElement|null>(null)
+const visualOverlays=ref(readVisualOverlayPreferences())
+watch(visualOverlays,value=>{saveVisualOverlayPreferences(value);render()})
 const range=ref<ExperimentRange>('1y')
 const selectedSegment=ref<string|null>(null)
 const visibleSegments=computed(()=>{const all=data.value?.segments??[];return all.filter(x=>x.segment_id===(selectedSegment.value??all.at(-1)?.segment_id))})
@@ -30,9 +34,32 @@ let candles:ReturnType<IChartApi['addSeries']>|null=null,upper:ReturnType<IChart
 let markers:ISeriesMarkersPluginApi<Time>|null=null
 const time=(text:string)=>Math.floor(Date.parse(text)/1000) as UTCTimestamp
 let stopLine:IPriceLine|null=null
-function render(){if(!chart||!candles||!upper||!lower||!markers)return;const bars=data.value?.bars??[];candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})));upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}));lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}));markers.setMarkers((data.value?.markers??[]).map(m=>({time:time(m.bar_end),position:m.action==='BUILD'?'belowBar':'aboveBar',shape:m.action==='BUILD'?'arrowUp':'arrowDown',color:m.action==='BUILD'?'#ff403a':'#22b95d',text:(m.action==='BUILD'?'建仓':m.stop_loss?'止损':m.confirm_exit?'确认清仓':'清仓')+' '+formatMarketDecimal(m.reference_price)+' · '+m.score+'分'})));if(stopLine)candles.removePriceLine(stopLine);stopLine=null;const latest=data.value?.segments.at(-1)?.latest_state;if(latest?.stop_reference_price)stopLine=candles.createPriceLine({price:Number(latest.stop_reference_price),color:'#e65f49',lineStyle:2,lineWidth:1,title:'止损',axisLabelVisible:true});chart.timeScale().fitContent()}
+const visualLines:ReturnType<IChartApi['addSeries']>[]=[]
+function renderVisual(){
+ if(!chart||!candles)return
+ for(const line of visualLines)chart.removeSeries(line)
+ visualLines.length=0
+ if(stopLine)candles.removePriceLine(stopLine)
+ stopLine=null
+ const bars=data.value?.bars??[]
+ if(visualOverlays.value.donchian){
+  const points=visualDonchian(bars.map(b=>({time:b.bar_end,high:Number(b.high),low:Number(b.low),owner:`${b.physical_contract}:${b.segment_id}`})),visualOverlays.value.window)
+  for(const [side,color] of [['upper','rgba(52,199,89,0.7)'],['lower','rgba(255,59,48,0.7)']] as const){
+   const line=chart.addSeries(LineSeries,{color,lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false})
+   line.setData(points.map(p=>({time:time(p.time),...(p[side]===null?{}:{value:p[side]!})})))
+   visualLines.push(line)
+  }
+ }
+ if(!visualOverlays.value.stop)return
+ const range=chart.timeScale().getVisibleLogicalRange()
+ const visible=bars.filter((_,i)=>!range||(i>=Math.ceil(range.from)&&i<=Math.floor(range.to)))
+ const pct=props.kind==='osc-test4'?0.12:0.07
+ const price=visibleBuildStop((data.value?.markers??[]).map(m=>({time:m.bar_end,owner:`${m.physical_contract}:${m.segment_id}`,price:m.reference_price,action:m.action})),visible.map(b=>({time:b.bar_end,owner:`${b.physical_contract}:${b.segment_id}`})),pct)
+ if(price!==null)stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
+}
+function render(){if(!chart||!candles||!upper||!lower||!markers)return;const bars=data.value?.bars??[];candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})));upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}));lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}));markers.setMarkers((data.value?.markers??[]).map(m=>({time:time(m.bar_end),position:m.action==='BUILD'?'belowBar':'aboveBar',shape:m.action==='BUILD'?'arrowUp':'arrowDown',color:m.action==='BUILD'?'#ff403a':'#22b95d',text:(m.action==='BUILD'?'建仓':m.stop_loss?'止损':m.confirm_exit?'确认清仓':'清仓')+' '+formatMarketDecimal(m.reference_price)+' · '+m.score+'分'})));chart.timeScale().fitContent();renderVisual()}
 watch(data,render)
-onMounted(()=>{if(!container.value)return;chart=createChart(container.value,{height:440,width:container.value.clientWidth,localization:{timeFormatter:formatChartTimeInShanghai},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f1f3f5'},horzLines:{color:'#f1f3f5'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff403a',downColor:'#22b95d',wickUpColor:'#ff403a',wickDownColor:'#22b95d',borderVisible:false});upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);observer=new ResizeObserver(()=>{if(container.value)chart?.applyOptions({width:container.value.clientWidth});if(curveContainer.value)curveChart?.applyOptions({width:curveContainer.value.clientWidth})});observer.observe(container.value);if(curveContainer.value){curveChart=createChart(curveContainer.value,{height:180,width:curveContainer.value.clientWidth,localization:{timeFormatter:formatChartTimeInShanghai}});observer.observe(curveContainer.value)}render();renderCurves()})
+onMounted(()=>{if(!container.value)return;chart=createChart(container.value,{height:440,width:container.value.clientWidth,localization:{timeFormatter:formatChartTimeInShanghai},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f1f3f5'},horzLines:{color:'#f1f3f5'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff403a',downColor:'#22b95d',wickUpColor:'#ff403a',wickDownColor:'#22b95d',borderVisible:false});upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(renderVisual);observer=new ResizeObserver(()=>{if(container.value)chart?.applyOptions({width:container.value.clientWidth});if(curveContainer.value)curveChart?.applyOptions({width:curveContainer.value.clientWidth})});observer.observe(container.value);if(curveContainer.value){curveChart=createChart(curveContainer.value,{height:180,width:curveContainer.value.clientWidth,localization:{timeFormatter:formatChartTimeInShanghai}});observer.observe(curveContainer.value)}render();renderCurves()})
 onBeforeUnmount(()=>{generation.clear();observer?.disconnect();chart?.remove();curveChart?.remove()})
 const pct=(v:unknown,signed=true)=>typeof v==='string'?formatMarketPercent(v,'percentage_points',signed):'—'
 const date=(v:unknown)=>typeof v==='string'?formatChartTimeInShanghai(time(v)):'—'
@@ -42,7 +69,7 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <template><section class="experiment-panel" aria-label="震荡实验策略">
 <header><strong>{{option.label}} · 震荡实验</strong><span>{{option.description}}</span><slot name="frequency" /></header>
 <p v-if="loading" role="status">正在读取实验策略…</p><p v-else-if="error" role="alert">{{error}} <button @click="load">重试</button></p><p v-else-if="!asOf" role="status">等待当前周期行情快照…</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='DATA_INSUFFICIENT'" role="status">当前合约段数据不足，暂时没有实验结果。</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='WARMUP'" role="status">当前合约段正在预热。</p>
-<div ref="container" class="experiment-chart" /><p>黄线：HHV10 · 蓝线：LLV10 · 红箭头：建仓 · 绿箭头：清仓 / 止损</p>
+<NewowVisualOverlayControls v-model="visualOverlays" /><div ref="container" class="experiment-chart" /><p>黄线：HHV10 · 蓝线：LLV10 · 红箭头：建仓 · 绿箭头：清仓 / 止损</p>
 <div class="experiment-mode"><button v-for="r in [{id:'3m',label:'近3月'},{id:'1y',label:'近1年'},{id:'3y',label:'近3年'},{id:'year',label:'今年'},{id:'all',label:'全部'}]" :key="r.id" :aria-pressed="range===r.id" @click="range=r.id as ExperimentRange">{{r.label}}</button></div><p v-if="data?.window">统计窗口 {{data.window.since}} 至 {{data.window.through}} · 主图最多显示最近2000根</p><div class="experiment-mode"><button :aria-pressed="mode==='ordinary'" @click="mode='ordinary'">普通收益</button><button :aria-pressed="mode==='theoretical'" @click="mode='theoretical'">理论收益</button><span>{{mode==='ordinary'?'末根收盘强制平仓计入统计':'基础震荡的回看理想模型，与四测试独立'}}</span></div><div ref="curveContainer" class="experiment-curve" />
 <template v-if="data"><label>合约计算段 <select v-model="selectedSegment"><option :value="null">当前计算段 · {{data.segments.at(-1)?.physical_contract}}</option><option v-for="s in data.segments.slice(0,-1)" :key="s.segment_id" :value="s.segment_id">{{s.physical_contract}} · {{date(s.statistics_window?.through)}}</option></select></label><p>截至 {{formatChartTimeInShanghai(Math.floor(Date.parse(data.as_of)/1000) as UTCTimestamp)}} · 页面参考，零手续费与滑点</p>
 <section v-for="segment in visibleSegments" :key="segment.segment_id" class="experiment-segment"><h4>{{segment.physical_contract}} <small v-if="segment.status==='ROLLOVER_INTERRUPTED'">换月中断</small><small v-else-if="segment.status==='DATA_CONFLICT'">数据中断</small></h4>

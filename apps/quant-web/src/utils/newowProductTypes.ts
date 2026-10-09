@@ -1080,7 +1080,7 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
   stringArray(cd.missing_roles,'cdv2.missing_roles')
   if (value.prices !== null) {
     const p = record(value.prices,'cross_period_prices')
-    requireExact(p.formula_version,'newow_target_absorb_selection_v3_3_59_v1','prices.version')
+    requireExact(p.formula_version,'newow_target_absorb_selection_v3_3_81_v1','prices.version')
     sameInstant(p.as_of,meta.as_of,'prices.as_of'); requireExact(p.executable,false,'prices.executable')
     const current = record(p.current_price,'prices.current')
     const price = (raw: unknown) => {
@@ -1092,6 +1092,7 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
       for (const field of ['source_identity','source_category','calculation_segment_id']) text(fact[field],field)
       literal(fact.frequency,['1d','1w','60m','1M'] as const,'price.frequency')
       if (fact.display_value !== undefined) decimal(fact.display_value,'price.display')
+      if (fact.support_cap_applied !== undefined && typeof fact.support_cap_applied !== 'boolean') throw new Error('invalid price support cap')
     }
     price(current)
     for (const surface of ['shared','status_card']) {

@@ -24,7 +24,7 @@ const lineByStrategy = {
 
 async function showReference(page) {
   if (await page.getByRole('dialog').isVisible()) await page.keyboard.press('Escape')
-  await page.locator('.newow-reference').scrollIntoViewIfNeeded()
+  await page.locator('.newow-reference[aria-labelledby="newow-reference-title"]').scrollIntoViewIfNeeded()
 }
 
 async function resetPageScroll(page) {
@@ -981,5 +981,36 @@ test('records raw cold, warm, reuse, rebuild and history-prepend timings without
   }
   await testInfo.attach('newow-performance.json', { body: JSON.stringify({ samples, thresholdMapping, environment: { ...environment, node: process.version, platform: `${os.platform()} ${os.release()}`, cpu: os.cpus()[0]?.model } }, null, 2), contentType: 'application/json' })
   console.log(`NEWOW_PERFORMANCE ${JSON.stringify(samples)}`)
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('latest T menu and independent visual overlays preserve strategy identity', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page)
+  await page.goto(newowRoute('trend', '1d'))
+  await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible()
+  await expect(page.getByRole('tab', { name: '主升浪', exact: true })).toHaveCount(0)
+  const menu = page.getByLabel('牛哇T策略')
+  await expect(menu.locator('option')).toHaveText(['基础策略', '测试1', '测试2', '测试3', '测试4', '主升浪'])
+  const stop = page.getByRole('button', { name: '止损参考线', exact: true })
+  await expect(stop).toHaveAttribute('aria-pressed', 'false')
+  await stop.click()
+  await expect(stop).toHaveAttribute('aria-pressed', 'true')
+  const donchian = page.getByRole('button', { name: '唐奇安通道', exact: true })
+  await expect(donchian).toHaveAttribute('aria-pressed', 'false')
+  await page.getByLabel('唐奇安窗口').fill('5')
+  await page.getByLabel('唐奇安窗口').press('Tab')
+  await donchian.click()
+  await expect(donchian).toHaveAttribute('aria-pressed', 'true')
+  await menu.selectOption('main_rise')
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-strategy', 'main_rise')
+  await expect(menu).toHaveValue('main_rise')
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-strategy', 'main_rise')
+  await page.getByRole('tab', { name: '双策略', exact: true }).click()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-strategy', 'trend')
+  await expect(menu.locator('option:checked')).toHaveText('基础策略')
+  await expect(stop).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByLabel('唐奇安窗口')).toHaveValue('5')
+  await stop.click()
+  await expect(stop).toHaveAttribute('aria-pressed', 'false')
   assertNoUnexpectedRequests(fixture)
 })

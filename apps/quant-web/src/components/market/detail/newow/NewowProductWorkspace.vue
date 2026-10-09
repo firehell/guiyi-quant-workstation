@@ -34,15 +34,28 @@ import type { PatternChoice } from '@/utils/newowPatternDisplay'
 import NewowDailyWeeklyPath from './NewowDailyWeeklyPath.vue'
 import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import NewowExperimentPanel from './NewowExperimentPanel.vue'
+import { newowMenuIdentity } from '@/utils/newowStrategyMenu'
 import {EXPERIMENT_OPTIONS,type ExperimentKind} from '@/utils/newowExperiments'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities }>()
-const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': []; 'analysis-as-of': [asOf: string | null] }>()
+const emit = defineEmits<{ 'select-identity': [identity: MarketDetailIdentity]; 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': []; 'analysis-as-of': [asOf: string | null] }>()
 const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const pathContext = ref<{decision: NewowDecisionV2 | null; loading: boolean; error: string}>({decision:null,loading:false,error:''})
 watch(identityKey,()=>{pathContext.value={decision:null,loading:false,error:''}},{flush:'sync'})
 const experimentKind=ref<ExperimentKind|null>(null)
+const menuChoice = computed<ExperimentKind | 'main_rise' | null>({
+  get: () => experimentKind.value ?? (props.identity.strategy === 'main_rise' ? 'main_rise' : null),
+  set: (choice) => {
+    if (choice === 'main_rise') {
+      experimentKind.value = null
+      emit('select-identity', newowMenuIdentity(props.identity, 'main_rise'))
+    } else {
+      experimentKind.value = choice
+      if (choice === null && props.identity.strategy === 'main_rise') emit('select-identity', newowMenuIdentity(props.identity, 'oscillation'))
+    }
+  },
+})
 watch([identityKey,()=>props.identity.newowMode],()=>{experimentKind.value=null},{flush:'sync'})
 const dualMode = computed(() => props.identity.newowMode === 'dual')
 const selectedStrategy = computed(() => props.identity.strategy as NewowProductStrategy)
@@ -420,7 +433,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="newow-product-workspace" data-detail-workspace="newow" :data-strategy="identity.strategy" :data-frequency="identity.frequency" :data-chart-state="loader.sections.chart.state.value" :data-auxiliary-state="loader.sections.auxiliary.state.value">
-    <div class="newow-experiment-controls" :class="{'is-active':experimentKind}"><label>T <select v-model="experimentKind" aria-label="震荡实验策略"><option :value="null">基础策略</option><option v-for="option in EXPERIMENT_OPTIONS" :key="option.kind" :value="option.kind">{{option.label}}</option></select></label></div>
+    <div class="newow-experiment-controls" :class="{'is-active':menuChoice}"><label>T <select v-model="menuChoice" aria-label="牛哇T策略"><option :value="null">基础策略</option><option v-for="option in EXPERIMENT_OPTIONS" :key="option.kind" :value="option.kind">{{option.label}}</option><option value="main_rise">主升浪</option></select></label></div>
     <NewowExperimentPanel v-if="experimentKind" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null"><template #frequency><slot name="chart-frequency" /></template></NewowExperimentPanel>
     <template v-else>
     <NewowDecisionV2Panel v-if="chartResponse?.value && loader.currentChartWindow.value" :response="chartResponse" :display-strategy="dualMode ? 'dual' : selectedStrategy" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />

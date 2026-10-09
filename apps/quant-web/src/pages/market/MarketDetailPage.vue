@@ -302,6 +302,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
             @refresh-current="dailyQuote.refresh"
             @analysis-as-of="aiAsOf = $event"
+            @select-identity="selectIdentity"
           >
             <template #chart-frequency>
               <div class="newow-chart-frequency" role="group" aria-label="周期">

@@ -673,6 +673,58 @@ test('oscillation breakout is an orange native price line and is revoked on stra
   app.unmount()
 })
 
+test('stop reference toggle defaults off, uses accepted BUILD, and revokes on owner loading or empty viewport', async () => {
+ const Stage=await loadComponent()
+ const response=ref<MutableChartResponse|null>(chartResponse()),loading=ref(false),switching=ref(false),strategy=ref('oscillation'),partner=ref<MutableChartResponse|null>(null)
+ const active=new Set<Record<string,unknown>>()
+ let range:{from:number;to:number}|null=null,changed:(range:unknown)=>void=()=>{}
+ const fakeChart={addSeries:()=>({setData(){},createPriceLine(options:Record<string,unknown>){const line={...options,applyOptions(){}};active.add(line);return line},removePriceLine(line:Record<string,unknown>){active.delete(line)}}),removeSeries(){},timeScale:()=>({fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>range,scrollToRealTime(){},subscribeVisibleLogicalRangeChange(callback:(range:unknown)=>void){changed=callback},unsubscribeVisibleLogicalRangeChange(){}}),subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response:response.value,strategy:strategy.value,selectedSignalId:null,loading:loading.value,strategySwitching:switching.value,comparisonResponse:partner.value})}))
+ app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart))
+ const root=element('root');app.mount(root);await nextTick()
+ const stops=()=>[...active].filter(l=>String(l.title).startsWith('止损价'))
+ assert.equal(stops().length,0)
+ const toggle=findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
+ ;(toggle.props.onClick as ()=>void)();await nextTick()
+ assert.deepEqual(stops().map(l=>[Number(Number(l.price).toFixed(8)),l.color,l.lineStyle]),[[83.7,'#3B82F6',2]])
+ loading.value=true;await nextTick();assert.equal(stops().length,0)
+ loading.value=false;await nextTick();assert.equal(stops().length,1)
+ const trend=strategyResponse('trend');trend.value!.actions[0]!.reference_price='200';partner.value=trend;await nextTick()
+ assert.equal(Number(Number(stops()[0]!.price).toFixed(8)),83.7,'dual anchor stays oscillation BUILD despite trend BUILD at 200')
+ const dualToggle=()=>findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
+ assert.ok(dualToggle(),'dual exposes direct overlay controls')
+ ;(dualToggle().props.onClick as ()=>void)();await nextTick();assert.equal(stops().length,0)
+ ;(dualToggle().props.onClick as ()=>void)();await nextTick();assert.equal(stops().length,1)
+ switching.value=true;await nextTick();assert.equal(stops().length,0,'strategy switching alone clears old stop')
+ switching.value=false;await nextTick();assert.equal(stops().length,1)
+ response.value!.status.status='warming';await nextTick();assert.equal(stops().length,0,'status invalidation without changing value clears stop')
+ response.value!.status.status='ready';await nextTick();assert.equal(stops().length,1)
+ strategy.value='trend';await nextTick();assert.equal(stops().length,0,'selected strategy mismatch clears old stop')
+ strategy.value='oscillation';await nextTick();assert.equal(stops().length,1)
+ range={from:1,to:2};changed(range);assert.equal(stops().length,0)
+ range=null;response.value=null;await nextTick();assert.equal(stops().length,0)
+ app.unmount()
+})
+
+test('dual stop maps a longer oscillation window to primary visible time and owner, not partner indexes', async () => {
+ const Stage=await loadComponent(),base=strategyResponse('trend'),partner=strategyResponse('oscillation')
+ const first=bar('2026-08-15T07:00:00Z','2026-08-15'),second=bar('2026-08-15T08:00:00Z','2026-08-15'),earlier=bar('2026-08-15T06:00:00Z','2026-08-15')
+ base.value!.bars=[first,second];partner.value!.bars=[earlier,first,second]
+ partner.value!.actions[0]!.bar_end=first.bar_end
+ const active=new Set<Record<string,unknown>>()
+ const fakeChart={addSeries:()=>({setData(){},createPriceLine(options:Record<string,unknown>){const line={...options,applyOptions(){}};active.add(line);return line},removePriceLine(line:Record<string,unknown>){active.delete(line)}}),removeSeries(){},timeScale:()=>({fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>({from:0,to:0}),scrollToRealTime(){},subscribeVisibleLogicalRangeChange(){},unsubscribeVisibleLogicalRangeChange(){}}),subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response:base,comparisonResponse:partner,strategy:'trend',selectedSignalId:null})}))
+ app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart))
+ const root=element('root');app.mount(root);await nextTick()
+ assert.equal(findNode(root,n=>n.props['data-testid']==='newow-product-chart-stage')!.props['data-comparison-active'],true)
+ const toggle=findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
+ ;(toggle.props.onClick as ()=>void)();await nextTick()
+ const stops=[...active].filter(l=>String(l.title).startsWith('止损价'))
+ assert.equal(stops.length,1,'oscillation BUILD on primary visible first bar remains accepted despite an extra earlier partner bar')
+ assert.equal(Number(Number(stops[0]!.price).toFixed(8)),83.7)
+ app.unmount()
+})
+
 function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {
@@ -760,12 +812,12 @@ function bar(barEnd: string, tradingDay: string) {
 
 function ready() { return { status: 'ready' as const, evidence_status: 'ACTIVE_CODE_VERIFIED' as const, reason_code: null } }
 
-async function loadComponent() {
-  const source = readFileSync(componentUrl, 'utf8')
-  const { descriptor, errors } = parse(source, { filename: componentUrl.pathname })
+async function componentModule(url: URL): Promise<string> {
+  const source = readFileSync(url, 'utf8')
+  const { descriptor, errors } = parse(source, { filename: url.pathname })
   assert.deepEqual(errors, [])
   const compiled = compileScript(descriptor, { id: 'newow-product-stage', inlineTemplate: true })
-  const transpiled = ts.transpileModule(compiled.content, {
+  let transpiled = ts.transpileModule(compiled.content, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
@@ -774,8 +826,14 @@ async function loadComponent() {
       const path = resolveSourceImport(specifier)
       return `from '${pathToFileURL(path).href}'`
     })
-  return (await import(`data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`)).default
+  for (const match of [...transpiled.matchAll(/from ['"]([^'"]+\.vue)['"]/g)]) {
+    const child = match[1]!.startsWith('file:') ? new URL(match[1]!) : new URL(match[1]!, url)
+    transpiled = transpiled.replace(match[0], `from '${await componentModule(child)}'`)
+  }
+  return `data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`
 }
+
+async function loadComponent() { return (await import(await componentModule(componentUrl))).default }
 
 function resolveSourceImport(specifier: string): string {
   for (const suffix of ['', '.ts', '.vue']) {

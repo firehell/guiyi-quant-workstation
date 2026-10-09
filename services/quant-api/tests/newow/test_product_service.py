@@ -1893,8 +1893,10 @@ def test_memoized_cache_hit_cannot_return_expired_or_different_bound_token(produ
     get = service._cache.get
     def raced_get(*args, **kwargs):
         cached = get(*args, **kwargs)
-        if race == 'expired': clock[0] = 300
-        elif hasattr(cached, 'meta'): cached = replace(cached, meta=replace(cached.meta, snapshot_token='new-generation'))
+        if race == 'expired':
+            clock[0] = 300
+        elif hasattr(cached, 'meta'):
+            cached = replace(cached, meta=replace(cached.meta, snapshot_token='new-generation'))
         return cached
     monkeypatch.setattr(service._cache, 'get', raced_get)
     monkeypatch.setattr(service._cache, 'refresh_verified_token', lambda *_: pytest.fail('memoized input renewed'))
@@ -1958,3 +1960,21 @@ def test_daily_decision_path_reads_hourly_context_from_same_product_reader(produ
     assert hour["current"] == path["periods"][1]["current"]
     assert hour["target"]["physical_contract"] == hour["current"]["physical_contract"]
     assert hour["target"]["segment_id"] == hour["current"]["segment_id"]
+
+
+def test_cdv2_weekly_status_card_retains_shared_target_and_direct_channel_absorb(product_cases):
+    from app.market_data.newow.decision_v2 import build_decision_v2
+    from guiyi_quant.newow.trend_channel_display import build_trend_channel_layer
+
+    case = product_cases.primitive_input('trend', '1w')
+    replay = replay_strategy(case.identity, case.bars)
+    last = replay.frames[-1]
+    read = SimpleNamespace(as_of=last.bar.bar.bar_end, boundaries=(), data_interruptions_by_frequency={})
+    result = build_decision_v2({ProductFrequency.WEEKLY: replay}, {}, None, read, case.identity)
+    prices = result['prices']
+    assert prices['formula_version'] == 'newow_target_absorb_selection_v3_3_81_v1'
+    assert prices['status_card']['target'] == prices['shared']['target']
+    layer = build_trend_channel_layer(tuple(f.bar for f in replay.frames), (last.bar,))
+    assert prices['status_card']['absorb']['raw'] == format(layer.points[-1].lower, 'f')
+    assert prices['status_card']['absorb']['branch'] == 'status_card_weekly_llv10_override'
+    assert prices['status_card']['absorb']['support_cap_applied'] is False

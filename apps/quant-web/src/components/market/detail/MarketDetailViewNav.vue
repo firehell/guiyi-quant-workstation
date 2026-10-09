@@ -36,7 +36,6 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
   { value: 'oscillation', label: '震荡策略' },
   { value: 'trend', label: '趋势策略' },
   { value: 'dual', label: '双策略' },
-  { value: 'main_rise', label: '主升浪' },
   { value: 'htdy', label: '火天大有' },
   { value: 'subing', label: '苏冰预警' },
   { value: 'free', label: '自由看盘' },
