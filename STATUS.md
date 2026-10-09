@@ -4,6 +4,13 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## Develop 牛哇页面一致性 P0
+
+2026-10-09：已有趋势、震荡、主升浪及融合的两个P0已集成develop，主图Marker与独立普通/理论收益投影修正通过测试和独立Review；四个测试策略未加入。
+当前代码详情schema/reference身份v4、页面收益投影v2；旧分钟参考资产不能作为新身份的验收证据，预览60m明确NOT_BUILT。本次未重建资产、未发布或切换Runtime。
+最终相关后端479 passed、Web835 passed/1 skipped、build通过，后续合并断言定向81 passed；公开JS冻结实际输入19 owner逐值通过，不能替代720组合候选验收。
+详见[本次P0交付](docs/tasks/newow-p0-current-20261009.md)。下一步为按新身份构建并验收参考资产，运行版本与自然验收仍按下文既有证据。
+
 ## Develop 短分钟持续记录候选
 
 2026-10-09：5m/15m/30m趋势、震荡、独立双策略的持续记录实现已通过测试与独立Review，
