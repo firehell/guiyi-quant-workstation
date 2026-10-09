@@ -4,7 +4,7 @@
 
 该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，
 不是本地实现；部分输入为构造边界，不能作为市场/OOS证据。当前结论与来源哈希见
-[v3.3.79手册卷](docs/research/newow-v3.2.82/AUDIT_20261008_V3379.md)。
+[v3.3.79手册卷](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)。
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -296,7 +296,7 @@ pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test
 
 ## Newow 固定公开快照离线逐值验证
 
-以下命令从仓库根执行，仅使用本机已冻结文件；不重新请求外站。临时目录缺失时不能复现，不可静默用新行情替换该快照。先核对目录内 `manifest.json` 的文件与源码哈希；具体采集身份、容差和119行/18个Marker结果见[当前复核](docs/research/newow-current-review.md)。
+以下命令从仓库根执行，仅使用本机已冻结文件；不重新请求外站。临时目录缺失时不能复现，不可静默用新行情替换该快照。先核对目录内 `manifest.json` 的文件与源码哈希；具体采集身份、容差和119行/18个Marker结果见[当前复核](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)。
 
 ```bash
 TZ=Asia/Shanghai node /private/tmp/newow-same-input-20260909-pjncal43/replay_page.mjs
@@ -321,7 +321,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
   services/quant-api/tests/newow/test_reference_trades.py
 ```
 
-实跑结果：比较器输出 `MISMATCH_CONFIRMED_SAME_BAR_REBUILD`，退出0表示已复现并核实差异，**不表示parity通过**；444个归一前缀、4输出哈希重放一致，73项既有合同测试通过。435对成熟通道值及共同26个Marker初始评分/价格一致；归一多4个Marker、2笔交易。源码两种灰度路径相同，原站允许重建的参数对照与归一30个Marker完全一致。详情及边界见[当前复核](docs/research/newow-current-review.md)，不执行选股或生产链。
+实跑结果：比较器输出 `MISMATCH_CONFIRMED_SAME_BAR_REBUILD`，退出0表示已复现并核实差异，**不表示parity通过**；444个归一前缀、4输出哈希重放一致，73项既有合同测试通过。435对成熟通道值及共同26个Marker初始评分/价格一致；归一多4个Marker、2笔交易。源码两种灰度路径相同，原站允许重建的参数对照与归一30个Marker完全一致。详情及边界见[当前复核](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)，不执行选股或生产链。
 
 ## Newow 主升浪与目标/吸筹固定快照验证
 
@@ -344,7 +344,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 ## Newow 综合解释 v2 固定同输入验证
 
-从仓库根执行，仅使用Git外已冻结的公开页面、三组`batch/quote`、18份趋势/震荡多周期响应和牛哇原内核。临时目录缺失时停止，不可联网补成另一快照。原始输入和DOM哈希见目录内`manifest.json`及[当前复核](docs/research/newow-current-review.md)。
+从仓库根执行，仅使用Git外已冻结的公开页面、三组`batch/quote`、18份趋势/震荡多周期响应和牛哇原内核。临时目录缺失时停止，不可联网补成另一快照。原始输入和DOM哈希见目录内`manifest.json`及[当前复核](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)。
 
 ```bash
 snapshot=/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2
@@ -1581,14 +1581,9 @@ codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push 
 前三项必须为 `forbidden`，普通 push 与 flag 后置样例必须无匹配。该规则只覆盖列出的精确参数前缀，
 不声称识别 `git -c`、绝对 executable、wrapper 或所有语义等价写法；仓库规则也不覆盖宿主安全控制。
 
-Newow 复刻手册使用独立、锁定的文档工具环境重建：
-
-```bash
-uv sync --project tools/docs --locked
-uv run --project tools/docs python scripts/docs/build_newow_replication_manual.py \
-  --source docs/research/newow-v3.2.82/REPLICATION_MANUAL.md \
-  --output output/pdf/newow-v3.2.82-futures-replication-manual.pdf
-```
+牛哇手册仅维护[最新完整Markdown正文](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)，不常驻生成PDF副本。
+`scripts/docs/build_newow_replication_manual.py` 与 `tools/docs` 是历史固定分页版本的导出工具，
+只能配合Git中的旧分页源稿使用；不能以当前正文执行旧的35～45页导出合同，本次不生成旧版PDF。
 
 Runtime health、data audit 与 alert status 是只读入口，不能推导 Runtime promotion、自然 evidence 或外部操作授权。`guiyi runtime acknowledge-alert-notification --failure-at <exact ISO timestamp>` 是受控 Redis 写入，普通验证只运行对应 pytest，不执行该命令。
 

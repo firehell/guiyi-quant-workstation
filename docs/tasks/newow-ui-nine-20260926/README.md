@@ -3,7 +3,7 @@
 基线 develop `1ca1b379`；开发集中在 `codex/newow-ui-nine` 单一 worktree。
 仅改变展示与交互；策略公式、参考收益、数据、发布与 Runtime 不在此次修改范围。
 
-比较依据：`docs/research/newow-v3.2.82/REPLICATION_MANUAL.md`、`FORMULA_CATALOG_20260926.md`、`AUDIT_20260926.md` 和 `screenshots/20260926/` 的公开页面留档。页面留档不是当前实时网络验证；夹具测试不证明生产数据可用。
+比较依据：[唯一完整手册](../../research/newow-v3.2.82/REPLICATION_MANUAL.md) 和 `screenshots/20260926/` 的公开页面留档。页面留档不是当前实时网络验证；夹具测试不证明生产数据可用。
 
 ## 顺序与验收记录
 

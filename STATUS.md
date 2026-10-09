@@ -225,7 +225,7 @@ P7-04 TA **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual�
 SuBing 已有自然 Event/实际收件闭环归属旧 exact `v1.10.5@cdd72d750`：2026-09-09 Event #143–#146，
 owner 确认 #146 PT2610 14:00 对应微信收件。该完成事实不重开，也不证明当前版本或其他受众实际收到。
 
-来源版本与公式复刻边界见 [当前研究复核](docs/research/newow-current-review.md)；历史原站证据不等于当前期货 OOS。
+来源版本与公式复刻边界见 [当前研究复核](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)；历史原站证据不等于当前期货 OOS。
 
 ## UR 四周期历史候选（2026-09-28）
 
@@ -354,5 +354,5 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
 
 ## 唯一下一步
 
-按已部署v1.14.5完成下一根自然completed Bar、其余日/周路由及Live→Canonical核对的只读验收；
+按本页最新已部署v1.14.7完成下一根自然completed Bar、其余日/周路由及Live→Canonical核对的只读验收；
 不手工触发任务、不制造Bar、不盲目重试，也不扩大现役运行范围。

@@ -8,7 +8,7 @@
 
 ## 已核对的依据
 
-- [公开公式审计](../research/newow-v3.2.82/FORMULA_CATALOG_20260926.md#5-新双策略三种不同的统计对象)：双轨标签、主导策略与融合交易是三种不同对象。
+- [公开公式审计](../research/newow-v3.2.82/REPLICATION_MANUAL.md#s-b7b9514d02)：双轨标签、主导策略与融合交易是三种不同对象。
 - [复刻手册](../research/newow-v3.2.82/REPLICATION_MANUAL.md)及同目录 `AUDIT_20260926.md`：双策略现场截图、公开前端函数证据。
 - [项目参考交易合同](../../openspec/specs/newow-product-reference-trading/spec.md)：`newow_dual_fusion_reference_zero_cost_v1`。
 - 现有实现：`fusion_reference.py`、`include_fusion=true`、`newowFusion.ts`、`NewowFusionPanel.vue`。前端已经校验独立模型版本、输入 hash、窗口、cutoff、来源和交易时间。

@@ -1,7 +1,7 @@
 # Newow page-parity witnesses — 2026-09-19
 
 These are small, source-derived witnesses for the implementation tasks in
-`docs/superpowers/plans/2026-09-19-newow-algorithm-display-parity-plan.md`.
+`openspec/specs/newow-product-reference-trading/spec.md`.
 They are not market data and do not assert production availability.
 
 Each JSON's `input_sha256` is the SHA-256 of its `input`, encoded as canonical

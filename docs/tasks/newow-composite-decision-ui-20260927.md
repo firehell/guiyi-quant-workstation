@@ -5,7 +5,7 @@
 
 ## 研究依据
 
-对照[复刻手册](../research/newow-v3.2.82/REPLICATION_MANUAL.md)、[原式卷第9节](../research/newow-v3.2.82/FORMULA_CATALOG_20260926.md#9-综合决策-cdv2-120)、用户截图及公开详情页实现。
+对照[复刻手册](../research/newow-v3.2.82/REPLICATION_MANUAL.md)、[原式卷第9节](../research/newow-v3.2.82/REPLICATION_MANUAL.md#s-4e9df33bc9)、用户截图及公开详情页实现。
 本次重新读取 [CDV2公开脚本](https://www.v8848.cn/composite-decision-v2.js?v=3.3.59)，SHA256为 `68c634c05bddc7191de884a37ae5c8877dfd8416a43e53d93c66838ea8585fbb`，与既有内核来源一致。公开详情源的折叠默认、评分拆分、R/MM说明、第一行动原则及独立依据展开均已核对；不保存第三方完整脚本、HTML或原始行情到仓库。
 
 使用四只股票公开日周响应（每只趋势/震荡×日/周，16次读取），最新数据端点2026-09-24。把同一份日周输入分别送入原版脚本和本地既有数值内核，total、R、MM及参考上限4/4一致；不含60分钟及J额外扣分，因此不能与原站完整三周期可见总分直接比较。

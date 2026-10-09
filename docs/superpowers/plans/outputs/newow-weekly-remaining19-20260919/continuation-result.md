@@ -61,8 +61,7 @@ Earlier evidence is retained rather than overwritten:
 - `browser-existing-input-rerun`: browser launch denied by the filesystem sandbox; 57 cases remain untested.
 - `browser-existing-input-final`: earlier successful run retained as historical evidence; it did not persist enough exact-code/API assertions for final acceptance.
 - `remaining19-matrix-existing-input-reviewed`: 300-second incomplete run retained with 40 `UNSTARTED` cases.
-- `remaining19-matrix-existing-input-reviewed-complete`: complete 57/57 run that exactly consumed the 399-work ceiling.
-- `remaining19-matrix-existing-input-reviewed-final`: final current-code 57/57 matrix with explicit 400-work allowance; the deadline flag remained exhausted during finalization and is retained.
+- `remaining19-matrix-existing-input-reviewed-final.json`: retained 57/57 matrix. The former `complete`-named JSON was byte-identical and has been deduplicated into this file. Historical notes described a 399-work ceiling and a final 400-work allowance; these duplicate bytes do not independently prove two distinct runs. Attempt/journal evidence remains authoritative; the exhausted deadline flag is retained.
 - `browser-existing-input-reviewed`: reviewed 57/57 run against the earlier matrix, retained as historical evidence.
 - `browser-existing-input-reviewed-final`: final 57/57 run with exact matching tested-code SHA, matrix SHA, preview identity, status/code/reason, policy, and Catalog-revision evidence.
 

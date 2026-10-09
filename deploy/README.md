@@ -37,12 +37,18 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 ## 发布工作树存储
 
-自2026-09-27起，发布与正式运行源码统一使用扩展盘的linked worktree：
-`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-vX.Y.Z`。目录按版本命名，发布后完成切换及现场读回，只保留最新发布树。
-不再常驻保留回滚工作树或Application Support下的旧Runtime clone；Git tag和必要运行证据继续保留。
-最新发布树可用于向前修复，修复通过验证后发布新的补丁版本，不覆盖旧tag或把dirty源码算成旧版本运行。
-安全配置、launcher与日志保持既有Git外位置。外接卷需真实launchd访问及服务读回，不能通过路径约定绕过宿主权限。
-清理必须核对无用户修改、无配置/loaded服务/进程引用，并先保留必要运行记录；失败恢复的原子性、preflight及身份校验不变。
+发布与正式运行源码统一使用扩展盘的linked worktree，默认路径为
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-vX.Y.Z`，按版本命名。
+最新发布树兼作正式服务源码根，不另建Application Support中的runtime克隆；安全配置、共享launcher和日志保持Git外既有位置。
+外接卷launchd访问须通过宿主权限与真实启动/读回验证，安装器沿用`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`选项并核对所有required服务。
+
+只保留完成切换及现场读回的最新发布树，不常驻旧树或回滚树；仅发布未切换时，不能删除仍被服务引用的旧树。
+创建新树、构建、render/preflight、切换和健康读回完成后，逐树核对精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务与进程引用；有用户修改或引用时停止该树清理。
+保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
+应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。
+
+修复默认向前发布补丁，不移动旧tag；需要恢复时可从Git重建精确旧版本。后续修复复用最新发布树的修复分支，发布新版本后改为对应版本名称；正式服务始终绑定已验证commit，不能把dirty源码冒充原版本。
+安装器的原子失败恢复、preflight、身份校验继续保留；结果不明先停止相关mutation并只读核对，不能因清理而盲目重试。
 
 ## 配置与变更 Gate
 
