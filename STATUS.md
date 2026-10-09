@@ -19,9 +19,9 @@
 最终相关后端479 passed、Web835 passed/1 skipped、build通过，后续合并断言定向81 passed；公开JS冻结实际输入19 owner逐值通过，不能替代720组合候选验收。
 详见[本次P0交付](docs/tasks/newow-p0-current-20261009.md)。下一步为按新身份构建并验收参考资产，运行版本与自然验收仍按下文既有证据。
 
-## Live 健康修复候选
+## Live 健康修复
 
-v1.14.7 修复 BREAK 冷重启未恢复冻结合约身份的问题；71 Live 与185健康/切换回归、独立 Review 通过，生产只读60/60覆盖核实正常。新版本现场切换验收尚未完成。详见 [发布说明](docs/releases/v1.14.7.md)。
+v1.14.7 修复 BREAK 冷重启未恢复冻结合约身份的问题，已发布并切换。精确发布树256项回归、Web build/typecheck/topology、独立 Review、Ruff/secret0/diff通过；现场整体health ok、Live60/60 coverage ok、六运行身份matched、local-services-status overall passed。健康规则未放宽，缺口仍lagging、身份冲突仍fail-closed。详见 [发布说明](docs/releases/v1.14.7.md)。
 
 ## Develop 短分钟持续记录候选
 
@@ -29,9 +29,18 @@ v1.14.7 修复 BREAK 冷重启未恢复冻结合约身份的问题；71 Live 与
 目标范围1260路、360调度key，capability v33/matrix v4；短分钟主升浪保持关闭。
 reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web53 passed与build、
 OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
-代码与Runtime已切至v1.14.6，当前实际仍为720路，新540路未构建/启用。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
+代码与Runtime已切至v1.14.7，当前实际仍为720路，新540路未构建/启用。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
 
 ## Release 与 Runtime
+
+最新正式发布及Runtime为 **v1.14.7@d957d62d363777be7091673256e8cde394153faa**，
+[PR #420](https://github.com/firehell/guiyi-quant-workstation/pull/420)、annotated tag 与 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.7) 精确一致。
+全部已启用服务绑定 `.worktrees/release-v1.14.7` detached/clean；API/Web HTTP200、整体health正常、Live60品种真实覆盖全部ok，六身份matched，安装器snapshot preflight60/60。
+0049保持已迁移；Rule、Scope、audience、transport、策略公式、行情及auto_order=false未变更。没有补行情、重放信号或测试推送。
+旧v1.14.6无修改/服务/进程引用后按non-force清理，运行JSON/SHA保留在 `output/newow-v1147-runtime-20261009/`。
+**整体健康正常不等于整体RUNTIME_READY**：新版首根自然completed Bar、苏冰六周期快照和Live→Canonical仍待自然验收；Alert既有HTDY通知失败事实保留，逐项coverage待新自然观察，weekly audit not_run。
+
+### 历史 v1.14.6 迁移与切换证据
 
 最新源码发布为 **v1.14.6@5b6f1cd49c14066b3c97766c18a9d65a24c6a1fd**，
 [PR #419](https://github.com/firehell/guiyi-quant-workstation/pull/419) 已合并，annotated tag 与
