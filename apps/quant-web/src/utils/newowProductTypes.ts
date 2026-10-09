@@ -1105,23 +1105,23 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
 function normalizeDailyWeeklyPath(payload: unknown, meta: NewowProductMeta, cd: Record<string, unknown>): import('../types/newowDecisionV2').DailyWeeklyPath {
   const field = 'daily_weekly_path'
   const value = exactRecord(payload, field, ['version','as_of','page_parity','executable','source_note','periods'])
-  requireExact(value.version,'guiyi_daily_weekly_path_v1',`${field}.version`)
+  requireExact(value.version,'guiyi_daily_weekly_path_v2',`${field}.version`)
   sameInstant(value.as_of,meta.as_of,`${field}.as_of`)
   requireExact(value.page_parity,true,`${field}.page_parity`)
   requireExact(value.executable,false,`${field}.executable`)
   text(value.source_note,`${field}.source_note`)
   const rows = array(value.periods,`${field}.periods`)
-  if (rows.length !== 2) throw new Error(`${field}.periods must contain independent D1/W1`)
+  if (rows.length !== 3) throw new Error(`${field}.periods must contain independent W1/D1/60m`)
   const periods = rows.map((raw,index) => {
     const name = `${field}.periods[${index}]`
     const row = exactRecord(raw,name,['frequency','state','status','cost','current','target','reason','formula_versions'])
-    requireExact(row.frequency,index===0?'1w':'1d',`${name}.frequency`)
-    const frequency = row.frequency as '1w' | '1d'
+    requireExact(row.frequency,(['1w','1d','60m'] as const)[index],`${name}.frequency`)
+    const frequency = row.frequency as '1w' | '1d' | '60m'
     const state = row.state === null ? null : literal(row.state,['buy','hold','sell','wait'] as const,`${name}.state`)
     const status = literal(row.status,['ready','partial','unavailable'] as const,`${name}.status`)
     if (row.reason !== null) literal(row.reason,['PERIOD_CONTEXT_UNAVAILABLE','FLAT_NO_OPEN_ENTRY','OPEN_ENTRY_UNAVAILABLE','TARGET_UNAVAILABLE'] as const,`${name}.reason`)
     const versions = uniqueStrings(row.formula_versions,`${name}.formula_versions`)
-    const fact = array(cd.facts,'cdv2.facts').map(f=>record(f,'cdv2.fact')).find(f=>f.role===`trend_${frequency==='1w'?'week':'day'}`)
+    const fact = array(cd.facts,'cdv2.facts').map(f=>record(f,'cdv2.fact')).find(f=>f.role===`trend_${frequency==='1w'?'week':frequency==='60m'?'m60':'day'}`)
     if (fact) requireExact(state,fact.state,`${name}.state_fact`)
     const source = (rawSource: unknown, kind: 'cost' | 'current' | 'target') => {
       if (rawSource === null) return null
@@ -1154,14 +1154,14 @@ function normalizeDailyWeeklyPath(payload: unknown, meta: NewowProductMeta, cd: 
     for (const p of [cost,target]) if (p && current && p.frequency === current.frequency) requireExact(p.calculation_segment_id,current.calculation_segment_id,`${name}.current_calculation_segment_id`)
     if (cost && current) requireNotAfter(cost.bar_end,current.bar_end,`${name}.entry_bar_end`,`${name}.current_bar_end`)
     const active = state==='buy' || state==='hold'
-    if (!active && cost) throw new Error(`${name}.flat must not have cost`)
+    if (!active && state!=='sell' && cost) throw new Error(`${name}.flat must not have cost`)
     if (status==='unavailable' && available.length) throw new Error(`${name}.unavailable must not have prices`)
     if (status!=='unavailable' && !current) throw new Error(`${name}.current missing`)
     if (status==='ready' && (!target || active && !cost)) throw new Error(`${name}.ready missing source`)
     if (status!=='unavailable') exactStringArray(versions,EXPECTED_FORMULAS.trend,`${name}.formula_versions`)
     return {frequency,state,status,cost,current,target,reason:row.reason as string|null,formula_versions:versions}
   })
-  return {version:'guiyi_daily_weekly_path_v1',as_of:meta.as_of,page_parity:true,executable:false,source_note:value.source_note as string,periods}
+  return {version:'guiyi_daily_weekly_path_v2',as_of:meta.as_of,page_parity:true,executable:false,source_note:value.source_note as string,periods}
 }
 
 

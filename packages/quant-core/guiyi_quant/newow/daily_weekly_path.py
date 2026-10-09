@@ -1,13 +1,13 @@
-"""Independent completed D1/W1 illustration; never executable price predictions."""
+"""Independent completed W1/D1/60m illustration; never executable price predictions."""
 
 from .cross_period_prices import PriceSource
 
-VERSION = "guiyi_daily_weekly_path_v1"
+VERSION = "guiyi_daily_weekly_path_v2"
 
 
 def build_daily_weekly_path(*, as_of, current, periods):
     rows = []
-    for frequency in ("1w", "1d"):
+    for frequency in ("1w", "1d", "60m"):
         state, frames, target = periods.get(frequency, (None, (), None))
         row = {
             "frequency": frequency,
@@ -28,6 +28,9 @@ def build_daily_weekly_path(*, as_of, current, periods):
             (current.physical_contract, current.segment_id) != owner
             or current.bar_end > as_of
             or current.source_category != "canonical_completed_close"
+            or (current.frequency == frequency and current.calculation_segment_id != calc)
+            or not tail.bar.observation_eligible
+            or tail.bar.bar_end > as_of
         ):
             rows.append(row)
             continue
@@ -36,6 +39,7 @@ def build_daily_weekly_path(*, as_of, current, periods):
             target is not None
             and target.frequency == frequency
             and target.source_category == "canonical_channel"
+            and target.bar_end == tail.bar.bar_end
             and target.bar_end <= as_of
             and (
                 target.physical_contract,
@@ -46,6 +50,7 @@ def build_daily_weekly_path(*, as_of, current, periods):
         )
         row["target"] = target.wire() if valid_target else None
         open_entries = {}
+        cleared_entry = None
         for frame in frames:
             if (
                 not frame.bar.bar.observation_eligible
@@ -68,15 +73,15 @@ def build_daily_weekly_path(*, as_of, current, periods):
                 if action.kind.value == "BUILD":
                     open_entries[action.signal_id] = (action, frame.bar)
                 elif action.kind.value == "CLEAR":
-                    open_entries.pop(action.related_build_id, None)
+                    cleared_entry = open_entries.pop(action.related_build_id, None)
         active = state in ("buy", "hold")
+        candidates = open_entries if active else ({"closed": cleared_entry} if state == "sell" and cleared_entry else {})
         # Exactly one unmatched identity is required; ambiguous/missing entry is not guessed.
         if (
-            active
-            and len(open_entries) == 1
-            and next(iter(open_entries.values()))[0].bar_end <= current.bar_end
+            len(candidates) == 1
+            and next(iter(candidates.values()))[0].bar_end <= current.bar_end
         ):
-            entry, bar = next(iter(open_entries.values()))
+            entry, bar = next(iter(candidates.values()))
             cost = PriceSource(
                 entry.reference_price,
                 frequency,
@@ -93,7 +98,7 @@ def build_daily_weekly_path(*, as_of, current, periods):
         )
         row["reason"] = (
             "FLAT_NO_OPEN_ENTRY"
-            if not active
+            if not active and row["cost"] is None
             else "OPEN_ENTRY_UNAVAILABLE"
             if row["cost"] is None
             else "TARGET_UNAVAILABLE"
@@ -107,5 +112,5 @@ def build_daily_weekly_path(*, as_of, current, periods):
         "page_parity": True,
         "executable": False,
         "periods": rows,
-        "source_note": "独立日周趋势 BUILD 参考成本与同周期 Canonical HHV10 目标；页面示意，不保证未来路径，不代表成交。",
+        "source_note": "独立周、日、60分钟趋势 BUILD 参考成本与同周期 Canonical HHV10 目标（期货适配，非牛哇私有 batch 价格）；页面示意，不保证未来路径，不代表成交。",
     }

@@ -60,7 +60,7 @@ export interface Cdv2 {
 export interface NewowDecisionV2 { cdv2: Cdv2; prices: CrossPeriodPrices | null; daily_weekly_path?: DailyWeeklyPath }
 
 export interface DailyWeeklyPathPeriod {
-  frequency: '1d' | '1w'
+  frequency: '1d' | '1w' | '60m'
   state: string | null
   status: 'ready' | 'partial' | 'unavailable'
   cost: (DecisionPriceSource & { entry_marker_id: string }) | null

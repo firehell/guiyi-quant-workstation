@@ -1418,6 +1418,35 @@ ReferenceTrade 状态和诊断保留独立展示，缺少新投影时不得用�
 - **THEN** 基础 ReferenceTrade 继续 OPEN，不创建 CLEAR、PaperFill 或账户收益
 
 
+### Requirement: Independent seven-pattern hindsight overlay
+The Newow chart SHALL expose the public v3.3.79 cup-handle, saucer, double-bottom, flat-base, ascending-base, consolidation and tight-area detectors as a separately versioned hindsight decoration, `newow_public_patterns_v3379_v1`.
+The overlay SHALL carry page-parity, non-executable and repainting identity, SHALL NOT replace the causal cup-handle facts, and SHALL NOT affect BUILD/CLEAR, reference returns or strategy decisions.
+
+#### Scenario: Complete loaded owner input
+- **WHEN** the user opens pattern recognition
+- **THEN** the detector evaluates all loaded completed bars of the selected contiguous physical-contract/segment/calculation-segment owner, without sampling or implicit truncation
+- **AND** scores, loop boundaries, first-on-tie choices and stable sorting follow the frozen public formulas
+- **AND** the highest-scoring candidate is the default overlay; each candidate can be drawn or cleared
+- **AND** the displayed input span is explicit, so a loaded window is not presented as whole-history evidence.
+
+#### Scenario: Chart changes during computation
+- **WHEN** product, frequency, strategy, snapshot or loaded window changes
+- **THEN** the old overlay is revoked and a cancelled Worker generation cannot publish old results
+- **AND** geometry anchors map only to accepted same-owner bars and their source identities.
+
+### Requirement: W1 D1 and 60m independent illustration
+The independently versioned `guiyi_daily_weekly_path_v2` SHALL include W1, D1 and 60m rows. A 60m score SHALL NOT substitute for its path facts.
+Each row SHALL use a same-period completed HHV10 target with physical-contract, segment, calculation-segment and as-of validation. A cost for buy, hold or sell SHALL require a proven same-period strategy BUILD identity. A wait row may expose ready current/target facts with cost=null, without drawing a complete cost path. Current completed Close may be shared across periods only with an explicit source identity and compatible owner.
+The target SHALL be labelled a futures adaptation, not the unavailable private page batch price. Cost→current→target uses stage coordinates 0/62/100 and SHALL NOT be represented as predicted times or executable prices.
+
+#### Scenario: Cleared or missing position reference
+- **WHEN** the strategy is in sell state
+- **THEN** the path may display the historical BUILD cost only from the exact same-owner CLEAR.related_build_id relationship, and uses a dashed path
+- **WHEN** required BUILD cost for buy/hold/sell, compatible owner or target cannot be proven
+- **THEN** the row is partial/unavailable and no complete path is invented
+- **AND** no ReferenceTrade OPEN/CLOSED fact or strategy state is altered.
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

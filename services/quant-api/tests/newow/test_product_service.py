@@ -1926,3 +1926,35 @@ def test_hourly_decision_never_replays_main_rise_and_uses_hourly_readiness(produ
     assert cd["extra_sources"]["j_reduce"] == "unavailable"
     assert any(f["role"] == "trend_m60" and f["status"] == "ready" for f in cd["facts"])
     assert result.explanation.status.status is FeatureRuntimeStatus.READY
+    path = result.explanation.value.decision_v2["daily_weekly_path"]
+    assert path["version"] == "guiyi_daily_weekly_path_v2"
+    assert [row["frequency"] for row in path["periods"]] == ["1w", "1d", "60m"]
+    hour = path["periods"][2]
+    assert hour["state"] == next(f["state"] for f in cd["facts"] if f["role"] == "trend_m60")
+    assert hour["current"]["frequency"] == "60m"
+    assert hour["target"]["frequency"] == "60m"
+    assert hour["target"]["source_category"] == "canonical_channel"
+    assert hour["target"]["physical_contract"] == hour["current"]["physical_contract"]
+    assert hour["target"]["segment_id"] == hour["current"]["segment_id"]
+    assert hour["target"]["calculation_segment_id"] == hour["current"]["calculation_segment_id"]
+
+
+def test_daily_decision_path_reads_hourly_context_from_same_product_reader(product_cases):
+    contexts = (ProductFrequency.WEEKLY, ProductFrequency.DAILY, ProductFrequency.HOURLY)
+    reader, _query, fake = product_cases.paged_reader(prefix_bars=120, frequency="1d", context_frequencies=contexts)
+    seen = []
+    def factory(context, cancelled):
+        seen.append(context)
+        return reader
+    service = NewowProductService(factory, now=lambda: fake.as_of)
+    result = service.query(ProductServiceQuery("rb", "trend", "1d", section="explanation", decision_v2=True, as_of=fake.as_of))
+    assert seen == [contexts]
+    path = result.explanation.value.decision_v2["daily_weekly_path"]
+    hour = path["periods"][2]
+    assert hour["frequency"] == "60m"
+    assert hour["target"] is not None
+    assert hour["target"]["frequency"] == "60m"
+    assert hour["current"]["frequency"] == "1d"
+    assert hour["current"] == path["periods"][1]["current"]
+    assert hour["target"]["physical_contract"] == hour["current"]["physical_contract"]
+    assert hour["target"]["segment_id"] == hour["current"]["segment_id"]

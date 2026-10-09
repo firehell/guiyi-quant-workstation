@@ -233,7 +233,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             else None
         )
         channels = {}
-        for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY):
+        for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY):
             prefix = prefixes.get(("trend", freq), [])
             if not prefix:
                 continue
@@ -279,7 +279,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             freq.value: (states["trend"][PERIODS[freq]],
                          prefixes.get(("trend", freq), []),
                          channels.get(freq, (None, None))[0])
-            for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+            for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY)
         },
     )
     for row in paths["periods"]:

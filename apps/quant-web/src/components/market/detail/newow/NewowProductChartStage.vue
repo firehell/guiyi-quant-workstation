@@ -27,6 +27,8 @@ import {
 } from 'lightweight-charts'
 
 import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
+import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
+import { buildNewowPatternGeometry, type PatternChoice } from '@/utils/newowPatternDisplay'
 import { NewowTrendChannelPrimitive } from '@/components/market/detail/newow/newowTrendChannelPrimitive'
 import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
 import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
@@ -58,6 +60,8 @@ import {
 
 const props = withDefaults(defineProps<{
   response: NewowProductSectionResponse<'chart'> | null
+  patternSelection?:PatternChoice|null
+  patternWindowKey?:string|null
   strategy: NewowProductStrategy
   targetPrice?: string | null
   absorbPrice?: string | null
@@ -160,6 +164,17 @@ let volume: ISeriesApi<'Histogram'> | null = null
 const band = new NewowProductBandPrimitive()
 const dualBackground = new NewowDualBackgroundPrimitive()
 const trendChannel = new NewowTrendChannelPrimitive()
+const publicPattern = new NewowPublicPatternPrimitive()
+function renderPattern(){
+ publicPattern.setData(null)
+ const choice=props.patternSelection
+ if(!choice||!model.value||props.loading||props.strategySwitching||choice.windowKey!==props.patternWindowKey)return
+ // Every source bar must still be exactly present in the accepted owner window.
+ const accepted=new Map(model.value.bars.map(b=>[b.barEnd,b]))
+ if(!choice.bars.every(b=>{const current=accepted.get(b.barEnd);return current&&current.sourceIdentity===b.sourceIdentity&&current.physicalContract===b.physicalContract&&current.segmentId===b.segmentId&&current.calculationSegmentId===b.calculationSegmentId}))return
+ try{publicPattern.setData(buildNewowPatternGeometry(choice,model.value.identity.frequency))}catch{publicPattern.setData(null)}
+}
+watch(()=>[props.patternSelection,props.patternWindowKey,props.loading,props.strategySwitching],renderPattern)
 const zhaoyaoMirror = new NewowZhaoyaoMirrorPrimitive()
 const upDownEnergy = new NewowUpDownEnergyPrimitive()
 const mainForceControl = new NewowMainForceControlPrimitive()
@@ -208,6 +223,7 @@ onMounted(async () => {
   candles.attachPrimitive(band)
   candles.attachPrimitive(dualBackground)
   candles.attachPrimitive(trendChannel)
+  candles.attachPrimitive(publicPattern)
   volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 1)
   // Whitespace keeps the auxiliary pane/timeline present during loading, without inventing zero values.
   auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 2)
@@ -242,6 +258,7 @@ onUnmounted(createNewowProductChartDisposer({
     candles?.detachPrimitive(band)
     candles?.detachPrimitive(dualBackground)
     candles?.detachPrimitive(trendChannel)
+    candles?.detachPrimitive(publicPattern)
     auxiliaryAnchor?.detachPrimitive(zhaoyaoMirror)
     auxiliaryAnchor?.detachPrimitive(upDownEnergy)
     auxiliaryAnchor?.detachPrimitive(mainForceControl)
@@ -304,6 +321,7 @@ function renderReferencePrices(): void {
 function renderModel(value: NewowProductChartModel | null): void {
   if (chart === null || candles === null) return
   renderReferencePrices()
+  renderPattern()
   if (value === null) {
     rememberViewport()
     paginationArmed = false
