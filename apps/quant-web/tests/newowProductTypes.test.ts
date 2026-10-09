@@ -1119,6 +1119,21 @@ test('CDV2 explanation rejects future ages, inconsistent totals and executable c
   assert.equal(normalizeNewowProductResponse(xp.wire,{...expected,section:'explanation'}).section,'explanation')
   const invalidXp=make(); Object.assign(invalidXp.addon.cdv2,{period_conflict:{version:'newow_period_conflict_v3379_v1',hit:true,code:'XP1',week_state:'unknown',day_state:'unknown'}})
   assert.throws(()=>normalizeNewowProductResponse(invalidXp.wire,{...expected,section:'explanation'}),/period_conflict/)
+  const latestPrice = make()
+  const current = { raw:'13.50', frequency:'1d', bar_end:AS_OF, physical_contract:'RB2701', segment_id:'owner', calculation_segment_id:'calc', source_identity:'completed-close', source_category:'canonical_completed_close' }
+  const absorb = { ...current, raw:'13.52', display_value:'13.50', source_category:'canonical_channel', branch:'absorb_daily_buy', support_cap_applied:true }
+  const prices = { formula_version:'newow_target_absorb_selection_v3_3_81_v1', as_of:AS_OF, executable:false, current_price:current, previous_close:null, shared:{target:null,absorb},status_card:{target:null,absorb} }
+  Object.assign(latestPrice.addon, { prices })
+  const parsed = normalizeNewowProductResponse(latestPrice.wire, { ...expected, section:'explanation' })
+  assert.equal(parsed.value!.decision_v2!.prices!.shared.absorb!.raw,'13.52')
+  assert.equal(parsed.value!.decision_v2!.prices!.shared.absorb!.display_value,'13.50')
+  assert.equal(parsed.value!.decision_v2!.prices!.shared.absorb!.support_cap_applied,true)
+  const stalePrices = make()
+  Object.assign(stalePrices.addon, { prices:{...prices,formula_version:'newow_target_absorb_selection_v3_3_59_v1'} })
+  assert.throws(() => normalizeNewowProductResponse(stalePrices.wire, { ...expected, section:'explanation' }), /prices.version/)
+  const invalidCap = make()
+  Object.assign(invalidCap.addon, { prices:{...prices,shared:{target:null,absorb:{...absorb,support_cap_applied:'true'}}} })
+  assert.throws(() => normalizeNewowProductResponse(invalidCap.wire, { ...expected, section:'explanation' }), /support cap/)
   const badSum = make(); badSum.addon.cdv2.total = 20
   assert.throws(() => normalizeNewowProductResponse(badSum.wire, { ...expected, section: 'explanation' }), /sum conflict/)
   const badExecution = make(); badExecution.addon.cdv2.executable = true

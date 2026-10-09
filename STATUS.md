@@ -16,6 +16,13 @@
 目前delivery为空，自然信号和成员实际收到仍待验收；旧盘后retained_failure字节保持，整体health仍degraded，不能宣布RUNTIME_READY。
 本次不夹带develop尚未发布的视觉/公式改动。见[交付与恢复](docs/tasks/newow-topic-notifications-20261009.md)。
 
+## Develop 牛哇 v3.3.80／v3.3.81 页面补齐
+
+2026-10-09：最新版吸筹显示护栏与通用cost兜底、周线状态卡目标共享优先、本地吸筹独立覆盖已修正；raw/BUILD/CLEAR/收益及资产身份不变。独立唐奇安窗口5～120（默认20）、默认关闭蓝色止损参考线、dual独立控制与可见BUILD锚点已补齐；主升浪移入T菜单，手册来源更新。
+完整Newow回归3091 passed/1 skipped；两项沙箱socket权限失败在宿主补跑2 passed。Web1035 passed/3 skipped、build/typecheck/topology、OpenSpec11/11、Ruff/secret/diff通过；独审确认问题已修正。详见[本轮交付及验收边界](docs/tasks/newow-v3381-parity-20261009.md)。
+当前public新historical exact identity矩阵1260项全部NOT_REGISTERED；旧historical723/forward720 metadata属于旧v3基础/v1融合，不能证明新身份资产完成。仅只读核实，未构建/启用新资产。
+本轮只读launchd及Git回读确认实际服务root/tag为v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e；下文v1.14.8及更早发布记录是历史检查点。本任务未发布或切换Runtime，不由版本一致推定自然RUNTIME_READY。
+
 ## Develop 牛哇 P1 第二项
 
 2026-10-09：XP1独立周期冲突及周/日basis联动已完成测试和独立Review。综合动作、强度、理由、冲突及状态立场/进度共享页面判定；融合复用主图兼容/主导来源，旧评分与策略信号不变。四测试未加入。

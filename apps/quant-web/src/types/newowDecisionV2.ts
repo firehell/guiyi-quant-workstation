@@ -8,6 +8,7 @@ export interface DecisionPriceSource {
   source_identity: string
   source_category: string
   display_value?: string
+  support_cap_applied?: boolean
   branch?: string
 }
 export interface CrossPeriodPrices {
