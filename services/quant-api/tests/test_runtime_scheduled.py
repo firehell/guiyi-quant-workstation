@@ -87,7 +87,7 @@ def test_unknown_calendar_readback_disables_future_triggers_without_kill():
     assert 'kill' not in backend.calls
 
 
-@pytest.mark.parametrize('phase', ['prepared', 'binding_committed', 'outcome_unknown'])
+@pytest.mark.parametrize('phase', ['prepared', 'binding_committed', 'outcome_unknown', None])
 def test_nonterminal_scheduled_journal_requires_readback(tmp_path, monkeypatch, phase):
     from app.runtime_scheduled import ScheduledBackend
     from app.runtime_handover import _write

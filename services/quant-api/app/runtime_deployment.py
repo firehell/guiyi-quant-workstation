@@ -398,12 +398,12 @@ class LaunchdBackend:
 
 def assert_no_unknown_deployment():
     journal = _read(runtime_directory() / 'deployment-outcome.json')
-    if journal and journal.get('phase') not in {'switched', 'cancelled'}:
+    if journal is not None and journal.get('phase') not in {'switched', 'cancelled'}:
         raise DeploymentError('RUNTIME_HANDOVER_RECOVERY_READBACK_REQUIRED')
     from app.runtime_scheduled import SCHEDULED
     for service in SCHEDULED:
         state = _read(runtime_directory() / f'{service}.scheduled-update.json')
-        if state and state.get('phase') not in {'switched', 'scheduled_busy', 'precondition_blocked'}:
+        if state is not None and state.get('phase') not in {'switched', 'scheduled_busy', 'precondition_blocked'}:
             raise DeploymentError('SCHEDULED_RECOVERY_READBACK_REQUIRED')
 
 

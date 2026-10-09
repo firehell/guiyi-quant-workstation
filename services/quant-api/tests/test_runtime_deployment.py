@@ -139,3 +139,10 @@ def test_unknown_before_binding_commit_does_not_drain_legacy(monkeypatch):
     monkeypatch.setattr(d, 'resolve_service_binding', lambda service: object())
     monkeypatch.setattr(d, 'request_drain', lambda *a, **kw: pytest.fail('legacy must remain untouched'))
     backend.halt_unknown('alert', None, 'request')
+
+
+def test_empty_interrupted_journal_is_not_absent(monkeypatch):
+    from app import runtime_deployment as d
+    monkeypatch.setattr(d, '_read', lambda path: {})
+    with pytest.raises(d.DeploymentError, match='RECOVERY_READBACK_REQUIRED'):
+        d.assert_no_unknown_deployment()

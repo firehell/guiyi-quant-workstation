@@ -195,7 +195,7 @@ def test_unknown_before_registry_does_not_park_legacy(tmp_path):
     assert stopped == []
 
 
-@pytest.mark.parametrize('phase', ['prepared', 'binding_committed', 'outcome_unknown'])
+@pytest.mark.parametrize('phase', ['prepared', 'binding_committed', 'outcome_unknown', None])
 def test_nonterminal_bootstrap_journal_requires_readback(tmp_path, monkeypatch, phase):
     from app.runtime_bootstrap import BootstrapBackend
     from app.runtime_handover import _write
