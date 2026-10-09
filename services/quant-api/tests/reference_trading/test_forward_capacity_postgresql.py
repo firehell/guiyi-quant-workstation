@@ -86,6 +86,9 @@ class _MarketRead:
         self.contract = contract
         self.htdy = htdy
 
+    def newow_completed_observation_snapshot(self, query, after, now):
+        return self.observation_snapshot(query, after, now)
+
     def observation_snapshot(self, _query, _after, _now):
         return MarketObservationSnapshot(
             state=None, source="realtime", trading_day=self.bar.trading_day,
@@ -105,6 +108,9 @@ class _MarketRead:
 
 
 class _IdleMarketRead:
+    def newow_completed_observation_snapshot(self, query, after, now):
+        return self.observation_snapshot(query, after, now)
+
     def observation_snapshot(self, _query, _after, _now):
         return MarketObservationSnapshot(
             state=None, source="none", trading_day=_END.date(),
@@ -136,6 +142,9 @@ class _MdsMarketRead:
         assert page.bars and page.bars[-1] == self.target_bar
         assert all(segment.contract == self.contract for segment in page.resolved_contract_segments)
         return page.bars
+
+    def newow_completed_observation_snapshot(self, query, after, now):
+        return self.observation_snapshot(query, after, now)
 
     def observation_snapshot(self, _query, _after, _now):
         bars = self._page(1, self.target_bar.bar_end)
@@ -187,6 +196,9 @@ class _LongLivedMdsMarketRead:
         bars = reader._page(limit, target.bar_end)
         self.read_count += reader.read_count
         return bars
+
+    def newow_completed_observation_snapshot(self, query, after, now):
+        return self.observation_snapshot(query, after, now)
 
     def observation_snapshot(self, query, after, _now):
         target = self.target(query.frequency.value)

@@ -130,6 +130,71 @@ class MarketPhaseResolver:
             self._next_session_start(resolved, local_now),
         )
 
+    def completed_observation_trading_day(self, symbol: str, now: datetime) -> date | None:
+        """Day of the latest started authoritative Session, including its close.
+
+        Closed phase's civil day is a display fact, not the night Bar's owner.
+        No Redis key scan or inferred next-business-day calendar is used.
+        """
+        normalized = symbol.strip().lower()
+        if now.tzinfo is None or now.utcoffset() is None:
+            return None
+        local_now = now.astimezone(SHANGHAI)
+        exchange = self._session.scalar(select(Instrument.exchange_code).where(
+            Instrument.symbol == normalized, Instrument.is_active.is_(True),
+        ))
+        if exchange is None:
+            return None
+        calendars = self._nearby_calendar_rows(exchange, local_now.date())
+        if calendars is None or self.resolve(normalized, now).phase is MarketPhase.UNKNOWN:
+            return None
+        candidates = []
+        for day, calendar in calendars.items():
+            if not calendar.is_trading_day:
+                continue
+            try:
+                windows = resolved_session_windows_for_trading_day(
+                    self._session, exchange=exchange, symbol=normalized, trading_day=day,
+                )
+            except SessionClockError:
+                return None
+            for item in windows:
+                if item.is_night and not calendar.has_night_session:
+                    continue
+                if item.window.start <= local_now:
+                    candidates.append((item.window.start, day))
+        if not candidates:
+            # Before a day-only product opens after midnight, current/future
+            # Calendar rows have no started Session. Read the exact previous
+            # trading Calendar fact; never infer a date or use a Redis key.
+            previous = self._session.scalar(select(TradingCalendar).where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date < local_now.date(),
+                TradingCalendar.is_trading_day.is_(True),
+            ).order_by(TradingCalendar.trade_date.desc()).limit(1))
+            if previous is None:
+                return None
+            calendar_count = self._session.scalar(select(func.count()).select_from(TradingCalendar).where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date >= previous.trade_date,
+                TradingCalendar.trade_date <= local_now.date(),
+            ))
+            if calendar_count != (local_now.date() - previous.trade_date).days + 1:
+                return None
+            try:
+                windows = resolved_session_windows_for_trading_day(
+                    self._session, exchange=exchange, symbol=normalized,
+                    trading_day=previous.trade_date,
+                )
+            except SessionClockError:
+                return None
+            for item in windows:
+                if item.is_night and not previous.has_night_session:
+                    continue
+                if item.window.start <= local_now:
+                    candidates.append((item.window.start, previous.trade_date))
+        return max(candidates)[1] if candidates else None
+
     def _nearby_calendar_rows(
         self,
         exchange: str,

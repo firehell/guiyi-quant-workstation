@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { getNewowRecordingMatrix } from '../src/api/referenceTrading.ts'
-import { recordingStatusLabel, recordingStateLabel, recordingPointLabel, newowRecordingWindow } from '../src/utils/newowRecording.ts'
+import { recordingStatusLabel, recordingStateLabel, recordingPointLabel, newowRecordingWindow, recordingItemStatus } from '../src/utils/newowRecording.ts'
 
 test('matrix read is explicit forward and validates version rather than inventing records', async () => {
   const response = { version: 'newow_recording_matrix_v1', recording_mode: 'forward_observation', expected_count: 720,
@@ -129,4 +129,17 @@ test('matrix accepts a persisted observed trading day and rejects malformed cale
   for (const day of ['2026-02-30', '2026-10-09T00:00:00Z', 20261009, 'unknown']) {
     await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, items: [{ ...row, latest_observed_trading_day: day }] }) }), /REFERENCE_RESPONSE_INVALID/)
   }
+})
+
+
+test('v3 accepts completed Live endpoint and labels uncaptured observation lag', async () => {
+  const row = { product: 'rb', strategy: 'trend', frequency: '60m', stream_id: 'stream', enabled: true,
+    status: 'OBSERVATION_LAGGING', latest_state: null, latest_state_source: null, computed_through: null,
+    observed_through: null, historical_computed_through: null, last_observed_at: null,
+    expected_through: '2026-10-08T15:00:00Z', expected_source: 'completed_live', endpoint_status: 'READY' }
+  const response = { version: 'newow_recording_matrix_v3', recording_mode: 'forward_observation', expected_count: 1,
+    configured_count: 1, enabled_count: 1, observed_count: 0, seeded_count: 0, items: [row] }
+  assert.equal(await getNewowRecordingMatrix({ request: async () => response }), response)
+  assert.equal(recordingItemStatus(row), '已完成 K 线尚未记录')
+  await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, version: 'newow_recording_matrix_v2' }) }), /REFERENCE_RESPONSE_INVALID/)
 })

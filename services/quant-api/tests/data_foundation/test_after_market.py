@@ -137,6 +137,10 @@ class _LiveStore:
             self.cleanup_failures -= 1
             raise RuntimeError("private redis cleanup detail")
         self.cleaned.append(trading_day)
+        self.snapshot = None
+
+    def cleanup_readback(self, trading_day):
+        return {"remaining_bar_keys": 0, "subscription_present": self.snapshot is not None}
 
 
 class _RecordingTransport:
@@ -2013,3 +2017,200 @@ def test_natural_reconciliation_still_rejects_missing_snapshot(tmp_path):
     assert live.cleaned == []
     assert len(notices) == 1
     assert _status(updater.status_path)["last_successful_trading_day"] is None
+
+
+def test_live_evidence_survives_cleanup_and_public_projection(tmp_path):
+    updater, _, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    assert updater.run().status == "passed"
+    status = _status(updater.status_path)
+    evidence = status["last_run"]["live_evidence"]
+    assert evidence["rank1_matches_snapshot"] is True
+    assert evidence["snapshot_sha256"] == evidence["formal_rank1_sha256"]
+    assert evidence["cleanup_verified"] is True
+    assert evidence["remaining_bar_keys"] == 0
+    assert evidence["subscription_present"] is False
+    assert evidence["canonical_live_exclusion"] == "not_verified"
+    assert public_after_market_status(status)["last_run"]["live_evidence"] == evidence
+    assert live.snapshot is None
+
+
+def test_cleanup_readback_residue_fails_closed_without_retry(tmp_path):
+    updater, _, _, sleeps, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    live.cleanup_readback = lambda day: {"remaining_bar_keys": 1, "subscription_present": False}
+    assert updater.run().status == "failed"
+    assert sleeps == []
+    evidence = _status(updater.status_path)["last_run"]["live_evidence"]
+    assert evidence["cleanup_verified"] is False
+    assert evidence["remaining_bar_keys"] == 1
+
+
+def test_public_live_evidence_rejects_scope_drift(tmp_path):
+    updater, _, _, _, _, _ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    updater.run()
+    status = _status(updater.status_path)
+    status["last_run"]["live_evidence"]["scope_sha256"] = "0" * 64
+    assert public_after_market_status(status) == {}
+
+
+def test_reconciliation_persisted_before_cleanup_source_is_deleted(tmp_path):
+    updater, _, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    cleanup = live.cleanup_trading_day
+    def observed_cleanup(day):
+        evidence = _status(updater.status_path)["current_run"]["live_evidence"]
+        assert evidence["rank1_matches_snapshot"] is True
+        assert evidence["cleanup_verified"] is False
+        assert evidence["cleanup_checked_at"] is None
+        cleanup(day)
+    live.cleanup_trading_day = observed_cleanup
+    assert updater.run().status == "passed"
+
+
+def test_malformed_snapshot_extra_value_is_not_silently_ignored(tmp_path):
+    updater, _, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    live.snapshot["unexpected"] = {"secret": "must-not-be-published"}
+    assert updater.run().error_code == "LIVE_DOMINANT_MISMATCH"
+    assert live.cleaned == []
+    assert "must-not-be-published" not in updater.status_path.read_text()
+
+
+def test_cleanup_readback_error_retains_precleanup_evidence(tmp_path):
+    updater, _, _, sleeps, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    def unavailable(day):
+        raise ConnectionError("private Redis location and credentials")
+    live.cleanup_readback = unavailable
+    assert updater.run().status == "failed"
+    assert sleeps == []
+    evidence = _status(updater.status_path)["last_run"]["live_evidence"]
+    assert evidence["rank1_matches_snapshot"] is True
+    assert evidence["cleanup_verified"] is False
+    assert evidence["cleanup_checked_at"] is None
+    assert "private Redis" not in updater.status_path.read_text()
+
+
+def test_committed_historical_publications_are_bound_to_natural_run(tmp_path):
+    updater, manager, _, _, _, _ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed", applied=2)])
+    publication = {"dataset": ["contract", "ag", "AG2610", "1m"], "year": 2026, "month": 8,
+                   "file_name": "part." + "a" * 64 + ".parquet",
+                   "provenance": {"version": 1, "input_source": "rqdata", "input_sha256": "b" * 64}}
+    # Weekly D1 companion publication may legitimately touch a dataset twice.
+    manager.publication_evidence = [publication, publication]
+    assert updater.run().status == "passed"
+    status = _status(updater.status_path)
+    assert status["last_run"]["historical_publications"] == [publication, publication]
+    assert status["last_run"]["live_evidence"]["canonical_live_exclusion"] == "historical_publications_recorded"
+    assert public_after_market_status(status)["last_run"]["historical_publications"] == [publication, publication]
+
+
+def test_missing_publication_receipt_fails_closed_before_live_cleanup(tmp_path):
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed", applied=1)])
+    manager.publication_evidence = []
+    assert updater.run().status == "failed"
+    assert live.cleaned == []
+
+
+def test_noop_does_not_claim_old_assets_have_verified_sources(tmp_path):
+    updater, manager, _, _, _, _ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("noop")])
+    manager.publication_evidence = []
+    assert updater.run().status == "passed"
+    status = _status(updater.status_path)
+    assert status["last_run"]["historical_publications"] == []
+    assert status["last_run"]["live_evidence"]["canonical_live_exclusion"] == "no_publication"
+    assert public_after_market_status(status)
+
+
+def test_atomic_status_fsyncs_replaced_directory(tmp_path, monkeypatch):
+    import os
+    import stat
+    from app.market_data import after_market as module
+    calls = []
+    original = os.fsync
+    def observed(fd):
+        calls.append("directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file")
+        original(fd)
+    monkeypatch.setattr(os, "fsync", observed)
+    module._atomic_write_status(tmp_path / "status.json", {"safe": True})
+    assert calls == ["file", "directory"]
+
+
+def test_oversized_status_never_replaces_previous_file(tmp_path):
+    from app.market_data import after_market as module
+    path = tmp_path / "status.json"
+    path.write_text("previous")
+    with pytest.raises(ValueError, match="AFTER_MARKET_STATUS_TOO_LARGE"):
+        module._atomic_write_status(path, {"padding": "x" * (1024 * 1024)})
+    assert path.read_text() == "previous"
+
+
+def test_directory_sync_failure_prevents_live_source_deletion(tmp_path, monkeypatch):
+    import os
+    import stat
+    updater, _, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    original = os.fsync
+    def failed_directory(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            if "live_evidence" in updater.status_path.read_text():
+                raise OSError("directory sync failed")
+        original(fd)
+    monkeypatch.setattr(os, "fsync", failed_directory)
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    assert live.cleaned == []
+    assert live.snapshot is not None
+
+
+def test_partial_update_preserves_only_confirmed_publication_prefix(tmp_path):
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("partial", applied=1)])
+    publication = {"dataset": ["contract", "ag", "AG2610", "1m"], "year": 2026, "month": 8,
+                   "file_name": "part." + "a" * 64 + ".parquet",
+                   "provenance": {"version": 1, "input_source": "rqdata", "input_sha256": "b" * 64}}
+    manager.publication_evidence = [publication]
+    assert updater.run().status == "failed"
+    status = _status(updater.status_path)
+    assert status["last_run"]["historical_publications"] == [publication]
+    assert "live_evidence" not in status["last_run"]
+    assert live.cleaned == []
+
+
+def test_largest_allowed_publication_summary_preserves_next_run_history(tmp_path):
+    from app.market_data import after_market as module
+    updater, _, _, _, _, _ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed")])
+    updater.run()
+    status = _status(updater.status_path)
+    publication = {"dataset": ["contract", "ag", "AG2610", "1m"], "year": 2026, "month": 8,
+                   "file_name": "part." + "a" * 64 + ".parquet",
+                   "provenance": {"version": 1, "input_source": "rqdata", "input_sha256": "b" * 64}}
+    largest = []
+    for count in range(1, 1026):
+        candidate = [publication] * count
+        if module._public_historical_publications(candidate, _ACTIVE_PRODUCTS) is None:
+            break
+        largest = candidate
+    assert largest
+    status["last_run"]["historical_publications"] = largest
+    from app.market_data.newow.after_market_consumer_audit import CONSUMER_SECTIONS
+    check = {
+        "status": "incomplete", "case_count": 1800, "main_ready_count": 0,
+        "reference_ready_count": 0, "auxiliary_ready_count": 0, "budget_exhausted": True,
+        "trading_day": "2026-08-10", "checked_at": "2026-08-10T19:00:00+08:00",
+        "failures": [{"product": "ag", "strategy": "oscillation",
+                      "section": max(CONSUMER_SECTIONS, key=len), "reason": "X" * 80}] * 1800,
+    }
+    status["consumer_checks"] = {"newow_d1": check, "newow_w1": check}
+    module._atomic_write_status(updater.status_path, status)
+    assert module._load_status(updater.status_path)["last_run"]["historical_publications"] == largest
+    # The next ordinary run keeps the exact historical evidence before replacing it.
+    updater._write_current_run(datetime(2026, 8, 11, 18, 5, tzinfo=module.SHANGHAI), _ACTIVE_PRODUCTS)
+    restarted = module._load_status(updater.status_path)
+    assert restarted["last_run"]["historical_publications"] == largest

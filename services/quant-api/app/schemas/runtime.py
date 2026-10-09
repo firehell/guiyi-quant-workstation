@@ -7,6 +7,18 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class RuntimeServiceIdentity(BaseModel):
+    status: Literal["matched", "mismatch", "unknown", "disabled"]
+    runtime_root: str | None = None
+    runtime_commit: str | None = None
+    error_type: str | None = None
+
+
+class RuntimeDeploymentIdentity(BaseModel):
+    status: Literal["matched", "mismatch", "unknown"]
+    services: dict[str, RuntimeServiceIdentity]
+
+
 class RuntimeComponentHealth(BaseModel):
     """通用组件健康（DB、Redis 等单点探测）。"""
 
@@ -75,8 +87,9 @@ class RuntimeAfterMarketCurrentRun(BaseModel):
 class RuntimeWeeklyAuditHealth(BaseModel):
     """Optional full-history observation; independent of operational service health."""
 
-    status: Literal["disabled", "not_run", "missed", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"]
+    status: Literal["disabled", "not_run", "missed", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid", "unknown"]
     configured_enabled: bool = False
+    error_type: str | None = None
     scheduled_for: str | None = None
     readonly: bool = True
     scope: Literal["operational_full_history"] = "operational_full_history"
@@ -233,4 +246,5 @@ class RuntimeHealthOut(BaseModel):
     would_start_services: bool = False
     would_enqueue_jobs: bool = False
     would_send_notifications: bool = False
+    runtime_identity: RuntimeDeploymentIdentity | None = None
     components: RuntimeHealthComponents

@@ -2869,3 +2869,32 @@ def test_rqdata_all_direct_frequencies_apply_turnover_precision_policy(tmp_path,
     else:
         assert actual[0].turnover == Decimal("0.000000000116415321") * len(days)
     session.close()
+
+
+def test_snapshot_session_reuse_preserves_endpoints_and_batches_only_new_days(tmp_path, monkeypatch):
+    import app.market_data.coverage_source as module
+    session, starts = _session(tmp_path)
+    plain = DatabaseCoverageSource(session, starts)
+    reused = DatabaseCoverageSource(session, starts, reuse_session_windows=True)
+    days = (date(2025, 1, 6), date(2025, 1, 7), date(2025, 1, 8))
+    daily = DatasetKey("contract", "jm", "JM2505", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2505", "1w")
+    expected_daily = plain.expected_bar_end_pairs_for_trading_days(daily, days)
+    expected_weekly = plain.expected_bar_end_pairs_for_trading_days(weekly, days)
+    original = module.SessionWindowBatch
+    batches = []
+    def counted(*args, **kwargs):
+        batches.append(kwargs["trading_days"])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(module, "SessionWindowBatch", counted)
+    assert reused.expected_bar_end_pairs_for_trading_days(daily, days) == expected_daily
+    assert reused.expected_bar_end_pairs_for_trading_days(weekly, days) == expected_weekly
+    assert reused.expected_bar_end_pairs_for_trading_days(daily, days[1:]) == expected_daily[1:]
+    assert batches == [days]
+    extra = (*days, date(2025, 1, 9))
+    assert reused.expected_bar_end_pairs_for_trading_days(daily, extra) == plain.expected_bar_end_pairs_for_trading_days(daily, extra)
+    assert batches[1] == (date(2025, 1, 9),)
+    # A fresh audit creates a fresh coverage instance; no process/global reuse.
+    fresh = DatabaseCoverageSource(session, starts, reuse_session_windows=True)
+    fresh.expected_bar_end_pairs_for_trading_days(daily, days)
+    assert batches[-1] == days

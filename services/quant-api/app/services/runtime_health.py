@@ -40,6 +40,7 @@ from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.session_clock import SHANGHAI
 from app.models import Instrument, TradingCalendar
+from app.services.deployment_identity import deployment_identity_health
 
 RUNTIME_STATUS_OK = "ok"
 RUNTIME_STATUS_DEGRADED = "degraded"
@@ -162,7 +163,26 @@ def build_runtime_health(
     from app.market_data.late_provider_recovery import recovery_health
     components["late_provider_recovery"] = recovery_health(
         PROJECT_ROOT / ".run" / "late-provider-recovery-status.json", current_time)
+    runtime_identity = None
+    declared_commit = os.environ.get("GUIYI_RUNTIME_COMMIT")
+    if declared_commit:
+        runtime_identity = deployment_identity_health(root=PROJECT_ROOT, commit=declared_commit)
+        for name, identity in runtime_identity["services"].items():
+            if name in components and identity["status"] not in {"matched", "disabled"}:
+                # This API root cannot verify another deployment's files or marker.
+                diagnostic = components[name].get("notification") if name == "alert" else None
+                components[name] = {"status": "unknown", "configured_enabled": False,
+                    "error_type": "runtime_identity_unavailable"}
+                if name == "alert":
+                    components[name]["notification"] = diagnostic
+        core_identity_unverified = any(
+            runtime_identity["services"].get(name, {}).get("status") not in {"matched", "disabled"}
+            for name in ("live_market", "after_market")
+        )
+        if core_identity_unverified and overall != RUNTIME_STATUS_FAILED:
+            overall = RUNTIME_STATUS_DEGRADED
     return {
+        "runtime_identity": runtime_identity,
         "status": overall,
         "generated_at": _iso(current_time),
         "readonly": True,
@@ -911,7 +931,15 @@ def _collect_current_after_market_health(
             "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
     if isinstance(public.get("consumer_checks"), Mapping):
-        base["consumer_checks"] = public["consumer_checks"]
+        # A natural receipt describes its frozen input revision. Health does
+        # not rerun the consumer or hash the entire Catalog on every GET.
+        # Preserve the receipt outcome and explicitly withhold current validity.
+        base["consumer_checks"] = {
+            key: {**check, "freshness": "unverified",
+                  "freshness_reason": "INPUT_REVISION_NOT_RECHECKED"}
+            for key, check in public["consumer_checks"].items()
+            if isinstance(check, Mapping)
+        }
     if "last_interruption" in public:
         base["last_interruption"] = public["last_interruption"]
     if expected_day_error:

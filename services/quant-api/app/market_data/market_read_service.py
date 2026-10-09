@@ -23,11 +23,13 @@ from app.market_data.domain import (
     normalize_contract_for_symbol,
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
-from app.market_data.market_data_service import MarketDataError
+from app.market_data.market_data_service import DominantContractSegmentSummary, MarketDataError
 from app.market_data.live_market import LiveBarObservation, LiveRecoveryState
 
 
 class MarketPageReader(Protocol):
+    def dominant_segment_for_day(self, symbol: str, trading_day: date) -> DominantContractSegmentSummary: ...
+
     def validate_actual_dominant_alert_window(
         self,
         *,
@@ -63,6 +65,8 @@ class MarketPageReader(Protocol):
 
 class PhaseReader(Protocol):
     def resolve(self, symbol: str, now: datetime) -> ProductMarketPhase: ...
+
+    def completed_observation_trading_day(self, symbol: str, now: datetime) -> date | None: ...
 
 
 class LiveReadStore(Protocol):
@@ -780,6 +784,87 @@ class MarketReadService:
             contract=post_read_state.live_contract,
             bars=tuple(bars),
         )
+
+    def _newow_completed_identity(self, identity: SeriesPageQuery, now: datetime) -> tuple[date, str]:
+        if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
+                or identity.frequency is not BarFrequency.H1
+                or identity.symbol not in self._operational_products
+                or now.tzinfo is None or now.utcoffset() is None):
+            raise ValueError("NEWOW_COMPLETED_OBSERVATION_IDENTITY_INVALID")
+        day = self._phase_resolver.completed_observation_trading_day(identity.symbol, now)
+        if day is None:
+            raise ValueError("NEWOW_SESSION_DAY_UNAVAILABLE")
+        owner = self._market_data.dominant_segment_for_day(identity.symbol, day)
+        return day, owner.contract
+
+    def newow_completed_observation_endpoint(
+        self, identity: SeriesPageQuery, now: datetime,
+    ) -> tuple[datetime | None, date, str]:
+        """Session expected H1 completion, independent of Redis Bar presence.
+
+        Missing Calendar/Session/rank1 raises; no due endpoint alone returns None.
+        """
+        day, contract = self._newow_completed_identity(identity, now)
+        endpoints = self._market_data.expected_contract_replay_endpoints(
+            symbol=identity.symbol, contract=contract, frequency=identity.frequency,
+            trading_day=day, cutoff=now, since=day,
+        )
+        if any(item_day != day or end > now for end, item_day in endpoints):
+            raise ValueError("NEWOW_SESSION_ENDPOINT_INVALID")
+        if self._newow_completed_identity(identity, now) != (day, contract):
+            raise MarketObservationSnapshotError()
+        return endpoints[-1][0] if endpoints else None, day, contract
+
+    def newow_completed_observation_snapshot(
+        self, identity: SeriesPageQuery, after: datetime | None, now: datetime,
+    ) -> MarketObservationSnapshot:
+        """Newow recording only: read saved completed H1 even after Session close.
+
+        This does not change strict realtime Alert or Web display eligibility.
+        Observation time remains the caller's actual read time.
+        """
+        if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
+                or identity.frequency is not BarFrequency.H1
+                or now.tzinfo is None or now.utcoffset() is None
+                or after is not None and (after.tzinfo is None or after.utcoffset() is None or after > now)):
+            raise ValueError("NEWOW_COMPLETED_OBSERVATION_IDENTITY_INVALID")
+        state = self.state(identity, now)
+        day = None
+        contract = None
+        try:
+            if not state.operational:
+                raise ValueError("NEWOW_NOT_OPERATIONAL")
+            day, contract = self._newow_completed_identity(identity, now)
+            if self._subscription_contract(symbol=identity.symbol, trading_day=day) != contract:
+                raise ValueError("NEWOW_LIVE_OWNER_UNAVAILABLE")
+            boundary = _later(after, state.canonical_end)
+            observations = self._live_store.bar_observations(
+                day, identity.symbol, identity.frequency.value, boundary, now,
+                inclusive_after=False, expected_contract=contract,
+            )
+            bars = tuple(item.bar for item in observations if type(item) is LiveBarObservation)
+            if len(bars) != len(observations) or any(
+                type(item.bar) is not CanonicalBar or item.contract != contract
+                or item.bar.trading_day != day or item.bar.bar_end > now
+                or boundary is not None and item.bar.bar_end <= boundary
+                for item in observations
+            ) or any(b.bar_end <= a.bar_end for a, b in zip(bars, bars[1:])):
+                raise ValueError("NEWOW_LIVE_PROVENANCE_INVALID")
+            if bars:
+                expected = self._market_data.expected_contract_replay_endpoints(
+                    symbol=identity.symbol, contract=contract, frequency=identity.frequency,
+                    trading_day=day, cutoff=bars[-1].bar_end, after=boundary, since=day,
+                )
+                if tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected:
+                    raise ValueError("NEWOW_LIVE_SESSION_COVERAGE_INVALID")
+            if (self._phase_resolver.completed_observation_trading_day(identity.symbol, now) != day
+                    or self._market_data.dominant_segment_for_day(identity.symbol, day).contract != contract
+                    or self._subscription_contract(symbol=identity.symbol, trading_day=day) != contract
+                    or self._canonical_end(identity) != state.canonical_end):
+                raise MarketObservationSnapshotError()
+        except Exception:  # noqa: BLE001 - saved observations require complete authority
+            return MarketObservationSnapshot(state, "unavailable", day, contract, ())
+        return MarketObservationSnapshot(state, "realtime", day, contract, bars)
 
     def display_snapshot(
         self,

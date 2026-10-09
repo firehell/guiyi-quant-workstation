@@ -340,3 +340,43 @@ def test_friday_night_remains_unknown_without_next_trading_day_sessions(
     session.commit()
 
     assert MarketPhaseResolver(session).resolve("jm", _now(3, 21)).phase is MarketPhase.UNKNOWN
+
+
+@pytest.mark.parametrize(("symbol", "now", "day"), (
+    ("jm", _now(3, 23, 10), date(2025, 1, 6)),
+    ("ag", _now(4, 2, 40), date(2025, 1, 6)),
+    ("j", _now(6, 10, 20), date(2025, 1, 6)),
+    ("j", _now(6, 15, 10), date(2025, 1, 6)),
+    ("jm", _now(6, 23, 10), date(2025, 1, 7)),
+))
+def test_completed_observation_day_retains_real_session_identity_after_close(session, symbol, now, day):
+    assert MarketPhaseResolver(session).completed_observation_trading_day(symbol, now) == day
+
+
+def test_completed_observation_day_fails_closed_without_next_snapshot(session):
+    session.execute(delete(TradingSession).where(TradingSession.instrument_symbol == "jm"))
+    session.commit()
+    assert MarketPhaseResolver(session).completed_observation_trading_day("jm", _now(6, 23, 10)) is None
+
+
+@pytest.mark.parametrize('symbol, expected', [('ap', date(2025, 1, 6)), ('jm', date(2025, 1, 7))])
+def test_midnight_completed_observation_uses_previous_authoritative_session(session, symbol, expected):
+    session.add(TradingCalendar(exchange_code='CZCE' if symbol == 'ap' else 'DCE', trade_date=date(2025, 1, 9), is_trading_day=True))
+    session.commit()
+    resolver = MarketPhaseResolver(session)
+    assert resolver.completed_observation_trading_day(symbol, _now(7, 0, 14)) == expected
+
+
+def test_midnight_previous_session_missing_fails_closed(session):
+    session.add(TradingCalendar(exchange_code='CZCE', trade_date=date(2025, 1, 9), is_trading_day=True))
+    for row in session.scalars(select(TradingSession).where(TradingSession.instrument_symbol == 'ap')):
+        row.effective_from = date(2025, 1, 7)
+    session.commit()
+    assert MarketPhaseResolver(session).completed_observation_trading_day('ap', _now(7, 0, 14)) is None
+
+
+def test_midnight_missing_intermediate_calendar_cannot_skip_to_older_session(session):
+    session.add(TradingCalendar(exchange_code='CZCE', trade_date=date(2025, 1, 9), is_trading_day=True))
+    session.execute(delete(TradingCalendar).where(TradingCalendar.exchange_code == 'CZCE', TradingCalendar.trade_date == date(2025, 1, 6)))
+    session.commit()
+    assert MarketPhaseResolver(session).completed_observation_trading_day('ap', _now(7, 0, 14)) is None

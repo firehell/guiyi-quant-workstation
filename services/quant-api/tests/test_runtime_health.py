@@ -1408,6 +1408,9 @@ def test_after_market_health_exposes_weekly_consumer_check_without_promoting_it(
     after_market = payload["components"]["after_market"]
     assert after_market["status"] == "ok"
     assert after_market["consumer_checks"]["newow_w1"]["status"] == "incomplete"
+    assert after_market["consumer_checks"]["newow_w1"]["freshness"] == "unverified"
+    assert after_market["consumer_checks"]["newow_w1"]["freshness_reason"] == "INPUT_REVISION_NOT_RECHECKED"
+    assert "freshness" not in json.loads(status_path.read_text())["consumer_checks"]["newow_w1"]
 
 
 def test_after_market_health_preserves_consumer_check_on_failed_run(
@@ -2304,3 +2307,69 @@ def _contains_no_secret_words(payload: dict) -> bool:
             "must-not-leak",
         )
     )
+
+
+def test_formal_mixed_runtime_cannot_report_disabled_healthy(monkeypatch):
+    import app.services.runtime_health as module
+    monkeypatch.setenv("GUIYI_RUNTIME_COMMIT", "a" * 40)
+    monkeypatch.setattr(module, "deployment_identity_health", lambda **_: {
+        "status": "mismatch", "services": {"live_market": {"status": "mismatch"},
+        "after_market": {"status": "mismatch"}, "alert": {"status": "mismatch"},
+        "weekly_audit": {"status": "mismatch"}}})
+    with _session_factory()() as session:
+        result = build_runtime_health(session, redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False, after_market_automation_enabled=False,
+            alert_runtime_enabled=False, weekly_audit_enabled=False,
+            notification_transport_configured=False)
+    assert result["status"] == "degraded"
+    assert result["runtime_identity"]["status"] == "mismatch"
+    for name in ("live_market", "after_market", "alert", "weekly_audit"):
+        assert result["components"][name]["status"] == "unknown"
+    from app.schemas.runtime import RuntimeHealthOut
+    public = RuntimeHealthOut.model_validate(result).model_dump()
+    assert public["runtime_identity"]["status"] == "mismatch"
+
+
+def test_local_runtime_does_not_probe_host(monkeypatch):
+    import app.services.runtime_health as module
+    monkeypatch.delenv("GUIYI_RUNTIME_COMMIT", raising=False)
+    monkeypatch.setattr(module, "deployment_identity_health", lambda **_: pytest.fail("host probe"))
+    with _session_factory()() as session:
+        result = build_runtime_health(session, redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False, after_market_automation_enabled=False,
+            alert_runtime_enabled=False, weekly_audit_enabled=False,
+            notification_transport_configured=False)
+    assert result["runtime_identity"] is None
+
+
+@pytest.mark.parametrize("diagnostic", ["weekly_audit", "reference_worker", "alert"])
+def test_optional_or_alert_identity_does_not_redefine_market_health(monkeypatch, diagnostic):
+    import app.services.runtime_health as module
+    monkeypatch.setenv("GUIYI_RUNTIME_COMMIT", "a" * 40)
+    services = {name: {"status": "matched"} for name in ("live_market", "after_market")}
+    services[diagnostic] = {"status": "unknown"}
+    monkeypatch.setattr(module, "deployment_identity_health", lambda **_: {
+        "status": "unknown", "services": services})
+    with _session_factory()() as session:
+        result = build_runtime_health(session, redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False, after_market_automation_enabled=False,
+            alert_runtime_enabled=False, weekly_audit_enabled=False,
+            notification_transport_configured=False)
+    assert result["status"] == "ok"
+    assert result["runtime_identity"]["services"][diagnostic]["status"] == "unknown"
+
+
+def test_base_only_formal_install_preserves_default_off_health(monkeypatch):
+    import app.services.runtime_health as module
+    monkeypatch.setenv("GUIYI_RUNTIME_COMMIT", "a" * 40)
+    monkeypatch.setattr(module, "deployment_identity_health", lambda **_: {
+        "status": "matched", "services": {name: {"status": "disabled"}
+            for name in ("live_market", "after_market", "alert", "weekly_audit", "reference_worker")}})
+    with _session_factory()() as session:
+        result = build_runtime_health(session, redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False, after_market_automation_enabled=False,
+            alert_runtime_enabled=False, weekly_audit_enabled=False,
+            notification_transport_configured=False)
+    assert result["status"] == "ok"
+    assert result["components"]["live_market"]["status"] == "disabled"
+    assert result["components"]["after_market"]["status"] == "disabled"

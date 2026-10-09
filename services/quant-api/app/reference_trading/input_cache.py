@@ -30,6 +30,10 @@ class NewowInputCache:
             def observation_snapshot(self, query, after, now):
                 return cache.read(("live", query, after, now), lambda: market_read.observation_snapshot(query, after, now))
 
+            def newow_completed_observation_snapshot(self, query, after, now):
+                return cache.read(("newow-completed-live", query, after, now),
+                    lambda: market_read.newow_completed_observation_snapshot(query, after, now))
+
             def __getattr__(self, name):
                 return getattr(market_read, name)
 

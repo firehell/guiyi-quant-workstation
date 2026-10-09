@@ -93,14 +93,16 @@ def _read_launchd_service(label: str, *, root: Path) -> str | None:
     _reject("IDENTITY_UNAVAILABLE")
 
 
-def _verify_markers(root: Path) -> None:
+def _verify_markers(root: Path, *, require_alert_enabled: bool = True) -> None:
     try:
         directory = os.open(root / ".run", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             info = os.fstat(directory)
             if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o022:
                 _reject("MARKER_INVALID")
-            for name in ("market-runtime-enabled", "alert-runtime-enabled"):
+            names = (("market-runtime-enabled", "alert-runtime-enabled")
+                     if require_alert_enabled else ("market-runtime-enabled",))
+            for name in names:
                 descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                                      dir_fd=directory)
                 try:

@@ -114,7 +114,30 @@ request/response 摘要、取得时间和分类规则版本 MUST 与分区质量
 - **WHEN** 存在缺日、重复、额外端点、身份漂移、文件或质量摘要冲突
 - **THEN** 发布或读取 fail closed，不将异常改写为合法价，也不把该日从目标集合删除
 
+### Requirement: Historical publication retains bounded source evidence
+
+New HistoricalDataManager publications MUST retain bounded source evidence in immutable Parquet metadata
+`guiyi.historical_provenance`: version, actual input source, and SHA-256 of the exact input values.
+The metadata MUST be included in physical verification and the content-addressed filename. A post-market
+publication receipt MUST bind the committed dataset/month, filename digest, and this evidence, permitting
+independent Catalog-pinned readback. This proves only the recorded publication input; it MUST NOT claim
+provenance for prior unannotated assets or infer provenance from price equality with Live. Missing metadata
+on prior assets MUST remain unverified and MUST NOT trigger rewrites solely to add labels.
+
+#### Scenario: Read back a new Historical publication
+
+- **WHEN** a provider-backed or Canonical-1m-derived partition is committed
+- **THEN** its metadata and immutable file digest retain the exact publication input evidence
+- **AND** a later reader can verify it without Redis subscription or Bar retention
+
+#### Scenario: Preserve prior assets without provenance
+
+- **WHEN** a Catalog-pinned prior partition has no publication provenance metadata
+- **THEN** the source evidence is unknown, while existing physical and quality validation still apply
+- **AND** the reader does not fabricate a source label or rewrite the partition
+
 ### Requirement: Immutable publication uses Catalog commit as its visibility point
+
 候选 MUST 完成全部发布校验，再完成不可变文件及目录 durability，随后在既有 DB 事务内
 register/flush，并由真实 MarketDataService strict-read 校验无异常候选、质量感知 read 校验
 有异常候选的 Catalog URI。commit SHALL 是

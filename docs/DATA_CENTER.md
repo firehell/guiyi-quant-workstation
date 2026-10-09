@@ -417,6 +417,11 @@ Calendar/Session 与不可变 Parquet 分区指针摘要；W1 摘要同时绑定
 逐品种截止、输入摘要、只读预热提案与运行 commit。`READY` 之外的 `WARMING`、
 `NOT_APPLICABLE`、`UNAVAILABLE`、`DATA_INTERRUPTED` 保持显式合法状态；未知、预算耗尽、
 未检或 `input_changed` 不构成验收通过。
+消费者读取可在单次只读快照内复用同品种 Session 窗口及精确物理合约 replay；缓存不得跨事务、
+跨品种或进入维护 writer，必须绑定周期、质量分类、窗口与截止时点，失败不得缓存。生命周期、
+Calendar/provider 与完整周校验仍按原合同执行，不扩大 600/1200 秒预算。健康读回的旧检查结果
+仍绑定其 `input_revision`；未重算当前摘要时标记 `freshness=unverified`，不能把历史失败当作当前失败，
+也不能把历史成功当作当前通过。
 可选 `diagnostics` 记录 cutoff 解析、输入摘要、消费查询、预热提案和 scope 总耗时，分组预算与跳过状态，
 以及最多 8 条最慢消费调用的品种、策略、section、耗时和完成/错误/预算取消状态；仅保留白名单身份与有限数值，
 不输出异常正文、SQL、路径或凭据。子报告未检品种按 scope 顺序去重合并；未检不自动等同预算耗尽。
@@ -425,6 +430,16 @@ Calendar/Session 与不可变 Parquet 分区指针摘要；W1 摘要同时绑定
 生产重试或发送额外通知。未执行或旧 Runtime 没有该字段表示未验证。
 
 ### 盘后 Runtime 状态合同
+
+新自然运行在清理 Redis 前将 `live_evidence` 写入既有状态：绑定交易日、run、attempt、精确品种范围
+摘要、Live subscription 与正式 rank1 摘要及运行 commit；清理后再次读取当日 namespace，记录剩余
+Bar key 和 subscription 是否存在，残留或读回失败保持失败关闭。旧运行没有这些字段仍表示证据缺失，
+不得补造。新 Historical 发布在不可变 Parquet metadata 记录实际输入来源与输入摘要，终态
+`historical_publications` 绑定本次分区身份与文件内容 hash，可经 Catalog 指针独立读回；这是本次发布
+来源证据，不追溯证明旧资产来源，也不把与 Live 相同的价格值视为来源证明。无来源 metadata 的旧资产
+继续标为未验证，不为添加标签重写旧数据。
+发布摘要最多 1024 次且序列化不超过 256 KiB；整个状态使用紧凑 JSON，写入前校验不超过既有
+1 MiB 读取边界，文件和替换目录均 fsync。超限或持久化失败停止后续清理，不写出无法读回的状态。
 
 `.run/after-market-status.json` 写 schema v3；读取兼容旧 schema v1/v2。schema v3 在受监督自然盘后运行开始、任何
 coverage/RQData/update 尝试之前写入 `current_run`，白名单化保留 `attempt/stage/updated_at/stage_started_at/elapsed_seconds`、

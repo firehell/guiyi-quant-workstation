@@ -38,7 +38,7 @@ def newow_recording_matrix(products, health: dict) -> dict:
                     **endpoints.get((product, frequency), {}), **(item or {}),
                 })
     return {
-        "version": "newow_recording_matrix_v2", "recording_mode": "forward_observation",
+        "version": "newow_recording_matrix_v3", "recording_mode": "forward_observation",
         "expected_count": len(items), "configured_count": len(routes),
         "enabled_count": sum(item["enabled"] is True for item in items),
         "observed_count": sum(item["observed_through"] is not None for item in items),

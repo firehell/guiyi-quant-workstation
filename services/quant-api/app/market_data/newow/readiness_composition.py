@@ -30,7 +30,12 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
         session,
         PROJECT_ROOT / "data/universe/product_window_starts.csv",
         now=lambda: request.as_of,
+        reuse_session_windows=True,
     )
+    # This service and coverage are local to the audit's read-only snapshot.
+    # Share overlapping lifecycle sessions across contracts and D1/W1 without
+    # caching or weakening per-contract Calendar/provider/lifecycle proofs.
+    market.replay_coverage = coverage
     policy_frequency = (
         ProductFrequency.WEEKLY
         if ProductFrequency.WEEKLY in request.frequencies
