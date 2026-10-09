@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { deriveBasisDecision } from '@/utils/newowBasisDecision'
 import { historicalAnalysisAsOf } from '@/api/newowAiAnalysis'
 import { ref, computed, watch, onBeforeUnmount, useId } from 'vue'
 import NewowStatusCard from './NewowStatusCard.vue'
@@ -9,7 +10,7 @@ import type { NewowDecisionV2, DecisionPriceSource } from '@/types/newowDecision
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[] }>()
+const props = defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean }>()
 const decisionAsOf = computed(() => props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
@@ -41,6 +42,9 @@ async function load() {
     if (token === generation) error.value = failure instanceof NewowProductRequestError && failure.classification === 'busy' ? '图表仍在计算，请稍后重试综合解释。' : '综合解释读取失败或输入快照不一致，请刷新后重试。'
   } finally { if (token === generation) loading.value = false }
 }
+const basis = ref<'week'|'day'>('week')
+const displayStrategy = computed(() => props.displayStrategy ?? props.response.meta.identity.strategy)
+const basisDecision = computed(() => displayStrategy.value === 'dual' && (!props.dominantReady || props.dominantAsOf !== result.value?.cdv2.as_of) ? null : deriveBasisDecision(result.value,displayStrategy.value,basis.value,props.dominant ?? null))
 const cd = computed(() => result.value?.cdv2)
 const view = computed(() => cd.value ? decisionDisplay(cd.value) : null)
 const copy = computed(() => cd.value?.presentation?.version === 'guiyi_cdv2_daily_weekly_hourly_presentation_v1' && cd.value.presentation.scope === 'daily_weekly_hourly' ? cd.value.presentation : null)
@@ -64,24 +68,26 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
         <strong>综合决策</strong>
-        <span v-if="cd" class="decision-v2__action" :class="{ flat: cd.action.includes('空') || cd.action.includes('清') }">{{ cd.action === '清/空仓' ? '空仓' : cd.action }}</span>
+        <span v-if="cd" class="decision-v2__action" :class="{ flat: (basisDecision?.action ?? cd.action).includes('空') || (basisDecision?.action ?? cd.action).includes('清') }">{{ basisDecision?.action ?? (cd.action === '清/空仓' ? '空仓' : cd.action) }}</span>
         <span v-else class="decision-v2__basis">{{ loading ? '读取中…' : '综合依据待就绪' }}</span>
         <span class="decision-v2__arrow" :class="{ collapsed }" aria-hidden="true">▾</span>
       </button>
     </div>
     <p v-if="loading" class="decision-v2__message" role="status">正在读取同一快照的已完成日周小时策略…</p>
-    <p v-else-if="error" class="decision-v2__message" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
+    <div v-if="cd" class="decision-v2__period-choice" aria-label="页面决策口径"><button type="button" aria-label="周线口径" :aria-pressed="basis==='week'" @click="basis='week'">周线口径</button><button type="button" aria-label="日线口径" :aria-pressed="basis==='day'" @click="basis='day'">日线口径</button><span>{{ basis==='week' ? '周线定方向 · 日线定执行' : '日线定方向 · 60分定执行' }}</span></div>
+    <p v-if="error" class="decision-v2__message" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
     <div v-show="!collapsed" :id="bodyId" class="decision-v2__body">
       <template v-if="cd && view">
         <p class="decision-v2__headline">{{ dailyWeeklyFacts.filter(item => item.role.startsWith('trend')).map(item => `${item.role.endsWith('week') ? '周' : item.role.endsWith('m60') ? '60分' : '日'} ${decisionFactState(item.fact)}`).join(' / ') }}</p>
-        <p class="decision-v2__interpretation">{{ view.direction.text }}</p>
-        <section v-if="copy" class="decision-v2__first-action" :data-level="copy.first_action.level" aria-label="第一行动原则">
+        <section v-if="basisDecision" class="decision-v2__first-action" :data-level="basisDecision.strength==='tip'?'warn':basisDecision.strength" aria-label="口径行动原则"><b>{{ basisDecision.strengthName }}</b><strong>{{ basisDecision.strengthText }}</strong></section><p v-if="basisDecision">{{ basisDecision.reason }}</p><p v-else>所选口径不可用，当前保留原综合依据；不补造周期状态。</p><p v-if="basisDecision?.conflict" role="status">周期冲突 · {{ basisDecision.dirFull }}看多，{{ basisDecision.execFull }}回调</p><p v-if="cd.period_conflict?.code==='XP1'" role="status">XP1 · 趋势周线向上、日线向下；独立周期提示</p>
+        <p v-if="!basisDecision" class="decision-v2__interpretation">{{ view.direction.text }}</p>
+        <section v-if="copy && !basisDecision" class="decision-v2__first-action" :data-level="copy.first_action.level" aria-label="第一行动原则">
           <b>{{ { ok:'遵守', warn:'提示', violate:'警示', unknown:'待确认' }[copy.first_action.level] }}</b>
           <div><strong>{{ copy.first_action.title }}</strong></div>
         </section>
         <p v-if="missingDailyWeekly.length" class="decision-v2__missing">日周小时输入不可用：{{ missingDailyWeekly.map(decisionRoleLabel).join('、') }}；缺失不当作空仓，不使用其他周期替代。</p>
         <section v-if="view.mismatch" class="decision-v2__mismatch" aria-label="错配期提示" :style="{ '--mismatch-color': view.mismatch.color }">
-          <div><strong>{{ view.mismatch.name }}</strong><b>{{ cd.action }}</b></div>
+          <div><strong>{{ view.mismatch.name }}</strong><b>{{ {MM1:'趋势日线仍持股 · 震荡已转空',MM2:'趋势日线仍空仓 · 震荡已建仓',MM3:'趋势已转空 · 震荡仍持股',MM4:'趋势已转多 · 震荡仍空仓'}[cd.mismatch as 'MM1'|'MM2'|'MM3'|'MM4'] }}</b></div>
           <p><b>{{ view.mismatch.ageLabel }}</b> {{ view.mismatch.detail }}</p>
         </section>
         <button type="button" class="decision-v2__detail-toggle" :aria-label="evidenceExpanded ? '收起综合依据' : '展开综合依据'" :aria-expanded="evidenceExpanded" :aria-controls="evidenceId" @click="evidenceExpanded = !evidenceExpanded">{{ evidenceExpanded ? '收起依据' : '展开依据' }} <span aria-hidden="true">{{ evidenceExpanded ? '▴' : '▾' }}</span></button>
@@ -105,14 +111,14 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
               </article>
             </div>
           </section>
-          <div class="decision-v2__direction" :style="{ borderLeftColor: view.direction.color }"><strong>方向</strong><p :style="{ color: view.direction.color }">{{ view.direction.text }}</p></div>
+          <div class="decision-v2__direction" :style="{ borderLeftColor: view.direction.color }"><strong>原周日趋势背景</strong><p :style="{ color: view.direction.color }">{{ view.direction.text }}</p></div>
         <div class="decision-v2__resonance" aria-label="共振与错配依据" :style="{ '--resonance-color': view.resonance.color }">
           <strong>{{ view.resonance.name }}</strong><span class="decision-v2__dots" aria-hidden="true">{{ view.resonance.dots }}</span><p>{{ view.resonance.description }}</p>
         </div>
           <details class="decision-v2__proof"><summary>数据来源、信号计龄与参考强度</summary>
                       <p>沿用原版权重，日周小时共同参与；缺失不补分、不归一化。确定性表示信号明确性，不是胜率。</p>
           <p>错配依据：{{ decisionMismatchReason(cd) }}</p>
-            <p v-if="copy">{{ copy.first_action.detail }}</p>
+            <p v-if="copy && !basisDecision">{{ copy.first_action.detail }}</p>
             <p>信号年龄为距最近一次策略动作的已完成 K 线数；0根表示本周期当前 Bar 发生动作，日K与周K分别计龄。</p>
             <div class="decision-v2__scroll"><table><thead><tr><th>策略周期</th><th>状态</th><th>信号年龄</th><th>Bar / 合约</th><th>来源</th></tr></thead><tbody><tr v-for="item in dailyWeeklyFacts" :key="item.role"><td>{{ decisionRoleLabel(item.role) }}</td><td>{{ decisionFactState(item.fact) }}</td><td>{{ decisionFactAge(item.fact) }}</td><td>{{ item.fact?.bar_end ? formatBeijingInstant(item.fact.bar_end) : '—' }} / {{ item.fact?.physical_contract || '—' }}</td><td>{{ decisionFactReason(item.fact) }}</td></tr></tbody></table></div>
             <p>额外扣分 {{ cd.cert_extra }}：<span v-for="(score,key) in cd.deductions" :key="key">{{ deductions[key] ?? key }} {{ score }}（{{ cd.extra_sources[key] }}） </span></p>
@@ -132,7 +138,7 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
     </div>
     <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
-  <NewowStatusCard :background="context.background" :decision="result" :strategy="response.meta.identity.strategy" :loading="loading" :error="error" @retry="load" />
+  <NewowStatusCard :background="context.background" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" />
   <NewowDailyWeeklyPath :decision="result" :loading="loading" :error="error" />
 </template>
 
@@ -203,4 +209,10 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 .decision-v2__volatility,.decision-v2__column,.decision-v2__direction,.decision-v2__resonance { background:#f0f1f8; }
 .decision-v2__detail-toggle { padding:4px 0; }
 .decision-v2__body { gap:7px; }
+</style>
+
+<style scoped>
+.decision-v2__period-choice { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px;color:#8e8e93 }
+.decision-v2__period-choice button { border:1px solid #ddd;border-radius:5px;background:white;color:inherit;padding:5px 9px;cursor:pointer }
+.decision-v2__period-choice button[aria-pressed=true] { border-color:#ff9500;color:#ff9500;background:#ff950010 }
 </style>

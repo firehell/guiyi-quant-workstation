@@ -1447,6 +1447,23 @@ The target SHALL be labelled a futures adaptation, not the unavailable private p
 - **AND** no ReferenceTrade OPEN/CLOSED fact or strategy state is altered.
 
 
+### Requirement: Orthogonal XP1 and shared period-basis display
+The CDV2 response SHALL expose independently versioned `newow_period_conflict_v3379_v1`: trend week up and day down alone yields XP1. Scores, R/MM, legacy action, exposure caps and strategy BUILD/CLEAR SHALL remain unchanged.
+The page SHALL use `newow_basis_decision_v3379_v1` as the shared source of action, strength, reason, conflict and status stance. Week basis uses W1/D1; day basis uses D1/60m. BUILD/HOLD are holding, CLEAR is cleared, FLAT is neutral for this display; CDV2 normalized down SHALL NOT substitute for neutral.
+
+#### Scenario: Selected basis changes
+- **WHEN** the user switches week/day basis
+- **THEN** both cards and price-progress orientation update from one decision row without changing strategy facts or rereading data
+- **AND** old action directions are hidden or explicitly identified as original weekly/daily background inside folded evidence
+- **AND** no exposure or account sizing is recomputed.
+
+#### Scenario: Missing inputs or incompatible fusion partner
+- **WHEN** required completed facts are missing, future, duplicate or incompatible by physical contract/segment
+- **THEN** the selected basis is unavailable and no state is invented
+- **AND** dual uses the same compatibility and dominant algorithm as the chart header; an unavailable partner is distinct from valid null dominance (trend fallback)
+- **AND** a different dominant snapshot cannot be mixed with the explanation snapshot.
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

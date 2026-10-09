@@ -71,3 +71,27 @@ def test_state_cube_is_total_and_never_executable():
             assert r["resonance"] in ("R0", "R1", "R2", "R3", "R4")
             assert r["reference_exposure_cap"] in (0, 10, 30, 50, 60, 100)
             assert not r["executable"]
+
+
+@pytest.mark.parametrize("week,day,hour", tuple(product(("hold", "wait", None), repeat=3)))
+def test_period_conflict_is_independent_of_hourly_state(week, day, hour):
+    result = compute_cdv2(states((week, day, hour)), {})
+    assert result["period_conflict"] == {
+        "version": "newow_period_conflict_v3379_v1",
+        "hit": week == "hold" and day == "wait",
+        "code": "XP1" if week == "hold" and day == "wait" else None,
+        "week_state": {"hold": "up", "wait": "down", None: "unknown"}[week],
+        "day_state": {"hold": "up", "wait": "down", None: "unknown"}[day],
+    }
+
+
+def test_period_conflict_preserves_legacy_formula_identity_and_mismatch():
+    result = compute_cdv2(
+        states(("hold", "wait", "hold")),
+        states(("hold", "hold", "hold")),
+        osc_age=3,
+    )
+    assert result["period_conflict"]["code"] == "XP1"
+    assert result["mismatch"] == "MM2"
+    assert result["formula_version"] == "newow_composite_decision_cdv2_1_2_0_v1"
+    assert result["explanation_only"] and result["executable"] is False

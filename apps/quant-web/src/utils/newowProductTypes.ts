@@ -1069,6 +1069,14 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
   const facts = array(cd.facts,'cdv2.facts')
   if (facts.length !== 6) throw new Error('cdv2 facts missing')
   facts.forEach(raw => { const f = record(raw,'cdv2.fact'); text(f.role,'cdv2.role'); if (!Number.isInteger(f.age) || Number(f.age)<-1) throw new Error('cdv2 age'); if (f.bar_end !== null) requireNotAfter(instant(f.bar_end,'cdv2.bar_end'),meta.as_of,'cdv2.bar_end','meta.as_of') })
+  if (cd.period_conflict !== undefined) {
+    const p=exactRecord(cd.period_conflict,'period_conflict',['version','hit','code','week_state','day_state'])
+    requireExact(p.version,'newow_period_conflict_v3379_v1','period_conflict.version')
+    requireExact(p.week_state,record(cd.trend_state,'trend_state').week,'period_conflict.week')
+    requireExact(p.day_state,record(cd.trend_state,'trend_state').day,'period_conflict.day')
+    const hit=p.week_state==='up' && p.day_state==='down'
+    requireExact(p.hit,hit,'period_conflict.hit'); requireExact(p.code,hit?'XP1':null,'period_conflict.code')
+  }
   stringArray(cd.missing_roles,'cdv2.missing_roles')
   if (value.prices !== null) {
     const p = record(value.prices,'cross_period_prices')

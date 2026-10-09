@@ -4,6 +4,11 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## Develop 牛哇 P1 第二项
+
+2026-10-09：XP1独立周期冲突及周/日basis联动已完成测试和独立Review。综合动作、强度、理由、冲突及状态立场/进度共享页面判定；融合复用主图兼容/主导来源，旧评分与策略信号不变。四测试未加入。
+后端218 passed、Web1013 passed/1 skipped、冻结原JS及typecheck/build、独审64定向通过。详见[P1口径交付及公式表](docs/tasks/newow-p1-basis-20261009.md)。本次仅develop交付，未发布或切换Runtime。
+
 ## Develop 牛哇两个 P2
 
 2026-10-09：七类公开回看形态（杯柄、浅碟、双底、平台、递升、盘整、窄幅）与独立60分钟嵌套路径已完成实现、测试及独立Review。

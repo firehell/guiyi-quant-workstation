@@ -1115,6 +1115,10 @@ test('CDV2 explanation rejects future ages, inconsistent totals and executable c
   }
   const valid = make()
   assert.equal(normalizeNewowProductResponse(valid.wire, { ...expected, section: 'explanation' }).section, 'explanation')
+  const xp=make(); Object.assign(xp.addon.cdv2,{period_conflict:{version:'newow_period_conflict_v3379_v1',hit:false,code:null,week_state:'unknown',day_state:'unknown'}})
+  assert.equal(normalizeNewowProductResponse(xp.wire,{...expected,section:'explanation'}).section,'explanation')
+  const invalidXp=make(); Object.assign(invalidXp.addon.cdv2,{period_conflict:{version:'newow_period_conflict_v3379_v1',hit:true,code:'XP1',week_state:'unknown',day_state:'unknown'}})
+  assert.throws(()=>normalizeNewowProductResponse(invalidXp.wire,{...expected,section:'explanation'}),/period_conflict/)
   const badSum = make(); badSum.addon.cdv2.total = 20
   assert.throws(() => normalizeNewowProductResponse(badSum.wire, { ...expected, section: 'explanation' }), /sum conflict/)
   const badExecution = make(); badExecution.addon.cdv2.executable = true

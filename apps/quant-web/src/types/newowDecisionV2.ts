@@ -26,6 +26,7 @@ export interface CrossPeriodPrices {
   source_note: string
 }
 export interface Cdv2 {
+  period_conflict?: {version: string; hit: boolean; code: 'XP1'|null; week_state: string; day_state: string}
   formula_version: string
   as_of: string
   total: number

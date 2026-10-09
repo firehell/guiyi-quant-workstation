@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import type { NewowDecisionV2 } from '../src/types/newowDecisionV2'
+import { deriveBasisDecision } from '../src/utils/newowBasisDecision.ts'
 import { buildStatusCard, statusPriceProgress } from '../src/utils/newowStatusCardPresentation.ts'
 const price = (raw: string, physical_contract = 'JM2701') => ({ raw, display_value:raw, physical_contract, segment_id:'owner', calculation_segment_id:'quality', frequency:'1d' as const, bar_end:'2026-09-24T07:00:00Z', source_identity:'s', source_category:'canonical_channel' })
 const decision = (w = 'hold', d = 'hold', overrides = {}) => ({ cdv2:{ as_of:'2026-09-24T07:00:00Z', trend_bias:'bullish', reference_exposure_range:'0%–10%', reference_exposure_cap:10, facts:['trend_week','trend_day','oscillation_week','oscillation_day'].map(role=>({role,state:role.endsWith('week')?w:d,status:'ready',frequency:role.endsWith('week')?'1w':'1d',bar_end:'2026-09-24T07:00:00Z',physical_contract:'JM2701',segment_id:'owner',age:2})), ...overrides }, prices:{as_of:'2026-09-24T07:00:00Z',current_price:price('51.33'),status_card:{target:price('52.88'),absorb:price('47.96')}} }) as unknown as NewowDecisionV2
@@ -57,4 +58,11 @@ test('all 27 public oscillation combinations require compatible completed hour f
  value.cdv2.facts.at(-1)!.physical_contract='JM2609';assert.equal(buildStatusCard(value,'oscillation').risk,'unknown')
  value.cdv2.facts.at(-1)!.physical_contract='JM2701';value.cdv2.facts.at(-1)!.status='warming';assert.equal(buildStatusCard(value,'oscillation').risk,'unknown')
  assert.equal(buildStatusCard(decision(),'main_rise').risk,'unknown')
+})
+
+test('basis reason retains DN build wording despite legacy bearish guard',()=>{
+ const value=decision('sell','wait',{trend_bias:'bearish'});value.cdv2.as_of='2026-09-24T07:00:00Z'
+ for(const f of value.cdv2.facts){f.bar_end=value.cdv2.as_of;f.frequency=f.role.endsWith('week')?'1w':'1d'}
+ const basis=deriveBasisDecision(value,'trend','week')!;assert.equal(basis.row,'DN')
+ const card=buildStatusCard(value,'trend',basis);assert.equal(card.advice,basis.reason);assert.match(card.explanation,/暂不建仓/);assert.equal(card.riskLabel,'空仓防御')
 })

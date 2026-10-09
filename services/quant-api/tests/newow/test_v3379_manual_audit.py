@@ -81,6 +81,12 @@ def test_latest_cdv2_state_cube_numeric_outputs():
     assert len(ORACLE["cdv2_cases"]) == 729
     for case in ORACLE["cdv2_cases"]:
         actual = compute_cdv2(case["trend"], case["oscillation"])
+        conflict = actual["period_conflict"]
+        expected_conflict = case["period_conflict"]
+        assert conflict["hit"] == expected_conflict["hit"]
+        assert conflict["code"] == expected_conflict["code"]
+        assert conflict["week_state"] == expected_conflict["weekState"]
+        assert conflict["day_state"] == expected_conflict["dayState"]
         for field, expected in case["expected"].items():
             assert actual[field] == expected, (
                 case["trend"],
@@ -89,16 +95,18 @@ def test_latest_cdv2_state_cube_numeric_outputs():
             )
 
 
-def test_latest_xp1_is_not_implemented_locally():
+def test_latest_xp1_matches_public_source():
     witness = next(
         c
         for c in ORACLE["cdv2_cases"]
         if c["trend"] == {"week": "hold", "day": "wait", "m60": "hold"}
     )
     assert witness["period_conflict"]["code"] == "XP1"
-    assert "period_conflict" not in compute_cdv2(
-        witness["trend"], witness["oscillation"]
-    )
+    actual = compute_cdv2(witness["trend"], witness["oscillation"])["period_conflict"]
+    assert actual["code"] == witness["period_conflict"]["code"]
+    assert actual["hit"] == witness["period_conflict"]["hit"]
+    assert actual["week_state"] == witness["period_conflict"]["weekState"]
+    assert actual["day_state"] == witness["period_conflict"]["dayState"]
 
 
 def bars(case):

@@ -1,3 +1,4 @@
+import type { deriveBasisDecision } from './newowBasisDecision.ts'
 import type { CrossPeriodPrices, NewowDecisionV2, Cdv2 } from '../types/newowDecisionV2'
 import { OSCILLATION_MATRIX } from './newowOscillationMatrix.ts'
 import { formatMarketDecimal } from './marketDisplay.ts'
@@ -35,16 +36,18 @@ const signalLabels: Record<Signal,string> = {buy:'建仓',hold:'持有',sell:'�
 const oscState = (s:Signal) => s==='buy'||s==='hold'?'holding':s==='sell'?'cleared':'idle'
 function fact(cd:Cdv2|undefined,role:string) { return cd?.facts.find(f=>f.role===role) }
 function signal(f:Cdv2['facts'][number]|undefined):Signal|null { return f?.status==='ready' && ['buy','hold','sell','wait'].includes(f.state??'') ? f!.state as Signal : null }
-export function buildStatusCard(value:NewowDecisionV2|null, strategy:string) {
- const cd=value?.cdv2, axis=strategy==='oscillation'?'oscillation':'trend'
+export function buildStatusCard(value:NewowDecisionV2|null, strategy:string, basisDecision?:ReturnType<typeof deriveBasisDecision>) {
+ const cd=value?.cdv2, axis=basisDecision?.directionFact.role.startsWith('oscillation')||strategy==='oscillation'?'oscillation':'trend'
  const wf=fact(cd,axis+'_week'),df=fact(cd,axis+'_day'),hf=fact(cd,axis+'_m60'),w=signal(wf),d=signal(df),hour=signal(hf)
  const pairCompatible = w!==null && d!==null && !!wf?.physical_contract && !!wf.segment_id && wf.physical_contract===df?.physical_contract && wf.segment_id===df?.segment_id
  const compatible=pairCompatible && (strategy!=='oscillation' || (hour!==null && hf?.physical_contract===wf?.physical_contract && hf?.segment_id===wf?.segment_id))
  const key=w!==null&&d!==null&&hour!==null?`${oscState(w)}-${oscState(d)}-${oscState(hour)}`:null
  const matrix=key?OSCILLATION_MATRIX[key as keyof typeof OSCILLATION_MATRIX]:null
- const supported=strategy==='trend'||strategy==='oscillation'
- const row:Row = supported && compatible ? (strategy==='oscillation'&&matrix&&w&&d&&hour ? [oscillationDirection(oscState(w),oscState(d),oscState(hour)),matrix.risk,matrix.advice] : TREND[w+'-'+d])! : [strategy==='oscillation'?'周日小时状态不足':'日周状态不足','unknown',supported?'当前策略状态或合约上下文不足，等待已完成数据':'主升浪尚无独立日周摘要输入']
- const [name,risk,rawAdvice]=row
+ const supported=strategy==='trend'||strategy==='oscillation'||!!basisDecision
+ const row:Row = supported && compatible ? (axis==='oscillation'&&matrix&&w&&d&&hour ? [oscillationDirection(oscState(w),oscState(d),oscState(hour)),matrix.risk,matrix.advice] : TREND[w+'-'+d])! : [strategy==='oscillation'?'周日小时状态不足':'日周状态不足','unknown',supported?'当前策略状态或合约上下文不足，等待已完成数据':'主升浪尚无独立日周摘要输入']
+ const [name,legacyRisk,legacyAdvice]=row
+ const risk=basisDecision?.stance.risk ?? legacyRisk
+ const rawAdvice=basisDecision?.reason ?? legacyAdvice
  const bear=cd?.trend_bias==='bearish'
  const guard=(s:string)=>bear?s.replace(/加仓/g,'持仓').replace(/建仓/g,'持仓'):s
  const tag=(s:Signal|null)=>({state:s??'unknown',label:s===null?'未就绪':strategy==='oscillation'?({holding:'持有',cleared:'已清仓',idle:'待信号'}[oscState(s)]):signalLabels[s]})
@@ -52,8 +55,8 @@ export function buildStatusCard(value:NewowDecisionV2|null, strategy:string) {
  const current=value?.prices?.current_price
  const priceCompatible=compatible && current?.physical_contract===wf?.physical_contract && current?.segment_id===wf?.segment_id
  const progress=priceCompatible&&supported ? statusPriceProgress(value?.prices??null,risk) : null
- return {version:'guiyi_newow_status_card_hourly_v2',matrixLabel:compatible&&strategy==='oscillation'?matrix?.label:null,granularity:compatible&&strategy==='oscillation'?matrix?.granularity:null,name:guard(name),risk,riskLabel:guard(riskLabels[risk]),advice:guard(rawAdvice),week:tag(w),day:tag(d),weekFact:wf,dayFact:df,hour:tag(hour),hourFact:hf,exposure,progress,
-  explanation: `${guard(name)}，周线${tag(w).label}＋日线${tag(d).label}${strategy==='oscillation'?'＋60分钟'+tag(hour).label:''}。${guard(rawAdvice)}。${progress ? '目标价 '+formatMarketDecimal(value?.prices?.status_card.target?.display_value??value?.prices?.status_card.target?.raw)+'，吸筹价 '+formatMarketDecimal(value?.prices?.status_card.absorb?.display_value??value?.prices?.status_card.absorb?.raw)+'。' : '参考价格暂不可用。'}建议仓位参考强度 ${exposure}；状态摘要采用同一快照的策略事实，不代表账户持仓、保证金比例或手数。`}
+ return {version:basisDecision?'guiyi_newow_status_card_basis_v3379_v1':'guiyi_newow_status_card_hourly_v2',matrixLabel:compatible&&strategy==='oscillation'?matrix?.label:null,granularity:compatible&&strategy==='oscillation'?matrix?.granularity:null,name:guard(name),risk,riskLabel:basisDecision?.stance.label ?? guard(riskLabels[risk]),advice:basisDecision?rawAdvice:guard(rawAdvice),week:tag(w),day:tag(d),weekFact:wf,dayFact:df,hour:tag(hour),hourFact:hf,exposure,progress,
+  explanation: `${guard(name)}，周线${tag(w).label}＋日线${tag(d).label}${strategy==='oscillation'?'＋60分钟'+tag(hour).label:''}。${basisDecision?rawAdvice:guard(rawAdvice)}。${progress ? '目标价 '+formatMarketDecimal(value?.prices?.status_card.target?.display_value??value?.prices?.status_card.target?.raw)+'，吸筹价 '+formatMarketDecimal(value?.prices?.status_card.absorb?.display_value??value?.prices?.status_card.absorb?.raw)+'。' : '参考价格暂不可用。'}建议仓位参考强度 ${exposure}；状态摘要采用同一快照的策略事实，不代表账户持仓、保证金比例或手数。`}
 }
 
 // Bounded decimal lexemes -> scaled integers. No price arithmetic through binary floats.
