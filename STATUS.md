@@ -4,14 +4,26 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## Newow 四策略三周期 Topic 动作推送已启用
+
+现役发布与Runtime为 **v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e**，
+[PR #422](https://github.com/firehell/guiyi-quant-workstation/pull/422)、annotated tag与GitHub Release一致。
+2026-10-09 **21:00:51（Asia/Shanghai）**明确启用60品种×趋势/震荡/双策略/主升浪×1w/1d/60m，共720路。
+仅推送启用后新completed、新observed且已提交的正式动作到既有Topic；不推HOLD或hint，不补发历史，失败/未知不重试。
+当前kernel只有BUILD/CLEAR，REDUCE接口已支持但不把减仓hint升级为动作。Topic四人来自owner指定，未独立验证成员数量。
+100相关回归、4真实隔离PG、26相关部署、Web build/typecheck/topology、lock/Ruff/OpenSpec11/11/secret0/diff及独立Review通过。
+0050新增两张通知表及索引，实际migration和policy读回通过；现有服务身份matched、API/Web200、worker运行，独立验收720路及Topic hash匹配。
+目前delivery为空，自然信号和成员实际收到仍待验收；旧盘后retained_failure字节保持，整体health仍degraded，不能宣布RUNTIME_READY。
+本次不夹带develop尚未发布的视觉/公式改动。见[交付与恢复](docs/tasks/newow-topic-notifications-20261009.md)。
+
 ## Develop 牛哇 P1 第二项
 
 2026-10-09：XP1独立周期冲突及周/日basis联动已完成测试和独立Review。综合动作、强度、理由、冲突及状态立场/进度共享页面判定；融合复用主图兼容/主导来源，旧评分与策略信号不变。四测试未加入。
 后端218 passed、Web1013 passed/1 skipped、冻结原JS及typecheck/build、独审64定向通过。详见[P1口径交付及公式表](docs/tasks/newow-p1-basis-20261009.md)。本次仅develop交付，未发布或切换Runtime。
 
-## 每日增量稳定性补丁 v1.14.8 已发布并切换
+## 每日增量稳定性补丁 v1.14.8 发布检查点（已由v1.14.9接替）
 
-最新发布与现役 Runtime 为 **v1.14.8@3e1838e60ca95095137c5736f289b89a5f67a2ea**，
+v1.14.8 发布与切换检查点为 **v1.14.8@3e1838e60ca95095137c5736f289b89a5f67a2ea**，
 [PR #421](https://github.com/firehell/guiyi-quant-workstation/pull/421)、annotated tag及GitHub Release身份一致。
 仅在v1.14.7上叠加本次必要补丁，develop的未发布Newow改动不在现役版本中。
 盘后容量写前预估、可信提交前缀、进度日志和全部状态reader已修复；源码895 passed、独立Review259 passed、
