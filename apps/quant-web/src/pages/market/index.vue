@@ -5,11 +5,13 @@ import '@/styles/marketHome.css'
 import MarketHomeHeader from '@/components/market/MarketHomeHeader.vue'
 import { normalizeProductOptions } from '@/utils/productSearch'
 import { productSectorLabel } from '@/utils/productDirectory'
-import MarketHomeStrategyCards from '@/components/market/MarketHomeStrategyCards.vue'
+import MarketHomeLegend from '@/components/market/MarketHomeLegend.vue'
 import { newowMessageChartQuery, type NewowMessage } from '@/api/newowMessages'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
+import MarketHomeMobileList from '@/components/market/MarketHomeMobileList.vue'
 import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.vue'
 import MarketHomeSkeleton from '@/components/market/MarketHomeSkeleton.vue'
+import MarketHomeTable from '@/components/market/MarketHomeTable.vue'
 import { getMarketDominants, getMarketHomeOverview } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { useMarketHome } from '@/composables/useMarketHome'
@@ -30,7 +32,6 @@ const sortDirection = ref<MarketHomeSortDirection>(initialPreferences.sortDirect
 const compactDensity = ref(initialPreferences.compactDensity)
 const activeTab = ref<'market' | 'messages'>(loadActiveTab())
 const messageReloadSequence = ref(0)
-const cardReloadSequence = ref(0)
 const navigationError = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
 const home = useMarketHome({
@@ -64,7 +65,6 @@ async function refreshAll() {
     return
   }
   await home.refreshAll()
-  cardReloadSequence.value += 1
   live.restart()
 }
 
@@ -84,15 +84,6 @@ function openProduct(item: MarketHomeRow) {
 }
 
 function openNewowEvent(event: NewowMessage) { rememberPageState(); void router.push({ name: 'market-chart', query: newowMessageChartQuery(event) }) }
-function openCardChart(symbol: string, strategy: 'trend' | 'oscillation', frequency: '1d' | '1w') {
-  if (newowCapabilities.state.value !== 'ready' || !newowCapabilities.openFrequenciesFor(symbol).includes(frequency)) {
-    navigationError.value = newowCapabilities.error.value ?? '当前品种尚未开放此周期。'
-    return
-  }
-  rememberPageState()
-  navigationError.value = null
-  void router.push({ name: 'market-chart', query: marketHomeUnifiedProductChartQuery(symbol, frequency, strategy) })
-}
 function openEvent(event: AlertEvent) { rememberPageState(); void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
 function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
   const frequencies = newowCapabilities.openFrequenciesFor(symbol)
@@ -184,6 +175,7 @@ onBeforeUnmount(() => {
     <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
     <template v-if="activeTab === 'market'">
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
+      <MarketHomeLegend />
       <section class="market-home-main">
       <header class="market-home-list-heading">
         <div><h1>{{ sector ? productSectorLabel(sector) : '全部品种' }}</h1><span>{{ rows.length }}</span><p>{{ rows.some((row) => row.liveQuote) ? '最新已完成行情；日周指标仍为收盘口径' : '最近完整交易日收盘快照' }}</p></div>
@@ -197,7 +189,8 @@ onBeforeUnmount(() => {
       <p v-else-if="home.overview.stale.value" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />
       <template v-else>
-        <MarketHomeStrategyCards :rows="rows" :authority="home.overview.data.value?.target_as_of ?? ''" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart" />
+        <MarketHomeTable :rows="rows" :compact="compactDensity" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" />
+        <MarketHomeMobileList :rows="rows" :live-stale="live.stale.value" @open="openProduct" />
         <p v-if="!rows.length && home.overview.data.value" class="market-home-empty">当前{{ sector ? productSectorLabel(sector) : '快照' }}暂无可用品种。<span v-if="selectedSector">可用 {{ selectedSector.participant_count }} / 总数 {{ selectedSector.active_count }}；缺失品种不生成行情行。</span></p>
       </template>
       </section>

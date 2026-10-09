@@ -139,6 +139,7 @@ async function loadPage() {
       `from '${file === 'MarketHomeHeader.vue' ? headerComponent : file === 'MarketHomeTable.vue' || file === 'MarketHomeMobileList.vue' ? productComponent : plainComponent}'`
     ))
     .replace(/from ['"]@\/api\/(?:market|alerts|runtime)['"]/g, `from '${apiModule}'`)
+    .replace(/from ['"]@\/api\/newowMessages['"]/g, `from '${new URL('../src/api/newowMessages.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/composables\/useMarketHome['"]/g, `from '${homeModule}'`)
     .replace(/from ['"]@\/composables\/useMarketHomeLive['"]/g, `from '${liveModule}'`)
     .replace(/from ['"]@\/composables\/useNewowCapabilities['"]/g, `from '${capabilitiesModule}'`)
