@@ -72,7 +72,7 @@ def test_persisted_empty_scope_decodes_cached_full_prefix_after_source_proof(pro
 def test_required_page_contract_and_old_schema_rejected():
     assert ReferenceValueOut.model_fields["page_performance"].is_required()
     with pytest.raises(ValidationError):
-        PagePerformanceOut.model_validate({"version": "newow_page_performance_v3379_v1"})
+        PagePerformanceOut.model_validate({"version": "newow_page_performance_v3379_v2"})
     with pytest.raises(ValidationError):
         ProductMetaOut.model_validate({"schema_version": "newow_product_detail_v3"})
 

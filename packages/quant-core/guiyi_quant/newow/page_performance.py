@@ -17,7 +17,7 @@ from typing import Sequence
 
 from .ai_analysis import fixed
 
-PAGE_PERFORMANCE_VERSION = "newow_page_performance_v3379_v1"
+PAGE_PERFORMANCE_VERSION = "newow_page_performance_v3379_v2"
 PAGE_SOURCE_SHA256 = "3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d"
 
 
@@ -348,6 +348,13 @@ def compute_page_performance(
         "strategy": strategy,
         "segment_count": len(segments),
     }
+    # Public no-match fallback belongs to the full source sequence, not to
+    # each physical owner. Once the overall input reaches the requested start,
+    # ended owners must not re-enter the window through that fallback.
+    window_start_matched = since is not None and any(
+        bar.observation_eligible and (bar.trading_day or bar.date) >= since
+        for segment in segments for bar in segment.bars
+    )
     for ideal in (False, True):
         aggregate = {
             "period": period,
@@ -369,10 +376,13 @@ def compute_page_performance(
             )
             if result is None:
                 continue
-            used += 1
-            result["segment_ids"] = [segment.owner] * len(result["dates"])
             day_map = {b.date: b.trading_day or b.date for b in segment.bars}
             result["trading_days"] = [day_map[d] for d in result["dates"]]
+            if (window_start_matched and result["trading_days"]
+                    and result["trading_days"][-1] < since):
+                continue
+            used += 1
+            result["segment_ids"] = [segment.owner] * len(result["dates"])
             for trade in result["trades"]:
                 trade["segment_id"] = segment.owner
             raw_cum, raw_wins, raw_dd = (

@@ -359,7 +359,7 @@ class PagePerformanceResultOut(_PageOut):
 
 
 class PagePerformanceOut(_PageOut):
-    version: Literal["newow_page_performance_v3379_v1"]
+    version: Literal["newow_page_performance_v3379_v2"]
     source_version: Literal["3.3.79"]
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     page_parity: Literal[True]

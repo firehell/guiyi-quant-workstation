@@ -44,12 +44,14 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
         </svg>
         <p v-if="active.equity.length">末根累计 {{ referencePercentDisplay(active.equity.at(-1)).text }} · {{ active.trading_days.at(-1) }}</p>
       </section>
+      <section class="newow-reference__summary">
       <dl class="newow-reference__metrics" data-testid="page-performance-summary">
         <div><dt>累计收益</dt><dd>{{ referencePercentDisplay(active.summary.cumReturn).text }}</dd></div>
         <div><dt>胜率</dt><dd>{{ active.summary.accuracy }}%</dd></div>
-        <div><dt>页面回撤</dt><dd>{{ referencePercentDisplay(active.summary.maxDrawdown).text }}</dd></div>
+        <div><dt :title="selection === 'ideal' ? '完整历史按单笔最大亏损；原站日期窗口过滤会重算归一化曲线回撤，保持对应原式。' : '累计页面收益峰值与当前值之差，单位为百分点。'">{{ selection === 'ideal' ? '单笔最大亏损' : '页面回撤' }}</dt><dd>{{ referencePercentDisplay(active.summary.maxDrawdown).text }}</dd></div>
         <div><dt>估值交易次数</dt><dd>{{ active.summary.tradeCount }}</dd></div>
       </dl>
+      </section>
       <p v-if="value?.ordinary_interrupted_count">{{ value.ordinary_interrupted_count }} 笔跨区段未完成配对未计入普通收益。</p>
       <p v-if="selection === 'ideal' && value?.ideal_open_count">{{ value.ideal_open_count }} 笔理论未平仓未计入完成统计。</p>
       <h3>页面估值操盘记录 · {{ selection === 'ideal' ? '理论值' : '普通值' }}</h3>

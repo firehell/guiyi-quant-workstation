@@ -9,7 +9,7 @@ export interface PagePerformanceMode {
   readonly equity: readonly string[]; readonly trades: readonly PageEstimateTrade[]
 }
 export interface PagePerformance {
-  readonly version: 'newow_page_performance_v3379_v1'; readonly source_version: '3.3.79'; readonly source_sha256: string
+  readonly version: 'newow_page_performance_v3379_v2'; readonly source_version: '3.3.79'; readonly source_sha256: string
   readonly page_parity: true; readonly executable: false; readonly strategy: 'trend' | 'oscillation' | 'main_rise' | 'fusion'
   readonly input_sha256: string; readonly source_evidence_sha256: string | null
   readonly segment_count: number; readonly ordinary_interrupted_count: number; readonly ideal_open_count: number
@@ -62,7 +62,7 @@ export function normalizePagePerformance(v: unknown, strategy: PagePerformance['
   if (v === undefined || v === null) return null
   const p = obj(v)
   exact(p, ['version','source_version','source_sha256','page_parity','executable','strategy','segment_count','ordinary_interrupted_count','ideal_open_count','ordinary','ideal','input_sha256','source_evidence_sha256'])
-  if (p.version !== 'newow_page_performance_v3379_v1' || p.source_version !== '3.3.79' || p.source_sha256 !== sourceHash || p.page_parity !== true || p.executable !== false || p.strategy !== strategy) throw Error('page_performance source identity invalid')
+  if (p.version !== 'newow_page_performance_v3379_v2' || p.source_version !== '3.3.79' || p.source_sha256 !== sourceHash || p.page_parity !== true || p.executable !== false || p.strategy !== strategy) throw Error('page_performance source identity invalid')
   const inputHash = text(p.input_sha256), evidenceHash = p.source_evidence_sha256 === null ? null : text(p.source_evidence_sha256)
   if (!/^[a-f0-9]{64}$/.test(inputHash) || evidenceHash !== null && !/^[a-f0-9]{64}$/.test(evidenceHash)) throw Error('page_performance input identity invalid')
   const ordinary = mode(p.ordinary, cutoff), ideal = mode(p.ideal, cutoff, true), segmentCount = count(p.segment_count)
@@ -73,7 +73,9 @@ export function normalizePagePerformance(v: unknown, strategy: PagePerformance['
 
 export function pagePerformancePlot(mode: PagePerformanceMode | null) {
   if (!mode || mode.equity.length === 0) return []
-  const values = mode.equity.map(Number), low = Math.min(0, ...values), high = Math.max(0, ...values)
+  const values = mode.equity.map(Number)
+  let low = 0, high = 0
+  for (const value of values) { low = Math.min(low, value); high = Math.max(high, value) }
   const span = high - low || 1
   const parts: string[] = []
   values.forEach((v, i) => {

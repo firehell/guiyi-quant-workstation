@@ -222,7 +222,7 @@ test('comparator renders a natural insufficient-owner boundary without a conflic
 
 test('workspace uses a disclosure and dialog while keeping one selected signal authority', () => {
   const source = readFileSync(workspaceUrl, 'utf8')
-  assert.match(source, />查看依据</)
+  assert.ok(source.includes('@explain-main="openDialog(\'explanation\')"'))
   assert.doesNotMatch(source, /detailsOpen|newow-details/)
   assert.match(source, /<NewowDetailDialog/)
   assert.doesNotMatch(source, /role="tablist"|researchTab/)

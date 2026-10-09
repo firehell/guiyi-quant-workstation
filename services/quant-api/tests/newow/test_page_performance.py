@@ -290,3 +290,69 @@ def test_overlapping_eligible_owners_still_fail_closed():
         compute_page_performance(
             [PageSegment("one", rows), PageSegment("two", rows)], "fusion"
         )
+
+
+def test_exit_window_excludes_ended_owner_instead_of_per_owner_no_match_fallback():
+    def segment(owner, year, first_high, exit_price):
+        dates = tuple(f"{year}-01-0{day}" for day in (1, 2, 3))
+        rows = (PageBar(dates[0], Decimal(first_high), Decimal("90"), Decimal("100")),
+                PageBar(dates[1], Decimal("150"), Decimal("90"), Decimal("100")),
+                PageBar(dates[2], Decimal("110"), Decimal("90"), Decimal("100")))
+        return PageSegment(owner, rows, True, (
+            PageAction(dates[0], "buy", Decimal("100")),
+            PageAction(dates[1], "sell", Decimal(exit_price)),
+        ))
+    old = segment("old-owner", 2025, "120", "110")
+    current = segment("current-owner", 2026, "105", "105")
+    actual = compute_page_performance([old, current], "fusion", since="2026-01-01", through="2026-01-03")
+    expected = compute_page_performance([current], "fusion", since="2026-01-01", through="2026-01-03")
+    for mode in ("ordinary", "ideal"):
+        assert actual[mode] == expected[mode]
+        assert actual[mode]["summary"]["tradeCount"] == 1
+        assert actual[mode]["summary"]["cumReturn"] == "5"
+        assert set(actual[mode]["segment_ids"]) == {"current-owner"}
+
+
+def _window_owner(owner, year, *, eligible=True, open_only=False):
+    dates = tuple(f"{year}-01-0{day}" for day in (1, 2, 3))
+    bars = tuple(PageBar(d, Decimal("105"), Decimal("90"), Decimal("100"), eligible) for d in dates)
+    actions = (PageAction(dates[0], "buy", Decimal("100")),)
+    if not open_only:
+        actions += (PageAction(dates[1], "sell", Decimal("105")),)
+    return PageSegment(owner, bars, True, actions)
+
+
+@pytest.mark.parametrize("since,through", [
+    ("2025-06-01", "2026-01-03"),
+    ("2026-01-03", "2026-01-03"),
+    ("2025-06-01", "2025-12-31"),
+])
+def test_cross_owner_window_boundaries_match_current_owner_only(since, through):
+    old, current = _window_owner("old", 2025), _window_owner("current", 2026)
+    actual = compute_page_performance([old, current], "fusion", since=since, through=through)
+    expected = compute_page_performance([current], "fusion", since=since, through=through)
+    for mode in ("ordinary", "ideal"):
+        assert actual[mode] == expected[mode]
+
+
+def test_full_sequence_no_start_match_retains_public_fallback():
+    segments = [_window_owner("old", 2025), _window_owner("current", 2026)]
+    actual = compute_page_performance(segments, "fusion", since="2027-01-01")
+    expected = compute_page_performance(segments, "fusion")
+    for mode in ("ordinary", "ideal"):
+        assert actual[mode] == expected[mode]
+
+
+def test_warmup_only_owner_does_not_prove_global_start_match():
+    old, warmup = _window_owner("old", 2025), _window_owner("warmup", 2026, eligible=False)
+    actual = compute_page_performance([old, warmup], "fusion", since="2026-01-01")
+    expected = compute_page_performance([old], "fusion")
+    for mode in ("ordinary", "ideal"):
+        assert actual[mode] == expected[mode]
+
+
+def test_ended_owner_open_pairing_does_not_enter_window_interruption_counts():
+    old, current = _window_owner("old", 2025, open_only=True), _window_owner("current", 2026)
+    actual = compute_page_performance([old, current], "fusion", since="2026-01-01")
+    assert actual["ordinary_interrupted_count"] == 0
+    assert actual["ideal_open_count"] == 0

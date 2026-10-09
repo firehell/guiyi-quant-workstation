@@ -1387,9 +1387,11 @@ profile 为 `newow_trend_d1_page_v4`。这些身份 SHALL 进入缓存、资产�
 本节更新此前 v2/v3 envelope 身份，既有 ReferenceTrade 事实合同继续有效。
 趋势 MA7 / B10 SHALL 按公开 calcMAFrom 的最新到最旧顺序，以 binary64 逐次加法累加后除以周期；不得以补偿 sum、Decimal 或重排窗口替换。Close 与 B10 的边界比较保留原式，批量、增量和 checkpoint 重启必须一致。趋势带公式更新为 `newow_trend_band_page_v3`；旧 v2 候选不得复用。
 
-`newow_page_performance_v3379_v1` SHALL 独立返回 ordinary / ideal 的摘要、完整曲线和估值交易，
+`newow_page_performance_v3379_v2` SHALL 独立返回 ordinary / ideal 的摘要、完整曲线和估值交易，
 绑定来源版本、源码 SHA-256、有序输入 SHA-256 和来源 evidence SHA-256。所有输出
 `page_parity=true / executable=false`。不得从 ReferenceTrade 已裁剪的列表反推页面收益。
+
+当全输入存在窗口起点之后的 eligible Bar 时，聚合层 SHALL 排除结束于起点之前的 owner，收益、曲线、回撤和未完成计数均不得因逐 owner 的 no-match fallback 回流。全输入没有起点匹配时保留原站单序列 fallback。此窗口适配修正使用独立页面投影 v2，不修改 ReferenceTrade 身份或原式单段过滤函数。
 
 ordinary SHALL 从权威完整物理生命周期前缀计算，按退出日期选择窗口，保留公开函数的标记权益归零及舍入。
 完整最终 owner 的末根 Close forceClose 只属于页面估值统计，不生成 CLEAR，不关闭 ReferenceTrade OPEN。
