@@ -91,3 +91,12 @@ owner明确批准短暂切换至v1.14.3。原子安装器首次在mutation前因
 最终v1.14.5候选扩大后端2934 passed/111 skipped，候选隔离PG40 passed，Web809 passed/1 skipped及build/typecheck/topology；午夜176+独审46、audit217+独审5，OpenSpec10/10、Ruff/secret0/diff通过。候选只读720 configured/enabled，584 READY/136实际漏记、180 source endpoint READY，混合部署身份诊断正确。PR417仍草稿：宿主明确拒绝ready/main merge，要求此次具体发布批准；尚无新tag/Release/Runtime切换或终场恢复。
 
 最终待发布候选 `1820951bfa8c7cdc234a22cca85d698a3effba60`（PR417），包含本轮审计误判修复；此前34649e4ff为补充修复前检查点。尚未ready/main/tag/Release/Runtime。
+
+
+## v1.14.5已发布与正式切换（2026-10-09）
+
+owner本轮“你开始发布”后，PR417合并main至b4b45643fe6ea0d383b7342329389879d962573f，annotated v1.14.5及GitHub Release核对一致；合并树与最终候选1820951bf内容相同。此前发布授权阻断已由本次明确交办解决，旧失败记录保留。
+
+正式树离线uv锁定依赖、Web build/typecheck/topology通过，render/preflight60/60；API/Web/logrotate、Market三服务及reference worker均经既有安装器切换并独立核对精确root/commit。首次Market动作因旧after-market.lock缺失在mutation前停止，历史JSONvalid，既有guard初始化精确600文件后原安装流程持锁/保留history/原子提交通过。Alert13和weekly14.2不切换，legacy服务脚本overall failed/3项源于这些明确保留的身份差异；核心Runtime health ok。
+
+独立生产136条23:00 calculation证据完整，真实observed_at08:41:09–08:44:03，正常worker扫描恢复，无手动job/replay/backfill。08:44:31矩阵720READY、enabled720、观察180、endpoint180READY、pending capture0。新版本首根自然completed Bar、其余540周期观察及Live→Canonical核对尚待发生，发布和安装成功不等于整体RUNTIME_READY。现场输出保存在output/newow-v1145-release-20261009/。

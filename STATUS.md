@@ -6,45 +6,31 @@
 
 ## Release 与 Runtime
 
-最新正式发布为 **v1.14.3@00bc70899a4d8b6a519dd9d443caf6c2d256ac21**，
-[PR #416](https://github.com/firehell/guiyi-quant-workstation/pull/416) 与
-[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.3) exact identity 已核对。
-API/Web/logrotate 已切至 v1.14.3，API health HTTP200、实际版本1.14.3；正式发布树 detached/clean。
-当前运行组件版本并不统一：reference worker为v1.14.3、weekly audit为v1.14.2，Market Live/盘后/late-provider 为 v1.14.0，
-共享 Alert 为 v1.13.0。八个应用 label loaded；schedule-only not_running 不视为故障。
+最新正式发布为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，
+[PR #417](https://github.com/firehell/guiyi-quant-workstation/pull/417) 已合并，annotated tag与
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.5) 精确身份一致。
+2026-10-09 08:39–08:41，API/Web/logrotate、Market Live/盘后/late-provider及reference worker已完成正式切换。
+发布树 `.worktrees/release-v1.14.5` detached/clean，API实际1.14.5/HTTP200、Web HTTP200，核心DB/Redis/Market health为ok。
+Alert保留v1.13.0、weekly audit保留v1.14.2，身份诊断明确mismatch；旧服务检查脚本因此overall failed/3项，不能宣称所有组件统一就绪。
+本轮未切换Alert、未执行0049 migration、未新增推送或订单；auto_order=false。
 
-**牛哇60品种×四策略×W1/D1/60m，共720条链路**：历史资产720/720 READY，forward720/720启用并预热。
-D1/60m最新已完成历史端点为2026-10-08 15:00北京时间，W1为2026-09-30；未完成周不生成正式历史。
-2026-10-08 21:59开始记录，首个22:00夜盘端点已自然观察180/180条（45夜盘品种×四策略），
-180条源哈希与独立60×1m重建一致，17个策略Marker、17个Hint已记录；pending capture/rejection/diagnostic均0。
-上述计数为22:57验收快照：其余540条当时等待各自自然completed端点，seed不计作实时观察；180条Live→Canonical核对当时pending，不能算匹配完成。
+**原136条终场遗漏已恢复，整体自然验收仍待完成。** 独立生产只读核对34品种×四策略的23:00 calculation全部存在，
+真实observed_at为10/9 08:41:09–08:44:03；既有worker正常扫描完成，未手动job/replay/backfill或伪造昨日首次观察。
+08:44:31矩阵720 configured/enabled/READY，180 source endpoint READY、pending capture0；自然观察仍180条，
+其余540条尚待自身自然周期。READY表示当前预期端点无落后，不等于720均有自然观察。
+Live→Canonical核对仍pending；新版本上线后的首根自然completed Bar及日/周自然闭环尚未发生，**不声明整体RUNTIME_READY**。
+历史D1/60m已完成端点10/8 15:00、W1为9/30，未完成周不生成正式历史；page_parity=true/executable=false。
 
-**后续review确认23:00终场漏记136条（34品种×四策略），代码修复已完成、正式读回待验收。**
-因此720配置/历史READY不等于720自然记录完整；22:00成功不能证明23:00覆盖。
-本轮CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE：后端805通过/52跳过、隔离PostgreSQL40通过，两轮独审无Confirmed Issue；Session终场捕获、矩阵v3与部署身份诊断已修复。v1.14.5隔离补丁候选1820951bf已完成扩大验证：后端2934通过/111跳过、候选隔离PG40通过、Web809通过/1跳过及构建、OpenSpec10、secret0、Ruff、独审与preflight60/60通过。PR417仍草稿，宿主拒绝ready/main merge并要求具体发布批准；尚未发布或切换，不预记136条现场恢复完成。
+修复及验证完成：后端2934 passed/111 skipped，真实隔离PG40 passed，Web809 passed/1 skipped及typecheck/build/topology，
+午夜176+独审46、audit217+独审5、OpenSpec10/10、Ruff/secret0/diff通过。正式发布树Web重新构建通过、Market preflight60/60通过，现场身份与136恢复独立验收通过。
+首次Market安装在变更前因旧v1.14.0缺after-market.lock停止；历史JSON只读校验通过后用既有guard初始化600锁文件，原安装器持锁/历史保留/原子切换通过，没有绕过校验。
 
-数据配置域审计已闭环：原operational60七频、截至10/8审计67分11秒，23项均RS W1；40个端点均由完整D1 typed质量中断证明。修audit误判后217测试/独审5通过，RS七频新审计0finding/provider0/applied0；原其余59无finding结果和原失败报告保留。范围为2023 floor/新上市后、rank1及已登记physical warm-up，不证明无限历史或正常正价W1。252/257质量日当前RQData七字段一致，BZ5 fresh UNKNOWN且禁重试；旧源质量事实不改。
+配置域数据审计已闭环：operational60七频、截至10/8、2023 floor/新上市后及已登记physical warm-up。
+原23项RS W1告警逐40端点由完整D1 typed质量周中断证明；修audit误判后RS七频新审计0finding/provider0/applied0，原报告保留。
+252/257质量日当前RQData七字段一致；BZ5 fresh UNKNOWN且禁重试，旧源质量事实保持，不声明无限历史或正常正价W1。
 
-v1.14.3正式页面只读验收通过：RB四策略显示10月9日交易日中的10月8日22:00状态；
-历史窗口与分页快照保持一致，浏览器无错误。Web808通过/1skip，真实隔离PostgreSQL39通过，
-定向后端42通过/2skip，扩展数据与worker162通过/2skip，typecheck/build/OpenSpec10/Ruff/secret与独立Review通过。
-page_parity=true/executable=false，不证明因果/OOS、Paper或账户收益；auto_order=false。
-
-**记录服务切换及旧阻塞恢复已完成；自然周期与Canonical核对仍待验收，不声明全Runtime统一就绪。**
-owner明确批准短暂切换后，reference worker已运行v1.14.3@00bc70899，实际PID64434、root/commit一致。
-首安装在变更前因新树缺现役启用标记停止；核对并复制600权限标记后原子安装成功，既有恢复前像保留。
-2026-10-08 22:55:30锁内重新证明720历史来源身份未变，将85条精确MAPPED_CONTRACT_DATASET_MISSING、
-无plan/resume/attempt的旧阻塞项恢复；原始字节0400备份与SHA保留，没有修改DB资产。
-后续自然刷新游标持续前进、routes为空；22:57:17只读生产验收720启用/180观察、180Canonical端点READY、pending捕获0。
-该22:57检查点尚未等到新版本首根自然completed端点或完整720刷新轮次；180夜盘Live→Canonical核对当时pending。后续23:00缺口见上文，不再将漏记仅归为自然周期未到。
-Market必要身份校验已修复并通过前置验证，但未部署；宿主此前对另一v1.14.4发布动作的授权阻断仍保留。记录worker切换不等于全Runtime统一切换。
-
-**牛哇不推送、不下单；苏冰既有推送继续暂停，15m信号/Event保留；HTDY既有通知保持。**
-共享Alert版本切换也被自动审批拒绝，原因是可能触发既有外部通知；本次没有绕过或新增Rule/Scope/受众。
-0048 migration已完成，0049未执行，既有失败attempt和旧证据保留。
-详见[实时记录交付记录](docs/tasks/newow-realtime-recording-20261008.md)，
-证据位于独立task树的 `outputs/newow-realtime-recording-20261008/`，正式浏览器验收位于
-`output/playwright/newow-v1143-readonly-20261008T1450Z/acceptance-summary.json`。
+详见[实时记录交付](docs/tasks/newow-realtime-recording-20261008.md)与[发布记录](docs/releases/v1.14.5.md)。
+本轮现场与旧树归档证据在 `output/newow-v1145-release-20261009/`；此前完整数据证据保留在原task outputs。
 
 ## 当前产品范围与历史候选检查点
 
@@ -279,7 +265,7 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
   SOURCE_READY，PL/PX/RS 九条仍为 `REFERENCE_BOUNDARY_CONTEXT_MISSING`。这些是对应旧精确提交的审计，
   当前版本完整矩阵、历史构建与持续更新须重新绑定 exact code/input identity，不能沿用旧结论。
 - 0048 migration及本轮Newow720历史构建、记录worker启用已完成；全局persisted reader与其他P9范围须按各自证据验收，不能由Newow闭环推定完成。
-  Newow历史刷新修复已切入v1.14.3 worker并恢复85条旧阻塞；后续23:00漏记修复与自然验收见顶部。旧P9未知结果与恢复边界保留。
+  2026-10-08历史检查点：v1.14.3 worker恢复85条旧阻塞；当前worker已为v1.14.5，136条23:00遗漏已恢复，自然验收见顶部。旧P9未知结果与恢复边界保留。
 - A2611 旧来源请求已按 `SOURCE_RESPONSE_IDENTITY_INVALID` 停止且禁止重试；后续 D1 修复后重审无新恢复目标，
   不是对旧请求的重试。六个 W1 新批次共 64 个 W1 与 64 个 D1 同源上下文目标通过，来源 journal 64 次请求。
 
@@ -308,5 +294,5 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
 
 ## 唯一下一步
 
-先修复review确认的23:00终场漏记，并对精确恢复范围独立读回；再按实际exact Runtime版本完成自然 completed Bar、盘后增量/MDS和weekly的证据验收；
-期间页面已确认缺口与 P9 未知结果分别按各自合同处理，不制造 Bar、不盲目重试，也不扩大现役运行范围。
+按已部署v1.14.5完成下一根自然completed Bar、其余日/周路由及Live→Canonical核对的只读验收；
+不手工触发任务、不制造Bar、不盲目重试，也不扩大现役运行范围。
