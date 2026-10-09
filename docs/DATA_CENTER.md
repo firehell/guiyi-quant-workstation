@@ -438,8 +438,15 @@ Bar key 和 subscription 是否存在，残留或读回失败保持失败关闭�
 `historical_publications` 绑定本次分区身份与文件内容 hash，可经 Catalog 指针独立读回；这是本次发布
 来源证据，不追溯证明旧资产来源，也不把与 Live 相同的价格值视为来源证明。无来源 metadata 的旧资产
 继续标为未验证，不为添加标签重写旧数据。
-发布摘要最多 1024 次且序列化不超过 256 KiB；整个状态使用紧凑 JSON，写入前校验不超过既有
-1 MiB 读取边界，文件和替换目录均 fsync。超限或持久化失败停止后续清理，不写出无法读回的状态。
+发布摘要最多 8192 次且紧凑序列化不超过 4 MiB；整个状态写入和所有状态 reader 共用 16 MiB
+边界，跨版本历史封装共用 32 MiB 边界；配置、heartbeat 和独立恢复状态仍保持其原有较小边界。
+维护锁内冻结实际 update 计划，W1 伴随 D1 发布计入预估；保留既有当天 metadata 前置同步；在行情 Bar provider 访问和 Canonical 发布前校验发布
+数量及包括上轮结果、本轮进度、消费者检查的完整状态预算，超限明确失败，不截断或遗漏发布证据。
+已确认提交的证据随进度持久化，失败终态保留已确认前缀；显式 interrupted closeout 仅继承
+已白名单校验的原 run 发布及 Live 证据，不将 closeout 现场检查冒充原 run cleanup。进度不是恢复
+checkpoint，不允许据此重复下载或发布。文件和替换目录均 fsync；超限或持久化失败停止后续清理，不写出无法读回的状态。
+通知投递失败只保留独立诊断，不改写每日增量 status、成功交易日或触发数据重跑；通知诊断自身
+持久化失败也不得覆盖已经确认的增量结果。
 
 `.run/after-market-status.json` 写 schema v3；读取兼容旧 schema v1/v2。schema v3 在受监督自然盘后运行开始、任何
 coverage/RQData/update 尝试之前写入 `current_run`，白名单化保留 `attempt/stage/updated_at/stage_started_at/elapsed_seconds`、

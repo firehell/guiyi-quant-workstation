@@ -30,6 +30,7 @@ from app.alerts.notification import (
     ProviderAcceptance,
 )
 from app.core.env import PROJECT_ROOT
+from app.market_data.after_market_limits import MAX_PUBLICATIONS, MAX_PUBLICATION_BYTES, MAX_STATUS_BYTES
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import HistoricalDataManager, MaintenanceProgressEvent, UpdateRequest
 from app.market_data.live_market import RedisLiveStore
@@ -58,6 +59,9 @@ _PUBLIC_ERROR_CODES = frozenset(
         "TRADING_CALENDAR_CONFLICT",
         "TRADING_CALENDAR_MISSING",
         "UPDATE_FAILED",
+        "PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED",
+        "PUBLICATION_EVIDENCE_INVALID",
+        "PUBLICATION_EVIDENCE_COUNT_MISMATCH",
         "COMMIT_OUTCOME_UNKNOWN",
         "HISTORICAL_MAINTENANCE_REQUIRED",
         "CALENDAR_NIGHT_AUTHORITY_MISSING",
@@ -436,6 +440,7 @@ class AfterMarketUpdater:
     ) -> str | None:
         self._live_evidence = None
         self._historical_publications = None
+        self._publication_bytes = 2
         self._current.pop("live_evidence", None)
         self._current.pop("historical_publications", None)
         try:
@@ -475,8 +480,16 @@ class AfterMarketUpdater:
                 ),
                 before_apply=self._invalidate_market_home_projection,
                 observer=self._observe_progress,
+                before_daily_apply=self._preflight_publication_capacity,
+                publication_observer=self._observe_publications,
             )
+        except KeyboardInterrupt:
+            self._retain_confirmed_publications(products)
+            raise
         except InfrastructureError as exc:
+            evidence_error = self._retain_confirmed_publications(products)
+            if evidence_error is not None:
+                return evidence_error
             if exc.code in {"HISTORICAL_MAINTENANCE_REQUIRED", "RQDATA_NOT_READY"}:
                 return exc.code
             if exc.code == "NEXT_TRADING_SESSION_NOT_READY":
@@ -500,10 +513,15 @@ class AfterMarketUpdater:
             )
             return "UPDATE_FAILED"
         except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
+            evidence_error = None
+            if not self._progress_failed:
+                evidence_error = self._retain_confirmed_publications(products)
             if self._progress_failed:
                 raise _ProgressPersistenceError() from None
             if isinstance(exc, StorageError) and exc.code == "COMMIT_OUTCOME_UNKNOWN":
                 return exc.code
+            if evidence_error is not None:
+                return evidence_error
             if isinstance(exc, CalendarNightAuthorityError):
                 context = {
                     "exchange_code": exc.exchange_code,
@@ -548,8 +566,13 @@ class AfterMarketUpdater:
         publications = getattr(self.manager, "publication_evidence", None)
         if publications is not None:
             validated = _public_historical_publications(publications, products)
-            if validated is None or len(validated) != result.applied:
-                return "UPDATE_FAILED"
+            mutated = (validated is not None and self._historical_publications is not None
+                       and validated[:len(self._historical_publications)] != self._historical_publications)
+            if validated is None or mutated or len(validated) != result.applied:
+                code = "PUBLICATION_EVIDENCE_INVALID" if validated is None or mutated else "PUBLICATION_EVIDENCE_COUNT_MISMATCH"
+                _diagnostic_warning("after_market_attempt_failed stage=publication_evidence detail_code=%s",
+                                    code, stage="publication_evidence", detail_code=code)
+                return code
             self._historical_publications = validated
             self._current["historical_publications"] = validated
         if result.status not in {"passed", "noop"}:
@@ -778,7 +801,8 @@ class AfterMarketUpdater:
         # A diagnostic copy of successfully persisted progress, never a checkpoint.
         # Reuse the public schema projection; neither raw objects nor exceptions reach logs.
         try:
-            progress = _public_current_run(self._current, schema_version=3)
+            from app.runtime_logging import _progress_diagnostic
+            progress = _progress_diagnostic(self._current)
             if progress is not None:
                 _LOGGER.info("AFTER_MARKET_PROGRESS", extra={"diagnostic_fields": {"progress": progress}})
         except Exception:
@@ -788,6 +812,55 @@ class AfterMarketUpdater:
         self._current.update(stage=stage, current_partition=None, current_symbol=None,
                              stage_started_at=_local_timestamp(self.now()).isoformat())
         self._persist_progress()
+
+    def _preflight_publication_capacity(self, count: int, evidence_bytes: int) -> None:
+        # Prior last_run and current progress coexist. Reserve the complete consumer
+        # diagnostics plus bounded progress/live envelope before any bar fetch/write.
+        previous_bytes = len(json.dumps(_load_status(self.status_path), ensure_ascii=False,
+                                        separators=(",", ":")).encode("utf-8"))
+        if (count > MAX_PUBLICATIONS or evidence_bytes > MAX_PUBLICATION_BYTES
+                or previous_bytes + evidence_bytes + 4 * 1024 * 1024 > MAX_STATUS_BYTES):
+            raise ValueError("PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED")
+
+    def _observe_publications(self, publications: list[dict[str, object]]) -> None:
+        # Copy only newly confirmed records, preserving an independent valid prefix.
+        # Per-commit full-prefix copies would make large runs quadratic. The complete
+        # manager prefix is checked again on normal and exceptional termination.
+        previous = self._historical_publications or []
+        if not isinstance(publications, list) or len(publications) < len(previous):
+            raise ValueError("PUBLICATION_EVIDENCE_INVALID")
+        additions = _public_historical_publications(publications[len(previous):], self._current["products"])
+        if additions is None:
+            raise ValueError("PUBLICATION_EVIDENCE_INVALID")
+        added_bytes = sum(len(json.dumps(item, separators=(",", ":")).encode("ascii")) + 1
+                          for item in additions)
+        if (len(publications) > MAX_PUBLICATIONS
+                or getattr(self, "_publication_bytes", 2) + added_bytes > MAX_PUBLICATION_BYTES):
+            raise ValueError("PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED")
+        first = not previous
+        previous.extend(additions)
+        self._publication_bytes = getattr(self, "_publication_bytes", 2) + added_bytes
+        self._historical_publications = previous
+        self._current["historical_publications"] = previous
+        if first or self.monotonic() - self._last_progress_write >= 5:
+            self._persist_progress()
+
+    def _retain_confirmed_publications(self, products: tuple[str, ...]) -> str | None:
+        publications = getattr(self.manager, "publication_evidence", None)
+        if publications is None:
+            return None
+        validated = _public_historical_publications(publications, products)
+        if (validated is None or (self._historical_publications is not None
+                and validated[:len(self._historical_publications)] != self._historical_publications)):
+            _diagnostic_warning("after_market_publication_evidence_invalid detail_code=%s",
+                                "PUBLICATION_EVIDENCE_INVALID", detail_code="PUBLICATION_EVIDENCE_INVALID")
+            # Never replace trusted committed evidence with a malformed/mutated tail.
+            self._persist_progress()
+            return "PUBLICATION_EVIDENCE_INVALID"
+        self._historical_publications = validated
+        self._current["historical_publications"] = validated
+        self._persist_progress()
+        return None
 
     def _observe_progress(self, event: MaintenanceProgressEvent) -> None:
         changed = self._current["stage"] != event.phase
@@ -1033,7 +1106,11 @@ class _ConfiguredNotificationTransport:
 
 def _load_status(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        with path.open("rb") as stream:
+            content = stream.read(MAX_STATUS_BYTES + 1)
+        if len(content) > MAX_STATUS_BYTES:
+            return {}
+        payload = json.loads(content)
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -1065,9 +1142,9 @@ def _invalidate_status_before_run(path: Path) -> dict[str, Any]:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
             raise ValueError
-        content = os.read(descriptor, 1024 * 1024 + 1)
+        content = os.read(descriptor, MAX_STATUS_BYTES + 1)
         try:
-            previous = json.loads(content) if len(content) <= 1024 * 1024 else {}
+            previous = json.loads(content) if len(content) <= MAX_STATUS_BYTES else {}
         except (ValueError, TypeError):
             previous = {}
         os.ftruncate(descriptor, 0)
@@ -1082,7 +1159,7 @@ def _invalidate_status_before_run(path: Path) -> dict[str, Any]:
 
 def _atomic_write_status(path: Path, payload: Mapping[str, object]) -> None:
     content = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-    if len(content.encode("utf-8")) > 1024 * 1024:
+    if len(content.encode("utf-8")) > MAX_STATUS_BYTES:
         raise ValueError("AFTER_MARKET_STATUS_TOO_LARGE")
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
@@ -1197,7 +1274,7 @@ def _rank1_matches_snapshot(
 def _public_historical_publications(
     value: object, products: tuple[str, ...] | list[str],
 ) -> list[dict[str, object]] | None:
-    if not isinstance(value, list) or len(value) > 1024:
+    if not isinstance(value, list) or len(value) > MAX_PUBLICATIONS:
         return None
     public = []
     for item in value:
@@ -1223,7 +1300,7 @@ def _public_historical_publications(
             return None
         public.append({"dataset": list(key), "year": year, "month": month,
                        "file_name": file_name, "provenance": dict(provenance)})
-    if len(json.dumps(public, separators=(",", ":")).encode("ascii")) > 256 * 1024:
+    if len(json.dumps(public, separators=(",", ":")).encode("ascii")) > MAX_PUBLICATION_BYTES:
         return None
     return public
 

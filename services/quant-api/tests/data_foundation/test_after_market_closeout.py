@@ -297,7 +297,7 @@ def test_closeout_requires_loaded_recovery_guard_declaration():
 
 def test_closed_interrupted_schema_is_readable_but_cannot_authorize_same_day_live_repair(monkeypatch):
     from app.guiyi_cli import captured_recovery
-    monkeypatch.setattr(captured_recovery, "read_captured_file", lambda *args: json.dumps(interrupted_status()).encode())
+    monkeypatch.setattr(captured_recovery, "read_captured_file", lambda *args, **kwargs: json.dumps(interrupted_status()).encode())
     with pytest.raises(captured_recovery.CapturedRecoveryCliError):
         captured_recovery._after_market_preflight(datetime(2026, 9, 9).date())
     captured_recovery._after_market_preflight(datetime(2026, 9, 10).date())
@@ -450,7 +450,7 @@ def test_v5_reader_and_health_expose_missing_evidence(tmp_path, monkeypatch):
 
 def test_v5_captured_reader_retains_same_day_repair_block(monkeypatch):
     from app.guiyi_cli import captured_recovery
-    monkeypatch.setattr(captured_recovery, "read_captured_file", lambda *args: json.dumps(missing_interrupted_status()).encode())
+    monkeypatch.setattr(captured_recovery, "read_captured_file", lambda *args, **kwargs: json.dumps(missing_interrupted_status()).encode())
     with pytest.raises(captured_recovery.CapturedRecoveryCliError):
         captured_recovery._after_market_preflight(datetime(2026, 9, 9).date())
     captured_recovery._after_market_preflight(datetime(2026, 9, 10).date())
@@ -601,3 +601,59 @@ def test_snapshot_timestamp_precedes_final_identity_check_completion(closeout_ca
     evidence = result["last_interruption"]
     assert evidence["snapshot_checked_at"] == "2026-09-10T08:10:00+08:00"
     assert evidence["closed_at"] == "2026-09-10T08:12:00+08:00"
+
+
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("with_live_evidence", [False, True])
+def test_closeout_preserves_confirmed_progress_prefix_without_fabricating_cleanup(
+    closeout_case, apply, with_live_evidence
+):
+    from app.market_data.after_market import _evidence_hash
+    from app.market_data.runtime_promotion import _after_market_status_decision
+    case = closeout_case
+    raw = json.loads(case["content"])
+    raw["schema_version"] = 3
+    current = raw["current_run"]
+    current.update(attempt=1, stage="live_reconciliation", updated_at="2026-09-09T18:11:00+08:00",
+                   stage_started_at="2026-09-09T18:11:00+08:00", elapsed_seconds=360,
+                   current_partition=None, current_symbol=None, counters={"publishing": {"completed": 2}},
+                   stage_durations={}, retry_at=None)
+    publication = {"dataset": ["contract", "au", "AU2612", "1m"], "year": 2026, "month": 9,
+                   "file_name": "part." + "a" * 64 + ".parquet",
+                   "provenance": {"version": 1, "input_source": "rqdata", "input_sha256": "b" * 64}}
+    current["historical_publications"] = [publication, publication]
+    current["unknown_raw_field"] = "must not become terminal evidence"
+    if with_live_evidence:
+        current["live_evidence"] = {
+            "trading_day": "2026-09-09", "run_started_at": current["started_at"], "attempt": 1,
+            "scope_sha256": _evidence_hash(["au"]),
+            "snapshot_sha256": _evidence_hash({"au": "AU2612"}),
+            "formal_rank1_sha256": _evidence_hash({"au": "AU2612"}),
+            "rank1_matches_snapshot": True, "reconciled_at": "2026-09-09T18:11:00+08:00",
+            "code_commit": "a" * 40, "cleanup_verified": False, "cleanup_checked_at": None,
+            "remaining_bar_keys": None, "subscription_present": None,
+            "canonical_live_exclusion": "historical_publications_recorded",
+        }
+    validated = public_after_market_status(raw)
+    assert validated["current_run"]["historical_publications"] == [publication, publication]
+    content = (json.dumps(raw) + "\n").encode()
+    case["path"].write_bytes(content)
+    result = close(case, apply=apply, expected_status_sha256=hashlib.sha256(content).hexdigest())
+    assert result["status"] == ("closed_interrupted" if apply else "ready")
+    assert result["provider_requests"] == result["data_writes"] == 0
+    if not apply:
+        assert case["path"].read_bytes() == content
+        return
+    terminal = public_after_market_status(json.loads(case["path"].read_bytes()))
+    assert terminal["last_successful_trading_day"] == "2026-09-08"
+    assert terminal["last_run"]["historical_publications"] == [publication, publication]
+    assert "unknown_raw_field" not in terminal["last_run"]
+    assert terminal["last_run"]["attempts"] == 1
+    if with_live_evidence:
+        assert terminal["last_run"]["live_evidence"] == validated["current_run"]["live_evidence"]
+        assert terminal["last_run"]["live_evidence"]["cleanup_verified"] is False
+        assert terminal["last_run"]["live_evidence"]["cleanup_checked_at"] is None
+    else:
+        assert "live_evidence" not in terminal["last_run"]
+    assert _after_market_status_decision(terminal, trading_day=datetime(2026, 9, 9).date(),
+        products=("au",), now=datetime.fromisoformat("2026-09-10T09:00:00+08:00")) == "missing"

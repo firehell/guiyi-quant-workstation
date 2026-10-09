@@ -1,8 +1,8 @@
 """Explicit interrupted-run closeout. Never a repair, retry or promotion override.
 
-The old writer has no per-run publication ledger. Consequently this seam requires
-the existing full audit at the interrupted cutoff, not an inference from progress
-or Catalog endpoints. Missing old Live evidence remains explicitly unverified; it is never synthesized.
+This seam requires the existing full audit at the interrupted cutoff, not an
+inference from progress or Catalog endpoints. Validated original-run evidence is
+retained; missing old Live evidence stays unverified and is never synthesized.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from app.market_data.after_market import public_after_market_status, _rank1_matc
 from app.market_data.historical_data_manager import AuditRequest, HistoricalDataManager
 from app.market_data.domain import BarFrequency, DatasetKey, DatasetKind
 from app.market_data.session_clock import SHANGHAI
+from app.market_data.after_market_limits import MAX_STATUS_BYTES
 
 
 _NAME = "after-market-status.json"
@@ -57,13 +58,14 @@ def _directory(path: Path) -> Iterator[int]:
 
 
 def _read(directory: int, name: str) -> bytes:
+    limit = MAX_STATUS_BYTES if name == _NAME else _LIMIT
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     try:
         info = os.fstat(fd)
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_nlink != 1 or info.st_mode & 0o022 or not 0 < info.st_size <= _LIMIT):
+                or info.st_nlink != 1 or info.st_mode & 0o022 or not 0 < info.st_size <= limit):
             raise ValueError
-        value = os.read(fd, _LIMIT + 1)
+        value = os.read(fd, limit + 1)
         if len(value) != info.st_size:
             raise ValueError
         return value
@@ -309,6 +311,11 @@ def close_interrupted_run(
                     "last_successful_trading_day": public["last_successful_trading_day"],
                     "last_failure": {"trading_day": day.isoformat(), "error_code": "AFTER_MARKET_INTERRUPTED"},
                 }
+                # Carry only evidence already validated against the interrupted run.
+                # This closeout's snapshot check is not that run's cleanup evidence.
+                for field in ("historical_publications", "live_evidence"):
+                    if field in current:
+                        payload["last_run"][field] = current[field]
                 if not public_after_market_status(payload):
                     raise ValueError
                 if apply:

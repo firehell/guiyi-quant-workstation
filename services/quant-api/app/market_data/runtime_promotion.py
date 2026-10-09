@@ -402,7 +402,9 @@ def _load_after_market_status(path: Path) -> object:
     if not path.exists():
         return None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        from app.market_data.after_market_history import _bytes
+
+        payload = json.loads(_bytes(path))
     except (OSError, TypeError, ValueError):
         return _INVALID
     return payload

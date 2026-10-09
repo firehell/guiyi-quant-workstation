@@ -15,21 +15,22 @@ from zoneinfo import ZoneInfo
 import subprocess
 import fcntl
 
+from app.market_data.after_market_limits import MAX_HISTORY_BYTES, MAX_STATUS_BYTES
+
 NAME = "after-market-history.json"
-_LIMIT = 2 * 1024 * 1024
 
 
-def _bytes(path: Path) -> bytes:
+def _bytes(path: Path, *, max_bytes: int = MAX_STATUS_BYTES) -> bytes:
     if path.parent.resolve(strict=True) != path.parent.absolute():
         raise ValueError("AFTER_MARKET_HISTORY_INVALID")
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         info = os.fstat(fd)
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_mode & 0o022 or info.st_size > _LIMIT):
+                or info.st_mode & 0o022 or not 0 < info.st_size <= max_bytes):
             raise ValueError("AFTER_MARKET_HISTORY_INVALID")
-        data = os.read(fd, _LIMIT + 1)
-        if len(data) > _LIMIT:
+        data = os.read(fd, max_bytes + 1)
+        if len(data) != info.st_size or len(data) > max_bytes:
             raise ValueError("AFTER_MARKET_HISTORY_INVALID")
         return data
     finally:
@@ -43,6 +44,8 @@ def _digest(value: object) -> str:
 def make_history(content: bytes, *, commit: str, products: tuple[str, ...], now: datetime) -> dict:
     from app.market_data.after_market import public_after_market_status
 
+    if not 0 < len(content) <= MAX_STATUS_BYTES:
+        raise ValueError("AFTER_MARKET_HISTORY_INVALID")
     public = public_after_market_status(json.loads(content))
     last = public.get("last_run")
     day = public.get("last_successful_trading_day")
@@ -74,7 +77,7 @@ def make_history(content: bytes, *, commit: str, products: tuple[str, ...], now:
 def read_history(path: Path, *, products: tuple[str, ...], now: datetime) -> dict | None:
     if not os.path.lexists(path):
         return None
-    value = json.loads(_bytes(path))
+    value = json.loads(_bytes(path, max_bytes=MAX_HISTORY_BYTES))
     if (not isinstance(value, dict) or set(value) != {"schema_version", "source_commit",
             "source_status_sha256", "retained_at", "status", "status_sha256"}
             or type(value["schema_version"]) is not int or value["schema_version"] != 1
@@ -98,6 +101,8 @@ def publish_history(path: Path, value: dict) -> str:
     if path.parent.resolve(strict=True) != path.parent.absolute():
         raise ValueError("AFTER_MARKET_HISTORY_INVALID")
     content = (json.dumps(value, indent=2) + "\n").encode()
+    if len(content) > MAX_HISTORY_BYTES:
+        raise ValueError("AFTER_MARKET_HISTORY_INVALID")
     # One file is the entire proof; no partially committed sidecar pair.
     import tempfile
     fd, temporary = tempfile.mkstemp(prefix=".history-", dir=path.parent)
@@ -109,7 +114,7 @@ def publish_history(path: Path, value: dict) -> str:
         try:
             os.link(temporary, path)
         except FileExistsError:
-            if _bytes(path) != content:
+            if _bytes(path, max_bytes=MAX_HISTORY_BYTES) != content:
                 raise ValueError("AFTER_MARKET_HISTORY_CONFLICT") from None
             return "already_retained"
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

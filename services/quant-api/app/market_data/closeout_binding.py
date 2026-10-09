@@ -18,6 +18,7 @@ from sqlalchemy.engine import make_url
 
 from app.db.url import normalize_database_url
 from app.market_data.after_market import public_after_market_status
+from app.market_data.after_market_limits import MAX_STATUS_BYTES
 from app.market_data.after_market_closeout import (
     _directory,
     _read,
@@ -222,6 +223,7 @@ def _products(root: Path) -> tuple[str, ...]:
 
 
 def _snapshot(path: Path, *, private: bool = False) -> tuple[bytes, tuple[int, ...]]:
+    limit = MAX_STATUS_BYTES if path.name == "after-market-status.json" and not private else 1024 * 1024
     with _directory(path.parent) as directory:
         if private and stat.S_IMODE(os.fstat(directory).st_mode) != 0o700:
             raise ValueError
@@ -229,10 +231,10 @@ def _snapshot(path: Path, *, private: bool = False) -> tuple[bytes, tuple[int, .
         try:
             info = os.fstat(fd)
             if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1
-                    or info.st_mode & 0o022 or info.st_size > 1024 * 1024
+                    or info.st_mode & 0o022 or info.st_size > limit
                     or private and stat.S_IMODE(info.st_mode) != 0o600):
                 raise ValueError
-            content = os.read(fd, 1024 * 1024 + 1)
+            content = os.read(fd, limit + 1)
             def identity(item):
                 return (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
             after = os.stat(path.name, dir_fd=directory, follow_symlinks=False)

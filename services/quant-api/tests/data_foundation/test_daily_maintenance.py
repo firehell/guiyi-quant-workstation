@@ -1443,3 +1443,66 @@ def test_physical_week_context_starts_at_contract_listing(daily_manager):
     assert {stamp.date() for companion in companions for stamp in companion.missing} == {
         date(2025, 3, 5), date(2025, 3, 6), date(2025, 3, 7),
     }
+
+
+def test_daily_capacity_checks_same_frozen_plan_before_source_and_reuses_it(daily_manager, monkeypatch):
+    manager = daily_manager
+    plans = []
+    events = []
+    original_plan = manager._plan_daily_recovery
+    original_prepare = manager._prepare_daily_sources
+    original_execute = manager._execute_daily_recovery_plan
+    def freeze(products, through):
+        plan = original_plan(products, through)
+        plans.append(plan)
+        events.append("plan")
+        return plan
+    def capacity(count, size):
+        assert manager.provider.calls == []
+        assert count == len(plans[0].planned_targets)
+        # More than seven datasets per family-month because W1 refreshes D1.
+        assert count > sum(len(group.targets) for group in plans[0].groups)
+        assert count > 0 and size >= count * 280
+        events.append("capacity")
+    def prepare(plan):
+        assert plan is plans[0]
+        events.append("source")
+        return original_prepare(plan)
+    def execute(plan, through, *, console_progress):
+        assert plan is plans[0]
+        events.append("execute")
+        return original_execute(plan, through, console_progress=console_progress)
+    monkeypatch.setattr(manager, "_plan_daily_recovery", freeze)
+    monkeypatch.setattr(manager, "_prepare_daily_sources", prepare)
+    monkeypatch.setattr(manager, "_execute_daily_recovery_plan", execute)
+    prefixes = []
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 3, 7), apply=True,
+        mode="daily", require_source_ready=True), before_daily_apply=capacity,
+        publication_observer=lambda publications: prefixes.append(len(publications)))
+    assert result.status == "passed"
+    assert events == ["plan", "capacity", "source", "execute"]
+    assert prefixes == list(range(1, result.applied + 1))
+    assert len(prefixes) == len(plans[0].planned_targets)
+    assert historical._daily_publication_capacity(plans[0])[1] >= len(json.dumps(
+        manager.publication_evidence, separators=(",", ":")).encode("ascii"))
+
+
+def test_daily_capacity_rejection_releases_lock_without_fetch_or_publish(daily_manager, monkeypatch):
+    manager = daily_manager
+    publications = list(manager.catalog.product_partitions("jm"))
+    events = []
+    class Lease:
+        def release(self):
+            events.append("release")
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: events.append("lock") or Lease())
+    def reject(count, size):
+        assert count > 0
+        events.append("capacity")
+        raise ValueError("PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED")
+    with pytest.raises(ValueError, match="PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED"):
+        manager.update(UpdateRequest(("jm",), None, date(2025, 3, 7), apply=True,
+            mode="daily", require_source_ready=True), before_daily_apply=reject)
+    assert events == ["lock", "capacity", "release"]
+    assert manager.provider.calls == []
+    assert manager.publication_evidence == []
+    assert list(manager.catalog.product_partitions("jm")) == publications

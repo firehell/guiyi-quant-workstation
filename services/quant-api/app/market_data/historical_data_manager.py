@@ -1087,6 +1087,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         # 同进程内已同步过的 (products, through) 不再重复拉 metadata，减少 RQData 调用。
         self._metadata_watermarks: set[tuple[tuple[str, ...], date]] = set()
         self.publication_evidence: list[dict[str, object]] = []
+        self._publication_observer: Callable[[list[dict[str, object]]], None] | None = None
         self._observer: MaintenanceObserver | None = None
         self._progress_counts: dict[str, int] = {}
         self._source_cache: dict[tuple[DatasetKey, int, int, str], tuple[CanonicalBar, ...]] | None = None
@@ -1097,17 +1098,21 @@ class HistoricalDataManager(ContractWarmupPlanner):
         *,
         before_apply: Callable[[], None] | None = None,
         observer: MaintenanceObserver | None = None,
+        before_daily_apply: Callable[[int, int], None] | None = None,
+        publication_observer: Callable[[list[dict[str, object]]], None] | None = None,
     ) -> MaintenanceResult:
         if request.mode not in {"full", "daily"}:
             raise ValueError("UPDATE_MODE_INVALID")
         if request.mode == "daily" and request.since is not None:
             raise ValueError("DAILY_UPDATE_SINCE_UNSUPPORTED")
         self._observer = observer
+        self._publication_observer = publication_observer
         self._progress_counts = {}
         self.publication_evidence = []
         try:
-            return self._update(request, before_apply=before_apply)
+            return self._update(request, before_apply=before_apply, before_daily_apply=before_daily_apply)
         finally:
+            self._publication_observer = None
             self._observer = None
             self._source_cache = None
             self._ready_batches = None
@@ -1238,6 +1243,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
 
     def _update(
         self, request: UpdateRequest, *, before_apply: Callable[[], None] | None,
+        before_daily_apply: Callable[[int, int], None] | None = None,
     ) -> MaintenanceResult:
         """增量更新：缺省 through 为各品种最近完整交易日；apply 时持锁并先补齐元数据再写分区。"""
         assert_products_not_retired(request.products)
@@ -1265,9 +1271,12 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     )
                 if request.mode == "daily":
                     through = request.through or self.coverage.latest_complete_day(request.products)
-                    if request.require_source_ready:
+                    if request.require_source_ready or before_daily_apply is not None:
                         plan = self._plan_daily_recovery(request.products, through)
-                        self._prepare_daily_sources(plan)
+                        if before_daily_apply is not None:
+                            before_daily_apply(*_daily_publication_capacity(plan))
+                        if request.require_source_ready:
+                            self._prepare_daily_sources(plan)
                         return self._execute_daily_recovery_plan(plan, through, console_progress=False)
                     return self._execute_daily(request.products, through, apply=True)
                 watermark = (request.products, metadata_through)
@@ -3135,6 +3144,11 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 "dataset": [target.key.kind.value, target.key.symbol, target.key.series_or_contract, target.key.frequency.value], "year": target.year, "month": target.month,
                 "file_name": partition.parquet_path.name, "provenance": dict(provenance),
             })
+            if self._publication_observer is not None:
+                try:
+                    self._publication_observer(self.publication_evidence)
+                except Exception as exc:
+                    raise _ObserverFailure("MAINTENANCE_OBSERVER_FAILED") from exc
 
     def _strict_verify(self, target: _Target) -> None:
         """发布后经 MarketDataService 读回，确保消费者路径与 expected 完全一致（fail-closed）。"""
@@ -3260,6 +3274,25 @@ def _daily_recovery_target_payload(target: _Target) -> Mapping[str, object]:
         "expected_bar_ends_sha256": _bar_ends_sha256(target.expected),
         "missing_bar_ends_sha256": _bar_ends_sha256(target.missing),
     }
+
+
+def _daily_publication_capacity(plan: _DailyRecoveryPlan) -> tuple[int, int]:
+    """Bound evidence from the exact frozen writer targets, including W1 companions.
+
+    Unknown content hashes use their fixed maximum legal representation. Dataset
+    identity and partition values come from the same objects passed to the writer.
+    """
+    count = len(plan.planned_targets)
+    size = 2  # JSON array brackets
+    for target in plan.planned_targets:
+        evidence = {
+            "dataset": list(target.key.as_tuple()), "year": target.year, "month": target.month,
+            "file_name": "part." + "f" * 64 + ".parquet",
+            "provenance": {"version": 1, "input_source": "historical_provider",
+                           "input_sha256": "f" * 64},
+        }
+        size += len(json.dumps(evidence, separators=(",", ":"), ensure_ascii=True).encode("ascii"))
+    return count, size + max(0, count - 1)
 
 
 def _daily_recovery_target_windows(

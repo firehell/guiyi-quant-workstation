@@ -54,7 +54,8 @@ class _Manager:
         self.result = result
         self.calls = 0
 
-    def update(self, _request, *, before_apply=None, observer=None) -> MaintenanceResult:
+    def update(self, _request, *, before_apply=None, observer=None,
+               before_daily_apply=None, publication_observer=None) -> MaintenanceResult:
         if before_apply is not None:
             before_apply()
         self.calls += 1
