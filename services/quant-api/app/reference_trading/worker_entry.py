@@ -123,11 +123,17 @@ def open_forward_worker():
             refresh = RefreshThread(build_historical_refresh(
                 SessionLocal, state_path=historical_refresh_state_path(),
             ))
+            from app.notifications.newow import NewowNotificationDispatcher
+            from app.notifications.newow_thread import NotificationThread
+            notifications = NotificationThread(NewowNotificationDispatcher(SessionLocal))
             try:
                 wake.subscribe()
                 refresh.start()
+                notifications.start()
                 yield worker, wake, reconciliation
             finally:
+                if notifications.is_alive():
+                    notifications.stop()
                 refresh.stop()
                 wake.close()
         finally:
