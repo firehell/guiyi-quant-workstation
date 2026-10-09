@@ -10,13 +10,13 @@ from app.market_data.newow.product_release import INTRADAY_HISTORY_AS_OF, requir
 from guiyi_quant.newow.product_contracts import ProductFrequency
 
 
-def test_v32_publishes_latest_completed_scope_and_strategy_support():
+def test_v33_publishes_latest_completed_scope_and_strategy_support():
     with TestClient(app) as client:
         response = client.get('/api/v1/market/newow/product-capabilities')
     payload = response.json()
     assert response.status_code == 200
-    assert payload['schema_version'] == 'newow_product_capabilities_v32'
-    assert payload['latest_completed_frequencies'] == ['1d', '1w', '60m']
+    assert payload['schema_version'] == 'newow_product_capabilities_v33'
+    assert payload['latest_completed_frequencies'] == ['1d', '1w', '60m', '5m', '15m', '30m']
     assert payload['strategy_frequencies']['main_rise'] == ['1d', '1w', '60m']
     assert payload['strategy_frequencies']['dual'] == payload['open_frequencies']
     assert len(payload['intraday_products']) == 60
@@ -28,7 +28,9 @@ def test_v32_publishes_latest_completed_scope_and_strategy_support():
     ('trend', '60m', False, '2026-10-01T00:00:00+00:00', False),
     ('trend', '1d', True, '2026-10-01T00:00:00+00:00', False),
     ('trend', '1w', True, '2026-10-01T00:00:00+00:00', False),
-    ('trend', '5m', False, INTRADAY_HISTORY_AS_OF.isoformat(), True),
+    ('trend', '5m', False, '2026-10-01T00:00:00+00:00', False),
+    ('oscillation', '15m', False, '2026-10-01T00:00:00+00:00', False),
+    ('trend', '30m', False, '2026-10-01T00:00:00+00:00', False),
 ])
 def test_detail_uses_current_canonical_only_for_current_scope(monkeypatch, strategy, frequency, decision, expected, frozen):
     captured = []

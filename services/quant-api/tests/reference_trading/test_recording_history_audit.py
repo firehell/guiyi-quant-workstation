@@ -23,7 +23,7 @@ def test_audit_reads_formal_identity_and_only_checkpoint_scalars():
             result = audit_history(session, ('rb',), at=NOW)
     finally:
         event.remove(engine, 'before_cursor_execute', record)
-    assert result['expected_count'] == 12
+    assert result['expected_count'] == 21
     assert result['registered_count'] == result['active_count'] == result['ready_count'] == 1
     item = next(item for item in result['items'] if item['stream_id'] == identity.stream_id)
     assert item['status'] == 'READY'

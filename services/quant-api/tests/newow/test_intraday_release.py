@@ -16,10 +16,10 @@ def test_formal_capability_has_exact_historical_scope():
         response = client.get('/api/v1/market/newow/product-capabilities')
     data = response.json()
     assert response.status_code == 200
-    assert data['schema_version'] == 'newow_product_capabilities_v32'
+    assert data['schema_version'] == 'newow_product_capabilities_v33'
     assert data['intraday_products'] == PRODUCTS
     assert len(PRODUCTS) == 60
-    assert data['intraday_as_of'] == '2026-09-24T07:00:00.000001Z'
+    assert data['intraday_as_of'] is None
     assert data['open_frequencies'] == ['5m', '15m', '30m', '60m', '1d', '1w']
     assert len(data['weekly_products']) == 60
 

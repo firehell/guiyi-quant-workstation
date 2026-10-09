@@ -81,12 +81,12 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v32",
-        "release_stage": "daily_weekly_hourly_current",
+        "schema_version": "newow_product_capabilities_v33",
+        "release_stage": "daily_weekly_intraday_current",
         "open_frequencies": ["5m", "15m", "30m", "60m", "1d", "1w"],
         "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss pp".split()),
-        "intraday_as_of": "2026-09-24T07:00:00.000001Z",
-        "latest_completed_frequencies": ["1d", "1w", "60m"],
+        "intraday_as_of": None,
+        "latest_completed_frequencies": ["1d", "1w", "60m", "5m", "15m", "30m"],
         "strategy_frequencies": {
             "trend": ["5m", "15m", "30m", "60m", "1d", "1w"],
             "oscillation": ["5m", "15m", "30m", "60m", "1d", "1w"],

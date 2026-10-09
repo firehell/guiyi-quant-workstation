@@ -826,9 +826,10 @@ def _assert_restart_projects_pending_capture_once(
     assert repo.load_checkpoint(identity.stream_id)[0].seq == 2
 
 
-def test_newow_hourly_capture_requires_completed_live_and_capability():
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m"))
+def test_newow_hourly_capture_requires_completed_live_and_capability(frequency):
     _factory, _repo, daily_identity, _revision, start, observed, _reader = _setup()
-    identity = replace(daily_identity, frequency="60m")
+    identity = replace(daily_identity, frequency=frequency)
     bar = CanonicalBar(
         observed - timedelta(seconds=5), observed.date(),
         3500, 3510, 3490, 3500, 100, None, None,

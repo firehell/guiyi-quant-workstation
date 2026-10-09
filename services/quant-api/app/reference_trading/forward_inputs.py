@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+
 from collections.abc import Callable
 from datetime import date, datetime
 from hashlib import sha256
@@ -211,14 +213,14 @@ def capture_newow_live(
     expected_endpoints: Callable[[StreamIdentity, str, date, datetime | None, datetime], tuple[datetime, ...]],
     capability_ready: Callable[[StreamIdentity], bool],
 ) -> ForwardCapture | None:
-    """Capture one 60m completed Live Bar without opening the product capability."""
+    """Capture one intraday completed Live Bar without opening the product capability."""
     _newow_strategy(identity)
-    if identity.frequency != ProductFrequency.HOURLY.value or wake_kind not in {"live_event", "scan"}:
+    if identity.frequency not in LIVE_FREQUENCIES or wake_kind not in {"live_event", "scan"}:
         raise ValueError("FORWARD_INPUT_IDENTITY_INVALID")
     if not capability_ready(identity):
         raise ForwardInputUnavailable("NEWOW_CAPABILITY_CLOSED")
     query = SeriesPageQuery(
-        SeriesKind.ACTUAL_DOMINANT, identity.product.upper(), BarFrequency.H1,
+        SeriesKind.ACTUAL_DOMINANT, identity.product.upper(), BarFrequency(identity.frequency),
         limit=2,
     )
     snapshot = market_read.newow_completed_observation_snapshot(query, after, now)

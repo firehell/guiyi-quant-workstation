@@ -1,4 +1,4 @@
-"""720 persisted observation routes through real kernels in an isolated schema."""
+"""1260 persisted observation routes through real kernels in an isolated schema."""
 from dataclasses import replace
 from datetime import timedelta
 from hashlib import sha256
@@ -29,7 +29,7 @@ from test_newow_forward import _capture
 
 
 @pytest.mark.isolated_postgresql
-def test_720_current_routes_are_fair_persisted_and_restart_idempotent(isolated_postgres_engine):  # noqa: F811
+def test_1260_current_routes_are_fair_persisted_and_restart_idempotent(isolated_postgres_engine):  # noqa: F811
     from newow.product_fixtures import ProductCases
 
     schema = 'newow_720_' + uuid4().hex
@@ -50,14 +50,15 @@ def test_720_current_routes_are_fair_persisted_and_restart_idempotent(isolated_p
         all_now = []
         for product in products:
             product = product.lower()
-            for frequency in ('1w','1d','60m'):
+            from app.reference_trading.recording_scope import FREQUENCIES, LIVE_FREQUENCIES, strategies_for
+            for frequency in FREQUENCIES:
                 case = ProductCases().closed(frequency=frequency)
                 bar = case.bars[0]
                 start = bar.bar.bar_end
                 now = start + timedelta(minutes=1)
                 all_now.append(now)
                 policy = candidate_input_quality_policy(product, frequency, candidate_weekly=False)
-                for strategy in ('trend','oscillation','main_rise','dual_fusion'):
+                for strategy in strategies_for(frequency):
                     if strategy == 'dual_fusion':
                         identity = build_fusion_stream_identity(product,frequency,
                             recording_mode='forward_observation',observation_policy_version='completed_observation_v1',
@@ -84,7 +85,7 @@ def test_720_current_routes_are_fair_persisted_and_restart_idempotent(isolated_p
                     if strategy != 'dual_fusion':
                         capture = _capture(identity,bar)
                         captures[identity.stream_id]=replace(capture,revision_id=revision,
-                            source_kind='completed_live' if frequency == '60m' else 'canonical_completed',
+                            source_kind='completed_live' if frequency in LIVE_FREQUENCIES else 'canonical_completed',
                             input_payload={**capture.input_payload,'input_quality_policy':policy.value})
         def read(stream_id,_kind,_end):
             identity,revision,start,now=contexts[stream_id]
@@ -99,19 +100,19 @@ def test_720_current_routes_are_fair_persisted_and_restart_idempotent(isolated_p
                 dependency_manifest=manifests[stream_id]))
         worker=ForwardReferenceWorker(repo,service,read,enabled=True)
         worker.scan()
-        assert worker.health().pending_keys == 180
+        assert worker.health().pending_keys == 360
         completed=0
-        for _ in range(40):
+        for _ in range(80):
             if worker.health().pending_keys == 0:
                 break
             completed += worker.run_round()
-        assert completed == 720, worker.health().blocked
+        assert completed == 1260, worker.health().blocked
         assert not worker.health().blocked and worker.health().pending_keys == 0
         with factory() as c:
             count=c.scalar(select(func.count()).select_from(ReferenceBatch).where(ReferenceBatch.kind=='calculation'))
             pending=c.scalar(select(func.count()).select_from(ReferenceBatch).where(
                 ReferenceBatch.kind=='capture',ReferenceBatch.consumed_by_batch_id.is_(None)))
-        assert count == 720 and pending == 0
+        assert count == 1260 and pending == 0
         restarted=ForwardReferenceWorker(repo,service,read,enabled=True)
         restarted.scan()
         while restarted.health().pending_keys:

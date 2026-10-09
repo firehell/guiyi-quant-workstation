@@ -125,8 +125,8 @@ def test_scope_matrix_requires_exact_sixty_and_reports_missing_history_without_w
         validate_product_scope(products, products[:-1])
     result = service.plan_scope(products, products, recording_start=START, expires_at=START,
         host='isolated-host', environment='isolated', now=NOW)
-    assert result['expected_count'] == 720
-    assert len(result['items']) == 720
+    assert result['expected_count'] == 1260
+    assert len(result['items']) == 1260
     assert all(item['reason'] == 'BOOTSTRAP_HISTORY_MISSING' for item in result['items'])
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(ReferenceStream)) == 1
@@ -445,3 +445,14 @@ def test_real_terminal_boundary_can_seed_without_faking_strategy_progress(strate
     with pytest.raises(RepositoryConflict, match="BOOTSTRAP_WARMUP_NOT_PROVEN"):
         with factory() as session:
             service._source(session, identity.stream_id)
+
+def test_new_minute_scope_plans_only_nine_new_routes_without_reseeding_legacy():
+    factory, *_ = setup_source()
+    service = NewowForwardBootstrap(factory)
+    report = service.plan_scope(tuple(f"p{chr(97+i//26)}{chr(97+i%26)}" for i in range(60)), tuple(f"p{chr(97+i//26)}{chr(97+i%26)}" for i in range(60)),
+        selected_products=("paa",), selected_frequencies=("5m", "15m", "30m"),
+        recording_start=START, expires_at=START + timedelta(hours=1), host="isolated", environment="isolated")
+    assert report["version"] == "newow_forward_bootstrap_scope_v2"
+    assert report["expected_count"] == 9
+    assert {item["frequency"] for item in report["items"]} == {"5m", "15m", "30m"}
+    assert {item["strategy"] for item in report["items"]} == {"trend", "oscillation", "dual_fusion"}

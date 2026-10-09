@@ -4,6 +4,14 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## Develop 短分钟持续记录候选
+
+2026-10-09：5m/15m/30m趋势、震荡、独立双策略的持续记录实现已通过测试与独立Review，
+目标范围1260路、360调度key，capability v33/matrix v4；短分钟主升浪保持关闭。
+reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web53 passed与build、
+OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
+未发布/切换Runtime，当前实际仍如下v1.14.5的720路。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
+
 ## Release 与 Runtime
 
 最新正式发布为 **v1.14.5@b4b45643fe6ea0d383b7342329389879d962573f**，

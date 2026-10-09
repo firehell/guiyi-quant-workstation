@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import FREQUENCIES
+
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -270,7 +272,7 @@ class ReferenceRepository:
         code = func.replace(ReferenceStream.strategy_code, "-", "_")
         grouped = and_(
             code.in_(("newow_trend", "newow_oscillation", "newow_main_rise", "newow_dual_fusion")),
-            ReferenceStream.frequency.in_(("1d", "1w", "60m")),
+            ReferenceStream.frequency.in_(FREQUENCIES),
         )
         return case((grouped, literal("newow:") + func.lower(ReferenceStream.product)
                      + literal(":") + ReferenceStream.frequency),

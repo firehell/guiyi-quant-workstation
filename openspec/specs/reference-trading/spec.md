@@ -365,9 +365,9 @@ reject the source rather than silently adopting an old D1 asset.
 - **AND** the previous revision is retained for readback without rewriting its identity or evidence
 
 
-### Requirement: Newow completed terminal observations and matrix v3
+### Requirement: Newow completed intraday observations and matrix v4
 
-Newow 60m forward recording SHALL read genuine saved completed Live observations after a
+Newow 5m/15m/30m/60m forward recording SHALL read genuine saved completed Live observations after a
 Session closes through the dedicated MarketReadService recording seam. Calendar, Session,
 rank1 physical owner, subscription, typed provenance and exact completed endpoint coverage
 SHALL be proven; closed phase civil date SHALL NOT replace a night Bar's trading day.
@@ -376,8 +376,8 @@ ordering. It SHALL NOT change HTDY/SuBing realtime notification eligibility, fab
 first_seen or consume preview/display bars. Unknown identity or a missing endpoint SHALL
 fail closed; multiple missed observations retain the existing interruption policy.
 
-The current recording matrix SHALL use newow_recording_matrix_v3. D1/W1 expected endpoints
-SHALL remain Canonical publication endpoints. For 60m the expected endpoint SHALL also
+The current recording matrix SHALL use newow_recording_matrix_v4. D1/W1 expected endpoints
+SHALL remain Canonical publication endpoints. For each intraday frequency the expected endpoint SHALL also
 include authoritative already-completed Session endpoints, even when Redis has not saved
 the corresponding Bar. expected_source=completed_live denotes that observation expectation,
 not proof that Redis contains the Bar. When the expected endpoint is on or after recording_start
@@ -394,5 +394,35 @@ Unproved endpoint authority SHALL be SOURCE_UNAVAILABLE. Health SHALL remain rea
 #### Scenario: An eligible Bar was never captured and the durable queue is empty
 - **GIVEN** Session authority proves a completed 23:00 endpoint after recording_start
 - **AND** actual observations only reach 22:00 and pending_capture_count is zero
-- **WHEN** matrix v3 is read
+- **WHEN** matrix v4 is read
 - **THEN** the route is OBSERVATION_LAGGING rather than READY
+
+### Requirement: Short-minute continuous recording uses the existing deterministic projection
+
+Matrix v4 SHALL enumerate 60 products with four strategies at 1w/1d/60m and
+trend/oscillation/dual_fusion at 5m/15m/30m, totalling 1260 routes. Main-rise
+short-minute routes and Newow 1m SHALL remain closed. Each intraday completed
+Live Bar SHALL originate from validated same-physical-contract 1m aggregation
+by authoritative Session (start,end], without gap fill, cross-period fallback
+or unfinished bars. Capture, state, action, Hint and reference identities SHALL
+bind the actual frequency. Reconciliation SHALL compare the same physical
+contract and frequency against published Canonical; publication absence is pending.
+
+Bootstrap scope v2 SHALL bind selected frequencies and support enabling only the
+nine new short-minute routes per product. Existing enabled day/week/hourly streams
+SHALL NOT be reseeded or assigned a new recording_start as a side effect. Historical
+prewarm SHALL carry no observed position and SHALL NOT count as natural observation.
+Worker grouping SHALL include all six frequencies and keep base streams before
+fusion; bounded queue fairness and restart idempotence SHALL be verified.
+
+#### Scenario: Three new short-minute periods preserve existing observations
+- **GIVEN** the existing twelve routes per product are enabled
+- **WHEN** an exact scope v2 plan selects 5m,15m,30m
+- **THEN** nine new routes are planned and the existing twelve identities,
+  activation generations, recording_start and observed records are unchanged
+
+#### Scenario: Per-K state records without an action
+- **GIVEN** a completed 5m Bar with no BUILD or CLEAR action
+- **WHEN** the corresponding enabled route processes it
+- **THEN** its actual observed_at and versioned Bar state are persisted once
+- **AND** absence of an action does not create a trade or fabricate a flat state
