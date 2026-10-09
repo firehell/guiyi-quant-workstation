@@ -94,10 +94,11 @@ test('composite card keeps compact action header and places scores inside indepe
   const body=findNode(root,n=>n.props.class==='decision-v2__body')!
   assert.equal(header().props['aria-expanded'],false)
   assert.equal(body.style.display,'none')
+  assert.equal(findNode(root,n=>n.props['aria-label']==='页面决策口径')!.style.display,'none')
   assert.match(nodeText(header()),/综合决策.*建仓/)
   ;(header().props.onClick as Function)(); await nextTick()
   assert.equal(header().props['aria-expanded'],true); assert.notEqual(body.style.display,'none')
-  assert.equal(stored.get('guiyi_newow_composite_collapsed'),'0')
+  assert.equal(stored.get('guiyi_newow_composite_collapsed'),undefined)
   const scores=findNode(root,n=>n.props['aria-label']==='综合决策五项评分')!
   assert.equal(findNodes(scores,n=>n.props.class==='decision-v2__score').length,5)
   assert.match(nodeText(scores),/24.*趋势一致.*22.*震荡确认.*10.*共振.*12.*方向拐点.*-3.*波动折损/)
@@ -109,6 +110,7 @@ test('composite card keeps compact action header and places scores inside indepe
   assert.equal(evidence().props['aria-expanded'],true)
   assert.match(nodeText(details),/2.5%.*日周小时共同参与/)
   response.value=input('rb'); await nextTick()
+  assert.equal(header().props['aria-expanded'],false, 'new identity always collapses the composite')
   assert.doesNotMatch(nodeText(root),/65 分|错配 MM4|回补窗口/)
   ;(header().props.onClick as Function)(); await nextTick(); app.unmount()
   const second=element('root'), app2=renderer.createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('al')})}))
@@ -304,3 +306,30 @@ test('basis toggles drive composite action and status stance from one completed 
  settings.value={...settings.value,displayStrategy:'dual'};await nextTick()
  assert.match(nodeText(root),/所选口径不可用/);app.unmount()
  })
+
+test('card visibility defaults match source and toggling does not reload facts', async () => {
+ const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root'), before=mock.calls.length
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb')})}));app.mount(root)
+ const shell=findNode(root,n=>n.props['data-testid']==='composite-card-surface')!
+ assert.ok(shell); assert.equal(shell.style.display,'none')
+ const show=findNode(root,n=>n.props['aria-label']==='显示综合决策卡')!
+ assert.ok(show); (show.props.onChange as Function)({target:{checked:true}});await nextTick()
+ assert.notEqual(shell.style.display,'none');assert.equal(mock.calls.length,before+1)
+ const status=findNode(root,n=>n.props['data-testid']==='status-card-surface')!
+ assert.notEqual(status.style.display,'none')
+ const toggle=findNode(root,n=>n.props['aria-label']==='显示AI状态卡')!
+ ;(toggle.props.onChange as Function)({target:{checked:false}});await nextTick()
+ assert.equal(status.style.display,'none');assert.equal(mock.calls.length,before+1)
+ app.unmount()
+})
+
+test('relocated path shares decision generation and clears when switching or unmounting',async()=>{
+ const Panel=await component('newow/NewowDecisionV2Panel'),root=element('root'),before=mock.calls.length,response=ref(input('rb')),contexts:any[]=[]
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:response.value,showPath:false,onPathContext:(v:any)=>contexts.push(v)})}));app.mount(root)
+ assert.equal(findNode(root,n=>n.props['aria-label']==='周日60分路径示意图'),undefined)
+ mock.calls[before].resolve(output());await nextTick();await nextTick()
+ assert.equal(contexts.at(-1).decision.cdv2.total,78);assert.equal(contexts.at(-1).loading,false)
+ response.value=input('cu');await nextTick()
+ assert.equal(contexts.at(-1).decision,null);assert.equal(contexts.at(-1).loading,true)
+ app.unmount();assert.deepEqual(contexts.at(-1),{decision:null,loading:false,error:''})
+})

@@ -10,26 +10,23 @@ import type { NewowDecisionV2, DecisionPriceSource } from '@/types/newowDecision
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean }>()
+const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean }>(), { showPath: true })
+const emit = defineEmits<{ 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
 const decisionAsOf = computed(() => props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
-function preference() {
-  try { return typeof localStorage === 'undefined' || localStorage.getItem('guiyi_newow_composite_collapsed') !== '0' } catch { return true }
-}
-const collapsed = ref(preference()), evidenceExpanded = ref(false)
+const collapsed = ref(true), evidenceExpanded = ref(false)
+const showComposite = ref(false), showStatus = ref(true)
 const bodyId = useId(), evidenceId = useId()
-function toggleCard() {
-  collapsed.value = !collapsed.value
-  try { localStorage.setItem('guiyi_newow_composite_collapsed', collapsed.value ? '1' : '0') } catch { /* storage is optional */ }
-}
+watch([result, loading, error], () => emit('path-context', { decision: result.value, loading: loading.value, error: error.value }), { flush: 'sync' })
+function toggleCard() { collapsed.value = !collapsed.value }
 let generation = 0, controller: AbortController | null = null
 watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value].join('|'), () => {
-  generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; evidenceExpanded.value = false
+  generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; evidenceExpanded.value = false; collapsed.value = true
   void load()
 }, { immediate: true })
-onBeforeUnmount(() => { generation++; controller?.abort() })
+onBeforeUnmount(() => { generation++; controller?.abort(); emit('path-context', {decision:null,loading:false,error:''}) })
 async function load() {
   const token = ++generation
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
@@ -64,7 +61,8 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
 </script>
 
 <template>
-  <section class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
+  <details class="decision-card-settings"><summary>卡片显示</summary><label><input type="checkbox" aria-label="显示综合决策卡" :checked="showComposite" @change="showComposite = ($event.target as HTMLInputElement).checked" />综合决策卡</label><label><input type="checkbox" aria-label="显示AI状态卡" :checked="showStatus" @change="showStatus = ($event.target as HTMLInputElement).checked" />AI状态卡</label></details>
+  <section v-show="showComposite" data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
         <strong>综合决策</strong>
@@ -73,9 +71,9 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
         <span class="decision-v2__arrow" :class="{ collapsed }" aria-hidden="true">▾</span>
       </button>
     </div>
-    <p v-if="loading" class="decision-v2__message" role="status">正在读取同一快照的已完成日周小时策略…</p>
-    <div v-if="cd" class="decision-v2__period-choice" aria-label="页面决策口径"><button type="button" aria-label="周线口径" :aria-pressed="basis==='week'" @click="basis='week'">周线口径</button><button type="button" aria-label="日线口径" :aria-pressed="basis==='day'" @click="basis='day'">日线口径</button><span>{{ basis==='week' ? '周线定方向 · 日线定执行' : '日线定方向 · 60分定执行' }}</span></div>
-    <p v-if="error" class="decision-v2__message" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
+    <p v-if="loading" v-show="!collapsed" class="decision-v2__message" role="status">正在读取同一快照的已完成日周小时策略…</p>
+    <div v-if="cd" v-show="!collapsed" class="decision-v2__period-choice" aria-label="页面决策口径"><button type="button" aria-label="周线口径" :aria-pressed="basis==='week'" @click="basis='week'">周线口径</button><button type="button" aria-label="日线口径" :aria-pressed="basis==='day'" @click="basis='day'">日线口径</button><span>{{ basis==='week' ? '周线定方向 · 日线定执行' : '日线定方向 · 60分定执行' }}</span></div>
+    <p v-if="error" v-show="!collapsed" class="decision-v2__message" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
     <div v-show="!collapsed" :id="bodyId" class="decision-v2__body">
       <template v-if="cd && view">
         <p class="decision-v2__headline">{{ dailyWeeklyFacts.filter(item => item.role.startsWith('trend')).map(item => `${item.role.endsWith('week') ? '周' : item.role.endsWith('m60') ? '60分' : '日'} ${decisionFactState(item.fact)}`).join(' / ') }}</p>
@@ -138,11 +136,14 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
     </div>
     <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
-  <NewowStatusCard :background="context.background" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" />
-  <NewowDailyWeeklyPath :decision="result" :loading="loading" :error="error" />
+  <div v-show="showStatus" data-testid="status-card-surface"><NewowStatusCard :background="context.background" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
+  <NewowDailyWeeklyPath v-if="showPath !== false" :decision="result" :loading="loading" :error="error" />
 </template>
 
 <style scoped>
+.decision-card-settings { font-size:11px; color:#8e8e93; padding:2px 10px; }
+.decision-card-settings summary { cursor:pointer; }
+.decision-card-settings label { display:inline-flex; align-items:center; gap:4px; margin:6px 12px 2px 0; }
 .decision-v2 { margin:8px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:#1c1c1e; }
 .decision-v2__header { display:flex; align-items:center; gap:6px; padding:9px 14px; }
 button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid #007aff; outline-offset:2px; } button:disabled { cursor:wait; opacity:.5; }
@@ -193,6 +194,9 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 </style>
 
 <style scoped>
+.decision-card-settings { font-size:11px; color:#8e8e93; padding:2px 10px; }
+.decision-card-settings summary { cursor:pointer; }
+.decision-card-settings label { display:inline-flex; align-items:center; gap:4px; margin:6px 12px 2px 0; }
 .decision-v2__header { padding:12px 14px; min-height:44px; box-sizing:border-box; }
 .decision-v2__toggle { flex-wrap:nowrap; min-height:24px; }
 .decision-v2__action { margin-left:auto; font-size:20px; font-weight:700; color:#ff3b30; }
@@ -212,6 +216,9 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 </style>
 
 <style scoped>
+.decision-card-settings { font-size:11px; color:#8e8e93; padding:2px 10px; }
+.decision-card-settings summary { cursor:pointer; }
+.decision-card-settings label { display:inline-flex; align-items:center; gap:4px; margin:6px 12px 2px 0; }
 .decision-v2__period-choice { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px;color:#8e8e93 }
 .decision-v2__period-choice button { border:1px solid #ddd;border-radius:5px;background:white;color:inherit;padding:5px 9px;cursor:pointer }
 .decision-v2__period-choice button[aria-pressed=true] { border-color:#ff9500;color:#ff9500;background:#ff950010 }
