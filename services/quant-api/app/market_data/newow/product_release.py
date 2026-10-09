@@ -56,8 +56,8 @@ DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
     ("explanation", "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"),
 )
 
-CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v9"] = (
-    "newow_product_capabilities_v9"
+CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v34"] = (
+    "newow_product_capabilities_v34"
 )
 CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
 CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)

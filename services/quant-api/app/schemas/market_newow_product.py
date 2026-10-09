@@ -974,7 +974,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v29",
         "newow_product_capabilities_v30",
         "newow_product_capabilities_v31",
-        "newow_product_capabilities_v32", "newow_product_capabilities_v33",
+        "newow_product_capabilities_v32", "newow_product_capabilities_v33", "newow_product_capabilities_v34",
     ]
     release_stage: Literal[
         "daily",

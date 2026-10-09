@@ -217,6 +217,7 @@ class ChartSectionValue:
     price_reference: ChartPriceReference | None
     next_older_window: str | None = None
     price_unavailable_days: tuple[tuple[date, str, str], ...] = ()
+    home_summary: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1373,6 +1374,7 @@ class NewowProductService:
             channel, selected[-1].bar, as_of=request_as_of,
             input_sha256=lifecycle_input_sha256(read.replay_bars),
         ) if selected else None
+        from .home_cards import project_home_summary
         return SectionDelivery(
             "delivered",
             status,
@@ -1385,6 +1387,7 @@ class NewowProductService:
                 page_identity,
                 channel if identity.strategy is ProductStrategy.TREND else None,
                 price_reference,
+                home_summary=project_home_summary(replay, selected[-1] if selected else None, status, price_reference),
                 price_unavailable_days=tuple(
                     (gap.trading_day, gap.physical_contract, gap.segment_id)
                     for gap in _owned_display_interruptions(read)
