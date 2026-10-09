@@ -16,8 +16,8 @@ export function recordingStateLabel(state: NewowRecordedState | null): string {
 }
 export function recordingPointLabel(point: ReferencePoint): string {
   if (point.value.version === 'newow_bar_state_v1') return recordingStateLabel(point.value as NewowRecordedState)
-  const kind = String(point.value.kind ?? point.value.action ?? point.value.direction ?? point.kind)
-  return states[kind] ?? ({ OPEN_LONG: '建仓', CLOSE_LONG: '清仓', J: 'J 风险提示', D1: 'D1 逃顶提示', D2: 'D2 逃顶提示', D3: 'D3 逃顶提示', D4: 'D4 低位修复提示', D5: 'D5 低位修复提示', D6: 'D6 低位修复提示', hint: '过程提示', signal: '策略信号' } as Record<string, string>)[kind] ?? kind
+  const kind = String(point.value.kind ?? point.value.action ?? point.value.direction ?? point.kind).replace(/^NEWOW_ESCAPE_/, '')
+  return states[kind] ?? ({ OPEN_LONG: '建仓', CLOSE: '清仓', CLOSE_LONG: '清仓', J: 'J 风险提示', D1: 'D1 逃顶提示', D2: 'D2 逃顶提示', D3: 'D3 逃顶提示', D4: 'D4 低位修复提示', D5: 'D5 低位修复提示', D6: 'D6 低位修复提示', hint: '过程提示', signal: '策略信号' } as Record<string, string>)[kind] ?? kind
 }
 export function isRecordingTradingDay(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false

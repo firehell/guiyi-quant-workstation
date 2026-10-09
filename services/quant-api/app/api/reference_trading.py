@@ -130,3 +130,13 @@ def newow_matrix(request: Request):
 
     products = tuple(product.lower() for product in load_operational_products())
     return _run(lambda: newow_recording_matrix(products, _health.read(products=products)))
+
+
+@router.get("/newow/messages")
+def newow_messages(request: Request, since: date, through: date, product: str | None = None,
+                   strategy: str | None = None, frequency: str | None = None,
+                   limit: int = Query(500, ge=1, le=500)):
+    from app.reference_trading.messages import read_messages
+    _keys(request, frozenset({"since", "through", "product", "strategy", "frequency", "limit"}))
+    return _run(lambda: read_messages(SessionLocal, since=since, through=through,
+                                     product=product, strategy=strategy, frequency=frequency, limit=limit))
