@@ -39,3 +39,5 @@ __all__ = [
     "ReferenceStream",
     "ReferenceTradeRow",
 ]
+
+from app.notifications.newow import NewowNotificationDelivery, NewowNotificationPolicy  # noqa: F401, E402
