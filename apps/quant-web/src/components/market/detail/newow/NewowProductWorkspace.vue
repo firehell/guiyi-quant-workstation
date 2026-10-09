@@ -43,6 +43,11 @@ const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const pathContext = ref<{decision: NewowDecisionV2 | null; loading: boolean; error: string}>({decision:null,loading:false,error:''})
 watch(identityKey,()=>{pathContext.value={decision:null,loading:false,error:''}},{flush:'sync'})
+const testMenu = ref<HTMLDetailsElement | null>(null)
+function selectTest(choice: ExperimentKind | 'main_rise') {
+  menuChoice.value = choice
+  if (testMenu.value) testMenu.value.open = false
+}
 const experimentKind=ref<ExperimentKind|null>(null)
 const menuChoice = computed<ExperimentKind | 'main_rise' | null>({
   get: () => experimentKind.value ?? (props.identity.strategy === 'main_rise' ? 'main_rise' : null),
@@ -433,7 +438,15 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="newow-product-workspace" data-detail-workspace="newow" :data-strategy="identity.strategy" :data-frequency="identity.frequency" :data-chart-state="loader.sections.chart.state.value" :data-auxiliary-state="loader.sections.auxiliary.state.value">
-    <div class="newow-experiment-controls" :class="{'is-active':menuChoice}"><label>T <select v-model="menuChoice" aria-label="牛哇T策略"><option :value="null">基础策略</option><option v-for="option in EXPERIMENT_OPTIONS" :key="option.kind" :value="option.kind">{{option.label}}</option><option value="main_rise">主升浪</option></select></label></div>
+    <Teleport defer to="#newow-strategy-test-anchor">
+      <details ref="testMenu" class="newow-test-menu" @keydown.esc="testMenu?.removeAttribute('open')" @focusout="(event: FocusEvent) => { if (!testMenu?.contains(event.relatedTarget as Node)) testMenu?.removeAttribute('open') }">
+        <summary aria-label="牛哇T策略" :class="{'is-active':menuChoice}">T <span aria-hidden="true">▾</span></summary>
+        <div class="newow-test-menu__popup" aria-label="T策略选项">
+          <button v-for="option in EXPERIMENT_OPTIONS" :key="option.kind" type="button" :aria-pressed="menuChoice === option.kind" @click="selectTest(option.kind)">{{ option.kind === 'osc-test' ? '测试' : option.label }}</button>
+          <button type="button" :aria-pressed="menuChoice === 'main_rise'" @click="selectTest('main_rise')">主升浪</button>
+        </div>
+      </details>
+    </Teleport>
     <NewowExperimentPanel v-if="experimentKind" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null"><template #frequency><slot name="chart-frequency" /></template></NewowExperimentPanel>
     <template v-else>
     <NewowDecisionV2Panel v-if="chartResponse?.value && loader.currentChartWindow.value" :response="chartResponse" :display-strategy="dualMode ? 'dual' : selectedStrategy" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
@@ -700,4 +713,17 @@ onBeforeUnmount(() => {
 .newow-window-state h3 { font-size:14px; }
 pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 @media(max-width:640px) { .newow-product-workspace__auxiliary-controls button,.newow-summary__evidence { min-height:44px; }.newow-summary { padding:12px; }.newow-summary__facts { grid-template-columns:1fr 1fr; }.newow-summary__evidence { margin-left:0; } }
+</style>
+
+<style>
+.unified-detail-light .detail-view-nav__views { overflow:visible; flex-wrap:wrap; }
+.newow-test-menu { position:relative; color:#888; font-size:14px; }
+.newow-test-menu summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:4px; height:36px; padding:0 12px; border-radius:6px; background:#f0f0f5; font-weight:600; }
+.newow-test-menu summary::-webkit-details-marker { display:none; }
+.newow-test-menu summary:focus-visible { outline:2px solid #007aff; outline-offset:2px; }
+.newow-test-menu summary.is-active { background:#ff6b2c; color:#fff; }
+.newow-test-menu__popup { position:absolute; z-index:100; top:calc(100% + 4px); left:0; width:88px; padding:4px 0; border-radius:8px; background:#fff; box-shadow:0 4px 16px #00000026; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button { display:block; width:100%; min-height:32px; padding:0 14px; text-align:left; border-radius:0; background:#fff; color:#222; font-size:13px; font-weight:400; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button:hover { background:#f5f5f7; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button[aria-pressed=true] { color:#ff6b2c; }
 </style>

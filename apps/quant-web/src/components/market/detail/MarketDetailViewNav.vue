@@ -123,6 +123,7 @@ function periodLabel(value: MarketFrequency) {
         :class="{ 'is-active': activeChoice === view.value }"
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
+      <span v-if="view.value === 'dual' && identity.view === 'newow'" id="newow-strategy-test-anchor" />
       <button v-if="view.value === 'dual' && identity.view === 'newow'" type="button" class="detail-view-nav__ai" @click="emit('ai-analysis')">✨AI分析</button></template>
     </div>
 
