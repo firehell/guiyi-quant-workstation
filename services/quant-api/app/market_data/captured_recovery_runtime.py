@@ -13,6 +13,7 @@ import subprocess
 from typing import NoReturn
 
 from app.core.env import PROJECT_ROOT
+from app.runtime_bindings import authorized_program_arguments, read_bindings, resolve_service_binding, verify_release
 
 
 class CapturedRecoveryRuntimeError(ValueError):
@@ -30,10 +31,15 @@ def _reject(suffix: str) -> NoReturn:
 def runtime_heartbeat_identity() -> dict[str, object]:
     """Code-root identity plus the launcher's whitelisted commit declaration."""
     commit = os.environ.get("GUIYI_RUNTIME_COMMIT", "")
-    return {
+    identity: dict[str, object] = {
         "runtime_root": str(PROJECT_ROOT),
         "runtime_commit": commit if re.fullmatch(r"[0-9a-f]{40}", commit) else None,
     }
+    generation = os.environ.get("GUIYI_RUNTIME_GENERATION", "")
+    tag = os.environ.get("GUIYI_RUNTIME_TAG", "")
+    if re.fullmatch(r"[1-9][0-9]*", generation) and re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+        identity.update(runtime_generation=int(generation), runtime_tag=tag)
+    return identity
 
 
 def _read_command(arguments: list[str], *, root: Path) -> str:
@@ -66,7 +72,7 @@ def _command_result(
 def _read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
     if re.fullmatch(
-        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker)",
+        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker|market-feed)(?:-candidate-[0-9a-f]{32})?",
         label,
     ) is None:
         _reject("IDENTITY_UNAVAILABLE")
@@ -179,7 +185,8 @@ def _verify_after_market_plist(
     home: Path | None = None,
 ) -> None:
     """Require the installed schedule to retain the same guarded after-market code root."""
-    if label not in {f"com.guiyi.quant-{name}" for name in ("api", "web", "live", "alert", "after-market", "late-provider-recovery")}:
+    base_label = re.sub(r"-candidate-[0-9a-f]{32}$", "", label)
+    if base_label not in {f"com.guiyi.quant-{name}" for name in ("api", "web", "live", "market-feed", "alert", "after-market", "late-provider-recovery")}:
         _reject("SERVICE_CONFIGURATION_INVALID")
     account_home = home if home is not None else Path.home()
     path = account_home / "Library" / "LaunchAgents" / f"{label}.plist"
@@ -205,8 +212,14 @@ def _verify_after_market_plist(
     if not isinstance(payload, dict):
         _reject("SERVICE_CONFIGURATION_INVALID")
     environment = payload.get("EnvironmentVariables")
+    binding = resolve_service_binding(base_label.removeprefix("com.guiyi.quant-"), home=account_home)
+    if binding is not None and (binding.label != label or binding.root != str(root) or binding.commit != commit
+            or tuple(payload.get("ProgramArguments", ())) != authorized_program_arguments(binding, account_home)
+            or not isinstance(environment, dict) or environment.get("GUIYI_RUNTIME_GENERATION") != str(binding.generation)
+            or environment.get("GUIYI_RUNTIME_TAG") != binding.tag):
+        _reject("SERVICE_CONFIGURATION_INVALID")
     if (payload.get("Label") != label
-            or payload.get("WorkingDirectory") != str(account_home if label in {"com.guiyi.quant-api", "com.guiyi.quant-web"} else root)
+            or payload.get("WorkingDirectory") != str(account_home if base_label in {"com.guiyi.quant-api", "com.guiyi.quant-web"} else root)
             or not isinstance(environment, dict)
             or environment.get("GUIYI_PROJECT_ROOT") != str(root)
             or environment.get("GUIYI_RUNTIME_COMMIT") != commit):
@@ -261,8 +274,41 @@ def verify_captured_recovery_runtime(
     if (_read_command([*git, "cat-file", "-t", tag_ref], root=root) != "tag"
             or _read_command([*git, "rev-parse", f"{tag_ref}^{{commit}}"], root=root) != commit):
         _reject("CODE_IDENTITY_INVALID")
+    registry = read_bindings()
+    if registry is not None:
+        services = ("live", "alert", "after-market")
+        if any(service not in registry.services or not registry.services[service].enabled for service in services):
+            _reject("SERVICE_IDENTITY_INVALID")
+        if str(root) not in {registry.services[service].root for service in ("live", "after-market")}:
+            _reject("ROOT_INVALID")
+        for service in services:
+            binding = registry.services[service]
+            service_root = Path(binding.root)
+            verify_release(service_root, binding.tag, binding.commit)
+            label = binding.label
+            output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"], root=service_root)
+            _verify_loaded_service(output, root=service_root, commit=binding.commit, allow_idle=service == "after-market")
+            from app.market_data.closeout_binding import _arguments, _environments
+            if _arguments(output) != authorized_program_arguments(binding, Path.home()):
+                _reject("SERVICE_IDENTITY_INVALID")
+            declarations = [item for item in _environments(output)
+                if item.get("GUIYI_PROJECT_ROOT") == binding.root and item.get("GUIYI_RUNTIME_COMMIT") == binding.commit]
+            if (len(declarations) != 1 or declarations[0].get("GUIYI_RUNTIME_GENERATION") != str(binding.generation)
+                    or declarations[0].get("GUIYI_RUNTIME_TAG") != binding.tag):
+                _reject("SERVICE_IDENTITY_INVALID")
+            if service == "after-market":
+                _verify_after_market_plist(root=service_root, commit=binding.commit, label=binding.label)
+        for service, heartbeat in (("live", live_heartbeat), ("alert", alert_heartbeat)):
+            binding = registry.services[service]
+            _verify_heartbeat(heartbeat, now=now, root=Path(binding.root), commit=binding.commit)
+            if heartbeat is None or heartbeat.get("runtime_generation") != binding.generation or heartbeat.get("runtime_tag") != binding.tag:
+                _reject("HEARTBEAT_INVALID")
+        if read_bindings() != registry:
+            _reject("SERVICE_IDENTITY_INVALID")
+        return json.dumps({"root": str(root), "commit": commit, "tag": tag}, sort_keys=True, separators=(",", ":"))
     _verify_markers(root)
     for label in ("com.guiyi.quant-live", "com.guiyi.quant-alert"):
+
         output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"], root=root)
         _verify_loaded_service(output, root=root, commit=commit)
     _verify_after_market_plist(root=root, commit=commit)

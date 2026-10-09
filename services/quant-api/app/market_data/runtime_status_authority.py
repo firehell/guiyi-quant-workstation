@@ -14,6 +14,7 @@ import sys
 from typing import Protocol
 
 from app.core.env import PROJECT_ROOT
+from app.runtime_bindings import authorized_program_arguments, resolve_service_binding, verify_release
 from app.market_data.after_market_closeout import verify_runtime_release_identity
 from app.market_data.captured_recovery_runtime import (
     _read_launchd_service,
@@ -33,6 +34,7 @@ _MARKET_LABELS = {
     "com.guiyi.quant-after-market": "after-market",
     "com.guiyi.quant-late-provider-recovery": "late-provider-recovery",
     "com.guiyi.quant-live": "live",
+    "com.guiyi.quant-market-feed": "market-feed",
 }
 _INSTALLABLE_LABELS = {
     "com.guiyi.quant-api",
@@ -42,6 +44,7 @@ _INSTALLABLE_LABELS = {
     "com.guiyi.quant-alert",
     "com.guiyi.quant-weekly-audit",
     "com.guiyi.quant-reference-worker",
+    "com.guiyi.quant-market-feed",
 }
 
 
@@ -71,8 +74,12 @@ def _account_home() -> Path:
 
 
 def _installed_identity(home: Path) -> tuple[Path, str] | None:
-    path = home / "Library/LaunchAgents" / f"{_LABEL}.plist"
+    binding = resolve_service_binding("after-market", home=home)
+    label = _LABEL if binding is None else binding.label
+    path = home / "Library/LaunchAgents" / f"{label}.plist"
     if not os.path.lexists(path):
+        if binding is not None:
+            raise ValueError
         return None
     content, _identity = _snapshot(path)
     try:
@@ -89,18 +96,25 @@ def _installed_identity(home: Path) -> tuple[Path, str] | None:
             / "Library/Application Support/GuiyiQuant/run-local-service.sh"
         )
         if (
-            payload.get("Label") != _LABEL
+            payload.get("Label") != label
             or not isinstance(commit, str)
             or re.fullmatch(r"[0-9a-f]{40}", commit) is None
             or not root.is_absolute()
             or root != root.resolve(strict=True)
             or tuple(payload.get("ProgramArguments", ()))
-            != ("/bin/bash", str(launcher), "after-market")
+            != (("/bin/bash", str(launcher), "after-market") if binding is None
+                else authorized_program_arguments(binding, home))
             or payload.get("WorkingDirectory") != str(root)
         ):
             raise ValueError
     except (KeyError, OSError, TypeError, ValueError, plistlib.InvalidFileException):
         raise ValueError from None
+    if binding is not None:
+        verify_release(Path(binding.root), binding.tag, binding.commit)
+        if (root != Path(binding.root) or commit != binding.commit
+                or environment.get("GUIYI_RUNTIME_GENERATION") != str(binding.generation)
+                or environment.get("GUIYI_RUNTIME_TAG") != binding.tag):
+            raise ValueError
     return root, commit
 
 
@@ -123,10 +137,14 @@ def verify_restored_loaded_market_service(
     service_reader: Callable[..., str | None] = _read_launchd_service,
 ) -> None:
     """Verify one restored loaded market process against its installed plist."""
-    service = _MARKET_LABELS.get(label)
+    account_home = _account_home() if home is None else home
+    base_label = re.sub(r"-candidate-[0-9a-f]{32}$", "", label)
+    service = _MARKET_LABELS.get(base_label)
     if service is None:
         raise ValueError
-    account_home = _account_home() if home is None else home
+    binding = resolve_service_binding(service, home=account_home)
+    if label != (base_label if binding is None else binding.label):
+        raise ValueError
     path = account_home / "Library/LaunchAgents" / f"{label}.plist"
     try:
         content, _identity = _snapshot(path)
@@ -141,7 +159,7 @@ def verify_restored_loaded_market_service(
             raise ValueError
         root = Path(environment["GUIYI_PROJECT_ROOT"])
         commit = environment["GUIYI_RUNTIME_COMMIT"]
-        arguments = (
+        arguments: tuple[str, ...] = (
             "/bin/bash",
             str(
                 account_home
@@ -149,18 +167,27 @@ def verify_restored_loaded_market_service(
             ),
             service,
         )
+        if binding is not None:
+            arguments = authorized_program_arguments(binding, account_home)
         if (
             payload.get("Label") != label
             or payload.get("WorkingDirectory") != str(root)
             or tuple(payload.get("ProgramArguments", ())) != arguments
-            or set(environment)
-            != {"PATH", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT"}
+            or set(environment) - ({"PATH", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT"}
+                | ({"GUIYI_RUNTIME_GENERATION", "GUIYI_RUNTIME_TAG", "GUIYI_RUNTIME_HANDOVER_ENABLED",
+                    "GUIYI_OBSERVATION_STREAM_ENABLED"} if binding is not None else set()))
             or not environment["PATH"]
             or re.fullmatch(r"[0-9a-f]{40}", commit) is None
             or not root.is_absolute()
             or root != root.resolve(strict=True)
         ):
             raise ValueError
+        if binding is not None:
+            verify_release(Path(binding.root), binding.tag, binding.commit)
+            if (root != Path(binding.root) or commit != binding.commit
+                    or environment.get("GUIYI_RUNTIME_GENERATION") != str(binding.generation)
+                    or environment.get("GUIYI_RUNTIME_TAG") != binding.tag):
+                raise ValueError
         _verify_after_market_plist(
             root=root, commit=commit, label=label, home=account_home
         )
@@ -205,7 +232,9 @@ def resolve_market_runtime_status_authority(
     """Resolve loaded, exact stopped-terminal, or genuine first-install ownership."""
     home = _account_home()
     installed = _installed_identity(home)
-    output = service_reader(_LABEL, root=candidate_root)
+    binding = resolve_service_binding("after-market", home=home)
+    label = _LABEL if binding is None else binding.label
+    output = service_reader(label, root=candidate_root)
     if output is not None:
         if installed is None:
             raise ValueError
@@ -216,8 +245,8 @@ def resolve_market_runtime_status_authority(
                 raise ValueError
             # Market ownership is independent of the separately installed Alert root.
             verify_runtime_release_identity(root, commit, require_alert_enabled=False)
-            _verify_after_market_plist(root=root, commit=commit, home=home)
-            current = service_reader(_LABEL, root=root)
+            _verify_after_market_plist(root=root, commit=commit, home=home, label=label)
+            current = service_reader(label, root=root)
             if current is None:
                 raise ValueError
             _verify_loaded_service(
@@ -240,7 +269,7 @@ def resolve_market_runtime_status_authority(
         def recheck_first_install() -> None:
             if (
                 _installed_identity(home) is not None
-                or service_reader(_LABEL, root=root) is not None
+                or service_reader(label, root=root) is not None
                 or os.path.lexists(status_path)
             ):
                 raise ValueError
@@ -251,14 +280,14 @@ def resolve_market_runtime_status_authority(
         )
     root, commit = installed
     expected = _verify_status_sha256(root, expected_stopped_status_sha256)
-    binding = binding_factory(root, commit, expected, home=home)
-    if binding.after_market_state != "stopped":
+    legacy_binding = binding_factory(root, commit, expected, home=home)
+    if legacy_binding.after_market_state != "stopped":
         raise ValueError
-    binding.check_runtime_heartbeats()
+    legacy_binding.check_runtime_heartbeats()
     return RuntimeStatusAuthority(
         root / ".run/after-market-status.json",
         "stopped_terminal",
-        binding.check_runtime_heartbeats,
+        legacy_binding.check_runtime_heartbeats,
     )
 
 
@@ -266,7 +295,8 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if len(arguments) == 2 and arguments[0] == "launchd-service-state":
         label = arguments[1]
-        if label not in _INSTALLABLE_LABELS:
+        base_label = re.sub(r"-candidate-[0-9a-f]{32}$", "", label)
+        if base_label not in _INSTALLABLE_LABELS:
             return 1
         try:
             output = _read_launchd_service(label, root=PROJECT_ROOT)

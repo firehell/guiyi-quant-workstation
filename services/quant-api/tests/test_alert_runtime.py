@@ -1841,3 +1841,32 @@ def test_live_signal_only_persists_event_and_skips_sender(rule_code):
     assert sender.calls == (0 if rule_code == SUBING_THS_ALERT_RULE_CODE else 1)
     assert runtime._current_runtime_status()["notification_error_type"] is None
     engine.dispose()
+
+
+@pytest.mark.parametrize('age, expired', [(30, False), (31, True)])
+def test_buffer_source_age_preserves_detection_and_unsent_expiry(age, expired):
+    from app.alerts.runtime import _persist_candidate_and_prepare_notification
+    from app.alerts.service import AlertService
+    source = datetime(2026, 10, 9, 1, tzinfo=UTC)
+    detected = source + timedelta(seconds=age)
+    engine = create_engine('sqlite://')
+    for table in (AlertRule.__table__, AlertEvent.__table__, SubingSignalAlignment.__table__):
+        table.create(engine)
+    with OrmSession(engine) as session:
+        rule = AlertRule(rule_code=HTDY_ALERT_RULE_CODE, enabled=True,
+                         scope_product_frequencies={'rb': ['15m']})
+        session.add(rule)
+        session.commit()
+        result = _persist_candidate_and_prepare_notification(
+            AlertService(session, operational_products=('rb',)),
+            taxonomy={'rb': SimpleNamespace(name='螺纹钢')}, rule=rule, symbol='rb', frequency='15m',
+            candidate=AlertObservationCandidate(source, source.date(), 'RB2610', ('buy',)),
+            processing_now=detected, source_observed_at=source, source_observation_id='stable-observation')
+        assert result.event_created
+        assert (result.message is None) == expired
+        event = session.scalar(select(AlertEvent))
+        assert event.detected_at.replace(tzinfo=UTC) == detected
+        assert event.source_observed_at.replace(tzinfo=UTC) == source
+        assert event.source_observation_id == 'stable-observation'
+        assert (event.notification_attempted_at is None) == expired
+        assert event.notification_status == ('EXPIRED_NO_SEND' if expired else None)

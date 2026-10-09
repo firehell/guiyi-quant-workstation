@@ -34,3 +34,20 @@ def test_failure_logging_does_not_disclose_exception(caplog):
     thread.stop()
     assert "private-token" not in caplog.text
     assert "NEWOW_NOTIFICATION_TICK_FAILED" in caplog.text
+
+
+def test_stop_does_not_report_drained_while_provider_is_running():
+    entered, release = Event(), Event()
+    class Dispatcher:
+        def tick(self):
+            entered.set()
+            release.wait(2)
+    thread = NotificationThread(Dispatcher())
+    thread.start()
+    assert entered.wait(1)
+    try:
+        assert thread.stop(timeout_seconds=0.01) is False
+        assert thread.is_alive()
+    finally:
+        release.set()
+        assert thread.stop() is True

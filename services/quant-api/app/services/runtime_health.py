@@ -34,6 +34,7 @@ from app.alerts.runtime import (
 )
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
+from app.runtime_bindings import RuntimeBindingError, resolve_service_binding
 from app.market_data.after_market import public_after_market_status
 from app.market_data.weekly_audit import weekly_audit_health
 from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
@@ -74,6 +75,23 @@ def build_runtime_health(
     真实探测 db/redis，读取 Market Runtime 的公开状态。可选注入 redis_factory 供测试替换。
     """
     current_time = now or datetime.now(UTC)
+    try:
+        after_binding = resolve_service_binding("after-market")
+        weekly_binding = resolve_service_binding("weekly-audit")
+        recovery_binding = resolve_service_binding("late-provider-recovery")
+        if after_binding is not None and after_market_status_path == DEFAULT_AFTER_MARKET_STATUS_PATH:
+            after_market_status_path = Path(after_binding.root) / ".run/after-market-status.json"
+        if weekly_binding is not None and weekly_audit_status_path == PROJECT_ROOT / ".run/weekly-audit-status.json":
+            weekly_audit_status_path = Path(weekly_binding.root) / ".run/weekly-audit-status.json"
+        weekly_identity = runtime_heartbeat_identity() if weekly_binding is None else {
+            "runtime_root": weekly_binding.root, "runtime_commit": weekly_binding.commit,
+            "runtime_generation": weekly_binding.generation, "runtime_tag": weekly_binding.tag}
+        recovery_root = PROJECT_ROOT if recovery_binding is None else Path(recovery_binding.root)
+    except RuntimeBindingError:
+        # No authority can be established. Do not read another service's legacy files.
+        after_market_status_path = weekly_audit_status_path = None
+        weekly_identity = {}
+        recovery_root = None
     # live_runtime_enabled 保留为测试/本地装配可注入开关。
     # 真实启动状态来自项目固定 .run 标记，而非另一个 launchd job 的进程环境。
     freshness_seconds = live_freshness_seconds or _env_positive_int(
@@ -158,11 +176,12 @@ def build_runtime_health(
     )
     # Historical audit is optional and does not redefine operational service health.
     components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
-        identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time,
+        identity=weekly_identity, products=load_operational_products(), now=current_time,
         configured_enabled=weekly_enabled)
     from app.market_data.late_provider_recovery import recovery_health
-    components["late_provider_recovery"] = recovery_health(
-        PROJECT_ROOT / ".run" / "late-provider-recovery-status.json", current_time)
+    components["late_provider_recovery"] = (recovery_health(
+        recovery_root / ".run" / "late-provider-recovery-status.json", current_time)
+        if recovery_root is not None else {"status": "unknown", "error_type": "runtime_binding_registry_invalid"})
     runtime_identity = None
     declared_commit = os.environ.get("GUIYI_RUNTIME_COMMIT")
     if declared_commit:
@@ -195,6 +214,12 @@ def build_runtime_health(
 
 def _market_runtime_activation_enabled() -> bool:
     """仅接受本项目显式 activation 写入的固定本地标记，任何读取异常均保持关闭。"""
+    try:
+        binding = resolve_service_binding("live")
+        if binding is not None:
+            return binding.enabled
+    except RuntimeBindingError:
+        return False
     marker_path = PROJECT_ROOT / ".run" / MARKET_RUNTIME_ACTIVATION_MARKER_NAME
     try:
         return marker_path.read_text(encoding="utf-8") == "enabled\n"
@@ -204,6 +229,12 @@ def _market_runtime_activation_enabled() -> bool:
 
 def _alert_runtime_activation_enabled() -> bool:
     """Alert activation 与 Market marker 严格分离，读取异常时保持关闭。"""
+    try:
+        binding = resolve_service_binding("alert")
+        if binding is not None:
+            return binding.enabled
+    except RuntimeBindingError:
+        return False
     marker_path = PROJECT_ROOT / ".run" / ALERT_RUNTIME_ACTIVATION_MARKER_NAME
     try:
         return marker_path.read_text(encoding="utf-8") == "enabled\n"
@@ -213,6 +244,12 @@ def _alert_runtime_activation_enabled() -> bool:
 
 def _weekly_audit_activation_enabled() -> bool:
     """Weekly audit installation is explicit and independent of Market/Alert."""
+    try:
+        binding = resolve_service_binding("weekly-audit")
+        if binding is not None:
+            return binding.enabled
+    except RuntimeBindingError:
+        return False
     marker_path = PROJECT_ROOT / ".run" / WEEKLY_AUDIT_ACTIVATION_MARKER_NAME
     try:
         return marker_path.read_text(encoding="utf-8") == "enabled\n"
@@ -930,14 +967,15 @@ def _collect_current_after_market_health(
             "run_state": "degraded",
             "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
-    if isinstance(public.get("consumer_checks"), Mapping):
+    consumer_checks = public.get("consumer_checks")
+    if isinstance(consumer_checks, Mapping):
         # A natural receipt describes its frozen input revision. Health does
         # not rerun the consumer or hash the entire Catalog on every GET.
         # Preserve the receipt outcome and explicitly withhold current validity.
         base["consumer_checks"] = {
             key: {**check, "freshness": "unverified",
                   "freshness_reason": "INPUT_REVISION_NOT_RECHECKED"}
-            for key, check in public["consumer_checks"].items()
+            for key, check in consumer_checks.items()
             if isinstance(check, Mapping)
         }
     if "last_interruption" in public:

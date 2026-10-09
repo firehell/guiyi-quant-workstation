@@ -108,10 +108,20 @@ if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
   export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
 fi
 case "$SERVICE" in
+  handover-candidate)
+    exec "$PYTHON_BIN" -m app.runtime_deployment candidate "${2:?}" "${3:?}" "${4:?}"
+    ;;
+  market-feed)
+    [[ -x "$PYTHON_BIN" ]] || exit 78
+    exec "$PYTHON_BIN" -m app.runtime_entry market-feed
+    ;;
   api)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     # Newow snapshot tokens, deduplication and heavy admission share one process.
     # Keep this explicit: WEB_CONCURRENCY must not create independent owners.
+    if [[ "${GUIYI_RUNTIME_HANDOVER_ENABLED:-0}" == "1" ]]; then
+      exec "$PYTHON_BIN" -m app.runtime_deployment port-service api
+    fi
     exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$PROJECT_ROOT/services/quant-api" --host 127.0.0.1 --port 8000 --workers 1 --no-access-log
     ;;
   live)
@@ -145,6 +155,9 @@ case "$SERVICE" in
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }
     [[ -f "$PROJECT_ROOT/apps/quant-web/node_modules/vite/bin/vite.js" ]] || { printf '[run-local-service] frontend vite entrypoint missing; run pnpm --dir apps/quant-web install\n' >&2; exit 2; }
+    if [[ "${GUIYI_RUNTIME_HANDOVER_ENABLED:-0}" == "1" ]]; then
+      exec "$PYTHON_BIN" -m app.runtime_deployment port-service web
+    fi
     exec node "$PROJECT_ROOT/apps/quant-web/node_modules/vite/bin/vite.js" preview "$PROJECT_ROOT/apps/quant-web" --host 127.0.0.1 --port 5173
     ;;
   *)

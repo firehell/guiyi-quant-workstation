@@ -426,3 +426,24 @@ fusion; bounded queue fairness and restart idempotence SHALL be verified.
 - **WHEN** the corresponding enabled route processes it
 - **THEN** its actual observed_at and versioned Bar state are persisted once
 - **AND** absence of an action does not create a trade or fabricate a flat state
+
+## Requirement: Live observation handover preserves capture identity
+
+With the explicitly enabled completed observation journal, new Live captures SHALL
+originate only from its real completed observation envelopes. Each capture SHALL use
+that envelope's first actual `confirmed_at`, never the current scan or restart time. Original `raw_received_at` is preserved separately and may precede Bar end; it never grants completed eligibility by itself.
+D1/W1 canonical capture, pending-capture recovery and recording activation generations
+remain unchanged. A scan MAY recover an existing pending Live capture but SHALL NOT
+recapture new Live bars at scan time.
+
+The Reference consumer SHALL acknowledge an envelope only after all affected routes
+have safely persisted and projected the existing capture identity. The capture's `observed_at` is the first real completed confirmation time; `source_proof.raw_received_at` and the committed batch's `observation_timing_v1` separately retain the original receipt for notification freshness. Invalid physical
+identity, a blocked route or unknown commit SHALL keep the observation unacknowledged.
+The consumer SHALL preserve its explicit cursor across publication roots; missing or
+expired progress SHALL block rather than silently start at the latest Bar. First
+migration SHALL initialize only an empty journal before its publisher is started.
+
+Candidate prewarm SHALL read scoped checkpoints/input facts and run pure evaluation
+without capture, batch, historical refresh or notification writes. When caught up, it
+MAY recalculate an immutable prior capture from its actual predecessor checkpoint;
+missing preimage SHALL fail closed and SHALL NOT create a synthetic observation.

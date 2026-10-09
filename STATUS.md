@@ -4,12 +4,49 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## 每日增量稳定性补丁候选 v1.14.8
+## 盘中连续交接工程候选
 
-盘后发布证据容量、写前预估、可信提交前缀、进度日志和全部状态reader已修复并通过独立Review。
-仅在v1.14.7上叠加本次必要补丁；候选精确回归895 passed、Web版本测试通过，发布与Runtime切换尚待现场证据。
-10/9自然任务仍保留failed/UPDATE_FAILED；独立只读60×七频420分区完整、daily-recovery noop，因此未重复下载或发布。
-通知失败不影响增量结果；下一次自然盘后验收待发生。见[修复任务](docs/tasks/after-market-stability-20261009.md)及[补丁说明](docs/releases/v1.14.8.md)。
+三包代码与独立Review已完成，支持逐服务身份/选择性计划、独立market-feed及持久观察链路、Alert/Reference协作交接和30秒过期不发送。
+联合500项与扩展706项通过（扩展44项可选条件skip，不计通过），OpenSpec11/secret0/Ruff/Mypy及diff检查通过。
+本任务尚未创建正式tag/Release、执行0051生产迁移或切换Runtime；现役v1.14.9与既有Scope不变。
+休息段首次迁移、自然盘中业务切换及60品种/720流连续性验收待执行，不能据工程测试声明RUNTIME_READY。
+见[实现与验收边界](docs/tasks/intraday-runtime-handover-20261009.md)。
+
+## Newow 四策略三周期 Topic 动作推送已启用
+
+现役发布与Runtime为 **v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e**，
+[PR #422](https://github.com/firehell/guiyi-quant-workstation/pull/422)、annotated tag与GitHub Release一致。
+2026-10-09 **21:00:51（Asia/Shanghai）**明确启用60品种×趋势/震荡/双策略/主升浪×1w/1d/60m，共720路。
+仅推送启用后新completed、新observed且已提交的正式动作到既有Topic；不推HOLD或hint，不补发历史，失败/未知不重试。
+当前kernel只有BUILD/CLEAR，REDUCE接口已支持但不把减仓hint升级为动作。Topic四人来自owner指定，未独立验证成员数量。
+100相关回归、4真实隔离PG、26相关部署、Web build/typecheck/topology、lock/Ruff/OpenSpec11/11/secret0/diff及独立Review通过。
+0050新增两张通知表及索引，实际migration和policy读回通过；现有服务身份matched、API/Web200、worker运行，独立验收720路及Topic hash匹配。
+目前delivery为空，自然信号和成员实际收到仍待验收；旧盘后retained_failure字节保持，整体health仍degraded，不能宣布RUNTIME_READY。
+本次不夹带develop尚未发布的视觉/公式改动。见[交付与恢复](docs/tasks/newow-topic-notifications-20261009.md)。
+
+## Develop 牛哇 v3.3.80／v3.3.81 页面补齐
+
+2026-10-09：最新版吸筹显示护栏与通用cost兜底、周线状态卡目标共享优先、本地吸筹独立覆盖已修正；raw/BUILD/CLEAR/收益及资产身份不变。独立唐奇安窗口5～120（默认20）、默认关闭蓝色止损参考线、dual独立控制与可见BUILD锚点已补齐；主升浪移入T菜单，手册来源更新。
+完整Newow回归3091 passed/1 skipped；两项沙箱socket权限失败在宿主补跑2 passed。Web1035 passed/3 skipped、build/typecheck/topology、OpenSpec11/11、Ruff/secret/diff通过；独审确认问题已修正。详见[本轮交付及验收边界](docs/tasks/newow-v3381-parity-20261009.md)。
+当前public新historical exact identity矩阵1260项全部NOT_REGISTERED；旧historical723/forward720 metadata属于旧v3基础/v1融合，不能证明新身份资产完成。仅只读核实，未构建/启用新资产。
+本轮只读launchd及Git回读确认实际服务root/tag为v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e；下文v1.14.8及更早发布记录是历史检查点。本任务未发布或切换Runtime，不由版本一致推定自然RUNTIME_READY。
+
+## Develop 牛哇 P1 第二项
+
+2026-10-09：XP1独立周期冲突及周/日basis联动已完成测试和独立Review。综合动作、强度、理由、冲突及状态立场/进度共享页面判定；融合复用主图兼容/主导来源，旧评分与策略信号不变。四测试未加入。
+后端218 passed、Web1013 passed/1 skipped、冻结原JS及typecheck/build、独审64定向通过。详见[P1口径交付及公式表](docs/tasks/newow-p1-basis-20261009.md)。本次仅develop交付，未发布或切换Runtime。
+
+## 每日增量稳定性补丁 v1.14.8 发布检查点（已由v1.14.9接替）
+
+v1.14.8 发布与切换检查点为 **v1.14.8@3e1838e60ca95095137c5736f289b89a5f67a2ea**，
+[PR #421](https://github.com/firehell/guiyi-quant-workstation/pull/421)、annotated tag及GitHub Release身份一致。
+仅在v1.14.7上叠加本次必要补丁，develop的未发布Newow改动不在现役版本中。
+盘后容量写前预估、可信提交前缀、进度日志和全部状态reader已修复；源码895 passed、独立Review259 passed、
+独立发布环境追加804 passed，Web build/版本测试、OpenSpec10/10、Ruff、secret/diff通过。
+现有API/Web/Market/Alert/reference/weekly及日志轮转已切换；API/Web200、业务服务身份matched、DB/Redis/Live正常。
+10/9 failed/UPDATE_FAILED原始字节未变并保留为retained_failure，因此health仍degraded；未伪造新自然成功状态。
+今日独立只读60×七频420分区完整、daily-recovery noop，未重复下载或发布；通知失败不影响增量结果。
+下一次自然盘后仍待验收，不能宣布RUNTIME_READY。见[修复任务](docs/tasks/after-market-stability-20261009.md)及[补丁说明](docs/releases/v1.14.8.md)。
 
 ## Develop 牛哇两个 P2
 
@@ -26,9 +63,9 @@
 最终相关后端479 passed、Web835 passed/1 skipped、build通过，后续合并断言定向81 passed；公开JS冻结实际输入19 owner逐值通过，不能替代720组合候选验收。
 详见[本次P0交付](docs/tasks/newow-p0-current-20261009.md)。下一步为按新身份构建并验收参考资产，运行版本与自然验收仍按下文既有证据。
 
-## Live 健康修复候选
+## Live 健康修复
 
-v1.14.7 修复 BREAK 冷重启未恢复冻结合约身份的问题；71 Live 与185健康/切换回归、独立 Review 通过，生产只读60/60覆盖核实正常。新版本现场切换验收尚未完成。详见 [发布说明](docs/releases/v1.14.7.md)。
+v1.14.7 修复 BREAK 冷重启未恢复冻结合约身份的问题，已发布并切换。精确发布树256项回归、Web build/typecheck/topology、独立 Review、Ruff/secret0/diff通过；现场整体health ok、Live60/60 coverage ok、六运行身份matched、local-services-status overall passed。健康规则未放宽，缺口仍lagging、身份冲突仍fail-closed。详见 [发布说明](docs/releases/v1.14.7.md)。
 
 ## Develop 短分钟持续记录候选
 
@@ -36,9 +73,18 @@ v1.14.7 修复 BREAK 冷重启未恢复冻结合约身份的问题；71 Live 与
 目标范围1260路、360调度key，capability v33/matrix v4；短分钟主升浪保持关闭。
 reference513 passed/3 skipped、修复定向450 passed、隔离PG12 passed、Web53 passed与build、
 OpenSpec10/10、Ruff/secret/diff通过。生产仅只读核对与精确基础历史计划，未构建/启用新增540路，
-代码与Runtime已切至v1.14.6，当前实际仍为720路，新540路未构建/启用。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
+代码与Runtime已切至v1.14.7，当前实际仍为720路，新540路未构建/启用。详见[短分钟记录任务](docs/tasks/newow-minute-recording-20261009.md)。
 
-## Release 与 Runtime
+## 历史 Release 与 Runtime 检查点（现役见上文 v1.14.8）
+
+最新正式发布及Runtime为 **v1.14.7@d957d62d363777be7091673256e8cde394153faa**，
+[PR #420](https://github.com/firehell/guiyi-quant-workstation/pull/420)、annotated tag 与 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.7) 精确一致。
+全部已启用服务绑定 `.worktrees/release-v1.14.7` detached/clean；API/Web HTTP200、整体health正常、Live60品种真实覆盖全部ok，六身份matched，安装器snapshot preflight60/60。
+0049保持已迁移；Rule、Scope、audience、transport、策略公式、行情及auto_order=false未变更。没有补行情、重放信号或测试推送。
+旧v1.14.6无修改/服务/进程引用后按non-force清理，运行JSON/SHA保留在 `output/newow-v1147-runtime-20261009/`。
+**整体健康正常不等于整体RUNTIME_READY**：新版首根自然completed Bar、苏冰六周期快照和Live→Canonical仍待自然验收；Alert既有HTDY通知失败事实保留，逐项coverage待新自然观察，weekly audit not_run。
+
+### 历史 v1.14.6 迁移与切换证据
 
 最新源码发布为 **v1.14.6@5b6f1cd49c14066b3c97766c18a9d65a24c6a1fd**，
 [PR #419](https://github.com/firehell/guiyi-quant-workstation/pull/419) 已合并，annotated tag 与
@@ -218,7 +264,7 @@ P7-04 TA **12/12 CANDIDATE_CLOSED**（5m/15m/30m/60m × trend/oscillation/dual�
 SuBing 已有自然 Event/实际收件闭环归属旧 exact `v1.10.5@cdd72d750`：2026-09-09 Event #143–#146，
 owner 确认 #146 PT2610 14:00 对应微信收件。该完成事实不重开，也不证明当前版本或其他受众实际收到。
 
-来源版本与公式复刻边界见 [当前研究复核](docs/research/newow-current-review.md)；历史原站证据不等于当前期货 OOS。
+来源版本与公式复刻边界见 [当前研究复核](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)；历史原站证据不等于当前期货 OOS。
 
 ## UR 四周期历史候选（2026-09-28）
 
@@ -326,6 +372,14 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
 `outputs/reference-p9-warmup-wave1-20260925/`、`outputs/reference-p9-source-inventory-20260925/`。
 旧盘后 D/E/F 已关闭，不重跑；旧事故未证明的生产归因继续保持证据不足。
 
+## Develop：牛哇 P1 四个震荡实验（2026-10-09）
+
+四公开测试、T菜单、独立普通／理论页面收益及参考记录已通过测试、独立Review和Chrome只读验收，按本任务集成develop。3089项后端及1022项Web测试通过，各1项既有跳过；构建、规范和秘密扫描通过。详见 [任务记录](docs/tasks/newow-p1-experiments-20261009.md)。三正式策略和Runtime范围保持既有合同；本项尚未发布，不改变顶部v1.14.7运行证据。
+
+## Develop：牛哇 P3视觉与交互（2026-10-09）
+
+卡片显隐／全折叠、双策略简标价格、最近三笔与两位显示、路径位置及记录密度已通过1026项Web测试（1项既有跳过）、构建和Chrome只读验收，按本任务集成develop。仅展示变化，公式／收益与Runtime不变；详见[P3记录](docs/tasks/newow-p3-visual-20261009.md)，尚未发布。
+
 ## 已接受的后续交付规划
 
 日周交付 → 关闭已记录页面缺口与自然维护验收 → Web 体验改善与分钟数据准备 → 分钟产品独立验收开放。
@@ -347,5 +401,5 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
 
 ## 唯一下一步
 
-按已部署v1.14.5完成下一根自然completed Bar、其余日/周路由及Live→Canonical核对的只读验收；
+按本页最新已部署v1.14.7完成下一根自然completed Bar、其余日/周路由及Live→Canonical核对的只读验收；
 不手工触发任务、不制造Bar、不盲目重试，也不扩大现役运行范围。

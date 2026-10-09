@@ -91,6 +91,16 @@ printf '[local-services-status] inspector_repo=%s\n' "$PROJECT_ROOT"
 runtime_root="$(plist_root "$API_LABEL")"
 printf '[local-services-status] supervised_runtime_root=%s\n' "$runtime_root"
 
+# A present registry is authoritative, including corruption; never fall back to
+# the legacy same-root inspector to hide an invalid per-service deployment.
+registry="$HOME/Library/Application Support/GuiyiQuant/service-bindings.json"
+if [[ -e "$registry" || -L "$registry" ]]; then
+  [[ "$runtime_root" == /* && -x "$runtime_root/services/quant-api/.venv/bin/python" ]] || {
+    printf '[local-services-status] registry=unknown overall=failed\n'; exit 1;
+  }
+  exec "$runtime_root/services/quant-api/.venv/bin/python" -m app.runtime_deployment status
+fi
+
 runtime_checkout_commit=unknown
 runtime_checkout_detached=unknown
 runtime_checkout_clean=unknown

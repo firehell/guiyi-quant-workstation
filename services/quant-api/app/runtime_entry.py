@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 import logging
+import os
+import signal
 import sys
 from typing import Any, TextIO
 
@@ -36,6 +38,7 @@ AlertRuntimeFactory = Callable[[], Any]
 
 _LOGGER = logging.getLogger(__name__)
 _COMMANDS = {
+    "market-feed": "runtime.market-feed",
     "live": "runtime.live",
     "alert": "runtime.alert",
     "after-market": "data.after-market",
@@ -45,14 +48,58 @@ _COMMANDS = {
 }
 
 
+def build_market_feed_service(session):
+    from app.market_data.composition import build_market_feed_service as factory
+    return factory(session)
+
+
+def _owned_runner(service: str, run) -> None:
+    """Drain cooperatively; SIGTERM cannot release ownership around an active send."""
+    from app.runtime_handover import run_supervised
+    stopped = False
+    def stop(_signum, _frame):
+        nonlocal stopped
+        stopped = True
+    original = {}
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        original[signum] = signal.signal(signum, stop)
+    try:
+        run_supervised(service, lambda owner: run(owner, lambda: stopped or owner.should_drain()),
+                       stop_requested=lambda: stopped)
+    finally:
+        for signum, handler in original.items():
+            signal.signal(signum, handler)
+
+
 def run_live(
     *,
     session_factory: SessionFactory,
     live_service_factory: LiveServiceFactory,
 ) -> dict[str, object]:
     """Run the existing foreground Live service and return its public payload."""
-    with session_factory() as session:
-        live_service_factory(session).run_forever()
+    if os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') == '1':
+        def run(owner, should_stop):
+            with session_factory() as session:
+                instance = live_service_factory(session)
+                instance.assert_owned = owner.assert_owned
+                poll = instance.poll
+                def checked_poll(now):
+                    owner.mark_not_ready()
+                    result = poll(now)
+                    if result is None:
+                        source = getattr(instance, 'source_provider', None)
+                        if source is None:
+                            owner.mark_ready()
+                        else:
+                            owner.mark_ready({'input_read_frontier': source.after,
+                                'trading_day': source.day.isoformat() if source.day else None})
+                    return result
+                instance.poll = checked_poll
+                instance.run_forever(should_stop=should_stop)
+        _owned_runner('live', run)
+    else:
+        with session_factory() as session:
+            live_service_factory(session).run_forever()
     return {
         "schema_version": 1,
         "command": "runtime.live",
@@ -66,7 +113,15 @@ def run_alert(
     alert_runtime_factory: AlertRuntimeFactory,
 ) -> dict[str, object]:
     """Run the existing foreground Alert runtime and return its public payload."""
-    alert_runtime_factory().run_forever()
+    if os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') == '1':
+        def run(owner, should_stop):
+            instance = alert_runtime_factory(assert_owned=owner.assert_owned)
+            instance.stop_requested = should_stop
+            instance.mark_ready = owner.mark_ready
+            instance.run_forever()
+        _owned_runner('alert', run)
+    else:
+        alert_runtime_factory().run_forever()
     return {
         "schema_version": 1,
         "command": "runtime.alert",
@@ -112,7 +167,27 @@ def main(
     service = raw[0]
     command = _COMMANDS[service]
     try:
-        if service == "live":
+        if service == 'market-feed':
+            def run_feed(owner, should_stop):
+                with session_factory() as session:
+                    feed = build_market_feed_service(session)
+                    if owner is not None:
+                        feed.assert_owned = owner.assert_owned
+                        poll = feed.poll
+                        def checked_poll(now):
+                            owner.mark_not_ready()
+                            result = poll(now)
+                            if result is None:
+                                owner.mark_ready()
+                            return result
+                        feed.poll = checked_poll
+                    feed.run_forever(should_stop=should_stop)
+            if os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') == '1':
+                _owned_runner(service, run_feed)
+            else:
+                run_feed(None, lambda: False)
+            payload = {'schema_version': 1, 'command': command, 'status': 'ok', 'foreground': True}
+        elif service == "live":
             payload = run_live(
                 session_factory=session_factory,
                 live_service_factory=live_service_factory,
@@ -174,7 +249,7 @@ def run_weekly_audit_service(
 def entrypoint() -> None:
     handler = None
     if len(sys.argv) == 2 and sys.argv[1] in {
-        "live", "alert", "after-market", "late-provider-recovery", "weekly-audit", "weekly-audit-scheduled",
+        "market-feed", "live", "alert", "after-market", "late-provider-recovery", "weekly-audit", "weekly-audit-scheduled",
     }:
         from app.runtime_logging import install_runtime_diagnostics
 

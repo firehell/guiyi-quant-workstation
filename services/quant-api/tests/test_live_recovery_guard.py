@@ -114,3 +114,66 @@ def test_unlock_failure_still_closes_descriptor_and_releases_kernel_lock(tmp_pat
                 pass
     with recovery_guard("jm", root=tmp_path):
         pass
+
+
+def test_handover_guards_share_stable_inode_across_release_roots(tmp_path, monkeypatch):
+    from app.market_data.live_recovery_guard import recovery_guard
+    stable = tmp_path / 'runtime'
+    first, second = tmp_path / 'release-one', tmp_path / 'release-two'
+    (first / '.run').mkdir(parents=True)
+    (second / '.run').mkdir(parents=True)
+    monkeypatch.setenv('GUIYI_RUNTIME_HANDOVER_ENABLED', '1')
+    import app.runtime_handover
+    monkeypatch.setattr(app.runtime_handover, 'runtime_directory', lambda: stable)
+    with recovery_guard('jm', root=first / '.run/live-recovery-guards'):
+        with pytest.raises(RuntimeError, match='LIVE_RECOVERY_BUSY'):
+            with recovery_guard('jm', root=second / '.run/live-recovery-guards'):
+                pytest.fail('different release roots cannot split the shared guard')
+    assert (stable / 'live-recovery-guards/jm.lock').exists()
+
+
+def test_cross_process_handover_guards_ignore_distinct_release_paths(tmp_path, monkeypatch):
+    from app.market_data.live_recovery_guard import recovery_guard
+    import app.runtime_handover
+    stable = tmp_path / 'runtime'
+    first, second = tmp_path / 'first', tmp_path / 'second'
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setenv('GUIYI_RUNTIME_HANDOVER_ENABLED', '1')
+    monkeypatch.setattr(app.runtime_handover, 'runtime_directory', lambda: stable)
+    code = '''import sys
+from pathlib import Path
+import app.runtime_handover
+from app.market_data.live_recovery_guard import recovery_guard
+app.runtime_handover.runtime_directory = lambda: Path(sys.argv[2])
+try:
+    with recovery_guard('jm', root=Path(sys.argv[1])):
+        sys.exit(0)
+except RuntimeError:
+    sys.exit(7)
+'''
+    env = {**os.environ, 'PYTHONPATH': os.pathsep.join(sys.path)}
+    with recovery_guard('jm', root=first):
+        assert subprocess.run([sys.executable, '-c', code, str(second), str(stable)],
+                              env=env, capture_output=True).returncode == 7
+    assert subprocess.run([sys.executable, '-c', code, str(second), str(stable)],
+                          env=env, capture_output=True).returncode == 0
+
+
+def test_registry_mode_and_bootstrap_legacy_probe_are_distinct(tmp_path, monkeypatch):
+    import app.runtime_bindings
+    import app.runtime_handover
+    from app.market_data.live_recovery_guard import after_market_recovery_guard
+    stable, legacy = tmp_path / 'runtime', tmp_path / 'legacy'
+    legacy.mkdir()
+    monkeypatch.delenv('GUIYI_RUNTIME_HANDOVER_ENABLED', raising=False)
+    monkeypatch.setattr(app.runtime_bindings, 'read_bindings', lambda: object())
+    monkeypatch.setattr(app.runtime_handover, 'runtime_directory', lambda: stable)
+    with after_market_recovery_guard(root=legacy):
+        with pytest.raises(RuntimeError, match='LIVE_RECOVERY_BUSY'):
+            with after_market_recovery_guard():
+                pytest.fail('a registered deployment uses stable shared guards without an env flag')
+        with after_market_recovery_guard(root=legacy, legacy_root=True):
+            pass  # bootstrap can independently prove old Runtime inodes are idle
+    assert (legacy / 'after-market.lock').exists()
+    assert (stable / 'live-recovery-guards/after-market.lock').exists()
