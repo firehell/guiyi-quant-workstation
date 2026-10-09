@@ -79,6 +79,10 @@ class AlertEvent(Base):
     bar_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     result_codes: Mapped[list[str]] = mapped_column(_RESULT_CODES_TYPE, nullable=False)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_observation_id: Mapped[str | None] = mapped_column(String(160))
+    processing_mode: Mapped[str | None] = mapped_column(String(32))
+    notification_status: Mapped[str | None] = mapped_column(String(32))
     notification_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

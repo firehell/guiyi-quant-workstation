@@ -67,6 +67,10 @@ class AlertEventCreate:
     detected_at: datetime
     notification_attempted_at: datetime | None
     subing_alignment: dict[str, object] | None = None
+    source_observed_at: datetime | None = None
+    source_observation_id: str | None = None
+    processing_mode: str | None = None
+    notification_status: str | None = None
 
 
 class AlertService:
@@ -160,6 +164,19 @@ class AlertService:
             _require_aware(value)
         if request.notification_attempted_at is not None:
             _require_aware(request.notification_attempted_at)
+        if request.source_observed_at is not None:
+            _require_aware(request.source_observed_at)
+            if (request.detected_at < request.source_observed_at
+                    or not isinstance(request.source_observation_id, str)
+                    or not 1 <= len(request.source_observation_id) <= 160
+                    or request.processing_mode != "handover_buffer"):
+                raise AlertConsistencyError()
+        elif request.source_observation_id is not None or request.processing_mode is not None:
+            raise AlertConsistencyError()
+        if request.notification_status not in (None, "EXPIRED_NO_SEND"):
+            raise AlertConsistencyError()
+        if request.notification_status == "EXPIRED_NO_SEND" and request.notification_attempted_at is not None:
+            raise AlertConsistencyError()
         existing = self._event_by_identity(
             rule_id=rule.id,
             symbol=symbol,
@@ -201,6 +218,10 @@ class AlertService:
             result_codes=list(result_codes),
             detected_at=request.detected_at,
             notification_attempted_at=request.notification_attempted_at,
+            source_observed_at=request.source_observed_at,
+            source_observation_id=request.source_observation_id,
+            processing_mode=request.processing_mode,
+            notification_status=request.notification_status,
         )
         if request.subing_alignment is not None:
             from app.alerts.registry import SUBING_THS_ALERT_RULE_CODE

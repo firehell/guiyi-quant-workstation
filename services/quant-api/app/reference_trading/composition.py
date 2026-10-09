@@ -66,10 +66,17 @@ def build_forward_reference_worker(
                 if isinstance(capture, dict) and capture.get("eligibility") == "gap_recovery"
                 else evaluator
             )
-            return selected(
+            prepared = selected(
                 token, checkpoint, evidence,
                 dependency_manifest=state.dependency_manifest,
             )
+            timing = capture.get("source_proof", {}) if isinstance(capture, dict) else {}
+            if isinstance(timing, dict) and timing.get("raw_received_at"):
+                from dataclasses import replace
+                prepared = replace(prepared, source_evidence={**prepared.source_evidence,
+                    "observation_timing_v1": {"raw_received_at": timing["raw_received_at"],
+                                              "confirmed_at": timing["confirmed_at"]}})
+            return prepared
 
         return ForwardReferenceService(repository, evaluate, commit_guard=reconciliation_commit_guard)
 
@@ -81,7 +88,9 @@ def build_forward_reference_worker(
             return None
         (identity, revision_id, generation, recording_start, computed_through,
          recovery_policy, prior_owner_id, prior_calculation_id) = context
-        observed = cache.observed_at or now()
+        if kind == "scan" and identity.frequency in LIVE_FREQUENCIES and not worker.scan_live:
+            return None
+        observed = (worker.source_observed_at if kind == "live_event" else None) or cache.observed_at or now()
         after = (
             computed_through if computed_through is not None
             else recording_start - timedelta(microseconds=1)
@@ -147,10 +156,11 @@ def build_forward_reference_worker(
             )
         raise ValueError("FORWARD_STRATEGY_UNSUPPORTED")
 
-    return ForwardReferenceWorker(
+    worker = ForwardReferenceWorker(
         repository, service_for, read_input, enabled=enabled,
         begin_unit=lambda: cache.begin(now()), end_unit=cache.end,
     )
+    return worker
 
 
 def build_historical_reference_planner(

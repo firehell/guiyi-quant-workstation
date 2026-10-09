@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from time import monotonic, sleep
 
@@ -44,6 +44,11 @@ class ForwardReferenceWorker:
         begin_unit: Callable[[], None] = lambda: None,
         end_unit: Callable[[], None] = lambda: None,
     ) -> None:
+        self.source_observed_at: datetime | None = None
+        self.raw_received_at: datetime | None = None
+        self.assert_owned = lambda: None
+        self.scan_live = True
+        self.mark_ready = lambda: None
         self._repository = repository
         self._service_for = service_for
         self._read_input = read_input
@@ -78,13 +83,13 @@ class ForwardReferenceWorker:
         if stream_id in self._remaining:
             if kind == "live_event":
                 previous = self._deferred.get(stream_id)
-                if previous is None or previous[0] != "live_event" or bar_end > previous[1]:
+                if previous is None or previous[0] != "live_event" or previous[1] is None or (bar_end is not None and bar_end > previous[1]):
                     self._deferred[stream_id] = (kind, bar_end)
             return False
         if stream_id in self._queued:
             if kind == "live_event":
                 previous_kind, previous_end = self._queued[stream_id]
-                if previous_kind != "live_event" or bar_end > previous_end:
+                if previous_kind != "live_event" or previous_end is None or (bar_end is not None and bar_end > previous_end):
                     self._queued[stream_id] = (kind, bar_end)
             return False
         if len(self._queue) >= self._budget.max_pending_keys:
@@ -121,6 +126,13 @@ class ForwardReferenceWorker:
             self._scan_after = None
             keys = self._enabled_keys(limit=available)
         for key in keys:
+            if not self.scan_live:
+                from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+                routes = self._work_routes(key)
+                contexts = [self._repository.forward_source_context(route) for route in routes]
+                if any(context and context[0].frequency in LIVE_FREQUENCIES for context in contexts):
+                    if not any(self._repository.read_pending_capture(route) is not None for route in routes):
+                        continue
             self.wake(key, kind="scan")
         if keys:
             self._scan_after = keys[-1]
@@ -154,13 +166,20 @@ class ForwardReferenceWorker:
                         service = self._service_for(stream_id)
                         pending = self._repository.read_pending_capture(stream_id)
                         if pending is not None:
+                            self.assert_owned()
                             result = service.process_pending(stream_id)
                             needs_scan = True
                         else:
                             capture = self._read_input(stream_id, kind, event_bar_end)
                             result = None
                             if capture is not None:
+                                if self.raw_received_at is not None and kind == "live_event":
+                                    capture = replace(capture, source_proof={**capture.source_proof,
+                                        "raw_received_at": self.raw_received_at.isoformat(),
+                                        "confirmed_at": capture.observed_at.isoformat()})
+                                self.assert_owned()
                                 self._repository.capture_forward(capture)
+                                self.assert_owned()
                                 result = service.process_pending(stream_id)
                         if result is not None:
                             completed += 1
@@ -203,6 +222,8 @@ class ForwardReferenceWorker:
         while not should_stop():
             self.scan()
             self.run_round()
+            if not self.health().blocked:
+                self.mark_ready()
             if not should_stop():
                 wait(scan_interval_seconds)
 

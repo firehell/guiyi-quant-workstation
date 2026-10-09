@@ -11,12 +11,14 @@ import plistlib
 import re
 import stat
 from zoneinfo import ZoneInfo
+from typing import Any, cast
 
 from redis import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.engine import make_url
 
 from app.db.url import normalize_database_url
+from app.runtime_bindings import authorized_program_arguments, read_bindings, registry_path, verify_release
 from app.market_data.after_market import public_after_market_status
 from app.market_data.after_market_limits import MAX_STATUS_BYTES
 from app.market_data.after_market_closeout import (
@@ -320,6 +322,11 @@ class RuntimeDataBinding:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         self.root, self.commit = root, commit
         self.home = home if home is not None else Path.home()
+        self._registry = read_bindings(home=self.home)
+        if self._registry is not None:
+            binding = self._registry.services.get("after-market")
+            if binding is None or binding.root != str(root) or binding.commit != commit:
+                self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         try:
             with _directory(root / ".run") as directory:
                 status = _read(directory, "after-market-status.json")
@@ -439,7 +446,7 @@ class RuntimeDataBinding:
                 public = public_after_market_status(parsed)
                 last_run = public.get("last_run")
                 if isinstance(last_run, dict) and last_run.get("status") == "skipped":
-                    last_failure = public.get("last_failure")
+                    last_failure = cast(dict[str, Any] | None, public.get("last_failure"))
                     if (
                         public.get("schema_version") != 3
                         or public.get("current_run") is not None
@@ -472,7 +479,7 @@ class RuntimeDataBinding:
             if parsed.get("schema_version") == 3 and allow_failed_terminal:
                 public = public_after_market_status(parsed)
                 last_run = public.get("last_run")
-                last_failure = public.get("last_failure")
+                last_failure = cast(dict[str, Any] | None, public.get("last_failure"))
                 accepted_errors = {"UPDATE_FAILED"}
                 if allow_calendar_metadata_failure:
                     accepted_errors.add("CALENDAR_NIGHT_AUTHORITY_MISSING")
@@ -524,7 +531,7 @@ class RuntimeDataBinding:
             public = public_after_market_status(parsed)
             interruption = public.get("last_interruption")
             last_run = public.get("last_run")
-            last_failure = public.get("last_failure")
+            last_failure = cast(dict[str, Any] | None, public.get("last_failure"))
             if (not isinstance(interruption, dict) or not isinstance(last_run, dict)
                     or last_run.get("status") != "interrupted"
                     or last_run.get("error_code") != "AFTER_MARKET_INTERRUPTED"
@@ -552,12 +559,28 @@ class RuntimeDataBinding:
             raise ValueError
 
     def _verify_runtime_identity(self) -> None:
+        if getattr(self, "_registry", None) is not None:
+            self._verify_runtime_identity_bounded()
+            return
         if self.after_market_state == "stopped":
             verify_runtime_release_identity(self.root, self.commit)
         else:
             verify_closeout_identity(self.root, self.commit, home=self.home)
 
     def _verify_runtime_identity_bounded(self) -> None:
+        registry = getattr(self, "_registry", None)
+        if registry is not None:
+            if read_bindings(home=self.home) != registry:
+                self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+            for service in ("api", "web", "live", "alert", "after-market"):
+                binding = registry.services.get(service)
+                if binding is None or not binding.enabled:
+                    self._fail("RUNTIME_RECOVERY_SERVICE_MISMATCH")
+                verify_release(Path(binding.root), binding.tag, binding.commit)
+            if any(registry.services[service].contracts[key] != registry.services["after-market"].contracts[key]
+                   for service in ("api", "web", "live", "alert") for key in ("db", "live", "input", "launcher")):
+                self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+            return
         try:
             verify_runtime_release_identity(self.root, self.commit)
         except (OSError, ValueError):
@@ -727,16 +750,22 @@ class RuntimeDataBinding:
 
     def _check_heartbeats(self, redis, store, now: Callable[[], datetime]) -> None:
         observed = now()
-        _verify_heartbeat(
-            store.heartbeat(), now=observed, root=self.root, commit=self.commit
-        )
+        registry = getattr(self, "_registry", None)
+        live = None if registry is None else registry.services["live"]
+        alert = None if registry is None else registry.services["alert"]
+        live_heartbeat = store.heartbeat()
+        _verify_heartbeat(live_heartbeat, now=observed,
+            root=self.root if live is None else Path(live.root), commit=self.commit if live is None else live.commit)
+        if live is not None and (live_heartbeat.get("runtime_generation") != live.generation
+                                 or live_heartbeat.get("runtime_tag") != live.tag):
+            raise ValueError
         raw = redis.get("alert:heartbeat")
-        _verify_heartbeat(
-            json.loads(raw) if raw is not None else None,
-            now=observed,
-            root=self.root,
-            commit=self.commit,
-        )
+        alert_heartbeat = json.loads(raw) if raw is not None else None
+        _verify_heartbeat(alert_heartbeat, now=observed,
+            root=self.root if alert is None else Path(alert.root), commit=self.commit if alert is None else alert.commit)
+        if alert is not None and (alert_heartbeat is None or alert_heartbeat.get("runtime_generation") != alert.generation
+                                  or alert_heartbeat.get("runtime_tag") != alert.tag):
+            raise ValueError
 
     def check_runtime_heartbeats(self) -> None:
         """Verify stopped-terminal service identity and both fresh Runtime heartbeats."""
@@ -762,12 +791,14 @@ class RuntimeDataBinding:
         # Do not inspect secrets or silently support a second configuration source.
         if os.path.lexists(self.root / ".env"):
             raise ValueError
-        paths = [self.config_path, self.runtime_dir / "run-local-service.sh",
-            self.root / "scripts/ops/macos/run-local-service.sh"]
+        registered = getattr(self, "_registry", None) is not None
+        launcher_source = self.root / "scripts/ops/macos" / (
+            "runtime-service-dispatch.sh" if registered else "run-local-service.sh")
+        paths = [self.config_path, self.runtime_dir / "run-local-service.sh", launcher_source]
         paths += [self.root / "data/universe" / name for name in (
             "operational_products.txt", "active_products.txt", "retired_products.txt",
             "product_window_starts.csv", "active_history_floor.txt")]
-        paths += [self.agent_dir / f"com.guiyi.quant-{name}.plist"
+        paths += [self.agent_dir / f"{self._registry.services[name].label if registered else f'com.guiyi.quant-{name}'}.plist"
                   for name in ("api", "web", "live", "alert", "after-market")]
         result = {path: _snapshot(path, private=path == self.config_path) for path in paths}
         with _directory(self.root) as directory:
@@ -776,6 +807,9 @@ class RuntimeDataBinding:
             result[self.root] = (b"", (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns))
         if result[paths[1]][0] != result[paths[2]][0]:
             raise ValueError
+        if registered:
+            path = registry_path(self.home)
+            result[path] = _snapshot(path, private=True)
         return result
 
     def _read_processes(self):
@@ -783,6 +817,8 @@ class RuntimeDataBinding:
         allowed = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_CTYPE",
                    "XPC_SERVICE_NAME", "XPC_FLAGS", "OSLogRateLimit", "MallocSpaceEfficient",
                    "__CF_USER_TEXT_ENCODING", "SSH_AUTH_SOCK", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT"}
+        if getattr(self, "_registry", None) is not None:
+            allowed |= {"GUIYI_RUNTIME_GENERATION", "GUIYI_RUNTIME_TAG", "GUIYI_RUNTIME_HANDOVER_ENABLED", "GUIYI_OBSERVATION_STREAM_ENABLED"}
         def validate_environment(values, service):
             supported = allowed | ({"GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"} if service in {"api", "alert"} else set())
             if values.keys() - supported or values.get("HOME", str(self.home)) != str(self.home):
@@ -792,9 +828,13 @@ class RuntimeDataBinding:
                     or ".." in Path(notification).parts or any(c in notification for c in "\n\r\t")):
                 raise ValueError
         for name in ("api", "web", "live", "alert", "after-market"):
-            label = f"com.guiyi.quant-{name}"
-            arguments = ("/bin/bash", str(self.runtime_dir / "run-local-service.sh"), name)
-            working_directory = self.home if name in {"api", "web"} else self.root
+            binding = None if getattr(self, "_registry", None) is None else self._registry.services[name]
+            service_root = self.root if binding is None else Path(binding.root)
+            service_commit = self.commit if binding is None else binding.commit
+            label = f"com.guiyi.quant-{name}" if binding is None else binding.label
+            arguments = (("/bin/bash", str(self.runtime_dir / "run-local-service.sh"), name)
+                         if binding is None else authorized_program_arguments(binding, self.home))
+            working_directory = self.home if name in {"api", "web"} else service_root
             path = self.agent_dir / f"{label}.plist"
             payload = plistlib.loads(self._sources[path][0])
             if not isinstance(payload, dict) or payload.get("Label") != label:
@@ -803,10 +843,14 @@ class RuntimeDataBinding:
             validate_environment(installed_environment, name)
             if (tuple(payload.get("ProgramArguments", ())) != arguments
                     or payload.get("WorkingDirectory") != str(working_directory)
-                    or installed_environment.get("GUIYI_PROJECT_ROOT") != str(self.root)
-                    or installed_environment.get("GUIYI_RUNTIME_COMMIT") != self.commit):
+                    or installed_environment.get("GUIYI_PROJECT_ROOT") != str(service_root)
+                    or installed_environment.get("GUIYI_RUNTIME_COMMIT") != service_commit):
                 raise ValueError
-            output = _read_launchd_service(label, root=self.root)
+            if binding is not None and (
+                    installed_environment.get("GUIYI_RUNTIME_GENERATION") != str(binding.generation)
+                    or installed_environment.get("GUIYI_RUNTIME_TAG") != binding.tag):
+                raise ValueError
+            output = _read_launchd_service(label, root=service_root)
             if name == "after-market" and self.after_market_state == "stopped":
                 if output is not None:
                     raise ValueError
@@ -818,12 +862,16 @@ class RuntimeDataBinding:
                 validate_environment(environment, name)
             if _arguments(output) != arguments:
                 raise ValueError
-            fields = _verify_loaded_service(output, root=self.root, commit=self.commit,
+            fields = _verify_loaded_service(output, root=service_root, commit=service_commit,
                 allow_idle=name == "after-market", require_idle=name == "after-market",
                 working_directory=working_directory)
             matching_environments = [environment for environment in environments
-                if environment.get("GUIYI_PROJECT_ROOT") == str(self.root)
-                and environment.get("GUIYI_RUNTIME_COMMIT") == self.commit]
+                if environment.get("GUIYI_PROJECT_ROOT") == str(service_root)
+                and environment.get("GUIYI_RUNTIME_COMMIT") == service_commit]
+            if binding is not None and (len(matching_environments) != 1
+                    or matching_environments[0].get("GUIYI_RUNTIME_GENERATION") != str(binding.generation)
+                    or matching_environments[0].get("GUIYI_RUNTIME_TAG") != binding.tag):
+                raise ValueError
             behavior_keys = {"PATH", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT",
                              "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"}
             if (len(matching_environments) != 1
@@ -850,7 +898,7 @@ class RuntimeDataBinding:
             raise ValueError
         install_artifacts = {self.runtime_dir / "run-local-service.sh"}
         install_artifacts.update(
-            self.agent_dir / f"com.guiyi.quant-{name}.plist"
+            self.agent_dir / f"{self._registry.services[name].label if getattr(self, '_registry', None) is not None else f'com.guiyi.quant-{name}'}.plist"
             for name in ("api", "web", "live", "alert", "after-market")
         )
         consumer_started = min(item[1] for item in self._processes.values())

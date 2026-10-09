@@ -147,7 +147,7 @@ def runtime_diagnostic_handler(path: Path) -> logging.Handler:
 
 
 def install_runtime_diagnostics(service: str) -> logging.Handler:
-    filename = {"live": "live-market.log", "alert": "alert-runtime.log",
+    filename = {"market-feed": "market-feed.log", "live": "live-market.log", "alert": "alert-runtime.log",
                 "after-market": "after-market.log",
                 "late-provider-recovery": "late-provider-recovery.log", "weekly-audit": "weekly-audit.log",
                 "weekly-audit-scheduled": "weekly-audit.log"}[service]

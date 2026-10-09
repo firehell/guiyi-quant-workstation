@@ -1945,3 +1945,51 @@ def test_binding_requires_exact_partition_validator_and_dependency_identity(targ
         finally:
             client.close()
     engine.dispose()
+
+
+def test_registered_closeout_reads_service_specific_root_and_candidate_label(target, tmp_path):
+    from app.runtime_bindings import BindingRegistry, ServiceBinding
+    module = target.module
+    root = tmp_path / "live-release"
+    root.mkdir()
+    registry = {}
+    sources = {}
+    for service in ("api", "web", "live", "alert", "after-market"):
+        original_label = f"com.guiyi.quant-{service}"
+        old_path = target.home / "Library/LaunchAgents" / f"{original_label}.plist"
+        payload = plistlib.loads(old_path.read_bytes())
+        selected_root = root if service == "live" else target.root
+        label = original_label if service != "live" else original_label + "-candidate-" + "f" * 32
+        payload["Label"] = label
+        if service == "live":
+            payload["ProgramArguments"] = ["/bin/bash", str(target.home / "Library/Application Support/GuiyiQuant/run-local-service.sh"),
+                                           "handover-candidate", "live", "f" * 32, "2"]
+        environment = payload["EnvironmentVariables"]
+        environment.update(GUIYI_PROJECT_ROOT=str(selected_root), GUIYI_RUNTIME_GENERATION="2", GUIYI_RUNTIME_TAG="v1.2.3")
+        if service == "live":
+            payload["WorkingDirectory"] = str(selected_root)
+        path = old_path.with_name(f"{label}.plist")
+        path.write_bytes(plistlib.dumps(payload))
+        sources[path] = module._snapshot(path)
+        output = target.outputs[original_label]
+        output = output.replace(f"GUIYI_PROJECT_ROOT => {target.root}", f"GUIYI_PROJECT_ROOT => {selected_root}")
+        if service == "live":
+            output = output.replace(f"working directory = {target.root}", f"working directory = {selected_root}")
+        output = output.replace("GUIYI_RUNTIME_COMMIT => " + "a" * 40,
+            "GUIYI_RUNTIME_COMMIT => " + "a" * 40 + "\nGUIYI_RUNTIME_GENERATION => 2\nGUIYI_RUNTIME_TAG => v1.2.3")
+        if service == "live":
+            old_arguments = "\n".join(["/bin/bash", str(target.home / "Library/Application Support/GuiyiQuant/run-local-service.sh"), "live"])
+            output = output.replace(old_arguments, "\n".join(payload["ProgramArguments"]))
+        target.outputs[label] = output
+        registry[service] = ServiceBinding(service, str(selected_root), "v1.2.3", "a" * 40, 2, True,
+            {key: "c" * 64 for key in ("db", "live", "input", "formula", "reference", "launcher")},
+            None if service != "live" else label)
+    binding = module.RuntimeDataBinding.__new__(module.RuntimeDataBinding)
+    binding.root, binding.commit, binding.home = target.root, "a" * 40, target.home
+    binding.agent_dir = target.home / "Library/LaunchAgents"
+    binding.runtime_dir = target.home / "Library/Application Support/GuiyiQuant"
+    binding.after_market_state, binding._registry, binding._sources = "loaded", BindingRegistry(1, registry), sources
+    assert "live" in binding._read_processes()
+    target.outputs[registry["live"].label] = target.outputs[registry["live"].label].replace("GENERATION => 2", "GENERATION => 1")
+    with pytest.raises(ValueError):
+        binding._read_processes()

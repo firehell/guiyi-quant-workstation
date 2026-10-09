@@ -18,7 +18,7 @@ Newow 的 snapshot token、重型门禁与在途去重都由该进程持有；�
 按链路从内向外执行；以下脚本只读取状态，不启动、停止、重载服务，也不运行 migration 或数据任务：
 
 ```bash
-# Mac：API/Web/Live/after-market/Alert 五个 label（按 activation marker 判定 required）、同一 Runtime 根、
+# Mac：按每个服务绑定核对实际 root/tag/commit/generation 与监督进程、
 # 已加载进程 commit 身份与本地 HTTP/Runtime health
 ./scripts/ops/macos/local-services-status.sh
 
@@ -42,13 +42,49 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 最新发布树兼作正式服务源码根，不另建Application Support中的runtime克隆；安全配置、共享launcher和日志保持Git外既有位置。
 外接卷launchd访问须通过宿主权限与真实启动/读回验证，安装器沿用`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`选项并核对所有required服务。
 
-只保留完成切换及现场读回的最新发布树，不常驻旧树或回滚树；仅发布未切换时，不能删除仍被服务引用的旧树。
+保留所有仍被 service-bindings、磁盘 plist 或现场进程引用的发布树；解除全部引用并完成现场读回后才清理。只读 `python -m app.runtime_retention cleanup-plan /exact/root...` 汇总 binding/plist/loaded/进程引用；未知结果阻止清理，删除前重新扫描。未引用旧树不作为常驻回滚树。
 创建新树、构建、render/preflight、切换和健康读回完成后，逐树核对精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务与进程引用；有用户修改或引用时停止该树清理。
 保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
 应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。
 
 修复默认向前发布补丁，不移动旧tag；需要恢复时可从Git重建精确旧版本。后续修复复用最新发布树的修复分支，发布新版本后改为对应版本名称；正式服务始终绑定已验证commit，不能把dirty源码冒充原版本。
 安装器的原子失败恢复、preflight、身份校验继续保留；结果不明先停止相关mutation并只读核对，不能因清理而盲目重试。
+
+## 按服务连续交接
+
+新增稳定目录 `~/Library/Application Support/GuiyiQuant/service-bindings.json` 是启用新拓扑后的唯一身份入口。
+每项固定 exact annotated tag、commit、发布根、代次、启用状态、合同内容指纹及实际 launchd label。
+共享 `run-local-service.sh` 只做稳定分派，业务 launcher 保留在各自发布树。普通发布不覆盖共享分派器。
+API/Web 配套影响；未知依赖按全服务受影响。v1 对共享合同只接受内容指纹相等，不能证明兼容时阻止混合版本。
+所有已启用服务都参加兼容检查，即使它们全部在本次受影响集合中，也不默许顺序制造未知混合版本。
+
+安装器的四个新入口在 legacy render/mutation 之前分派（计划文件需当前用户独占 0600）：
+
+```bash
+./scripts/ops/macos/install-local-services.sh --plan-topology --candidate-root /absolute/release-tree --tag vX.Y.Z --commit EXACT_SHA
+./scripts/ops/macos/install-local-services.sh --apply-topology-plan --plan /absolute/topology-plan.json
+./scripts/ops/macos/install-local-services.sh --plan-release --candidate-root /absolute/release-tree --tag vX.Y.Z --commit EXACT_SHA
+./scripts/ops/macos/install-local-services.sh --apply-release-plan --plan /absolute/service-plan.json
+```
+
+前两项用于一次性迁移：权威 Session 证明全部 operational 品种 BREAK/CLOSED、末根 completed 覆盖及确认宽限结束，
+冻结旧 plist/loaded 身份与发送互斥锁后停止旧拓扑，执行 0051、证明空 journal、显式初始化 0-0，启动消费者再启动 Feed。
+旧进程若不具备可证明的发送收尾合同，返回 `BOOTSTRAP_LEGACY_*_DRAIN_UNSUPPORTED`，不能强杀、伪造空闲或补发。
+迁移 journal 结果未知时保留 preimage 并禁止复用；只能先精确只读核对，不能把失败当安全重试。
+
+后两项只交接受影响的服务。候选使用临时 label，最多 120 秒纯读取/计算预热。
+旧版停止领取，最多 10 秒收尾并释放 OS 独占锁；超时取消，旧版恢复领取。
+候选取得新代次后，从原提交进度续接。现场核对 plist、loaded PID/env、心跳、实际 ready、冻结输入边界与消费进度；
+API/Web 还读回 HTTP。定时服务仅在维护锁与无运行 PID 证明成立后重新注册日历，不 kickstart 业务任务。候选 label 晋升后继续由 KeepAlive 监督，直到下次被精确退休。
+采集器本身的交接仍限于权威休息段、实际 pending=0 与 source cursor=tail。
+API 始终一个进程，短暂重启会失效旧 snapshot token。UI/API 发布不会切换未受影响的 Feed/Live/Alert/Reference。
+
+交接后的未知结果写入 `deployment-outcome.json` 并请求候选协作停止领取，不恢复旧发送权，不重试 provider。
+全部正式副作用受 OS 锁与新代次二次核对约束；TTL、健康标签或候选预热不授予发送权。
+新绑定存在后，旧一根安装器的 mutation 模式拒绝执行；只读状态按各服务根检查，不能用 API 根代表全部 Runtime。
+
+工程测试、发布、现场交接及自然连续性验收分别记录。专用 Redis/PostgreSQL 测试不发送真实推送；
+自然信号未发生时保留待验收，不能宣布 `RUNTIME_READY`。
 
 ## 配置与变更 Gate
 

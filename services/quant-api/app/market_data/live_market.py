@@ -482,10 +482,14 @@ class RQDataLiveProvider:
 
     def __init__(self, client: RawLiveMarketClient) -> None:
         self._client = client
-        self._messages: deque[Mapping[str, Any]] = deque()
+        self._messages: deque[tuple[Mapping[str, Any], datetime]] = deque()
+        self._received: dict[tuple[str, CanonicalBar], datetime] = {}
         self._message_lock = Lock()
         self._listener: LiveListener | None = None
         self._closed = False
+        self._retired_listener: LiveListener | None = None
+        self._close_succeeded = False
+        self._close_failed = False
 
     def subscribe(self, channels: tuple[str, ...]) -> None:
         self._client.subscribe(list(channels))
@@ -508,11 +512,14 @@ class RQDataLiveProvider:
             listener_stopped = (
                 self._listener is not None and not self._listener.is_alive()
             )
-        buffered = tuple(
-            item
-            for message in messages
-            if (item := _canonical_bar_from_raw_feed(message)) is not None
-        )
+        buffered_items = []
+        self._received.clear()
+        for message, received_at in messages:
+            item = _canonical_bar_from_raw_feed(message)
+            if item is not None:
+                buffered_items.append(item)
+                self._received.setdefault(item, received_at)
+        buffered = tuple(buffered_items)
         # Preserve a valid final Bar that the handler accepted immediately before
         # its listener stopped. The next poll reports the dead provider.
         if buffered:
@@ -527,13 +534,42 @@ class RQDataLiveProvider:
         if self._closed:
             return
         self._closed = True
+        self._retired_listener = self._listener
         self._listener = None
         self._client.close()
+        self._close_succeeded = True
+
+    def close_verified(self, *, timeout: float = 5, clock=None, sleep=None) -> None:
+        """Feed handover proof; legacy retry close retains its original behavior."""
+        from time import monotonic, sleep as real_sleep
+        clock = clock or monotonic
+        sleep = sleep or real_sleep
+        if not 0 <= timeout <= 5 or self._close_failed:
+            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+        listener = self._listener or self._retired_listener
+        try:
+            if not self._close_succeeded:
+                self._client.close()
+                self._close_succeeded = True
+            deadline = clock() + timeout
+            while listener is not None and listener.is_alive():
+                if clock() >= deadline:
+                    raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+                sleep(0.01)
+        except Exception:  # noqa: BLE001 - unknown connection outcome cannot become a parked owner
+            self._close_failed = True
+            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN') from None
+        self._closed = True
+        self._retired_listener = listener
+        self._listener = None
+
+    def source_observed_at(self, contract: str, bar: CanonicalBar) -> datetime | None:
+        return self._received.get((contract, bar))
 
     def _buffer_message(self, message: object) -> None:
         if isinstance(message, MappingABC):
             with self._message_lock:
-                self._messages.append(message)
+                self._messages.append((message, datetime.now(UTC)))
 
 
 class DominantSource(Protocol):
@@ -969,15 +1005,18 @@ class LiveMarketService:
             return "LIVE_REDIS_UNAVAILABLE"
         return None
 
-    def run_forever(self) -> None:
+    def run_forever(self, *, should_stop: Callable[[], bool] | None = None) -> None:
         """前台循环；由 CLI/launchd 管理进程，不在 Python 内 daemonize。"""
         if self._sleep is None:
             from time import sleep
 
             self._sleep = sleep
-        while True:
-            self.poll(self._clock())
-            self._sleep(1)
+        try:
+            while should_stop is None or not should_stop():
+                self.poll(self._clock())
+                self._sleep(1)
+        finally:
+            self._discard_provider()
 
     def _derive(
         self,
