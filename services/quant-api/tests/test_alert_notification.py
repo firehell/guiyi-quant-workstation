@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -27,6 +27,29 @@ def test_transport_error_rejects_unlisted_diagnostic_attributes() -> None:
     assert error.diagnostic_code == "UNKNOWN"
     assert sensitive_marker not in str(error)
     assert sensitive_marker not in repr(error)
+
+
+@pytest.mark.parametrize("rule_code", ["htdy_original_15m", "subing_ths_alert_15m_v1"])
+def test_buffer_notification_shows_original_observation_and_send_time_delay(rule_code):
+    observed = datetime(2026, 8, 15, 2, 0, 2, tzinfo=UTC)
+    detected = observed + timedelta(seconds=3)
+    checked = observed + timedelta(seconds=7)
+    content = format_alert_message(message(rule_code=rule_code, source_observed_at=observed,
+        detected_at=detected, notification_checked_at=checked))
+    assert f"原始观察：{observed.isoformat()}" in content
+    assert f"处理时间：{detected.isoformat()}" in content
+    assert "处理延迟：7.0秒" in content
+
+
+def test_legacy_notification_does_not_invent_source_observation():
+    content = format_alert_message(message())
+    assert "原始观察" not in content
+    assert "处理延迟" not in content
+
+
+def test_notification_rejects_processing_before_source_observation():
+    with pytest.raises(ValueError, match="ALERT_NOTIFICATION_TIME_INVALID"):
+        format_alert_message(message(source_observed_at=datetime(2026, 8, 15, 2, 0, 2, tzinfo=UTC)))
 
 
 class Transport:

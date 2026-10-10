@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, DecimalException
 import json
@@ -162,6 +162,7 @@ def _persist_candidate_and_prepare_notification(
             bar_end=candidate.bar_end,
             detected_at=processing_now,
             result_codes=candidate.observation_types,
+            source_observed_at=source_observed_at,
         ),
         None,
     )
@@ -632,6 +633,8 @@ class AlertRuntime:
             )
             try:
                 self.assert_owned()
+                if message.source_observed_at is not None:
+                    message = replace(message, notification_checked_at=send_now)
                 acceptance = self._sender.send(message)
             except NotificationTransportError as exc:
                 self._record_notification_failure(

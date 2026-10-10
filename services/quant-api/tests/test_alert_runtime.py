@@ -1864,9 +1864,40 @@ def test_buffer_source_age_preserves_detection_and_unsent_expiry(age, expired):
             processing_now=detected, source_observed_at=source, source_observation_id='stable-observation')
         assert result.event_created
         assert (result.message is None) == expired
+        if not expired:
+            assert result.message.source_observed_at == source
+            assert result.message.detected_at == detected
         event = session.scalar(select(AlertEvent))
         assert event.detected_at.replace(tzinfo=UTC) == detected
         assert event.source_observed_at.replace(tzinfo=UTC) == source
         assert event.source_observation_id == 'stable-observation'
         assert (event.notification_attempted_at is None) == expired
         assert event.notification_status == ('EXPIRED_NO_SEND' if expired else None)
+
+
+def test_buffer_notification_delay_uses_send_check_after_processing():
+    from app.alerts.notification import AlertNotificationMessage, ProviderAcceptance, format_alert_message
+    from app.alerts.runtime import AlertRuntime
+    source = datetime(2026, 10, 9, 1, tzinfo=UTC)
+    detected = source + timedelta(seconds=3)
+    checked = source + timedelta(seconds=7)
+    sent = []
+    runtime = AlertRuntime.__new__(AlertRuntime)
+    runtime._source_observed_at = source
+    runtime._source_observation_id = 'stable-observation'
+    runtime._aware_now = lambda: checked
+    runtime.assert_owned = lambda: None
+    runtime._update_runtime_status = lambda **_kwargs: None
+    def send(value):
+        sent.append(value)
+        return ProviderAcceptance('accepted')
+    runtime._sender = SimpleNamespace(send=send)
+    value = AlertNotificationMessage(rule_code=HTDY_ALERT_RULE_CODE, symbol='rb',
+        product_name='螺纹钢', contract='RB2610', frequency='15m', bar_end=source - timedelta(minutes=1),
+        detected_at=detected, result_codes=('buy',), source_observed_at=source)
+    runtime._send_messages_once([value], processing_now=detected)
+    assert len(sent) == 1
+    assert sent[0].source_observed_at == source
+    assert sent[0].detected_at == detected
+    assert sent[0].notification_checked_at == checked
+    assert '处理延迟：7.0秒' in format_alert_message(sent[0])
