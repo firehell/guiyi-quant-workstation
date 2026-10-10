@@ -34,3 +34,13 @@ Reference只读warmup缺真实capture/checkpoint preimage时阻断，不伪造ca
 首次生产候选应从 exact现役tag叠加本任务，不能将develop尚未发布的Newow公式/UI修改混入。
 全部权威Session确认休息、末根收尾且发送锁空闲后才执行一次首次拓扑迁移。之后分别自然盘中切换Live/Alert/Reference，
 读取60品种端点、已有启用预警范围与720流；尚未自然发生信号时保留待验收，不制造广播，不宣布RUNTIME_READY。
+
+## 2026-10-10 生产迁移与宿主启动阻断
+
+v1.14.13@f49f54da0c908fc39ba33d3557a447f736579667已通过PR427/main、annotated tag及Release。239本次隔离测试全通过，新增恢复10项通过；工程检查与独立Review通过。v1.14.11/12预检问题仅以新tag前向修正，旧tag未移动。
+
+owner要求直接迁移且不做DB备份。旧KeepAlive局部停用已通过精确文件/身份、完整发送锁和pre-schema/pre-install事实恢复（plan18d8a9d3a98e9860ff3910c3f09b5c8c1ea03e414318e4cf3b429cdee22cbb9c），原unknown bytes保留。随后新plan d2cf8d8fe7446d1dad6c7b958d7f4bfcdfc1184391bb0fbf065cae033b016e54实际提交旧版退出、0051迁移、显式0-0基线、plist和registry。
+
+新启动均在取得正式owner之前exit126：macOS对launchd读取外置盘版本脚本报Operation not permitted。停止mutation并独立读回：旧Event/Rule/delivery/policy摘要完全相同，720路及启用时间/cursor保持；新增来源列全NULL，source/completed空，3cursor均0-0，未知claim0。已持6个owner锁卸载失败连续定义停止KeepAlive空重启；定时任务禁用，journal保留outcome_unknown/5个已提交步骤。API/Web和业务服务当前停驻，迁移成功不能表述为切换完成。
+
+剩余唯一阻断为宿主权限；不能修改用户级/全局权限或借其他路径绕过。权限解决后先读取上述schema/registry/cursor/所有权及通知事实证明，再恢复已提交版本启动，不重复migration或初始化buffer，不恢复旧版或补发。自然连续性/通知仍待真实市场事件，不能声明RUNTIME_READY。
