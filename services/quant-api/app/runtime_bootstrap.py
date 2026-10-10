@@ -426,7 +426,7 @@ class BootstrapBackend:
                     raw = redis.get('alert:heartbeat')
                     heartbeat = json.loads(raw) if raw else {}
                     if (old_alert.get('loaded_pid') is None
-                            or self._pid(old_alert['label']) != old_alert['loaded_pid']):
+                            or str(self._pid(old_alert['label'])) != str(old_alert['loaded_pid'])):
                         raise BootstrapError('BOOTSTRAP_LEGACY_ALERT_DRAIN_UNSUPPORTED')
                     generated = datetime.fromisoformat(heartbeat.get('generated_at', ''))
                     if (heartbeat.get('recovery_guard_enabled') is not True
