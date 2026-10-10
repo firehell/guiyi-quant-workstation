@@ -4,7 +4,21 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## 盘中连续交接 v1.14.10 已发布，Runtime未切换
+## v1.14.13 已发布；生产0051已迁移，Runtime启动被宿主权限阻断
+
+[PR427](https://github.com/firehell/guiyi-quant-workstation/pull/427)、annotated tag与[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.13)绑定 **v1.14.13@f49f54da0c908fc39ba33d3557a447f736579667**。从v1.14.9只发布连续交接及其首次拓扑适配，不包含develop未发布牛哇公式/UI。
+239项本次专用Redis/PostgreSQL联合测试全通过，恢复追加10项通过；Ruff/Mypy、Web typecheck/build/topology、lock、OpenSpec11/11、secret0及独立Review通过。旧logrotate身份、PID类型、launchd KeepAlive原PID收尾与有限pre-install恢复已前向修正。
+
+owner明确交办直接生产迁移且不做DB备份。先在60品种权威CLOSED/末根收尾条件下恢复已证明的旧局部停用，再执行新冻结计划 **d2cf8d8fe7446d1dad6c7b958d7f4bfcdfc1184391bb0fbf065cae033b016e54**。
+生产已完成旧服务退出、0050→**20261009_0051**增量迁移、2026-10-12来源/完成观察的显式0-0基线、稳定分派/plist与10服务generation1绑定。
+新连续服务在正式owner之前全部exit126：macOS拒绝launchd读取外置盘`release-v1.14.13/scripts/ops/macos/run-local-service.sh`，报`Operation not permitted`。journal保留`outcome_unknown`及5个已提交步骤；不重跑迁移、不绕过宿主权限。
+已在6个独占owner锁内证明没有新正式来源事件、source/completed tail与3消费者cursor均0-0、未知claim0，然后卸载失败的连续launchd定义停止空重启；定时任务由安全收尾禁用。**当前API/Web、Live、Alert、Reference与market-feed均未运行；不能声明切换完成或RUNTIME_READY。**
+
+独立生产只读验收：Alert1449事件/2规则、Newow71 delivery/原policy与迁移前摘要完全一致；delivery保留64 BATCH_PROCESSED和7 PROVIDER_ACCEPTED（不代表成员收到）。实际60×4×{1d,1w,60m}=720路启用，policy启用时间与cursor未重置；Alert原失败状态及盘后历史字节保留。新增4列均NULL，没有补发、测试广播或订单，auto_order=false。未做数据库备份。
+唯一下一步：处理macOS对launchd外置盘脚本读取的权限阻断，再按已提交绑定/基线的现场证明恢复启动；不能重复0051迁移或重新初始化消费进度。自然盘中切换、60品种/720流连续性与新自然通知仍待验收。
+证据：`output/intraday-v11413-runtime-20261010/{legacy-recovery-result.json,topology-plan.json,host-block-readback.json}`；宿主原unknown journal及原字节档案仍保留。见[补丁说明](docs/releases/v1.14.13.md)和[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
+
+## v1.14.10 工程发布检查点（迁移前历史状态）
 
 三包代码与独立Review已完成，支持逐服务身份/选择性计划、独立market-feed及持久观察链路、Alert/Reference协作交接和30秒过期不发送。
 联合500项与扩展706项通过（扩展44项可选条件skip，不计通过），OpenSpec11/secret0/Ruff/Mypy及diff检查通过。
@@ -14,9 +28,9 @@
 休息段首次迁移、自然盘中业务切换及60品种/720流连续性验收待执行，不能据工程测试声明RUNTIME_READY。
 见[实现与验收边界](docs/tasks/intraday-runtime-handover-20261009.md)。
 
-## Newow 四策略三周期 Topic 动作推送已启用
+## Newow 四策略三周期 Topic 初始启用检查点（当前运行见顶部）
 
-现役发布与Runtime为 **v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e**，
+初次启用发布与Runtime为 **v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e**，
 [PR #422](https://github.com/firehell/guiyi-quant-workstation/pull/422)、annotated tag与GitHub Release一致。
 2026-10-09 **21:00:51（Asia/Shanghai）**明确启用60品种×趋势/震荡/双策略/主升浪×1w/1d/60m，共720路。
 仅推送启用后新completed、新observed且已提交的正式动作到既有Topic；不推HOLD或hint，不补发历史，失败/未知不重试。

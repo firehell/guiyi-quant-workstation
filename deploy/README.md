@@ -71,6 +71,8 @@ API/Web 配套影响；未知依赖按全服务受影响。v1 对共享合同只
 冻结旧 plist/loaded 身份与发送互斥锁后停止旧拓扑，执行 0051、证明空 journal、显式初始化 0-0，启动消费者再启动 Feed。
 旧进程若不具备可证明的发送收尾合同，返回 `BOOTSTRAP_LEGACY_*_DRAIN_UNSUPPORTED`，不能强杀、伪造空闲或补发。
 迁移 journal 结果未知时保留 preimage 并禁止复用；只能先精确只读核对，不能把失败当安全重试。
+首次迁移兼容旧独立日志轮转：按固定脚本字节、plist、loaded参数/cwd与空闲状态冻结旧未版本化身份；不借用API根伪造旧tag。迁移后使用正式服务绑定与发布树内脚本。
+历史Alert失败诊断继续保留；无锁预检不声称发送空闲，只有完整旧符号锁与Newow发送锁持有、Canonical通知路径排除及现场身份验证后才允许收尾。
 
 后两项只交接受影响的服务。候选使用临时 label，最多 120 秒纯读取/计算预热。
 旧版停止领取，最多 10 秒收尾并释放 OS 独占锁；超时取消，旧版恢复领取。
@@ -295,3 +297,7 @@ Market正常日切准备与Newow历史刷新分别使用既有稳定运行目录
 对应独立锁、0600文件、原子提交及fsync保持；切换版本、退休worktree不得删除或重新初始化。
 `inflight/blocked`仍须读回，不因新版本重新消费provider或重建资产；不兼容状态版本须显式迁移或阻断。
 本次首次启用没有旧运行状态需迁移，initial历史receipt继续保留在任务证据目录。
+
+首次拓扑切换的旧launchd KeepAlive可能在正常SIGTERM后复活；收尾必须确认原PID退出，在完整发送锁持有期间重新验证复活定义并卸载，不能把label出现新PID视为原PID仍在发送。真实print-disabled同时支持enabled/disabled及旧布尔格式，未知值阻断。
+
+仅当旧拓扑已经局部停用、schema仍0050且没有新registry/观察基线/owner/安装preimage时，`python -m app.runtime_bootstrap recover-readback --output <absolute-plan>`冻结有限恢复计划；`recover-legacy --plan <absolute-plan>`重新校验后恢复原loaded Web启用状态和原空闲日历服务，不kickstart。原未知journal按原字节保留，失败恢复attempt禁止盲重试；恢复终态通过后另生成新的拓扑计划。该入口不处理已经迁移、安装或候选发送过的未知结果。
