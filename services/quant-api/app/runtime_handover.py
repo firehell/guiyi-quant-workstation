@@ -122,6 +122,7 @@ class RunOwnership:
         self.directory = runtime_dir or runtime_directory()
         _path(self.directory, service, 'owner.lock')
         self._fd: int | None = None
+        self._diagnostic_proof: dict | None = None
         self._verify = verify or self._verify_binding
         if generation is None:
             from app.runtime_bindings import resolve_service_binding
@@ -203,18 +204,21 @@ class RunOwnership:
         _write(_path(self.directory, self.service, 'owner.json'), {
             'schema_version': 1, 'service': self.service, 'generation': self.generation,
             'phase': phase, 'pid': os.getpid(), 'at': datetime.now(UTC).isoformat(),
+            'ready': False, 'proof': self._diagnostic_proof or {},
         })
 
-    def mark_not_ready(self) -> None:
+    def mark_not_ready(self, proof: dict | None = None) -> None:
         self.assert_owned()
+        self._diagnostic_proof = proof
         self._state('active')
 
     def mark_ready(self, proof: dict | None = None) -> None:
         self.assert_owned()
+        self._diagnostic_proof = proof or {'cycle_ok': True}
         _write(_path(self.directory, self.service, 'owner.json'), {
             'schema_version': 1, 'service': self.service, 'generation': self.generation,
             'phase': 'active', 'ready': True, 'pid': os.getpid(),
-            'proof': proof or {'cycle_ok': True}, 'at': datetime.now(UTC).isoformat(),
+            'proof': self._diagnostic_proof, 'at': datetime.now(UTC).isoformat(),
         })
 
 

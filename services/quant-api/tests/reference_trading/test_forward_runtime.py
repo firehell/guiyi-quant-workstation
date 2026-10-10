@@ -70,6 +70,21 @@ def test_serve_scans_immediately_and_stops_without_extra_wait():
     assert seen == ["a", "b", "c"]
 
 
+def test_cycle_diagnostic_reports_safe_counts_and_clears_ready_on_block():
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(), lambda *_args: None, enabled=True)
+    proofs = []
+    worker.report_health = lambda proof: proofs.append(proof)
+    worker._blocked['private-stream-id'] = 'credential=value SQL select'
+    calls = [0]
+    def stop():
+        calls[0] += 1
+        return calls[0] > 2
+    worker.serve(should_stop=stop, wait=lambda _: None)
+    assert proofs[-1]['ready'] is False
+    assert proofs[-1]['blocked_counts'] == {'UNCLASSIFIED_FAILURE': 1}
+    assert 'private-stream-id' not in str(proofs) and 'credential' not in str(proofs)
+
+
 def test_pending_recovery_never_reuses_old_live_event_for_next_bar():
     event_end = datetime(2026, 9, 23, 1, tzinfo=UTC)
     seen = []
