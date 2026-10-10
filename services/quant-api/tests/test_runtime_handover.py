@@ -1,6 +1,20 @@
 import pytest
 
 
+def test_not_ready_overwrites_success_and_preserves_diagnostic_when_parked(tmp_path):
+    from app.runtime_handover import read_service_state, request_drain
+    owner = ownership(tmp_path)
+    with owner.acquired():
+        owner.mark_ready({'cycle_ok': True})
+        owner.mark_not_ready({'stage': 'cycle', 'blocked_counts': {'SOURCE_BUSY': 2}})
+        active = read_service_state('alert', runtime_dir=tmp_path)
+        assert active['ready'] is False and active['proof']['blocked_counts'] == {'SOURCE_BUSY': 2}
+        request_drain('alert', generation=1, runtime_dir=tmp_path)
+    parked = read_service_state('alert', runtime_dir=tmp_path)
+    assert parked['phase'] == 'parked' and parked['ready'] is False
+    assert parked['proof'] == active['proof']
+
+
 def ownership(tmp_path, **kwargs):
     from app.runtime_handover import RunOwnership
     return RunOwnership('alert', runtime_dir=tmp_path, generation=1,
