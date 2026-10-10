@@ -53,7 +53,7 @@ def host(tmp_path, monkeypatch):
 }}'''
     backend = BootstrapBackend()
     backend.candidate_root = REPO
-    monkeypatch.setattr(backend, '_launchctl', lambda *_args, **_kwargs: SimpleNamespace(stdout=b'', returncode=0))
+    monkeypatch.setattr(backend, '_launchctl', lambda *_args, **_kwargs: SimpleNamespace(stdout=b'disabled services = {\n}', returncode=0))
     monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', lambda *_args, **_kwargs: output)
     return backend, path, script, output
 

@@ -297,3 +297,7 @@ Market正常日切准备与Newow历史刷新分别使用既有稳定运行目录
 对应独立锁、0600文件、原子提交及fsync保持；切换版本、退休worktree不得删除或重新初始化。
 `inflight/blocked`仍须读回，不因新版本重新消费provider或重建资产；不兼容状态版本须显式迁移或阻断。
 本次首次启用没有旧运行状态需迁移，initial历史receipt继续保留在任务证据目录。
+
+首次拓扑切换的旧launchd KeepAlive可能在正常SIGTERM后复活；收尾必须确认原PID退出，在完整发送锁持有期间重新验证复活定义并卸载，不能把label出现新PID视为原PID仍在发送。真实print-disabled同时支持enabled/disabled及旧布尔格式，未知值阻断。
+
+仅当旧拓扑已经局部停用、schema仍0050且没有新registry/观察基线/owner/安装preimage时，`python -m app.runtime_bootstrap recover-readback --output <absolute-plan>`冻结有限恢复计划；`recover-legacy --plan <absolute-plan>`重新校验后恢复原loaded Web启用状态和原空闲日历服务，不kickstart。原未知journal按原字节保留，失败恢复attempt禁止盲重试；恢复终态通过后另生成新的拓扑计划。该入口不处理已经迁移、安装或候选发送过的未知结果。
