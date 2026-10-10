@@ -4,19 +4,17 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.13 已发布；生产0051已迁移，Runtime启动被宿主权限阻断
+## 生产0051已迁移；宿主权限已解决，业务服务恢复中
 
-[PR427](https://github.com/firehell/guiyi-quant-workstation/pull/427)、annotated tag与[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.13)绑定 **v1.14.13@f49f54da0c908fc39ba33d3557a447f736579667**。从v1.14.9只发布连续交接及其首次拓扑适配，不包含develop未发布牛哇公式/UI。
-239项本次专用Redis/PostgreSQL联合测试全通过，恢复追加10项通过；Ruff/Mypy、Web typecheck/build/topology、lock、OpenSpec11/11、secret0及独立Review通过。旧logrotate身份、PID类型、launchd KeepAlive原PID收尾与有限pre-install恢复已前向修正。
+生产 schema 为 **20261009_0051**，原始迁移计划已提交旧服务退出、显式观察基线、plist 和10服务 generation1绑定；本次恢复不重复迁移或初始化消费进度，按owner要求未做DB备份。
+macOS已通过系统设置授权 `/bin/bash` 完全磁盘访问，并读回开关开启。v1.14.13首次恢复中API/Web正常；Live在真实CLOSED无trading_day场景无法ready，Reference受维护锁阻断。失败后业务4服务协作停驻，**当前API/Web HTTP200，Live/Alert/Reference/market-feed仍停驻，尚未完成切换。** 原unknown journal与字节档案保留。
 
-owner明确交办直接生产迁移且不做DB备份。先在60品种权威CLOSED/末根收尾条件下恢复已证明的旧局部停用，再执行新冻结计划 **d2cf8d8fe7446d1dad6c7b958d7f4bfcdfc1184391bb0fbf065cae033b016e54**。
-生产已完成旧服务退出、0050→**20261009_0051**增量迁移、2026-10-12来源/完成观察的显式0-0基线、稳定分派/plist与10服务generation1绑定。
-新连续服务在正式owner之前全部exit126：macOS拒绝launchd读取外置盘`release-v1.14.13/scripts/ops/macos/run-local-service.sh`，报`Operation not permitted`。journal保留`outcome_unknown`及5个已提交步骤；不重跑迁移、不绕过宿主权限。
-已在6个独占owner锁内证明没有新正式来源事件、source/completed tail与3消费者cursor均0-0、未知claim0，然后卸载失败的连续launchd定义停止空重启；定时任务由安全收尾禁用。**当前API/Web、Live、Alert、Reference与market-feed均未运行；不能声明切换完成或RUNTIME_READY。**
+前向修复 **v1.14.14@0eb05c0a2350203ddb49d4cfeefb9dc143c883d1**、**v1.14.15@b2e2163db2d0c072b43fb8f91ff94ee394f67ba9** 已发布，均未切换生产。v1.14.15由唯一Session入口核对下一真实交易段，不推算交易日；真实60品种只读预检通过，新增/关联独审30项通过，构建与工程检查通过。
+另发现旧weekly正式label错误使用manual入口，导致小时触发绕过每周最多一次保护；已精确停止经独立审查确认无provider/data write/通知的旧只读审计PID，保留原running诊断不伪造完成。启动参数根因修复 **v1.14.16@53434f5e5391e53bbaa9c78905da83f3b0fba548** 已由[PR430](https://github.com/firehell/guiyi-quant-workstation/pull/430)、annotated tag与[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.16)发布；锁定venv与Web构建通过，独立46项通过/1项可选Redis跳过，整代恢复脚本独立31项通过。另一历史资产任务当前占用维护锁，不解除其锁。
 
-独立生产只读验收：Alert1449事件/2规则、Newow71 delivery/原policy与迁移前摘要完全一致；delivery保留64 BATCH_PROCESSED和7 PROVIDER_ACCEPTED（不代表成员收到）。实际60×4×{1d,1w,60m}=720路启用，policy启用时间与cursor未重置；Alert原失败状态及盘后历史字节保留。新增4列均NULL，没有补发、测试广播或订单，auto_order=false。未做数据库备份。
-唯一下一步：处理macOS对launchd外置盘脚本读取的权限阻断，再按已提交绑定/基线的现场证明恢复启动；不能重复0051迁移或重新初始化消费进度。自然盘中切换、60品种/720流连续性与新自然通知仍待验收。
-证据：`output/intraday-v11413-runtime-20261010/{legacy-recovery-result.json,topology-plan.json,host-block-readback.json}`；宿主原unknown journal及原字节档案仍保留。见[补丁说明](docs/releases/v1.14.13.md)和[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
+旧Alert1449事件/2规则、Newow71 delivery/policy及720路范围、启用时间和cursor按原生产preimage核对；保留原失败通知事实，不重试、补发或制造广播，auto_order=false。新恢复计划要求发送事实、schema、Stream进度及旧owner身份一致，整套旧进程退出后才原子换代；尚未创建新的生产恢复attempt。
+整代恢复计划 **ddf5964284276b88dcac89d8f3897e9ad33bd1bfe095b621547a818b6fcef1af** 已冻结通过，当前 `source_busy=true`，尚未执行apply。下一步：维护锁可用后复核冻结计划并恢复已提交拓扑。自然盘中切换、60品种/720路连续性及自然通知仍待验收，**不能宣布RUNTIME_READY**。
+证据：`output/intraday-v11413-runtime-20261010/`、`output/intraday-v11414-runtime-20261010/`；详见[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
 
 ## v1.14.10 工程发布检查点（迁移前历史状态）
 

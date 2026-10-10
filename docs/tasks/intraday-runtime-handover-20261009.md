@@ -44,3 +44,19 @@ owner要求直接迁移且不做DB备份。旧KeepAlive局部停用已通过精�
 新启动均在取得正式owner之前exit126：macOS对launchd读取外置盘版本脚本报Operation not permitted。停止mutation并独立读回：旧Event/Rule/delivery/policy摘要完全相同，720路及启用时间/cursor保持；新增来源列全NULL，source/completed空，3cursor均0-0，未知claim0。已持6个owner锁卸载失败连续定义停止KeepAlive空重启；定时任务禁用，journal保留outcome_unknown/5个已提交步骤。API/Web和业务服务当前停驻，迁移成功不能表述为切换完成。
 
 剩余唯一阻断为宿主权限；不能修改用户级/全局权限或借其他路径绕过。权限解决后先读取上述schema/registry/cursor/所有权及通知事实证明，再恢复已提交版本启动，不重复migration或初始化buffer，不恢复旧版或补发。自然连续性/通知仍待真实市场事件，不能声明RUNTIME_READY。
+
+## 宿主权限解决后的恢复检查点
+
+owner自行完成macOS管理员认证后，系统设置已添加并读回 `/bin/bash` 完全磁盘访问开关开启；不是修改TCC数据库或绕过宿主控制。0051迁移和显式观察基线不重跑。v1.14.13实际一次恢复启动后API/Web正常，业务服务ready未收敛而协作停驻；当前仅API/Web运行，原unknown恢复journal保留。
+
+Live真实CLOSED解析结果没有trading_day，先前v1.14.14 fixture带day的假设与现场不一致，因此v1.14.14虽然已发布但未部署。v1.14.15通过唯一Session resolver解析下一真实session，保留当前CLOSED事实，不用日历加一天，不造TRADING或初始化cursor；现场60品种预检通过后发布，仍未切换生产。v1.14.15独审相关30项通过，Web构建与工程检查通过。
+
+现场还核实v13正式weekly label传manual入口，周六小时调度反复只读扫描并持Canonical维护锁。独立Review确认该路径只有READ ONLY事务、Parquet读及本地状态文件，没有RQData请求/数据写入/通知。只在精确核对label/root/tag/commit/PID53129和禁用状态后发SIGTERM，并证明PID退出；这不是优雅审计完成，原running诊断已保留于 `output/intraday-v11414-runtime-20261010/weekly-audit-interrupted-preimage.json`。未终止另一历史资产任务或解除其维护租约。
+
+v1.14.16候选修复唯一argv入口及bootstrap/scheduled两writer：正式weekly使用scheduled，candidate参数不变，其他任务不变。联合89项通过/1项可选Redis跳过，另入口/审计/所有权54项通过；独立46项通过/1项可选Redis跳过，Ruff/Mypy/secret/diff通过。一次性generation2恢复脚本独立31项通过，仅本次v16，旧v13源码SHA和精确身份限定旧manual参数，input/launcher差异限定已审查文件及冻结blob，DB/Live/formula/reference相等。必须所有旧进程退出或scheduled idle，再持10owner锁一次性绑定新代次，不混合同，不重置通知/消费进度。
+
+恢复attempt尚未创建；维护锁可用、现场事实不漂移才能apply。API/Web保持HTTP200，业务服务停驻；自然盘中切换、60品种/720路连续性与新自然通知均未验收，不能声明RUNTIME_READY。
+
+当前发布读回：v1.14.16@53434f5e5391e53bbaa9c78905da83f3b0fba548，PR430 MERGED，annotated tag peeled identity匹配，GitHub Release非draft/非prerelease；exact发布树detached/clean，锁定venv及Web typecheck/build/topology通过。额外54项在独立HOME中测试以隔离现场registry；生产HOME下合成weekly health fixture会被实际registry重定向，不能当作本补丁回归，未修改生产或伪造fixture。
+
+只读generation2计划已冻结：ddf5964284276b88dcac89d8f3897e9ad33bd1bfe095b621547a818b6fcef1af，所有identity/schema/Session/DB/Stream检查通过，source_busy=true。未执行apply、未创建新的生产恢复attempt；API/Web仍旧v13 HTTP200，业务4停驻。待维护锁可用后按同一恢复边界核对，不盲重试未知结果。
