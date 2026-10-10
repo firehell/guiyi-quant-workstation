@@ -4,7 +4,12 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.12 PID身份前向修正版候选
+## v1.14.13 launchd收尾与有限恢复候选
+
+v1.14.12已发布（PR426，9643b495af027975cbb426869ca1881cdf7d5fd2）。实际首次切换已证明只发生旧定时任务卸载及Web禁用，Web正常SIGTERM退出后被KeepAlive拉起；schema仍0050、无registry或观察基线，业务服务仍v1.14.9。Alert1449事件/2规则、Newow71 delivery/原policy摘要与迁移前一致，没有补发或新claim。原unknown attempt保留。
+前向修正支持真实enabled/disabled、确认原PID退出及持锁下复活身份再验证，新增只接受pre-schema/pre-install边界的有限恢复。239项真实隔离Redis/PG联合全通过，工程检查与独审通过；真实只读恢复预检已证明四个恢复动作，实际恢复/0051迁移/切换尚待新exact发布。未做DB备份。见[补丁说明](docs/releases/v1.14.13.md)。
+
+## v1.14.12 PID身份修正版发布检查点
 
 v1.14.11已发布（PR425，a4f71e1ad3b0fb4ac905869b5a24efa958f7736d），首次apply仅在持锁前置条件阻断，journal completed_steps为空，生产仍v1.14.9/schema0050。冻结PID文本与现场整数比较错误已修正，84项回归通过（1项隔离Redis条件skip不计通过），独立Review无遗留Confirmed Issue。真实60品种全旧符号锁、Newow advisory、maintenance和发送证明已通过只读取锁验证并释放；Ruff/Mypy、Web build/typecheck/topology、OpenSpec11/11与secret0通过。不做DB备份，迁移/切换尚待新exact发布后执行。见[补丁说明](docs/releases/v1.14.12.md)。
 
