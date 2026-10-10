@@ -1693,3 +1693,5 @@ PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
 
 休息段持久Live恢复定向测试：`services/quant-api/tests/data_foundation/test_durable_live_rest.py`。
 使用专用非生产Redis，覆盖CLOSED/BREAK空Stream的已有登记日恢复、冻结订阅缺失/合约冲突、cursor缺失不创建，以及未确认来源只刷新heartbeat、不生成completed或推进cursor。
+
+真实CLOSED空日合同：`services/quant-api/tests/data_foundation/test_durable_live_closed_session.py`，SQLite真实MarketPhaseResolver核验周末下一Session，未知/缺失/窗口错位/多品种日冲突不创建进度。发布前另只读核验现场operational集合的实际nextSession、登记日与冻结订阅，不以CLOSED带日的测试替代。
