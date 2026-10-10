@@ -4,21 +4,19 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.16 已发布并绑定；API/Web及输入服务恢复，Reference仍停驻
+## v1.14.18 已发布、绑定并恢复；自然连续性待验收
 
-当前10服务绑定 **v1.14.16@53434f5e5391e53bbaa9c78905da83f3b0fba548 / generation2**，由[PR430](https://github.com/firehell/guiyi-quant-workstation/pull/430)、annotated tag及[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.16)发布，develop已集成。生产schema仍 **20261009_0051**；本次未重复迁移或观察基线初始化，按owner要求未做DB备份。macOS系统设置已添加并读回 `/bin/bash` 完全磁盘访问开启。
+当前10服务绑定 **v1.14.18@8d8904e9bdc962f167f5f330eb90343f7640178c / generation4**，由[PR432](https://github.com/firehell/guiyi-quant-workstation/pull/432)、annotated tag及[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.18)发布并已集成develop。生产schema仍 **20261009_0051**，未重复migration/观察初始化，按owner要求未做DB备份；macOS已开启 `/bin/bash` 完全磁盘访问。
 
-v14/v15均未切换生产：v15修复真实CLOSED没有trading_day时，使用唯一Session入口核对下一真实交易段并恢复冻结订阅；现场60品种只读预检与关联独审30项通过。v16修复weekly正式label使用manual参数，恢复scheduled每周attempt去重；联合89 passed/1 optional Redis skipped，隔离HOME入口/审计/所有权54 passed，独审46 passed/1 optional Redis skipped。工程Ruff/Mypy/secret0、Web typecheck/build/topology及OpenSpec11/11通过。
+v17补充有界启动诊断，预热使用原不可变capture及真实前置checkpoint；v18修复前台首轮与历史刷新争用，首个健康前台轮之后仅启动刷新一次，收尾后读取实际线程状态。相关81 passed/3隔离条件skipped、独立48 passed；exact发布树48 passed、实际480路只读预热48.42秒、Web typecheck/build/topology、OpenSpec11/11、Ruff/Mypy/secret0/diff通过。原历史刷新状态199路、181pending/18blocked、0inflight、63,999,968字节及容量/覆盖阻断保留；未清空状态或扩大预算。
 
-旧weekly只读审计已精确停止并保留原running诊断；随后在其idle状态持真实audit锁、owner锁和部署锁一次卸载旧日历，权威absence已读回，避免等待期间再次整点触发。整代恢复脚本最终独审40项通过，仅允许exact v16及已审查input/launcher文件差异，其余DB/Live/formula/reference合同不变。另一历史资产构建仍在执行，不解除其维护锁或中断其任务。
+新计划 **59c7fe0a355f6ae72d6bc6da1bf7f1ba3bff0f927adfd4c5310e4fa2ce48dc79** 独立重算与现场一致后一次执行：旧进程合作收尾并证明退出，十绑定原子换代，六连续服务首次ready通过。但日历前再次采样报 `CONTINUOUS_READY_CHANGED`，新journal保留outcome_unknown；安全收尾已证明四业务parked，4日历disabled/absent且未加载。该失败检查点API/Web31920/31923运行，四业务31928/31931/31934/31937停驻；Reference收尾blocked0、通知/历史线程实际退出。此旧attempt不复用，当前恢复见下段。
 
-原计划ddf596...因 `PRECONDITION_SOURCE_BUSY` 在mutation之前退出。旧周审计absence纳入新计划 **baa2ea91741bc6ebd327fed1fe4062665e345ccaaf1b36a6adbb6d357232f8d2**；维护锁自然释放后实际完成旧进程退出、十服务原子换代绑定、六服务启动。但Reference未在120秒达到ready，journal保留 `outcome_unknown / STARTUP_READY_TIMEOUT`；安全收尾已停驻4业务服务、禁用定时任务，不盲重试。
-**随后同版本恢复已接回market-feed、Live和Alert；当前API/Web保持HTTP200，三个输入服务同PID/gen2 active；Reference原PID61460仍parked，4个日历任务disabled且未加载，整体恢复仍未完成。**
+旧Alert1449事件/2规则、Newow71delivery/1policy及六发送事实、720路范围/启用时间/策略合同保持；unknownclaim0，source/completed 10/12空分区、3cursor0-0。旧正式Live前缀225keys/9205bars摘要保持，不把旧Bar伪装成新的实时观察。10份原journal及历史刷新preimage保留。没有补发、测试广播或订单，auto_order=false。
 
-失败后独立只读核对：原Alert1449事件/2规则、Newow71 delivery/policy及6项发送事实完全一致；source/completed空且三个cursor仍0-0，未知claim0。720路范围、启用时间和通知policy未重置，没有补发、测试广播或订单，auto_order=false。旧未知journal及精确原字节仍保留。自然盘中切换、60品种/720路连续性及新自然通知尚未验收，不能声明RUNTIME_READY。
-同版本完整恢复的只读检查遇到Reference `SOURCE_BUSY`，在创建attempt或修改控制前停止。新增显式inputs-only模式独立66项通过，冻结plan **84d6a48a43e27749cc06fcc9434811b671c10bdc55bc868c62919b5276418d21** 后一次取消3个drain，journal读回 `inputs_resumed_reference_parked`。未重复bootstrap/CAS/迁移/观察初始化，Reference drain原字节与定时任务禁用/absence保持；原unknown journal原字节保留。独立有界采样取得整体checked_ready=true；Live/feed新鲜heartbeat available，约2.7/2.3秒，operational60全部CLOSED且无inputfailure。每轮poll先清ready再标记成功，短暂字段缺失已结合心跳和成功周期核实；自然业务验收仍待真实行情。
-下一步：在维护资源可用且同代次所有权/无未知发送证明通过后恢复Reference及原日历任务；不重复迁移或初始化，不中断其他历史任务。
-证据：`output/intraday-v11413-runtime-20261010/`、`output/intraday-v11414-runtime-20261010/`和稳定运行目录恢复journal；见[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
+随后独立同代次恢复计划 **a927b5468e6bb2c8419c886cf2d4a5595aeed21ccee0fe6e3e30dc5ecba0a44f** 验证当前停驻、owner/维护锁、原control及无未知发送，再释放证明锁后取消四drain一次。采用本次实际成功周期证据（各项≤30秒、总120秒）及当前身份/心跳/blocked校验，避免短暂scan窗口被误判。27定向测试含真实跨进程owner锁，联合恢复155 passed、Ruff/Mypy及独立Review通过。实际journal **generation4_cycles_resumed_calendars_idle** / failure=null，API31920/Web31923/Live31928/Alert31931/Reference31934/feed31937全部原PID/gen4 active；原after-market/late-provider-recovery/weekly-audit/log-rotate已注册idle。旧generation4未知journal字节及精确归档相等，不覆盖为成功。独立现场只读验收再次确认六身份matched、各≤30秒真实周期及新鲜available心跳、四日历idle，schema/发送事实/Scope/观察进度/旧journal/历史preimage一致。整体恢复完成，但历史容量/覆盖与旧盘后失败诊断仍保留。
+
+下一步：在真实市场运行中验收60品种completed、已有预警范围及720路连续性；自然盘中切换及新自然通知尚待发生，不声明RUNTIME_READY，不制造测试广播或新增后台任务。证据见 `output/intraday-v11414-runtime-20261010/`、稳定运行目录journal及[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
 
 ## v1.14.10 工程发布检查点（迁移前历史状态）
 
