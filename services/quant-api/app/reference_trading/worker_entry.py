@@ -34,11 +34,12 @@ def open_forward_worker(*, ownership=None, warmup=False):
     from app.reference_trading.runtime import diagnostic_reason
     stage = 'compose'
     last_runtime = {}
-    def publish(next_stage):
+    def publish(next_stage, **background_health):
         nonlocal stage
         stage = next_stage
         if ownership is not None:
-            ownership.mark_not_ready({'reference_runtime': {**last_runtime, 'stage': stage, 'ready': False}})
+            ownership.mark_not_ready({'reference_runtime': {**last_runtime, **background_health,
+                'stage': stage, 'ready': False}})
     def report_health(proof):
         nonlocal last_runtime
         last_runtime = dict(proof)
@@ -58,7 +59,7 @@ def open_forward_worker(*, ownership=None, warmup=False):
 
 
 @contextmanager
-def _open_forward_worker(*, ownership=None, warmup=False, publish_stage=lambda _stage: None,
+def _open_forward_worker(*, ownership=None, warmup=False, publish_stage=lambda _stage, **_fields: None,
                          report_health=lambda _proof: None):
     """Open DB and Redis only after an explicit local enable marker is present."""
     require_worker_enabled()
@@ -179,18 +180,22 @@ def _open_forward_worker(*, ownership=None, warmup=False, publish_stage=lambda _
                 publish_stage('stream_subscribe')
                 wake.subscribe()
                 if not warmup:
-                    publish_stage('historical_refresh_start')
-                    refresh.start()
                     publish_stage('notifications_start')
                     notifications.start()
+                    defer_historical_refresh(worker, refresh,
+                        should_stop=ownership.should_drain if ownership else lambda: False)
                 publish_stage('running')
                 yield worker, wake, reconciliation
             finally:
+                failed = sys.exc_info()[0] is not None
                 try:
-                    if sys.exc_info()[0] is None:
+                    if not failed:
                         publish_stage('draining')
                 finally:
                     close_worker_resources(notifications, refresh, wake, warmup=warmup)
+                if not failed:
+                    publish_stage('drained', historical_refresh_alive=refresh.is_alive(),
+                        notifications_alive=notifications.is_alive())
         finally:
             redis.close()
 
@@ -206,6 +211,18 @@ def close_worker_resources(notifications, refresh, wake, *, warmup):
                 refresh.stop(timeout=None)
         finally:
             wake.close()
+
+
+def defer_historical_refresh(worker, refresh, *, should_stop):
+    """The first committed healthy foreground proof precedes background startup."""
+    attempted = False
+    def after_healthy_round():
+        nonlocal attempted
+        if attempted or should_stop():
+            return
+        attempted = True  # A failed/unknown thread start is never retried.
+        refresh.start()
+    worker.after_healthy_round = after_healthy_round
 
 
 def main() -> int:

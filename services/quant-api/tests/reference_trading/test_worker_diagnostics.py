@@ -144,3 +144,85 @@ def test_saved_capture_summary_identity_drift_rejected(field, bad):
     latest.source_evidence['forward_capture_v1'][field] = bad
     with pytest.raises(RuntimeError, match='REFERENCE_WARMUP_CAPTURE_CONFLICT'):
         worker_entry._saved_capture_evidence(session, stream, latest, previous)
+
+
+def test_refresh_deferred_until_committed_healthy_round_then_started_once():
+    from app.reference_trading.runtime import ForwardReferenceWorker
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    events, rounds, blocked = [], [0], [True]
+    repository = SimpleNamespace(enabled_forward_stream_ids=lambda **kwargs: ('route',)
+        if kwargs.get('after') is None else (), read_pending_capture=lambda _: None)
+    def service(_name):
+        if blocked[0]:
+            raise ForwardInputUnavailable('SOURCE_BUSY')
+        return object()
+    worker = ForwardReferenceWorker(repository, service, lambda *_args: None, enabled=True)
+    worker.report_health = lambda proof: events.append(('proof', proof['ready']))
+    refresh = SimpleNamespace(start=lambda: events.append(('refresh', True)))
+    worker_entry.defer_historical_refresh(worker, refresh, should_stop=lambda: False)
+    assert events == []
+    def wait(_seconds):
+        rounds[0] += 1
+        blocked[0] = False
+    worker.serve(should_stop=lambda: rounds[0] >= 2, wait=wait)
+    assert events.index(('proof', True)) < events.index(('refresh', True))
+    assert ('proof', False) in events and events.count(('refresh', True)) == 1
+    worker.after_healthy_round()
+    assert events.count(('refresh', True)) == 1
+
+
+def test_drain_prevents_deferred_refresh_start_and_unstarted_close_is_safe():
+    from app.reference_trading.historical_refresh import RefreshThread
+    refresh = RefreshThread(SimpleNamespace(tick=lambda **kwargs: pytest.fail('unexpected refresh')))
+    worker = SimpleNamespace()
+    worker_entry.defer_historical_refresh(worker, refresh, should_stop=lambda: True)
+    worker.after_healthy_round()
+    assert not refresh.is_alive() and not refresh._started
+    worker_entry.close_worker_resources(SimpleNamespace(is_alive=lambda: False), refresh,
+        SimpleNamespace(close=lambda: None), warmup=False)
+
+
+def test_failed_healthy_proof_does_not_start_background():
+    from app.reference_trading.runtime import ForwardReferenceWorker
+    repository = SimpleNamespace(enabled_forward_stream_ids=lambda **kwargs: ('route',),
+        read_pending_capture=lambda _: None)
+    worker = ForwardReferenceWorker(repository, lambda _: object(), lambda *_args: None, enabled=True)
+    def failed_proof(proof):
+        if proof['ready']:
+            raise ValueError('proof commit unknown')
+    worker.report_health = failed_proof
+    starts = []
+    worker_entry.defer_historical_refresh(worker, SimpleNamespace(start=lambda: starts.append(True)),
+        should_stop=lambda: False)
+    with pytest.raises(ValueError, match='proof commit unknown'):
+        worker.serve(should_stop=lambda: False)
+    assert not starts
+
+
+def test_unknown_refresh_start_is_not_retried():
+    calls = []
+    def start():
+        calls.append(True)
+        raise ValueError('start unknown')
+    worker = SimpleNamespace()
+    worker_entry.defer_historical_refresh(worker, SimpleNamespace(start=start), should_stop=lambda: False)
+    with pytest.raises(ValueError):
+        worker.after_healthy_round()
+    worker.after_healthy_round()
+    assert calls == [True]
+
+
+def test_drained_reports_actual_closed_threads_preserving_last_counts(monkeypatch):
+    reports = []
+    @contextmanager
+    def opened(**kwargs):
+        kwargs['report_health']({'stage': 'cycle', 'ready': False, 'blocked_counts': {'SOURCE_BUSY': 4},
+            'notifications_alive': True})
+        yield None
+        kwargs['publish_stage']('drained', historical_refresh_alive=False, notifications_alive=False)
+    monkeypatch.setattr(worker_entry, '_open_forward_worker', opened)
+    with worker_entry.open_forward_worker(ownership=SimpleNamespace(mark_not_ready=reports.append)):
+        pass
+    proof = reports[-1]['reference_runtime']
+    assert proof['stage'] == 'drained' and proof['blocked_counts'] == {'SOURCE_BUSY': 4}
+    assert proof['historical_refresh_alive'] is False and proof['notifications_alive'] is False
