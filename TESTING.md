@@ -1690,3 +1690,6 @@ PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
 
 生产验收必须单独读取 exact各服务身份与进度，证明纯UI/API发布不改业务进程、60品种 completed端点和现有720路记录连续。
 真实业务服务切换后若尚无自然信号，继续保留自然通知验收待定，不用测试广播或历史回放填补。
+
+休息段持久Live恢复定向测试：`services/quant-api/tests/data_foundation/test_durable_live_rest.py`。
+使用专用非生产Redis，覆盖CLOSED/BREAK空Stream的已有登记日恢复、冻结订阅缺失/合约冲突、cursor缺失不创建，以及未确认来源只刷新heartbeat、不生成completed或推进cursor。
