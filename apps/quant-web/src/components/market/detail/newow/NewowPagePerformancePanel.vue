@@ -12,6 +12,11 @@ const analysisOpen = ref(false)
 const gradientId = `page-return-${useId()}`
 const windowSelection = ref('all')
 const active = computed(() => props.value?.[selection.value] ?? null)
+const periodLabels: Readonly<Record<string, string>> = {
+  day: '日K', week: '周K', hour: '60分',
+  '1d': '日K', '1w': '周K', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分',
+}
+const periodLabel = computed(() => periodLabels[active.value?.period ?? ''] ?? '—')
 const idealExplanation = computed(() => ({
   trend: '回看最高收盘价，包含清仓当根',
   main_rise: '回看建仓后最高收盘价，不含清仓当根',
@@ -89,7 +94,7 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
 
       <p v-if="records.length === 0">当前口径暂无页面估值交易。</p>
       <article v-for="(trade,index) in records" :key="`${trade.segment_id}:${trade.buyDate}:${trade.sellDate}:${index}`" class="newow-reference__card" :data-page-force-close="trade.forceClose">
-        <header><div class="page-performance__record-meta"><strong class="page-performance__badge" :data-open="trade.forceClose">{{ trade.forceClose ? '持仓参考中' : active.period === 'week' ? '周K' : active.period === 'hour' ? '60分' : '日K' }}</strong><span>{{ shortDate(trade.buyDate) }} → {{ trade.forceClose ? '至估值日' : shortDate(trade.sellDate) }}</span></div><strong :data-direction="Number(trade.pct) >= 0 ? 'up' : 'down'">{{ trade.forceClose ? '参考浮动' : '盈亏' }} {{ newowReferencePercent(trade.pct) }}</strong></header>
+        <header><div class="page-performance__record-meta"><strong class="page-performance__badge" :data-open="trade.forceClose">{{ trade.forceClose ? '持仓参考中' : periodLabel }}</strong><span>{{ shortDate(trade.buyDate) }} → {{ trade.forceClose ? '至估值日' : shortDate(trade.sellDate) }}</span></div><strong :data-direction="Number(trade.pct) >= 0 ? 'up' : 'down'">{{ trade.forceClose ? '参考浮动' : '盈亏' }} {{ newowReferencePercent(trade.pct) }}</strong></header>
         <p class="page-performance__record-line"><span><b class="page-performance__buy">建仓</b> 买入 <strong>{{ newowReferencePrice(trade.buyPrice) }}</strong></span><time :datetime="trade.buyDate" :title="trade.buyDate">{{ shortDate(trade.buyDate) }}</time></p>
         <p class="page-performance__record-line"><span><b :class="trade.forceClose ? '' : 'page-performance__sell'">{{ trade.forceClose ? '参考估值' : '清仓' }}</b> {{ trade.forceClose ? '' : '卖出' }} <strong>{{ newowReferencePrice(trade.sellPrice) }}</strong></span><time :datetime="trade.sellDate" :title="trade.sellDate">{{ shortDate(trade.sellDate) }}</time></p>
         <span v-if="trade.buyBarIsLive" class="page-performance__note">末根新建仓的页面估值投影；不代表真实成交。</span>
