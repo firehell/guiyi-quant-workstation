@@ -76,7 +76,8 @@ def authorized_program_arguments(binding: ServiceBinding, home: Path) -> tuple[s
     if binding.launchd_label is not None:
         request = binding.launchd_label.rsplit("-candidate-", 1)[1]
         return ("/bin/bash", launcher, "handover-candidate", binding.service, request, str(binding.generation))
-    return ("/bin/bash", launcher, binding.service)
+    service_argument = "weekly-audit-scheduled" if binding.service == "weekly-audit" else binding.service
+    return ("/bin/bash", launcher, service_argument)
 
 def _pairs(pairs):
     result = {}
