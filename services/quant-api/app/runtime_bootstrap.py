@@ -139,6 +139,7 @@ class BootstrapBackend:
 
     def verify_candidate(self, root, tag, commit):
         verify_release(root, tag, commit)
+        self.candidate_root = Path(root)
 
     def contracts(self, root):
         return contract_fingerprints(root)
@@ -154,8 +155,12 @@ class BootstrapBackend:
                 continue
             if path.is_symlink():
                 raise BootstrapError('BOOTSTRAP_PLIST_UNSAFE')
-            content = path.read_bytes()
+            from app.market_data.closeout_binding import _snapshot
+            content, _stamp = _snapshot(path)
             payload = plistlib.loads(content)
+            if service == 'log-rotate':
+                result[service] = self._legacy_log_rotate(path, payload, content, disabled)
+                continue
             env = payload.get('EnvironmentVariables', {})
             root = Path(env.get('GUIYI_PROJECT_ROOT', payload.get('WorkingDirectory', '')))
             if payload.get('Label') != label or not root.is_absolute() or root != root.resolve(strict=True):
@@ -198,6 +203,85 @@ class BootstrapBackend:
                 status = root / '.run/after-market-status.json'
                 result[service]['status_sha256'] = hashlib.sha256(_bytes(status)).hexdigest() if status.exists() else None
         return result
+
+    def _legacy_log_rotate(self, path, payload, content, disabled):
+        """The old standalone script has no release identity; freeze its actual bytes."""
+        from app.market_data.closeout_binding import _arguments, _snapshot
+        from app.market_data.captured_recovery_runtime import _read_launchd_service
+        try:
+            home = Path.home()
+            directory = home / 'Library/Application Support/GuiyiQuant'
+            script = directory / 'rotate-local-service-logs.sh'
+            label = 'com.guiyi.quant-log-rotate'
+            candidate_root = self.candidate_root
+            template = (candidate_root / 'deploy/launchd/com.guiyi.quant-log-rotate.plist.template').read_text()
+            expected = plistlib.loads(template.replace('__HOME__', str(home))
+                .replace('__RUNTIME_DIR__', str(directory))
+                .replace('__LOG_DIR__', str(home / 'Library/Logs/GuiyiQuant')).encode())
+            if 'Disabled' in payload:
+                if type(payload['Disabled']) is not bool:
+                    raise ValueError
+                expected['Disabled'] = payload['Disabled']
+            if payload != expected or path != home / 'Library/LaunchAgents' / f'{label}.plist':
+                raise ValueError
+            script_content, _script_stamp = _snapshot(script)
+            if script_content != (candidate_root / 'scripts/ops/macos/rotate-local-service-logs.sh').read_bytes():
+                raise ValueError
+            enabled = not payload.get('Disabled', False) and re.search(
+                rb'"' + label.encode() + rb'"\s*=>\s*true', disabled) is None
+            output = _read_launchd_service(label, root=home)
+            if enabled and output is None:
+                raise ValueError
+            if output is not None:
+                # Parse direct service fields only; an event descriptor cannot prove idle.
+                scopes, fields, environment = [], {}, {}
+                environment_seen = False
+                for raw in output.splitlines():
+                    line = raw.strip()
+                    if line.endswith((' = {', ' => {')):
+                        name, operator, _ = line.rsplit(' ', 2)
+                        if not scopes and (operator != '=' or name != f'gui/{os.getuid()}/{label}'):
+                            raise ValueError
+                        if len(scopes) == 1 and name == 'environment':
+                            if environment_seen or operator != '=':
+                                raise ValueError
+                            environment_seen = True
+                        scopes.append((name, operator))
+                    elif line == '}':
+                        if not scopes:
+                            raise ValueError
+                        scopes.pop()
+                    elif len(scopes) == 1:
+                        match = re.fullmatch(r'(state|pid|working directory|program) = (.*)', line)
+                        if match:
+                            if match[1] in fields:
+                                raise ValueError
+                            fields[match[1]] = match[2]
+                    elif len(scopes) == 2 and scopes[-1] == ('environment', '='):
+                        match = re.fullmatch(r'([^\s]+) => (.*)', line)
+                        if not match or match[1] in environment:
+                            raise ValueError
+                        environment[match[1]] = match[2]
+                expected_environment = dict(payload['EnvironmentVariables'])
+                if environment.get('XPC_SERVICE_NAME') == label:
+                    expected_environment['XPC_SERVICE_NAME'] = label
+                # These are launchd bookkeeping keys, not a release identity.
+                if 'OSLogRateLimit' in environment and re.fullmatch(r'[0-9]{1,10}', environment['OSLogRateLimit']):
+                    expected_environment['OSLogRateLimit'] = environment['OSLogRateLimit']
+                if (scopes or fields.get('state') != 'not running' or 'pid' in fields
+                        or fields.get('working directory') != str(home)
+                        or fields.get('program') != '/bin/bash'
+                        or _arguments(output) != tuple(payload['ProgramArguments'])
+                        or environment != expected_environment):
+                    raise ValueError
+            if _snapshot(path)[0] != content or _snapshot(script)[0] != script_content:
+                raise ValueError
+            return {'identity_kind': 'legacy_unversioned_log_rotate', 'label': label,
+                    'enabled': bool(enabled), 'loaded_pid': None,
+                    'script_path': str(script), 'script_sha256': hashlib.sha256(script_content).hexdigest(),
+                    'plist_sha256': hashlib.sha256(content).hexdigest()}
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            raise BootstrapError('BOOTSTRAP_LOG_ROTATE_IDENTITY_UNPROVEN') from None
 
     def schema_revision(self):
         from app.db.session import engine
@@ -244,13 +328,15 @@ class BootstrapBackend:
                 days.add(item.get('trading_day'))
             if None in days or len(days) != 1:
                 raise BootstrapError('BOOTSTRAP_TRADING_DAY_UNPROVEN')
-            self.prove_no_inflight_sends()
+            # This is an unlocked preflight, never proof that a transport is idle.
+            send_boundary = self.read_send_boundary()
             return {'trading_day': next(iter(days)), 'checked_at': now.isoformat(), 'products': len(products),
-                    'legacy_last_bar_at': heartbeat.get('last_bar_at')}
+                    'legacy_last_bar_at': heartbeat.get('last_bar_at'), 'send_boundary': send_boundary}
         finally:
             redis.close()
 
-    def prove_no_inflight_sends(self):
+    def read_send_boundary(self):
+        """Read historical diagnostics without changing or acknowledging any fact."""
         from app.db.session import engine
         from app.redis_connections import get_redis_connection
         from sqlalchemy import text
@@ -262,14 +348,39 @@ class BootstrapBackend:
             raw = redis.get('alert:runtime-status')
             if raw:
                 status = json.loads(raw)
+                if not isinstance(status, dict):
+                    raise BootstrapError('BOOTSTRAP_ALERT_SEND_UNKNOWN')
                 attempted = status.get('last_transport_attempt_at')
                 accepted = status.get('last_provider_accepted_at')
-                if attempted and (not accepted or datetime.fromisoformat(accepted) < datetime.fromisoformat(attempted)):
+                failure = status.get('last_notification_failure_at')
+                parsed = {}
+                for name, value in (('attempted', attempted), ('accepted', accepted), ('failure', failure)):
+                    if value is not None:
+                        stamp = datetime.fromisoformat(value)
+                        if stamp.tzinfo is None or stamp.utcoffset() is None or stamp > datetime.now(UTC):
+                            raise BootstrapError('BOOTSTRAP_ALERT_SEND_UNKNOWN')
+                        parsed[name] = stamp
+                if attempted and (not accepted or parsed['accepted'] < parsed['attempted']):
                     raise BootstrapError('BOOTSTRAP_ALERT_SEND_UNKNOWN')
-                if status.get('notification_error_type'):
+                if status.get('notification_error_type') and (
+                        not failure or not attempted or not accepted
+                        or not parsed['failure'] < parsed['attempted'] <= parsed['accepted']):
                     raise BootstrapError('BOOTSTRAP_ALERT_SEND_UNKNOWN')
+                return {'historical_notification_error': bool(status.get('notification_error_type')),
+                        'transport_idle_proven': False}
+            return {'historical_notification_error': False, 'transport_idle_proven': False}
+        except (TypeError, ValueError):
+            raise BootstrapError('BOOTSTRAP_ALERT_SEND_UNKNOWN') from None
         finally:
             redis.close()
+
+    def prove_no_inflight_sends(self):
+        # Only writer_guards establishes this marker after taking every legacy
+        # send lock and validating the unguarded Canonical path. Timestamps cannot
+        # establish it, nor do equal batch timestamps imply individual acceptance.
+        if getattr(self, '_transport_guards_held', False) is not True:
+            raise BootstrapError('BOOTSTRAP_SEND_GUARDS_REQUIRED')
+        self.read_send_boundary()
 
     @contextmanager
     def writer_guards(self, plan):
@@ -277,15 +388,20 @@ class BootstrapBackend:
         from app.market_data.catalog import MarketCatalog
         from app.market_data.composition import canonical_root
         from app.market_data.live_recovery_guard import after_market_recovery_guard
+        if getattr(self, '_transport_guards_held', False):
+            raise BootstrapError('BOOTSTRAP_SEND_GUARDS_REENTRANT')
         with ExitStack() as stack:
+            from app.market_data.operational_universe import load_operational_products
+            products = tuple(load_operational_products())
+            if not products or len(set(products)) != len(products):
+                raise BootstrapError('BOOTSTRAP_SEND_SCOPE_UNPROVEN')
             roots = {Path(plan['installed'][service]['root']) for service in ('live', 'after-market') if service in plan['installed']}
             for root in sorted(roots):
                 stack.enter_context(after_market_recovery_guard(root=root / ".run/live-recovery-guards", wait=False, legacy_root=True))
             from app.market_data.live_recovery_guard import recovery_guard
-            from app.market_data.operational_universe import load_operational_products
             guard_roots = {Path(plan['installed'][service]['root']) for service in ('live', 'alert') if service in plan['installed']}
             for root in sorted(guard_roots):
-                for product in load_operational_products():
+                for product in products:
                     stack.enter_context(recovery_guard(product, root=root / ".run/live-recovery-guards", wait=False, legacy_root=True))
             session = stack.enter_context(SessionLocal())
             from sqlalchemy import text, select
@@ -302,13 +418,16 @@ class BootstrapBackend:
                 if get_alert_rule_definition(rule.rule_code).notification_enabled and any(
                     frequency in ('1d', '1w') for values in rule.scope_product_frequencies.values() for frequency in values):
                     raise BootstrapError('BOOTSTRAP_LEGACY_CANONICAL_DRAIN_UNSUPPORTED')
-            if plan['installed'].get('alert', {}).get('enabled'):
+            old_alert = plan['installed'].get('alert', {})
+            if old_alert.get('enabled') or old_alert.get('loaded_pid') is not None:
                 from app.redis_connections import get_redis_connection
                 redis = get_redis_connection()
                 try:
                     raw = redis.get('alert:heartbeat')
                     heartbeat = json.loads(raw) if raw else {}
-                    old_alert = plan['installed']['alert']
+                    if (old_alert.get('loaded_pid') is None
+                            or self._pid(old_alert['label']) != old_alert['loaded_pid']):
+                        raise BootstrapError('BOOTSTRAP_LEGACY_ALERT_DRAIN_UNSUPPORTED')
                     generated = datetime.fromisoformat(heartbeat.get('generated_at', ''))
                     if (heartbeat.get('recovery_guard_enabled') is not True
                             or heartbeat.get('runtime_root') != old_alert['root']
@@ -317,16 +436,21 @@ class BootstrapBackend:
                         raise BootstrapError('BOOTSTRAP_LEGACY_ALERT_DRAIN_UNSUPPORTED')
                 finally:
                     redis.close()
-            self.prove_no_inflight_sends()
             lease = MarketCatalog(session, canonical_root()).acquire_maintenance_lock()
             if lease is None:
                 raise BootstrapError('BOOTSTRAP_CATALOG_WRITER_BUSY')
             stack.callback(lease.release)
-            for service in ('after-market', 'late-provider-recovery', 'weekly-audit'):
+            for service in ('after-market', 'late-provider-recovery', 'weekly-audit', 'log-rotate'):
                 old = plan['installed'].get(service)
                 if old and self._pid(old['label']) is not None:
                     raise BootstrapError('BOOTSTRAP_SCHEDULED_WRITER_BUSY')
-            yield
+            self._transport_guards_held = True
+            try:
+                self.prove_no_inflight_sends()
+                yield
+            finally:
+                # Reset before ExitStack releases the locks, including exceptions.
+                self._transport_guards_held = False
 
     def _launchctl(self, *args, allow_missing=False):
         result = subprocess.run(['/bin/launchctl', *args], capture_output=True, timeout=15)
@@ -351,6 +475,23 @@ class BootstrapBackend:
             label = old['label']
             target = f'gui/{os.getuid()}/{label}'
             self._launchctl('disable', target)
+            if service == 'log-rotate':
+                if self._pid(label) is not None:
+                    raise BootstrapError('BOOTSTRAP_LOG_ROTATE_BUSY')
+                from app.market_data.closeout_binding import _snapshot
+                try:
+                    path = Path.home() / 'Library/LaunchAgents' / f'{label}.plist'
+                    content = _snapshot(path)[0]
+                    frozen = self._legacy_log_rotate(path, plistlib.loads(content), content,
+                        b'"' + label.encode() + b'" => true')
+                    if any(frozen[key] != old[key] for key in ('script_path', 'script_sha256', 'plist_sha256')):
+                        raise ValueError
+                except (OSError, ValueError, TypeError, KeyError):
+                    raise BootstrapError('BOOTSTRAP_LOG_ROTATE_DRIFT') from None
+                if self._pid(label) is not None:
+                    raise BootstrapError('BOOTSTRAP_LOG_ROTATE_BUSY')
+                self._launchctl('bootout', target, allow_missing=True)
+                continue  # Log rotation must never enter the generic SIGTERM path.
             if self._pid(label) is not None:
                 self._launchctl('kill', 'SIGTERM', target)
                 deadline = monotonic() + 10

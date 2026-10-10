@@ -1672,6 +1672,8 @@ PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
   services/quant-api/tests/test_runtime_handover_entry.py \
   services/quant-api/tests/test_runtime_deployment.py \
   services/quant-api/tests/test_runtime_bootstrap.py \
+  services/quant-api/tests/test_runtime_bootstrap_log_rotate.py \
+  services/quant-api/tests/test_runtime_bootstrap_send_boundary.py \
   services/quant-api/tests/test_runtime_scheduled.py \
   services/quant-api/tests/test_runtime_retention.py \
   services/quant-api/tests/test_handover_consumers.py \

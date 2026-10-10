@@ -88,6 +88,11 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
   exit 1
 fi
 
+# Log rotation is a standalone scheduled file operation and needs no DB credentials.
+if [[ "$SERVICE" == "log-rotate" ]]; then
+  exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh"
+fi
+
 if [[ -f "$RUNTIME_ENV" ]]; then
   set -a
   # shellcheck disable=SC1091
