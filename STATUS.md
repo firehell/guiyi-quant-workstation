@@ -44,8 +44,8 @@ v17补充有界启动诊断，预热使用原不可变capture及真实前置chec
 
 2026-10-09：最新版吸筹显示护栏与通用cost兜底、周线状态卡目标共享优先、本地吸筹独立覆盖已修正；raw/BUILD/CLEAR/收益及资产身份不变。独立唐奇安窗口5～120（默认20）、默认关闭蓝色止损参考线、dual独立控制与可见BUILD锚点已补齐；主升浪移入T菜单，手册来源更新。
 完整Newow回归3091 passed/1 skipped；两项沙箱socket权限失败在宿主补跑2 passed。Web1035 passed/3 skipped、build/typecheck/topology、OpenSpec11/11、Ruff/secret/diff通过；独审确认问题已修正。详见[本轮交付及验收边界](docs/tasks/newow-v3381-parity-20261009.md)。
-当前public新historical exact identity矩阵1260项全部NOT_REGISTERED；旧historical723/forward720 metadata属于旧v3基础/v1融合，不能证明新身份资产完成。仅只读核实，未构建/启用新资产。
-本轮只读launchd及Git回读确认实际服务root/tag为v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e；下文v1.14.8及更早发布记录是历史检查点。本任务未发布或切换Runtime，不由版本一致推定自然RUNTIME_READY。
+2026-10-10 新 public historical exact identity 历史闭环已 COMPLETED / REVIEW_COMPLETE：60 operational品种×21，共1260唯一资产全部构建注册，逐品种数值验收通过；360融合完整分页、180主升浪查询通过，最终原生1260 READY且全部绑定同一plan/receipt/revision/seq/digest。新流保持disabled/generation0；1447旧流状态、720 enabled forward及受保护表计数与构建前一致。本任务未发布、切换或启用新Runtime，不代表因果收益、全60视觉或自然通知完成。现场证据为`outputs/newow-history-v4-20261010/final-matrix-acceptance.json`，详见[构建与验收记录](docs/tasks/newow-current-history-20261010.md)。
+早期只读launchd及Git回读v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e，以及下文v1.14.8及更早发布记录均为历史检查点。本任务使用develop ASGI和临时只读预览验收新资产，不由旧发布接口成功推定新身份或自然RUNTIME_READY。
 
 ## Develop 牛哇 P1 第二项
 
