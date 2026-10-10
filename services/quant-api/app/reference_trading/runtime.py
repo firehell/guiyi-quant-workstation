@@ -63,6 +63,7 @@ class ForwardReferenceWorker:
         self.assert_owned = lambda: None
         self.scan_live = True
         self.mark_ready = lambda: None
+        self.after_healthy_round: Callable[[], None] = lambda: None
         self.report_health: Callable[[dict], None] = lambda _proof: None
         self._repository = repository
         self._service_for = service_for
@@ -242,6 +243,8 @@ class ForwardReferenceWorker:
             self.report_health(self.diagnostic_health(stage='cycle', ready=healthy))
             if healthy:
                 self.mark_ready()
+                if not should_stop():
+                    self.after_healthy_round()
             if not should_stop():
                 wait(scan_interval_seconds)
 
