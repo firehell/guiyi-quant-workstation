@@ -292,12 +292,38 @@ def _warmup_saved_capture(repository, stream_id, service):
         if len(batches) != 2 or batches[0].seq != batches[1].seq + 1:
             raise RuntimeError("REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE")
         latest, previous = batches
-        evidence = latest.source_evidence
-        capture = evidence.get("forward_capture_v1")
-        if not isinstance(capture, dict):
-            raise RuntimeError("REFERENCE_WARMUP_CAPTURE_UNAVAILABLE")
+        evidence = _saved_capture_evidence(session, stream, latest, previous)
         checkpoint = adapter_checkpoint_from_json(previous.checkpoint_text,
             expected_stream=_identity_from_row(stream), expected_strategy_schema=previous.strategy_schema)
         token = CheckpointToken(stream_id, stream.active_revision_id, previous.seq,
                                 stream.row_version, _checkpoint_hash(previous.checkpoint_text))
         service._evaluator(token, checkpoint, evidence)
+
+
+def _saved_capture_evidence(session, stream, latest, previous):
+    """Resolve compact calculation proof to its exact immutable capture fact."""
+    from app.reference_trading.capture import ForwardCapture
+    from app.reference_trading.models import ReferenceBatch
+    proof = latest.source_evidence.get('forward_capture_v1')
+    if not isinstance(proof, dict) or not isinstance(proof.get('capture_id'), str):
+        raise RuntimeError('REFERENCE_WARMUP_CAPTURE_UNAVAILABLE')
+    row = session.get(ReferenceBatch, proof['capture_id'])
+    if (row is None or row.kind != 'capture' or row.outcome != 'consumed'
+            or row.stream_id != stream.stream_id or row.revision_id != stream.active_revision_id
+            or row.consumed_by_batch_id != latest.batch_id or latest.kind != 'calculation'
+            or latest.expected_seq != previous.seq or row.expected_seq != previous.seq):
+        raise RuntimeError('REFERENCE_WARMUP_CAPTURE_CONFLICT')
+    full = row.source_evidence.get('forward_capture_v1')
+    if (not isinstance(full, dict) or full.get('hash') != proof.get('hash')
+            or row.payload_hash != proof.get('hash') or full.get('generation') != proof.get('generation')
+            or full.get('generation') != stream.activation_generation):
+        raise RuntimeError('REFERENCE_WARMUP_CAPTURE_CONFLICT')
+    try:
+        capture = ForwardCapture(stream.stream_id, stream.active_revision_id, full['generation'],
+            full['source_key'], datetime.fromisoformat(full['bar_end']), datetime.fromisoformat(full['observed_at']),
+            full['source_kind'], full['input_payload'], full['source_proof'], full['eligibility'])
+    except (KeyError, TypeError, ValueError):
+        raise RuntimeError('REFERENCE_WARMUP_CAPTURE_INVALID') from None
+    if capture.capture_hash != row.payload_hash or capture.batch_key != row.batch_key:
+        raise RuntimeError('REFERENCE_WARMUP_CAPTURE_CONFLICT')
+    return {**row.source_evidence, 'capture_id': row.batch_id}

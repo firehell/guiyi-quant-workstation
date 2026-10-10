@@ -91,3 +91,56 @@ def test_warmup_validates_entire_live_group_when_one_route_pending(monkeypatch):
     monkeypatch.setattr(worker_entry, '_warmup_saved_capture', lambda *_args: None)
     assert worker_entry.warmup_reference_worker() == {'calculated': 2}
     assert calls == ['first', 'second']
+
+
+def saved_capture_fixture():
+    from datetime import UTC, datetime
+    from app.reference_trading.capture import ForwardCapture
+    capture = ForwardCapture('stream', 'revision', 1, 'source', datetime(2026, 10, 9, tzinfo=UTC),
+        datetime(2026, 10, 10, tzinfo=UTC), 'canonical_completed', {'bar': {}}, {'proof': 'original'},
+        'completed_observation')
+    stream = SimpleNamespace(stream_id='stream', active_revision_id='revision', activation_generation=1)
+    row = SimpleNamespace(kind='capture', outcome='consumed', stream_id='stream', revision_id='revision',
+        consumed_by_batch_id='calculation', expected_seq=1, payload_hash=capture.capture_hash,
+        batch_id='capture', batch_key=capture.batch_key, source_evidence=capture.evidence())
+    latest = SimpleNamespace(kind='calculation', batch_id='calculation', expected_seq=1,
+        source_evidence={'forward_capture_v1': {'capture_id': 'capture', 'hash': capture.capture_hash,
+            'generation': 1}})
+    previous = SimpleNamespace(seq=1)
+    session = SimpleNamespace(get=lambda model, identifier: row if identifier == 'capture' else None)
+    return session, stream, latest, previous, row
+
+
+def test_saved_calculation_resolves_original_full_capture_without_modification():
+    session, stream, latest, previous, row = saved_capture_fixture()
+    original = repr(row.source_evidence)
+    evidence = worker_entry._saved_capture_evidence(session, stream, latest, previous)
+    assert evidence == {**row.source_evidence, 'capture_id': 'capture'}
+    assert evidence['forward_capture_v1']['eligibility'] == 'completed_observation'
+    assert repr(row.source_evidence) == original
+    assert 'eligibility' not in latest.source_evidence['forward_capture_v1']
+
+
+@pytest.mark.parametrize('field,bad', [('revision_id', 'other'), ('stream_id', 'other'),
+    ('consumed_by_batch_id', 'other'), ('expected_seq', 0), ('kind', 'calculation'),
+    ('payload_hash', 'changed'), ('outcome', 'pending')])
+def test_saved_capture_linkage_drift_blocks_warmup(field, bad):
+    session, stream, latest, previous, row = saved_capture_fixture()
+    setattr(row, field, bad)
+    with pytest.raises(RuntimeError, match='REFERENCE_WARMUP_CAPTURE_CONFLICT'):
+        worker_entry._saved_capture_evidence(session, stream, latest, previous)
+
+
+def test_saved_capture_full_content_tamper_rejected_even_when_declared_hash_unchanged():
+    session, stream, latest, previous, row = saved_capture_fixture()
+    row.source_evidence['forward_capture_v1']['source_proof']['proof'] = 'changed'
+    with pytest.raises(RuntimeError, match='REFERENCE_WARMUP_CAPTURE_CONFLICT'):
+        worker_entry._saved_capture_evidence(session, stream, latest, previous)
+
+
+@pytest.mark.parametrize('field,bad', [('capture_id', 'missing'), ('generation', 2)])
+def test_saved_capture_summary_identity_drift_rejected(field, bad):
+    session, stream, latest, previous, _row = saved_capture_fixture()
+    latest.source_evidence['forward_capture_v1'][field] = bad
+    with pytest.raises(RuntimeError, match='REFERENCE_WARMUP_CAPTURE_CONFLICT'):
+        worker_entry._saved_capture_evidence(session, stream, latest, previous)
