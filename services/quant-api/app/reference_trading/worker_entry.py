@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 import signal
+import os
 
 from app.core.env import PROJECT_ROOT
 
@@ -27,7 +28,7 @@ def require_worker_enabled() -> None:
 
 
 @contextmanager
-def open_forward_worker():
+def open_forward_worker(*, ownership=None, warmup=False):
     """Open DB and Redis only after an explicit local enable marker is present."""
     require_worker_enabled()
     from app.db.session import SessionLocal
@@ -118,23 +119,34 @@ def open_forward_worker():
                 reconciliation_guard=reconciliation.assert_source_allowed,
                 reconciliation_commit_guard=reconciliation.commit_guard,
             )
-            wake = ForwardLiveWake(redis, repository, worker, market_data)
+            if ownership is not None:
+                worker.assert_owned = ownership.assert_owned
+                worker.mark_ready = lambda: ownership.mark_ready({"cursor_validated": True})
+            from app.reference_trading.live_wake import StreamForwardLiveWake
+            durable_observations = os.getenv("GUIYI_OBSERVATION_STREAM_ENABLED", "0") == "1"
+            worker.scan_live = not durable_observations
+            wake_type = StreamForwardLiveWake if durable_observations else ForwardLiveWake
+            wake = wake_type(redis, repository, worker, market_data)
             from app.reference_trading.historical_refresh import build_historical_refresh, RefreshThread
             refresh = RefreshThread(build_historical_refresh(
                 SessionLocal, state_path=historical_refresh_state_path(),
             ))
             from app.notifications.newow import NewowNotificationDispatcher
             from app.notifications.newow_thread import NotificationThread
-            notifications = NotificationThread(NewowNotificationDispatcher(SessionLocal))
+            notifications = NotificationThread(NewowNotificationDispatcher(SessionLocal,
+                assert_owned=ownership.assert_owned if ownership else None,
+                should_stop=ownership.should_drain if ownership else None))
             try:
                 wake.subscribe()
-                refresh.start()
-                notifications.start()
+                if not warmup:
+                    refresh.start()
+                    notifications.start()
                 yield worker, wake, reconciliation
             finally:
                 if notifications.is_alive():
                     notifications.stop()
-                refresh.stop()
+                if not warmup:
+                    refresh.stop(timeout=None)
                 wake.close()
         finally:
             redis.close()
@@ -149,13 +161,80 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    with open_forward_worker() as (worker, wake, reconciliation):
-        def wait(seconds):
-            reconciliation.tick(now=datetime.now(UTC))
-            wake.wait(seconds)
-        worker.serve(should_stop=lambda: stopped, wait=wait)
+    def run(ownership=None):
+        with open_forward_worker(ownership=ownership) as (worker, wake, reconciliation):
+            def wait(seconds):
+                if ownership:
+                    ownership.assert_owned()
+                reconciliation.tick(now=datetime.now(UTC))
+                wake.wait(seconds)
+            worker.serve(should_stop=lambda: stopped or bool(ownership and ownership.should_drain()), wait=wait)
+    from app.runtime_handover import run_supervised
+    from app.runtime_bindings import read_bindings
+    if read_bindings() is not None and os.getenv("GUIYI_RUNTIME_LEGACY_MODE") != "1":
+        run_supervised("reference-worker", run, stop_requested=lambda: stopped)
+    else:
+        run()
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def warmup_reference_worker():
+    """Read current checkpoints and calculate candidate captures without persistence."""
+    with open_forward_worker(warmup=True) as (worker, _wake, _reconciliation):
+        repository = worker._repository
+        count = 0
+        after = None
+        while True:
+            streams = repository.enabled_forward_stream_ids(limit=512, after=after)
+            if not streams:
+                break
+            for stream_id in streams:
+                service = worker._service_for(stream_id)
+                token, checkpoint = repository.load_checkpoint(stream_id)
+                pending = repository.read_pending_capture(stream_id)
+                if pending:
+                    capture_id, evidence = pending
+                    service._evaluator(token, checkpoint, {**evidence, "capture_id": capture_id})
+                else:
+                    capture = worker._read_input(stream_id, "scan", None)
+                    if capture is None:
+                        _warmup_saved_capture(repository, stream_id, service)
+                    else:
+                        service._evaluator(token, checkpoint, {**capture.evidence(), "capture_id": "warmup"})
+                count += 1
+            after = streams[-1]
+        if count == 0:
+            raise RuntimeError("REFERENCE_WARMUP_SCOPE_EMPTY")
+        return {"calculated": count}
+
+
+def _warmup_saved_capture(repository, stream_id, service):
+    """Recompute the last immutable calculation from its actual predecessor."""
+    from sqlalchemy import select
+    from app.reference_trading.models import ReferenceBatch, ReferenceStream
+    from app.reference_trading.contracts import CheckpointToken
+    from app.reference_trading.repository import _checkpoint_hash, _identity_from_row
+    from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_from_json
+    with repository._session_factory() as session:
+        stream = session.get(ReferenceStream, stream_id)
+        batches = session.scalars(select(ReferenceBatch).where(
+            ReferenceBatch.stream_id == stream_id,
+            ReferenceBatch.revision_id == stream.active_revision_id,
+            ReferenceBatch.outcome == "committed", ReferenceBatch.checkpoint_text.is_not(None),
+        ).order_by(ReferenceBatch.seq.desc()).limit(2)).all()
+        if len(batches) != 2 or batches[0].seq != batches[1].seq + 1:
+            raise RuntimeError("REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE")
+        latest, previous = batches
+        evidence = latest.source_evidence
+        capture = evidence.get("forward_capture_v1")
+        if not isinstance(capture, dict):
+            raise RuntimeError("REFERENCE_WARMUP_CAPTURE_UNAVAILABLE")
+        checkpoint = adapter_checkpoint_from_json(previous.checkpoint_text,
+            expected_stream=_identity_from_row(stream), expected_strategy_schema=previous.strategy_schema)
+        token = CheckpointToken(stream_id, stream.active_revision_id, previous.seq,
+                                stream.row_version, _checkpoint_hash(previous.checkpoint_text))
+        service._evaluator(token, checkpoint, evidence)

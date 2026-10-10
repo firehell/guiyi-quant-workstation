@@ -15,6 +15,22 @@ PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
 MODE="${1:---render-only}"
 ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
+# These entrypoints do not render files or mutate a service until an apply mode.
+case "$MODE" in
+  --plan-release) shift; exec "$PYTHON_BIN" -m app.runtime_deployment plan "$@" ;;
+  --apply-release-plan) shift; exec "$PYTHON_BIN" -m app.runtime_deployment apply-plan "$@" ;;
+  --plan-topology) shift; exec "$PYTHON_BIN" -m app.runtime_bootstrap plan "$@" ;;
+  --apply-topology-plan) shift; exec "$PYTHON_BIN" -m app.runtime_bootstrap apply "$@" ;;
+esac
+
+# The stable per-service authority must never be overwritten by the legacy all-root installer.
+if [[ -e "$RUNTIME_DIR/service-bindings.json" || -L "$RUNTIME_DIR/service-bindings.json" ]]; then
+  if [[ "$MODE" != "--render-only" ]]; then
+    printf '[install-local-services] ERROR: SERVICE_BINDING_REQUIRES_SELECTIVE_PLAN\n' >&2
+    exit 1
+  fi
+fi
+
 is_safe_absolute_path() {
   local path="$1" component
   local -a components

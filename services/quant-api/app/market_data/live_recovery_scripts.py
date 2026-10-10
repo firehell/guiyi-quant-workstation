@@ -82,3 +82,52 @@ state.last_at = tonumber(ARGV[1])
 redis.call('SET', KEYS[1], cjson.encode(state), 'EX', ARGV[2])
 return 1
 """
+
+COMMIT_OBSERVATIONS = r"""-- live-observation-commit-v1
+-- KEYS: source cursor, source stream, completed stream, completed identities, bar zsets.
+local ok,plan=pcall(cjson.decode,ARGV[3])
+if not ok or type(plan)~='table' or string.sub(ARGV[3],1,1)~='[' then return -4 end
+local ttl=tonumber(ARGV[4]); local limit=tonumber(ARGV[5])
+if not ttl or ttl~=259200 or not limit or limit~=120000 then return -4 end
+for i,k in ipairs(KEYS) do
+ local t=redis.call('TYPE',k).ok
+ local expected=i==1 and 'string' or ((i==2 or i==3) and 'stream' or (i==4 and 'hash' or 'zset'))
+ if t~='none' and t~=expected then return -4 end
+end
+if redis.call('GET',KEYS[1])~=ARGV[1] then return -2 end
+if ARGV[2]~=ARGV[1] and #redis.call('XRANGE',KEYS[2],ARGV[2],ARGV[2])~=1 then return -2 end
+local additions=0
+local identities={}
+for _,item in ipairs(plan) do
+ if type(item)~='table' or type(item.key_index)~='number' or item.key_index~=math.floor(item.key_index)
+    or item.key_index<5 or item.key_index>#KEYS or type(item.score)~='number'
+    or item.score~=item.score or item.score<=0 or item.score==math.huge
+    or item.score~=math.floor(item.score) or item.score>9007199254740991
+    or type(item.payload)~='string' or #item.payload==0
+    or type(item.envelope)~='string' or #item.envelope==0
+    or type(item.identity)~='string' or #item.identity==0 or identities[item.identity]
+    or type(item.channel)~='string' or #item.channel==0 then return -4 end
+ identities[item.identity]=true
+ local parsed,envelope=pcall(cjson.decode,item.envelope)
+ if not parsed or type(envelope)~='table' then return -4 end
+ local existing=redis.call('ZRANGEBYSCORE',KEYS[item.key_index],item.score,item.score)
+ if #existing>0 and (#existing~=1 or existing[1]~=item.payload) then return -1 end
+ local old=redis.call('HGET',KEYS[4],item.identity)
+ if old then
+  if cjson.decode(old).payload~=item.envelope then return -1 end
+ else additions=additions+1 end
+end
+if redis.call('XLEN',KEYS[3])+additions>limit then return -3 end
+for _,item in ipairs(plan) do
+ redis.call('ZADD',KEYS[item.key_index],item.score,item.payload)
+ redis.call('EXPIRE',KEYS[item.key_index],ttl)
+ if not redis.call('HGET',KEYS[4],item.identity) then
+  local id=redis.call('XADD',KEYS[3],'*','envelope',item.envelope)
+  redis.call('HSET',KEYS[4],item.identity,cjson.encode({id=id,payload=item.envelope}))
+  redis.call('PUBLISH',item.channel,item.payload)
+ end
+end
+redis.call('EXPIRE',KEYS[3],ttl); redis.call('EXPIRE',KEYS[4],ttl)
+redis.call('SET',KEYS[1],ARGV[2],'EX',ttl)
+return 1
+"""

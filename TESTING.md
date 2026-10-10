@@ -1658,3 +1658,31 @@ python -m pytest tests/newow_candidate_tools -q -p no:cacheprovider
 ```
 
 测试覆盖冻结身份、前置门禁、路径/排他输出、JS 场景与 XHR observer、完整数组/Decimal/SVG、分页/较早窗口、原生日周空态及取消/409 恢复。离线 PASS 不代替新现场采集、视觉核验或 candidate/source 闭环。
+
+
+## 盘中连续交接
+
+隔离测试仅使用本次专用 Redis（显式非6379端口、DB11）和通过现有 migration guard 的 PostgreSQL。
+不使用生产Redis/DB，不发送真实PushPlus；未配置导致的skip不算原子性/迁移验收。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
+  services/quant-api/tests/test_runtime_bindings.py \
+  services/quant-api/tests/test_runtime_handover.py \
+  services/quant-api/tests/test_runtime_handover_entry.py \
+  services/quant-api/tests/test_runtime_deployment.py \
+  services/quant-api/tests/test_runtime_bootstrap.py \
+  services/quant-api/tests/test_runtime_scheduled.py \
+  services/quant-api/tests/test_runtime_retention.py \
+  services/quant-api/tests/test_handover_consumers.py \
+  services/quant-api/tests/data_foundation/test_observation_stream.py \
+  services/quant-api/tests/test_newow_notifications_postgresql.py -q
+```
+
+设置 `GUIYI_TEST_REDIS_PORT`、`GUIYI_ISOLATED_REDIS_URL` 和 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL` 后验证真实 Lua/Stream、
+0051迁移、并发claim、过期无attempt及跨进程发送收尾锁。另扩展已有Live/recovery、Alert、Reference、deployment identity与promotion测试。
+语法与工程检查使用 `bash -n`、相关 Ruff/Mypy、`openspec validate --specs --strict --no-interactive`、
+`python3 scripts/engineering/secret_scan.py --json` 和 `git diff --check`。
+
+生产验收必须单独读取 exact各服务身份与进度，证明纯UI/API发布不改业务进程、60品种 completed端点和现有720路记录连续。
+真实业务服务切换后若尚无自然信号，继续保留自然通知验收待定，不用测试广播或历史回放填补。

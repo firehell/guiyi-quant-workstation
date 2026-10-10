@@ -712,7 +712,7 @@ def test_adapter_atomic_drain_keeps_callback_message_arriving_after_snapshot() -
             provider._buffer_message(second)
             return iter(snapshot)
 
-    provider._messages = SnapshotThenCallbackDeque((first,))
+    provider._messages = SnapshotThenCallbackDeque(((first, datetime.now(UTC)),))
     provider._listener = client.listener
 
     assert tuple(bar for _contract, bar in provider.poll()) == (_bar(1),)

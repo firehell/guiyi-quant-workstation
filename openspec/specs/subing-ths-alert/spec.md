@@ -606,3 +606,36 @@ Event；只有原始行情或公式无法证明才不产生原始 Event。API �
 
 - **WHEN** 原始信号成立但某周期输入无法证明，或已证明的方向不同
 - **THEN** 原始 Event 仍保存并分别记录 UNKNOWN 或 FAIL；重复触发不改首次快照
+
+## Requirement: Durable handover observations preserve forward-only eligibility
+
+When `GUIYI_OBSERVATION_STREAM_ENABLED=1`, Alert SHALL consume the existing completed
+observation journal using its explicitly initialized `alert` cursor. Pub/Sub SHALL be
+only a canonical/wakeup hint. Missing cursor, expired partition, conflicting typed
+Market window, or unknown commit SHALL block continuation rather than skip an input.
+This journal is a transient input buffer, not a transport retry queue or historical
+replay source; the no retry/backfill contracts above remain in force.
+
+Each new buffered Event SHALL preserve its actual `source_observed_at`, stable
+`source_observation_id`, and `processing_mode=handover_buffer`; `detected_at` SHALL be
+the actual processing time. First enablement SHALL establish an explicit empty-journal
+baseline before the publisher starts; it SHALL NOT adopt a historical tail as processed.
+A relevant typed-window mismatch SHALL leave the cursor unchanged. Recovery-watermark
+ineligible observations SHALL still receive no Event or transport eligibility.
+
+Only the process holding the OS ownership lock and current binding generation SHALL
+commit Events or invoke transport. Candidate warmup SHALL read and evaluate only.
+The input cursor SHALL advance only after processing has safely completed; replay of
+an already committed identity SHALL never recreate or resend its Event.
+
+#### Scenario: A buffered observation exceeds the notification deadline
+
+- **WHEN** a real eligible completed observation is processed more than 30 seconds after its original observation time
+- **THEN** its valid Event remains recorded with actual detection time and `notification_status=EXPIRED_NO_SEND`
+- **AND** `notification_attempted_at` remains null and no provider is invoked
+- **AND** the deadline is checked again immediately before transport; restart never resets the original observation time
+
+#### Scenario: Ownership changes after Event claim
+
+- **WHEN** the process cannot prove its current generation before sending
+- **THEN** it stops without invoking transport or authorizing a new sender to retry that Event

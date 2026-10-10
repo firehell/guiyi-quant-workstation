@@ -18,26 +18,39 @@ from app.core.env import PROJECT_ROOT
 
 
 @contextmanager
-def recovery_guard(symbol: str, *, root: Path | None = None, wait: bool = False) -> Iterator[None]:
+def recovery_guard(symbol: str, *, root: Path | None = None, wait: bool = False, legacy_root: bool = False) -> Iterator[None]:
     if re.fullmatch(r"[a-z]{1,2}", symbol) is None:
         raise ValueError("LIVE_RECOVERY_GUARD_UNSAFE")
-    with _file_guard(f"{symbol}.lock", root=root, wait=wait):
+    with _file_guard(f"{symbol}.lock", root=root, wait=wait, legacy_root=legacy_root):
         yield
 
 
 @contextmanager
-def after_market_recovery_guard(*, root: Path | None = None, wait: bool = False) -> Iterator[None]:
+def after_market_recovery_guard(*, root: Path | None = None, wait: bool = False, legacy_root: bool = False) -> Iterator[None]:
     """Captured recovery takes this before its symbol guard; after-market holds it for the job."""
-    with _file_guard("after-market.lock", root=root, wait=wait):
+    with _file_guard("after-market.lock", root=root, wait=wait, legacy_root=legacy_root):
         yield
 
 
+def guard_directory(*, root: Path | None = None, legacy_root: bool = False) -> Path:
+    """Shared across service releases; only topology bootstrap probes old inodes."""
+    if legacy_root:
+        if root is None:
+            raise ValueError('LIVE_RECOVERY_GUARD_UNSAFE')
+        return root
+    from app.runtime_bindings import read_bindings
+    from app.runtime_handover import runtime_directory
+    if os.environ.get('GUIYI_RUNTIME_HANDOVER_ENABLED') == '1' or read_bindings() is not None:
+        return runtime_directory() / 'live-recovery-guards'
+    return root if root is not None else PROJECT_ROOT / '.run' / 'live-recovery-guards'
+
+
 @contextmanager
-def _file_guard(name: str, *, root: Path | None, wait: bool) -> Iterator[None]:
-    directory = root if root is not None else PROJECT_ROOT / ".run" / "live-recovery-guards"
-    if root is None:
+def _file_guard(name: str, *, root: Path | None, wait: bool, legacy_root: bool = False) -> Iterator[None]:
+    directory = guard_directory(root=root, legacy_root=legacy_root)
+    if root is None or directory != root:
         parent = directory.parent
-        parent.mkdir(mode=0o700, exist_ok=True)
+        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         info = parent.lstat()
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
             raise ValueError("LIVE_RECOVERY_GUARD_UNSAFE")

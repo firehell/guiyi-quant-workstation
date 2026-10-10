@@ -31,6 +31,8 @@ class AlertNotificationMessage:
     bar_end: datetime
     detected_at: datetime
     result_codes: tuple[str, ...]
+    source_observed_at: datetime | None = None
+    notification_checked_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +96,23 @@ def _validate_result_codes(message: AlertNotificationMessage) -> None:
         raise ValueError("ALERT_NOTIFICATION_RESULT_INVALID")
 
 
+def _observation_timing(message: AlertNotificationMessage) -> str:
+    if message.source_observed_at is None:
+        return ""
+    observed = message.source_observed_at
+    checked = message.notification_checked_at or message.detected_at
+    for value in (observed, message.detected_at, checked):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("ALERT_NOTIFICATION_TIME_INVALID")
+    if not observed <= message.detected_at <= checked:
+        raise ValueError("ALERT_NOTIFICATION_TIME_INVALID")
+    return (
+        f"原始观察：{observed.isoformat()}\n"
+        f"处理时间：{message.detected_at.isoformat()}\n"
+        f"处理延迟：{(checked - observed).total_seconds():.1f}秒\n"
+    )
+
+
 def _format_htdy_message(message: AlertNotificationMessage) -> str:
     try:
         definition = get_alert_rule_definition(message.rule_code)
@@ -111,6 +130,7 @@ def _format_htdy_message(message: AlertNotificationMessage) -> str:
         f"合约：{message.contract}　周期：{message.frequency}\n"
         f"观察：{observations}\n"
         f"Bar：{message.bar_end.isoformat()}\n"
+        f"{_observation_timing(message)}"
         "仅供研究观察，不是交易指令。"
     )
 
@@ -136,6 +156,7 @@ def _format_subing_message(message: AlertNotificationMessage) -> str:
         f"合约：{message.contract}　周期：15m\n"
         f"{direction}：{cross}，收盘价位于 {position}\n"
         f"Bar：{message.bar_end.isoformat()}\n"
+        f"{_observation_timing(message)}"
         "请打开图表复核；仅供研究观察，不是交易指令。"
     )
 

@@ -54,3 +54,35 @@ Topic through the shared secure transport; no extra recipients or test broadcast
 - **WHEN** the external request raises an exception
 - **THEN** durable failure/unknown classification is recorded without exposing credentials
 - **AND** reference observation scheduling continues
+
+## Requirement: Original observation deadline and cooperative shutdown
+
+Dispatch SHALL preserve each action's persisted `observed_at` and, for buffered Live input, its original `observation_timing_v1.raw_received_at`. The original receipt is the notification deadline origin; confirmation SHALL NOT extend it. Immediately
+before an irrevocable claim and again before invoking the provider, elapsed time from
+that observation SHALL be at most 30 seconds. A valid action beyond the deadline SHALL
+produce a unique `EXPIRED_NO_SEND` delivery with null `attempted_at`, never a provider
+attempt. A clock before the source observation SHALL fail closed. Existing claimed or
+finished deliveries SHALL not be rewritten or retried merely because of restart.
+
+A dispatcher SHALL verify the OS owner and binding generation before each claim,
+provider invocation, final delivery update and processed-batch receipt. Loss of ownership
+after claim SHALL preserve `ATTEMPTED_UNKNOWN` without sending or rewriting its result.
+Unknown tick/commit outcomes SHALL halt that notification thread. Provider failures
+remain the existing one-shot `FAILED_OR_UNKNOWN` outcome.
+
+On drain, the dispatcher SHALL finish an already claimed attempt and stop taking new
+actions. It SHALL not write a processed-batch receipt for partially processed actions.
+The enclosing Reference worker SHALL hold ownership until both the notification thread
+and historical-refresh thread have actually exited; a timed join with a live thread
+SHALL NOT permit ownership transfer.
+
+#### Scenario: A fresh buffered action is sent
+
+- **WHEN** original observation age is at most 30 seconds at provider invocation
+- **THEN** a unique claim is committed before that single invocation
+- **AND** the message shows the original observation time and actual processing delay
+
+#### Scenario: An expired action is rediscovered after restart
+
+- **WHEN** the same stream/signal identity already has `EXPIRED_NO_SEND`
+- **THEN** no provider is invoked and no attempt timestamp is fabricated

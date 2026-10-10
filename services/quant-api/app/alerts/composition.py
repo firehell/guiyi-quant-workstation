@@ -69,6 +69,41 @@ class RedisAlertMessageSource:
         self._pubsub.close()
 
 
+class StreamAlertMessageSource(RedisAlertMessageSource):
+    """Durable completed observations; PubSub only carries canonical wake hints."""
+    def __init__(self, redis):
+        super().__init__(redis)
+        from app.market_data.observation_stream import ObservationStream
+        self._stream = ObservationStream(redis, kind="completed")
+        self.current_observation = None
+        self._expected_cursor = None
+
+    def subscribe(self, *patterns):
+        super().subscribe("market:state")
+
+    def get_message(self, *, timeout_seconds):
+        for day in self._stream.days():
+            cursor = self._stream.cursor("alert", day)
+            observations = self._stream.read("alert", day, count=1)
+            if observations:
+                self.current_observation = observations[0]
+                self._expected_cursor = cursor
+                if not self.current_observation.notification_eligible:
+                    self.ack_current()
+                    return None
+                return self.current_observation.channel, json.dumps(self.current_observation.data)
+        self.current_observation = None
+        return super().get_message(timeout_seconds=timeout_seconds)
+
+    def ack_current(self):
+        envelope = self.current_observation
+        if envelope is None:
+            raise RuntimeError("ALERT_BUFFER_ACK_INVALID")
+        self._stream.ack("alert", envelope.trading_day,
+                         expected_cursor=self._expected_cursor, next_id=envelope.stream_id)
+        self.current_observation = None
+
+
 class RedisAlertHeartbeatStore:
     def __init__(self, redis: Any) -> None:
         self._redis = redis
@@ -166,7 +201,7 @@ def acknowledge_alert_notification_failure(expected_failure_at: str) -> dict[str
     )
 
 
-def build_alert_runtime() -> AlertRuntime:
+def build_alert_runtime(*, assert_owned=None) -> AlertRuntime:
     try:
         enabled = ALERT_RUNTIME_ACTIVATION_MARKER.read_text(encoding="utf-8") == "enabled\n"
     except (OSError, UnicodeDecodeError):
@@ -178,6 +213,7 @@ def build_alert_runtime() -> AlertRuntime:
     from app.market_data.live_recovery_guard import recovery_guard
 
     return AlertRuntime(
+        assert_owned=assert_owned,
         live_processing_guard=(partial(recovery_guard, wait=True)
                                if os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1" else None),
         session_factory=SessionLocal,
@@ -189,7 +225,41 @@ def build_alert_runtime() -> AlertRuntime:
         sender=build_notification_sender_from_env(),
         operational_products=operational_products,
         taxonomy=load_product_taxonomy(),
-        message_source=RedisAlertMessageSource(redis),
+        message_source=(StreamAlertMessageSource(redis) if os.getenv("GUIYI_OBSERVATION_STREAM_ENABLED", "0") == "1" else RedisAlertMessageSource(redis)),
         heartbeat_store=RedisAlertHeartbeatStore(redis),
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )
+
+
+def warmup_alert_runtime():
+    """Verify scoped Market windows and evaluate without Event or transport writes."""
+    from sqlalchemy import select
+    from app.alerts.models import AlertRule
+    from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
+    runtime = build_alert_runtime()
+    count = 0
+    try:
+        runtime._validate_startup_composition()
+        source = runtime.message_source
+        if isinstance(source, StreamAlertMessageSource):
+            for day in source._stream.days():
+                source._stream.cursor("alert", day)
+        with runtime._session_factory() as session:
+            market = runtime._market_read_factory(session)
+            for rule in session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))):
+                for symbol, frequencies in rule.scope_product_frequencies.items():
+                    for frequency in frequencies:
+                        query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency(frequency))
+                        page = market.history_page(query)
+                        if not page.bars:
+                            raise RuntimeError("ALERT_WARMUP_INPUT_UNAVAILABLE")
+                        latest = page.bars[-1]
+                        window = market.bars_until(query, trading_day=latest.trading_day, end=latest.bar_end, limit=64)
+                        market.assert_window_current(window)
+                        runtime._evaluators[rule.rule_code].evaluate_candidates(market, window)
+                        count += 1
+        if not count:
+            raise RuntimeError("ALERT_WARMUP_SCOPE_EMPTY")
+        return {"calculated": count}
+    finally:
+        runtime.message_source.close()

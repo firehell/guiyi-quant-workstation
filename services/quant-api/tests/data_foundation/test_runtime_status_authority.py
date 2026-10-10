@@ -513,3 +513,29 @@ def test_reference_worker_cli_uses_actual_shared_reader(monkeypatch, capsys):
         args, 113, "", f'Could not find service "{label}" in domain for user gui: {reader.os.getuid()}\n'))
     assert module.main(["launchd-service-state", label]) == 0
     assert capsys.readouterr().out == "absent\n"
+
+
+def test_registered_after_market_authority_uses_candidate_label_and_exact_args(tmp_path, monkeypatch):
+    import plistlib
+    from app.runtime_bindings import BindingRegistry, ServiceBinding, authorized_program_arguments, write_bindings
+    from app.market_data import runtime_status_authority as module
+    root = tmp_path / "release"
+    root.mkdir()
+    label = "com.guiyi.quant-after-market-candidate-" + "d" * 32
+    binding = ServiceBinding("after-market", str(root), "v1.2.3", "a" * 40, 2, True,
+        {key: "c" * 64 for key in ("db", "live", "input", "formula", "reference", "launcher")}, label)
+    write_bindings(BindingRegistry(1, {"after-market": binding}), home=tmp_path, expected_sha256=None)
+    monkeypatch.setattr(module, "verify_release", lambda *args: None)
+    directory = tmp_path / "Library/LaunchAgents"
+    directory.mkdir(parents=True)
+    path = directory / f"{label}.plist"
+    payload = {"Label": label, "WorkingDirectory": str(root),
+        "ProgramArguments": list(authorized_program_arguments(binding, tmp_path)),
+        "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(root), "GUIYI_RUNTIME_COMMIT": "a" * 40,
+            "GUIYI_RUNTIME_GENERATION": "2", "GUIYI_RUNTIME_TAG": "v1.2.3"}}
+    path.write_bytes(plistlib.dumps(payload))
+    assert module._installed_identity(tmp_path) == (root, "a" * 40)
+    payload["ProgramArguments"][-1] = "1"
+    path.write_bytes(plistlib.dumps(payload))
+    with pytest.raises(ValueError):
+        module._installed_identity(tmp_path)

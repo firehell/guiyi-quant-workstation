@@ -157,3 +157,12 @@ Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`�
 旧页、专用 toolbar/sidebar、旧路由构造器及其偏好读写已删除。统一详情偏好保留旧值迁移：
 旧 chart v9 值迁移为 Free 周期与指标偏好；已有详情 v1 偏好按既有路径升级，
 不选择旧页、不决定旧无 view URL 行情身份。
+
+
+### 连续交接 Runtime
+
+`market-feed -> Redis source observation Stream -> Live confirmation/aggregation -> Redis completed observation Stream`
+是新拓扑的 transient observation 链。Alert 与 Reference 使用持久 cursor 消费；Canonical/MDS、策略公式、Scope 与通知
+one-shot 身份不变。稳定 service-bindings 按服务固定发布根/commit/tag/代次；稳定 dispatcher 不再要求业务服务同根。
+候选只读预热、旧版收尾、OS 独占锁、新代次核对、进度现场读回组成单机交接 seam，避免引入消息平台或第二正式 API。
+部署与首次迁移见 `deploy/README.md`。旧一根模式仅在 registry 不存在时兼容，corrupt registry 不回退。

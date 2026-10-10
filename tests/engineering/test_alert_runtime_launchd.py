@@ -582,6 +582,16 @@ def _install_python_authority_fixture(repo: Path) -> None:
         behavior.chmod(0o700)
     python.write_text(
         "#!/bin/sh\n"
+        'if [ "$1" = -m ] && [ "$2" = app.market_data.after_market_history ]; then\n'
+        '  if [ "$5" = --install ]; then\n'
+        '    export GUIYI_MARKET_INSTALL_GUARD_FD=fixture\n'
+        '    exec /bin/bash "$4/scripts/ops/macos/install-local-services.sh" --confirm-market-runtime\n'
+        '  fi\n'
+        '  [ "$5" != --verify-install-guard ] || exit 0\n'
+        '  printf "%s\\n" "$*" >> "$HOME/history-retention-calls"\n'
+        '  [ ! -f "$HOME/history-retention-blocked" ] || exit 1\n'
+        '  exit 0\n'
+        'fi\n'
         'if [ "$1" = -m ] && [ "$2" = app.market_data.runtime_status_authority ] '
         '&& [ "$3" = launchd-service-state ]; then\n'
         '  label="$4"\n'

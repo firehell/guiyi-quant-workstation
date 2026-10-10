@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, ContextManager, Mapping, cast
+from typing import TYPE_CHECKING, Any, Callable, ContextManager, Mapping, cast
 
 from sqlalchemy.orm import Session
 
@@ -285,7 +285,7 @@ def open_market_home_live_service() -> Iterator[MarketHomeLiveService]:
             redis.close()
 
 
-def build_live_market_service(session: Session) -> LiveMarketService:
+def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveMarketService:
     """Compose the foreground Live observation service without starting it."""
 
     from app.market_data.rqdata_adapter import RQDataClient
@@ -341,8 +341,8 @@ def build_live_market_service(session: Session) -> LiveMarketService:
         session.rollback()  # See the committed day metadata on the next phase / rank1 read.
         return failure
 
-    return LiveMarketService(
-        provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
+    common_kwargs: dict[str, Any] = dict(
+
         dominant_source=CatalogDominants(),
         prepare_trading_day=prepare_trading_day, authoritative_dominants=True,
         recovery_fetch_factory=recovery_fetch_factory,
@@ -353,6 +353,28 @@ def build_live_market_service(session: Session) -> LiveMarketService:
         store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
         operational_products=products,
     )
+    if _feed:
+        from app.market_data.market_feed import FeedLiveStore, MarketFeedService
+        from app.market_data.observation_stream import ObservationStream
+        redis = get_redis_connection()
+        common_kwargs.update(store=FeedLiveStore(cast(RedisClient, redis)), recovery_fetch_factory=None,
+                             recovery_sessions=None, recovery_guard_factory=None)
+        return MarketFeedService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
+                                 source_stream=ObservationStream(redis, kind='source'), **common_kwargs)
+    if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1':
+        from app.market_data.market_feed import DurableLiveMarketService, StreamLiveProvider
+        from app.market_data.observation_stream import ObservationStream
+        common_kwargs['prepare_trading_day'] = None
+        return DurableLiveMarketService(source_provider=StreamLiveProvider(
+            ObservationStream(get_redis_connection(), kind='source')), **common_kwargs)
+    return LiveMarketService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
+                             **common_kwargs)
+
+
+def build_market_feed_service(session: Session) -> LiveMarketService:
+    if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') != '1':
+        raise ValueError('OBSERVATION_STREAM_NOT_ENABLED')
+    return build_live_market_service(session, _feed=True)
 
 
 def build_session_anchor_repair_service(session: Session) -> SessionAnchorRepairService:
