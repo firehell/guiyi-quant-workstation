@@ -4,12 +4,18 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## 盘中连续交接发布候选 v1.14.10
+## v1.14.11 首次拓扑迁移修正版候选
+
+只读生产预检确认旧日志轮转为未版本化标准脚本，Alert历史失败保留至后续自然发送。修正版冻结真实旧脚本/plist/loaded身份并补齐稳定日志分派；完整旧符号锁与Newow advisory持锁期间才证明发送空闲，不清除历史失败或重试。
+隔离Redis/PostgreSQL联合204 passed/0 skipped，Ruff/Mypy、Web typecheck/build/topology、lock、OpenSpec11/11、secret0及独立Review通过。60品种权威CLOSED、末根端点无缺口；生产schema0050、现役v1.14.9不变。owner交办直接迁移切换且不做数据库备份，实际发布、0051迁移及Runtime切换尚待执行。见[补丁说明](docs/releases/v1.14.11.md)。
+
+## 盘中连续交接 v1.14.10 已发布，Runtime未切换
 
 三包代码与独立Review已完成，支持逐服务身份/选择性计划、独立market-feed及持久观察链路、Alert/Reference协作交接和30秒过期不发送。
 联合500项与扩展706项通过（扩展44项可选条件skip，不计通过），OpenSpec11/secret0/Ruff/Mypy及diff检查通过。
 本次v1.14.10从exact v1.14.9提取连续交接，不夹带develop未发布牛哇公式/UI；发布候选核心564 passed、Reference571项通过，新增展示与旧fixture修正已独立Review。
-[发布PR #424](https://github.com/firehell/guiyi-quant-workstation/pull/424)尚待main/tag/Release；未执行0051生产迁移或切换Runtime，现役v1.14.9与既有Scope不变。
+[PR #424](https://github.com/firehell/guiyi-quant-workstation/pull/424)已合并main，annotated tag与[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.10)读回一致：v1.14.10@6cf781fc9347b798d02620d4d45c3b3030c4646f。
+未执行0051生产迁移或切换Runtime，现役v1.14.9与既有Scope不变；新发布树detached/clean，旧现役树仍受服务引用而保留。
 休息段首次迁移、自然盘中业务切换及60品种/720流连续性验收待执行，不能据工程测试声明RUNTIME_READY。
 见[实现与验收边界](docs/tasks/intraday-runtime-handover-20261009.md)。
 
