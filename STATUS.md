@@ -4,7 +4,11 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.11 首次拓扑迁移修正版候选
+## v1.14.12 PID身份前向修正版候选
+
+v1.14.11已发布（PR425，a4f71e1ad3b0fb4ac905869b5a24efa958f7736d），首次apply仅在持锁前置条件阻断，journal completed_steps为空，生产仍v1.14.9/schema0050。冻结PID文本与现场整数比较错误已修正，84项回归通过（1项隔离Redis条件skip不计通过），独立Review无遗留Confirmed Issue。真实60品种全旧符号锁、Newow advisory、maintenance和发送证明已通过只读取锁验证并释放；Ruff/Mypy、Web build/typecheck/topology、OpenSpec11/11与secret0通过。不做DB备份，迁移/切换尚待新exact发布后执行。见[补丁说明](docs/releases/v1.14.12.md)。
+
+## v1.14.11 首次拓扑迁移修正版发布检查点
 
 只读生产预检确认旧日志轮转为未版本化标准脚本，Alert历史失败保留至后续自然发送。修正版冻结真实旧脚本/plist/loaded身份并补齐稳定日志分派；完整旧符号锁与Newow advisory持锁期间才证明发送空闲，不清除历史失败或重试。
 隔离Redis/PostgreSQL联合204 passed/0 skipped，Ruff/Mypy、Web typecheck/build/topology、lock、OpenSpec11/11、secret0及独立Review通过。60品种权威CLOSED、末根端点无缺口；生产schema0050、现役v1.14.9不变。owner交办直接迁移切换且不做数据库备份，实际发布、0051迁移及Runtime切换尚待执行。见[补丁说明](docs/releases/v1.14.11.md)。

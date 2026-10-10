@@ -167,3 +167,18 @@ def test_missing_fresh_exact_guard_identity_blocks(boundary, field, value):
     with pytest.raises(BootstrapError, match='ALERT_DRAIN_UNSUPPORTED'):
         with boundary.backend.writer_guards(boundary.plan):
             pytest.fail('identity proof absent')
+
+
+@pytest.mark.parametrize('loaded_pid', ['123', 123])
+def test_launchd_frozen_text_pid_matches_integer_host_pid(boundary, loaded_pid):
+    boundary.plan['installed']['alert']['loaded_pid'] = loaded_pid
+    with boundary.backend.writer_guards(boundary.plan):
+        boundary.backend.prove_no_inflight_sends()
+
+
+@pytest.mark.parametrize('loaded_pid', ['124', '0123', None, True, 123.0])
+def test_missing_changed_or_noncanonical_pid_blocks(boundary, loaded_pid):
+    boundary.plan['installed']['alert']['loaded_pid'] = loaded_pid
+    with pytest.raises(BootstrapError, match='ALERT_DRAIN_UNSUPPORTED'):
+        with boundary.backend.writer_guards(boundary.plan):
+            pytest.fail('exact frozen PID must be proved')
