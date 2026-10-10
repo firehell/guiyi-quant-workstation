@@ -241,6 +241,20 @@ class DurableLiveMarketService(LiveMarketService):
                     self._available = False
                     self._publish_heartbeat(now, phases)
                     return self._reject('OBSERVATION_DAY_AWAITING_FEED')
+                if phases and all(p.phase in (MarketPhase.CLOSED, MarketPhase.BREAK)
+                                  for p in phases.values()):
+                    # Restarts in a quiet window have no TRADING phase to select
+                    # a day. Restore only the already registered input identity,
+                    # with the same Session and frozen-subscription authority.
+                    if trading_days != {registered_day} or any(p.trading_day is None for p in phases.values()):
+                        raise ValueError('OBSERVATION_DAY_MISSING')
+                    frozen = self._store.subscriptions(registered_day)
+                    if frozen is None or set(frozen) != set(self._products):
+                        raise ValueError('OBSERVATION_SUBSCRIPTION_MISSING')
+                    failure = self._restore_frozen_day(registered_day)
+                    if failure:
+                        return self._reject(failure)
+                    self._available = True
                 failure = self._reconcile_prepared(now)
                 if failure:
                     return self._reject(failure)
@@ -265,7 +279,9 @@ class DurableLiveMarketService(LiveMarketService):
                 return 'LIVE_REDIS_UNAVAILABLE'
             # Empty/duplicate inputs still require a CAS progress commit.
             self._commit((), completed_keys=set(), confirmed_at=now)
-            return self._schedule_recovery_safely(now, phases)
+            failure = self._schedule_recovery_safely(now, phases)
+            self._publish_heartbeat(now, phases)
+            return failure
         except Exception as exc:  # noqa: BLE001 - explicit journal failure boundary
             self._available = False
             code = str(exc) if isinstance(exc, ValueError) else 'OBSERVATION_COMMIT_UNKNOWN'
