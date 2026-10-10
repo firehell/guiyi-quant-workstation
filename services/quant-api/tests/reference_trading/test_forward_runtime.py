@@ -134,6 +134,28 @@ class GroupedRepository(_Repository):
         return next(key for key, routes in self.groups.items() if stream_id in routes)
 
 
+def test_initial_blocked_group_waits_full_rotation_while_queue_size_stays_112():
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    repository = GroupedRepository(count=120)
+    initial_busy = [True]
+    def service(stream_id):
+        if initial_busy[0] and stream_id.startswith('000-'):
+            raise ForwardInputUnavailable('SOURCE_BUSY')
+        return _Service()
+    worker = ForwardReferenceWorker(repository, service, lambda *_args: None, enabled=True)
+    worker.scan()
+    worker.run_round()
+    initial_busy[0] = False
+    assert len(worker.health().blocked) == 4 and worker.health().pending_keys == 112
+    for _ in range(14):
+        worker.scan()
+        worker.run_round()
+        assert len(worker.health().blocked) == 4 and worker.health().pending_keys == 112
+    worker.scan()
+    worker.run_round()
+    assert not worker.health().blocked and worker.health().pending_keys == 112
+
+
 def test_grouped_newow_scan_has_180_keys_and_covers_all_720_streams_fairly():
     repository = GroupedRepository()
     seen, units = [], []
