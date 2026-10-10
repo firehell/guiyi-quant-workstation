@@ -24,7 +24,8 @@
 
 ## 限制与生产验收
 
-当前代码交付不表示已执行0051生产迁移、已创建tag/Release或切换正式Runtime。现役身份以STATUS现场记录为准。
+2026-10-10 已发布 v1.14.10@6cf781fc9347b798d02620d4d45c3b3030c4646f，PR #424、annotated tag及GitHub Release读回一致；merge树与候选一致。发布候选核心564 passed/0 skipped、Reference571项通过、补充109项及独立部署19项通过，31源文件Mypy与Web/锁/OpenSpec/secret/diff通过。旧fixture两失败在现役基线复现后已修正，不放宽生产门禁。专用测试容器与自身卷已精确清理。
+本次只发布，未执行0051生产迁移或切换正式Runtime；现役仍v1.14.9，自然连续性验收待执行。
 
 v1混合版本兼容只接受相等共享合同指纹：合同代码变化会明确阻止；不把这种保守限制表述为任意业务补丁都可无缝升级。
 Reference只读warmup缺真实capture/checkpoint preimage时阻断，不伪造capture。旧canonical Alert缺发送收尾保护时首次迁移阻断。

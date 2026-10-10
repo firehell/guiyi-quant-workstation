@@ -1,14 +1,16 @@
 # 当前状态
 
-更新：2026-10-09。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-10。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## 盘中连续交接工程候选
+## 盘中连续交接 v1.14.10 已发布，Runtime未切换
 
 三包代码与独立Review已完成，支持逐服务身份/选择性计划、独立market-feed及持久观察链路、Alert/Reference协作交接和30秒过期不发送。
 联合500项与扩展706项通过（扩展44项可选条件skip，不计通过），OpenSpec11/secret0/Ruff/Mypy及diff检查通过。
-本任务尚未创建正式tag/Release、执行0051生产迁移或切换Runtime；现役v1.14.9与既有Scope不变。
+本次v1.14.10从exact v1.14.9提取连续交接，不夹带develop未发布牛哇公式/UI；发布候选核心564 passed、Reference571项通过，新增展示与旧fixture修正已独立Review。
+[PR #424](https://github.com/firehell/guiyi-quant-workstation/pull/424)已合并main，annotated tag与[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.10)读回一致：v1.14.10@6cf781fc9347b798d02620d4d45c3b3030c4646f。
+未执行0051生产迁移或切换Runtime，现役v1.14.9与既有Scope不变；新发布树detached/clean，旧现役树仍受服务引用而保留。
 休息段首次迁移、自然盘中业务切换及60品种/720流连续性验收待执行，不能据工程测试声明RUNTIME_READY。
 见[实现与验收边界](docs/tasks/intraday-runtime-handover-20261009.md)。
 

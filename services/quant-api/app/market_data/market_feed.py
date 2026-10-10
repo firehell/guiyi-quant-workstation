@@ -11,7 +11,7 @@ from app.market_data.aggregation import aggregate_from_1m, bucket_window_for_bar
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
 from app.market_data.live_market import (
-    LiveMarketService, RedisLiveStore, _bar_from_payload, _bar_payload, _compact_json,
+    LiveMarketService, LiveProvider, RedisLiveStore, _bar_from_payload, _bar_payload, _compact_json,
     _epoch_millis, live_bar_channel,
 )
 from app.market_data.live_recovery_scripts import COMMIT_OBSERVATIONS
@@ -32,6 +32,9 @@ class FeedLiveStore(RedisLiveStore):
 
 class MarketFeedService(LiveMarketService):
     """Same authoritative subscription/session lifecycle, no completed publications."""
+    _provider: LiveProvider | None
+    _channels: set[str]
+
     def __init__(self, *, source_stream: ObservationStream, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.source_stream = source_stream
