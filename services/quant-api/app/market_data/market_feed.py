@@ -234,6 +234,19 @@ class DurableLiveMarketService(LiveMarketService):
                 source.select_day(registered_day)
             else:
                 trading_days = {p.trading_day for p in phases.values() if p.trading_day is not None}
+                for symbol, phase in phases.items():
+                    if phase.phase is MarketPhase.CLOSED and phase.trading_day is None:
+                        start = phase.next_session_start
+                        if start is None or start <= now:
+                            raise ValueError('OBSERVATION_DAY_MISSING')
+                        upcoming = self._phase_resolver.resolve(symbol, start)
+                        if (upcoming.phase is not MarketPhase.TRADING or upcoming.trading_day is None
+                                or upcoming.current_session is None or upcoming.current_session.start != start):
+                            raise ValueError('OBSERVATION_DAY_MISSING')
+                        trading_days.add(upcoming.trading_day)
+                if (len(trading_days) > 1 and all(p.phase in (MarketPhase.CLOSED, MarketPhase.BREAK)
+                                                for p in phases.values())):
+                    raise ValueError('LIVE_TRADING_DAY_INCONSISTENT')
                 if any(day > registered_day for day in trading_days):
                     # The feed owns atomic day initialization after every prior
                     # consumer is drained. Waiting here permits that handshake;
@@ -246,7 +259,8 @@ class DurableLiveMarketService(LiveMarketService):
                     # Restarts in a quiet window have no TRADING phase to select
                     # a day. Restore only the already registered input identity,
                     # with the same Session and frozen-subscription authority.
-                    if trading_days != {registered_day} or any(p.trading_day is None for p in phases.values()):
+                    if trading_days != {registered_day} or any(
+                            p.phase is MarketPhase.BREAK and p.trading_day is None for p in phases.values()):
                         raise ValueError('OBSERVATION_DAY_MISSING')
                     frozen = self._store.subscriptions(registered_day)
                     if frozen is None or set(frozen) != set(self._products):
