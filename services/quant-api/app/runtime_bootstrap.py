@@ -19,7 +19,7 @@ import subprocess
 from time import monotonic, sleep
 
 from app.runtime_bindings import (BindingRegistry, ServiceBinding, contract_fingerprints,
-    read_bindings, verify_release, write_bindings)
+    read_bindings, verify_release, write_bindings, authorized_program_arguments)
 from app.runtime_handover import _write, runtime_directory
 
 _CONTINUOUS = ('api', 'web', 'live', 'alert', 'reference-worker')
@@ -704,7 +704,7 @@ class BootstrapBackend:
                 GUIYI_RUNTIME_COMMIT=binding.commit, GUIYI_RUNTIME_GENERATION=str(binding.generation),
                 GUIYI_OBSERVATION_STREAM_ENABLED='1', GUIYI_RUNTIME_HANDOVER_ENABLED='1')
             payload['EnvironmentVariables'] = env
-            payload['ProgramArguments'] = ['/bin/bash', str(launcher), service]
+            payload['ProgramArguments'] = list(authorized_program_arguments(binding, Path.home()))
             payload['Disabled'] = not binding.enabled
             if service == 'market-feed':
                 payload['KeepAlive'] = True

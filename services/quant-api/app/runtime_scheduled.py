@@ -143,6 +143,7 @@ class ScheduledBackend:
         self._launchctl('bootout', f'gui/{os.getuid()}/{binding.label}', allow_missing=True)
 
     def install(self, previous, candidate, preimage):
+        from app.runtime_bindings import authorized_program_arguments
         path = self._path(previous)
         content = path.read_bytes()
         if hashlib.sha256(content).hexdigest() != preimage['plist_sha256']:
@@ -160,7 +161,7 @@ class ScheduledBackend:
                    GUIYI_RUNTIME_COMMIT=candidate.commit, GUIYI_RUNTIME_GENERATION=str(candidate.generation),
                    GUIYI_RUNTIME_HANDOVER_ENABLED='1', GUIYI_OBSERVATION_STREAM_ENABLED='1')
         payload['EnvironmentVariables'] = env
-        payload['ProgramArguments'] = ['/bin/bash', str(runtime_directory() / 'run-local-service.sh'), candidate.service]
+        payload['ProgramArguments'] = list(authorized_program_arguments(candidate, Path.home()))
         payload['RunAtLoad'] = False
         payload['KeepAlive'] = False
         payload['Disabled'] = not candidate.enabled
