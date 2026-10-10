@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -12,6 +12,20 @@ from app.reference_trading.capture import ForwardCapture
 from app.reference_trading.forward_service import ForwardReferenceService
 from app.reference_trading.forward_inputs import ForwardInputUnavailable
 from app.reference_trading.repository import ReferenceRepository
+
+
+DIAGNOSTIC_REASONS = frozenset({
+    'SOURCE_BUSY', 'REFERENCE_CANONICAL_MISMATCH', 'FORWARD_CHECKPOINT_INVALID',
+    'WORKER_QUEUE_FULL', 'FORWARD_STRATEGY_UNSUPPORTED', 'NEWOW_CAPABILITY_CLOSED',
+    'OBSERVATION_GAP', 'FIRST_SEEN_NOT_PROVEN', 'CANONICAL_READ_GUARD_MISSING',
+    'REFERENCE_BUFFER_PROCESSING_BLOCKED', 'REFERENCE_COMPLETED_TIME_MISSING',
+    'OBSERVATION_CURSOR_MISSING', 'OBSERVATION_STREAM_EXPIRED',
+    'REFRESH_STATE_BUDGET_EXCEEDED', 'REFRESH_READBACK_REQUIRED',
+})
+
+
+def diagnostic_reason(reason: str) -> str:
+    return reason if reason in DIAGNOSTIC_REASONS else 'UNCLASSIFIED_FAILURE'
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +63,7 @@ class ForwardReferenceWorker:
         self.assert_owned = lambda: None
         self.scan_live = True
         self.mark_ready = lambda: None
+        self.report_health: Callable[[dict], None] = lambda _proof: None
         self._repository = repository
         self._service_for = service_for
         self._read_input = read_input
@@ -220,12 +235,23 @@ class ForwardReferenceWorker:
         if not self._enabled:
             return
         while not should_stop():
+            self.report_health(self.diagnostic_health(stage='scan', ready=False))
             self.scan()
             self.run_round()
-            if not self.health().blocked:
+            healthy = not self.health().blocked
+            self.report_health(self.diagnostic_health(stage='cycle', ready=healthy))
+            if healthy:
                 self.mark_ready()
             if not should_stop():
                 wait(scan_interval_seconds)
+
+    def diagnostic_health(self, *, stage: str, ready: bool) -> dict:
+        health = self.health()
+        return {'stage': stage, 'ready': ready, 'enabled_count': health.enabled_count,
+            'pending_keys': health.pending_keys, 'blocked_count': len(health.blocked),
+            'blocked_counts': dict(sorted(Counter(diagnostic_reason(reason)
+                for _stream_id, reason in health.blocked).items())),
+            'last_success': None if health.last_success is None else health.last_success.isoformat()}
 
     def health(self) -> WorkerHealth:
         return WorkerHealth(
