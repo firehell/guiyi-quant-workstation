@@ -60,3 +60,20 @@ v1.14.16候选修复唯一argv入口及bootstrap/scheduled两writer：正式week
 当前发布读回：v1.14.16@53434f5e5391e53bbaa9c78905da83f3b0fba548，PR430 MERGED，annotated tag peeled identity匹配，GitHub Release非draft/非prerelease；exact发布树detached/clean，锁定venv及Web typecheck/build/topology通过。额外54项在独立HOME中测试以隔离现场registry；生产HOME下合成weekly health fixture会被实际registry重定向，不能当作本补丁回归，未修改生产或伪造fixture。
 
 只读generation2计划已冻结：ddf5964284276b88dcac89d8f3897e9ad33bd1bfe095b621547a818b6fcef1af，所有identity/schema/Session/DB/Stream检查通过，source_busy=true。未执行apply、未创建新的生产恢复attempt；API/Web仍旧v13 HTTP200，业务4停驻。待维护锁可用后按同一恢复边界核对，不盲重试未知结果。
+
+## generation2实际切换与ready阻断
+
+旧weekly空闲卸载经最终独审40项通过后执行，实际audit状态锁/owner/deployment锁内二次exact检查，单次bootout后权威absence写入unloaded证书；旧running诊断原字节未改。新计划baa2ea91741bc6ebd327fed1fe4062665e345ccaaf1b36a6adbb6d357232f8d2冻结时维护锁已自然释放。apply在重验后证明旧进程退出，原子提交十个服务到v16/gen2，实际启动六连续服务。API/Web/Live/Alert/market-feed均曾读回ready，Reference在120秒未ready，未注册定时任务即进入安全收尾。
+
+当前gen2journal outcome_unknown，failure_code STARTUP_READY_TIMEOUT，current_step continuous_generation2_ready。API/Web exact ready得以保留；业务4已parked，日历disabled，未重复apply。失败后只读data_proof/unchanged_data_facts=true：事件/规则/delivery/policy摘要、六通知事实、新增Alert列NULL及source/completed/三个cursor0-0均保持。v16已绑定不等于业务恢复完成，不宣布RUNTIME_READY。下一步仅只读定位Reference阻断，后续恢复须重新证明同代次身份、所有权和无未知发送；原journal不能覆盖成成功。
+
+
+## 同版本输入服务恢复
+
+完整同版本恢复只读重验在Reference canonical_guard遇到SOURCE_BUSY，尚未创建attempt或修改drain。为推进独立服务，增加显式inputs-only模式，冻结与执行都验证Reference原PID/parked/drain SHA、四scheduled disabled/absent、exact身份及数据/发送事实。仅该模式跳过永不加载日历的due eligibility；完整恢复保留原检查。独立samegen/helper共66 passed，root复跑66 passed，Ruff/Mypy/diff通过。
+
+新计划84d6a48a43e27749cc06fcc9434811b671c10bdc55bc868c62919b5276418d21实际一次取消market-feed/Live/Alert的drain，同代次journal phase=inputs_resumed_reference_parked。三个输入服务保留原PID61466/61454/61457并active，API/Web继续61446/61450；Reference61460继续parked，日历四项disabled且未加载。无新bootstrap、CAS、migration或cursor初始化。后续只读unchanged_data_facts=true，原unknown journal及archive字节保留，通知和范围未变。
+
+Live/feed的checked_poll每轮先mark_not_ready、成功再mark_ready，所以单瞬间owner.ready缺失不能证明服务失败，也不能作为持续ready证据；恢复完成回读和后续自然运行分别验收。Reference和scheduled恢复仍待维护资源可用与独立恢复边界证明，不能宣称全运行恢复或RUNTIME_READY。
+
+独立只读现场验收：三次有界采样确认feed ready null→true→null来自成功轮询窗口，取得整体checked_ready=true；Live/feed available heartbeat约2.7/2.3秒，operational60全CLOSED，无inputfailure。Reference原PID/drain、四日历disabled/absent及原unknown字节再次相同；事件/规则/delivery/policy、发送六事实、unknownclaim0、新Alert列NULL、source/completed 10/12空分区/cursor0-0、720=60×4×3均未变。仅inputs-only恢复现场验收通过；完整恢复及自然连续性仍未完成。

@@ -4,17 +4,21 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## 生产0051已迁移；宿主权限已解决，业务服务恢复中
+## v1.14.16 已发布并绑定；API/Web及输入服务恢复，Reference仍停驻
 
-生产 schema 为 **20261009_0051**，原始迁移计划已提交旧服务退出、显式观察基线、plist 和10服务 generation1绑定；本次恢复不重复迁移或初始化消费进度，按owner要求未做DB备份。
-macOS已通过系统设置授权 `/bin/bash` 完全磁盘访问，并读回开关开启。v1.14.13首次恢复中API/Web正常；Live在真实CLOSED无trading_day场景无法ready，Reference受维护锁阻断。失败后业务4服务协作停驻，**当前API/Web HTTP200，Live/Alert/Reference/market-feed仍停驻，尚未完成切换。** 原unknown journal与字节档案保留。
+当前10服务绑定 **v1.14.16@53434f5e5391e53bbaa9c78905da83f3b0fba548 / generation2**，由[PR430](https://github.com/firehell/guiyi-quant-workstation/pull/430)、annotated tag及[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.16)发布，develop已集成。生产schema仍 **20261009_0051**；本次未重复迁移或观察基线初始化，按owner要求未做DB备份。macOS系统设置已添加并读回 `/bin/bash` 完全磁盘访问开启。
 
-前向修复 **v1.14.14@0eb05c0a2350203ddb49d4cfeefb9dc143c883d1**、**v1.14.15@b2e2163db2d0c072b43fb8f91ff94ee394f67ba9** 已发布，均未切换生产。v1.14.15由唯一Session入口核对下一真实交易段，不推算交易日；真实60品种只读预检通过，新增/关联独审30项通过，构建与工程检查通过。
-另发现旧weekly正式label错误使用manual入口，导致小时触发绕过每周最多一次保护；已精确停止经独立审查确认无provider/data write/通知的旧只读审计PID，保留原running诊断不伪造完成。启动参数根因修复 **v1.14.16@53434f5e5391e53bbaa9c78905da83f3b0fba548** 已由[PR430](https://github.com/firehell/guiyi-quant-workstation/pull/430)、annotated tag与[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.16)发布；锁定venv与Web构建通过，独立46项通过/1项可选Redis跳过，整代恢复脚本独立31项通过。另一历史资产任务当前占用维护锁，不解除其锁。
+v14/v15均未切换生产：v15修复真实CLOSED没有trading_day时，使用唯一Session入口核对下一真实交易段并恢复冻结订阅；现场60品种只读预检与关联独审30项通过。v16修复weekly正式label使用manual参数，恢复scheduled每周attempt去重；联合89 passed/1 optional Redis skipped，隔离HOME入口/审计/所有权54 passed，独审46 passed/1 optional Redis skipped。工程Ruff/Mypy/secret0、Web typecheck/build/topology及OpenSpec11/11通过。
 
-旧Alert1449事件/2规则、Newow71 delivery/policy及720路范围、启用时间和cursor按原生产preimage核对；保留原失败通知事实，不重试、补发或制造广播，auto_order=false。新恢复计划要求发送事实、schema、Stream进度及旧owner身份一致，整套旧进程退出后才原子换代；尚未创建新的生产恢复attempt。
-整代恢复计划 **ddf5964284276b88dcac89d8f3897e9ad33bd1bfe095b621547a818b6fcef1af** 已冻结通过，当前 `source_busy=true`，尚未执行apply。下一步：维护锁可用后复核冻结计划并恢复已提交拓扑。自然盘中切换、60品种/720路连续性及自然通知仍待验收，**不能宣布RUNTIME_READY**。
-证据：`output/intraday-v11413-runtime-20261010/`、`output/intraday-v11414-runtime-20261010/`；详见[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
+旧weekly只读审计已精确停止并保留原running诊断；随后在其idle状态持真实audit锁、owner锁和部署锁一次卸载旧日历，权威absence已读回，避免等待期间再次整点触发。整代恢复脚本最终独审40项通过，仅允许exact v16及已审查input/launcher文件差异，其余DB/Live/formula/reference合同不变。另一历史资产构建仍在执行，不解除其维护锁或中断其任务。
+
+原计划ddf596...因 `PRECONDITION_SOURCE_BUSY` 在mutation之前退出。旧周审计absence纳入新计划 **baa2ea91741bc6ebd327fed1fe4062665e345ccaaf1b36a6adbb6d357232f8d2**；维护锁自然释放后实际完成旧进程退出、十服务原子换代绑定、六服务启动。但Reference未在120秒达到ready，journal保留 `outcome_unknown / STARTUP_READY_TIMEOUT`；安全收尾已停驻4业务服务、禁用定时任务，不盲重试。
+**随后同版本恢复已接回market-feed、Live和Alert；当前API/Web保持HTTP200，三个输入服务同PID/gen2 active；Reference原PID61460仍parked，4个日历任务disabled且未加载，整体恢复仍未完成。**
+
+失败后独立只读核对：原Alert1449事件/2规则、Newow71 delivery/policy及6项发送事实完全一致；source/completed空且三个cursor仍0-0，未知claim0。720路范围、启用时间和通知policy未重置，没有补发、测试广播或订单，auto_order=false。旧未知journal及精确原字节仍保留。自然盘中切换、60品种/720路连续性及新自然通知尚未验收，不能声明RUNTIME_READY。
+同版本完整恢复的只读检查遇到Reference `SOURCE_BUSY`，在创建attempt或修改控制前停止。新增显式inputs-only模式独立66项通过，冻结plan **84d6a48a43e27749cc06fcc9434811b671c10bdc55bc868c62919b5276418d21** 后一次取消3个drain，journal读回 `inputs_resumed_reference_parked`。未重复bootstrap/CAS/迁移/观察初始化，Reference drain原字节与定时任务禁用/absence保持；原unknown journal原字节保留。独立有界采样取得整体checked_ready=true；Live/feed新鲜heartbeat available，约2.7/2.3秒，operational60全部CLOSED且无inputfailure。每轮poll先清ready再标记成功，短暂字段缺失已结合心跳和成功周期核实；自然业务验收仍待真实行情。
+下一步：在维护资源可用且同代次所有权/无未知发送证明通过后恢复Reference及原日历任务；不重复迁移或初始化，不中断其他历史任务。
+证据：`output/intraday-v11413-runtime-20261010/`、`output/intraday-v11414-runtime-20261010/`和稳定运行目录恢复journal；见[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
 
 ## v1.14.10 工程发布检查点（迁移前历史状态）
 
