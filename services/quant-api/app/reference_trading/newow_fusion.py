@@ -413,13 +413,17 @@ class PersistedFusionComparison:
             source_through = date.fromisoformat(manifest["query_through"])
             source_cutoff = datetime.fromisoformat(manifest["query_as_of"])
             if (
-                manifest.get("reader") != "newow_fusion_saved_sources_v1"
+                manifest.get("reader") not in {
+                    "newow_fusion_saved_sources_v1", "newow_fusion_saved_sources_v2"
+                }
                 or through > source_through
                 or cutoff > source_cutoff
             ):
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
             source_reader = manifest.get("source_reader", "newow_product_reader_intraday_v3")
             if source_reader == "newow_product_reader_intraday_v3":
+                if manifest["reader"] != "newow_fusion_saved_sources_v1":
+                    raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
                 proof = reader.historical_source_evidence(
                     product=product, frequency=frequency,
                     since=date.fromisoformat(manifest["query_since"]),
@@ -439,9 +443,24 @@ class PersistedFusionComparison:
                 source = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None).plan_stream(
                     HistoricalStreamRequest(source_stream, date.fromisoformat(manifest["query_since"]),
                         through, cutoff))
-                verify_saved_input_prefix({**manifest, "reader":source_reader,
+                source_manifest = {**manifest, "reader":source_reader,
                     "formula_versions":list(base_identity.formula_versions),
-                    "reference_model_version":source_stream.reference_model_version},
+                    "reference_model_version":source_stream.reference_model_version}
+                if manifest["reader"] == "newow_fusion_saved_sources_v2":
+                    from hashlib import sha256
+                    from app.reference_trading.inputs import _canonical
+                    execution = manifest.get("input_fingerprints")
+                    shadow = manifest.get("source_input_fingerprints")
+                    if (
+                        not isinstance(execution, list) or not execution
+                        or not isinstance(shadow, list) or len(shadow) != len(execution)
+                        or type(manifest.get("input_count")) is not int
+                        or manifest["input_count"] != len(execution)
+                        or manifest.get("input_sha256") != sha256(_canonical(execution).encode()).hexdigest()
+                    ):
+                        raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+                    source_manifest["input_fingerprints"] = shadow
+                verify_saved_input_prefix(source_manifest,
                     source.dependency_manifest, through,
                     frozenset((bar.physical_contract, bar.owner_segment_id) for bar in source.bars if bar.strategy_input))
         except (KeyError, TypeError, ValueError) as error:
