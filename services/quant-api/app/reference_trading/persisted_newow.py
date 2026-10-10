@@ -401,8 +401,9 @@ class PersistedNewowReference:
             getattr(reader, "_check_cancelled", None),
         )
         availability = [point for point in facts["availability"] if point["trading_day"] >= since.isoformat()]
-        if minute:
-            availability = reader.reference_owned_points(request.product, availability, read.owners)
+        # All frequencies retain physical warmup facts. Only the authoritative
+        # rank1 owner may contribute availability for a trading day.
+        availability = reader.reference_owned_points(request.product, availability, read.owners)
         boundaries = facts["boundary"]
         hints = facts["hint"]
         actions = facts["action"]
