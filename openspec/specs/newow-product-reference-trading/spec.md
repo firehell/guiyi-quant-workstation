@@ -345,6 +345,17 @@ warm-up Bar 不得产生有效主力区段内的 BUILD；新主力起点已经�
 
 ### Requirement: Separate trade actions from explanatory hints
 
+主图过程提示 MUST 直接展示已接受快照中的 Hint，不在 Web 重新推算 4/7/11、J、D1–D6。
+4/7/11、J、★B 与 ★S 采用价格坐标上的文字图层，不添加影响价格轴范围的辅助 series。
+低点文字的 `LOW × 0.99` 仅为显示位置，不修改 `anchor_price`、动作参考价或收益。
+主升浪 `main_values.magic11_count` 是既有 `newow_magic11_page_v1` 的计数线事实投影：
+`1` 表示黄色，`-1` 表示红色，`null` 表示无可展示计数；它不是新的交易指标或状态。
+非 eligible Bar 不生成计数线。图层开关、快照撤销和策略切换 MUST 清除对应文字及计数线；
+不跨物理合约、计算段或来源身份拼接提示。它们继续保持 `quantity_effect=none`。
+`main_values.ma10_display_v1` 为主升浪只读辅助线：同一计算段的 completed CLOSE 10 根简单均值，
+不足 10 根为 `null`；采用粉色虚线显示。该独立显示版本不参与任何主动作、Hint 或收益公式，
+不从 Web 当前分页窗口重新计算，不跨计算段连接。MA35/MA45 的原策略版本保持不变。
+
 主动作 MUST 只有各策略自身的 `BUILD / CLEAR`。J、D1–D3、D4–D6、4/7/11、阶段、风险和结构信息
 均为 `quantity_effect=none` 的 Hint，不得改变 entry、持有、收益、手数或仓位。无主动作是完成计算后的
 有效结果，MUST 与 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE` 和 retrospective repaint 分开表达，不能合并为

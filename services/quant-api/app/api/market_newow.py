@@ -984,6 +984,14 @@ def _decimal(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
 
 
+def _auxiliary_data_value(component: str, value: object) -> object:
+    payload = _json_value(value)
+    if component == "zhaoyao_mirror" and isinstance(payload, dict):
+        # Internal causal peak events are consumed by hints, not the retrospective subplot wire.
+        payload.pop("confirmed_peak_events", None)
+    return payload
+
+
 def _json_value(value: object) -> object:
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -1256,7 +1264,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                     "segment_id": segment.segment_id,
                     "bar_ends": list(segment.bar_ends),
                     "status": _status(segment.status),
-                    "data": _json_value(segment.value),
+                    "data": _auxiliary_data_value(value.name, segment.value),
                 }
                 for segment in value.segments
             ],

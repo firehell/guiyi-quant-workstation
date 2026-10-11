@@ -287,7 +287,15 @@ def _main_rise_oracle(
             (
                 product_bar.bar.bar_end,
                 main_state,
-                (("ma35", _decimal(result.ma35)), ("ma45", _decimal(result.ma45))),
+                (
+                    ("ma35", _decimal(result.ma35)),
+                    ("ma45", _decimal(result.ma45)),
+                    ("ma10_display_v1", _decimal(result.ma10_display_v1)),
+                    ("magic11_count", {
+                        "newow-magic11-yellow": Decimal("1"),
+                        "newow-magic11-red": Decimal("-1"),
+                    }.get(result.magic11.count_line_color)),
+                ),
                 actions,
             )
         )

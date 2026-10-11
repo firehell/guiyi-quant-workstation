@@ -113,6 +113,7 @@ class MainRiseStepResult:
     buy_markers: tuple[MainRiseBuyMarker, ...]
     magic11: Magic11StepResult
     diagnostics: tuple[str, ...] = ()
+    ma10_display_v1: float | None = None
 
 
 def initial_main_rise_state() -> MainRiseState:
@@ -385,6 +386,7 @@ def step_main_rise(
         escape.markers,
         buy_markers,
         magic11,
+        ma10_display_v1=_average_latest(closes, 10) if len(closes) >= 10 else None,
     )
 
 

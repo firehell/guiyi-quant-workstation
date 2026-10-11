@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
 import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
 import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import { newowSimpleDualLabel, newowReferencePrice, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
@@ -129,6 +130,8 @@ const actionOverlayTop = ref(0)
 const actionOverlayHeight = ref(0)
 const actionOverlayLeft = ref(0)
 const actionOverlayWidth = ref(0)
+const cycleCountOverlays = ref<Array<{ x: number; top: number; height: number; color: string; barEnd: string }>>([])
+const processOverlays = ref<Array<{ id: string; kind: string; anchorPrice: string | null; x: number; y: number; text: string; color: string; below: boolean; cycle?: boolean }>>([])
 const attackOverlays = ref<Array<{ id: string; kind: string; x: number; y: number; height: number; width: number }>>([])
 const positionedActions = ref<PositionedCallout[]>([])
 const positionedComparison = ref<Array<PositionedCallout & { origin: 'trend' | 'oscillation' }>>([])
@@ -154,8 +157,8 @@ const comparisonStats = computed(() => newowDualVisibleStatistics(positionedComp
 const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
 const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(props.auxiliaryResponse?.value, props.response?.value?.bars.at(-1)))
 const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(props.auxiliaryLifecycle ?? 'not_requested', auxiliaryModel.value !== null, props.auxiliaryError ?? null, auxiliaryReadiness.value?.message ?? null))
-const mainLineColors: Record<string, string> = { b: '#F59E0B', a: '#2563EB', upper: '#16A34A', lower: '#DC2626', ma35: '#F59E0B', ma45: '#2563EB' }
-const legend = computed(() => [...new Map(model.value?.mainLines.map(line => [line.key, line]) ?? []).values()])
+const mainLineColors: Record<string, string> = { b: '#F59E0B', a: '#2563EB', upper: '#16A34A', lower: '#DC2626', ma35: '#F59E0B', ma45: '#2563EB', ma10_display_v1: 'rgba(255,105,180,.7)' }
+const legend = computed(() => [...new Map(model.value?.mainLines.filter(line => line.key !== 'ma10_display_v1').map(line => [line.key, line]) ?? []).values()])
 const mainLegendLabel = computed(() => ({ trend: '趋势带', oscillation: '震荡区间', main_rise: '主升浪' })[props.strategy])
 const adapter = inject(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
   createChart,
@@ -356,6 +359,8 @@ function renderReferencePrices(): void {
 }
 
 function renderModel(value: NewowProductChartModel | null): void {
+  processOverlays.value = []
+  cycleCountOverlays.value = []
   if (chart === null || candles === null) return
   renderReferencePrices()
   renderVisualOverlays()
@@ -469,9 +474,9 @@ function syncMainLines(value: NewowProductChartModel): void {
       series = chart.addSeries(LineSeries, {
         priceFormat: NEWOW_CHART_PRICE_FORMAT,
         color: mainLineColors[line.key] ?? '#64748B',
-        lineWidth: line.key === 'a' || line.key === 'b' ? 1 : 2,
+        lineWidth: ['a', 'b', 'ma35', 'ma45', 'ma10_display_v1'].includes(line.key) ? 1 : 2,
         lineVisible: line.key !== 'upper' && line.key !== 'lower',
-        lineStyle: line.key === 'a' || line.key === 'b' || line.key === 'ma35' || line.key === 'ma45' ? 2 : 0,
+        lineStyle: line.key === 'a' || line.key === 'b' || line.key === 'ma35' || line.key === 'ma45' || line.key === 'ma10_display_v1' ? 2 : 0,
         lastValueVisible: false,
         priceLineVisible: false,
       })
@@ -498,7 +503,9 @@ function renderMarkers(value: NewowProductChartModel | null): void {
 
 function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
   attackOverlays.value = []
-  if (chart === null || candles === null || container.value === null || value === null) {
+  processOverlays.value = []
+  cycleCountOverlays.value = []
+  if (props.strategySwitching || chart === null || candles === null || container.value === null || value === null) {
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     return
   }
@@ -519,6 +526,25 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   actionOverlayHeight.value = height
   actionOverlayLeft.value = container.value.offsetLeft
   actionOverlayWidth.value = width
+  if (showHints.value && !comparisonActive.value) {
+    cycleCountOverlays.value = (value.cycleCounts ?? []).flatMap(({ bar, color }) => {
+      const x = timeToCoordinate.call(scale, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay))
+      const high = priceToCoordinate.call(candles, bar.high)
+      const low = priceToCoordinate.call(candles, bar.low)
+      if (x == null || high == null || low == null || ![x, high, low].every(Number.isFinite) || x < 0 || x > width) return []
+      return [{ x, top: Math.min(high, low), height: Math.abs(low - high), color, barEnd: bar.barEnd }]
+    })
+    const bars = new Map(value.bars.map(bar => [bar.barEnd, bar]))
+    processOverlays.value = value.hints.flatMap(hint => {
+      const bar = bars.get(hint.barEnd)
+      const display = bar ? newowProcessHintDisplay(hint, bar) : null
+      if (!bar || !display) return []
+      const x = timeToCoordinate.call(scale, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay))
+      const y = priceToCoordinate.call(candles, display.displayPrice)
+      if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > width || y < 0 || y > height) return []
+      return [{ ...display, id: hint.id, kind: hint.kind, anchorPrice: hint.anchorPrice, x, y: y + (display.below ? display.padding : -display.padding) }]
+    })
+  }
   if (showHints.value && value.identity.strategy === 'oscillation') {
     const range = scale.getVisibleLogicalRange()
     const count = Math.max(1, range ? range.to - range.from + 1 : value.bars.length)
@@ -802,6 +828,10 @@ defineExpose({ revealSignal, scrollToLatest })
       @wheel="scheduleActionProjection"
       @dblclick="scheduleActionProjection"
     />
+    <div v-if="showHints && (processOverlays.length || cycleCountOverlays.length)" class="newow-process-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="主图过程提示，非成交">
+      <i v-for="item in cycleCountOverlays" :key="item.barEnd" class="newow-cycle-count" :data-cycle-count-bar="item.barEnd" :style="{ left: `${item.x}px`, top: `${item.top}px`, height: `${item.height}px`, background: item.color }" />
+      <span v-for="item in processOverlays" :key="item.id" :data-process-hint-id="item.id" :data-hint-kind="item.kind" :data-anchor-price="item.anchorPrice" :class="{ below: item.below, cycle: item.cycle }" :style="{ left: `${item.x}px`, top: `${item.y}px`, color: item.color }">{{ item.text }}</span>
+    </div>
     <div v-if="showHints && attackOverlays.length" class="newow-attack-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="震荡辅助攻击线提示">
       <span v-for="item in attackOverlays" :key="item.id" :data-hint-kind="item.kind" :style="{ left: `${item.x}px`, top: `${item.y}px`, width: item.kind === 'OSCILLATION_J' ? '12px' : `${item.width}px`, height: item.kind === 'OSCILLATION_J' ? '14px' : `${item.height}px` }" :class="item.kind">{{ item.kind === 'OSCILLATION_J' ? 'J' : '' }}</span>
     </div>
@@ -863,7 +893,7 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:auto; min-height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage:fullscreen .newow-product-chart-stage__chart { height:0; flex:1 1 auto; min-height:0; }
-.newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(500px,60vh,840px) + 200px); min-height:700px; }
+.newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(400px,48vh,650px) + 350px); min-height:690px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
 .newow-product-chart-stage__action-label { position:absolute; pointer-events:none; cursor:default; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:1px 4px; overflow:hidden; border:1.5px solid #AD5734; border-radius:8px; background:#FFFEFA; color:#665044; font-size:11px; line-height:13px; text-align:center; box-shadow:none; }
@@ -913,6 +943,11 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 </style>
 
 <style scoped>
+.newow-process-overlay { position:absolute; pointer-events:none; overflow:hidden; z-index:3; }
+.newow-cycle-count { position:absolute; width:1.5px; transform:translateX(-50%); opacity:.6; }
+.newow-process-overlay span { position:absolute; transform:translate(-50%,-100%); white-space:nowrap; font:15px Arial,sans-serif; line-height:18px; }
+.newow-process-overlay span.below { transform:translateX(-50%); }
+.newow-process-overlay span.cycle { font-size:18px; line-height:21px; font-weight:700; }
 .newow-attack-overlay { position:absolute; pointer-events:none; overflow:hidden; z-index:3; }
 .newow-attack-overlay span { position:absolute; transform:translateX(-50%); box-sizing:border-box; }
 .newow-attack-overlay .ZLGJ_BUY { background:#f00; border:1px solid white; }
