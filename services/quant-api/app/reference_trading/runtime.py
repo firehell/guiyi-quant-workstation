@@ -65,6 +65,8 @@ class ForwardReferenceWorker:
         self.mark_ready = lambda: None
         self.after_healthy_round: Callable[[], None] = lambda: None
         self.poll_observations: Callable[[], bool] = lambda: False
+        from contextlib import nullcontext
+        self.observation_priority = nullcontext
         self.report_health: Callable[[dict], None] = lambda _proof: None
         self._repository = repository
         self._service_for = service_for
@@ -156,6 +158,10 @@ class ForwardReferenceWorker:
 
     def process_live_observation(self, stream_ids: tuple[str, ...], bar_end: datetime) -> None:
         """Finish this observation's work groups without draining unrelated scans."""
+        with self.observation_priority():
+            self._process_live_observation(stream_ids, bar_end)
+
+    def _process_live_observation(self, stream_ids: tuple[str, ...], bar_end: datetime) -> None:
         if not self._enabled:
             raise RuntimeError("REFERENCE_WORKER_NOT_ENABLED")
         keys = tuple(dict.fromkeys(self._work_key(stream_id) for stream_id in stream_ids))

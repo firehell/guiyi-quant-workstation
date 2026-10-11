@@ -58,6 +58,10 @@ class RefreshStateError(ValueError):
     """Storage failure stops processing without overwriting unknown commit evidence."""
 
 
+class RefreshPlanningYield(RuntimeError):
+    """Pure planning was cooperatively cancelled before formal service work."""
+
+
 class RefreshStateStore:
     def __init__(self, path: Path):
         self.path = path
@@ -140,14 +144,16 @@ class HistoricalRefresh:
         self._routes, self._endpoint, self._components = routes, endpoint, components
         self.state = state
 
-    def tick(self, *, now, cancelled=lambda: False):
+    def tick(self, *, now, cancelled=lambda: False, batch_limit=None):
+        if batch_limit is not None and (type(batch_limit) is not int or batch_limit < 1):
+            raise ValueError('REFRESH_BATCH_LIMIT_INVALID')
         if cancelled():
             return
         with self.state.exclusive() as acquired:
             if acquired:
-                self._tick(now, cancelled)
+                self._tick(now, cancelled, batch_limit)
 
-    def _tick(self, now, cancelled):
+    def _tick(self, now, cancelled, batch_limit):
         state = self.state.read()
         # An unknown process exit may have happened between a commit and its
         # callback. A saved older resume token cannot prove the last outcome.
@@ -162,6 +168,9 @@ class HistoricalRefresh:
         offset = ids.index(state['cursor']) + 1 if state['cursor'] in ids else 0
         endpoints = {}
         for route in (routes[offset:] + routes[:offset])[:32]:
+            if cancelled():
+                return
+            previous_cursor = state['cursor']
             identity = route.identity
             key = identity.stream_id
             prior = state['routes'].get(key)
@@ -188,7 +197,10 @@ class HistoricalRefresh:
                     if (len(base) != 3 or any(item.computed_through is None or item.computed_through < endpoint
                                             for item in base)):
                         continue
-                self._execute(route, endpoint, trading_day, prior, state, now, cancelled)
+                self._execute(route, endpoint, trading_day, prior, state, now, cancelled, batch_limit)
+            except RefreshPlanningYield:
+                state['cursor'] = previous_cursor
+                self.state.write(state)  # Keep the original plan/rebuild/resume facts.
             except RefreshStateError:
                 raise  # Retain the last durable inflight/resume proof; never replace it.
             except Exception as error:
@@ -199,15 +211,21 @@ class HistoricalRefresh:
             return  # One selected stream per tick, even when planning fails.
         self.state.write(state)
 
-    def _execute(self, route, endpoint, trading_day, prior, state, now, cancelled):
+    def _execute(self, route, endpoint, trading_day, prior, state, now, cancelled, batch_limit):
         key = route.identity.stream_id
         storage_failure: RefreshStateError | None = None
+        original_cancelled = cancelled
+        committed_batches = 0
+        def cancelled():
+            return original_cancelled() or (batch_limit is not None and committed_batches >= batch_limit)
         def after_batch(stage, context):
-            nonlocal storage_failure
-            if stage == 'committed' and context.get('resume_token'):
-                state['routes'][key]['resume'] = asdict(context['resume_token'])
+            nonlocal storage_failure, committed_batches
+            if stage == 'committed':
+                if context.get('resume_token'):
+                    state['routes'][key]['resume'] = asdict(context['resume_token'])
                 try:
                     self.state.write(state)  # Still inflight until a known report.
+                    committed_batches += 1
                 except RefreshStateError as error:
                     storage_failure = error
                     raise
@@ -229,6 +247,14 @@ class HistoricalRefresh:
                     raise storage_failure
                 raise
         with protected_components() as (planner, service):
+            def prepare(request):
+                from app.market_data.newow.product_reader import NewowProductReadCancelled
+                try:
+                    return planner.plan(request)
+                except NewowProductReadCancelled:
+                    if cancelled():
+                        raise RefreshPlanningYield() from None
+                    raise
             if prior:
                 try:
                     plan = plan_from_dict(decode_plan(prior['plan']))
@@ -240,7 +266,7 @@ class HistoricalRefresh:
                 if prior.get('rebuild_required'):
                     # Rebuild only the exact same endpoint and source already
                     # proven by the failed append plan. Never shrink its prefix.
-                    replacement = planner.plan(HistoricalReferenceRequest(
+                    replacement = prepare(HistoricalReferenceRequest(
                         'rebuild', (plan.streams[0].request,), BUDGET,
                     ))
                     before, after = plan.streams[0], replacement.streams[0]
@@ -250,7 +276,7 @@ class HistoricalRefresh:
                         raise ValueError('SOURCE_CHANGED')
                     plan, prior = replacement, None
             else:
-                plan = planner.plan(HistoricalReferenceRequest(
+                plan = prepare(HistoricalReferenceRequest(
                     'advance', (HistoricalStreamRequest(route.identity, route.since,
                                                         trading_day, endpoint),), BUDGET,
                 ))
@@ -279,6 +305,10 @@ class HistoricalRefresh:
             result = report.streams[0]
             if result.status in {'completed', 'noop'}:
                 del state['routes'][key]
+            elif result.reason == 'INPUT_READ_INTERRUPTED' and cancelled():
+                # The service explicitly proves this interruption preceded all
+                # repository mutation. A bare reader error is not such proof.
+                pending.update(status='pending', reason='INTERRUPTED')
             elif result.reason == 'SOURCE_BUSY' and plan.operation == 'advance':
                 pending.update(status='pending', reason='SOURCE_BUSY')
             elif result.reason == 'REBUILD_REQUIRED' and plan.operation == 'advance':
@@ -296,8 +326,13 @@ class HistoricalRefresh:
 
 class RefreshThread:
     """Single cancellable worker; foreground observation never joins each tick."""
-    def __init__(self, runner, *, interval=30, now=lambda: datetime.now(UTC)):
+    def __init__(self, runner, *, interval=30, now=lambda: datetime.now(UTC),
+                 can_run=lambda: True, yield_requested=lambda: False,
+                 on_tick_started=lambda: True, on_tick_finished=lambda: None, batch_limit=None):
         self._runner, self._interval, self._now = runner, interval, now
+        self._can_run, self._yield_requested = can_run, yield_requested
+        self._on_tick_started, self._on_tick_finished = on_tick_started, on_tick_finished
+        self._batch_limit = batch_limit
         self._stop = Event()
         self.last_error = None
         # Cancellation normally completes shutdown. Daemon is a bounded final
@@ -308,7 +343,20 @@ class RefreshThread:
     def _run(self):
         while not self._stop.is_set():
             try:
-                self._runner.tick(now=self._now(), cancelled=self._stop.is_set)
+                if not self._can_run():
+                    self._stop.wait(.1)
+                    continue
+                if self._stop.is_set():
+                    return
+                if not self._on_tick_started():
+                    self._stop.wait(.1)
+                    continue
+                try:
+                    options = {} if self._batch_limit is None else {'batch_limit': self._batch_limit}
+                    self._runner.tick(now=self._now(), cancelled=lambda:
+                        self._stop.is_set() or self._yield_requested(), **options)
+                finally:
+                    self._on_tick_finished()
             except Exception as error:
                 self.last_error = _reason(error)
                 return  # Invalid state/storage never gets blindly overwritten.

@@ -1665,12 +1665,18 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
   services/quant-api/tests/reference_trading/test_live_wake.py \
   services/quant-api/tests/reference_trading/test_historical_refresh.py \
   services/quant-api/tests/reference_trading/test_refresh_plan_codec.py \
+  services/quant-api/tests/reference_trading/test_refresh_priority.py \
+  services/quant-api/tests/reference_trading/test_historical_refresh_priority.py \
+  services/quant-api/tests/reference_trading/test_historical_service_read_interrupt.py \
+  services/quant-api/tests/reference_trading/test_worker_entry.py \
   services/quant-api/tests/test_handover_consumers.py
 ```
 
 覆盖完整 frozen plan 无损存储与原 hash、64MB 上限、仅所选计划解压、真实服务异常隔离后的
 提交未知保护、112 个无关后台任务不挡当前观察、后台组之间前台优先、128 条有界消费与收尾。
 既有 blocked 记录不能凭新测试成功清空；其生产恢复仍需原始提交事实与精确读回。
+另覆盖权威休息段调度、前台许可不能积累、普通扫描与真实观察取消的区别、已提交批次量子、
+初始读取与写入后中断的分类、已有旧 token 不掩盖未知写入、主进程 SIGTERM 不再启动历史线程。
 
 隔离测试仅使用本次专用 Redis（显式非6379端口、DB11）和通过现有 migration guard 的 PostgreSQL。
 不使用生产Redis/DB，不发送真实PushPlus；未配置导致的skip不算原子性/迁移验收。

@@ -298,6 +298,15 @@ Market正常日切准备与Newow历史刷新分别使用既有稳定运行目录
 `inflight/blocked`仍须读回，不因新版本重新消费provider或重建资产；不兼容状态版本须显式迁移或阻断。
 本次首次启用没有旧运行状态需迁移，initial历史receipt继续保留在任务证据目录。
 
+Reference 历史刷新只在前台健康轮授予本地许可后领取一个工作单元，且 operational 60 品种
+均由既有 MarketPhaseResolver 确认为 BREAK/CLOSED、下一 Session 距今超过 140 秒时才开始。
+交易中、临近开盘或权威未知时保留 pending 意图并延后，线程等待不表示历史资产已完成。
+单次许可最多一个已提交批次，保存现有恢复状态后在既有批次边界让出；完整输入读取仍保持
+Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 completed 观察与收尾会协作请求退出。
+本地许可和两秒等待不授权接管源锁，超时仍按真实 SOURCE_BUSY 阻断。
+只有服务明确证明在任何写入之前中断，才可恢复 pending；写入后的裸取消及未知状态保存
+保持阻断与原始意图，不凭已有旧 resume token 盲重试。
+
 首次拓扑切换的旧launchd KeepAlive可能在正常SIGTERM后复活；收尾必须确认原PID退出，在完整发送锁持有期间重新验证复活定义并卸载，不能把label出现新PID视为原PID仍在发送。真实print-disabled同时支持enabled/disabled及旧布尔格式，未知值阻断。
 
 仅当旧拓扑已经局部停用、schema仍0050且没有新registry/观察基线/owner/安装preimage时，`python -m app.runtime_bootstrap recover-readback --output <absolute-plan>`冻结有限恢复计划；`recover-legacy --plan <absolute-plan>`重新校验后恢复原loaded Web启用状态和原空闲日历服务，不kickstart。原未知journal按原字节保留，失败恢复attempt禁止盲重试；恢复终态通过后另生成新的拓扑计划。该入口不处理已经迁移、安装或候选发送过的未知结果。
