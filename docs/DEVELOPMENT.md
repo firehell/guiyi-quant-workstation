@@ -51,6 +51,7 @@ references；历史恢复使用 Git，不建立 archive、backup 或 legacy-copy
 - [文档导航](../README.md#工程入口)只索引现役文档；任务边界在 `AGENTS.md`，当前发布、Runtime、待验收与下一步在 `STATUS.md`。
 - 稳定产品面在 `PROJECT_SOURCE.md`，依赖在 `docs/ARCHITECTURE.md`，领域语义在 accepted OpenSpec/deep canonical，验证入口在 `TESTING.md`。其他文档引用这些入口，不复制完成状态或规则。
 - 已完成且被现役合同取代的执行计划可删除，先检查引用；旧过程从 Git 查找。来源材料、公式审计、数据 journal、失败恢复及发布 evidence 不能仅因任务完成而删除。
+- 牛哇公开公式、复刻规则和最新对照只维护[一份手册正文](research/newow-v3.2.82/REPLICATION_MANUAL.md)。历史目录名不代表版本，不新增版本手册、公式卷、审计卷或常驻 PDF；任务记录只保存对应实现与验收证据，引用正文，不另复制公式。其他领域同样沿用现有唯一入口；历史证据明确标记冻结日期，不作为当前合同或待办。
 - **应用发布版本只改 `services/quant-api/app/version.py` 的 `APP_VERSION`**。API/OpenAPI/health 直接读取；Hatch 从同一文件生成 Python 包版本；Vite 从同一文件注入 `import.meta.env.VITE_APP_VERSION`。私有前端 package.json 不保存另一份发布版本。
 - `services/quant-api/uv.lock` 的 editable API 采用动态元数据，不再固化发布版本。修改版本后运行 `uv lock --check --offline --project services/quant-api`、版本一致性测试与前端 build；重新构建、安装和启动后消费者才使用新版本，已运行进程不会被修改源码自动升级。
 - 核心库版本、公式/profile/schema/capability 版本各有独立语义；已发布 tag、receipt 与历史 evidence 绑定当时身份，不能随应用版本替换。当前实际发布与 Runtime 身份仍以 `STATUS.md` 为准。

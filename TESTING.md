@@ -4,7 +4,7 @@
 
 该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，
 不是本地实现；部分输入为构造边界，不能作为市场/OOS证据。当前结论与来源哈希见
-[v3.3.79手册卷](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)。
+[牛哇唯一手册](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)。
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1582,8 +1582,7 @@ codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push 
 不声称识别 `git -c`、绝对 executable、wrapper 或所有语义等价写法；仓库规则也不覆盖宿主安全控制。
 
 牛哇手册仅维护[最新完整Markdown正文](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)，不常驻生成PDF副本。
-`scripts/docs/build_newow_replication_manual.py` 与 `tools/docs` 是历史固定分页版本的导出工具，
-只能配合Git中的旧分页源稿使用；不能以当前正文执行旧的35～45页导出合同，本次不生成旧版PDF。
+旧固定分页导出流程已经退出现役验证；需要恢复历史导出时使用对应 Git 版本的工具及源稿。现役验证检查单一 Markdown 正文及其来源/截图证据，不依赖本机残留的旧导出工具。
 
 Runtime health、data audit 与 alert status 是只读入口，不能推导 Runtime promotion、自然 evidence 或外部操作授权。`guiyi runtime acknowledge-alert-notification --failure-at <exact ISO timestamp>` 是受控 Redis 写入，普通验证只运行对应 pytest，不执行该命令。
 
