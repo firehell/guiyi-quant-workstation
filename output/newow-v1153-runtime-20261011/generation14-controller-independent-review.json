@@ -1,0 +1,30 @@
+{
+  "status": "REVIEW_COMPLETE",
+  "controller_sha256": "1d7b40bfc853dcec5fd5829cf88f531d177ec2099f1e00c291620924e4344f06",
+  "candidate_commit": "c28438d3d7ad6d6c66272027996f4a25e2facdfe",
+  "source_generation": 13,
+  "target_generation": 14,
+  "preserved_unknown_sha256": "97735faf858f628845959eda0755bb379074ca1fc2fc097645486da9cb58b872",
+  "test_command": "PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q output/newow-v1153-runtime-20261011/test_generation14_recovery.py",
+  "test_result": "32 passed in 0.66s",
+  "confirmed_issues_remaining": [],
+  "reviewed_boundaries": [
+    "gen13 unknown receipt and original journals immutable; new attempt path only",
+    "exact four existing business parks and two active API/Web owners; strict disabled calendar absence",
+    "all old PIDs exit before single generation14 CAS",
+    "owner/notification/maintenance/history locks and drained byte archive",
+    "unchanged exact release contracts, scope and notification semantics",
+    "bounded HTTP startup 60s with registry/PID/current identity/typed failures; HTTP alone not business evidence",
+    "separate 30s fresh all-six current-ready and heartbeat gate after heavy identity checks",
+    "final strict fresh sampler after heavy facts and calendar idle proofs",
+    "unknown failure cooperative park, secondary recovery error persisted, no attempt retry"
+  ],
+  "production_mutation_performed": false,
+  "runtime_plan_independent_recompute": "PASS_FULL_OBJECT_EQUAL",
+  "natural_business_acceptance": "PENDING",
+  "plan_hash": "c8a347401f397c7e004cb44bb4d54d0707d12f1139a7cd9c4b72ef0f80615a69",
+  "primary_plan": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/newow-v1153-runtime-20261011/runtime-generation14-plan.json",
+  "independent_plan": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/newow-v1153-runtime-20261011/reviewer-generation14-plan.json",
+  "apply_conclusion": "ALLOW_AUTHORIZED_SINGLE_GENERATION14_RECOVERY_APPLY_WITH_LOCKED_REFREEZE",
+  "original_generation13_attempt": "OUTCOME_UNKNOWN_PRESERVED_NO_RETRY"
+}

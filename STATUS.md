@@ -4,6 +4,29 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## v1.15.3/gen16 正式运行副本已切换并独立回读通过
+
+2026-10-11 owner明确交办切换到v1.15.3。十服务绑定、磁盘plist和正式运行根现为
+`.worktrees/release-v1.15.3`，精确commit **c28438d3d7ad6d6c66272027996f4a25e2facdfe**，generation16。
+单次gen16恢复执行成功：六常驻服务通过同轮当前ready与30秒freshness检查，四定时任务恢复enabled-idle；
+API8000报告1.15.3、Web5173返回200。未改变Scope、策略动作、参考收益、通知策略、历史资产或账户执行。
+
+精确候选210项、四代控制器171项测试通过；Web build/type/topology、秘密扫描0和跨版本
+9组810步状态/动作/身份及810个辅助指标prefix比较通过。控制器和冻结计划有独立Review。
+gen13–15的失败/未知原记录逐字节保留，未重试原attempt；gen16使用新代次、原子身份读和有限启动等待恢复。
+正式切换成功后的主/独立首轮只读回检均报HEALTHY_CYCLE_TIMEOUT，不能把这两轮记为通过；
+独立30秒高频诊断存在7轮六服务同时ready，全部当前PID/gen16、无失败、Reference blocked0。
+顺序第二次原控制器、原计划、原30秒Gate独立回检通过：十bindings/plists、四idle calendars、
+当前六服务ready/fresh、Live/Feed heartbeat及Scope/history保护均通过；首轮失败和诊断记录保留。
+证据见 [独立回读](output/newow-v1153-runtime-20261011/generation16-independent-readback-result.json)。
+
+旧v1.15.1发布树在两轮精确引用扫描一致、无binding/plist/loaded/进程引用后，以non-force
+`git worktree remove`清理；保留tag、历史与运行证据，可从v1.15.1重建。
+
+整体Runtime health仍degraded：保留的盘后failure、weekly audit missed、Alert degraded及log-rotate
+自然identity未产生；不为消除历史状态主动运行定时任务。60品种当前休市，首根自然completed Bar、
+策略事件和收件人送达验收仍PENDING，**不声明RUNTIME_READY**。
+
 ## JM 前三步：因果验证与本地 Paper 工程完成，策略不晋升
 
 2026-10-11 owner交办前三步，风险固定50000元、一手long、较交易日初权益亏损2%停开并安排清仓。
@@ -24,7 +47,7 @@ Paper/研究116项（含真实隔离PostgreSQL）及工程合同29项通过；�
 没有发布、运行切换、Broker接入、通知、真实资金订单或后台自动执行。`auto_order=false`。
 下一最小步骤：以同一因果成本口径重新筛选JM候选；当前5m双策略不进入SimNow自动交易。
 
-## v1.15.3 已发布当前 develop，Runtime 保持 v1.15.1/gen12
+## v1.15.3 发布检查点（发布时Runtime为v1.15.1/gen12）
 
 2026-10-11：[PR #441](https://github.com/firehell/guiyi-quant-workstation/pull/441) 已合并 main，
 annotated tag 与 [Release v1.15.3](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.15.3)

@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "scenarios": 9,
+  "incremental_steps": 810,
+  "subplot_prefixes": 810,
+  "dimensions": [
+    "trend",
+    "oscillation",
+    "main_rise"
+  ],
+  "frequencies": [
+    "1d",
+    "1w",
+    "60m"
+  ],
+  "normalized_output_sha256": "847a7382d577fa88f754fcb32e75e19523cdfc4a5635f9d8578d4c0bc9ecfa9b",
+  "normalization": [
+    "exclude newly-added ma10_display_v1 result field",
+    "exclude newly-added confirmed_peak_events result field",
+    "exclude new ma10_display_v1/magic11_count display metrics"
+  ],
+  "compared": [
+    "all old replay fields and formula identity",
+    "all checkpoint strategy states at every step",
+    "actions markers hints eligibility diagnostics and input_progress",
+    "all old subplot fields at every prefix"
+  ],
+  "limitations": [
+    "synthetic representative OHLC fixture; not production evidence",
+    "new display fields intentionally differ; compatibility is semantic not identical whole Frame wire"
+  ]
+}

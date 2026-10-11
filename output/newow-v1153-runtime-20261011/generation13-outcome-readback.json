@@ -1,0 +1,42 @@
+{
+  "phase": "outcome_unknown",
+  "failure_code": "HTTP_HEALTH_UNPROVEN",
+  "attempt_sha256": "97735faf858f628845959eda0755bb379074ca1fc2fc097645486da9cb58b872",
+  "bindings_sha256": "6a9699c23d761adbcfa3a81d7e3eb09a2d05680a28a0f731353790eadcae116e",
+  "stopped": [
+    "api",
+    "web",
+    "live",
+    "alert",
+    "reference-worker",
+    "market-feed"
+  ],
+  "started": [
+    "market-feed",
+    "api",
+    "web",
+    "live",
+    "alert",
+    "reference-worker"
+  ],
+  "health_preflight": {
+    "at": "2026-10-11T14:48:50.898280+00:00",
+    "http": false,
+    "http_seconds": 0.0003794579970417544,
+    "identity": true,
+    "identity_seconds": 1.8225148329947842
+  },
+  "halted": [
+    "live",
+    "alert",
+    "reference-worker",
+    "market-feed"
+  ],
+  "parked_verified": true,
+  "halt_failed": [],
+  "http_later": {
+    "api_status": 200,
+    "api_version": "1.15.3",
+    "web_status": 200
+  }
+}
