@@ -12,7 +12,7 @@ import type { MarketHomeLiveDisplayRow } from '@/utils/marketHomeLiveView'
 import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
 
 type Row = MarketHomeLiveDisplayRow<MarketHomeRow>
-const props = defineProps<{ rows: Row[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection }>()
+const props = defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection }>()
 const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod]; sort: [sort: MarketHomeSort] }>()
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
 const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value })
@@ -22,7 +22,7 @@ function toggleSummary(symbol: string) { const next = new Set(expanded.value); i
 const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
 const periods = ['1d', '1w'] as const
 const sortOptions = [{ code: 'default', label: '默认' }, { code: 'close', label: '价格' }, { code: 'change', label: '涨跌幅' }, { code: 'volume', label: '成交量' }, { code: 'oi', label: '持仓量' }] as const
-const productKey = computed(() => props.rows.map(row => row.symbol).sort().join(','))
+const productKey = computed(() => [...props.products].sort().join(','))
 watch([productKey, () => props.authority, () => props.refreshSequence], () => { void loader.load(productKey.value ? productKey.value.split(',') : []) }, { immediate: true })
 onBeforeUnmount(() => loader.dispose())
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }

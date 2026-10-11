@@ -96,7 +96,7 @@ test('real list switches strategy, routes day/week icons and retains failure/pen
   const List = await loadList(), root = element('root'), chart: unknown[] = [], sorts: unknown[] = []
   const sequence = ref(0)
   const rows = [{ symbol: 'rb', product_name: '螺纹钢', close: 3100.125, price_change_1d: .0125, actual_contract: 'RB2701', data_as_of: '2026-10-09', liveQuote: { physicalContract: 'RB2701', barEnd: '2026-10-09T00:00:00Z' } }]
-  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows, authority: 'one', refreshSequence: sequence.value, liveStale: true, sort: 'default', sortDirection: 'desc', onChart: (...args: unknown[]) => chart.push(args), onSort: (value: unknown) => sorts.push(value) }) }))
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows, products: ['rb'], authority: 'one', refreshSequence: sequence.value, liveStale: true, sort: 'default', sortDirection: 'desc', onChart: (...args: unknown[]) => chart.push(args), onSort: (value: unknown) => sorts.push(value) }) }))
   try {
     app.mount(root)
     const call = api.calls.at(-1)
@@ -145,6 +145,43 @@ test('real list switches strategy, routes day/week icons and retains failure/pen
     ;(summary.props.onClick as Function)(); await nextTick()
     assert.equal(summary.props['aria-expanded'], false)
     assert.doesNotMatch(nodeText(root), /日周综合/)
+  } finally { app.unmount() }
+})
+
+test('sector filtering keeps the full product load alive and reuses completed cards', async () => {
+  const List = await loadList(), root = element('root')
+  const all = ['a', 'cu', 'rb'].map(symbol => ({ symbol, product_name: symbol, close: 100, price_change_1d: 0 }))
+  const rows = ref(all), products = ref(all.map(row => row.symbol)), authority = ref('one')
+  const sequence = ref(0), sort = ref('default')
+  const start = api.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, {
+    rows: rows.value, products: products.value, authority: authority.value,
+    refreshSequence: sequence.value, liveStale: false, sort: sort.value, sortDirection: 'desc',
+  }) }))
+  const respond = (call: any) => call.resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: call.products.map((product: string) => ({ product, strategies: { trend: { '1d': ready('HOLD'), '1w': ready('HOLD') }, oscillation: { '1d': ready('FLAT'), '1w': ready('FLAT') } } })) })
+  try {
+    app.mount(root)
+    const initial = api.calls.slice(start)
+    assert.equal(initial.length, 2)
+    rows.value = [all[0]!]; await nextTick()
+    rows.value = [all[1]!]; await nextTick()
+    assert.equal(api.calls.length - start, 2)
+    assert.ok(initial.every(call => !call.signal.aborted))
+    initial.forEach(respond); await settle()
+    const third = api.calls.at(-1)
+    assert.deepEqual(third.products, ['rb']); respond(third); await settle()
+    const loaded = api.calls.length
+    rows.value = all; sort.value = 'close'; await nextTick()
+    const switcher = findNode(root, n => n.type === 'button' && nodeText(n) === '震荡')!
+    ;(switcher.props.onClick as Function)(); await nextTick()
+    products.value = ['rb', 'cu', 'a']; await nextTick()
+    assert.equal(api.calls.length, loaded)
+    assert.ok(findNode(root, n => n.type === 'button' && nodeText(n) === 'rb RB'))
+    sequence.value++; await nextTick()
+    assert.equal(api.calls.length, loaded + 2)
+    const refresh = api.calls.slice(loaded)
+    authority.value = 'two'; await nextTick()
+    assert.ok(refresh.every(call => call.signal.aborted))
   } finally { app.unmount() }
 })
 

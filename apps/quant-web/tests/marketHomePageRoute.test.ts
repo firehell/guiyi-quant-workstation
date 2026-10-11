@@ -57,7 +57,18 @@ test('Home header choice enters selected view and symbol through the page handle
   }
 })
 
-async function loadPage() {
+test('restored sector filters displayed rows while strategy loader receives all products', async () => {
+  const Page = await loadPage('agriculture'), root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Page)
+  try {
+    app.mount(root); await nextTick()
+    const list = findNode(root, node => node.type === 'button' && node.text === 'OPEN_AG')!
+    assert.deepEqual(list.props.products, ['a', 'cu'])
+    assert.deepEqual((list.props.rows as { symbol: string }[]).map(row => row.symbol), ['a'])
+  } finally { app.unmount() }
+})
+
+async function loadPage(initialSector = '') {
   const source = readFileSync(pageUrl, 'utf8')
   const { descriptor, errors } = parse(source, { filename: pageUrl.pathname })
   assert.deepEqual(errors, [])
@@ -70,8 +81,9 @@ async function loadPage() {
   const productComponent = moduleUrl(`
     import { defineComponent, h } from '${vueUrl}'
     export default defineComponent({
+      props: ['rows', 'products'],
       emits: ['open'],
-      setup(_props, { emit }) { return () => h('button', { onClick: () => emit('open', { symbol: 'ag' }) }, 'OPEN_AG') },
+      setup(props, { emit }) { return () => h('button', { rows: props.rows, products: props.products, onClick: () => emit('open', { symbol: 'ag' }) }, 'OPEN_AG') },
     })
   `)
   const headerComponent = moduleUrl(`
@@ -115,12 +127,12 @@ async function loadPage() {
   `)
   const viewModelModule = moduleUrl(`
     export function buildMarketHomeViewModel() {
-      return { rows: [], overview: { availability: 'unavailable' }, runtime: { status: 'unavailable' }, events: { availability: 'unavailable' } }
+      return { rows: [{ symbol: 'a', sector: 'agriculture' }, { symbol: 'cu', sector: 'nonferrous' }], overview: { availability: 'unavailable' }, runtime: { status: 'unavailable' }, events: { availability: 'unavailable' } }
     }
   `)
   const preferencesModule = moduleUrl(`
     export function loadMarketHomePreferences() {
-      return { sector: '', sort: 'default', sortDirection: 'desc', compactDensity: false, detailFrequency: '15m', focusRailCollapsed: false }
+      return { sector: ${JSON.stringify(initialSector)}, sort: 'default', sortDirection: 'desc', compactDensity: false, detailFrequency: '15m', focusRailCollapsed: false }
     }
     export function saveMarketHomePreferences() {}
   `)
