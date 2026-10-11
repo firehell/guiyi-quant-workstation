@@ -204,7 +204,8 @@ def test_failure_proof_journal_error_still_parks_business(driver,monkeypatch,tmp
 
 
 @pytest.mark.parametrize('failed_heartbeat',(False,True))
-def test_single_ready_snapshot_after_preflight_and_bad_heartbeat_still_blocks(driver,monkeypatch,failed_heartbeat):
+@pytest.mark.parametrize('persist',(False,True))
+def test_single_ready_snapshot_after_preflight_and_bad_heartbeat_still_blocks(driver,monkeypatch,failed_heartbeat,persist):
     import app.services.deployment_identity as identity
     import app.runtime_deployment as deployment
     clock=[0.0];calls=[]
@@ -223,7 +224,10 @@ def test_single_ready_snapshot_after_preflight_and_bad_heartbeat_still_blocks(dr
     monkeypatch.setattr(driver.h,'read_service_state',lambda _: {})
     monkeypatch.setattr(driver.h,'loaded_identity',lambda _: '42')
     monkeypatch.setattr(driver,'heartbeat_gate',lambda _:(not failed_heartbeat,{'live':{'accepted':not failed_heartbeat}}))
-    monkeypatch.setattr(driver,'log',lambda a,step:calls.append(step))
+    def write_log(attempt,step):
+        assert persist, 'read-only sampling must never log the source attempt'
+        calls.append(step)
+    monkeypatch.setattr(driver,'log',write_log)
     def poll(*args):
         calls.append('poll')
         # The previous implementation's second instant poll would fail here.
@@ -231,8 +235,8 @@ def test_single_ready_snapshot_after_preflight_and_bad_heartbeat_still_blocks(dr
     monkeypatch.setattr(driver,'poll_cycles',poll)
     if failed_heartbeat:
         with pytest.raises(driver.h.ResumeBlocked,match='HEALTHY_CYCLE_TIMEOUT'):
-            driver.await_cycles(new,{},attempt,{},.5)
-    else:driver.await_cycles(new,{},attempt,{},.5)
+            driver.await_cycles(new,{},attempt,{},.5,persist=persist)
+    else:driver.await_cycles(new,{},attempt,{},.5,persist=persist)
     assert calls.count('poll')==1
     assert attempt['health_gate_evidence']['heartbeat'] is (not failed_heartbeat)
     assert attempt['health_gate_evidence']['owner_ready'] is True
@@ -251,3 +255,26 @@ def test_heartbeat_exact_fields_and_failed_availability(driver,monkeypatch,avail
     assert proof['live']['accepted'] is available
     assert proof['live']['runtime_generation']==12
     assert proof['live']['identity_matches']['runtime_root'] is True
+
+
+def test_readback_never_rewrites_completed_attempt(driver,monkeypatch,tmp_path):
+    history=tmp_path/'history.bytes';history.write_bytes(b'preserved');history.chmod(0o600)
+    plan={'new':{},'journals':{},'history_sha256':driver.h.digest(b'preserved'),
+        'assets':{},'candidate':{'root':str(tmp_path)},'scope_proof':{'count':720}}
+    plan['plan_hash']=driver.h.plan_hash(plan)
+    attempt={'phase':'generation12_ready_calendars_idle','plan':plan,'history_archive':str(history)}
+    journal=tmp_path/'attempt.json';journal.write_text(json.dumps(attempt));journal.chmod(0o600)
+    before=journal.read_bytes()
+    monkeypatch.setattr(driver,'attempt_path',lambda:journal)
+    new=SimpleNamespace(services={})
+    monkeypatch.setattr(driver.g,'registry',lambda _:new)
+    monkeypatch.setattr(driver.h,'read_bindings',lambda:new)
+    monkeypatch.setattr(driver,'facts',lambda _:None)
+    monkeypatch.setattr(driver,'log',lambda *a:pytest.fail('readback may never log to original attempt'))
+    def sample(new,plan,in_memory,evidence,deadline,*,persist):
+        assert persist is False
+        in_memory['health_gate_evidence']={'owner_ready':True}
+    monkeypatch.setattr(driver,'await_cycles',sample)
+    result=driver.readback(plan)
+    assert result['health_gate_evidence']=={'owner_ready':True}
+    assert journal.read_bytes()==before
