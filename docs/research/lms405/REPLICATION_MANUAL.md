@@ -4,7 +4,7 @@
 
 `lms405-evidence-v0.1` 是部分还原的研究工具，不是原作者系统，也不是可执行候选。已实现两腿动作语义、披露时间隔离、区域几何观察和本地行情只读适配；BBB/keybar、行情分类、区域生成、站稳、退出许可没有可辨认公式，仍为 UNKNOWN。独立模式输出 INDETERMINATE，不通过任意 MA/ATR 参数冒充原版。
 
-最终定向测试 `pytest services/quant-api/tests/lms405 -q`：24 passed；`ruff check`：passed。独立审查两项 P2 已修复，包括同事务前缀子状态。
+初始实现定向测试：24 passed；后续批次结果见对应章节。独立审查两项 P2 已修复，包括同事务前缀子状态。
 
 本轮没有订单、Fill、账户、收益、自动晋升、公开 API 或 Runtime 修改。单位数量只用于动作合同验证。继承 [sources.csv](sources.csv) 44 条索引，不将其中所有条目认作 4.0.5：5.0 的风险参数与 6.0 染色规则不加入此版本。
 
@@ -189,3 +189,39 @@ E55把跳空跨过1140～1144称为逃避阻力测试，构成“收盘越界即
 本批定向验证：`pytest services/quant-api/tests/lms405 -q` 31 passed；研究脚本与测试ruff通过。新增测试覆盖日盘排除夜盘、完整交易日对照、不以高低点相等认作K线一致、缺失数据与事务退出失败。此前24/26条测试结果为各批历史记录。
 
 第三批独立Review完成：无Confirmed Issue；允许集成develop，仅限补证与行情对齐研究，不表示前五步原版识别完成。
+
+## 后续六个工作包：设计与研究工具 v0.1
+
+2026-10-11 owner要求跳过暂不可用的Chrome补证，继续设计开发。此前过程列表到第10步；本轮将最后交付拆为失败归因与研究包交付，形成6～11六个工作包，不扩展为自动交易。它们依赖前五步的公式和证据；当前交付是可运行验证工具，原版策略仍部分还原。
+
+|步骤|设计及已实现工具|当前原版验收|
+|---|---|---|
+|6 决策与持仓管理|外部条件为true/false/未知；全真才检查两腿动作合法性；空条件不可判定；保存来源、未知和拒绝依据|入场、保护、解锁、回补、退出许可及周期切换未识别|
+|7 冻结与重放|规则范围、版本、冻结时刻和代码/证据digest进入指纹；checkpoint保留具体合约、两腿和游标；只接受严格事件后缀|冻结的是已实现语义与未知范围，不是原版完整公式|
+|8 留出与跨合约验证|已见/拟合材料隔离；对齐标签分别计算匹配、错配、误报、漏报、不可判定；节点误差使用Decimal/tick|未见留出0；无作者golden Bar或完整动作预测样本|
+|9 因果可执行性|核对必要规则身份及19项调用方证据声明，任何缺失均BLOCKED|没有撮合或成本计算；execution事实不足；不运行收益研究|
+|10 失败归因|公式、行为、对齐、数据、访问、留出缺口附来源链接；未解析的旧索引引用单列|失败报告不等同于原版策略失效结论|
+|11 研究包交付|离线命令读取现有来源/约束/时间线，生成JSON、CSV、Markdown和输入哈希；输出目录必须新建|工具可交付，完整复刻仍PARTIAL|
+
+纯函数入口新增 `guiyi_quant.lms405.validation`。`decide`只检查外部给定条件及动作状态，不识别信号；输出固定`original_trigger_identified=false`、`executable=false`，不得作为原版预测。False明确拒绝，未知不伪装成HOLD；有False同时保留其余未知。真实数量未知时仍沿用单位研究语义。
+
+`advance`在现有`replay_events`上增加冻结身份与严格游标。迟到或等时披露不修改历史，冲突与跨合约沿用原拒绝合同；重启必须输入游标之后的事件，不重复整个事件列表。checkpoint同时保存已处理事件ID和内容摘要，拒绝跨重启复用ID修改内容；它是披露动作的研究状态，不是账户Position事实。
+
+`compare_labels`要求一一对齐的真值与预测，`NONE`仅表示明确披露的无信号/无动作；Python None为未知。未知真值不作负例，未知预测单列unresolved、不进入match分母。错误方向计mismatch，不混同absence型误报/漏报。无可评价样本时match_rate=null。作者动作重放不能填进同一作者动作的预测分子。时间容差匹配、场景完整覆盖和真实信号误报/漏报仍需已识别算法与人工标注样本，当前没有宣称已完成。
+
+`holdout_status`只筛查已见/用于拟合污染：ELIGIBLE_NEW_EVIDENCE不保证独立性、代表性或足够样本。`causal_preflight`是显式的调用方证据声明清单，不能自行证明声明为真，也不能代替数据质量、成本或执行事实核验；READY_FOR_CAUSAL_STUDY仅允许后来研究，不代表已有Fill、收益或允许Runtime。
+
+本次实际研究输出：[report.md](evidence/validation-v0.1/report.md)、[report.json](evidence/validation-v0.1/report.json)、[failures.csv](evidence/validation-v0.1/failures.csv)。58条来源、11条约束，完整作者生命周期0、作者Bar样本0、留出0；因果状态BLOCKED，匹配率null。未访问新增微博、读取新行情、下载、修改正式数据、active策略或Runtime。旧约束K03的“既有索引”不是精确source id，单列未解析引用，不作为精确规则证据补造链接。
+
+运行命令（freeze-at保存本次冻结时刻，output必须不存在）：
+
+```sh
+PYTHONPATH=packages/quant-core \
+/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python \
+scripts/research/lms405_validation_package.py \
+--freeze-at 2026-10-11T14:39:31+00:00 --output /private/tmp/lms405-validation-new
+```
+
+定向测试覆盖未知/false差异、非法输入、锁定和恢复、冻结身份变化、strict-before、同刻冲突、严格后缀、前缀/增量/序列化重启一致性、留出污染、零样本和无成本净仓保护。测试中的动作与声明是合同样本，不冒充作者实盘。脚本集成测试另核对真实已有58条索引和新目录禁止覆盖。
+
+本轮最终验证：LMS定向测试45 passed；Ruff、diff及定向secret scan通过。独立Review发现跨checkpoint重复ID冲突未拒绝；先复现失败测试，再加入事件身份历史，回归通过。原版公式、作者行为和因果收益的验收仍被已列缺口阻断，允许集成develop的范围仅为研究验证工具。

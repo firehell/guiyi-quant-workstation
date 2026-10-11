@@ -1,0 +1,340 @@
+{
+  "identity": "lms405-validation-package-v0.1",
+  "status": "PARTIAL",
+  "frozen_at": "2026-10-11T14:39:31+00:00",
+  "rule_scope_fingerprint": "cab2aabb3b67fc40418450b7288a58ae76dedd5bd3b0e1d90ea96b9bd2f90604",
+  "definition_digest": "2b2735d8f2da4c4e868bcd4bdb76d1448f1fe51c14136dac1d05faee8b8b5608",
+  "input_hashes": {
+    "docs/research/lms405/sources.csv": "e3dbee809c51e531d1ebf93078f7d9aeca241fdc180f5dafbc4e22f3bacadc85",
+    "docs/research/lms405/evidence/action-timeline.csv": "d6ea2758869ec68e25a17045df5d02327089c2d144b88297415290a2e7bc4d49",
+    "docs/research/lms405/evidence/rule-identification.csv": "e0c3d8acc8a64d2e8524434b3d5ae0622c058263a17b18d639c931072248187e",
+    "docs/research/lms405/evidence/batch3.json": "044da6b6d4d6fc5ce0f7f84ea28b7770b1bec2f09c3ff9db9d26075508ee4b3e",
+    "packages/quant-core/guiyi_quant/lms405/__init__.py": "67b0b8c0934a3a8f33b19d7dcb40ad8af222e1a2cdeec806fcd548616e469791",
+    "packages/quant-core/guiyi_quant/lms405/validation.py": "54525e0002415b98e509c8f715e4e6e873953644ab0bf51b18f455d600bac39f",
+    "scripts/research/lms405_validation_package.py": "84fa7d2feeedbfa5f45c0f0e404ffd4034f079dea51a653b5ea94c0dfd962fe0"
+  },
+  "source_count": 58,
+  "constraint_count": 11,
+  "development_count": 58,
+  "holdout_count": 0,
+  "author_complete_lifecycles": 0,
+  "author_bar_samples": 0,
+  "behavior_metrics": {
+    "known_truth": 0,
+    "evaluated": 0,
+    "matches": 0,
+    "mismatches": 0,
+    "unresolved": 0,
+    "unknown_truth": 0,
+    "false_positive": 0,
+    "false_negative": 0,
+    "match_rate": null
+  },
+  "behavior_metrics_scope": "NO_ELIGIBLE_AUTHOR_CASES; NOT_DISLOSED_ACTION_REPLAY",
+  "causal": {
+    "status": "BLOCKED",
+    "blockers": [
+      "FORMULA_UNKNOWN:ENTRY",
+      "FORMULA_UNKNOWN:ENVIRONMENT",
+      "FORMULA_UNKNOWN:KEYBAR",
+      "FORMULA_UNKNOWN:PROTECTION",
+      "FORMULA_UNKNOWN:QUANTITY_POLICY",
+      "FORMULA_UNKNOWN:RESTORE_EXIT",
+      "FORMULA_UNKNOWN:STAND_FIRM",
+      "FORMULA_UNKNOWN:TIMEFRAME_POLICY",
+      "FORMULA_UNKNOWN:ZONE_GENERATOR",
+      "RULE_UNIDENTIFIED:KEYBAR",
+      "RULE_UNIDENTIFIED:ENVIRONMENT",
+      "RULE_UNIDENTIFIED:ZONE_GENERATOR",
+      "RULE_UNIDENTIFIED:STAND_FIRM",
+      "RULE_UNIDENTIFIED:ENTRY",
+      "RULE_UNIDENTIFIED:PROTECTION",
+      "RULE_UNIDENTIFIED:RESTORE_EXIT",
+      "RULE_UNIDENTIFIED:TIMEFRAME_POLICY",
+      "RULE_UNIDENTIFIED:QUANTITY_POLICY",
+      "BEHAVIOR_VALIDATION_MISSING",
+      "COMPLETED_ONLY_MISSING",
+      "STRICT_BEFORE_MISSING",
+      "NEXT_EXECUTABLE_TIME_MISSING",
+      "PHYSICAL_CONTRACT_MISSING",
+      "TICK_SIZE_MISSING",
+      "CONTRACT_MULTIPLIER_MISSING",
+      "FEE_PROFILE_MISSING",
+      "SLIPPAGE_MISSING",
+      "TRADING_SESSION_MISSING",
+      "LIMIT_RULE_MISSING",
+      "ZERO_VOLUME_RULE_MISSING",
+      "ROLL_RULE_MISSING",
+      "TWO_LEG_COSTS_MISSING",
+      "EXECUTION_FACTS_MISSING",
+      "PREFIX_INVARIANCE_MISSING",
+      "BATCH_INCREMENTAL_PARITY_MISSING",
+      "RESTART_PARITY_MISSING",
+      "HISTORICAL_KNOWN_AT_MISSING"
+    ],
+    "required_facts": [
+      "behavior_validation",
+      "completed_only",
+      "strict_before",
+      "next_executable_time",
+      "physical_contract",
+      "tick_size",
+      "contract_multiplier",
+      "fee_profile",
+      "slippage",
+      "trading_session",
+      "limit_rule",
+      "zero_volume_rule",
+      "roll_rule",
+      "two_leg_costs",
+      "execution_facts",
+      "prefix_invariance",
+      "batch_incremental_parity",
+      "restart_parity",
+      "historical_known_at"
+    ],
+    "evidence_kind": "CALLER_ATTESTED",
+    "executable": false,
+    "performance": null
+  },
+  "observations": [
+    {
+      "source": "E56",
+      "visible_publication": "2026-09-01 16:01",
+      "contract": "FG2701",
+      "version": "4.0.5",
+      "observation_type": "HOLD_LONG",
+      "disclosure": "作者自述做多",
+      "effective_at": "UNKNOWN",
+      "quantity": "UNKNOWN",
+      "fill_price": "UNKNOWN",
+      "limitations": "开发背景；未扩展本地窗口",
+      "source_url": "https://weibo.com/1885745060/Rg68t1asH"
+    },
+    {
+      "source": "E57",
+      "visible_publication": "2026-09-04 16:04",
+      "contract": "FG2701",
+      "version": "4.0.5",
+      "observation_type": "HOLD_LONG",
+      "disclosure": "作者自述已持有较久",
+      "effective_at": "UNKNOWN",
+      "quantity": "UNKNOWN",
+      "fill_price": "UNKNOWN",
+      "limitations": "编辑后事后文字；不可连接成连续仓位事实",
+      "source_url": "https://weibo.com/1885745060/Rgyr9hxIZ"
+    },
+    {
+      "source": "E52",
+      "visible_publication": "2026-09-14 16:15",
+      "contract": "FG2701",
+      "version": "4.0.5",
+      "observation_type": "TAKE_PROFIT_REPORTED",
+      "disclosure": "一次止盈；后续等待回补",
+      "effective_at": "UNKNOWN",
+      "quantity": "UNKNOWN",
+      "fill_price": "UNKNOWN",
+      "limitations": "不知全平还是减仓；不生成CLEAR或REENTER",
+      "source_url": "https://weibo.com/1885745060/Ri4MIBhEZ"
+    },
+    {
+      "source": "E45",
+      "visible_publication": "2026-09-17 16:22",
+      "contract": "FG2701",
+      "version": "UNKNOWN",
+      "observation_type": "SHORT_REPORTED",
+      "disclosure": "既有索引中的短线自述",
+      "effective_at": "UNKNOWN",
+      "quantity": "UNKNOWN",
+      "fill_price": "UNKNOWN",
+      "limitations": "本批未重新查证；不连接E52成回补动作",
+      "source_url": "https://weibo.com/1885745060/Rix74bvd5"
+    },
+    {
+      "source": "E51",
+      "visible_publication": "2026-09-21 16:35",
+      "contract": "JM2701",
+      "version": "UNKNOWN",
+      "observation_type": "LOCK_PLAN",
+      "disclosure": "寻找多V+保护空单的计划",
+      "effective_at": "UNKNOWN",
+      "quantity": "UNKNOWN",
+      "fill_price": "UNKNOWN",
+      "limitations": "无已执行证据；不能生成LOCK",
+      "source_url": "https://weibo.com/1885745060/Rj8UtoViI"
+    },
+    {
+      "source": "E50",
+      "visible_publication": "2026-09-23 10:04",
+      "contract": "FG2701",
+      "version": "4.0.5",
+      "observation_type": "LONG_SNAPSHOT",
+      "disclosure": "图2 FG701多20",
+      "effective_at": "UNKNOWN",
+      "quantity": "20",
+      "fill_price": "UNKNOWN",
+      "limitations": "图2今日数量0；未列空腿不等于确认空腿为0；截图时间未知",
+      "source_url": "https://weibo.com/1885745060/RjpcGkbtf"
+    },
+    {
+      "source": "E11",
+      "visible_publication": "2026-10-09",
+      "contract": "JM2701",
+      "version": "4.0.5关联未确认",
+      "observation_type": "TWO_LEG_SNAPSHOT",
+      "disclosure": "图3多20空20",
+      "effective_at": "UNKNOWN",
+      "quantity": "20 long / 20 short",
+      "fill_price": "UNKNOWN",
+      "limitations": "持仓展示；不确认进入和锁定发生时间",
+      "source_url": "https://weibo.com/1885745060/RlS8pn2fR"
+    },
+    {
+      "source": "E49",
+      "visible_publication": "2026-10-09 夜盘",
+      "contract": "JM2701",
+      "version": "4.0.5",
+      "observation_type": "LONG_SNAPSHOT_AND_LOCK_PLAN",
+      "disclosure": "图2多20且未列空；正文预备锁",
+      "effective_at": "UNKNOWN",
+      "quantity": "20 long",
+      "fill_price": "UNKNOWN",
+      "limitations": "夜盘交易日为10月12日；主窗口外；不能生成UNLOCK",
+      "source_url": "https://weibo.com/1885745060/RlUIugLoT"
+    }
+  ],
+  "failures": [
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "KEYBAR",
+      "sources": "E07;E53;E54;E58",
+      "source_urls": "https://weibo.com/ttarticle/p/show?id=2309405298236796830178 https://weibo.com/1885745060/QzPwlpQ6w https://weibo.com/1885745060/Pv1jPpn5K https://weibo.com/1885745060/Q0JPx37RQ"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "ENVIRONMENT",
+      "sources": "E01;E41;E48;E51;E57",
+      "source_urls": "https://weibo.com/ttarticle/p/show?id=2309405352486050594922 https://weibo.com/1885745060/Rf0dDugg8 https://weibo.com/1885745060/RlQ6sB0U1 https://weibo.com/1885745060/Rj8UtoViI https://weibo.com/1885745060/Rgyr9hxIZ"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "ZONE_GENERATOR",
+      "sources": "E48;E56;E57",
+      "source_urls": "https://weibo.com/1885745060/RlQ6sB0U1 https://weibo.com/1885745060/Rg68t1asH https://weibo.com/1885745060/Rgyr9hxIZ"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "STAND_FIRM",
+      "sources": "E48;E55",
+      "source_urls": "https://weibo.com/1885745060/RlQ6sB0U1 https://weibo.com/1885745060/PcU1jok2E"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "ENTRY",
+      "sources": "E02;E43;E53",
+      "source_urls": "https://weibo.com/ttarticle/p/show?id=2309405352159557844998 https://weibo.com/1885745060/RdYmChTUW https://weibo.com/1885745060/QzPwlpQ6w"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "PROTECTION",
+      "sources": "E41;E43;E48",
+      "source_urls": "https://weibo.com/1885745060/Rf0dDugg8 https://weibo.com/1885745060/RdYmChTUW https://weibo.com/1885745060/RlQ6sB0U1"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "RESTORE_EXIT",
+      "sources": "E41;E43;E52",
+      "source_urls": "https://weibo.com/1885745060/Rf0dDugg8 https://weibo.com/1885745060/RdYmChTUW https://weibo.com/1885745060/Ri4MIBhEZ"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "TIMEFRAME_POLICY",
+      "sources": "E26;E48",
+      "source_urls": "https://weibo.com/1885745060/RjhLwFjrH https://weibo.com/1885745060/RlQ6sB0U1"
+    },
+    {
+      "category": "UNKNOWN_ORIGINAL_RULE",
+      "reason": "QUANTITY_POLICY",
+      "sources": "E11;E50",
+      "source_urls": "https://weibo.com/1885745060/RlS8pn2fR https://weibo.com/1885745060/RjpcGkbtf"
+    },
+    {
+      "category": "BEHAVIOR_EVIDENCE",
+      "reason": "NO_COMPLETE_TIMED_LIFECYCLE",
+      "sources": "E11;E49;E50",
+      "source_urls": "https://weibo.com/1885745060/RlS8pn2fR https://weibo.com/1885745060/RlUIugLoT https://weibo.com/1885745060/RjpcGkbtf"
+    },
+    {
+      "category": "HOLDOUT",
+      "reason": "NO_UNSEEN_HOLDOUT",
+      "sources": "E01;E02;E03;E04;E05;E06;E07;E08;E09;E10;E11;E12;E13;E14;E15;E16;E17;E18;E19;E20;E21;E22;E23;E24;E25;E26;E27;E28;E29;E30;E31;E32;E33;E34;E35;E36;E37;E38;E39;E40;E41;E42;E43;E44;E45;E46;E47;E48;E49;E50;E51;E52;E53;E54;E55;E56;E57;E58",
+      "source_urls": "https://weibo.com/ttarticle/p/show?id=2309405352486050594922 https://weibo.com/ttarticle/p/show?id=2309405352159557844998 https://weibo.com/ttarticle/p/show?id=2309405343740155003056 https://weibo.com/ttarticle/p/show?id=2309405321422393704882 https://weibo.com/ttarticle/p/show?id=2309405303683851616289 https://weibo.com/ttarticle/p/show?id=2309405302212405887680 https://weibo.com/ttarticle/p/show?id=2309405298236796830178 https://weibo.com/ttarticle/p/show?id=2309405297070939963488 https://weibo.com/ttarticle/p/show?id=2309405169074765693026 https://weibo.com/1885745060/RlLLjiTAq https://weibo.com/1885745060/RlS8pn2fR https://weibo.com/1885745060/RiuHj06QV https://weibo.com/1885745060/Ricgn8FGp https://weibo.com/1885745060/RhsGMwwSK https://weibo.com/1885745060/R2BUg4ZWi https://weibo.com/1885745060/QhYLukfu7 https://weibo.com/1885745060/QgUOLiPBb https://weibo.com/1885745060/PgSW1oJwc https://weibo.com/1885745060/RichSDP0n https://weibo.com/ttarticle/p/show?id=2309405352158076993645 https://weibo.com/1885745060/RlIC4adz5 https://weibo.com/1885745060/RbPYbhE4A https://weibo.com/1885745060/RlszsmxUa https://weibo.com/1885745060/Rjkl6CXtz https://weibo.com/1885745060/Rj8jW9oAJ https://weibo.com/1885745060/RjhLwFjrH https://weibo.com/1885745060/RiE7qzIVy https://weibo.com/1885745060/RiwvH3hXK https://weibo.com/1885745060/P562BAIKr https://weibo.com/1885745060/QhP9mbzi9 https://weibo.com/1885745060/Q0hPi3kaO https://weibo.com/1885745060/RiGQTEXV2 https://weibo.com/1885745060/RkcluCne2 https://weibo.com/1885745060/Rj8OGeLAz https://weibo.com/1885745060/RjtRHhhVU https://weibo.com/1885745060/RlQerpbgO https://weibo.com/1885745060/QCIi9zIxK https://weibo.com/1885745060/QEil827dy https://weibo.com/1885745060/Retg5iDKz https://weibo.com/1885745060/QCuHvpcSk https://weibo.com/1885745060/Rf0dDugg8 https://weibo.com/1885745060/Rer0eF62V https://weibo.com/1885745060/RdYmChTUW https://weibo.com/1885745060/Rgp7Xh1dT https://weibo.com/1885745060/Rix74bvd5 https://weibo.com/1885745060/RkatOszLo https://weibo.com/1885745060/Rkarmv8U1 https://weibo.com/1885745060/RlQ6sB0U1 https://weibo.com/1885745060/RlUIugLoT https://weibo.com/1885745060/RjpcGkbtf https://weibo.com/1885745060/Rj8UtoViI https://weibo.com/1885745060/Ri4MIBhEZ https://weibo.com/1885745060/QzPwlpQ6w https://weibo.com/1885745060/Pv1jPpn5K https://weibo.com/1885745060/PcU1jok2E https://weibo.com/1885745060/Rg68t1asH https://weibo.com/1885745060/Rgyr9hxIZ https://weibo.com/1885745060/Q0JPx37RQ"
+    },
+    {
+      "category": "DATA",
+      "reason": "FG2609_LOCAL_WINDOW_MISSING",
+      "sources": "E43",
+      "source_urls": "https://weibo.com/1885745060/RdYmChTUW"
+    },
+    {
+      "category": "ALIGNMENT",
+      "reason": "NO_AUTHOR_BAR_OHLC",
+      "sources": "E48;E51",
+      "source_urls": "https://weibo.com/1885745060/RlQ6sB0U1 https://weibo.com/1885745060/Rj8UtoViI"
+    },
+    {
+      "category": "ACCESS",
+      "reason": "CHROME_CONNECTION_UNAVAILABLE_SKIPPED",
+      "sources": "E26",
+      "source_urls": "https://weibo.com/1885745060/RjhLwFjrH"
+    },
+    {
+      "category": "RULE_REFERENCE_UNRESOLVED",
+      "reason": "既有索引",
+      "sources": "E07;E55",
+      "source_urls": "https://weibo.com/ttarticle/p/show?id=2309405298236796830178 https://weibo.com/1885745060/PcU1jok2E"
+    }
+  ],
+  "work_packages": [
+    {
+      "step": 6,
+      "name": "决策与持仓管理",
+      "tool": "EXTERNAL_CONDITION_GATE",
+      "original_status": "TRIGGERS_UNKNOWN"
+    },
+    {
+      "step": 7,
+      "name": "冻结规则与重放",
+      "tool": "HASHED_SCOPE_AND_CHECKPOINT",
+      "original_status": "FORMULA_FREEZE_BLOCKED"
+    },
+    {
+      "step": 8,
+      "name": "留出及跨合约验证",
+      "tool": "LABEL_METRICS_AND_CONTAMINATION_CHECK",
+      "original_status": "NO_HOLDOUT"
+    },
+    {
+      "step": 9,
+      "name": "因果可执行性",
+      "tool": "CAUSAL_PREFLIGHT",
+      "original_status": "EXECUTION_FACTS_MISSING"
+    },
+    {
+      "step": 10,
+      "name": "失败归因",
+      "tool": "SOURCE_LINKED_GAPS",
+      "original_status": "PARTIAL"
+    },
+    {
+      "step": 11,
+      "name": "研究包交付",
+      "tool": "JSON_CSV_MARKDOWN",
+      "original_status": "PARTIAL_REPLICATION"
+    }
+  ],
+  "executable": false,
+  "no_download": true,
+  "no_production_write": true,
+  "original_formula_identified": false
+}
