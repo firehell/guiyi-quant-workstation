@@ -1657,6 +1657,21 @@ python -m pytest tests/newow_candidate_tools -q -p no:cacheprovider
 
 ## 盘中连续交接
 
+Reference 前台优先级、当前观察确认与历史控制意图恢复回归（不连接生产、不发送通知）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/reference_trading/test_forward_runtime.py \
+  services/quant-api/tests/reference_trading/test_live_wake.py \
+  services/quant-api/tests/reference_trading/test_historical_refresh.py \
+  services/quant-api/tests/reference_trading/test_refresh_plan_codec.py \
+  services/quant-api/tests/test_handover_consumers.py
+```
+
+覆盖完整 frozen plan 无损存储与原 hash、64MB 上限、仅所选计划解压、真实服务异常隔离后的
+提交未知保护、112 个无关后台任务不挡当前观察、后台组之间前台优先、128 条有界消费与收尾。
+既有 blocked 记录不能凭新测试成功清空；其生产恢复仍需原始提交事实与精确读回。
+
 隔离测试仅使用本次专用 Redis（显式非6379端口、DB11）和通过现有 migration guard 的 PostgreSQL。
 不使用生产Redis/DB，不发送真实PushPlus；未配置导致的skip不算原子性/迁移验收。
 

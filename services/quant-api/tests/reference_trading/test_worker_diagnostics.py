@@ -36,7 +36,8 @@ def test_warmup_skips_idle_durable_minutes_but_validates_canonical_service(monke
         _read_input=lambda *_args: None)
     @contextmanager
     def opened(**kwargs):
-        assert kwargs == {'warmup': True}
+        assert kwargs['warmup'] is True
+        assert kwargs['warmup_deadline'] > worker_entry.monotonic()
         yield worker, None, None
     monkeypatch.setattr(worker_entry, 'open_forward_worker', opened)
     monkeypatch.setattr(worker_entry, '_warmup_saved_capture', lambda _repository, name, _service:
