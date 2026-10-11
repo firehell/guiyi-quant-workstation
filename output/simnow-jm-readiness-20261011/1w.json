@@ -1,0 +1,379 @@
+{
+  "head": "c89a612fa61e01342b8c70cd421618d7969322e5",
+  "product": "jm",
+  "frequency": "1w",
+  "requested_window": [
+    "2025-10-11",
+    "2026-10-10"
+  ],
+  "as_of_utc": "2026-10-10T16:00:00+00:00",
+  "rows": [
+    {
+      "strategy": "trend",
+      "status": "OK",
+      "page_version": "newow_page_performance_v3379_v2",
+      "input_sha256": "19fb0f6aac8618fdcce2906d1cb6cc520b06a54a63b2eec12d0ce0ee14bbdd83",
+      "source_evidence_sha256": null,
+      "actual_available_through": "2026-10-09",
+      "cutoff_utc": "2026-10-09T07:00:00+00:00",
+      "history_coverage": "FULL",
+      "summary": {
+        "cumReturn": "3.99",
+        "accuracy": 83,
+        "maxDrawdown": "13.77",
+        "tradeCount": 6
+      },
+      "interrupted_count": 1,
+      "segment_count": 12,
+      "page_parity": true,
+      "executable": false,
+      "request_formula_versions": [
+        "newow_escape_d123_page_v2",
+        "newow_trend_band_page_v3",
+        "newow_trend_marker_initial_clear_v2"
+      ]
+    },
+    {
+      "strategy": "oscillation",
+      "status": "OK",
+      "page_version": "newow_page_performance_v3379_v2",
+      "input_sha256": "19fb0f6aac8618fdcce2906d1cb6cc520b06a54a63b2eec12d0ce0ee14bbdd83",
+      "source_evidence_sha256": null,
+      "actual_available_through": "2026-10-09",
+      "cutoff_utc": "2026-10-09T07:00:00+00:00",
+      "history_coverage": "FULL",
+      "summary": {
+        "cumReturn": "41.08",
+        "accuracy": 100,
+        "maxDrawdown": "10.86",
+        "tradeCount": 2
+      },
+      "interrupted_count": 3,
+      "segment_count": 12,
+      "page_parity": true,
+      "executable": false,
+      "request_formula_versions": [
+        "newow_hhv_llv_channel_page_v1",
+        "newow_oscillation_hhv_llv10_page_v2"
+      ]
+    },
+    {
+      "strategy": "dual_fusion",
+      "status": "OK",
+      "page_version": "newow_page_performance_v3379_v2",
+      "input_sha256": "19fb0f6aac8618fdcce2906d1cb6cc520b06a54a63b2eec12d0ce0ee14bbdd83",
+      "source_evidence_sha256": null,
+      "actual_available_through": "2026-10-09",
+      "cutoff_utc": "2026-10-09T07:00:00+00:00",
+      "history_coverage": "FULL",
+      "summary": {
+        "cumReturn": "41.68",
+        "accuracy": 83,
+        "maxDrawdown": "9.75",
+        "tradeCount": 6
+      },
+      "interrupted_count": 3,
+      "segment_count": 12,
+      "page_parity": true,
+      "executable": false,
+      "request_formula_versions": [
+        "newow_escape_d123_page_v2",
+        "newow_trend_band_page_v3",
+        "newow_trend_marker_initial_clear_v2"
+      ],
+      "fusion_code_identity": {
+        "provenance": "build_fusion_stream_identity at c89a612fa61e01342b8c70cd421618d7969322e5; code-derived, not field captured from the original query",
+        "source_formula_versions": [
+          "newow_escape_d123_page_v2",
+          "newow_trend_band_page_v3",
+          "newow_trend_marker_initial_clear_v2",
+          "newow_hhv_llv_channel_page_v1",
+          "newow_oscillation_hhv_llv10_page_v2"
+        ],
+        "profile_id": "newow_dual_fusion_1w_v1",
+        "reference_model_version": "newow_dual_fusion_reference_zero_cost_v2"
+      }
+    },
+    {
+      "strategy": "osc-test",
+      "status": "OK",
+      "formula_version": "newow_osc_test_page_v3379_v1",
+      "input_snapshot_hash": "50c17283fa40c54066fe3ca514f3ddd7ea9bdc88b6343fa0122b0b3a4c20a2ce",
+      "requested_through": "2026-10-10",
+      "last_completed_bar_utc": "2026-10-09T07:00:00+00:00",
+      "last_completed_trading_date_shanghai": "2026-10-09",
+      "terminal_eligible": true,
+      "segment_count": 4,
+      "readiness": {
+        "status": "READY",
+        "reason_code": null
+      },
+      "segment_readiness": [
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        }
+      ],
+      "summary_segment_sum_rounded_pp": "48.58",
+      "summary_segment_trade_count": 3,
+      "summary_max_segment_drawdown_pp": "10.11",
+      "segment_summaries": [
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "3.28",
+          "trade_count": 0
+        },
+        {
+          "cum_return_percentage_points": "21.31",
+          "accuracy_pct": "50",
+          "max_drawdown_percentage_points": "10.11",
+          "trade_count": 2
+        },
+        {
+          "cum_return_percentage_points": "27.27",
+          "accuracy_pct": "100",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 1
+        },
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 0
+        }
+      ],
+      "segment_statuses": [
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "CURRENT"
+      ],
+      "page_parity": true,
+      "executable": false
+    },
+    {
+      "strategy": "osc-test2",
+      "status": "OK",
+      "formula_version": "newow_osc_test2_page_v3379_v1",
+      "input_snapshot_hash": "50c17283fa40c54066fe3ca514f3ddd7ea9bdc88b6343fa0122b0b3a4c20a2ce",
+      "requested_through": "2026-10-10",
+      "last_completed_bar_utc": "2026-10-09T07:00:00+00:00",
+      "last_completed_trading_date_shanghai": "2026-10-09",
+      "terminal_eligible": true,
+      "segment_count": 4,
+      "readiness": {
+        "status": "READY",
+        "reason_code": null
+      },
+      "segment_readiness": [
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        }
+      ],
+      "summary_segment_sum_rounded_pp": "14.84",
+      "summary_segment_trade_count": 2,
+      "summary_max_segment_drawdown_pp": "16.16",
+      "segment_summaries": [
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "3.28",
+          "trade_count": 0
+        },
+        {
+          "cum_return_percentage_points": "-7",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "16.16",
+          "trade_count": 1
+        },
+        {
+          "cum_return_percentage_points": "21.84",
+          "accuracy_pct": "100",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 1
+        },
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 0
+        }
+      ],
+      "segment_statuses": [
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "CURRENT"
+      ],
+      "page_parity": true,
+      "executable": false
+    },
+    {
+      "strategy": "osc-test3",
+      "status": "OK",
+      "formula_version": "newow_osc_test3_page_v3379_v1",
+      "input_snapshot_hash": "50c17283fa40c54066fe3ca514f3ddd7ea9bdc88b6343fa0122b0b3a4c20a2ce",
+      "requested_through": "2026-10-10",
+      "last_completed_bar_utc": "2026-10-09T07:00:00+00:00",
+      "last_completed_trading_date_shanghai": "2026-10-09",
+      "terminal_eligible": true,
+      "segment_count": 4,
+      "readiness": {
+        "status": "READY",
+        "reason_code": null
+      },
+      "segment_readiness": [
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        }
+      ],
+      "summary_segment_sum_rounded_pp": "27.27",
+      "summary_segment_trade_count": 1,
+      "summary_max_segment_drawdown_pp": "3.28",
+      "segment_summaries": [
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "3.28",
+          "trade_count": 0
+        },
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 0
+        },
+        {
+          "cum_return_percentage_points": "27.27",
+          "accuracy_pct": "100",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 1
+        },
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 0
+        }
+      ],
+      "segment_statuses": [
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "CURRENT"
+      ],
+      "page_parity": true,
+      "executable": false
+    },
+    {
+      "strategy": "osc-test4",
+      "status": "OK",
+      "formula_version": "newow_osc_test4_page_v3379_v1",
+      "input_snapshot_hash": "50c17283fa40c54066fe3ca514f3ddd7ea9bdc88b6343fa0122b0b3a4c20a2ce",
+      "requested_through": "2026-10-10",
+      "last_completed_bar_utc": "2026-10-09T07:00:00+00:00",
+      "last_completed_trading_date_shanghai": "2026-10-09",
+      "terminal_eligible": true,
+      "segment_count": 4,
+      "readiness": {
+        "status": "READY",
+        "reason_code": null
+      },
+      "segment_readiness": [
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        },
+        {
+          "status": "READY",
+          "reason_code": null
+        }
+      ],
+      "summary_segment_sum_rounded_pp": "24.92",
+      "summary_segment_trade_count": 2,
+      "summary_max_segment_drawdown_pp": "10.86",
+      "segment_summaries": [
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "3.28",
+          "trade_count": 0
+        },
+        {
+          "cum_return_percentage_points": "7.21",
+          "accuracy_pct": "100",
+          "max_drawdown_percentage_points": "10.86",
+          "trade_count": 1
+        },
+        {
+          "cum_return_percentage_points": "17.71",
+          "accuracy_pct": "100",
+          "max_drawdown_percentage_points": "8.01",
+          "trade_count": 1
+        },
+        {
+          "cum_return_percentage_points": "0",
+          "accuracy_pct": "0",
+          "max_drawdown_percentage_points": "0",
+          "trade_count": 0
+        }
+      ],
+      "segment_statuses": [
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "ROLLOVER_INTERRUPTED",
+        "CURRENT"
+      ],
+      "page_parity": true,
+      "executable": false
+    }
+  ],
+  "metadata_amendment": "page flags and dual code identity added after original read; unavailable_days and native fusion revision were not captured, so are not asserted"
+}
