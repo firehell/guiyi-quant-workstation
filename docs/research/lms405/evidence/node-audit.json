@@ -1,0 +1,192 @@
+{
+  "identity": "lms405-node-audit-v0.1",
+  "results": [
+    {
+      "source": "E46",
+      "contract": "FG2701",
+      "visible_publication": "2026-09-28T10:25:00+08:00",
+      "historical_known_at_verified": false,
+      "frequency": "1m",
+      "source_signal_period": "UNKNOWN",
+      "audit_window": "same trading day remainder",
+      "author_zone_expiry": "UNKNOWN",
+      "status": "GEOMETRY_ONLY",
+      "source_bar_count": 225,
+      "input_snapshot_hash": "da71294d8365fc21ee3e5d4f24ab0fae034ff581c8670a06b1f13838761b1548",
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "fg",
+        "contract": "FG2701",
+        "frequency": "1m",
+        "start": "2026-09-28T01:00:00+00:00",
+        "end": "2026-09-28T07:00:00+00:00"
+      },
+      "nodes": [
+        {
+          "id": "watershed",
+          "lower": "899",
+          "upper": "918",
+          "eligible_bars": 150,
+          "first_lower_touch": "2026-09-28T02:31:00+00:00",
+          "first_upper_touch": null,
+          "first_close_above": null,
+          "first_close_below": "2026-09-28T02:32:00+00:00",
+          "minimum_low": "893.000000000000000000",
+          "maximum_high": "901.000000000000000000",
+          "stand_firm": "UNKNOWN",
+          "condition_satisfied": null,
+          "signal": "UNKNOWN",
+          "action_match": null
+        },
+        {
+          "id": "conditional-extension",
+          "lower": "878",
+          "upper": "878",
+          "eligible_bars": 150,
+          "first_lower_touch": null,
+          "first_upper_touch": null,
+          "first_close_above": "2026-09-28T02:31:00+00:00",
+          "first_close_below": null,
+          "minimum_low": "893.000000000000000000",
+          "maximum_high": "901.000000000000000000",
+          "stand_firm": "UNKNOWN",
+          "condition_satisfied": null,
+          "signal": "UNKNOWN",
+          "action_match": null
+        }
+      ]
+    },
+    {
+      "source": "E47",
+      "contract": "JM2701",
+      "visible_publication": "2026-09-28T10:19:00+08:00",
+      "historical_known_at_verified": false,
+      "frequency": "1m",
+      "source_signal_period": "UNKNOWN",
+      "audit_window": "same trading day remainder",
+      "author_zone_expiry": "UNKNOWN",
+      "status": "GEOMETRY_ONLY",
+      "source_bar_count": 225,
+      "input_snapshot_hash": "9d10c602804f32e35c3159b351bcc3437ef9fd4e0d397a4ee2bf9ac4fe135cd5",
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "jm",
+        "contract": "JM2701",
+        "frequency": "1m",
+        "start": "2026-09-28T01:00:00+00:00",
+        "end": "2026-09-28T07:00:00+00:00"
+      },
+      "nodes": [
+        {
+          "id": "conditional-extension",
+          "lower": "1428",
+          "upper": "1431.5",
+          "eligible_bars": 150,
+          "first_lower_touch": null,
+          "first_upper_touch": null,
+          "first_close_above": "2026-09-28T02:31:00+00:00",
+          "first_close_below": null,
+          "minimum_low": "1440.000000000000000000",
+          "maximum_high": "1463.000000000000000000",
+          "stand_firm": "UNKNOWN",
+          "condition_satisfied": null,
+          "signal": "UNKNOWN",
+          "action_match": null
+        }
+      ]
+    },
+    {
+      "source": "E48",
+      "contract": "JM2701",
+      "visible_publication": "2026-10-09T10:14:00+08:00",
+      "historical_known_at_verified": false,
+      "frequency": "1m",
+      "source_signal_period": "UNKNOWN",
+      "audit_window": "same trading day remainder",
+      "author_zone_expiry": "UNKNOWN",
+      "status": "GEOMETRY_ONLY",
+      "source_bar_count": 345,
+      "input_snapshot_hash": "63ad92b0c7ed236fe7c6c12fd0ab6b62b6069c1d4af4dd5d73b7fadbc95199ee",
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "jm",
+        "contract": "JM2701",
+        "frequency": "1m",
+        "start": "2026-10-08T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "nodes": [
+        {
+          "id": "short-target",
+          "lower": "1531.5",
+          "upper": "1542.5",
+          "eligible_bars": 150,
+          "first_lower_touch": null,
+          "first_upper_touch": "2026-10-09T02:31:00+00:00",
+          "first_close_above": "2026-10-09T02:39:00+00:00",
+          "first_close_below": null,
+          "minimum_low": "1532.000000000000000000",
+          "maximum_high": "1556.500000000000000000",
+          "stand_firm": "UNKNOWN",
+          "condition_satisfied": null,
+          "signal": "UNKNOWN",
+          "action_match": null
+        },
+        {
+          "id": "conditional-trend-target",
+          "lower": "1554",
+          "upper": "1571",
+          "eligible_bars": 150,
+          "first_lower_touch": "2026-10-09T02:50:00+00:00",
+          "first_upper_touch": null,
+          "first_close_above": null,
+          "first_close_below": "2026-10-09T02:31:00+00:00",
+          "minimum_low": "1532.000000000000000000",
+          "maximum_high": "1556.500000000000000000",
+          "stand_firm": "UNKNOWN",
+          "condition_satisfied": null,
+          "signal": "UNKNOWN",
+          "action_match": null
+        },
+        {
+          "id": "weak-start",
+          "lower": "1517.5",
+          "upper": "1517.5",
+          "eligible_bars": 150,
+          "first_lower_touch": null,
+          "first_upper_touch": null,
+          "first_close_above": "2026-10-09T02:31:00+00:00",
+          "first_close_below": null,
+          "minimum_low": "1532.000000000000000000",
+          "maximum_high": "1556.500000000000000000",
+          "stand_firm": "UNKNOWN",
+          "condition_satisfied": null,
+          "signal": "UNKNOWN",
+          "action_match": null
+        },
+        {
+          "id": "M-defense",
+          "lower": "1507.5",
+          "upper": "1512.5",
+          "eligible_bars": 150,
+          "first_lower_touch": null,
+          "first_upper_touch": null,
+          "first_close_above": "2026-10-09T02:31:00+00:00",
+          "first_close_below": null,
+          "minimum_low": "1532.000000000000000000",
+          "maximum_high": "1556.500000000000000000",
+          "stand_firm": "UNKNOWN",
+          "condition_satisfied": null,
+          "signal": "UNKNOWN",
+          "action_match": null
+        }
+      ]
+    }
+  ],
+  "causal_acceptance": false,
+  "complete_action_cases": 0,
+  "performance": null,
+  "warning": "Current visible text uses publication as an unverified historical proxy; geometry is neither stand-firm nor author execution.",
+  "no_download": true,
+  "no_production_write": true
+}
