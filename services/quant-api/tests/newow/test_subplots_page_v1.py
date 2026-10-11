@@ -97,3 +97,18 @@ def test_batch_subplots_reject_cross_contract_segment_input(calculator) -> None:
 
     with pytest.raises(ValueError, match="NEWOW_SUBPLOT_MIXED_SEGMENT"):
         calculator(mixed)
+
+
+def test_confirmed_peak_events_keep_confirmation_separate_from_repainted_peak():
+    from decimal import Decimal
+    template = golden_bars()
+    closes = [100] * 20 + [110, 108, 104, 103, 109]
+    bars = tuple(replace(template[i], open=Decimal(c), high=Decimal(c + 1), low=Decimal(c - 1), close=Decimal(c)) for i, c in enumerate(closes))
+    before = calculate_zhaoyao_mirror(bars[:22])
+    confirmed = calculate_zhaoyao_mirror(bars[:23])
+    full = calculate_zhaoyao_mirror(bars)
+    assert before.confirmed_peak_events == ()
+    assert confirmed.confirmed_peak_events == ((20, 22),)
+    assert full.confirmed_peak_events == ((20, 22),)
+    assert confirmed.peaks[20] == 1
+    assert confirmed.caution[-1] == 0

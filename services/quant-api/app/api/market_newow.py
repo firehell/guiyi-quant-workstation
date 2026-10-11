@@ -418,6 +418,7 @@ def _build_product_service(
     cancelled: Callable[[], bool] | None = None,
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     *, historical_intraday: bool = False, current_reference: bool = False,
+    reuse_read_inputs: bool = False,
 ) -> NewowProductService:
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
@@ -454,6 +455,7 @@ def _build_product_service(
         cancelled=cancelled,
         quality_policy=quality_policy,
         persisted_reference=persisted_reference,
+        reuse_read_inputs=reuse_read_inputs,
     )
 
 
@@ -637,7 +639,9 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                 policy = _input_quality_policy(request, product, frequency)
                 resolver = (_build_daily_resolver if frequency == '1d' else _build_weekly_resolver)(session, cancelled, lambda: now, policy)
                 snapshot = resolver.resolve(product, ProductStrategy.TREND, ProductFrequency(frequency))
-                service = _build_product_service(session, cancelled, policy)
+                # One pinned request lifecycle; never reuse unchecked inputs
+                # between HTTP requests or different authority generations.
+                service = _build_product_service(session, cancelled, policy, reuse_read_inputs=True)
             except Exception as exc:
                 for strategy in strategies:
                     strategies[strategy][frequency] = unavailable(exc, product, frequency)
@@ -652,11 +656,54 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                     else:
                         strategies[strategy][frequency] = {**summary, 'display_as_of': now, 'as_of': result.meta.as_of,
                             'freshness': snapshot.freshness, 'formula_versions': result.meta.identity.formula_versions,
-                            'input_sha256': result.meta.input_content_sha256, 'snapshot_token': result.meta.snapshot_token}
+                            'input_sha256': result.meta.input_content_sha256, 'snapshot_token': result.meta.snapshot_token,
+                            'data_revision_identity': result.meta.data_revision_identity,
+                            'snapshot_context': {**_json_value(snapshot), 'strategy': strategy,
+                                'schema_version': 'newow_daily_snapshot_v1' if frequency == '1d' else 'newow_weekly_snapshot_v1',
+                                'series_kind': 'actual_dominant'}}
                 except Exception as exc:
                     strategies[strategy][frequency] = unavailable(exc, product, frequency)
         items.append({'product': product, 'strategies': strategies})
-    return JSONResponse(_json_value({'schema_version': 'newow_home_cards_v1', 'requested_at': now, 'items': items}))
+    return JSONResponse(_json_value({'schema_version': 'newow_home_cards_v2', 'requested_at': now, 'items': items}))
+
+
+@router.get('/home-card-performance')
+def newow_home_card_performance(
+    request: Request, product: str = Query(...),
+    strategy: Literal['trend', 'oscillation'] = Query(...),
+    as_of: datetime = Query(...), snapshot_token: str = Query(..., min_length=1, max_length=256),
+    session: Session = Depends(get_db),
+):
+    """Lazy ordinary page statistics bound to the displayed daily snapshot."""
+    allowed = {'product', 'strategy', 'as_of', 'snapshot_token'}
+    if set(request.query_params) != allowed or any(len(request.query_params.getlist(key)) != 1 for key in allowed) or as_of.tzinfo is None:
+        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
+    product = _normalize_public_product(product)
+
+    def cancelled():
+        try:
+            return from_thread.run(request.is_disconnected)
+        except RuntimeError:
+            return False
+
+    try:
+        _enforce_product_frequency(request, product, '1d')
+        _require_strategy_frequency(request, strategy, '1d')
+        policy = _input_quality_policy(request, product, '1d')
+        service = _build_product_service(session, cancelled, policy)
+        result = service.query(ProductServiceQuery(
+            product, ProductStrategy(strategy), ProductFrequency.DAILY,
+            section=ProductSection.REFERENCE, as_of=as_of, snapshot_token=snapshot_token, history_limit=1,
+        ))
+        from app.market_data.newow.home_cards import project_home_performance
+        return JSONResponse(_json_value({
+            'schema_version': 'newow_home_performance_v1', 'product': product,
+            'strategy': strategy, 'snapshot_token': result.meta.snapshot_token,
+            'as_of': result.meta.as_of, 'performance': project_home_performance(result),
+        }))
+    except Exception as exc:
+        status, detail = public_product_error(exc, context={'symbol': product, 'frequency': '1d'})
+        raise HTTPException(status, detail=detail) from exc
 
 
 @router.get("/daily-snapshot", response_model=NewowDailySnapshotResponse)
@@ -937,6 +984,14 @@ def _decimal(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
 
 
+def _auxiliary_data_value(component: str, value: object) -> object:
+    payload = _json_value(value)
+    if component == "zhaoyao_mirror" and isinstance(payload, dict):
+        # Internal causal peak events are consumed by hints, not the retrospective subplot wire.
+        payload.pop("confirmed_peak_events", None)
+    return payload
+
+
 def _json_value(value: object) -> object:
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -1209,7 +1264,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                     "segment_id": segment.segment_id,
                     "bar_ends": list(segment.bar_ends),
                     "status": _status(segment.status),
-                    "data": _json_value(segment.value),
+                    "data": _auxiliary_data_value(value.name, segment.value),
                 }
                 for segment in value.segments
             ],

@@ -1120,3 +1120,19 @@ def test_daily_decision_keeps_explicit_completed_context_cutoff(monkeypatch):
         assert captured[0].as_of == datetime(2026, 10, 1, tzinfo=UTC)
     finally:
         app.dependency_overrides.clear()
+
+
+def test_mirror_subplot_wire_does_not_leak_internal_peak_events():
+    from guiyi_quant.newow.subplots import ZhaoyaoMirrorResult
+    from app.schemas.market_newow_product import ZhaoyaoMirrorDataOut
+
+    values = (0.0, 1.0)
+    result = ZhaoyaoMirrorResult(
+        values, values, values, values, values, values, (0, 1), (0, 0),
+        confirmed_peak_events=((0, 1),),
+    )
+    payload = market_newow._auxiliary_data_value("zhaoyao_mirror", result)
+    ZhaoyaoMirrorDataOut.model_validate(payload)
+    assert "confirmed_peak_events" not in payload
+    assert result.confirmed_peak_events == ((0, 1),)
+    assert market_newow._json_value(result)["confirmed_peak_events"] == [[0, 1]]

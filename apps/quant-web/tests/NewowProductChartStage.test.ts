@@ -194,6 +194,49 @@ test('dense same-Bar hints stay queryable by exact ID without adding native mark
   app.unmount()
 })
 
+test('process labels and cycle counts follow candles and revoke on switches or empty snapshots', async () => {
+  const Stage = await loadComponent()
+  const response = ref<NewowProductSectionResponse<'chart'> | null>(chartResponse())
+  response.value!.meta.identity.strategy = 'main_rise'
+  response.value!.value!.hints[0]!.kind = 'MAGIC11:4低'
+  response.value!.value!.frames[0]!.main_values = { ma35: '100', ma45: '99', magic11_count: '1' }
+  const switching = ref(false)
+  let x = 210
+  const scale = {
+    width: () => 500, timeToCoordinate: () => x, fitContent() {}, setVisibleLogicalRange() {},
+    getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+  }
+  const fakeChart = {
+    addSeries: () => ({ setData() {}, createPriceLine() {}, attachPrimitive() {}, detachPrimitive() {}, priceToCoordinate: (price: number) => price * 2 }),
+    removeSeries() {}, panes: () => [400, 100, 100].map(height => ({ getHeight: () => height, setStretchFactor() {} })),
+    timeScale: () => scale, subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: 'main_rise', selectedSignalId: null, strategySwitching: switching.value,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root'); app.mount(root); await nextTick(); await nextTick()
+  const hint = () => findNode(root, node => node.props['data-process-hint-id'] === 'hint-stable')
+  assert.ok(hint()); assert.equal(textContent(hint()!), '4低')
+  assert.equal((hint()!.props.style as any).left, '210px')
+  assert.equal(hint()!.props['data-anchor-price'], '88')
+  assert.ok(findNode(root, node => node.props['data-cycle-count-bar'] != null))
+  const toggle = findNode(root, node => node.type === 'button' && textContent(node) === '过程提示')
+  assert.ok(toggle)
+  ;(toggle.props.onClick as () => void)(); await nextTick(); await nextTick()
+  assert.equal(hint(), undefined)
+  ;(toggle.props.onClick as () => void)(); await nextTick(); await nextTick()
+  assert.ok(hint())
+  switching.value = true; await nextTick(); await nextTick(); assert.equal(hint(), undefined)
+  switching.value = false; await nextTick(); await nextTick(); assert.ok(hint())
+  x = -5
+  const plot = findNode(root, node => typeof node.props.onPointermove === 'function')!
+  ;(plot.props.onPointermove as () => void)(); await nextTick(); await nextTick(); assert.equal(hint(), undefined)
+  response.value = null; await nextTick(); await nextTick()
+  assert.equal(findNode(root, node => node.props['data-cycle-count-bar'] != null), undefined)
+  app.unmount()
+})
+
 test('connects action labels to the exact server reference price coordinate', async () => {
   const Stage = await loadComponent()
   const response = chartResponse()

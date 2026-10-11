@@ -309,19 +309,23 @@ test('basis toggles drive composite action and status stance from one completed 
  assert.match(nodeText(root),/所选口径不可用/);app.unmount()
  })
 
-test('card visibility defaults match source and toggling does not reload facts', async () => {
+test('both cards stay visible without settings and collapsing does not reload facts', async () => {
  const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root'), before=mock.calls.length
  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb')})}));app.mount(root)
  const shell=findNode(root,n=>n.props['data-testid']==='composite-card-surface')!
- assert.ok(shell); assert.equal(shell.style.display,'none')
- const show=findNode(root,n=>n.props['aria-label']==='显示综合决策卡')!
- assert.ok(show); (show.props.onChange as Function)({target:{checked:true}});await nextTick()
- assert.notEqual(shell.style.display,'none');assert.equal(mock.calls.length,before+1)
  const status=findNode(root,n=>n.props['data-testid']==='status-card-surface')!
- assert.notEqual(status.style.display,'none')
- const toggle=findNode(root,n=>n.props['aria-label']==='显示AI状态卡')!
- ;(toggle.props.onChange as Function)({target:{checked:false}});await nextTick()
- assert.equal(status.style.display,'none');assert.equal(mock.calls.length,before+1)
+ assert.ok(shell); assert.notEqual(shell.style.display,'none')
+ assert.ok(status); assert.notEqual(status.style.display,'none')
+ assert.equal(findNode(root,n=>n.props['aria-label']==='显示综合决策卡'),undefined)
+ assert.equal(findNode(root,n=>n.props['aria-label']==='显示AI状态卡'),undefined)
+ const expand=findNode(root,n=>n.props['aria-label']==='展开综合决策')!
+ ;(expand.props.onClick as Function)();await nextTick()
+ const collapse=findNode(root,n=>n.props['aria-label']==='收起综合决策')!
+ assert.ok(collapse)
+ ;(collapse.props.onClick as Function)();await nextTick()
+ assert.ok(findNode(root,n=>n.props['aria-label']==='展开综合决策'))
+ assert.notEqual(shell.style.display,'none');assert.notEqual(status.style.display,'none')
+ assert.equal(mock.calls.length,before+1,'card expansion shares the existing fact read')
  app.unmount()
 })
 

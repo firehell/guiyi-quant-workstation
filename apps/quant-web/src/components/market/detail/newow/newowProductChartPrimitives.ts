@@ -85,6 +85,7 @@ export interface NewowProductChartModel {
     readonly frequency: NewowProductFrequency
   }
   readonly bars: readonly NewowProductChartBar[]
+  readonly cycleCounts?: readonly { bar: NewowProductChartBar; color: string }[]
   readonly bandAreas: readonly NewowProductBandArea[]
   readonly channelPoints: readonly NewowPriceChannelChartPoint[]
   readonly mainLines: readonly NewowProductMainLine[]
@@ -110,7 +111,7 @@ export interface NewowProductBandArea {
 const MAIN_LAYER_DEFINITIONS = {
   trend: [['b', 'B'], ['a', 'A']],
   oscillation: [['upper', 'HHV'], ['lower', 'LLV']],
-  main_rise: [['ma35', 'MA35'], ['ma45', 'MA45']],
+  main_rise: [['ma35', 'MA35'], ['ma45', 'MA45'], ['ma10_display_v1', 'MA10']],
 } as const
 
 /** Projects only validated P4 facts. It never calculates a strategy value. */
@@ -176,7 +177,9 @@ export function buildNewowProductChartModel(
         time: chartMarkerTime(bar.barEnd, response.meta.identity.frequency, bar.tradingDay),
         a: chartCoordinate(frame.main_values[firstKey]),
         b: chartCoordinate(frame.main_values[secondKey]),
-        color: ['BUILD', 'HOLD'].includes(frame.main_state) ? 'rgba(245, 183, 38, 0.35)' : 'rgba(54, 90, 245, 0.35)',
+        color: response.meta.identity.strategy === 'main_rise'
+          ? (['BUILD', 'HOLD'].includes(frame.main_state) ? 'rgba(255, 200, 50, 0.50)' : 'rgba(50, 130, 255, 0.42)')
+          : (['BUILD', 'HOLD'].includes(frame.main_state) ? 'rgba(245, 183, 38, 0.35)' : 'rgba(54, 90, 245, 0.35)'),
       })
     }
   }
@@ -238,6 +241,12 @@ export function buildNewowProductChartModel(
       strategy: response.meta.identity.strategy,
       frequency: response.meta.identity.frequency,
     },
+    cycleCounts: response.meta.identity.strategy === 'main_rise' ? bars.flatMap(bar => {
+      const frame = frameByEnd.get(bar.barEnd)
+      const count = frame?.main_values.magic11_count
+      if (frame?.status.status !== 'ready' || !['1', '-1'].includes(count ?? '')) return []
+      return [{ bar, color: count === '1' ? '#F5A623' : '#E53935' }]
+    }) : [],
     bars, bandAreas, channelPoints, mainLines, actions, hints, nextBefore: value.next_before,
   }
 }

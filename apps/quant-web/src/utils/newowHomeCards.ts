@@ -17,6 +17,8 @@ export interface HomePeriodFact {
   calculation_segment_id?: string
   source_identity?: string
   input_sha256?: string
+  snapshot_context?: unknown
+  data_revision_identity?: unknown
   snapshot_token?: string
   formula_versions?: string[]
   freshness?: string
@@ -29,6 +31,10 @@ export interface HomePeriodFact {
   target?: string | null
   absorb?: string | null
   target_space_percent?: string | null
+  absorb_space_percent?: string | null
+  main_force_control?: { status: string; label: string | null; formula_version: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean }
+  row_hints?: { status: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean; items: Array<{ kind: 'caution' | 'reduce'; peak_day?: string; event_day: string; j_value?: string; reference_price?: string; formula_version: string }> } | null
+  page_performance?: { status: string; reason_code?: string; version?: string; strategy?: HomeStrategy; frequency?: HomePeriod; as_of?: string; input_sha256?: string; source_evidence_sha256?: string | null; since?: string | null; through?: string | null; cum_return_percent?: string; trade_count?: number; page_parity?: boolean; executable?: boolean }
   display_as_of?: string
   display_projection_version?: 'newow_home_display_v1'
   current_event?: { kind: 'BUILD' | 'CLEAR'; bar_end: string; signal_id: string } | null
@@ -38,7 +44,7 @@ export interface HomePeriodFact {
   executable?: boolean
 }
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
-export interface HomeCardsResponse { schema_version: 'newow_home_cards_v1'; requested_at: string; items: HomeCard[] }
+export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[] }
 export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean }
 
 export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
@@ -107,7 +113,7 @@ export function homeDeliveryNotice(delivery?: CardDelivery) {
 
 export function normalizeHomeCards(value: unknown, products: readonly string[]): HomeCardsResponse {
   const response = value as HomeCardsResponse
-  if (response?.schema_version !== 'newow_home_cards_v1' || !Array.isArray(response.items) || response.items.length !== products.length || !Number.isFinite(Date.parse(response.requested_at))) throw new Error('INVALID_HOME_CARDS')
+  if (response?.schema_version !== 'newow_home_cards_v2' || !Array.isArray(response.items) || response.items.length !== products.length || !Number.isFinite(Date.parse(response.requested_at))) throw new Error('INVALID_HOME_CARDS')
   const seen = new Set<string>()
   for (const item of response.items) {
     if (!products.includes(item.product) || seen.has(item.product)) throw new Error('INVALID_HOME_CARDS')
@@ -116,7 +122,11 @@ export function normalizeHomeCards(value: unknown, products: readonly string[]):
       const fact = item.strategies?.[strategy]?.[period]
       if (!fact || !['ready', 'warming', 'unavailable'].includes(fact.status)) throw new Error('INVALID_HOME_CARDS')
       if (fact.status === 'ready' && (!['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(fact.state ?? '') || !fact.physical_contract || !fact.segment_id || !fact.calculation_segment_id || !fact.input_sha256 || !fact.formula_versions?.length || !Number.isFinite(Date.parse(fact.as_of ?? '')) || !Number.isFinite(Date.parse(fact.bar_end ?? '')) || fact.page_parity !== true || fact.executable !== false)) throw new Error('INVALID_HOME_CARDS')
-      for (const key of ['target', 'absorb', 'reference_cost', 'reference_current', 'target_space_percent', 'guard_ma10'] as const) if (fact[key] != null && (typeof fact[key] !== 'string' || !Number.isFinite(Number(fact[key])))) throw new Error('INVALID_HOME_CARDS')
+      for (const key of ['target', 'absorb', 'reference_cost', 'reference_current', 'target_space_percent', 'absorb_space_percent', 'guard_ma10'] as const) if (fact[key] != null && (typeof fact[key] !== 'string' || !Number.isFinite(Number(fact[key])))) throw new Error('INVALID_HOME_CARDS')
+      const performance = fact.page_performance
+      if (performance?.status === 'ready' && (!performance.version || !performance.input_sha256 || performance.frequency !== '1d' || performance.strategy !== strategy || performance.as_of !== fact.as_of || performance.page_parity !== true || performance.executable !== false || !Number.isInteger(performance.trade_count) || performance.trade_count! < 0 || typeof performance.cum_return_percent !== 'string' || !Number.isFinite(Number(performance.cum_return_percent)))) throw new Error('INVALID_HOME_PERFORMANCE')
+      const control = fact.main_force_control
+      if (control?.status === 'ready' && (!control.formula_version || !['无庄控盘','开始控盘','有庄控盘','高度控盘','主力出货','高控+出货'].includes(control.label ?? '') || control.bar_end !== fact.bar_end || control.physical_contract !== fact.physical_contract || control.calculation_segment_id !== fact.calculation_segment_id || control.page_parity !== true || control.executable !== false)) throw new Error('INVALID_HOME_CONTROL')
       if (fact.status !== 'ready' && fact.state !== null) throw new Error('INVALID_HOME_CARDS')
     }
   }
@@ -129,7 +139,7 @@ export function homeCardsReloadIdentity(overview: { target_as_of: string; items:
 }
 
 /** Two workers; late/cancelled generations cannot replace a newer snapshot. */
-export function createHomeCardLoader(fetch: (products: string[], signal: AbortSignal) => Promise<HomeCardsResponse>, publish: (items: Record<string, CardDelivery>) => void) {
+export function createHomeCardLoader(fetch: (products: string[], signal: AbortSignal) => Promise<HomeCardsResponse>, publish: (items: Record<string, CardDelivery>) => void, cached?: (product: string) => HomeCardsResponse | undefined) {
   let generation = 0
   let controller: AbortController | null = null
   let items: Record<string, CardDelivery> = {}
@@ -139,12 +149,15 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
       controller?.abort()
       controller = new AbortController()
       const signal = controller.signal
-      items = Object.fromEntries(products.map(product => [product, { card: items[product]?.card ?? null, loading: true, stale: Boolean(items[product]?.card), failed: false }]))
+      items = Object.fromEntries(products.map(product => {
+        const card = cached?.(product)?.items.find(item => item.product === product)
+        return [product, card ? { card, loading: false, stale: false, failed: false } : { card: items[product]?.card ?? null, loading: true, stale: Boolean(items[product]?.card), failed: false }]
+      }))
       publish({ ...items })
       const batches: string[][] = []
       // Cold canonical reads can take tens of seconds per product. Publish each
       // product as soon as it finishes instead of hiding twelve behind one read.
-      for (const product of products) batches.push([product])
+      for (const product of products) if (items[product]?.loading) batches.push([product])
       async function worker() {
         while (batches.length && current === generation) {
           const batch = batches.shift()!
@@ -161,6 +174,54 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
       }
       await Promise.all([worker(), worker()])
     },
+    async reloadProduct(product: string) {
+      const current = generation, signal = controller?.signal
+      if (!signal || signal.aborted || !items[product]) return
+      items[product] = { card: items[product]!.card, loading: true, stale: Boolean(items[product]!.card), failed: false }
+      publish({ ...items })
+      try {
+        const response = normalizeHomeCards(await fetch([product], signal), [product])
+        if (current !== generation || signal.aborted) return
+        items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
+      } catch {
+        if (current !== generation || signal.aborted) return
+        items[product] = { card: items[product]!.card, loading: false, stale: Boolean(items[product]!.card), failed: true }
+      }
+      publish({ ...items })
+    },
     dispose() { ++generation; controller?.abort() },
   }
+}
+
+
+/** Presentation only: space uses the confirmed daily anchor, never live ticks. */
+export function homeCardSpace(day?: HomePeriodFact) {
+  const target = homeReferenceDisplay(day).label === '目标'
+  const value = target ? day?.target_space_percent : day?.absorb_space_percent
+  if (day?.status !== 'ready' || value == null) return { label: '空间待确认', value: null, target }
+  return { label: target ? '预计上涨空间' : '预计下跌空间', value, target }
+}
+
+export function homeControlLabel(day?: HomePeriodFact) {
+  const control = day?.main_force_control
+  return day?.status === 'ready' && control?.status === 'ready' && control.page_parity === true && control.executable === false
+    && control.physical_contract === day.physical_contract && control.calculation_segment_id === day.calculation_segment_id && control.bar_end === day.bar_end
+    ? control.label ?? '控盘待确认' : '控盘待确认'
+}
+
+export function homePagePerformance(day: HomePeriodFact | undefined, strategy: HomeStrategy) {
+  const value = day?.page_performance
+  return value?.status === 'ready' && value.page_parity === true && value.executable === false && value.frequency === '1d' && value.strategy === strategy
+    && value.version && value.input_sha256 && value.as_of === day?.as_of
+    && Number.isInteger(value.trade_count) && value.trade_count! >= 0 && typeof value.cum_return_percent === 'string'
+    ? value : null
+}
+
+export function homeRowHints(day?: HomePeriodFact) {
+  const hints = day?.row_hints
+  if (day?.status !== 'ready' || !day.bar_end || !day.physical_contract || !day.calculation_segment_id || !hints || hints.status !== 'ready' || hints.page_parity !== true || hints.executable !== false || hints.bar_end !== day.bar_end || hints.physical_contract !== day.physical_contract || hints.calculation_segment_id !== day.calculation_segment_id || !Array.isArray(hints.items)) return []
+  return hints.items.filter(item => item.formula_version && /^\d{4}-\d{2}-\d{2}$/.test(item.event_day) && item.event_day <= day.bar_end!.slice(0, 10) && (item.kind === 'caution' ? /^\d{4}-\d{2}-\d{2}$/.test(item.peak_day ?? '') && item.peak_day! <= item.event_day : item.kind === 'reduce' && Number.isFinite(Number(item.j_value)) && Number(item.reference_price) > 0)).map(item => ({
+    label: item.kind === 'caution' ? '小心' : '减仓',
+    title: item.kind === 'caution' ? `高位波峰（${item.peak_day}）已于 ${item.event_day} 确认 · 页面参考提示` : `J值（${Number(item.j_value).toFixed(1)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`,
+  }))
 }

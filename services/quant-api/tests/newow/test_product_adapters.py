@@ -33,6 +33,49 @@ from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 from guiyi_quant.newow.trend_band import initial_trend_band_state
 
 
+def test_main_rise_display_ma10_and_counts_preserve_kernel_facts(product_cases):
+    from guiyi_quant.newow.main_rise import initial_main_rise_state, step_main_rise
+
+    case = product_cases.primitive_input("main_rise", "1d")
+    replay = replay_strategy(case.identity, case.bars)
+    state = initial_main_rise_state()
+    closes = []
+    counts = []
+    for source, frame in zip(case.bars, replay.frames, strict=True):
+        result = step_main_rise(state, source.bar)
+        state = result.state
+        closes.append(float(source.bar.close))
+        expected = sum(closes[-10:]) / 10 if len(closes) >= 10 else None
+        assert result.ma10_display_v1 == expected
+        values = dict(frame.main_values)
+        assert values["ma10_display_v1"] == adapters._metric(expected)
+        expected_count = {
+            "newow-magic11-yellow": Decimal("1"),
+            "newow-magic11-red": Decimal("-1"),
+        }.get(result.magic11.count_line_color)
+        assert values["magic11_count"] == expected_count
+        counts.append(expected_count)
+    assert any(value is not None for value in counts)
+
+
+def test_display_ma10_restarts_at_a_new_physical_owner(product_cases):
+    from guiyi_quant.newow.main_rise import initial_main_rise_state, step_main_rise
+
+    case = product_cases.primitive_input("main_rise", "1d")
+    state = initial_main_rise_state()
+    for source in case.bars:
+        state = step_main_rise(state, source.bar).state
+    closes = []
+    for source in case.bars[:12]:
+        new_bar = replace(source.bar, physical_contract="RB9999", segment_id="new-owner")
+        result = step_main_rise(state, new_bar)
+        state = result.state
+        closes.append(float(new_bar.close))
+        assert result.ma10_display_v1 == (
+            sum(closes[-10:]) / 10 if len(closes) >= 10 else None
+        )
+
+
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
 @pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
 def test_adapter_preserves_every_primitive_prefix_value(

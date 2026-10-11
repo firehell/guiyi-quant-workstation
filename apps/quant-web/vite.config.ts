@@ -6,11 +6,11 @@ import { execFileSync } from 'node:child_process'
 import { candidatePreviewPlugin, candidatePreviewProxy, candidatePreviewWebPort, resolveCandidateOrigin } from './previewProxy.ts'
 import { previewInstant } from './src/utils/candidatePreviewInstant.ts'
 
-const apiProxyTarget = process.env.VITE_PROXY_API_TARGET || 'http://127.0.0.1:8000'
-const wsProxyTarget = process.env.VITE_PROXY_WS_TARGET || apiProxyTarget.replace(/^http/, 'ws')
 
 // https://vite.dev/config/
 export default defineConfig(({ mode, command }) => {
+  const apiProxyTarget = process.env.VITE_PROXY_API_TARGET || (mode === 'develop' ? 'http://127.0.0.1:8002' : 'http://127.0.0.1:8000')
+  const wsProxyTarget = process.env.VITE_PROXY_WS_TARGET || apiProxyTarget.replace(/^http/, 'ws')
   const candidate = mode === 'candidate-preview'
   const cutoff = process.env.GUIYI_PREVIEW_AS_OF || ''
   const defaultWeekly = candidate && process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY === '1'

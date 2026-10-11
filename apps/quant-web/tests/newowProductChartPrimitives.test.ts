@@ -414,6 +414,19 @@ test('trend model projects only ready channel facts at their real prices', () =>
   }])
 })
 
+test('main rise projects versioned display MA10 and eligible counts without creating action markers', () => {
+  const response = chartResponse('main_rise', '1d')
+  const value = response.value!
+  value.frames[0]!.main_values = { ma35: '101', ma45: '99', ma10_display_v1: '103', magic11_count: '1' }
+  value.frames[1]!.main_values = { ma35: '102', ma45: '100', ma10_display_v1: null, magic11_count: '-1' }
+  const model = buildNewowProductChartModel(response)
+  assert.deepEqual(model.mainLines.find(line => line.key === 'ma10_display_v1')?.points.map(p => p.value), [103])
+  assert.deepEqual(model.cycleCounts?.map(item => item.color), ['#F5A623', '#E53935'])
+  assert.deepEqual(model.actions, [])
+  value.frames[0]!.status = { status: 'unavailable', reason_code: 'DATA_INSUFFICIENT' } as any
+  assert.deepEqual(buildNewowProductChartModel(response).cycleCounts?.map(item => item.color), ['#E53935'])
+})
+
 test('strategy overlays stay mutually exclusive and preserve only their own server values', () => {
   const trend = buildNewowProductChartModel(chartResponse('trend', '1d'))
   assert.equal(trend.bandAreas.length, 2)
@@ -433,8 +446,8 @@ test('strategy overlays stay mutually exclusive and preserve only their own serv
   const mainRise = buildNewowProductChartModel(chartResponse('main_rise', '1d'))
   assert.deepEqual(mainRise.channelPoints, [])
   assert.deepEqual(mainRise.bandAreas.map(({ a, b, color }) => ({ a, b, color })), [
-    { a: 101, b: 99, color: 'rgba(54, 90, 245, 0.35)' },
-    { a: 102, b: 100, color: 'rgba(245, 183, 38, 0.35)' },
+    { a: 101, b: 99, color: 'rgba(50, 130, 255, 0.42)' },
+    { a: 102, b: 100, color: 'rgba(255, 200, 50, 0.50)' },
   ])
 })
 

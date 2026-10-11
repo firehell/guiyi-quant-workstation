@@ -749,7 +749,16 @@ def _main_rise_frame(
     frame = StrategyFrame(
         product_bar,
         main_state,
-        (("ma35", _metric(result.ma35)), ("ma45", _metric(result.ma45))),
+        (
+            ("ma35", _metric(result.ma35)),
+            ("ma45", _metric(result.ma45)),
+            ("ma10_display_v1", _metric(result.ma10_display_v1)),
+            # Existing completed/eligible Magic11 facts, not a frontend recount.
+            ("magic11_count", {
+                "newow-magic11-yellow": Decimal("1"),
+                "newow-magic11-red": Decimal("-1"),
+            }.get(result.magic11.count_line_color)),
+        ),
         availability,
         actions,
         _main_rise_hints(identity, product_bar, result),
