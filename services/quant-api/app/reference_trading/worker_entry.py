@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic, sleep
 import signal
 import os
 import sys
@@ -13,6 +14,27 @@ from app.core.env import PROJECT_ROOT
 
 
 ACTIVATION_MARKER = PROJECT_ROOT / ".run" / "reference-worker-enabled"
+
+
+def _check_warmup_deadline(deadline: float | None) -> None:
+    if deadline is not None and monotonic() >= deadline:
+        raise RuntimeError("REFERENCE_WARMUP_TIMEOUT")
+
+
+def _acquire_canonical_lease(catalog, *, deadline: float | None):
+    """Only read-only candidate composition waits for the existing exclusive lease."""
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    while True:
+        _check_warmup_deadline(deadline)
+        lease = catalog.acquire_maintenance_lock()
+        if lease is not None:
+            if deadline is not None and monotonic() >= deadline:
+                lease.release()
+                raise RuntimeError("REFERENCE_WARMUP_TIMEOUT")
+            return lease
+        if deadline is None:
+            raise ForwardInputUnavailable("SOURCE_BUSY")
+        sleep(min(0.1, max(0.0, deadline - monotonic())))
 
 
 def historical_refresh_state_path() -> Path:
@@ -29,9 +51,13 @@ def require_worker_enabled() -> None:
 
 
 @contextmanager
-def open_forward_worker(*, ownership=None, warmup=False):
+def open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None):
     """Persist bounded startup diagnostics without changing startup ordering."""
     from app.reference_trading.runtime import diagnostic_reason
+    if warmup:
+        warmup_deadline = warmup_deadline if warmup_deadline is not None else monotonic() + 120.0
+    else:
+        warmup_deadline = None
     stage = 'compose'
     last_runtime = {}
     def publish(next_stage, **background_health):
@@ -48,7 +74,8 @@ def open_forward_worker(*, ownership=None, warmup=False):
                 {'reference_runtime': proof, 'cursor_validated': True})
     publish(stage)
     try:
-        with _open_forward_worker(ownership=ownership, warmup=warmup, publish_stage=publish,
+        with _open_forward_worker(ownership=ownership, warmup=warmup, warmup_deadline=warmup_deadline,
+                publish_stage=publish,
                 report_health=report_health) as value:
             yield value
     except Exception as error:
@@ -59,7 +86,8 @@ def open_forward_worker(*, ownership=None, warmup=False):
 
 
 @contextmanager
-def _open_forward_worker(*, ownership=None, warmup=False, publish_stage=lambda _stage, **_fields: None,
+def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
+                         publish_stage=lambda _stage, **_fields: None,
                          report_health=lambda _proof: None):
     """Open DB and Redis only after an explicit local enable marker is present."""
     require_worker_enabled()
@@ -123,9 +151,7 @@ def _open_forward_worker(*, ownership=None, warmup=False, publish_stage=lambda _
             @contextmanager
             def canonical_guard():
                 session.rollback()  # Refresh read-only Catalog state after natural publication.
-                lease = catalog.acquire_maintenance_lock()
-                if lease is None:
-                    raise ForwardInputUnavailable("SOURCE_BUSY")
+                lease = _acquire_canonical_lease(catalog, deadline=warmup_deadline if warmup else None)
                 try:
                     yield
                 finally:
@@ -167,6 +193,9 @@ def _open_forward_worker(*, ownership=None, warmup=False, publish_stage=lambda _
             worker.scan_live = not durable_observations
             wake_type = StreamForwardLiveWake if durable_observations else ForwardLiveWake
             wake = wake_type(redis, repository, worker, market_data)
+            if durable_observations:
+                wake.stop_requested = ownership.should_drain if ownership else lambda: False
+                worker.poll_observations = wake.poll
             from app.reference_trading.historical_refresh import build_historical_refresh, RefreshThread
             refresh = RefreshThread(build_historical_refresh(
                 SessionLocal, state_path=historical_refresh_state_path(),
@@ -236,12 +265,15 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     def run(ownership=None):
         with open_forward_worker(ownership=ownership) as (worker, wake, reconciliation):
+            def should_stop():
+                return stopped or bool(ownership and ownership.should_drain())
+            wake.stop_requested = should_stop
             def wait(seconds):
                 if ownership:
                     ownership.assert_owned()
                 reconciliation.tick(now=datetime.now(UTC))
                 wake.wait(seconds)
-            worker.serve(should_stop=lambda: stopped or bool(ownership and ownership.should_drain()), wait=wait)
+            worker.serve(should_stop=should_stop, wait=wait)
     from app.runtime_handover import run_supervised
     from app.runtime_bindings import read_bindings
     if read_bindings() is not None and os.getenv("GUIYI_RUNTIME_LEGACY_MODE") != "1":
@@ -257,15 +289,18 @@ if __name__ == "__main__":
 
 def warmup_reference_worker():
     """Read current checkpoints and calculate candidate captures without persistence."""
-    with open_forward_worker(warmup=True) as (worker, _wake, _reconciliation):
+    deadline = monotonic() + 120.0
+    with open_forward_worker(warmup=True, warmup_deadline=deadline) as (worker, _wake, _reconciliation):
         repository = worker._repository
         count = 0
         after = None
         while True:
+            _check_warmup_deadline(deadline)
             streams = repository.enabled_forward_stream_ids(limit=512, after=after)
             if not streams:
                 break
             for stream_id in streams:
+                _check_warmup_deadline(deadline)
                 from app.reference_trading.recording_scope import LIVE_FREQUENCIES
                 pending = repository.read_pending_capture(stream_id)
                 context = repository.forward_source_context(stream_id)
@@ -286,6 +321,7 @@ def warmup_reference_worker():
                     else:
                         service._evaluator(token, checkpoint, {**capture.evidence(), "capture_id": "warmup"})
                 count += 1
+                _check_warmup_deadline(deadline)
             after = streams[-1]
         if count == 0:
             raise RuntimeError("REFERENCE_WARMUP_SCOPE_EMPTY")

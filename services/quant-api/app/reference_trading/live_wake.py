@@ -38,36 +38,42 @@ class ForwardLiveWake:
                 self._on_message(message.get("channel"), message.get("data"))
 
     def _on_message(self, raw_channel: object, raw_data: object) -> bool:
+        validated = self._validated_routes(raw_channel, raw_data)
+        if validated is None:
+            return False
+        end, routes = validated
+        for stream_id in routes:
+            self._worker.wake(stream_id, kind="live_event", bar_end=end)
+        return True
+
+    def _validated_routes(self, raw_channel: object, raw_data: object) -> tuple[datetime, tuple[str, ...]] | None:
         try:
             channel = raw_channel.decode() if isinstance(raw_channel, bytes) else raw_channel
             data = raw_data.decode() if isinstance(raw_data, bytes) else raw_data
             if not isinstance(channel, str) or not isinstance(data, str):
-                return False
+                return None
             prefix = f"{LIVE_BAR_CHANNEL_PREFIX}:"
             if not channel.startswith(prefix):
-                return False
+                return None
             product, frequency = channel[len(prefix):].split(":", 1)
             if product != product.lower():
-                return False
+                return None
             BarFrequency(frequency)
             payload = json.loads(data)
             if not isinstance(payload, dict):
-                return False
+                return None
             end = datetime.fromisoformat(payload["bar_end"])
             day = date.fromisoformat(payload["trading_day"])
             contract = payload["contract"]
             if (end.tzinfo is None or end.utcoffset() is None
                     or normalize_contract_for_symbol(product, contract) != contract):
-                return False
+                return None
             owner = self._market_data.dominant_segment_for_day(product, day)
             if owner.contract != contract:
-                return False
+                return None
         except (AttributeError, KeyError, TypeError, ValueError, MarketDataError):
-            return False
-        for stream_id in self._repository.enabled_forward_routes(product, frequency):
-            self._worker.wake(stream_id, kind="live_event", bar_end=end)
-
-        return True
+            return None
+        return end, self._repository.enabled_forward_routes(product, frequency)
 
     def close(self) -> None:
         self._pubsub.close()
@@ -79,15 +85,24 @@ class StreamForwardLiveWake(ForwardLiveWake):
         super().__init__(redis, repository, worker, market_data)
         from app.market_data.observation_stream import ObservationStream
         self._stream = ObservationStream(redis, kind="completed")
+        self.stop_requested = lambda: False
 
     def subscribe(self):
         for day in self._stream.days():
             self._stream.cursor("reference", day)
 
-    def wait(self, seconds):
+    def poll(self, *, limit: int = 128) -> bool:
+        """Consume a bounded batch without sleeping; True keeps foreground priority."""
+        if type(limit) is not int or not 1 <= limit <= 128:
+            raise ValueError("REFERENCE_OBSERVATION_POLL_BUDGET_INVALID")
+        self._last_poll_count = 0
+        if self.stop_requested():
+            return True
         for day in self._stream.days():
             cursor = self._stream.cursor("reference", day)
-            for observation in self._stream.read("reference", day, count=1):
+            for observation in self._stream.read("reference", day, count=limit - self._last_poll_count):
+                if self.stop_requested():
+                    return True
                 if observation.notification_eligible:
                     confirmed = getattr(observation, "confirmed_at", None)
                     if confirmed is None:
@@ -95,17 +110,24 @@ class StreamForwardLiveWake(ForwardLiveWake):
                     self._worker.source_observed_at = confirmed
                     self._worker.raw_received_at = observation.source_observed_at
                     try:
-                        if not self._on_message(observation.channel, json.dumps(observation.data)):
+                        validated = self._validated_routes(observation.channel, json.dumps(observation.data))
+                        if validated is None:
                             raise RuntimeError("REFERENCE_BUFFER_IDENTITY_INVALID")
-                        while self._worker.health().pending_keys:
-                            self._worker.assert_owned()
-                            self._worker.run_round()
-                            if self._worker.health().blocked:
-                                raise RuntimeError("REFERENCE_BUFFER_PROCESSING_BLOCKED")
+                        end, routes = validated
+                        self._worker.process_live_observation(routes, end)
                     finally:
                         self._worker.source_observed_at = None
                         self._worker.raw_received_at = None
+                self._worker.assert_owned()
                 self._stream.ack("reference", day, expected_cursor=cursor, next_id=observation.stream_id)
-                return
+                cursor = observation.stream_id
+                self._last_poll_count += 1
+                if self._last_poll_count == limit:
+                    return True
+        return False
+
+    def wait(self, seconds):
+        if self.poll() or self._last_poll_count:
+            return
         from time import sleep
         sleep(min(seconds, 1))

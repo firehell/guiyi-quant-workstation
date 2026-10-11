@@ -50,21 +50,27 @@ def test_missing_alert_cursor_is_not_initialized_or_skipped():
 
 
 def test_reference_failed_route_keeps_input_unacked_and_source_time():
+    from app.reference_trading.runtime import ForwardReferenceWorker
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
     wake = StreamForwardLiveWake.__new__(StreamForwardLiveWake)
+    wake.stop_requested = lambda: False
     wake._stream = stream = Stream()
-    class Worker:
-        source_observed_at = None
-        assert_owned = staticmethod(lambda: None)
-        def health(self):
-            return SimpleNamespace(pending_keys=1, blocked=('route-conflict',))
-        def run_round(self):
-            assert self.source_observed_at == OBSERVED
-    wake._worker = Worker()
-    wake._on_message = lambda *_args: True
+    seen = []
+    def read_input(route, kind, bar_end):
+        seen.append((route, kind, bar_end))
+        assert worker.source_observed_at == OBSERVED and worker.raw_received_at == OBSERVED
+        raise ForwardInputUnavailable('LIVE_EVENT_IDENTITY_CONFLICT')
+    worker = ForwardReferenceWorker(SimpleNamespace(read_pending_capture=lambda _: None),
+        lambda _: SimpleNamespace(), read_input, enabled=True)
+    wake._worker = worker
+    wake._validated_routes = lambda *_args: (OBSERVED, ('route',))
     with pytest.raises(RuntimeError, match='PROCESSING_BLOCKED'):
         wake.wait(0)
     assert stream.acks == []
     assert wake._worker.source_observed_at is None
+    assert wake._worker.raw_received_at is None
+    assert seen == [('route', 'live_event', OBSERVED)]
+    assert worker._blocked == {'route': 'LIVE_EVENT_IDENTITY_CONFLICT'}
 
 
 def test_durable_reference_scan_does_not_recapture_live_at_scan_time():
