@@ -17,6 +17,8 @@ export interface HomePeriodFact {
   calculation_segment_id?: string
   source_identity?: string
   input_sha256?: string
+  snapshot_context?: unknown
+  data_revision_identity?: unknown
   snapshot_token?: string
   formula_versions?: string[]
   freshness?: string
@@ -42,7 +44,7 @@ export interface HomePeriodFact {
   executable?: boolean
 }
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
-export interface HomeCardsResponse { schema_version: 'newow_home_cards_v1'; requested_at: string; items: HomeCard[] }
+export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[] }
 export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean }
 
 export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
@@ -111,7 +113,7 @@ export function homeDeliveryNotice(delivery?: CardDelivery) {
 
 export function normalizeHomeCards(value: unknown, products: readonly string[]): HomeCardsResponse {
   const response = value as HomeCardsResponse
-  if (response?.schema_version !== 'newow_home_cards_v1' || !Array.isArray(response.items) || response.items.length !== products.length || !Number.isFinite(Date.parse(response.requested_at))) throw new Error('INVALID_HOME_CARDS')
+  if (response?.schema_version !== 'newow_home_cards_v2' || !Array.isArray(response.items) || response.items.length !== products.length || !Number.isFinite(Date.parse(response.requested_at))) throw new Error('INVALID_HOME_CARDS')
   const seen = new Set<string>()
   for (const item of response.items) {
     if (!products.includes(item.product) || seen.has(item.product)) throw new Error('INVALID_HOME_CARDS')
@@ -137,7 +139,7 @@ export function homeCardsReloadIdentity(overview: { target_as_of: string; items:
 }
 
 /** Two workers; late/cancelled generations cannot replace a newer snapshot. */
-export function createHomeCardLoader(fetch: (products: string[], signal: AbortSignal) => Promise<HomeCardsResponse>, publish: (items: Record<string, CardDelivery>) => void) {
+export function createHomeCardLoader(fetch: (products: string[], signal: AbortSignal) => Promise<HomeCardsResponse>, publish: (items: Record<string, CardDelivery>) => void, cached?: (product: string) => HomeCardsResponse | undefined) {
   let generation = 0
   let controller: AbortController | null = null
   let items: Record<string, CardDelivery> = {}
@@ -147,12 +149,15 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
       controller?.abort()
       controller = new AbortController()
       const signal = controller.signal
-      items = Object.fromEntries(products.map(product => [product, { card: items[product]?.card ?? null, loading: true, stale: Boolean(items[product]?.card), failed: false }]))
+      items = Object.fromEntries(products.map(product => {
+        const card = cached?.(product)?.items.find(item => item.product === product)
+        return [product, card ? { card, loading: false, stale: false, failed: false } : { card: items[product]?.card ?? null, loading: true, stale: Boolean(items[product]?.card), failed: false }]
+      }))
       publish({ ...items })
       const batches: string[][] = []
       // Cold canonical reads can take tens of seconds per product. Publish each
       // product as soon as it finishes instead of hiding twelve behind one read.
-      for (const product of products) batches.push([product])
+      for (const product of products) if (items[product]?.loading) batches.push([product])
       async function worker() {
         while (batches.length && current === generation) {
           const batch = batches.shift()!
@@ -168,6 +173,21 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
         }
       }
       await Promise.all([worker(), worker()])
+    },
+    async reloadProduct(product: string) {
+      const current = generation, signal = controller?.signal
+      if (!signal || signal.aborted || !items[product]) return
+      items[product] = { card: items[product]!.card, loading: true, stale: Boolean(items[product]!.card), failed: false }
+      publish({ ...items })
+      try {
+        const response = normalizeHomeCards(await fetch([product], signal), [product])
+        if (current !== generation || signal.aborted) return
+        items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
+      } catch {
+        if (current !== generation || signal.aborted) return
+        items[product] = { card: items[product]!.card, loading: false, stale: Boolean(items[product]!.card), failed: true }
+      }
+      publish({ ...items })
     },
     dispose() { ++generation; controller?.abort() },
   }

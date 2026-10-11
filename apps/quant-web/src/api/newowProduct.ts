@@ -1,3 +1,4 @@
+import { newowSessionResources, newowResourceIdentity } from '../utils/newowSessionResources.ts'
 import type {
   NewowHistoricalSnapshot,
   NewowDailySnapshot,
@@ -217,6 +218,7 @@ export async function getNewowHistoricalSnapshot(
   identity: NewowProductRequest['identity'],
   options: NewowProductRequestOptions = {},
 ): Promise<NewowHistoricalSnapshot> {
+  if (options.request === undefined) return newowSessionResources.load(snapshotResourceKey('historical-snapshot', identity), signal => getNewowHistoricalSnapshot(identity, { ...options, signal, request: defaultRequest }), newowResourceIdentity, options.signal)
   const transport = options.request ?? defaultRequest
   let payload: unknown
   try {
@@ -236,6 +238,8 @@ export async function getNewowDailySnapshot(
   identity: NewowProductRequest['identity'],
   options: NewowProductRequestOptions = {},
 ): Promise<NewowDailySnapshot> {
+  if (options.request === undefined && !options.signal?.aborted) { const context = homeSnapshot(identity); if (context?.frequency === '1d') return context }
+  if (options.request === undefined) return newowSessionResources.load(snapshotResourceKey('daily-snapshot', identity), signal => getNewowDailySnapshot(identity, { ...options, signal, request: defaultRequest }), newowResourceIdentity, options.signal)
   const transport = options.request ?? defaultRequest
   let payload: unknown
   try {
@@ -255,6 +259,8 @@ export async function getNewowWeeklySnapshot(
   identity: NewowProductRequest['identity'],
   options: NewowProductRequestOptions = {},
 ): Promise<NewowWeeklySnapshot> {
+  if (options.request === undefined && !options.signal?.aborted) { const context = homeSnapshot(identity); if (context?.frequency === '1w') return context }
+  if (options.request === undefined) return newowSessionResources.load(snapshotResourceKey('weekly-snapshot', identity), signal => getNewowWeeklySnapshot(identity, { ...options, signal, request: defaultRequest }), newowResourceIdentity, options.signal)
   const transport = options.request ?? defaultRequest
   let payload: unknown
   try {
@@ -347,6 +353,7 @@ export async function getNewowProductSection(
   request: NewowProductRequest,
   options: NewowProductRequestOptions = {},
 ): Promise<NewowProductSectionResponse> {
+  if (options.request === undefined) return newowSessionResources.load(`newow:${request.identity.product}:section:${JSON.stringify(buildNewowProductQuery(request))}`, signal => getNewowProductSection(request, { ...options, signal, request: defaultRequest }), newowResourceIdentity, options.signal)
   const transport = options.request ?? defaultRequest
   let payload: unknown
   try {
@@ -409,6 +416,7 @@ function addWindow(target: Record<string, unknown>, from: string | undefined, th
 }
 
 async function defaultRequest(path: string, config: ProductRequestConfig): Promise<unknown> {
+  if (import.meta.env?.DEV) console.debug('Newow HTTP detail', path, config.params.product, config.params.section ?? 'snapshot')
   const { default: request } = await import('./request.ts')
   return request.get<never, unknown>(path, config)
 }
@@ -437,4 +445,20 @@ function isAbort(error: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function snapshotResourceKey(kind: string, identity: NewowProductRequest['identity']) {
+  return `newow:${identity.product}:${kind}:${JSON.stringify(identity)}`
+}
+
+/** Context is read from the bounded home entry, not duplicated four times per product. */
+function homeSnapshot(identity: NewowProductRequest['identity']): NewowDailySnapshot | NewowWeeklySnapshot | undefined {
+  return newowSessionResources.find(value => {
+    const response = value as { schema_version?: string; items?: Array<{ product: string; strategies: Record<string, Record<string, { snapshot_context?: unknown }>> }> }
+    if (response?.schema_version !== 'newow_home_cards_v2') return undefined
+    const context = response.items?.find(item => item.product === identity.product)?.strategies[identity.strategy]?.[identity.frequency]?.snapshot_context
+    if (identity.frequency === '1d' && isDailySnapshot(context, identity)) return context
+    if (identity.frequency === '1w' && isWeeklySnapshot(context, identity)) return context
+    return undefined
+  })
 }

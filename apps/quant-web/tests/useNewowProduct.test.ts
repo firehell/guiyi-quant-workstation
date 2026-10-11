@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { nextTick, ref, watch } from 'vue'
 
-import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
+import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, buildNewowProductQuery, NewowProductRequestError } from '../src/api/newowProduct.ts'
+import { newowSessionResources, invalidateNewowProduct } from '../src/utils/newowSessionResources.ts'
 import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 import { newowChartSnapshotKey } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
@@ -11,6 +12,26 @@ import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts
 import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel.ts'
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
+
+test('production readers reuse home cutoff context and complete detail sections separately', async () => {
+  newowSessionResources.invalidate()
+  const identity = { product: 'jm', strategy: 'trend' as const, frequency: '1d' as const, seriesKind: 'actual_dominant' as const }
+  const snapshot = { schema_version: 'newow_daily_snapshot_v1', product: 'jm', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant', requested_at: AS_OF, expected_trading_day: '2026-08-14', available_trading_day: '2026-08-14', as_of: AS_OF, freshness: 'current' }
+  newowSessionResources.put('home:jm:authority', { schema_version: 'newow_home_cards_v2', items: [{ product: 'jm', strategies: { trend: { '1d': { snapshot_context: snapshot } } } }] })
+  assert.deepEqual(await getNewowDailySnapshot(identity), snapshot)
+  const request: NewowProductRequest = { identity, section: 'chart', asOf: AS_OF }
+  const chart = normalizedChart(request)
+  const key = `newow:jm:section:${JSON.stringify(buildNewowProductQuery(request))}`
+  // A summary owns no chart payload. Only a complete, validated section can serve a revisit.
+  assert.equal(newowSessionResources.peek(key), undefined)
+  newowSessionResources.put(key, chart)
+  assert.deepEqual(await getNewowProductSection(request), chart)
+  assert.deepEqual(await getNewowProductSection(request), chart)
+  invalidateNewowProduct('jm')
+  assert.equal(newowSessionResources.peek(key), undefined)
+  assert.equal(newowSessionResources.peek('home:jm:authority'), undefined)
+  newowSessionResources.invalidate()
+})
 
 test('default W1 waits for one complete-week cutoff before loading panels', async () => {
   const pending: Pending[] = []

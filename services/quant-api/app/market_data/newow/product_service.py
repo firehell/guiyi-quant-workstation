@@ -776,6 +776,7 @@ class NewowProductService:
             ResolvedPerformanceWindow,
         ] = {}
         self._reads: dict[tuple[object, ...], ProductReadSet] = {}
+        self._home_inputs: dict[tuple[object, ...], object] = {}
         self._read_input_failures: dict[
             tuple[int, object], tuple[str, str | None, dict[str, object]]
         ] = {}
@@ -1388,7 +1389,15 @@ class NewowProductService:
             channel, selected[-1].bar, as_of=request_as_of,
             input_sha256=lifecycle_input_sha256(read.replay_bars),
         ) if selected else None
-        from .home_cards import project_home_summary
+        from .home_cards import project_home_inputs, project_home_summary
+        anchor = selected[-1] if selected else None
+        shared_home = self._cached_read_input(
+            self._home_inputs,
+            ('newow_home_shared_v1', lifecycle_input_sha256(read.replay_bars),
+             identity.input_quality_policy, identity.frequency, anchor.bar.calculation_segment_id,
+             anchor.bar.bar.physical_contract, anchor.bar.bar.bar_end),
+            lambda: project_home_inputs(replay, anchor),
+        ) if anchor is not None else None
         return SectionDelivery(
             "delivered",
             status,
@@ -1401,7 +1410,7 @@ class NewowProductService:
                 page_identity,
                 channel if identity.strategy is ProductStrategy.TREND else None,
                 price_reference,
-                home_summary=project_home_summary(replay, selected[-1] if selected else None, status, price_reference),
+                home_summary=project_home_summary(replay, anchor, status, price_reference, shared_home),
                 price_unavailable_days=tuple(
                     (gap.trading_day, gap.physical_contract, gap.segment_id)
                     for gap in _owned_display_interruptions(read)

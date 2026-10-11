@@ -9,6 +9,8 @@ from app.db.session import get_db
 
 from app.market_data.newow.product_service import ProductServiceQuery
 from .test_product_service import _service
+from app.market_data.newow.daily_snapshot import DailySnapshot
+from guiyi_quant.newow.product_contracts import ProductStrategy, ProductFrequency
 from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, FeatureStatus, EvidenceStatus
 from app.market_data.newow.home_cards import project_home_summary
 
@@ -39,8 +41,8 @@ def test_home_summary_open_cost_is_eligible_build_price(product_cases):
 
 def test_batch_card_is_exact_projection_and_weekly_failure_is_isolated(monkeypatch, product_cases):
     service, _, _, clear = _service(product_cases)
-    monkeypatch.setattr(market_newow, '_build_product_service', lambda *_: service)
-    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_: SimpleNamespace(resolve=lambda *args: SimpleNamespace(as_of=clear.bar_end, freshness='current')))
+    monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: service)
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
     def failed(*args):
         raise ValueError('NEWOW_WEEKLY_STALE')
     monkeypatch.setattr(market_newow, '_build_weekly_resolver', failed)
@@ -50,7 +52,9 @@ def test_batch_card_is_exact_projection_and_weekly_failure_is_isolated(monkeypat
             response = client.get('/api/v1/market/newow/home-cards?products=rb')
             assert response.status_code == 200
             body = response.json()
+            assert body['schema_version'] == 'newow_home_cards_v2'
             trend = body['items'][0]['strategies']['trend']
+            assert 'page_performance' not in trend['1d']
             assert trend['1d']['state'] == 'CLEAR'
             assert trend['1d']['recent_action']['signal_id'] == clear.signal_id
             assert trend['1d']['display_as_of'] == body['requested_at']
@@ -198,3 +202,69 @@ def test_row_caution_uses_confirmation_window_and_current_owner():
     anchor = SimpleNamespace(bar=SimpleNamespace(bar=foreign, calculation_segment_id='other'))
     replay = SimpleNamespace(identity=SimpleNamespace(frequency=SimpleNamespace(value='1d')), frames=frames)
     assert project_row_hints(replay, anchor, True) is None
+
+
+def test_home_never_reads_reference_history(monkeypatch, product_cases):
+    service, _, _, clear = _service(product_cases)
+    calls = []
+    original = service.query
+    def query(request):
+        calls.append(request.section.value)
+        assert request.section.value == 'chart'
+        return original(request)
+    monkeypatch.setattr(service, 'query', query)
+    monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: service)
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
+    monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *_: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            assert client.get('/api/v1/market/newow/home-cards?products=rb').status_code == 200
+        assert calls == ['chart'] * 4
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_lazy_performance_is_compact_and_bound_to_chart_token(monkeypatch, product_cases):
+    service, reader, build, clear = _service(product_cases)
+    resolve_window = reader.resolve_performance_window
+    monkeypatch.setattr(reader, 'resolve_performance_window', lambda product, frequency, since, through, as_of: resolve_window(product, frequency, since or build.trading_day, through or clear.trading_day, as_of))
+    chart = service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end))
+    assert chart.meta.snapshot_token
+    monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: service)
+    app.dependency_overrides[get_db] = lambda: object()
+    params = {'product':'rb', 'strategy':'trend', 'as_of':clear.bar_end.isoformat(), 'snapshot_token':chart.meta.snapshot_token}
+    try:
+        with TestClient(app) as client:
+            response = client.get('/api/v1/market/newow/home-card-performance', params=params)
+            assert response.status_code == 200, response.json()
+            body = response.json()
+            assert body['snapshot_token'] == chart.meta.snapshot_token
+            expected = service.query(ProductServiceQuery('rb', 'trend', '1d', section='reference', as_of=clear.bar_end, snapshot_token=chart.meta.snapshot_token, history_limit=1))
+            from app.market_data.newow.home_cards import project_home_performance
+            assert body['performance']['cum_return_percent'] == str(project_home_performance(expected)['cum_return_percent'])
+            assert not any(key in body['performance'] for key in ('items','curve','bars','trades'))
+            assert client.get('/api/v1/market/newow/home-card-performance', params={**params,'snapshot_token':'foreign'}).status_code == 409
+            assert client.get('/api/v1/market/newow/home-card-performance', params={**params,'as_of':'2026-10-09T07:00:00'}).status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_request_scoped_sharing_reuses_facts_and_auxiliary_inputs_without_changing_values(monkeypatch, product_cases):
+    from app.market_data.newow import home_cards
+    service, reader, _, clear = _service(product_cases)
+    service._reuse_read_inputs = True
+    original = home_cards.project_home_inputs
+    calls = []
+    def shared(replay, anchor):
+        calls.append(replay.identity.strategy)
+        return original(replay, anchor)
+    monkeypatch.setattr(home_cards, 'project_home_inputs', shared)
+    values = []
+    for strategy in ('trend', 'oscillation'):
+        values.append(service.query(ProductServiceQuery('rb', strategy, '1d', as_of=clear.bar_end)).chart.value.home_summary)
+    assert len(reader.loads) == 1
+    assert len(calls) == 1
+    independent, _, _, _ = _service(product_cases)
+    for strategy, expected in zip(('trend', 'oscillation'), values, strict=True):
+        assert independent.query(ProductServiceQuery('rb', strategy, '1d', as_of=clear.bar_end)).chart.value.home_summary == expected

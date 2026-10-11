@@ -3,8 +3,8 @@ import NewowPriceSources from './detail/newow/NewowPriceSources.vue'
 import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { getNewowHomeCards } from '@/api/newowHomeCards'
-import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards } from '@/api/newowHomeCards'
+import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
@@ -15,21 +15,70 @@ type Row = MarketHomeLiveDisplayRow<MarketHomeRow>
 const props = defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection }>()
 const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod]; sort: [sort: MarketHomeSort] }>()
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
-const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value })
+const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value }, peekNewowHomeCards)
+const performanceDeliveries = shallowRef<Record<string, { owner: string; loading: boolean; failed: boolean; value?: HomePeriodFact['page_performance'] }>>({})
+const previousPerformanceDeliveries = shallowRef<typeof performanceDeliveries.value>({})
+const recoveredProducts = new Set<string>()
+const performanceController = new AbortController()
+function performanceOwner(fact?: HomePeriodFact) { return JSON.stringify([fact?.as_of, fact?.snapshot_token, fact?.physical_contract, fact?.input_sha256, fact?.formula_versions, fact?.data_revision_identity]) }
+function ensurePerformance(symbol: string) {
+  const delivery = deliveries.value[symbol]
+  if (!delivery?.card || delivery.loading || delivery.stale) return
+  for (const choice of ['trend', 'oscillation'] as const) {
+    const day = delivery.card.strategies[choice]['1d'], key = `${symbol}:${choice}`, owner = performanceOwner(day)
+    if (day.status !== 'ready' || !day.snapshot_token || performanceDeliveries.value[key]?.owner === owner) continue
+    const entry = { owner, loading: true, failed: false }
+    performanceDeliveries.value = { ...performanceDeliveries.value, [key]: entry }
+    void getNewowHomePerformance(symbol, choice, day, performanceController.signal).then(value => {
+      if (performanceController.signal.aborted || performanceDeliveries.value[key] !== entry) return
+      performanceDeliveries.value = { ...performanceDeliveries.value, [key]: { owner, value, loading: false, failed: false } }
+    }).catch(error => {
+      if (performanceController.signal.aborted || performanceDeliveries.value[key] !== entry) return
+      performanceDeliveries.value = { ...performanceDeliveries.value, [key]: { owner, loading: false, failed: true } }
+      if (error?.code === 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' && !recoveredProducts.has(symbol)) {
+        recoveredProducts.add(symbol)
+        // Reacquire the entire product owner, never attach a new performance
+        // generation to old state/price facts. At most one recovery per refresh.
+        for (const choice of ['trend', 'oscillation'] as const) delete performanceDeliveries.value[`${symbol}:${choice}`]
+        void loader.reloadProduct(symbol)
+      }
+    })
+  }
+}
 const strategy = ref<HomeStrategy>('trend')
 const expanded = ref(new Set<string>())
-function toggleSummary(symbol: string) { const next = new Set(expanded.value); if (next.has(symbol)) next.delete(symbol); else next.add(symbol); expanded.value = next }
+function toggleSummary(symbol: string) { const next = new Set(expanded.value); if (next.has(symbol)) next.delete(symbol); else next.add(symbol); expanded.value = next; if (next.has(symbol)) ensurePerformance(symbol) }
 const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
 const periods = ['1d', '1w'] as const
 const sortOptions = [{ code: 'default', label: '默认' }, { code: 'close', label: '价格' }, { code: 'change', label: '涨跌幅' }, { code: 'volume', label: '成交量' }, { code: 'oi', label: '持仓量' }] as const
 const productKey = computed(() => [...props.products].sort().join(','))
-watch([productKey, () => props.authority, () => props.refreshSequence], () => { void loader.load(productKey.value ? productKey.value.split(',') : []) }, { immediate: true })
-onBeforeUnmount(() => loader.dispose())
+watch([productKey, () => props.authority, () => props.refreshSequence], (_value, previous) => {
+  // A remounted overview starts unresolved. Absence is not a new authority
+  // and must not erase valid session results before its snapshot arrives.
+  if (!props.authority) { void loader.load([]); return }
+  const forced = previous?.length === 3 && previous[2] !== props.refreshSequence
+  configureHomeCardAuthority(props.authority, forced)
+  if (forced || (previous?.length === 3 && (previous[0] !== productKey.value || previous[1] !== props.authority))) {
+    previousPerformanceDeliveries.value = performanceDeliveries.value
+    performanceDeliveries.value = {}
+    recoveredProducts.clear()
+  }
+  void loader.load(productKey.value ? productKey.value.split(',') : [])
+}, { immediate: true })
+watch(deliveries, () => { for (const symbol of expanded.value) ensurePerformance(symbol) })
+onBeforeUnmount(() => { loader.dispose(); performanceController.abort() })
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
 function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
 function composite(symbol: string) { return homeCompositeDisplay(fact(symbol, '1d'), fact(symbol, '1w')) }
 function space(symbol: string) { return homeCardSpace(fact(symbol, '1d')) }
-function performance(symbol: string) { return homePagePerformance(fact(symbol, '1d'), strategy.value) }
+function performanceDelivery(symbol: string) {
+  const day = fact(symbol, '1d'), delivery = performanceDeliveries.value[`${symbol}:${strategy.value}`]
+  if (delivery?.owner === performanceOwner(day)) return delivery
+  const previous = previousPerformanceDeliveries.value[`${symbol}:${strategy.value}`]
+  return deliveries.value[symbol]?.stale && previous?.owner === performanceOwner(day) ? previous : undefined
+}
+function performance(symbol: string) { return homePagePerformance({ ...fact(symbol, '1d'), status: fact(symbol, '1d')?.status ?? 'unavailable', state: fact(symbol, '1d')?.state ?? null, page_performance: performanceDelivery(symbol)?.value }, strategy.value) }
+function performanceNotice(symbol: string) { return performanceDelivery(symbol)?.loading ? '参考收益读取中' : performanceDelivery(symbol)?.failed ? '参考收益读取失败，可刷新重试' : '参考收益待确认' }
 function narrative(symbol: string) {
   const state = composite(symbol).state, referenceSpace = space(symbol)
   const signal = state === 'CLEAR' ? '清仓参考信号已出现' : state === 'BUILD' ? '建仓参考信号已出现' : state === 'HOLD' ? '持有观察' : state === 'FLAT' ? '空仓观察' : '日周综合状态待确认'
@@ -83,7 +132,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
               <span v-else class="stage-idle" aria-hidden="true">−</span><span>{{ stage.label }}</span>
             </div>
           </div>
-          <div class="composite-footer"><div class="composite-tags"><span class="control-tag">{{ homeControlLabel(fact(row.symbol, '1d')) }}</span><span class="performance-tag" :title="performance(row.symbol) ? `页面普通参考收益 · ${performance(row.symbol)?.since} 至 ${performance(row.symbol)?.through} · 零手续费与滑点` : '日线页面参考收益暂不可用'">日线 <template v-if="performance(row.symbol)">{{ performance(row.symbol)?.trade_count ? formatMarketPercent(performance(row.symbol)?.cum_return_percent, 'percentage_points', false) : '—' }}（{{ performance(row.symbol)?.trade_count }} 笔参考交易）</template><template v-else>参考收益待确认</template></span></div><strong v-if="space(row.symbol).value != null" :class="space(row.symbol).target ? 'composite-target' : 'space-down'">{{ space(row.symbol).label }} {{ formatMarketPercent(space(row.symbol).value, 'percentage_points', true) }}</strong><span v-else>空间待确认</span></div>
+          <div class="composite-footer"><div class="composite-tags"><span class="control-tag">{{ homeControlLabel(fact(row.symbol, '1d')) }}</span><span class="performance-tag" :title="performance(row.symbol) ? `页面普通参考收益 · ${performance(row.symbol)?.since} 至 ${performance(row.symbol)?.through} · 零手续费与滑点` : '日线页面参考收益暂不可用'">日线 <template v-if="performance(row.symbol)">{{ performance(row.symbol)?.trade_count ? formatMarketPercent(performance(row.symbol)?.cum_return_percent, 'percentage_points', false) : '—' }}（{{ performance(row.symbol)?.trade_count }} 笔参考交易）</template><template v-else>{{ performanceNotice(row.symbol) }}</template></span></div><strong v-if="space(row.symbol).value != null" :class="space(row.symbol).target ? 'composite-target' : 'space-down'">{{ space(row.symbol).label }} {{ formatMarketPercent(space(row.symbol).value, 'percentage_points', true) }}</strong><span v-else>空间待确认</span></div>
           <p class="composite-disclaimer">历史页面参考 · 零手续费与滑点 · 非可执行指令 <span>查看策略详情 →</span></p>
         </div>
         <details class="composite-evidence" @click.stop @keydown.stop><summary>详情与口径</summary><p>日周综合 · {{ direction(row.symbol).label }}</p><p v-if="composite(row.symbol).reason" class="composite-reason" role="status">{{ composite(row.symbol).reason }}</p><NewowPriceSources :rows="homePriceSources(fact(row.symbol, '1d'))" /></details>

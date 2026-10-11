@@ -1,3 +1,4 @@
+import { invalidateNewowProduct } from '../utils/newowSessionResources.ts'
 import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 
 import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
@@ -207,6 +208,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function refreshCurrent(): void {
+    if (currentIdentity.value) invalidateNewowProduct(currentIdentity.value.product)
     resetCurrentGeneration(true)
   }
 
@@ -425,6 +427,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
                 ? { chartLimit: chartPageLimit ?? 500 }
                 : { from: chartWindow.from, through: chartWindow.through, chartLimit: chartPageLimit ?? 500 }
               : null
+            invalidateNewowProduct(request.identity.product)
             invalidateTokenDependents(rejectedToken, section)
             if (section === 'auxiliary') {
               if (rebuildExhausted || rebuildChartWindow === null) {

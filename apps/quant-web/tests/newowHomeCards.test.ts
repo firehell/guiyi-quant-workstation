@@ -3,8 +3,23 @@ import test from 'node:test'
 import { homeCardsReloadIdentity, createHomeCardLoader, normalizeHomeCards, type CardDelivery, type HomeCardsResponse } from '../src/utils/newowHomeCards.ts'
 import { marketHomeUnifiedProductChartQuery } from '../src/utils/marketHomeRoutes.ts'
 
-const response = (products: string[]): HomeCardsResponse => ({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: products.map(product => ({ product, strategies: { trend: { '1d': { status: 'warming', state: null }, '1w': { status: 'unavailable', state: null } }, oscillation: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } } } })) })
+const response = (products: string[]): HomeCardsResponse => ({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: products.map(product => ({ product, strategies: { trend: { '1d': { status: 'warming', state: null }, '1w': { status: 'unavailable', state: null } }, oscillation: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } } } })) })
 const tick = () => new Promise<void>(resolve => setImmediate(resolve))
+
+test('returning home publishes later cached cards before expired earlier products finish', async () => {
+  let items: Record<string, CardDelivery> = {}
+  const pending: Array<{ product: string; resolve: (value: HomeCardsResponse) => void }> = []
+  const loader = createHomeCardLoader((products) => new Promise(resolve => pending.push({ product: products[0]!, resolve })), value => { items = value }, product => product === 'al' ? response(['al']) : undefined)
+  const loading = loader.load(['a', 'ag', 'al'])
+  assert.equal(items.al!.loading, false)
+  assert.equal(items.al!.stale, false)
+  assert.ok(items.al!.card)
+  assert.deepEqual(pending.map(item => item.product), ['a', 'ag'])
+  for (const item of pending) item.resolve(response([item.product]))
+  await loading
+  assert.equal(pending.length, 2)
+  loader.dispose()
+})
 
 test('60 cards load in bounded batches and no more than two concurrent requests', async () => {
   let active = 0, maximum = 0

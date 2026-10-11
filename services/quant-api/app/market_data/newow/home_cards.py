@@ -8,7 +8,16 @@ from guiyi_quant.newow.subplots import calculate_zhaoyao_mirror
 from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, MainState, TradeEligibility
 
 
-def project_home_summary(replay, anchor, status, prices):
+def project_home_inputs(replay, anchor):
+    """Strategy-independent inputs; callers share only an identical owner prefix."""
+    control = calculate_auxiliary_component(
+        replay.identity, tuple(frame.bar for frame in replay.frames if frame.bar.bar.bar_end <= anchor.bar.bar.bar_end),
+        'main_force_control', as_of=anchor.bar.bar.bar_end,
+    )
+    return control, project_row_hints(replay, anchor, True)
+
+
+def project_home_summary(replay, anchor, status, prices, shared_inputs=None):
     if anchor is None:
         return None
     bar = anchor.bar.bar
@@ -27,10 +36,7 @@ def project_home_summary(replay, anchor, status, prices):
     # history remains available for provenance, never as a fresh crossing.
     current = next((action for action in reversed(actions) if action.bar_end == bar.bar_end), None) if ready else None
     ma10 = dict(anchor.main_values).get('b') if replay.identity.strategy.value == 'trend' and ready else None
-    control = calculate_auxiliary_component(
-        replay.identity, tuple(frame.bar for frame in replay.frames if frame.bar.bar.bar_end <= bar.bar_end),
-        'main_force_control', as_of=bar.bar_end,
-    )
+    control, row_hints = shared_inputs if shared_inputs is not None else project_home_inputs(replay, anchor)
     tail = control.segments[-1] if control.segments else None
     control_ready = ready and tail is not None and tail.status.status is FeatureRuntimeStatus.READY and tail.value is not None and tail.physical_contract == bar.physical_contract and tail.segment_id == anchor.bar.calculation_segment_id and tail.bar_ends[-1] == bar.bar_end
     return {
@@ -65,7 +71,7 @@ def project_home_summary(replay, anchor, status, prices):
             'formula_version': control.formula_version, 'bar_end': bar.bar_end,
             'physical_contract': bar.physical_contract, 'calculation_segment_id': anchor.bar.calculation_segment_id,
             'page_parity': True, 'executable': False},
-        'row_hints': project_row_hints(replay, anchor, ready),
+        'row_hints': row_hints if ready else None,
         'recent_action': {'kind': latest.kind.value, 'bar_end': latest.bar_end, 'signal_id': latest.signal_id} if latest else None,
         'page_parity': True, 'executable': False,
     }

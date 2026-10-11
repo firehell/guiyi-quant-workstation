@@ -280,7 +280,7 @@ overview authority，卡片仅为真实参与行情品种生成；目录不得�
 
 - **WHEN** 用户点击默认、价格、涨跌幅、成交量或持仓量排序按钮或板块筛选
 - **THEN** 保留既有本地排序、缺值末尾和稳定symbol规则；按钮支持键盘操作，刷新及返回恢复有效偏好
-- **AND** 排序不重取策略；板块改变仅对新可见品种读取策略，旧响应不得覆盖新authority
+- **AND** 首次进入按完整首页品种集合读取策略，即使恢复了板块偏好；板块、排序和趋势/震荡切换只更新本地视图，不取消加载或重取策略，旧响应不得覆盖新authority
 
 #### Scenario: One strategy request fails during refresh
 
@@ -293,6 +293,28 @@ overview authority，卡片仅为真实参与行情品种生成；目录不得�
 - **WHEN** 使用受控60品种fixture验收桌面及390px布局
 - **THEN** 全部卡片纵向可达且无横向溢出；展开、收起、独立周期切换与数据失败均可访问
 - **AND** 参与/总数、缺失和过期状态仍由各自authority提供；fixture不代表生产或原站逐像素验收
+
+### Requirement: Home summaries and lazy reference performance have separate read contracts
+
+`/api/v1/market/newow/home-cards` SHALL 使用 `newow_home_cards_v2`，只读取日周策略摘要、参考价格、控盘、提示和快照上下文，不计算历史参考收益。同一请求内同权威输入的行情与策略无关指标可共享，但跨请求仍验证权威身份、质量与完整预热。
+
+`/api/v1/market/newow/home-card-performance` SHALL 为只读接口，要求品种、趋势或震荡策略、带时区截止时间及对应快照 token；返回 `newow_home_performance_v1` 的精简日线页面参考收益、交易数、统计区间和来源身份，不返回曲线或交易明细。快照冲突 MUST 显式拒绝，不能拼接当前摘要和旧收益。
+
+前端 SHALL 在品种展开时立即显示摘要，再独立补载趋势和震荡收益；未展开不请求收益，重复展开或进行中请求去重，失败不阻塞其他卡片。详情仍按分区读取完整图表、参考交易、解释与辅助指标，摘要不可作为图表缓存；可复用已验证的对应日周快照上下文。
+
+资源存储 SHALL 仅限当前浏览器会话，最多120项、32 MiB、5分钟有效期，按最久未使用淘汰，命中不延长有效期。身份 MUST 包含品种、周期、物理合约、策略/公式版本、数据修订、快照 token、窗口及 schema。离开页面只解除订阅，不取消其他订阅共享的读取；主动刷新、参与集合或权威身份变化须失效对应资源并隔离代次。收益快照冲突至多触发一次该品种摘要恢复，不重取全量集合。
+
+策略状态、页面参考收益与未来账户订单/成交/持仓/净收益 MUST 保持独立身份。页面结果继续标记 `page_parity=true`、`executable=false`；分钟报价不触发日周重算，页面读取不得触发订单或重建账户持仓。未来账户投影由 Ledger 与账户事件驱动，本轮不新增账户接口。
+
+#### Scenario: A user expands and revisits a strategy summary
+
+- **WHEN** 用户展开、收起并再次展开同一快照，或从详情返回首页
+- **THEN** 未过期结果与进行中请求复用；摘要立即显示，收益加载/失败独立展示；详情图表仍须有自己的完整响应
+
+#### Scenario: A refreshed authority rejects an old performance owner
+
+- **WHEN** 主动刷新、权威身份变化或收益接口拒绝旧 token
+- **THEN** 新旧代次隔离，失败仅保留并标记旧快照，旧请求不能覆盖新状态；token 冲突只恢复受影响品种，恢复失败不循环重试
 
 ### Requirement: Home quotes use a separate completed minute authority
 

@@ -82,7 +82,7 @@ test('home supplemental facts keep daily ownership and ordinary page return', ()
 })
 
 const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
-const apiUrl = moduleUrl('export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
+const apiUrl = moduleUrl('export const performanceCalls=[];export const authorityCalls=[];export function configureHomeCardAuthority(...args){authorityCalls.push(args)};export function peekNewowHomeCards(){return undefined};export function getNewowHomePerformance(product,strategy,fact,signal){return new Promise((resolve,reject)=>performanceCalls.push({product,strategy,fact,signal,resolve,reject}))};export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
 const api = await import(apiUrl)
 async function loadList() {
   const iconSource = readFileSync(new URL('../src/components/market/MarketStateIcon.vue', import.meta.url), 'utf8')
@@ -114,8 +114,9 @@ test('rows expand and summary cards navigate with selected strategy while retain
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows, products: ['rb'], authority: 'one', refreshSequence: sequence.value, liveStale: true, sort: 'default', sortDirection: 'desc', onChart: (...args: unknown[]) => chart.push(args), onSort: (value: unknown) => sorts.push(value) }) }))
   try {
     app.mount(root)
+    assert.equal(api.authorityCalls.at(-1)?.[1], false)
     const call = api.calls.at(-1)
-    call.resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:true, executable:false, items:[{kind:'caution', peak_day:'2026-10-08', event_day:'2026-10-09', formula_version:'mirror'}]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
+    call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:true, executable:false, items:[{kind:'caution', peak_day:'2026-10-08', event_day:'2026-10-09', formula_version:'mirror'}]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
     await settle()
     assert.match(nodeText(root), /3100.13/)
     assert.equal(nodeText(findNode(root, n => n.props.class === 'row-hint')!), '小心')
@@ -144,7 +145,7 @@ test('rows expand and summary cards navigate with selected strategy while retain
     ;(findNode(root, n => n.props.role === 'link')!.props.onClick as Function)()
     assert.deepEqual(chart, [['rb', 'trend', '1d'], ['rb', 'oscillation', '1d']])
     sequence.value++; await nextTick()
-    api.calls.at(-1).resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': { ...ready('HOLD'), target_space_percent: '4' }, '1w': ready('CLEAR') }, oscillation: { '1d': { ...ready('FLAT'), absorb_space_percent: '-3' }, '1w': ready('HOLD') } } }] })
+    api.calls.at(-1).resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': { ...ready('HOLD'), target_space_percent: '4' }, '1w': ready('CLEAR') }, oscillation: { '1d': { ...ready('FLAT'), absorb_space_percent: '-3' }, '1w': ready('HOLD') } } }] })
     await settle()
     assert.match(nodeText(root), /日线吸筹参考价相对确认收盘价 -3/)
     ;(findNode(root, n => n.type === 'button' && nodeText(n) === '趋势')!.props.onClick as Function)(); await nextTick()
@@ -162,7 +163,7 @@ test('rows expand and summary cards navigate with selected strategy while retain
     assert.match(nodeText(root), /3000.00/)
     sequence.value++; await nextTick()
     const warming = { status: 'warming', state: null }, unavailable = { status: 'unavailable', state: null }
-    api.calls.at(-1).resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': warming, '1w': unavailable }, oscillation: { '1d': warming, '1w': unavailable } } }] })
+    api.calls.at(-1).resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': warming, '1w': unavailable }, oscillation: { '1d': warming, '1w': unavailable } } }] })
     await settle()
     assert.match(nodeText(root), /日线预热中/)
     assert.match(nodeText(root), /周线不可用/)
@@ -178,16 +179,19 @@ test('rows expand and summary cards navigate with selected strategy while retain
 test('sector filtering keeps the full product load alive and reuses completed cards', async () => {
   const List = await loadList(), root = element('root')
   const all = ['a', 'cu', 'rb'].map(symbol => ({ symbol, product_name: symbol, close: 100, price_change_1d: 0 }))
-  const rows = ref(all), products = ref(all.map(row => row.symbol)), authority = ref('one')
+  const rows = ref(all), products = ref(all.map(row => row.symbol)), authority = ref('')
   const sequence = ref(0), sort = ref('default')
   const start = api.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, {
     rows: rows.value, products: products.value, authority: authority.value,
     refreshSequence: sequence.value, liveStale: false, sort: sort.value, sortDirection: 'desc',
   }) }))
-  const respond = (call: any) => call.resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: call.products.map((product: string) => ({ product, strategies: { trend: { '1d': ready('HOLD'), '1w': ready('HOLD') }, oscillation: { '1d': ready('FLAT'), '1w': ready('FLAT') } } })) })
+  const respond = (call: any) => call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: call.products.map((product: string) => ({ product, strategies: { trend: { '1d': ready('HOLD'), '1w': ready('HOLD') }, oscillation: { '1d': ready('FLAT'), '1w': ready('FLAT') } } })) })
   try {
     app.mount(root)
+    assert.equal(api.calls.length, start)
+    assert.notEqual(api.authorityCalls.at(-1)?.[0], '')
+    authority.value = 'one'; await nextTick()
     const initial = api.calls.slice(start)
     assert.equal(initial.length, 2)
     rows.value = [all[0]!]; await nextTick()
@@ -272,4 +276,39 @@ test('row hints require exact daily ownership and do not create a trend source',
   assert.deepEqual(homeRowHints({...day, row_hints: {...day.row_hints, physical_contract: 'RB2601'}}), [])
   assert.deepEqual(homeRowHints({...day, row_hints: {...day.row_hints, executable: true}}), [])
   assert.equal(homeTrendDisplay().tone, 'pending')
+})
+
+
+test('expanded performance is lazy, deduplicated, authority isolated and recovers one rejected product owner', async () => {
+  const List = await loadList(), root = element('root'), authority = ref('first')
+  const row = { symbol: 'rb', product_name: '螺纹钢', close: 3100, price_change_1d: 0 }
+  const packet = (token: string) => ({ schema_version: 'newow_home_cards_v2', requested_at: ready('FLAT').display_as_of, items: [{ product:'rb', strategies: { trend: { '1d': { ...ready('FLAT'), snapshot_token:token }, '1w':ready('FLAT') }, oscillation: { '1d':{ ...ready('HOLD'), snapshot_token:token + '-osc' }, '1w':ready('HOLD') } } }] })
+  const initialCount = api.performanceCalls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows:[row], products:['rb'], authority:authority.value, refreshSequence:0, liveStale:false, sort:'default', sortDirection:'desc' }) }))
+  try {
+    app.mount(root); api.calls.at(-1).resolve(packet('one')); await settle()
+    assert.equal(api.performanceCalls.length, initialCount)
+    const toggle = () => (findNode(root, n => n.props['aria-label'] === '螺纹钢展开策略摘要')!.props.onClick as Function)()
+    toggle(); await settle(); assert.equal(api.performanceCalls.length, initialCount + 2)
+    assert.match(nodeText(root), /参考收益读取中/)
+    toggle(); toggle(); await settle(); assert.equal(api.performanceCalls.length, initialCount + 2)
+    const oldTrend = api.performanceCalls[initialCount], oldOsc = api.performanceCalls[initialCount + 1]
+    authority.value = 'second'; await settle(); api.calls.at(-1).resolve(packet('one')); await settle()
+    assert.equal(api.performanceCalls.length, initialCount + 4)
+    const perf = (strategy: string, percent: string) => ({ status:'ready', version:'newow_page_performance_v3379_v2', strategy, frequency:'1d', as_of:ready('FLAT').as_of, input_sha256:'history', cum_return_percent:percent, trade_count:5, page_parity:true, executable:false })
+    oldTrend.resolve(perf('trend','999')); oldOsc.reject(Error('old offline')); await settle()
+    assert.doesNotMatch(nodeText(root), /999|读取失败/)
+    api.performanceCalls[initialCount + 2].reject(Object.assign(Error('conflict'), { code:'NEWOW_SNAPSHOT_GENERATION_CONFLICT' })); await settle()
+    assert.match(nodeText(root), /策略刷新中，保留上次快照/)
+    api.calls.at(-1).resolve(packet('two')); await settle()
+    assert.equal(api.performanceCalls.length, initialCount + 6)
+    api.performanceCalls[initialCount + 3].resolve(perf('oscillation','999')); await settle()
+    api.performanceCalls[initialCount + 4].resolve(perf('trend','20.59'))
+    api.performanceCalls[initialCount + 5].resolve(perf('oscillation','62.14')); await settle()
+    assert.match(nodeText(root), /20.59%/)
+    const before = api.performanceCalls.length
+    ;(findNode(root, n => n.type === 'button' && nodeText(n) === '震荡')!.props.onClick as Function)(); await settle()
+    assert.match(nodeText(root), /62.14%/); assert.doesNotMatch(nodeText(root), /999/)
+    toggle(); toggle(); await settle(); assert.equal(api.performanceCalls.length, before)
+  } finally { app.unmount() }
 })
