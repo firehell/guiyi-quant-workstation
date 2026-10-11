@@ -235,6 +235,9 @@ def test_main_actions_keep_semantic_prices_and_same_segment_references(
             assert action.reference_price == dict(frame.main_values)["ma45"]
             assert action.source_marker_id is None
         assert action.anchor_price == action.reference_price
+        if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY:
+            assert action.related_build_id is None
+            continue
         if action.kind is ActionKind.CLEAR:
             entry = by_id[action.related_build_id]
             assert entry.kind is ActionKind.BUILD
@@ -323,17 +326,15 @@ def _same_bar_oscillation_case(product_cases, *, prewarm: bool = False):
     return replace(base, bars=tuple(bars))
 
 
-def test_oscillation_keeps_source_clear_then_build_order_on_the_same_bar(product_cases):
+def test_oscillation_clear_forbids_build_on_the_same_bar(product_cases):
     case = _same_bar_oscillation_case(product_cases)
     replay = replay_strategy(case.identity, case.bars)
     actions = replay.frames[-1].actions
 
     assert [(action.kind, action.sequence) for action in actions] == [
         (ActionKind.CLEAR, 0),
-        (ActionKind.BUILD, 1),
     ]
     assert actions[0].related_build_id == replay.frames[-2].actions[0].signal_id
-    assert actions[1].related_build_id is None
 
 
 def test_prewarm_build_witness_classifies_later_clear_without_eligible_entry(

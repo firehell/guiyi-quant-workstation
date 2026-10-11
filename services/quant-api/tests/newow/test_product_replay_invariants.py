@@ -15,7 +15,7 @@ from guiyi_quant.newow.product_adapters import (
     replay_strategy,
     seed_replay_state,
 )
-from guiyi_quant.newow.product_contracts import DataInterruption
+from guiyi_quant.newow.product_contracts import DataInterruption, TradeEligibility
 from guiyi_quant.newow.product_identity import InputQualityPolicy, build_segment_id
 
 
@@ -61,14 +61,24 @@ def test_public_replay_and_persistable_per_bar_state_share_one_step(
 ):
     """The public wrapper must not have a separate batch-only formula path."""
     case = product_cases.primitive_input(strategy, frequency)
-    expected = replay_strategy(case.identity, case.bars).frames
+    batch = replay_strategy(case.identity, case.bars)
+    expected = batch.frames
     state = seed_replay_state()
     actual = []
+    actual_diagnostics = []
     for item in label_calculation_segments(case.identity, case.bars, ()):
         state, frame, diagnostics = replay_step(case.identity, state, item)
-        assert diagnostics == ()
+        expected_diagnostics = (
+            ("INITIAL_CLEAR_NO_ENTRY",)
+            if any(action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+                   for action in frame.actions)
+            else ()
+        )
+        assert diagnostics == expected_diagnostics
+        actual_diagnostics.extend(diagnostics)
         actual.append(frame)
     assert tuple(actual) == expected
+    assert tuple(dict.fromkeys(actual_diagnostics)) == batch.diagnostics
     assert len(state.pairing.source_builds) <= 1
 
 

@@ -278,3 +278,15 @@ test('third isolated candidate accepts only fixed loopback 8012 and defaults to 
     else process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN = originalOrigin
   }
 })
+
+
+test('four experiment preview allows its exact read-only route and rejects writes or aliases', async () => {
+  const { previewTarget } = await import('../previewProxy.ts')
+  const path = '/api/v1/market/newow/experiments?product=rb&frequency=1d&kind=osc-test4'
+  assert.equal(previewTarget('GET', path), 'http://127.0.0.1:8010')
+  for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) assert.equal(previewTarget(method, path), null)
+  assert.equal(previewTarget('GET', path, true), null)
+  for (const route of ['/api/v1/market/newow/experiments/', '/api/v1/market/newow/%65xperiments']) {
+    assert.equal(previewTarget('GET', route), null)
+  }
+})

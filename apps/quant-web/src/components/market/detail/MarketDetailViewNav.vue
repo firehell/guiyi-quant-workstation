@@ -60,9 +60,10 @@ watch(() => props.identity, (identity) => {
 function chooseView(view: AnalysisChoice) {
   if (view === 'trend' || view === 'oscillation' || view === 'main_rise' || view === 'dual') {
     const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
-    const frequency = props.identity.view === 'newow'
+    const preferredFrequency = props.identity.view === 'newow'
       ? props.identity.frequency
       : (restored.frequency === '1m' || props.newowFrequencies.includes(restored.frequency)) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
+    const frequency = view === 'main_rise' && ['5m', '15m', '30m'].includes(preferredFrequency) ? '1d' : preferredFrequency
     emit('select', {
       view: 'newow', symbol: props.identity.symbol, strategy: view === 'dual' ? 'trend' : view,
       ...(view === 'dual' ? { newowMode: 'dual' as const } : {}),
@@ -122,6 +123,7 @@ function periodLabel(value: MarketFrequency) {
         :class="{ 'is-active': activeChoice === view.value }"
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
+      <span v-if="view.value === 'dual' && identity.view === 'newow'" id="newow-strategy-test-anchor" />
       <button v-if="view.value === 'dual' && identity.view === 'newow'" type="button" class="detail-view-nav__ai" @click="emit('ai-analysis')">✨AI分析</button></template>
     </div>
 

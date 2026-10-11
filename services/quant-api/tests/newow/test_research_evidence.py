@@ -77,7 +77,7 @@ def test_fold_evidence_reports_required_nonaggregate_dimensions() -> None:
         frequency="1d",
         strategy=ResearchStrategy.TREND,
         formula_version="newow_causal_next_open_costed_v1",
-        signal_formula_versions=("newow_trend_band_page_v2",),
+        signal_formula_versions=("newow_trend_band_page_v3",),
         costs=BacktestCosts(),
         cost_snapshot_identities=("sha256:baseline",),
         fills=(),
@@ -97,7 +97,7 @@ def test_fold_evidence_reports_required_nonaggregate_dimensions() -> None:
     )
     result = WalkForwardValidationResult(
         strategy=ResearchStrategy.TREND,
-        signal_formula_versions=("newow_trend_band_page_v2",),
+        signal_formula_versions=("newow_trend_band_page_v3",),
         folds=(
             WalkForwardFoldResult(
                 fold=fold,

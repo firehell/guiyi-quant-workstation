@@ -516,6 +516,12 @@ class MarketDataHistoricalInputReader:
             fingerprint=sha256(_canonical([item.fingerprint,[(action.signal_id,str(action.reference_price),action.trade_eligibility.value) for action in source_actions]]).encode()).hexdigest()
             bars.append(replace(item,payload=payload,fingerprint=fingerprint,boundaries=tuple(replace(boundary,stream=request.identity) for boundary in item.boundaries)))
         manifest={**shadow.dependency_manifest,"query_through":request.through.isoformat(),"query_as_of":request.as_of.isoformat(),"input_count":len(bars),"source_reader":shadow.dependency_manifest["reader"],"reader":"newow_fusion_saved_sources_v1","source_dependencies":dependencies,"formula_versions":list(request.identity.formula_versions),"reference_model_version":request.identity.reference_model_version,"input_sha256":sha256(_canonical([bar.fingerprint for bar in bars]).encode()).hexdigest()}
+        if "input_fingerprints" in manifest:
+            # Full manifests bind execution inputs, not the shadow market
+            # inputs from which fusion payloads and fingerprints were derived.
+            manifest["source_input_fingerprints"] = manifest["input_fingerprints"]
+            manifest["input_fingerprints"] = [bar.fingerprint for bar in bars]
+            manifest["reader"] = "newow_fusion_saved_sources_v2"
         return HistoricalInputSnapshot(request.identity,shadow.storage_start,shadow.completed_through,tuple(bars),manifest,sha256(_canonical(manifest).encode()).hexdigest(),len(_canonical(manifest).encode())+len(bars)*256)
 
     def _read_subing(self, request):

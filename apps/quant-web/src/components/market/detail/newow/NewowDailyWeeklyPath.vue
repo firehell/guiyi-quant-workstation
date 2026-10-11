@@ -18,37 +18,38 @@ const reasons: Record<string,string> = { PERIOD_CONTEXT_UNAVAILABLE:'周期数�
 </script>
 
 <template>
-  <section class="period-path" aria-label="日周路径示意图">
+  <section class="period-path" aria-label="周日60分路径示意图">
     <button class="period-path__toggle" type="button" :aria-expanded="expanded" :aria-controls="bodyId" @click="expanded = !expanded">
       <strong>多周期嵌套波段路径</strong><b>{{ expanded ? '收起 ⌃' : '展开 ⌄' }}</b>
     </button>
     <div v-show="expanded" :id="bodyId" class="period-path__body">
-      <p v-if="loading" role="status">读取同一快照的日周路径…</p>
+      <p v-if="loading" role="status">读取同一快照的周日60分路径…</p>
       <p v-else-if="error" role="alert">路径数据读取失败，请刷新综合决策。</p>
-      <p v-else-if="!data">日周路径数据不可用。</p>
+      <p v-else-if="!data">周日60分路径数据不可用。</p>
       <template v-else>
-        <div class="period-path__overview"><span>现价 <b>{{ price(data.periods.find(period => period.current)?.current ?? null) }}</b></span><span v-for="period in data.periods" :key="period.frequency">{{ period.frequency === '1w' ? '周线' : '日线' }} 成本 <b>{{ price(period.cost) }}</b> → 目标 <b>{{ price(period.target) }}</b></span><span>60分 —（路径事实未提供）</span></div>
+        <div class="period-path__overview"><span>现价 <b>{{ price(data.periods.find(period => period.current)?.current ?? null) }}</b></span><span v-for="period in data.periods" :key="period.frequency">{{ period.frequency === '1w' ? '周线' : period.frequency === '60m' ? '60分' : '日线' }} 成本 <b>{{ price(period.cost) }}</b> → 目标 <b>{{ price(period.target) }}</b></span></div>
+        <p>路径快照 {{ formatBeijingInstant(data.as_of) }}</p>
         <div class="period-path__canvas">
-          <svg viewBox="0 0 760 380" role="img" aria-label="日周参考成本、现价与目标的价格示意">
-            <rect x="465" y="50" width="250" height="290" fill="#edeef4" />
+          <svg viewBox="0 0 760 380" role="img" aria-label="周日60分参考成本、现价与目标的价格示意">
+            <rect x="471.8" y="50" width="243.2" height="290" fill="#edeef4" />
             <g v-for="tick in ticks" :key="tick.y"><path :d="`M75 ${tick.y} H715`" stroke="#dedfe7" /><text x="66" :y="tick.y + 5" text-anchor="end" class="period-path__axis">{{ tick.value }}</text></g>
-            <path d="M465 50 V340" stroke="#999ba6" stroke-dasharray="6 5" fill="none" />
-            <text x="465" y="32" text-anchor="middle" class="period-path__axis period-path__now">现在</text>
-            <text x="75" y="366" class="period-path__axis">过去（成本 → 现在）</text><text x="715" y="366" text-anchor="end" class="period-path__axis">未来（目标示意区）</text>
+            <path d="M471.8 50 V340" stroke="#999ba6" stroke-dasharray="6 5" fill="none" />
+            <text x="471.8" y="32" text-anchor="middle" class="period-path__axis period-path__now">现在</text>
+            <text x="75" y="366" class="period-path__axis">过去（成本 → 现在）</text><text x="715" y="366" text-anchor="end" class="period-path__axis">目标示意区（非预测）</text>
             <g v-for="(path,index) in paths" :key="path.frequency" :stroke="path.color" :fill="path.color">
-              <path v-if="path.cost && path.current && path.active" :d="`M${path.cost.x} ${path.cost.y} L${path.current.x} ${path.current.y}`" fill="none" stroke-width="2.5" />
-              <path v-if="path.current && path.target" :d="`M${path.current.x} ${path.current.y} L${path.target.x} ${path.target.y}`" fill="none" stroke-width="2.5" stroke-dasharray="7 5" />
+              <path v-if="path.cost && path.current && path.target" :d="`M${path.cost.x} ${path.cost.y} L${path.current.x} ${path.current.y}`" fill="none" stroke-width="2.5" :stroke-dasharray="path.dash" />
+              <path v-if="path.cost && path.current && path.target" :d="`M${path.current.x} ${path.current.y} L${path.target.x} ${path.target.y}`" fill="none" stroke-width="2.5" :stroke-dasharray="path.dash" />
               <template v-for="(point,key) in { cost:path.cost, current:path.current, target:path.target }" :key="key"><circle v-if="point" :cx="point.x" :cy="point.y" :r="key === 'current' ? 5 : 4" fill="white" stroke-width="2" /></template>
-              <text v-if="path.cost" :x="path.cost.x + 6" :y="path.cost.y + (index === 0 ? -10 : 20)" stroke="none">{{ path.label }}成本 {{ price(data.periods[index]!.cost) }}</text>
-              <text v-if="path.target" text-anchor="end" :x="path.target.x - 6" :y="path.target.y + (index === 0 ? -10 : 20)" stroke="none">目标 {{ price(data.periods[index]!.target) }} {{ path.active ? '[持有]' : '[观望]' }}</text>
+              <text v-if="path.cost" :x="path.cost.x + 6" :y="path.cost.y + (index === 0 ? -10 : index === 1 ? 20 : 40)" stroke="none">{{ path.label }}成本 {{ price(data.periods[index]!.cost) }}</text>
+              <text v-if="path.target" text-anchor="end" :x="path.target.x - 6" :y="path.target.y + (index === 0 ? -10 : index === 1 ? 20 : 40)" stroke="none">目标 {{ price(data.periods[index]!.target) }} {{ `[${path.stateLabel}]` }}</text>
             </g>
           </svg>
         </div>
-        <div class="period-path__legend"><span v-for="path in paths" :key="path.frequency" :style="{ color:path.color }">━ {{ path.label }} {{ path.state === null ? '[数据不足]' : path.active ? '[持有]' : '[观望]' }}</span><span style="color:#00bcd4">━ 60分（暂无路径事实）</span><small>○ 成本　━ 实线＝已完成段 / 虚线＝目标示意</small></div>
+        <div class="period-path__legend"><span v-for="path in paths" :key="path.frequency" :style="{ color:path.color }">━ {{ path.label }} {{ `[${path.stateLabel}]` }}</span><small>○ BUILD参考成本　━ 实线＝建仓/持有；虚线＝清仓；点线＝空仓</small></div>
         <details class="period-path__sources"><summary>路径口径与数据来源</summary>
-        <div class="period-path__values"><article v-for="period in data.periods" :key="period.frequency"><strong>{{ period.frequency === '1w' ? '周线' : '日线' }}</strong><span>成本 {{ price(period.cost) }}</span><span>现价 {{ price(period.current) }}</span><span>目标 {{ price(period.target) }}</span><small v-if="period.reason">{{ reasons[period.reason] ?? '输入不足' }}</small></article></div>
-        <p>页面路径仅连接参考价格，横轴为阶段示意，不是预测时间或价格保证；空仓不绘制已持有路径。无止损事实时不补画止损。</p>
-        <details class="period-path__sources"><summary>日周独立价格来源</summary><div v-for="period in data.periods" :key="period.frequency"><strong>{{ period.frequency === '1w' ? '周线' : '日线' }}</strong><p v-for="(source,key) in {cost:period.cost,current:period.current,target:period.target}" :key="key">{{ {cost:'建仓成本',current:'现价',target:'目标'}[key] }}：{{ source ? `${price(source)} · ${source.frequency} · ${formatBeijingInstant(source.bar_end)} · ${source.physical_contract} / ${source.segment_id} · ${source.source_category}` : '来源缺失' }}<span v-if="key === 'cost' && period.cost"> · BUILD {{ period.cost.entry_marker_id }}</span></p><small>{{ period.formula_versions?.join(' / ') }}</small></div><p>目标为同周期 HHV10 通道，是期货适配，不冒充牛哇私有价格；不参与策略评分或收益。</p></details>
+        <div class="period-path__values"><article v-for="period in data.periods" :key="period.frequency"><strong>{{ period.frequency === '1w' ? '周线' : period.frequency === '60m' ? '60分' : '日线' }}</strong><span>成本 {{ price(period.cost) }}</span><span>现价 {{ price(period.current) }}</span><span>目标 {{ price(period.target) }}</span><small v-if="period.reason">{{ reasons[period.reason] ?? '输入不足' }}</small></article></div>
+        <p>清仓状态的成本只来自准确关联的历史 BUILD，不表示当前持仓。页面路径仅连接参考价格，横轴为阶段示意，不是预测时间或价格保证；缺建仓身份不绘制过去或目标路径。无止损事实时不补画止损。</p>
+        <details class="period-path__sources"><summary>周日60分独立价格来源</summary><div v-for="period in data.periods" :key="period.frequency"><strong>{{ period.frequency === '1w' ? '周线' : period.frequency === '60m' ? '60分' : '日线' }}</strong><p v-for="(source,key) in {cost:period.cost,current:period.current,target:period.target}" :key="key">{{ {cost:'建仓成本',current:'现价',target:'目标'}[key] }}：{{ source ? `${price(source)} · ${source.frequency} · ${formatBeijingInstant(source.bar_end)} · ${source.physical_contract} / ${source.segment_id} · ${source.source_category}` : '来源缺失' }}<span v-if="key === 'cost' && period.cost"> · BUILD {{ period.cost.entry_marker_id }}</span></p><small>{{ period.formula_versions?.join(' / ') }}</small></div><p>目标为同周期 HHV10 通道，是期货适配，不冒充牛哇私有价格；不参与策略评分或收益。</p></details>
         </details>
       </template>
     </div>

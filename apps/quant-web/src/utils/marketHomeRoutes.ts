@@ -8,9 +8,9 @@ export function marketHomeEventChartQuery(event: AlertEvent) {
   return marketHomeUnifiedEventChartQuery(event)
 }
 
-export function marketHomeUnifiedProductChartQuery(symbol: string, frequency: NewowFrequency) {
+export function marketHomeUnifiedProductChartQuery(symbol: string, frequency: NewowFrequency, strategy: 'trend' | 'oscillation' = 'trend') {
   return serializeMarketDetailIdentity({
-    view: 'newow', symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency,
+    view: 'newow', symbol, strategy, seriesKind: 'actual_dominant', frequency,
   })
 }
 

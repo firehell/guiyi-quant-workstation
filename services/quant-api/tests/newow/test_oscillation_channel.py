@@ -86,7 +86,7 @@ def test_frozen_v3_2_82_channel_matches_all_30_page_values() -> None:
     ]
 
 
-def test_same_bar_prioritizes_clear_then_allows_new_build() -> None:
+def test_same_bar_clear_forbids_new_build() -> None:
     rows = [(95, 100, 90, 95, 100)] * 9
     rows.append((90, 95, 80, 85, 100))
     rows.append((90, 110, 70, 90, 100))
@@ -96,9 +96,8 @@ def test_same_bar_prioritizes_clear_then_allows_new_build() -> None:
     assert [signal.action for signal in steps[9].signals] == [OscillationAction.BUILD]
     assert [signal.action for signal in steps[10].signals] == [
         OscillationAction.CLEAR,
-        OscillationAction.BUILD,
     ]
-    assert steps[10].state.holding is True
+    assert steps[10].state.holding is False
 
 
 def test_prefix_restore_ineligible_and_rollover_are_safe() -> None:

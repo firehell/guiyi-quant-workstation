@@ -603,6 +603,62 @@ def newow_historical_snapshot(
         raise HTTPException(status_code=status, detail=detail) from exc
 
 
+@router.get("/home-cards")
+def newow_home_cards(request: Request, products: str = Query(...), session: Session = Depends(get_db)):
+    """Bounded D1/W1 facts; a failed period never suppresses another product."""
+    if set(request.query_params) != {'products'} or len(request.query_params.getlist('products')) != 1:
+        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
+    names = products.split(',')
+    if not 1 <= len(names) <= 12 or len(set(names)) != len(names):
+        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
+    names = [_normalize_public_product(name) for name in names]
+    if len(set(names)) != len(names):
+        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
+    now = getattr(request.state, 'candidate_preview_as_of', None) or datetime.now(UTC)
+
+    def cancelled():
+        try:
+            return from_thread.run(request.is_disconnected)
+        except RuntimeError:
+            return False
+
+    def unavailable(exc, product, frequency):
+        _, detail = public_product_error(exc, context={'symbol': product, 'frequency': frequency})
+        return {'status': 'unavailable', 'state': None, 'reason_code': detail.get('code', 'NEWOW_DATA_UNAVAILABLE')}
+
+    items = []
+    for product in names:
+        strategies = {strategy: {} for strategy in ('trend', 'oscillation')}
+        for frequency in ('1d', '1w'):
+            if cancelled():
+                raise HTTPException(409, detail={'code': 'NEWOW_REQUEST_CANCELLED'})
+            try:
+                _enforce_product_frequency(request, product, frequency)
+                policy = _input_quality_policy(request, product, frequency)
+                resolver = (_build_daily_resolver if frequency == '1d' else _build_weekly_resolver)(session, cancelled, lambda: now, policy)
+                snapshot = resolver.resolve(product, ProductStrategy.TREND, ProductFrequency(frequency))
+                service = _build_product_service(session, cancelled, policy)
+            except Exception as exc:
+                for strategy in strategies:
+                    strategies[strategy][frequency] = unavailable(exc, product, frequency)
+                continue
+            for strategy in strategies:
+                try:
+                    _require_strategy_frequency(request, strategy, frequency)
+                    result = service.query(ProductServiceQuery(product, ProductStrategy(strategy), ProductFrequency(frequency), as_of=snapshot.as_of))
+                    summary = result.chart.value.home_summary if result.chart.value else None
+                    if summary is None:
+                        strategies[strategy][frequency] = {'status': 'warming', 'state': None, 'reason_code': 'NEWOW_CHART_WARMING'}
+                    else:
+                        strategies[strategy][frequency] = {**summary, 'as_of': result.meta.as_of,
+                            'freshness': snapshot.freshness, 'formula_versions': result.meta.identity.formula_versions,
+                            'input_sha256': result.meta.input_content_sha256, 'snapshot_token': result.meta.snapshot_token}
+                except Exception as exc:
+                    strategies[strategy][frequency] = unavailable(exc, product, frequency)
+        items.append({'product': product, 'strategies': strategies})
+    return JSONResponse(_json_value({'schema_version': 'newow_home_cards_v1', 'requested_at': now, 'items': items}))
+
+
 @router.get("/daily-snapshot", response_model=NewowDailySnapshotResponse)
 def newow_daily_snapshot(
     request: Request,
@@ -808,6 +864,62 @@ def newow_strategy_detail(
         status, detail = public_product_error(
             exc, context={"symbol": product, "frequency": frequency}
         )
+        raise HTTPException(status_code=status, detail=detail) from exc
+
+
+@router.get("/experiments")
+def newow_experiments(
+    request: Request,
+    product: str = Query(...),
+    frequency: Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"] = Query(...),
+    kind: Literal["osc-test", "osc-test2", "osc-test3", "osc-test4"] = Query(...),
+    as_of: datetime | None = Query(None),
+    from_: date | None = Query(None, alias="from"),
+    through: date | None = Query(None),
+    chart_limit: int = Query(500, ge=11, le=2000),
+    all_history: bool = Query(False),
+    session: Session = Depends(get_db),
+):
+    """Public experiments, calculated read-only from existing completed inputs."""
+    from app.market_data.newow.experiments import ExperimentQuery, NewowExperimentService
+    from guiyi_quant.newow.oscillation_experiments import ExperimentKind
+    allowed = {"product", "frequency", "kind", "as_of", "from", "through", "chart_limit", "all_history"}
+    if (set(request.query_params) - allowed
+        or any(len(request.query_params.getlist(key)) != 1 for key in request.query_params)
+        or (as_of is not None and (as_of.utcoffset() is None or as_of.astimezone(UTC) > datetime.now(UTC)))):
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
+    try:
+        _enforce_product_frequency(request, product, frequency)
+        policy = _input_quality_policy(request, product, frequency)
+        preview_as_of = getattr(request.state, "candidate_preview_as_of", None)
+        if preview_as_of is not None:
+            if as_of is not None and as_of > preview_as_of:
+                raise ValueError("NEWOW_INVALID_AS_OF")
+            as_of = as_of or preview_as_of
+        if (getattr(request.state, "candidate_preview_as_of", None) is None
+            and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES):
+            as_of = released_intraday_as_of(as_of)
+        def cancelled():
+            try:
+                return from_thread.run(request.is_disconnected)
+            except RuntimeError:
+                return False
+        reader = NewowProductReader(
+            build_market_data_service(session), coverage=build_database_coverage_source(session),
+            active_products=load_active_products(), input_quality_policy=policy, cancelled=cancelled,
+        )
+        with _PRODUCT_GATE.acquire(cancelled):
+            result = NewowExperimentService(reader, cancelled=cancelled).query(ExperimentQuery(
+                product, ProductFrequency(frequency), ExperimentKind(kind), as_of, from_, through, chart_limit, all_history,
+            ))
+        return result
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        raise HTTPException(status_code=503, detail={"code": "NEWOW_DATA_UNAVAILABLE"}) from None
+    except Exception as exc:
+        status, detail = public_product_error(exc, context={"symbol": product, "frequency": frequency})
         raise HTTPException(status_code=status, detail=detail) from exc
 
 
@@ -1032,6 +1144,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "history_coverage": value.history_coverage,
             "theoretical": value.theoretical,
             "holding_curve": value.holding_curve,
+            "page_performance": value.page_performance,
             "unavailable_days": list(value.unavailable_days),
             "coverage_intervals": [
                 {

@@ -8,6 +8,7 @@ export interface DecisionPriceSource {
   source_identity: string
   source_category: string
   display_value?: string
+  support_cap_applied?: boolean
   branch?: string
 }
 export interface CrossPeriodPrices {
@@ -26,6 +27,7 @@ export interface CrossPeriodPrices {
   source_note: string
 }
 export interface Cdv2 {
+  period_conflict?: {version: string; hit: boolean; code: 'XP1'|null; week_state: string; day_state: string}
   formula_version: string
   as_of: string
   total: number
@@ -60,7 +62,7 @@ export interface Cdv2 {
 export interface NewowDecisionV2 { cdv2: Cdv2; prices: CrossPeriodPrices | null; daily_weekly_path?: DailyWeeklyPath }
 
 export interface DailyWeeklyPathPeriod {
-  frequency: '1d' | '1w'
+  frequency: '1d' | '1w' | '60m'
   state: string | null
   status: 'ready' | 'partial' | 'unavailable'
   cost: (DecisionPriceSource & { entry_marker_id: string }) | null

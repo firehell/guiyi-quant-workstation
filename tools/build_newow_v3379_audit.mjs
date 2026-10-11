@@ -24,7 +24,7 @@ const names = ['calcMAFrom', 'calcEMAFrom', 'calcVolumeMA', 'calcYellowBlueBand'
   'runOscBacktest', 'runTrendBacktest', '_computeAllSignals', '_isOscFamily', '_isOscTest',
   '_isOscTargetExit', '_isOscMaGate', '_isOscConfirmExit', '_oscStopPct',
   'localXichouLagaoBacktestIdeal', 'localHuangLantaiBacktestIdeal',
-  'localZhushenglangBacktestIdeal', 'filterBacktestByDate', 'calcHHV', 'calcLLV',
+  'localZhushenglangBacktest', 'localZhushenglangBacktestIdeal', 'filterBacktestByDate', 'calcHHV', 'calcLLV',
   '_groupFusionByBar', 'runDualFusionBacktest', 'runDualFusionBacktestIdeal'];
 const declarations = names.map(name => {
   const source = sources[name === 'calcHHV' || name === 'calcLLV' ? 'strategy-calc.js' : 'detail.html'];
@@ -46,7 +46,8 @@ const wave = Array.from({length: 150}, (_, i) => {
 const preEntry = Array.from({length: 11}, (_, i) => ({date: date(i), open: 100,
   high: i === 0 ? 200 : i === 10 ? 199 : 105, low: i === 9 ? 90 : 95, close: 100, volume: 100}));
 const cases = [...normal, {name: 'main-rise-theory-entry', provenance: 'constructed boundary witness, not market evidence', bars: wave},
-  {name: 'oscillation-pre-entry-high', provenance: 'constructed boundary witness, not market evidence', bars: preEntry}];
+  {name: 'oscillation-pre-entry-high', provenance: 'constructed boundary witness, not market evidence', bars: preEntry},
+  {name:'oscillation-same-bar',provenance:'constructed order-of-operations witness, not market evidence',bars:Array.from({length:12},(_,i)=>({date:date(i),open:100,high:105,low:95,close:100,volume:100}))}];
 const context = vm.createContext({cases});
 vm.runInContext(declarations.join('\n') + `
   var OSC_STOP_PCT = 0.07;
@@ -57,20 +58,25 @@ vm.runInContext(declarations.join('\n') + `
     ybBand = calcYellowBlueBand(klineData); mainRiseBand = calcMainRiseBand(klineData);
     currentStrategy = 'xichou-lagao';
     const chart = _computeAllSignals(klineData).map(s => ({date:s.date,type:s.type,price:s.price}));
-    const ordinary = {oscillation:runOscBacktest(klineData,hhv10,llv10,'day'),trend:runTrendBacktest(klineData,ybBand,'day')};
+    const ordinary = {oscillation:runOscBacktest(klineData,hhv10,llv10,'day'),trend:runTrendBacktest(klineData,ybBand,'day'),main_rise:localZhushenglangBacktest()};
     const ideal = {oscillation:localXichouLagaoBacktestIdeal(),trend:localHuangLantaiBacktestIdeal(),main_rise:localZhushenglangBacktestIdeal()};
     const tests = [{useStop:true},{useStop:true,targetExit:true},{useStop:true,maGate:true},{useStop:true,confirmExit:true,stopPct:.12}]
       .map(opts => runOscBacktest(klineData,hhv10,llv10,'day',opts)?.summary ?? null);
-    return {...c,chart,ordinary,ideal,tests,
+    const windows = Object.fromEntries(['ordinary','ideal'].map(mode=>[mode,Object.fromEntries(Object.entries(mode==='ordinary'?ordinary:ideal).map(([strategy,result])=>[strategy,filterBacktestByDate(result,c.bars[Math.floor(c.bars.length/2)].date)]))]));
+    return {...c,chart,ordinary,ideal,windows,tests,
       trend:{states:ybBand.states,a:ybBand.a,b:ybBand.b,signals:ybBand.signals},
       main_rise:{states:mainRiseBand.states,ma35:mainRiseBand.ma35,ma45:mainRiseBand.ma45,signals:mainRiseBand.signals}};
   });
+  this.maSumWitness = {values:[1,1,1e16],expected:calcMAFrom([1,1,1e16],3)};
   this.windowWitness = filterBacktestByDate({period:'day',dates:['2025-01-01','2025-01-02','2025-01-03'],equity:[0,5,10],
     trades:[{buyDate:'2025-01-01',sellDate:'2025-01-03',buyPrice:100,sellPrice:110,pct:10}]},'2025-01-02');
   const fusionBars = [{date:'2026-01-05',open:100,high:110,low:90,close:100},
     {date:'2026-01-06',open:110,high:121,low:99,close:110}];
   const fusionEntry = {date:'2026-01-05',index:0,type:'buy',price:100};
   const fusionExit = {date:'2026-01-06',index:1,type:'sell',price:110};
+  this.fusionOrderWitness = {bars: [{date:'2026-02-01',high:111,low:90,close:100},{date:'2026-02-02',high:999,low:80,close:120},{date:'2026-02-03',high:130,low:90,close:110}],signals:[{date:'2026-02-01',type:'buy',price:100},{date:'2026-02-01',type:'buy',price:105},{date:'2026-02-02',type:'sell',price:120},{date:'2026-02-02',type:'sell',price:115},{date:'2026-02-02',type:'buy',price:90},{date:'2026-02-02',type:'buy',price:110},{date:'2026-02-03',type:'sell',price:110}]};
+  this.fusionOrderWitness.ordinary=runDualFusionBacktest(this.fusionOrderWitness.bars,this.fusionOrderWitness.signals,'day');
+  this.fusionOrderWitness.ideal=runDualFusionBacktestIdeal(this.fusionOrderWitness.bars,this.fusionOrderWitness.signals,'day');
   this.fusionWitness = {bars:fusionBars,signals:[fusionEntry,fusionExit],
     ordinary:runDualFusionBacktest(fusionBars,[fusionEntry,fusionExit],'day'),
     ideal:runDualFusionBacktestIdeal(fusionBars,[fusionEntry,fusionExit],'day'),
@@ -98,5 +104,5 @@ vm.runInContext(`
 `, cdvContext, {timeout: 5000});
 fs.writeFileSync(destination, JSON.stringify({source_version:'3.3.79', source_url:'https://www.v8848.cn/stock_detail.html?code=601958.SH&period=week&strategy=huanglantai',
   source_sha256:expected, extracted_declarations_sha256:sha(declarations.join('\n')), cases:context.results,
-  window_witness:context.windowWitness,fusion_witness:context.fusionWitness,cdv2_cases:cdvContext.cdvCases}) + '\n');
+  ma_sum_witness:context.maSumWitness,window_witness:context.windowWitness,fusion_witness:context.fusionWitness,fusion_order_witness:context.fusionOrderWitness,cdv2_cases:cdvContext.cdvCases}) + '\n');
 console.log(JSON.stringify({cases:context.results.length, source_sha256:expected, output:destination}));

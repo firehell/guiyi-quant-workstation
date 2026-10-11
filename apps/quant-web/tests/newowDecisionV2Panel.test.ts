@@ -94,14 +94,15 @@ test('composite card keeps compact action header and places scores inside indepe
   const body=findNode(root,n=>n.props.class==='decision-v2__body')!
   assert.equal(header().props['aria-expanded'],false)
   assert.equal(body.style.display,'none')
-  assert.match(nodeText(header()),/综合决策.*回补窗口·分批建仓/)
+  assert.equal(findNode(root,n=>n.props['aria-label']==='页面决策口径')!.style.display,'none')
+  assert.match(nodeText(header()),/综合决策.*建仓/)
   ;(header().props.onClick as Function)(); await nextTick()
   assert.equal(header().props['aria-expanded'],true); assert.notEqual(body.style.display,'none')
-  assert.equal(stored.get('guiyi_newow_composite_collapsed'),'0')
+  assert.equal(stored.get('guiyi_newow_composite_collapsed'),undefined)
   const scores=findNode(root,n=>n.props['aria-label']==='综合决策五项评分')!
   assert.equal(findNodes(scores,n=>n.props.class==='decision-v2__score').length,5)
   assert.match(nodeText(scores),/24.*趋势一致.*22.*震荡确认.*10.*共振.*12.*方向拐点.*-3.*波动折损/)
-  assert.match(nodeText(root),/震荡日线已清仓.*错配期·趋势转多.*最新一根日K.*10%–30%/)
+  assert.match(nodeText(root),/错配期·趋势转多.*趋势已转多.*最新一根日K.*10%–30%/)
   const evidence=()=>findNode(root,n=>n.props['aria-label']==='展开综合依据'||n.props['aria-label']==='收起综合依据')!
   const details=findNode(root,n=>n.props.class==='decision-v2__evidence')!
   assert.equal(evidence().props['aria-expanded'],false); assert.equal(details.style.display,'none')
@@ -109,6 +110,7 @@ test('composite card keeps compact action header and places scores inside indepe
   assert.equal(evidence().props['aria-expanded'],true)
   assert.match(nodeText(details),/2.5%.*日周小时共同参与/)
   response.value=input('rb'); await nextTick()
+  assert.equal(header().props['aria-expanded'],false, 'new identity always collapses the composite')
   assert.doesNotMatch(nodeText(root),/65 分|错配 MM4|回补窗口/)
   ;(header().props.onClick as Function)(); await nextTick(); app.unmount()
   const second=element('root'), app2=renderer.createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('al')})}))
@@ -142,7 +144,7 @@ test('status card has independent folding, preference restore, explanatory expan
   assert.match(nodeText(root),/多周期感知.*日周小时策略状态/)
   const periodRows=findNodes(root,n=>n.props.class==='newow-status-card__period')
   assert.equal(periodRows.length,3)
-  assert.match(nodeText(root),/震荡名称采用周日小时组合/)
+  assert.match(nodeText(root),/立场与综合卡共享所选口径/)
   ;(header().props.onClick as Function)(); await nextTick(); app.unmount()
   const second=element('root'), app2=renderer.createApp(defineComponent({setup:()=>()=>h(Card,{decision:null,strategy:'trend',loading:false,error:'读取失败'})}))
   app2.mount(second)
@@ -181,27 +183,28 @@ test('daily weekly path reuses decision snapshot and folds independently with ex
   app.mount(root)
   const payload = output() as any
   const price = (raw: string, frequency: string, category: string) => ({ raw,frequency,source_category:category,bar_end:'2026-09-24T07:00:00Z',physical_contract:'JM2701',segment_id:'owner',calculation_segment_id:frequency+'-calc',source_identity:'source' })
-  payload.value.decision_v2.daily_weekly_path = {version:'guiyi_daily_weekly_path_v1',page_parity:true,executable:false,periods:[
+  payload.value.decision_v2.daily_weekly_path = {version:'guiyi_daily_weekly_path_v2',page_parity:true,executable:false,periods:[
     {frequency:'1w',state:'hold',status:'ready',cost:{...price('90','1w','canonical_strategy_build'),entry_marker_id:'weekly-entry'},current:price('110','1d','canonical_completed_close'),target:price('160','1w','canonical_channel'),reason:null},
     {frequency:'1d',state:'wait',status:'partial',cost:null,current:price('110','1d','canonical_completed_close'),target:null,reason:'FLAT_NO_OPEN_ENTRY'},
+    {frequency:'60m',state:'sell',status:'ready',cost:{...price('105','60m','canonical_strategy_build'),entry_marker_id:'hourly-entry'},current:price('110','1d','canonical_completed_close'),target:price('119','60m','canonical_channel'),reason:null},
   ]}
   mock.calls[before].resolve(payload)
   await nextTick(); await nextTick()
-  const section = findNode(root,n=>n.props['aria-label']==='日周路径示意图')!
+  const section = findNode(root,n=>n.props['aria-label']==='周日60分路径示意图')!
   const toggle = findNode(section,n=>n.type==='button')!
   assert.equal(toggle.props['aria-expanded'],false)
   ;(toggle.props.onClick as Function)()
   await nextTick()
   assert.equal(toggle.props['aria-expanded'],true)
   assert.equal(mock.calls.length,before+1)
-  assert.match(nodeText(section),/周线 \[持有\].*日线 \[观望\]/)
+  assert.match(nodeText(section),/周线 \[持有\].*日线 \[空仓\].*60分 \[清仓\]/)
   assert.match(nodeText(section),/周线成本 90/)
   assert.match(nodeText(section),/BUILD weekly-entry/)
   assert.match(nodeText(section),/空仓，无当前建仓成本/)
   const solid = findNodes(section,n=>n.type==='path' && Number(n.props['stroke-width'])===2.5 && !n.props['stroke-dasharray'])
   const dashed = findNodes(section,n=>n.type==='path' && n.props['stroke-dasharray']==='7 5')
-  assert.equal(solid.length,1)
-  assert.equal(dashed.length,1)
+  assert.equal(solid.length,2)
+  assert.equal(dashed.length,2)
   app.unmount()
 })
 
@@ -274,4 +277,59 @@ test('capability cutoff change cancels the old historical decision before loadin
   mock.calls[before].resolve(output()); await nextTick(); await nextTick()
   assert.doesNotMatch(nodeText(root), /78\s*分/)
   app.unmount()
+})
+
+test('basis toggles drive composite action and status stance from one completed pair', async () => {
+ const Panel=await component('newow/NewowDecisionV2Panel'),root=element('root'),before=mock.calls.length
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb')})}));app.mount(root)
+ const value=output(); value.value.decision_v2.cdv2.missing_roles=[]
+ for(const f of value.value.decision_v2.cdv2.facts){f.status='ready';f.frequency=f.role.endsWith('week')?'1w':f.role.endsWith('m60')?'60m':'1d';if(f.role==='trend_m60')f.state='sell'}
+ mock.calls[before].resolve(value);await nextTick();await nextTick()
+ const week=findNode(root,n=>n.props['aria-label']==='周线口径')!,day=findNode(root,n=>n.props['aria-label']==='日线口径')!
+ assert.ok(week);assert.ok(day);assert.match(nodeText(root),/积极做多/)
+ ;(day.props.onClick as Function)();await nextTick()
+ const header=findNode(root,n=>n.props['aria-label']==='展开综合决策'||n.props['aria-label']==='收起综合决策')!
+ assert.match(nodeText(header),/等待/);assert.match(nodeText(root),/谨慎持仓/);assert.match(nodeText(root),/周期冲突/)
+ assert.equal(mock.calls.length,before+1,'basis switches presentation without another data read')
+ app.unmount()
+})
+
+ test('daily basis suppresses opposite weekly legacy action text and dual rejects unready partner',async()=>{
+ const Panel=await component('newow/NewowDecisionV2Panel'),root=element('root'),before=mock.calls.length
+ const settings=ref({displayStrategy:'trend',dominantReady:false,dominantAsOf:'2026-09-24T07:00:00Z'})
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb'),...settings.value})}));app.mount(root)
+ const payload=output();payload.value.decision_v2.cdv2.trend_state={week:'down',day:'up',m60:'up'} as any
+ for(const f of payload.value.decision_v2.cdv2.facts){f.status='ready';f.frequency=f.role.endsWith('week')?'1w':f.role.endsWith('m60')?'60m':'1d';if(f.role==='trend_week')f.state='sell'}
+ mock.calls[before].resolve(payload);await nextTick();await nextTick()
+ ;(findNode(root,n=>n.props['aria-label']==='日线口径')!.props.onClick as Function)();await nextTick()
+ assert.match(nodeText(root),/积极做多/);assert.equal(findNode(root,n=>n.props.class==='decision-v2__interpretation'),undefined)
+ settings.value={...settings.value,displayStrategy:'dual'};await nextTick()
+ assert.match(nodeText(root),/所选口径不可用/);app.unmount()
+ })
+
+test('card visibility defaults match source and toggling does not reload facts', async () => {
+ const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root'), before=mock.calls.length
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb')})}));app.mount(root)
+ const shell=findNode(root,n=>n.props['data-testid']==='composite-card-surface')!
+ assert.ok(shell); assert.equal(shell.style.display,'none')
+ const show=findNode(root,n=>n.props['aria-label']==='显示综合决策卡')!
+ assert.ok(show); (show.props.onChange as Function)({target:{checked:true}});await nextTick()
+ assert.notEqual(shell.style.display,'none');assert.equal(mock.calls.length,before+1)
+ const status=findNode(root,n=>n.props['data-testid']==='status-card-surface')!
+ assert.notEqual(status.style.display,'none')
+ const toggle=findNode(root,n=>n.props['aria-label']==='显示AI状态卡')!
+ ;(toggle.props.onChange as Function)({target:{checked:false}});await nextTick()
+ assert.equal(status.style.display,'none');assert.equal(mock.calls.length,before+1)
+ app.unmount()
+})
+
+test('relocated path shares decision generation and clears when switching or unmounting',async()=>{
+ const Panel=await component('newow/NewowDecisionV2Panel'),root=element('root'),before=mock.calls.length,response=ref(input('rb')),contexts:any[]=[]
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:response.value,showPath:false,onPathContext:(v:any)=>contexts.push(v)})}));app.mount(root)
+ assert.equal(findNode(root,n=>n.props['aria-label']==='周日60分路径示意图'),undefined)
+ mock.calls[before].resolve(output());await nextTick();await nextTick()
+ assert.equal(contexts.at(-1).decision.cdv2.total,78);assert.equal(contexts.at(-1).loading,false)
+ response.value=input('cu');await nextTick()
+ assert.equal(contexts.at(-1).decision,null);assert.equal(contexts.at(-1).loading,true)
+ app.unmount();assert.deepEqual(contexts.at(-1),{decision:null,loading:false,error:''})
 })

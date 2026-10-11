@@ -20,7 +20,7 @@ from .product_identity import REFERENCE_MODEL_VERSION
 from .reference_statistics import PerformanceWindow, summarize_reference
 from .holding_reference import holding_reference_curve, fusion_theoretical_reference
 
-MODEL_VERSION = "newow_dual_fusion_reference_zero_cost_v1"
+MODEL_VERSION = "newow_dual_fusion_reference_zero_cost_v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +108,7 @@ def fusion_reference_comparison(
             if action.bar_end <= window.cutoff and action.trade_eligibility in (
                 TradeEligibility.ELIGIBLE,
                 TradeEligibility.NO_ELIGIBLE_ENTRY,
+                TradeEligibility.INITIAL_CLEAR_NO_ENTRY,
             ):
                 by_bar.setdefault(action.bar_end, []).append(action)
     rows = []

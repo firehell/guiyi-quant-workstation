@@ -219,7 +219,9 @@ registry-owned active Alert Rules 的 exact trading day `AlertEvent`。`limit` M
 品种目录 SHALL 独立读取既有 `/market/dominants` 批量接口，只用于搜索、导航和消息品种筛选，
 不得从 overview 的参与行情行推导目录，也不得用目录补造缺失行情。消息按需加载且不阻塞市场列表。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为
 stale/unavailable；它不得由 Runtime heartbeat 推导 overview/Alert 状态，也不得由 Event 空列表推导
-Runtime 正常静默。浏览器仅允许上述单一批量目录读取，不得发起 per-product 请求或任何写请求；行情增量
+Runtime 正常静默。品种目录只使用上述单一批量目录读取；日周策略事实另外读取只读
+`/api/v1/market/newow/home-cards`，每次请求一个品种、最多两个并发，逐卡显示，不复用详情连接。
+不得发起其他 per-product 行情请求或任何写请求；行情增量
 只允许一个 server 固定 operational Scope 的批量 WebSocket，不复用60个单品种详情连接。
 
 返回首页 SHALL 立即恢复已成功的列表、筛选、排序和滚动位置；有效缓存不得因重新挂载或浏览器重新
@@ -260,32 +262,37 @@ MUST 保持独立图标与状态，不得改写为未同向。桌面与窄屏 SH
 - **THEN** it has the approved size, color and Chinese accessible label, while adjacent HTDY/SuBing Event copy remains an observation rather than a trading instruction
 
 
-### Requirement: Market Home uses an approved light full-width desktop layout
+### Requirement: Market Home uses approved daily and weekly strategy cards
 
-`/market` SHALL 使用白色全宽布局、市场/消息 Tab、期货板块选择、紧凑图例与直接表头排序。
-市场 Tab 不显示搜索、独立排序工具条、研究观察折叠区、常驻观察侧栏或底部移动导航；消息 Tab
-单独提供其查询控件。页头“更多” SHALL 改名“自由看盘”，真正的下拉入口使用统一细线 SVG
-chevron，展开状态旋转且支持键盘操作。板块按钮换行不得把单个尾项拉伸整行。
-板块与总数 SHALL 读取 overview authority；缺失品种不得在浏览器补造事实行。普通行进入 Newow
-趋势 actual_dominant 1d；页头各视角菜单 SHALL 从当前可用品种显式选择，再委托既有 route serializer。
+`/market` SHALL 使用白色全宽布局、市场/消息 Tab、全局品种搜索、期货板块选择、报价和本地排序。
+市场主体显示日周策略卡，替代旧行情表格；不恢复研究观察侧栏或底部移动导航。板块与总数来自
+overview authority，卡片仅为真实参与行情品种生成；目录不得补造缺失报价。卡片标题进入 Newow
+趋势 actual_dominant 1d；各策略图表入口保留自身策略与选定周期。板块按钮换行不得拉伸尾项。
+
+#### Scenario: A user compares independent daily and weekly strategy facts
+
+- **WHEN** 用户读取或展开品种策略卡
+- **THEN** 趋势、震荡分别显示D1/W1状态；展开后分别选择周期并显示四阶段、目标、吸筹、参考成本、目标空间和事实截止
+- **AND** 所有价格绑定同物理合约、owner、计算段及输入身份，参考成本仅来自有效BUILD；预热或缺事实不补造状态、价格或成本
+- **AND** 策略事实保留page_parity=true、executable=false，不代表成交、真实仓位或因果收益；报价截止与策略截止独立显示
 
 #### Scenario: A user sorts or filters the available futures locally
 
-- **WHEN** 用户点击收盘、1d涨跌幅、量比或1d增仓率表头
-- **THEN** 当前列依次降序、升序、默认次序；切列从降序开始，空值与非有限值两个方向均末尾，同值按symbol排序，默认保持服务端次序
-- **AND** 表头具有button和aria-sort，Enter/Space可用，筛选排序不修改输入、不发网络请求；返回或刷新恢复有效偏好，失效板块回到全部
+- **WHEN** 用户点击默认、价格、涨跌幅、成交量或持仓量排序按钮或板块筛选
+- **THEN** 保留既有本地排序、缺值末尾和稳定symbol规则；按钮支持键盘操作，刷新及返回恢复有效偏好
+- **AND** 排序不重取策略；板块改变仅对新可见品种读取策略，旧响应不得覆盖新authority
 
-#### Scenario: A target reference price has no authorized bulk source
+#### Scenario: One strategy request fails during refresh
 
-- **WHEN** 当前 overview 未提供同身份目标参考价
-- **THEN** 目标参考价列固定显示 `—`，解释“尚未接入同身份目标参考价”，不可排序，不补造字段或逐品种请求
-- **AND** `oi_change_1d` 以中性文字显示带符号百分比增仓率；涨跌幅使用红/绿浅色圆角背景，0与缺失仍可区分，量比展示两位小数
+- **WHEN** 卡片或某周期读取失败
+- **THEN** 周期独立失败，不隐藏其他品种；刷新失败保留已接受策略快照并明确标注，首次失败不造数
+- **AND** loader至多两并发、可取消，旧generation响应不得覆盖新快照；不修改策略参数或行情事实
 
-#### Scenario: A full desktop viewport displays 60 fixture participants
+#### Scenario: A full desktop or narrow viewport displays fixture participants
 
-- **WHEN** 以受控60品种fixture在1280、1440、1920、2560宽度验收
-- **THEN** 表格撑满可用宽度、页面无横向溢出，所有行纵向可达且表头保持可见；390px保留可访问列表
-- **AND** 非实时日期、真实参与/总数、缺失及过期计数和独立Runtime/Event异常可见；fixture截图不代表生产或原站page parity验收
+- **WHEN** 使用受控60品种fixture验收桌面及390px布局
+- **THEN** 全部卡片纵向可达且无横向溢出；展开、收起、独立周期切换与数据失败均可访问
+- **AND** 参与/总数、缺失和过期状态仍由各自authority提供；fixture不代表生产或原站逐像素验收
 
 ### Requirement: Home quotes use a separate completed minute authority
 

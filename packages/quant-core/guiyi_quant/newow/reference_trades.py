@@ -23,6 +23,10 @@ from ..reference_trading.contracts import (
 from ..reference_trading.reducer import reduce_reference
 from ..reference_trading.adapters import strategy_input_fingerprint
 
+from .models import NewowMarkerType
+from .profile import NEWOW_TREND_D1_PAGE_V2
+from .trend_band import _marker_id
+
 from .product_contracts import (
     ActionKind,
     DataInterruption,
@@ -420,11 +424,14 @@ def _validate_initial_clear_no_entry(
     matching = tuple(frame for frame in frames if frame.bar.bar.bar_end == action.bar_end)
     if (
         action.identity != replay.identity
-        or replay.identity.strategy is not ProductStrategy.MAIN_RISE
+        or replay.identity.strategy not in (ProductStrategy.MAIN_RISE, ProductStrategy.TREND)
         or action.kind is not ActionKind.CLEAR
         or action.related_build_id is not None
         or action.sequence != 0
-        or action.source_marker_id is not None
+        or (replay.identity.strategy is ProductStrategy.MAIN_RISE
+            and action.source_marker_id is not None)
+        or (replay.identity.strategy is ProductStrategy.TREND
+            and action.source_marker_id is None)
         or action.source_related_marker_ids
         or key not in positions
         or has_prior_actions
@@ -432,11 +439,16 @@ def _validate_initial_clear_no_entry(
     ):
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     current = matching[0]
+    if replay.identity.strategy is ProductStrategy.TREND and action.source_marker_id != _marker_id(
+        current.bar.bar, NewowMarkerType.CLEAR, NEWOW_TREND_D1_PAGE_V2
+    ):
+        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     prefix = tuple(frame for frame in frames if frame.bar.bar.bar_end <= action.bar_end)
     prior = prefix[:-1]
     values = dict(current.main_values)
-    ma35 = values.get("ma35")
-    ma45 = values.get("ma45")
+    ma35 = (current.bar.bar.close if replay.identity.strategy is ProductStrategy.TREND
+            else values.get("ma35"))
+    ma45 = values.get("b" if replay.identity.strategy is ProductStrategy.TREND else "ma45")
     if (
         not prior
         or current is not prefix[-1]
@@ -452,8 +464,9 @@ def _validate_initial_clear_no_entry(
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     for frame in prior:
         frame_values = dict(frame.main_values)
-        prior_ma35 = frame_values.get("ma35")
-        prior_ma45 = frame_values.get("ma45")
+        prior_ma35 = (frame.bar.bar.close if replay.identity.strategy is ProductStrategy.TREND
+                      else frame_values.get("ma35"))
+        prior_ma45 = frame_values.get("b" if replay.identity.strategy is ProductStrategy.TREND else "ma45")
         if (
             frame.availability.status is not FeatureRuntimeStatus.READY
             or prior_ma35 is None
@@ -488,11 +501,14 @@ def _validate_checkpointed_initial_clear(
     )
     if (
         action.identity != replay.identity
-        or replay.identity.strategy is not ProductStrategy.MAIN_RISE
+        or replay.identity.strategy not in (ProductStrategy.MAIN_RISE, ProductStrategy.TREND)
         or action.kind is not ActionKind.CLEAR
         or action.related_build_id is not None
         or action.sequence != 0
-        or action.source_marker_id is not None
+        or (replay.identity.strategy is ProductStrategy.MAIN_RISE
+            and action.source_marker_id is not None)
+        or (replay.identity.strategy is ProductStrategy.TREND
+            and action.source_marker_id is None)
         or action.source_related_marker_ids
         or key not in positions
         or has_prior_actions
@@ -500,9 +516,14 @@ def _validate_checkpointed_initial_clear(
     ):
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     current = matching[0]
+    if replay.identity.strategy is ProductStrategy.TREND and action.source_marker_id != _marker_id(
+        current.bar.bar, NewowMarkerType.CLEAR, NEWOW_TREND_D1_PAGE_V2
+    ):
+        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     values = dict(current.main_values)
-    ma35 = values.get("ma35")
-    ma45 = values.get("ma45")
+    ma35 = (current.bar.bar.close if replay.identity.strategy is ProductStrategy.TREND
+            else values.get("ma35"))
+    ma45 = values.get("b" if replay.identity.strategy is ProductStrategy.TREND else "ma45")
     if (
         current.availability.status is not FeatureRuntimeStatus.READY
         or not current.bar.bar.observation_eligible

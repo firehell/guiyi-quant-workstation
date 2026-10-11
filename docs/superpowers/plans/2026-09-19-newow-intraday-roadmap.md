@@ -44,7 +44,7 @@
 | `NewowFusionPanel.vue` | 从返回记录生成曲线；截断时拒绝绘图；部分窗口按北京时间自然日期筛选，非周标日K | 后端提供权威窗口 membership；夜盘用 trading_day；统一周期标签 |
 | `product_service.py` fusion 分支 | include_fusion 绕过 persisted reader，按需全窗计算 | 构建时复用两套输入，分钟查询读取已验证快照，不请求时全历史重放 |
 
-手册按最新 [公式目录](../../research/newow-v3.2.82/FORMULA_CATALOG_20260926.md)、[双策略任务](../../tasks/newow-dual-entry-20260927.md)、[融合展示任务](../../tasks/newow-fusion-reference-ui-20260927.md) 与当前代码交叉判断；旧手册“尚未实现”描述不能覆盖新代码事实。
+手册按最新 [公式目录](../../research/newow-v3.2.82/REPLICATION_MANUAL.md)、[双策略任务](../../tasks/newow-dual-entry-20260927.md)、[融合展示任务](../../tasks/newow-fusion-reference-ui-20260927.md) 与当前代码交叉判断；旧手册“尚未实现”描述不能覆盖新代码事实。
 
 ## 设计合同（Global Constraints）
 

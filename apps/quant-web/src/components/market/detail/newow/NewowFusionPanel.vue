@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NewowPagePerformancePanel from './NewowPagePerformancePanel.vue'
 import { holdingCurvePlot, holdingCurveWindow, fusionTheoreticalCurve } from '@/utils/newowHoldingCurve'
 import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue'
 import { getNewowFusion, type FusionComparison } from '@/api/newowFusion'
@@ -11,6 +12,8 @@ import { formatMarketDecimal, formatBeijingInstant } from '@/utils/marketDisplay
 const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'reference'>; readyToLoad?: boolean }>(), { readyToLoad: true })
 const emit = defineEmits<{ 'snapshot-conflict': [token: string] }>()
 const result = ref<FusionComparison | null>(null)
+const pageWindow = ref<{performanceSince: string; performanceThrough: string} | null>(null)
+function reloadPage(window: {performanceSince: string; performanceThrough: string}) { pageWindow.value = window; void load() }
 const loading = ref(false)
 const error = ref('')
 let controller: AbortController | null = null
@@ -19,6 +22,7 @@ const initialLoadPending = ref(true)
 const waitingForInput = computed(() => initialLoadPending.value && !props.readyToLoad)
 const inputKey = computed(() => JSON.stringify([props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, props.response.value?.reference_input_sha256, props.response.value?.performance_since, props.response.value?.performance_through]))
 watch(inputKey, () => {
+  pageWindow.value = null
   generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; initialLoadPending.value = true
   void load()
 }, { immediate: true })
@@ -37,7 +41,7 @@ async function load() {
   loading.value = true; error.value = ''
   const identity = props.response.meta.identity
   try {
-    const next = await getNewowFusion({ identity: { product: identity.product, strategy: 'trend', frequency: identity.frequency, seriesKind: 'actual_dominant' }, section: 'reference', asOf: props.response.meta.as_of, snapshotToken: props.response.meta.snapshot_token ?? undefined, performanceSince: value.performance_since, performanceThrough: value.performance_through }, { signal: controller.signal })
+    const next = await getNewowFusion({ identity: { product: identity.product, strategy: 'trend', frequency: identity.frequency, seriesKind: 'actual_dominant' }, section: 'reference', asOf: props.response.meta.as_of, snapshotToken: props.response.meta.snapshot_token ?? undefined, performanceSince: pageWindow.value?.performanceSince ?? value.performance_since, performanceThrough: pageWindow.value?.performanceThrough ?? value.performance_through }, { signal: controller.signal })
     if (token === generation && inputKey.value === requestInputKey) {
       if (next.reference_input_sha256 !== value.reference_input_sha256 || next.reference_cutoff !== value.reference_cutoff) {
         error.value = '融合输入已变化，请刷新当前图表后重试。'
@@ -167,6 +171,8 @@ function inspectHolding(event: MouseEvent) {
 </script>
 <template>
   <section class="fusion-panel newow-reference" aria-label="双策略融合参考模型" :aria-busy="loading || waitingForInput">
+    <NewowPagePerformancePanel :value="result?.page_performance" :since="result?.performance_since" :through="result?.performance_through" :floor="response.value?.performance_since" :loading="loading || waitingForInput" @reload="reloadPage" />
+    <details><summary>原始融合 ReferenceTrade 事实与诊断</summary><p>此处保留策略信号配对事实；页面收益投影在上方独立显示。</p>
     <header class="newow-reference__returns-heading"><strong>策略收益率走势</strong><span class="newow-reference__annualized">年化{{ annualized }}</span><button class="fusion-refresh" :disabled="loading || !readyToLoad" @click="load">{{ waitingForInput ? '读取中…' : loading ? '计算中…' : '重新计算' }}</button></header>
     <p class="fusion-caption">双策略融合 · 单仓 long/flat · 零费用、零滑点页面参考，不代表可执行收益。</p>
     <p v-if="response.value?.history_coverage === 'PARTIAL'" role="status">数据覆盖不完整，仅统计已验证片段，中断不计入已完成收益。</p>
@@ -220,6 +226,7 @@ function inspectHolding(event: MouseEvent) {
       <p v-if="!records.length">近一年暂无融合参考记录。</p>
       <details><summary>三组独立统计与融合配对规则</summary><p>{{ result.performance_since }} — {{ result.performance_through }} · 截至 {{ formatBeijingInstant(result.reference_cutoff) }}<small>{{ result.reference_model_version }}</small></p><div class="fusion-panel__scroll"><table><thead><tr><th>模型</th><th>已完成</th><th>累计收益百分点</th><th>未清仓</th><th>中断</th></tr></thead><tbody><tr v-for="g in result.groups" :key="g.model"><th>{{ names[g.model] }}</th><td>{{ g.closed_count }}</td><td :class="tone(g.sum_return_percentage_points)">{{ display(g.sum_return_percentage_points) }}</td><td>{{ g.open_count }}</td><td>{{ g.interrupted_count }}</td></tr></tbody></table></div><p>累计简单相加窗口内建仓且已完成的参考收益。同根先清仓再建仓，同方向优先震荡价；允许跨策略配对，持有期间不重复建仓，不跨合约配对。期初已有、未清仓浮动和中断不计入累计。</p></details>
     </template>
+    </details>
   </section>
 </template>
 <style scoped src="./newowReferencePanel.css"></style>

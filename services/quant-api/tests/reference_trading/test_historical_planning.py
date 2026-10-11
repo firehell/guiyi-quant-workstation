@@ -323,7 +323,7 @@ def test_independent_fusion_stream_plan_requires_own_model_and_profile(frequency
     plan = HistoricalReferencePlanner(reader, now=lambda:NOW).plan(
         HistoricalReferenceRequest("build",(stream,),_budget()),
     )
-    assert plan.streams[0].request.identity.reference_model_version == "newow_dual_fusion_reference_zero_cost_v1"
+    assert plan.streams[0].request.identity.reference_model_version == "newow_dual_fusion_reference_zero_cost_v2"
     for identity in (replace(stream.identity, profile_id="wrong"), replace(stream.identity, reference_model_version=REFERENCE_MODEL_VERSION)):
         with pytest.raises(ValueError, match="REFERENCE_IDENTITY_VERSION_UNSUPPORTED"):
             HistoricalReferencePlanner(Reader(), now=lambda:NOW).plan(HistoricalReferenceRequest("build",(replace(stream,identity=identity),),_budget()))

@@ -23,7 +23,7 @@ from guiyi_quant.newow.subplots import ZHAOYAO_MIRROR_FORMULA_VERSION
 
 
 UTC = timezone.utc
-TREND_FORMULA = "newow_trend_band_page_v2"
+TREND_FORMULA = "newow_trend_band_page_v3"
 
 
 def _bar(

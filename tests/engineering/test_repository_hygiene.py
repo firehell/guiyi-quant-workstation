@@ -251,7 +251,7 @@ def test_superpowers_documents_remain_in_documentation_scopes() -> None:
 
 
 def test_newow_screenshot_distribution_owner_decision_is_explicit() -> None:
-    readme = (NEWOW_DOSSIER / "README.md").read_text(encoding="utf-8")
+    readme = NEWOW_REPLICATION_MANUAL.read_text(encoding="utf-8")
     _assert_owner_distribution_contract(readme)
 
     screenshots = _tracked_paths("docs/research/newow-v3.2.82/screenshots/**")

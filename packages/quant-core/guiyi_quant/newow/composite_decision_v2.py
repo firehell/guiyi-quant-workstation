@@ -5,6 +5,7 @@ from __future__ import annotations
 VERSION = "newow_composite_decision_cdv2_1_2_0_v1"
 SOURCE_SHA256 = "68c634c05bddc7191de884a37ae5c8877dfd8416a43e53d93c66838ea8585fbb"
 PERIODS = ("week", "day", "m60")
+PERIOD_CONFLICT_VERSION = "newow_period_conflict_v3379_v1"
 
 
 def normalize_state(value, axis):
@@ -167,6 +168,14 @@ def compute_cdv2(
         "source_sha256": SOURCE_SHA256,
         "explanation_only": True,
         "executable": False,
+        # Orthogonal public v3.3.79 output; never an input to legacy scores/actions.
+        "period_conflict": {
+            "version": PERIOD_CONFLICT_VERSION,
+            "hit": w == "up" and d == "down",
+            "code": "XP1" if w == "up" and d == "down" else None,
+            "week_state": w,
+            "day_state": d,
+        },
         "trend_state": ts,
         "oscillation_state": os,
         "trend_bias": tb,

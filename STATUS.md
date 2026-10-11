@@ -1,24 +1,109 @@
 # 当前状态
 
-更新：2026-10-10。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-11。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.13 launchd收尾与有限恢复候选
+## v1.14.21 已发布并完成 gen7 休息段切换，自然盘中验收待交易时段
 
-v1.14.12已发布（PR426，9643b495af027975cbb426869ca1881cdf7d5fd2）。实际首次切换已证明只发生旧定时任务卸载及Web禁用，Web正常SIGTERM退出后被KeepAlive拉起；schema仍0050、无registry或观察基线，业务服务仍v1.14.9。Alert1449事件/2规则、Newow71 delivery/原policy摘要与迁移前一致，没有补发或新claim。原unknown attempt保留。
-前向修正支持真实enabled/disabled、确认原PID退出及持锁下复活身份再验证，新增只接受pre-schema/pre-install边界的有限恢复。239项真实隔离Redis/PG联合全通过，工程检查与独审通过；真实只读恢复预检已证明四个恢复动作，实际恢复/0051迁移/切换尚待新exact发布。未做DB备份。见[补丁说明](docs/releases/v1.14.13.md)。
+[PR #435](https://github.com/firehell/guiyi-quant-workstation/pull/435) 已合并，annotated tag、
+[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.21) 与干净发布树一致：
+**v1.14.21@534a8a4492ac7822f365308b545a221aeb6af5c1 / generation7**。
+修复已真实复现的队列重检延迟：来源恢复后SOURCE_BUSY失败路由仍等整轮FIFO才重读。
+普通轮次最多优先一个已排队失败工作组，并与FIFO交替；不清阻断、不变预算，只有真实重读成功才恢复。
+剩余路由、pending capture、真实completed观察优先级、原cutoff和one-shot claim保持。
+654 Reference/交接通过、53可选隔离skip；专用非生产PostgreSQL/队列60通过无skip；
+独立Review、Ruff/Mypy、OpenSpec11/11、secret0/diff通过；exact树46定向、Web类型/构建/拓扑通过；
+480路日周只读预热54.59秒通过。
 
-## v1.14.12 PID身份修正版发布检查点
+gen7计划 **ca6c55328a5b78863bed5ff3c5f49936c71b3e6ac96d31d70c79faac7363bd7a**
+经独立完整重算相等、59项切换控制器测试和独立Review后执行。
+第一次SOURCE_BUSY仅在preflight停止，未创建attempt或mutation；锁自然释放后完整重验，唯一attempt成功。
+旧六PID合作退出，十绑定/plist换代，原四日历注册idle，实际journal为
+**generation7_ready_calendars_idle / failure=null**。
+新PID API42421/Web42427/Live42433/Alert42439/Reference42445/feed42451。
+18条历史计划的已知成功恢复和原gen6成功证明保留，所有旧unknown journal及精确归档保持。
+未重复迁移或初始化，schema0051、60品种/720路、启用时间、policy和旧发送事实不变；没有测试广播或补发。
+独立只读读回通过：以02:24:05.659677Z为本次采样边界，约25秒内取得六服务新的真实健康周期
+（02:24:27–02:24:31Z，各≤30秒），Reference当次scan blocked0/{}、pending112、两线程alive/error=null。
+所有原journal/archives、schema、输入进度、720scope和发送事实匹配，旧六PID已退出；
+该结果不证明永久无争用，也没有把一次完整SOURCE_BUSY episode或自然信号闭环虚报通过。
+后续02:28:32–02:30:31Z独立120秒只读采样：116个样本均blocked0/SOURCE_BUSY0，
+同一Reference PID42445/gen7取得11次新健康周期；三次真实Catalog维护锁持有后释放，随后均出现健康周期。
+采样前后保护事实与原journal逐字节匹配；本窗口未捕获此前忙碌阶段，不声称完整忙→释放→清除因果链。
+无引用v20发布树经两次精确引用证明一致（清理计划f673e373…43733）、五资产在v21逐字节相等后
+non-force移除；已合并任务树/本地分支也在clean/祖先/全引用检查后清理。仅保留develop与正式v21树。
+现场证据与控制器：`output/reference-continuity-20261011/`。
+今天权威Session为休息段，source/completed无自然观察，Live/Alert/Reference真实盘中独立切换、
+60品种completed端点与720路自然连续性仍待交易，不能宣布 `RUNTIME_READY`。
 
-v1.14.11已发布（PR425，a4f71e1ad3b0fb4ac905869b5a24efa958f7736d），首次apply仅在持锁前置条件阻断，journal completed_steps为空，生产仍v1.14.9/schema0050。冻结PID文本与现场整数比较错误已修正，84项回归通过（1项隔离Redis条件skip不计通过），独立Review无遗留Confirmed Issue。真实60品种全旧符号锁、Newow advisory、maintenance和发送证明已通过只读取锁验证并释放；Ruff/Mypy、Web build/typecheck/topology、OpenSpec11/11与secret0通过。不做DB备份，迁移/切换尚待新exact发布后执行。见[补丁说明](docs/releases/v1.14.12.md)。
+## v1.14.20 gen6 切换、18路恢复与后续队列阻断（历史检查点）
 
-## v1.14.11 首次拓扑迁移修正版发布检查点
+[PR #434](https://github.com/firehell/guiyi-quant-workstation/pull/434) 已合并，annotated tag、
+[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.20) 与干净发布树一致：
+**v1.14.20@f950d72b8559dd0801bb3d54df7854a1b03957ea / generation6**。
+历史刷新改为健康前台轮许可、全60权威休息段领取、一个已提交批次后保存并让出；
+真实观察/收尾协作取消，写入前中断与写入后未知严格区分，实际 Canonical 维护锁保留。
+629 Reference/交接、71通知测试通过；专用非生产 PostgreSQL 50 passed 无跳过；
+独立 Review、Ruff/Mypy、OpenSpec11/11、secret0/diff 通过。精确树47定向测试、Web类型/构建/拓扑、
+480路日周只读预热46.33秒通过。
 
-只读生产预检确认旧日志轮转为未版本化标准脚本，Alert历史失败保留至后续自然发送。修正版冻结真实旧脚本/plist/loaded身份并补齐稳定日志分派；完整旧符号锁与Newow advisory持锁期间才证明发送空闲，不清除历史失败或重试。
-隔离Redis/PostgreSQL联合204 passed/0 skipped，Ruff/Mypy、Web typecheck/build/topology、lock、OpenSpec11/11、secret0及独立Review通过。60品种权威CLOSED、末根端点无缺口；生产schema0050、现役v1.14.9不变。owner交办直接迁移切换且不做数据库备份，实际发布、0051迁移及Runtime切换尚待执行。见[补丁说明](docs/releases/v1.14.11.md)。
+gen6计划 **64dfdec3e0dbf23a82773992ad204e35734aaaf4f01f1dadbe5d2c55cb656670**
+经独立现场整份重算一致后一次执行，原六PID退出、新六PID启动、十服务绑定/plist换代。
+真实结果 **generation6_ready_calendars_idle / failure=null**，独立只读读回再次通过：
+API26728/Web26734/Live26740/Alert26746/Reference26752/feed26758，最近六服务成功周期均≤30秒；
+Reference blocked0，通知/历史线程存活且error=null，四个原定时服务idle。
+schema0051未重复迁移，观察未初始化，720路/激活时间/通知policy/发送事实/旧unknown归档保持。
+18条历史bareblocked已按原始事实、冻结精确计划恢复为pending，三锁内重算和写后读回通过；
+恢复journal为 **exact_pending_plans_restored_reference_parked**。随后原Reference PID26752同代恢复领取，
+独立恢复journal为 **generation6_reference_history_resumed / failure=null**，
+本次六服务实际健康周期02:03:37–02:03:39Z且验收时均≤30秒。
+后续独立120秒新健康周期复核超时：Reference仍保留2路SOURCE_BUSY/ready=false，
+两后台线程存活且error=null；现场Canonical维护锁采样为空。203条历史状态均pending、0blocked/0inflight，
+18条精确恢复成功不等于前台持续恢复，正定位失败路由在队列中的重检延迟。
+未执行数据库迁移、初始化、测试广播或补发；历史刷新继续按原身份推进，不宣称全部历史资产已完成。
+旧未知attempt及精确归档保留，未将旧失败改写为成功。恢复控制器定向37及25项测试、独立Review通过；
+JSON序列化身份差异曾在mutation前被PLAN_DRIFT拦截，修复并冻结新计划后才一次执行成功。
+旧v18/v19发布树经两次引用证明一致后non-force清理，正式服务只引用干净v20树。
+现场证据与控制器：`output/reference-continuity-20261011/`。今天权威休息段，
+Live/Alert/Reference真实盘中切换、60品种completed端点与720路连续性仍待自然交易，
+不能宣布 `RUNTIME_READY`。
 
-## 盘中连续交接 v1.14.10 已发布，Runtime未切换
+## v1.14.19 发布与 gen5 失败恢复（历史检查点）
+
+[PR #433](https://github.com/firehell/guiyi-quant-workstation/pull/433) 已合并，annotated tag、
+[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.19) 和干净发布树一致：
+**v1.14.19@3bfe072de4c180f057df4b10ec64d560e6678433**。修复持久观察优先消费、收尾停止领取、
+刷新计划有界无损存储和未知提交保护；不夹带 develop 尚未发布公式/UI，未重复迁移或初始化。
+665 项专用 Redis/PostgreSQL 联合测试全部通过、无跳过；独立 Review、Ruff/Mypy、Web 构建/类型/拓扑、
+OpenSpec11/11、secret0、diff 检查通过。精确发布树 63 passed/2 条条件 skip，480 路日/周只读预热 63.15 秒通过。
+
+实际休息段切换已完成旧六 PID 退出、新六 PID 启动及十服务绑定/plist 更新至 gen5。
+首次启动读回触发 `OWNER_IDENTITY_DRIFT`，原 attempt 保留 `outcome_unknown`；不能改写为成功。
+Reference 已停驻且通知/历史线程退出；其余输入服务保留运行，四个定时服务尚未重新加载。
+随后独立同代恢复再次以 `HEALTHY_CYCLE_TIMEOUT` 阻断并安全停驻 Reference：后台整条历史计算
+持 Canonical 独占锁，每 30 秒运行，前台旋转队列未清完又遇 `SOURCE_BUSY`。两份失败 journal 均保留，未重试。
+容量修复已实际生效，当前状态为 16,390,402 字节／SHA `cbec7fd8...`，181 pending/18 blocked/0 inflight；
+未清空或增加预算。18 路完整 typed 来源只读计划曾通过，但控制/代码已变化，不能复用该计划 apply。
+下一步在隔离修复树实现前台优先与历史协作让出，独审和验证后前向发布，再恢复 18 条历史计划。
+证据与精确控制器：`output/reference-continuity-20261011/`；自然盘中 Live/Alert/Reference 切换、
+60 品种 completed 端点与现有 720 路连续性仍待真实交易 Session，不能宣布 `RUNTIME_READY`。
+
+## v1.14.18 已发布、绑定并恢复（历史检查点）
+
+当前10服务绑定 **v1.14.18@8d8904e9bdc962f167f5f330eb90343f7640178c / generation4**，由[PR432](https://github.com/firehell/guiyi-quant-workstation/pull/432)、annotated tag及[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.18)发布并已集成develop。生产schema仍 **20261009_0051**，未重复migration/观察初始化，按owner要求未做DB备份；macOS已开启 `/bin/bash` 完全磁盘访问。
+
+v17补充有界启动诊断，预热使用原不可变capture及真实前置checkpoint；v18修复前台首轮与历史刷新争用，首个健康前台轮之后仅启动刷新一次，收尾后读取实际线程状态。相关81 passed/3隔离条件skipped、独立48 passed；exact发布树48 passed、实际480路只读预热48.42秒、Web typecheck/build/topology、OpenSpec11/11、Ruff/Mypy/secret0/diff通过。原历史刷新状态199路、181pending/18blocked、0inflight、63,999,968字节及容量/覆盖阻断保留；未清空状态或扩大预算。
+
+新计划 **59c7fe0a355f6ae72d6bc6da1bf7f1ba3bff0f927adfd4c5310e4fa2ce48dc79** 独立重算与现场一致后一次执行：旧进程合作收尾并证明退出，十绑定原子换代，六连续服务首次ready通过。但日历前再次采样报 `CONTINUOUS_READY_CHANGED`，新journal保留outcome_unknown；安全收尾已证明四业务parked，4日历disabled/absent且未加载。该失败检查点API/Web31920/31923运行，四业务31928/31931/31934/31937停驻；Reference收尾blocked0、通知/历史线程实际退出。此旧attempt不复用，当前恢复见下段。
+
+旧Alert1449事件/2规则、Newow71delivery/1policy及六发送事实、720路范围/启用时间/策略合同保持；unknownclaim0，source/completed 10/12空分区、3cursor0-0。旧正式Live前缀225keys/9205bars摘要保持，不把旧Bar伪装成新的实时观察。10份原journal及历史刷新preimage保留。没有补发、测试广播或订单，auto_order=false。
+
+随后独立同代次恢复计划 **a927b5468e6bb2c8419c886cf2d4a5595aeed21ccee0fe6e3e30dc5ecba0a44f** 验证当前停驻、owner/维护锁、原control及无未知发送，再释放证明锁后取消四drain一次。采用本次实际成功周期证据（各项≤30秒、总120秒）及当前身份/心跳/blocked校验，避免短暂scan窗口被误判。27定向测试含真实跨进程owner锁，联合恢复155 passed、Ruff/Mypy及独立Review通过。实际journal **generation4_cycles_resumed_calendars_idle** / failure=null，API31920/Web31923/Live31928/Alert31931/Reference31934/feed31937全部原PID/gen4 active；原after-market/late-provider-recovery/weekly-audit/log-rotate已注册idle。旧generation4未知journal字节及精确归档相等，不覆盖为成功。独立现场只读验收再次确认六身份matched、各≤30秒真实周期及新鲜available心跳、四日历idle，schema/发送事实/Scope/观察进度/旧journal/历史preimage一致。整体恢复完成，但历史容量/覆盖与旧盘后失败诊断仍保留。
+
+下一步：在真实市场运行中验收60品种completed、已有预警范围及720路连续性；自然盘中切换及新自然通知尚待发生，不声明RUNTIME_READY，不制造测试广播或新增后台任务。证据见 `output/intraday-v11414-runtime-20261010/`、稳定运行目录journal及[任务验收](docs/tasks/intraday-runtime-handover-20261009.md)。
+
+## v1.14.10 工程发布检查点（迁移前历史状态）
 
 三包代码与独立Review已完成，支持逐服务身份/选择性计划、独立market-feed及持久观察链路、Alert/Reference协作交接和30秒过期不发送。
 联合500项与扩展706项通过（扩展44项可选条件skip，不计通过），OpenSpec11/secret0/Ruff/Mypy及diff检查通过。
@@ -28,9 +113,9 @@ v1.14.11已发布（PR425，a4f71e1ad3b0fb4ac905869b5a24efa958f7736d），首次
 休息段首次迁移、自然盘中业务切换及60品种/720流连续性验收待执行，不能据工程测试声明RUNTIME_READY。
 见[实现与验收边界](docs/tasks/intraday-runtime-handover-20261009.md)。
 
-## Newow 四策略三周期 Topic 动作推送已启用
+## Newow 四策略三周期 Topic 初始启用检查点（当前运行见顶部）
 
-现役发布与Runtime为 **v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e**，
+初次启用发布与Runtime为 **v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e**，
 [PR #422](https://github.com/firehell/guiyi-quant-workstation/pull/422)、annotated tag与GitHub Release一致。
 2026-10-09 **21:00:51（Asia/Shanghai）**明确启用60品种×趋势/震荡/双策略/主升浪×1w/1d/60m，共720路。
 仅推送启用后新completed、新observed且已提交的正式动作到既有Topic；不推HOLD或hint，不补发历史，失败/未知不重试。
@@ -44,8 +129,8 @@ v1.14.11已发布（PR425，a4f71e1ad3b0fb4ac905869b5a24efa958f7736d），首次
 
 2026-10-09：最新版吸筹显示护栏与通用cost兜底、周线状态卡目标共享优先、本地吸筹独立覆盖已修正；raw/BUILD/CLEAR/收益及资产身份不变。独立唐奇安窗口5～120（默认20）、默认关闭蓝色止损参考线、dual独立控制与可见BUILD锚点已补齐；主升浪移入T菜单，手册来源更新。
 完整Newow回归3091 passed/1 skipped；两项沙箱socket权限失败在宿主补跑2 passed。Web1035 passed/3 skipped、build/typecheck/topology、OpenSpec11/11、Ruff/secret/diff通过；独审确认问题已修正。详见[本轮交付及验收边界](docs/tasks/newow-v3381-parity-20261009.md)。
-当前public新historical exact identity矩阵1260项全部NOT_REGISTERED；旧historical723/forward720 metadata属于旧v3基础/v1融合，不能证明新身份资产完成。仅只读核实，未构建/启用新资产。
-本轮只读launchd及Git回读确认实际服务root/tag为v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e；下文v1.14.8及更早发布记录是历史检查点。本任务未发布或切换Runtime，不由版本一致推定自然RUNTIME_READY。
+2026-10-10 新 public historical exact identity 历史闭环已 COMPLETED / REVIEW_COMPLETE：60 operational品种×21，共1260唯一资产全部构建注册，逐品种数值验收通过；360融合完整分页、180主升浪查询通过，最终原生1260 READY且全部绑定同一plan/receipt/revision/seq/digest。新流保持disabled/generation0；1447旧流状态、720 enabled forward及受保护表计数与构建前一致。本任务未发布、切换或启用新Runtime，不代表因果收益、全60视觉或自然通知完成。现场证据为`outputs/newow-history-v4-20261010/final-matrix-acceptance.json`，详见[构建与验收记录](docs/tasks/newow-current-history-20261010.md)。
+早期只读launchd及Git回读v1.14.9@130140a7b6f7cf8ae879c3ac097f4ef699bb441e，以及下文v1.14.8及更早发布记录均为历史检查点。本任务使用develop ASGI和临时只读预览验收新资产，不由旧发布接口成功推定新身份或自然RUNTIME_READY。
 
 ## Develop 牛哇 P1 第二项
 

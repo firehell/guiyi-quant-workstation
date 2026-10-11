@@ -30,9 +30,11 @@ PREVIEW_PATHS = frozenset(
         "/api/v1/market/research/home-overview",
         "/api/v1/market/newow/product-capabilities",
         "/api/v1/market/newow/strategy-detail",
+        "/api/v1/market/newow/experiments",
         "/api/v1/market/newow/historical-snapshot",
         "/api/v1/market/newow/daily-snapshot",
         "/api/v1/market/newow/weekly-snapshot",
+        "/api/v1/market/newow/home-cards",
     }
 )
 _SUBING_REFERENCE_PATH = re.compile(
@@ -168,11 +170,14 @@ def create_preview_app(
             values = dict(query)
             intraday_products = _intraday_preview_products()
             hourly_products = _hourly_preview_products()
+            if raw_path == '/api/v1/market/newow/home-cards' and (intraday_products or hourly_products or os.getenv('GUIYI_AU_PERIOD_PREVIEW') == '1'):
+                return JSONResponse(status_code=403, content={'detail': {'code': 'PREVIEW_PRODUCT_OUT_OF_SCOPE'}})
             au_period_preview = (
                 os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1" and hourly_products is None
             )
             if (au_period_preview and raw_path in {
                 "/api/v1/market/newow/strategy-detail",
+                "/api/v1/market/newow/experiments",
                 "/api/v1/market/newow/historical-snapshot",
             } and values.get("product", "").lower() != "au"):
                 return JSONResponse(
@@ -180,6 +185,7 @@ def create_preview_app(
                 )
             if hourly_products and raw_path in {
                 "/api/v1/market/newow/strategy-detail",
+                "/api/v1/market/newow/experiments",
                 "/api/v1/market/newow/historical-snapshot",
             }:
                 product = values.get("product", "").lower()
@@ -195,7 +201,8 @@ def create_preview_app(
                         content={"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}},
                     )
             if intraday_products and raw_path in {
-                "/api/v1/market/newow/strategy-detail", "/api/v1/market/newow/historical-snapshot",
+                "/api/v1/market/newow/strategy-detail",
+                "/api/v1/market/newow/experiments", "/api/v1/market/newow/historical-snapshot",
                 "/api/v1/market/newow/daily-snapshot", "/api/v1/market/newow/weekly-snapshot",
             } and values.get("product", "").lower() not in intraday_products:
                 return JSONResponse(status_code=403, content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}})
@@ -211,6 +218,7 @@ def create_preview_app(
             field = {
                 "/api/v1/market/bars/page": "before",
                 "/api/v1/market/newow/strategy-detail": "as_of",
+                "/api/v1/market/newow/experiments": "as_of",
             }.get(raw_path)
             if _SUBING_REFERENCE_PATH.fullmatch(raw_path):
                 field = "as_of"

@@ -44,7 +44,7 @@ test('trend A/B boundaries render as lightweight one-pixel lines above the colum
   const response = chartResponse()
   response.meta.identity.strategy = 'trend'
   response.meta.identity.profile_id = 'newow_product_trend_60m_v1'
-  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
   response.value!.frames[0]!.main_state = 'HOLD'
   response.value!.frames[0]!.main_values = { a: '99', b: '101' }
   response.value!.actions = []
@@ -413,7 +413,7 @@ test('channel primitive replaces strategy-owned data on snapshot pagination and 
     const response = ref<MutableChartResponse | null>(chartResponse())
     response.value!.meta.identity.strategy = 'trend'
     response.value!.meta.identity.profile_id = 'newow_product_trend_60m_v1'
-    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
     response.value!.value!.frames[0]!.main_values = { a: '99', b: '101' }
     response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 110, 90)
     const attached: string[] = []
@@ -673,6 +673,62 @@ test('oscillation breakout is an orange native price line and is revoked on stra
   app.unmount()
 })
 
+test('stop reference toggle defaults off, uses accepted BUILD, and revokes on owner loading or empty viewport', async () => {
+ const Stage=await loadComponent()
+ const response=ref<MutableChartResponse|null>(chartResponse()),loading=ref(false),switching=ref(false),strategy=ref('oscillation'),partner=ref<MutableChartResponse|null>(null)
+ const active=new Set<Record<string,unknown>>()
+ let range:{from:number;to:number}|null=null,changed:(range:unknown)=>void=()=>{}
+ const fakeChart={addSeries:()=>({setData(){},createPriceLine(options:Record<string,unknown>){const line={...options,applyOptions(){}};active.add(line);return line},removePriceLine(line:Record<string,unknown>){active.delete(line)}}),removeSeries(){},timeScale:()=>({fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>range,scrollToRealTime(){},subscribeVisibleLogicalRangeChange(callback:(range:unknown)=>void){changed=callback},unsubscribeVisibleLogicalRangeChange(){}}),subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response:response.value,strategy:strategy.value,selectedSignalId:null,loading:loading.value,strategySwitching:switching.value,comparisonResponse:partner.value})}))
+ app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart))
+ const root=element('root');app.mount(root);await nextTick()
+ const stops=()=>[...active].filter(l=>String(l.title).startsWith('止损价'))
+ assert.equal(stops().length,0)
+ const toggle=findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
+ ;(toggle.props.onClick as ()=>void)();await nextTick()
+ assert.deepEqual(stops().map(l=>[Number(Number(l.price).toFixed(8)),l.color,l.lineStyle]),[[83.7,'#3B82F6',2]])
+ response.value=prependBar(chartResponse());await nextTick()
+ range={from:0,to:0};changed(range)
+ assert.equal(Number(Number(stops()[0]!.price).toFixed(8)),83.7,'scrolling BUILD offscreen preserves observed stop in same owner')
+ range=null;response.value=chartResponse();await nextTick()
+ loading.value=true;await nextTick();assert.equal(stops().length,0)
+ loading.value=false;await nextTick();assert.equal(stops().length,1)
+ const trend=strategyResponse('trend');trend.value!.actions[0]!.reference_price='200';partner.value=trend;await nextTick()
+ assert.equal(Number(Number(stops()[0]!.price).toFixed(8)),83.7,'dual anchor stays oscillation BUILD despite trend BUILD at 200')
+ const dualToggle=()=>findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
+ assert.ok(dualToggle(),'dual exposes direct overlay controls')
+ ;(dualToggle().props.onClick as ()=>void)();await nextTick();assert.equal(stops().length,0)
+ ;(dualToggle().props.onClick as ()=>void)();await nextTick();assert.equal(stops().length,1)
+ switching.value=true;await nextTick();assert.equal(stops().length,0,'strategy switching alone clears old stop')
+ switching.value=false;await nextTick();assert.equal(stops().length,1)
+ response.value!.status.status='warming';await nextTick();assert.equal(stops().length,0,'status invalidation without changing value clears stop')
+ response.value!.status.status='ready';await nextTick();assert.equal(stops().length,1)
+ strategy.value='trend';await nextTick();assert.equal(stops().length,0,'selected strategy mismatch clears old stop')
+ strategy.value='oscillation';await nextTick();assert.equal(stops().length,1)
+ range={from:1,to:2};changed(range);assert.equal(stops().length,0)
+ range=null;response.value=null;await nextTick();assert.equal(stops().length,0)
+ app.unmount()
+})
+
+test('dual stop maps a longer oscillation window to primary visible time and owner, not partner indexes', async () => {
+ const Stage=await loadComponent(),base=strategyResponse('trend'),partner=strategyResponse('oscillation')
+ const first=bar('2026-08-15T07:00:00Z','2026-08-15'),second=bar('2026-08-15T08:00:00Z','2026-08-15'),earlier=bar('2026-08-15T06:00:00Z','2026-08-15')
+ base.value!.bars=[first,second];partner.value!.bars=[earlier,first,second]
+ partner.value!.actions[0]!.bar_end=first.bar_end
+ const active=new Set<Record<string,unknown>>()
+ const fakeChart={addSeries:()=>({setData(){},createPriceLine(options:Record<string,unknown>){const line={...options,applyOptions(){}};active.add(line);return line},removePriceLine(line:Record<string,unknown>){active.delete(line)}}),removeSeries(){},timeScale:()=>({fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>({from:0,to:0}),scrollToRealTime(){},subscribeVisibleLogicalRangeChange(){},unsubscribeVisibleLogicalRangeChange(){}}),subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response:base,comparisonResponse:partner,strategy:'trend',selectedSignalId:null})}))
+ app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart))
+ const root=element('root');app.mount(root);await nextTick()
+ assert.equal(findNode(root,n=>n.props['data-testid']==='newow-product-chart-stage')!.props['data-comparison-active'],true)
+ const toggle=findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
+ ;(toggle.props.onClick as ()=>void)();await nextTick()
+ const stops=[...active].filter(l=>String(l.title).startsWith('止损价'))
+ assert.equal(stops.length,1,'oscillation BUILD on primary visible first bar remains accepted despite an extra earlier partner bar')
+ assert.equal(Number(Number(stops[0]!.price).toFixed(8)),83.7)
+ app.unmount()
+})
+
 function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {
@@ -695,10 +751,10 @@ function chartResponse(): MutableChartResponse {
   const bars = [bar('2026-08-15T07:00:00Z', '2026-08-15')]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v3',
-      identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'] },
+      schema_version: 'newow_product_detail_v4',
+      identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2'] },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null,
-      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart', status: ready(), value: {
       chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [], bars,
@@ -715,7 +771,7 @@ function strategyResponse(strategy: 'trend' | 'oscillation' | 'main_rise'): Muta
   response.meta.identity.strategy = strategy
   response.meta.identity.profile_id = `newow_product_${strategy}_60m_v1`
   if (strategy === 'trend') {
-    response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
     response.value!.frames[0]!.main_values = { a: '99', b: '101' }
   } else if (strategy === 'main_rise') {
     response.meta.identity.formula_versions = ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
@@ -760,12 +816,12 @@ function bar(barEnd: string, tradingDay: string) {
 
 function ready() { return { status: 'ready' as const, evidence_status: 'ACTIVE_CODE_VERIFIED' as const, reason_code: null } }
 
-async function loadComponent() {
-  const source = readFileSync(componentUrl, 'utf8')
-  const { descriptor, errors } = parse(source, { filename: componentUrl.pathname })
+async function componentModule(url: URL): Promise<string> {
+  const source = readFileSync(url, 'utf8')
+  const { descriptor, errors } = parse(source, { filename: url.pathname })
   assert.deepEqual(errors, [])
   const compiled = compileScript(descriptor, { id: 'newow-product-stage', inlineTemplate: true })
-  const transpiled = ts.transpileModule(compiled.content, {
+  let transpiled = ts.transpileModule(compiled.content, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
@@ -774,8 +830,14 @@ async function loadComponent() {
       const path = resolveSourceImport(specifier)
       return `from '${pathToFileURL(path).href}'`
     })
-  return (await import(`data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`)).default
+  for (const match of [...transpiled.matchAll(/from ['"]([^'"]+\.vue)['"]/g)]) {
+    const child = match[1]!.startsWith('file:') ? new URL(match[1]!) : new URL(match[1]!, url)
+    transpiled = transpiled.replace(match[0], `from '${await componentModule(child)}'`)
+  }
+  return `data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`
 }
+
+async function loadComponent() { return (await import(await componentModule(componentUrl))).default }
 
 function resolveSourceImport(specifier: string): string {
   for (const suffix of ['', '.ts', '.vue']) {

@@ -3,6 +3,8 @@ from decimal import Decimal
 from datetime import datetime
 from hashlib import sha256
 
+import pytest
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -189,3 +191,104 @@ def test_hint_interval_index_preserves_ambiguity_and_nested_older_interval():
         at = f'2026-09-{day:02d}T09:00:00+00:00'
         return {'value': {'hint_id': f'h{day}', 'kind': 'process', 'retrospective': False, 'physical_contract': 'RB2610', 'segment_id': 'owner-1', 'bar_end': at, 'known_at': at, 'sequence': 1}}
     assert PersistedNewowReference._hint_ids(trades, [], [hint(2), hint(4)], datetime.fromisoformat(base['exit_bar_end'])) == {'long': ['h4'], 'short': []}
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_persisted_daily_weekly_availability_uses_authoritative_owner(monkeypatch, frequency):
+    """Saved next-contract warmup must not collide with the current owner's day."""
+    from datetime import UTC, date, time
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.market_data.aggregation import SessionWindow
+    from app.market_data.domain import ResolvedContractSegment
+    from app.market_data.newow.product_reader import NewowProductReader
+    from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+    from guiyi_quant.newow.product_identity import build_segment_id
+
+    day = date(2026, 9, 2)
+    owners = (
+        ResolvedContractSegment("RB2610", date(2026, 9, 1), date(2026, 9, 3)),
+        ResolvedContractSegment("RB2701", date(2026, 9, 8), date(2026, 9, 10)),
+    )
+    def sessions(*, symbol, trading_day):
+        assert symbol == "rb"
+        return (SessionWindow(datetime.combine(trading_day, time(1), UTC),
+                              datetime.combine(trading_day, time(7), UTC)),)
+    reader = object.__new__(NewowProductReader)
+    reader._market_data = SimpleNamespace(session_windows=sessions)
+    reader.historical_source_evidence = Mock(return_value={})
+    points = [{"trading_day": day.isoformat(), "value": {
+        "physical_contract": owner.contract,
+        "segment_id": build_segment_id("rb", owner.contract, sessions(
+            symbol="rb", trading_day=owner.start_trading_day)[0].start),
+        "calculation_segment_id": f"calculation-{index}", "status": "ready",
+    }} for index, owner in enumerate(owners)]
+    cutoff = datetime(2026, 9, 10, 7, 0, 1, tzinfo=UTC)
+    saved = PersistedNewowReference(lambda: None)
+    page = {"snapshot": "snapshot", "revision_id": "revision", "seq": 2,
+            "items": [], "next_cursor": None}
+    saved._query = SimpleNamespace(streams=lambda **kwargs: [{"stream_id": "stream"}],
+                                   trades=lambda *args, **kwargs: page,
+                                   summary=lambda *args, **kwargs: {})
+    manifest = {"query_since": day.isoformat(), "query_through": "2026-09-10",
+                "query_as_of": cutoff.isoformat(), "reader": "newow_product_reader_intraday_v3"}
+    saved._manifest = lambda *args: (None, manifest)
+    saved._reference_facts = lambda *args: {"availability": points,
+        "boundary": [], "hint": [], "action": []}
+    monkeypatch.setattr("app.reference_trading.persisted_newow.verify_saved_compact_source",
+                        lambda *args: None)
+    resolved = SimpleNamespace(requested_since=day, requested_through=date(2026, 9, 10),
+                               actual_through=date(2026, 9, 10), cutoff=cutoff)
+    read = SimpleNamespace(owners=owners, data_interruptions=())
+    class CoverageChecked(Exception):
+        pass
+    def coverage(availability, gaps, since, through):
+        intervals = PersistedNewowReference._coverage(availability, gaps, since, through)
+        assert len(intervals) == 1
+        assert intervals[0]["physical_contract"] == "RB2610"
+        assert intervals[0]["status"] == "VALID"
+        assert availability == points[:1]
+        raise CoverageChecked
+    saved._coverage = coverage
+    request = SimpleNamespace(product="rb", strategy=ProductStrategy.TREND,
+        frequency=ProductFrequency(frequency), history_before=None, history_limit=200)
+    with pytest.raises(CoverageChecked):
+        saved.section(request, read, None, reader, "fact", None, resolved)
+
+
+def test_saved_owner_date_boundaries_and_calculation_conflict():
+    from datetime import UTC, date, time, timedelta
+    from types import SimpleNamespace
+    from app.market_data.aggregation import SessionWindow
+    from app.market_data.domain import ResolvedContractSegment
+    from app.market_data.newow.product_reader import NewowProductReader
+    from app.reference_trading.query import QueryConflict
+    from guiyi_quant.newow.product_identity import build_segment_id
+
+    owners = (ResolvedContractSegment("RB2610", date(2026, 9, 1), date(2026, 9, 3)),
+              ResolvedContractSegment("RB2701", date(2026, 9, 4), date(2026, 9, 8)))
+    def sessions(*, symbol, trading_day):
+        return (SessionWindow(datetime.combine(trading_day, time(1), UTC),
+                              datetime.combine(trading_day, time(7), UTC)),)
+    reader = object.__new__(NewowProductReader)
+    reader._market_data = SimpleNamespace(session_windows=sessions)
+    def point(owner, day, calculation="calc"):
+        return {"trading_day": day.isoformat(), "value": {
+            "physical_contract": owner.contract,
+            "segment_id": build_segment_id("rb", owner.contract, sessions(
+                symbol="rb", trading_day=owner.start_trading_day)[0].start),
+            "calculation_segment_id": calculation, "status": "ready"}}
+    points = [point(owner, day) for owner in owners for day in (
+        owner.start_trading_day - timedelta(days=1), owner.start_trading_day,
+        owner.end_trading_day, owner.end_trading_day + timedelta(days=1))]
+    assert reader.reference_owned_points("rb", points, owners) == [points[i] for i in (1, 2, 5, 6)]
+    # On the switch day only the new owner survives, even when both saved facts exist.
+    switch = date(2026, 9, 4)
+    switched = [point(owner, switch) for owner in owners]
+    assert reader.reference_owned_points("rb", switched, owners) == switched[1:]
+    # Filtering physical warmup cannot hide a real calculation identity conflict.
+    conflict = [point(owners[1], switch, calculation) for calculation in ("calc-a", "calc-b")]
+    filtered = reader.reference_owned_points("rb", conflict, owners)
+    assert filtered == conflict
+    with pytest.raises(QueryConflict, match="COVERAGE_IDENTITY_CONFLICT"):
+        PersistedNewowReference._coverage(filtered, (), switch, switch)

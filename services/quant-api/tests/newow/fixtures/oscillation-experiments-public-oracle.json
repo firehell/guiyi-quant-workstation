@@ -1,0 +1,6911 @@
+{
+  "source_version": "3.3.79",
+  "source_sha256": "3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d",
+  "provenance": "Constructed OHLC witnesses; direct bounded public-source execution, not market evidence.",
+  "cases": [
+    {
+      "name": "same-bar",
+      "bars": [
+        {
+          "date": "2026-01-01",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-02",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-03",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-04",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-05",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-06",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-07",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-08",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-09",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-10",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-11",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-12",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-13",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-14",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-15",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-16",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        }
+      ],
+      "ideal": {
+        "period": "day",
+        "summary": {
+          "cumReturn": 70,
+          "accuracy": 100,
+          "maxDrawdown": 0,
+          "tradeCount": 7
+        },
+        "dates": [
+          "2026-01-10",
+          "2026-01-11",
+          "2026-01-12",
+          "2026-01-13",
+          "2026-01-14",
+          "2026-01-15",
+          "2026-01-16"
+        ],
+        "equity": [
+          10,
+          20,
+          30,
+          40,
+          50,
+          60,
+          70
+        ],
+        "trades": [
+          {
+            "buyDate": "2026-01-10",
+            "buyPrice": 100,
+            "sellDate": "2026-01-10",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-11",
+            "buyPrice": 100,
+            "sellDate": "2026-01-11",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-12",
+            "buyPrice": 100,
+            "sellDate": "2026-01-12",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-13",
+            "buyPrice": 100,
+            "sellDate": "2026-01-13",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-14",
+            "buyPrice": 100,
+            "sellDate": "2026-01-14",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-15",
+            "buyPrice": 100,
+            "sellDate": "2026-01-15",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-16",
+            "buyPrice": 100,
+            "sellDate": "2026-01-16",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          }
+        ]
+      },
+      "experiments": [
+        {
+          "kind": "osc-test",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 110,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.045454545454545456,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-13",
+              "type": "sell",
+              "price": 110,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.045454545454545456,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-14",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-15",
+              "type": "sell",
+              "price": 110,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.045454545454545456,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-16",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 65,
+              "accuracy": 100,
+              "maxDrawdown": 0,
+              "tradeCount": 7
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              15,
+              25,
+              35,
+              45,
+              55,
+              65
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-11",
+                "buyPrice": 100,
+                "sellDate": "2026-01-12",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 100,
+                "sellDate": "2026-01-13",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-13",
+                "buyPrice": 100,
+                "sellDate": "2026-01-14",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-14",
+                "buyPrice": 100,
+                "sellDate": "2026-01-15",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-15",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-16",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 105,
+                "pct": 5,
+                "buyBarIsLive": true,
+                "forceClose": true
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test2",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 110,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.045454545454545456,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-13",
+              "type": "sell",
+              "price": 110,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.045454545454545456,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-14",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-15",
+              "type": "sell",
+              "price": 110,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.045454545454545456,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-16",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 65,
+              "accuracy": 100,
+              "maxDrawdown": 0,
+              "tradeCount": 7
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              15,
+              25,
+              35,
+              45,
+              55,
+              65
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-11",
+                "buyPrice": 100,
+                "sellDate": "2026-01-12",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 100,
+                "sellDate": "2026-01-13",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-13",
+                "buyPrice": 100,
+                "sellDate": "2026-01-14",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-14",
+                "buyPrice": 100,
+                "sellDate": "2026-01-15",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-15",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-16",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 105,
+                "pct": 5,
+                "buyBarIsLive": true,
+                "forceClose": true
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test3",
+          "markers": [],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 0,
+              "accuracy": 0,
+              "maxDrawdown": 0,
+              "tradeCount": 0
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "trades": []
+          }
+        },
+        {
+          "kind": "osc-test4",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 5,
+              "accuracy": 100,
+              "maxDrawdown": 0,
+              "tradeCount": 1
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 105,
+                "pct": 5,
+                "buyBarIsLive": false,
+                "forceClose": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "wave",
+      "bars": [
+        {
+          "date": "2026-01-01",
+          "open": 100,
+          "high": 105,
+          "low": 95,
+          "close": 100,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-02",
+          "open": 103.85392,
+          "high": 108.85392,
+          "low": 98.85392,
+          "close": 103.85392,
+          "volume": 130
+        },
+        {
+          "date": "2026-01-03",
+          "open": 107.4771,
+          "high": 112.4771,
+          "low": 102.4771,
+          "close": 107.4771,
+          "volume": 160
+        },
+        {
+          "date": "2026-01-04",
+          "open": 110.65315,
+          "high": 115.65315,
+          "low": 105.65315,
+          "close": 110.65315,
+          "volume": 190
+        },
+        {
+          "date": "2026-01-05",
+          "open": 113.19349,
+          "high": 118.19349,
+          "low": 108.19349,
+          "close": 113.19349,
+          "volume": 220
+        },
+        {
+          "date": "2026-01-06",
+          "open": 114.94906,
+          "high": 119.94906,
+          "low": 109.94906,
+          "close": 114.94906,
+          "volume": 250
+        },
+        {
+          "date": "2026-01-07",
+          "open": 115.81957,
+          "high": 120.81957,
+          "low": 110.81957,
+          "close": 115.81957,
+          "volume": 280
+        },
+        {
+          "date": "2026-01-08",
+          "open": 115.75979,
+          "high": 120.75979,
+          "low": 110.75979,
+          "close": 115.75979,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-09",
+          "open": 114.78232,
+          "high": 119.78232,
+          "low": 109.78232,
+          "close": 114.78232,
+          "volume": 130
+        },
+        {
+          "date": "2026-01-10",
+          "open": 112.95681,
+          "high": 117.95681,
+          "low": 107.95681,
+          "close": 112.95681,
+          "volume": 160
+        },
+        {
+          "date": "2026-01-11",
+          "open": 110.40565,
+          "high": 115.40565,
+          "low": 105.40565,
+          "close": 110.40565,
+          "volume": 190
+        },
+        {
+          "date": "2026-01-12",
+          "open": 107.29634,
+          "high": 112.29634,
+          "low": 102.29634,
+          "close": 107.29634,
+          "volume": 220
+        },
+        {
+          "date": "2026-01-13",
+          "open": 103.83109,
+          "high": 108.83109,
+          "low": 98.83109,
+          "close": 103.83109,
+          "volume": 250
+        },
+        {
+          "date": "2026-01-14",
+          "open": 100.23422,
+          "high": 105.23422,
+          "low": 95.23422,
+          "close": 100.23422,
+          "volume": 280
+        },
+        {
+          "date": "2026-01-15",
+          "open": 96.73825,
+          "high": 101.73825,
+          "low": 91.73825,
+          "close": 96.73825,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-16",
+          "open": 93.56944,
+          "high": 98.56944,
+          "low": 88.56944,
+          "close": 93.56944,
+          "volume": 130
+        },
+        {
+          "date": "2026-01-17",
+          "open": 90.93368,
+          "high": 95.93368,
+          "low": 85.93368,
+          "close": 90.93368,
+          "volume": 160
+        },
+        {
+          "date": "2026-01-18",
+          "open": 89.00373,
+          "high": 94.00373,
+          "low": 84.00373,
+          "close": 89.00373,
+          "volume": 190
+        },
+        {
+          "date": "2026-01-19",
+          "open": 87.90848,
+          "high": 92.90848,
+          "low": 82.90848,
+          "close": 87.90848,
+          "volume": 220
+        },
+        {
+          "date": "2026-01-20",
+          "open": 87.72489,
+          "high": 92.72489,
+          "low": 82.72489,
+          "close": 87.72489,
+          "volume": 250
+        },
+        {
+          "date": "2026-01-21",
+          "open": 88.47328,
+          "high": 93.47328,
+          "low": 83.47328,
+          "close": 88.47328,
+          "volume": 280
+        },
+        {
+          "date": "2026-01-22",
+          "open": 90.11598,
+          "high": 95.11598,
+          "low": 85.11598,
+          "close": 90.11598,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-23",
+          "open": 92.55975,
+          "high": 97.55975,
+          "low": 87.55975,
+          "close": 92.55975,
+          "volume": 130
+        },
+        {
+          "date": "2026-01-24",
+          "open": 95.66153,
+          "high": 100.66153,
+          "low": 90.66153,
+          "close": 95.66153,
+          "volume": 160
+        },
+        {
+          "date": "2026-01-25",
+          "open": 99.23734,
+          "high": 104.23734,
+          "low": 94.23734,
+          "close": 99.23734,
+          "volume": 190
+        },
+        {
+          "date": "2026-01-26",
+          "open": 103.07374,
+          "high": 108.07374,
+          "low": 98.07374,
+          "close": 103.07374,
+          "volume": 220
+        },
+        {
+          "date": "2026-01-27",
+          "open": 106.94109,
+          "high": 111.94109,
+          "low": 101.94109,
+          "close": 106.94109,
+          "volume": 250
+        },
+        {
+          "date": "2026-01-28",
+          "open": 110.6078,
+          "high": 115.6078,
+          "low": 105.6078,
+          "close": 110.6078,
+          "volume": 280
+        },
+        {
+          "date": "2026-01-29",
+          "open": 113.8548,
+          "high": 118.8548,
+          "low": 108.8548,
+          "close": 113.8548,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-30",
+          "open": 116.48907,
+          "high": 121.48907,
+          "low": 111.48907,
+          "close": 116.48907,
+          "volume": 130
+        },
+        {
+          "date": "2026-01-31",
+          "open": 118.35571,
+          "high": 123.35571,
+          "low": 113.35571,
+          "close": 118.35571,
+          "volume": 160
+        },
+        {
+          "date": "2026-02-01",
+          "open": 119.34755,
+          "high": 124.34755,
+          "low": 114.34755,
+          "close": 119.34755,
+          "volume": 190
+        },
+        {
+          "date": "2026-02-02",
+          "open": 119.4118,
+          "high": 124.4118,
+          "low": 114.4118,
+          "close": 119.4118,
+          "volume": 220
+        },
+        {
+          "date": "2026-02-03",
+          "open": 118.55335,
+          "high": 123.55335,
+          "low": 113.55335,
+          "close": 118.55335,
+          "volume": 250
+        },
+        {
+          "date": "2026-02-04",
+          "open": 116.83445,
+          "high": 121.83445,
+          "low": 111.83445,
+          "close": 116.83445,
+          "volume": 280
+        },
+        {
+          "date": "2026-02-05",
+          "open": 114.37086,
+          "high": 119.37086,
+          "low": 109.37086,
+          "close": 114.37086,
+          "volume": 100
+        },
+        {
+          "date": "2026-02-06",
+          "open": 111.32463,
+          "high": 116.32463,
+          "low": 106.32463,
+          "close": 111.32463,
+          "volume": 130
+        },
+        {
+          "date": "2026-02-07",
+          "open": 107.89406,
+          "high": 112.89406,
+          "low": 102.89406,
+          "close": 107.89406,
+          "volume": 160
+        },
+        {
+          "date": "2026-02-08",
+          "open": 104.3013,
+          "high": 109.3013,
+          "low": 99.3013,
+          "close": 104.3013,
+          "volume": 190
+        },
+        {
+          "date": "2026-02-09",
+          "open": 100.77864,
+          "high": 105.77864,
+          "low": 95.77864,
+          "close": 100.77864,
+          "volume": 220
+        },
+        {
+          "date": "2026-02-10",
+          "open": 97.55397,
+          "high": 102.55397,
+          "low": 92.55397,
+          "close": 97.55397,
+          "volume": 250
+        },
+        {
+          "date": "2026-02-11",
+          "open": 94.83667,
+          "high": 99.83667,
+          "low": 89.83667,
+          "close": 94.83667,
+          "volume": 280
+        },
+        {
+          "date": "2026-02-12",
+          "open": 92.80456,
+          "high": 97.80456,
+          "low": 87.80456,
+          "close": 92.80456,
+          "volume": 100
+        },
+        {
+          "date": "2026-02-13",
+          "open": 91.59289,
+          "high": 96.59289,
+          "low": 86.59289,
+          "close": 91.59289,
+          "volume": 130
+        },
+        {
+          "date": "2026-02-14",
+          "open": 91.28586,
+          "high": 96.28586,
+          "low": 86.28586,
+          "close": 91.28586,
+          "volume": 160
+        },
+        {
+          "date": "2026-02-15",
+          "open": 91.91145,
+          "high": 96.91145,
+          "low": 86.91145,
+          "close": 91.91145,
+          "volume": 190
+        },
+        {
+          "date": "2026-02-16",
+          "open": 93.43965,
+          "high": 98.43965,
+          "low": 88.43965,
+          "close": 93.43965,
+          "volume": 220
+        },
+        {
+          "date": "2026-02-17",
+          "open": 95.78431,
+          "high": 100.78431,
+          "low": 90.78431,
+          "close": 95.78431,
+          "volume": 250
+        },
+        {
+          "date": "2026-02-18",
+          "open": 98.80855,
+          "high": 103.80855,
+          "low": 93.80855,
+          "close": 98.80855,
+          "volume": 280
+        },
+        {
+          "date": "2026-02-19",
+          "open": 102.33321,
+          "high": 107.33321,
+          "low": 97.33321,
+          "close": 102.33321,
+          "volume": 100
+        },
+        {
+          "date": "2026-02-20",
+          "open": 106.14803,
+          "high": 111.14803,
+          "low": 101.14803,
+          "close": 106.14803,
+          "volume": 130
+        },
+        {
+          "date": "2026-02-21",
+          "open": 110.0247,
+          "high": 115.0247,
+          "low": 105.0247,
+          "close": 110.0247,
+          "volume": 160
+        },
+        {
+          "date": "2026-02-22",
+          "open": 113.73108,
+          "high": 118.73108,
+          "low": 108.73108,
+          "close": 113.73108,
+          "volume": 190
+        },
+        {
+          "date": "2026-02-23",
+          "open": 117.04559,
+          "high": 122.04559,
+          "low": 112.04559,
+          "close": 117.04559,
+          "volume": 220
+        },
+        {
+          "date": "2026-02-24",
+          "open": 119.77105,
+          "high": 124.77105,
+          "low": 114.77105,
+          "close": 119.77105,
+          "volume": 250
+        },
+        {
+          "date": "2026-02-25",
+          "open": 121.74688,
+          "high": 126.74688,
+          "low": 116.74688,
+          "close": 121.74688,
+          "volume": 280
+        },
+        {
+          "date": "2026-02-26",
+          "open": 122.85911,
+          "high": 127.85911,
+          "low": 117.85911,
+          "close": 122.85911,
+          "volume": 100
+        },
+        {
+          "date": "2026-02-27",
+          "open": 123.04747,
+          "high": 128.04747,
+          "low": 118.04747,
+          "close": 123.04747,
+          "volume": 130
+        },
+        {
+          "date": "2026-02-28",
+          "open": 122.30914,
+          "high": 127.30914,
+          "low": 117.30914,
+          "close": 122.30914,
+          "volume": 160
+        },
+        {
+          "date": "2026-03-01",
+          "open": 120.6989,
+          "high": 125.6989,
+          "low": 115.6989,
+          "close": 120.6989,
+          "volume": 190
+        },
+        {
+          "date": "2026-03-02",
+          "open": 118.32575,
+          "high": 123.32575,
+          "low": 113.32575,
+          "close": 118.32575,
+          "volume": 220
+        },
+        {
+          "date": "2026-03-03",
+          "open": 115.34612,
+          "high": 120.34612,
+          "low": 110.34612,
+          "close": 115.34612,
+          "volume": 250
+        },
+        {
+          "date": "2026-03-04",
+          "open": 111.95416,
+          "high": 116.95416,
+          "low": 106.95416,
+          "close": 111.95416,
+          "volume": 280
+        },
+        {
+          "date": "2026-03-05",
+          "open": 108.36963,
+          "high": 113.36963,
+          "low": 103.36963,
+          "close": 108.36963,
+          "volume": 100
+        },
+        {
+          "date": "2026-03-06",
+          "open": 104.82431,
+          "high": 109.82431,
+          "low": 99.82431,
+          "close": 104.82431,
+          "volume": 130
+        },
+        {
+          "date": "2026-03-07",
+          "open": 101.54749,
+          "high": 106.54749,
+          "low": 96.54749,
+          "close": 101.54749,
+          "volume": 160
+        },
+        {
+          "date": "2026-03-08",
+          "open": 98.75179,
+          "high": 103.75179,
+          "low": 93.75179,
+          "close": 98.75179,
+          "volume": 190
+        },
+        {
+          "date": "2026-03-09",
+          "open": 96.61993,
+          "high": 101.61993,
+          "low": 91.61993,
+          "close": 96.61993,
+          "volume": 220
+        },
+        {
+          "date": "2026-03-10",
+          "open": 95.29332,
+          "high": 100.29332,
+          "low": 90.29332,
+          "close": 95.29332,
+          "volume": 250
+        },
+        {
+          "date": "2026-03-11",
+          "open": 94.86335,
+          "high": 99.86335,
+          "low": 89.86335,
+          "close": 94.86335,
+          "volume": 280
+        },
+        {
+          "date": "2026-03-12",
+          "open": 95.36561,
+          "high": 100.36561,
+          "low": 90.36561,
+          "close": 95.36561,
+          "volume": 100
+        },
+        {
+          "date": "2026-03-13",
+          "open": 96.77777,
+          "high": 101.77777,
+          "low": 91.77777,
+          "close": 96.77777,
+          "volume": 130
+        },
+        {
+          "date": "2026-03-14",
+          "open": 99.02091,
+          "high": 104.02091,
+          "low": 94.02091,
+          "close": 99.02091,
+          "volume": 160
+        },
+        {
+          "date": "2026-03-15",
+          "open": 101.96443,
+          "high": 106.96443,
+          "low": 96.96443,
+          "close": 101.96443,
+          "volume": 190
+        },
+        {
+          "date": "2026-03-16",
+          "open": 105.43422,
+          "high": 110.43422,
+          "low": 100.43422,
+          "close": 105.43422,
+          "volume": 220
+        },
+        {
+          "date": "2026-03-17",
+          "open": 109.22341,
+          "high": 114.22341,
+          "low": 104.22341,
+          "close": 109.22341,
+          "volume": 250
+        },
+        {
+          "date": "2026-03-18",
+          "open": 113.1053,
+          "high": 118.1053,
+          "low": 108.1053,
+          "close": 113.1053,
+          "volume": 280
+        },
+        {
+          "date": "2026-03-19",
+          "open": 116.84741,
+          "high": 121.84741,
+          "low": 111.84741,
+          "close": 116.84741,
+          "volume": 100
+        },
+        {
+          "date": "2026-03-20",
+          "open": 120.22596,
+          "high": 125.22596,
+          "low": 115.22596,
+          "close": 120.22596,
+          "volume": 130
+        },
+        {
+          "date": "2026-03-21",
+          "open": 123.03976,
+          "high": 128.03976,
+          "low": 118.03976,
+          "close": 123.03976,
+          "volume": 160
+        },
+        {
+          "date": "2026-03-22",
+          "open": 125.12275,
+          "high": 130.12275,
+          "low": 120.12275,
+          "close": 125.12275,
+          "volume": 190
+        },
+        {
+          "date": "2026-03-23",
+          "open": 126.35431,
+          "high": 131.35431,
+          "low": 121.35431,
+          "close": 126.35431,
+          "volume": 220
+        },
+        {
+          "date": "2026-03-24",
+          "open": 126.66673,
+          "high": 131.66673,
+          "low": 121.66673,
+          "close": 126.66673,
+          "volume": 250
+        },
+        {
+          "date": "2026-03-25",
+          "open": 126.04949,
+          "high": 131.04949,
+          "low": 121.04949,
+          "close": 126.04949,
+          "volume": 280
+        },
+        {
+          "date": "2026-03-26",
+          "open": 124.54983,
+          "high": 129.54983,
+          "low": 119.54983,
+          "close": 124.54983,
+          "volume": 100
+        },
+        {
+          "date": "2026-03-27",
+          "open": 122.26989,
+          "high": 127.26989,
+          "low": 117.26989,
+          "close": 122.26989,
+          "volume": 130
+        },
+        {
+          "date": "2026-03-28",
+          "open": 119.3603,
+          "high": 124.3603,
+          "low": 114.3603,
+          "close": 119.3603,
+          "volume": 160
+        },
+        {
+          "date": "2026-03-29",
+          "open": 116.01084,
+          "high": 121.01084,
+          "low": 111.01084,
+          "close": 116.01084,
+          "volume": 190
+        },
+        {
+          "date": "2026-03-30",
+          "open": 112.43866,
+          "high": 117.43866,
+          "low": 107.43866,
+          "close": 112.43866,
+          "volume": 220
+        },
+        {
+          "date": "2026-03-31",
+          "open": 108.87473,
+          "high": 113.87473,
+          "low": 103.87473,
+          "close": 108.87473,
+          "volume": 250
+        },
+        {
+          "date": "2026-04-01",
+          "open": 105.54953,
+          "high": 110.54953,
+          "low": 100.54953,
+          "close": 105.54953,
+          "volume": 280
+        },
+        {
+          "date": "2026-04-02",
+          "open": 102.67867,
+          "high": 107.67867,
+          "low": 97.67867,
+          "close": 102.67867,
+          "volume": 100
+        },
+        {
+          "date": "2026-04-03",
+          "open": 100.44955,
+          "high": 105.44955,
+          "low": 95.44955,
+          "close": 100.44955,
+          "volume": 130
+        },
+        {
+          "date": "2026-04-04",
+          "open": 99.00964,
+          "high": 104.00964,
+          "low": 94.00964,
+          "close": 99.00964,
+          "volume": 160
+        },
+        {
+          "date": "2026-04-05",
+          "open": 98.45734,
+          "high": 103.45734,
+          "low": 93.45734,
+          "close": 98.45734,
+          "volume": 190
+        },
+        {
+          "date": "2026-04-06",
+          "open": 98.83588,
+          "high": 103.83588,
+          "low": 93.83588,
+          "close": 98.83588,
+          "volume": 220
+        },
+        {
+          "date": "2026-04-07",
+          "open": 100.13061,
+          "high": 105.13061,
+          "low": 95.13061,
+          "close": 100.13061,
+          "volume": 250
+        },
+        {
+          "date": "2026-04-08",
+          "open": 102.2699,
+          "high": 107.2699,
+          "low": 97.2699,
+          "close": 102.2699,
+          "volume": 280
+        },
+        {
+          "date": "2026-04-09",
+          "open": 105.12964,
+          "high": 110.12964,
+          "low": 100.12964,
+          "close": 105.12964,
+          "volume": 100
+        },
+        {
+          "date": "2026-04-10",
+          "open": 108.54089,
+          "high": 113.54089,
+          "low": 103.54089,
+          "close": 108.54089,
+          "volume": 130
+        },
+        {
+          "date": "2026-04-11",
+          "open": 112.30044,
+          "high": 117.30044,
+          "low": 107.30044,
+          "close": 112.30044,
+          "volume": 160
+        },
+        {
+          "date": "2026-04-12",
+          "open": 116.18343,
+          "high": 121.18343,
+          "low": 111.18343,
+          "close": 116.18343,
+          "volume": 190
+        },
+        {
+          "date": "2026-04-13",
+          "open": 119.9573,
+          "high": 124.9573,
+          "low": 114.9573,
+          "close": 119.9573,
+          "volume": 220
+        },
+        {
+          "date": "2026-04-14",
+          "open": 123.39632,
+          "high": 128.39632,
+          "low": 118.39632,
+          "close": 123.39632,
+          "volume": 250
+        },
+        {
+          "date": "2026-04-15",
+          "open": 126.29552,
+          "high": 131.29552,
+          "low": 121.29552,
+          "close": 126.29552,
+          "volume": 280
+        },
+        {
+          "date": "2026-04-16",
+          "open": 128.48354,
+          "high": 133.48354,
+          "low": 123.48354,
+          "close": 128.48354,
+          "volume": 100
+        },
+        {
+          "date": "2026-04-17",
+          "open": 129.83322,
+          "high": 134.83322,
+          "low": 124.83322000000001,
+          "close": 129.83322,
+          "volume": 130
+        },
+        {
+          "date": "2026-04-18",
+          "open": 130.26953,
+          "high": 135.26953,
+          "low": 125.26953,
+          "close": 130.26953,
+          "volume": 160
+        },
+        {
+          "date": "2026-04-19",
+          "open": 129.77421,
+          "high": 134.77421,
+          "low": 124.77421000000001,
+          "close": 129.77421,
+          "volume": 190
+        },
+        {
+          "date": "2026-04-20",
+          "open": 128.38695,
+          "high": 133.38695,
+          "low": 123.38695000000001,
+          "close": 128.38695,
+          "volume": 220
+        },
+        {
+          "date": "2026-04-21",
+          "open": 126.20289,
+          "high": 131.20289,
+          "low": 121.20289,
+          "close": 126.20289,
+          "volume": 250
+        },
+        {
+          "date": "2026-04-22",
+          "open": 123.36669,
+          "high": 128.36669,
+          "low": 118.36669,
+          "close": 123.36669,
+          "volume": 280
+        },
+        {
+          "date": "2026-04-23",
+          "open": 120.06359,
+          "high": 125.06359,
+          "low": 115.06359,
+          "close": 120.06359,
+          "volume": 100
+        },
+        {
+          "date": "2026-04-24",
+          "open": 116.50783,
+          "high": 121.50783,
+          "low": 111.50783,
+          "close": 116.50783,
+          "volume": 130
+        },
+        {
+          "date": "2026-04-25",
+          "open": 112.92938,
+          "high": 117.92938,
+          "low": 107.92938,
+          "close": 112.92938,
+          "volume": 160
+        },
+        {
+          "date": "2026-04-26",
+          "open": 109.55961,
+          "high": 114.55961,
+          "low": 104.55961,
+          "close": 109.55961,
+          "volume": 190
+        },
+        {
+          "date": "2026-04-27",
+          "open": 106.61692,
+          "high": 111.61692,
+          "low": 101.61692,
+          "close": 106.61692,
+          "volume": 220
+        },
+        {
+          "date": "2026-04-28",
+          "open": 104.29315,
+          "high": 109.29315,
+          "low": 99.29315,
+          "close": 104.29315,
+          "volume": 250
+        },
+        {
+          "date": "2026-04-29",
+          "open": 102.74167,
+          "high": 107.74167,
+          "low": 97.74167,
+          "close": 102.74167,
+          "volume": 280
+        },
+        {
+          "date": "2026-04-30",
+          "open": 102.06782,
+          "high": 107.06782,
+          "low": 97.06782,
+          "close": 102.06782,
+          "volume": 100
+        },
+        {
+          "date": "2026-05-01",
+          "open": 102.32238,
+          "high": 107.32238,
+          "low": 97.32238,
+          "close": 102.32238,
+          "volume": 130
+        },
+        {
+          "date": "2026-05-02",
+          "open": 103.49841,
+          "high": 108.49841,
+          "low": 98.49841,
+          "close": 103.49841,
+          "volume": 160
+        },
+        {
+          "date": "2026-05-03",
+          "open": 105.53166,
+          "high": 110.53166,
+          "low": 100.53166,
+          "close": 105.53166,
+          "volume": 190
+        },
+        {
+          "date": "2026-05-04",
+          "open": 108.30461,
+          "high": 113.30461,
+          "low": 103.30461,
+          "close": 108.30461,
+          "volume": 220
+        },
+        {
+          "date": "2026-05-05",
+          "open": 111.65372,
+          "high": 116.65372,
+          "low": 106.65372,
+          "close": 111.65372,
+          "volume": 250
+        },
+        {
+          "date": "2026-05-06",
+          "open": 115.37965,
+          "high": 120.37965,
+          "low": 110.37965,
+          "close": 115.37965,
+          "volume": 280
+        },
+        {
+          "date": "2026-05-07",
+          "open": 119.25962,
+          "high": 124.25962,
+          "low": 114.25962,
+          "close": 119.25962,
+          "volume": 100
+        },
+        {
+          "date": "2026-05-08",
+          "open": 123.06127,
+          "high": 128.06126999999998,
+          "low": 118.06127,
+          "close": 123.06127,
+          "volume": 130
+        },
+        {
+          "date": "2026-05-09",
+          "open": 126.55711,
+          "high": 131.55711,
+          "low": 121.55711,
+          "close": 126.55711,
+          "volume": 160
+        },
+        {
+          "date": "2026-05-10",
+          "open": 129.53869,
+          "high": 134.53869,
+          "low": 124.53869,
+          "close": 129.53869,
+          "volume": 190
+        },
+        {
+          "date": "2026-05-11",
+          "open": 131.82948,
+          "high": 136.82948,
+          "low": 126.82947999999999,
+          "close": 131.82948,
+          "volume": 220
+        },
+        {
+          "date": "2026-05-12",
+          "open": 133.29596,
+          "high": 138.29596,
+          "low": 128.29596,
+          "close": 133.29596,
+          "volume": 250
+        },
+        {
+          "date": "2026-05-13",
+          "open": 133.85582,
+          "high": 138.85582,
+          "low": 128.85582,
+          "close": 133.85582,
+          "volume": 280
+        },
+        {
+          "date": "2026-05-14",
+          "open": 133.48313,
+          "high": 138.48313,
+          "low": 128.48313,
+          "close": 133.48313,
+          "volume": 100
+        },
+        {
+          "date": "2026-05-15",
+          "open": 132.20996,
+          "high": 137.20996,
+          "low": 127.20996,
+          "close": 132.20996,
+          "volume": 130
+        },
+        {
+          "date": "2026-05-16",
+          "open": 130.12433,
+          "high": 135.12433,
+          "low": 125.12432999999999,
+          "close": 130.12433,
+          "volume": 160
+        },
+        {
+          "date": "2026-05-17",
+          "open": 127.36481,
+          "high": 132.36481,
+          "low": 122.36481,
+          "close": 127.36481,
+          "volume": 190
+        },
+        {
+          "date": "2026-05-18",
+          "open": 124.11186,
+          "high": 129.11185999999998,
+          "low": 119.11186,
+          "close": 124.11186,
+          "volume": 220
+        },
+        {
+          "date": "2026-05-19",
+          "open": 120.5766,
+          "high": 125.5766,
+          "low": 115.5766,
+          "close": 120.5766,
+          "volume": 250
+        },
+        {
+          "date": "2026-05-20",
+          "open": 116.98773,
+          "high": 121.98773,
+          "low": 111.98773,
+          "close": 116.98773,
+          "volume": 280
+        },
+        {
+          "date": "2026-05-21",
+          "open": 113.57726,
+          "high": 118.57726,
+          "low": 108.57726,
+          "close": 113.57726,
+          "volume": 100
+        },
+        {
+          "date": "2026-05-22",
+          "open": 110.56613,
+          "high": 115.56613,
+          "low": 105.56613,
+          "close": 110.56613,
+          "volume": 130
+        },
+        {
+          "date": "2026-05-23",
+          "open": 108.15043,
+          "high": 113.15043,
+          "low": 103.15043,
+          "close": 108.15043,
+          "volume": 160
+        },
+        {
+          "date": "2026-05-24",
+          "open": 106.48925,
+          "high": 111.48925,
+          "low": 101.48925,
+          "close": 106.48925,
+          "volume": 190
+        },
+        {
+          "date": "2026-05-25",
+          "open": 105.69475,
+          "high": 110.69475,
+          "low": 100.69475,
+          "close": 105.69475,
+          "volume": 220
+        },
+        {
+          "date": "2026-05-26",
+          "open": 105.8252,
+          "high": 110.8252,
+          "low": 100.8252,
+          "close": 105.8252,
+          "volume": 250
+        },
+        {
+          "date": "2026-05-27",
+          "open": 106.88139,
+          "high": 111.88139,
+          "low": 101.88139,
+          "close": 106.88139,
+          "volume": 280
+        },
+        {
+          "date": "2026-05-28",
+          "open": 108.80652,
+          "high": 113.80652,
+          "low": 103.80652,
+          "close": 108.80652,
+          "volume": 100
+        },
+        {
+          "date": "2026-05-29",
+          "open": 111.48979,
+          "high": 116.48979,
+          "low": 106.48979,
+          "close": 111.48979,
+          "volume": 130
+        },
+        {
+          "date": "2026-05-30",
+          "open": 114.77323,
+          "high": 119.77323,
+          "low": 109.77323,
+          "close": 114.77323,
+          "volume": 160
+        },
+        {
+          "date": "2026-05-31",
+          "open": 118.46159,
+          "high": 123.46159,
+          "low": 113.46159,
+          "close": 118.46159,
+          "volume": 190
+        },
+        {
+          "date": "2026-06-01",
+          "open": 122.33442,
+          "high": 127.33442,
+          "low": 117.33442,
+          "close": 122.33442,
+          "volume": 220
+        },
+        {
+          "date": "2026-06-02",
+          "open": 126.15981,
+          "high": 131.15981,
+          "low": 121.15981,
+          "close": 126.15981,
+          "volume": 250
+        },
+        {
+          "date": "2026-06-03",
+          "open": 129.70881,
+          "high": 134.70881,
+          "low": 124.70881,
+          "close": 129.70881,
+          "volume": 280
+        },
+        {
+          "date": "2026-06-04",
+          "open": 132.76962,
+          "high": 137.76962,
+          "low": 127.76962,
+          "close": 132.76962,
+          "volume": 100
+        },
+        {
+          "date": "2026-06-05",
+          "open": 135.16083,
+          "high": 140.16083,
+          "low": 130.16083,
+          "close": 135.16083,
+          "volume": 130
+        },
+        {
+          "date": "2026-06-06",
+          "open": 136.74265,
+          "high": 141.74265,
+          "low": 131.74265,
+          "close": 136.74265,
+          "volume": 160
+        },
+        {
+          "date": "2026-06-07",
+          "open": 137.4256,
+          "high": 142.4256,
+          "low": 132.4256,
+          "close": 137.4256,
+          "volume": 190
+        },
+        {
+          "date": "2026-06-08",
+          "open": 137.17611,
+          "high": 142.17611,
+          "low": 132.17611,
+          "close": 137.17611,
+          "volume": 220
+        },
+        {
+          "date": "2026-06-09",
+          "open": 136.01857,
+          "high": 141.01857,
+          "low": 131.01857,
+          "close": 136.01857,
+          "volume": 250
+        }
+      ],
+      "ideal": {
+        "period": "day",
+        "summary": {
+          "cumReturn": 111.49,
+          "accuracy": 100,
+          "maxDrawdown": 0,
+          "tradeCount": 6
+        },
+        "dates": [
+          "2026-01-10",
+          "2026-01-11",
+          "2026-01-12",
+          "2026-01-13",
+          "2026-01-14",
+          "2026-01-15",
+          "2026-01-16",
+          "2026-01-17",
+          "2026-01-18",
+          "2026-01-19",
+          "2026-01-20",
+          "2026-01-21",
+          "2026-01-22",
+          "2026-01-23",
+          "2026-01-24",
+          "2026-01-25",
+          "2026-01-26",
+          "2026-01-27",
+          "2026-01-28",
+          "2026-01-29",
+          "2026-01-30",
+          "2026-01-31",
+          "2026-02-01",
+          "2026-02-02",
+          "2026-02-03",
+          "2026-02-04",
+          "2026-02-05",
+          "2026-02-06",
+          "2026-02-07",
+          "2026-02-08",
+          "2026-02-09",
+          "2026-02-10",
+          "2026-02-11",
+          "2026-02-12",
+          "2026-02-13",
+          "2026-02-14",
+          "2026-02-15",
+          "2026-02-16",
+          "2026-02-17",
+          "2026-02-18",
+          "2026-02-19",
+          "2026-02-20",
+          "2026-02-21",
+          "2026-02-22",
+          "2026-02-23",
+          "2026-02-24",
+          "2026-02-25",
+          "2026-02-26",
+          "2026-02-27",
+          "2026-02-28",
+          "2026-03-01",
+          "2026-03-02",
+          "2026-03-03",
+          "2026-03-04",
+          "2026-03-05",
+          "2026-03-06",
+          "2026-03-07",
+          "2026-03-08",
+          "2026-03-09",
+          "2026-03-10",
+          "2026-03-11",
+          "2026-03-12",
+          "2026-03-13",
+          "2026-03-14",
+          "2026-03-15",
+          "2026-03-16",
+          "2026-03-17",
+          "2026-03-18",
+          "2026-03-19",
+          "2026-03-20",
+          "2026-03-21",
+          "2026-03-22",
+          "2026-03-23",
+          "2026-03-24",
+          "2026-03-25",
+          "2026-03-26",
+          "2026-03-27",
+          "2026-03-28",
+          "2026-03-29",
+          "2026-03-30",
+          "2026-03-31",
+          "2026-04-01",
+          "2026-04-02",
+          "2026-04-03",
+          "2026-04-04",
+          "2026-04-05",
+          "2026-04-06",
+          "2026-04-07",
+          "2026-04-08",
+          "2026-04-09",
+          "2026-04-10",
+          "2026-04-11",
+          "2026-04-12",
+          "2026-04-13",
+          "2026-04-14",
+          "2026-04-15",
+          "2026-04-16",
+          "2026-04-17",
+          "2026-04-18",
+          "2026-04-19",
+          "2026-04-20",
+          "2026-04-21",
+          "2026-04-22",
+          "2026-04-23",
+          "2026-04-24",
+          "2026-04-25",
+          "2026-04-26",
+          "2026-04-27",
+          "2026-04-28",
+          "2026-04-29",
+          "2026-04-30",
+          "2026-05-01",
+          "2026-05-02",
+          "2026-05-03",
+          "2026-05-04",
+          "2026-05-05",
+          "2026-05-06",
+          "2026-05-07",
+          "2026-05-08",
+          "2026-05-09",
+          "2026-05-10",
+          "2026-05-11",
+          "2026-05-12",
+          "2026-05-13",
+          "2026-05-14",
+          "2026-05-15",
+          "2026-05-16",
+          "2026-05-17",
+          "2026-05-18",
+          "2026-05-19",
+          "2026-05-20",
+          "2026-05-21",
+          "2026-05-22",
+          "2026-05-23",
+          "2026-05-24",
+          "2026-05-25",
+          "2026-05-26",
+          "2026-05-27",
+          "2026-05-28",
+          "2026-05-29",
+          "2026-05-30",
+          "2026-05-31",
+          "2026-06-01",
+          "2026-06-02",
+          "2026-06-03",
+          "2026-06-04",
+          "2026-06-05",
+          "2026-06-06",
+          "2026-06-07",
+          "2026-06-08",
+          "2026-06-09"
+        ],
+        "equity": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          18.1074,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          39.0199,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          58.7418,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          77.3489,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          94.9095,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855,
+          111.4855
+        ],
+        "trades": [
+          {
+            "buyDate": "2026-01-12",
+            "buyPrice": 102.3,
+            "sellDate": "2026-01-25",
+            "sellPrice": 120.82,
+            "pct": 18.11,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-02-07",
+            "buyPrice": 102.89,
+            "sellDate": "2026-02-19",
+            "sellPrice": 124.41,
+            "pct": 20.91,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-03-04",
+            "buyPrice": 106.95,
+            "sellDate": "2026-03-16",
+            "sellPrice": 128.05,
+            "pct": 19.72,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-03-29",
+            "buyPrice": 111.01,
+            "sellDate": "2026-04-10",
+            "sellPrice": 131.67,
+            "pct": 18.61,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-04-23",
+            "buyPrice": 115.06,
+            "sellDate": "2026-05-05",
+            "sellPrice": 135.27,
+            "pct": 17.56,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-05-18",
+            "buyPrice": 119.11,
+            "sellDate": "2026-05-30",
+            "sellPrice": 138.86,
+            "pct": 16.58,
+            "forceClose": false
+          }
+        ]
+      },
+      "experiments": [
+        {
+          "kind": "osc-test",
+          "markers": [
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 102.29634,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04887760402767098,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-15",
+              "type": "sell",
+              "price": 95.1355962,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-16",
+              "type": "buy",
+              "price": 88.56944,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.056452880361442956,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-25",
+              "type": "sell",
+              "price": 104.23734,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.04796745580806264,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-07",
+              "type": "buy",
+              "price": 102.89406,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.9302325581395349,
+                "bodyPct": 0,
+                "penPct": 0.048593670033041755,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-10",
+              "type": "sell",
+              "price": 95.69147579999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-11",
+              "type": "buy",
+              "price": 89.83667,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.055656559843547185,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-19",
+              "type": "sell",
+              "price": 107.33321,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.046583904459766,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-04",
+              "type": "buy",
+              "price": 106.95416,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.04674899975840117,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-07",
+              "type": "sell",
+              "price": 99.46736879999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-08",
+              "type": "buy",
+              "price": 93.75179,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.0533323150416648,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-16",
+              "type": "sell",
+              "price": 110.43422,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.045275821208317496,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-29",
+              "type": "buy",
+              "price": 111.01084,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.045040646481010325,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-01",
+              "type": "sell",
+              "price": 103.24008119999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-02",
+              "type": "buy",
+              "price": 97.67867,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.05118824816103659,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-10",
+              "type": "sell",
+              "price": 113.54089,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.044036998476936366,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-23",
+              "type": "buy",
+              "price": 115.06359,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.04345423256826942,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-26",
+              "type": "sell",
+              "price": 107.0091387,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-27",
+              "type": "buy",
+              "price": 101.61692,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.049204404148443,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-05",
+              "type": "sell",
+              "price": 116.65372,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.256281407035176,
+                "bodyPct": 0,
+                "penPct": 0.042861899303339834,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-18",
+              "type": "buy",
+              "price": 119.11186,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04197734801555446,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-21",
+              "type": "sell",
+              "price": 110.77402979999998,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-22",
+              "type": "buy",
+              "price": 105.56613,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.047363676209405424,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-30",
+              "type": "sell",
+              "price": 119.77323,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.9302325581395349,
+                "bodyPct": 0,
+                "penPct": 0.041745555329851254,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 57.45,
+              "accuracy": 50,
+              "maxDrawdown": 12.84,
+              "tradeCount": 12
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16",
+              "2026-01-17",
+              "2026-01-18",
+              "2026-01-19",
+              "2026-01-20",
+              "2026-01-21",
+              "2026-01-22",
+              "2026-01-23",
+              "2026-01-24",
+              "2026-01-25",
+              "2026-01-26",
+              "2026-01-27",
+              "2026-01-28",
+              "2026-01-29",
+              "2026-01-30",
+              "2026-01-31",
+              "2026-02-01",
+              "2026-02-02",
+              "2026-02-03",
+              "2026-02-04",
+              "2026-02-05",
+              "2026-02-06",
+              "2026-02-07",
+              "2026-02-08",
+              "2026-02-09",
+              "2026-02-10",
+              "2026-02-11",
+              "2026-02-12",
+              "2026-02-13",
+              "2026-02-14",
+              "2026-02-15",
+              "2026-02-16",
+              "2026-02-17",
+              "2026-02-18",
+              "2026-02-19",
+              "2026-02-20",
+              "2026-02-21",
+              "2026-02-22",
+              "2026-02-23",
+              "2026-02-24",
+              "2026-02-25",
+              "2026-02-26",
+              "2026-02-27",
+              "2026-02-28",
+              "2026-03-01",
+              "2026-03-02",
+              "2026-03-03",
+              "2026-03-04",
+              "2026-03-05",
+              "2026-03-06",
+              "2026-03-07",
+              "2026-03-08",
+              "2026-03-09",
+              "2026-03-10",
+              "2026-03-11",
+              "2026-03-12",
+              "2026-03-13",
+              "2026-03-14",
+              "2026-03-15",
+              "2026-03-16",
+              "2026-03-17",
+              "2026-03-18",
+              "2026-03-19",
+              "2026-03-20",
+              "2026-03-21",
+              "2026-03-22",
+              "2026-03-23",
+              "2026-03-24",
+              "2026-03-25",
+              "2026-03-26",
+              "2026-03-27",
+              "2026-03-28",
+              "2026-03-29",
+              "2026-03-30",
+              "2026-03-31",
+              "2026-04-01",
+              "2026-04-02",
+              "2026-04-03",
+              "2026-04-04",
+              "2026-04-05",
+              "2026-04-06",
+              "2026-04-07",
+              "2026-04-08",
+              "2026-04-09",
+              "2026-04-10",
+              "2026-04-11",
+              "2026-04-12",
+              "2026-04-13",
+              "2026-04-14",
+              "2026-04-15",
+              "2026-04-16",
+              "2026-04-17",
+              "2026-04-18",
+              "2026-04-19",
+              "2026-04-20",
+              "2026-04-21",
+              "2026-04-22",
+              "2026-04-23",
+              "2026-04-24",
+              "2026-04-25",
+              "2026-04-26",
+              "2026-04-27",
+              "2026-04-28",
+              "2026-04-29",
+              "2026-04-30",
+              "2026-05-01",
+              "2026-05-02",
+              "2026-05-03",
+              "2026-05-04",
+              "2026-05-05",
+              "2026-05-06",
+              "2026-05-07",
+              "2026-05-08",
+              "2026-05-09",
+              "2026-05-10",
+              "2026-05-11",
+              "2026-05-12",
+              "2026-05-13",
+              "2026-05-14",
+              "2026-05-15",
+              "2026-05-16",
+              "2026-05-17",
+              "2026-05-18",
+              "2026-05-19",
+              "2026-05-20",
+              "2026-05-21",
+              "2026-05-22",
+              "2026-05-23",
+              "2026-05-24",
+              "2026-05-25",
+              "2026-05-26",
+              "2026-05-27",
+              "2026-05-28",
+              "2026-05-29",
+              "2026-05-30",
+              "2026-05-31",
+              "2026-06-01",
+              "2026-06-02",
+              "2026-06-03",
+              "2026-06-04",
+              "2026-06-05",
+              "2026-06-06",
+              "2026-06-07",
+              "2026-06-08",
+              "2026-06-09"
+            ],
+            "equity": [
+              0,
+              0,
+              4.8878,
+              1.5003,
+              -2.0158,
+              -7,
+              -1.3547,
+              -4.3306,
+              -6.5097,
+              -7.7463,
+              -7.9535,
+              -7.1086,
+              -5.2539,
+              -2.4947,
+              1.0074,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              10.69,
+              15.5493,
+              12.0576,
+              8.634,
+              3.69,
+              9.2556,
+              6.9936,
+              5.6449,
+              5.3031,
+              5.9995,
+              7.7006,
+              10.3105,
+              13.6768,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              23.1659,
+              27.8408,
+              24.4893,
+              21.1745,
+              16.1659,
+              21.4991,
+              19.2252,
+              17.8102,
+              17.3515,
+              17.8873,
+              19.3936,
+              21.7862,
+              24.9259,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              33.9602,
+              38.4642,
+              35.2464,
+              32.0359,
+              26.9602,
+              32.079,
+              29.7969,
+              28.3228,
+              27.7573,
+              28.1449,
+              29.4704,
+              31.6605,
+              34.5882,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              43.1993,
+              47.5448,
+              44.4545,
+              41.3445,
+              36.1993,
+              41.1198,
+              38.833,
+              37.3062,
+              36.6431,
+              36.8936,
+              38.0509,
+              40.0518,
+              42.7806,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              50.9969,
+              55.1946,
+              52.2266,
+              49.2136,
+              43.9969,
+              48.7332,
+              46.4449,
+              44.8713,
+              44.1187,
+              44.2423,
+              45.2428,
+              47.0664,
+              49.6082,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549,
+              57.4549
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 102.3,
+                "sellDate": "2026-01-15",
+                "sellPrice": 95.14,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-16",
+                "buyPrice": 88.57,
+                "sellDate": "2026-01-25",
+                "sellPrice": 104.24,
+                "pct": 17.69,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-02-07",
+                "buyPrice": 102.89,
+                "sellDate": "2026-02-10",
+                "sellPrice": 95.69,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-02-11",
+                "buyPrice": 89.84,
+                "sellDate": "2026-02-19",
+                "sellPrice": 107.33,
+                "pct": 19.48,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-04",
+                "buyPrice": 106.95,
+                "sellDate": "2026-03-07",
+                "sellPrice": 99.47,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-08",
+                "buyPrice": 93.75,
+                "sellDate": "2026-03-16",
+                "sellPrice": 110.43,
+                "pct": 17.79,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-29",
+                "buyPrice": 111.01,
+                "sellDate": "2026-04-01",
+                "sellPrice": 103.24,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-02",
+                "buyPrice": 97.68,
+                "sellDate": "2026-04-10",
+                "sellPrice": 113.54,
+                "pct": 16.24,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-23",
+                "buyPrice": 115.06,
+                "sellDate": "2026-04-26",
+                "sellPrice": 107.01,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-27",
+                "buyPrice": 101.62,
+                "sellDate": "2026-05-05",
+                "sellPrice": 116.65,
+                "pct": 14.8,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-05-18",
+                "buyPrice": 119.11,
+                "sellDate": "2026-05-21",
+                "sellPrice": 110.77,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-05-22",
+                "buyPrice": 105.57,
+                "sellDate": "2026-05-30",
+                "sellPrice": 119.77,
+                "pct": 13.46,
+                "forceClose": false
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test2",
+          "markers": [
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 102.29634,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04887760402767098,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-15",
+              "type": "sell",
+              "price": 95.1355962,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-16",
+              "type": "buy",
+              "price": 88.56944,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.056452880361442956,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-30",
+              "type": "sell",
+              "price": 120.81957,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.04115596571773905,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-07",
+              "type": "buy",
+              "price": 102.89406,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.9302325581395349,
+                "bodyPct": 0,
+                "penPct": 0.048593670033041755,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-10",
+              "type": "sell",
+              "price": 95.69147579999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-11",
+              "type": "buy",
+              "price": 89.83667,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.055656559843547185,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-24",
+              "type": "sell",
+              "price": 124.4118,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.256281407035176,
+                "bodyPct": 0,
+                "penPct": 0.04007339843657643,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-04",
+              "type": "buy",
+              "price": 106.95416,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.04674899975840117,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-07",
+              "type": "sell",
+              "price": 99.46736879999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-08",
+              "type": "buy",
+              "price": 93.75179,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.0533323150416648,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-22",
+              "type": "sell",
+              "price": 128.04747,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.03842525615236383,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-29",
+              "type": "buy",
+              "price": 111.01084,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.045040646481010325,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-01",
+              "type": "sell",
+              "price": 103.24008119999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-02",
+              "type": "buy",
+              "price": 97.67867,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.05118824816103659,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-16",
+              "type": "sell",
+              "price": 131.66673,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.037457801913254624,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-23",
+              "type": "buy",
+              "price": 115.06359,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.04345423256826942,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-26",
+              "type": "sell",
+              "price": 107.0091387,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-27",
+              "type": "buy",
+              "price": 101.61692,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.049204404148443,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-11",
+              "type": "sell",
+              "price": 135.26953,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.036541832944187176,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-18",
+              "type": "buy",
+              "price": 119.11186,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04197734801555446,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-21",
+              "type": "sell",
+              "price": 110.77402979999998,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-22",
+              "type": "buy",
+              "price": 105.56613,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.047363676209405424,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-06-05",
+              "type": "sell",
+              "price": 138.85582,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.035673304731428886,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 168.93,
+              "accuracy": 50,
+              "maxDrawdown": 12.84,
+              "tradeCount": 12
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16",
+              "2026-01-17",
+              "2026-01-18",
+              "2026-01-19",
+              "2026-01-20",
+              "2026-01-21",
+              "2026-01-22",
+              "2026-01-23",
+              "2026-01-24",
+              "2026-01-25",
+              "2026-01-26",
+              "2026-01-27",
+              "2026-01-28",
+              "2026-01-29",
+              "2026-01-30",
+              "2026-01-31",
+              "2026-02-01",
+              "2026-02-02",
+              "2026-02-03",
+              "2026-02-04",
+              "2026-02-05",
+              "2026-02-06",
+              "2026-02-07",
+              "2026-02-08",
+              "2026-02-09",
+              "2026-02-10",
+              "2026-02-11",
+              "2026-02-12",
+              "2026-02-13",
+              "2026-02-14",
+              "2026-02-15",
+              "2026-02-16",
+              "2026-02-17",
+              "2026-02-18",
+              "2026-02-19",
+              "2026-02-20",
+              "2026-02-21",
+              "2026-02-22",
+              "2026-02-23",
+              "2026-02-24",
+              "2026-02-25",
+              "2026-02-26",
+              "2026-02-27",
+              "2026-02-28",
+              "2026-03-01",
+              "2026-03-02",
+              "2026-03-03",
+              "2026-03-04",
+              "2026-03-05",
+              "2026-03-06",
+              "2026-03-07",
+              "2026-03-08",
+              "2026-03-09",
+              "2026-03-10",
+              "2026-03-11",
+              "2026-03-12",
+              "2026-03-13",
+              "2026-03-14",
+              "2026-03-15",
+              "2026-03-16",
+              "2026-03-17",
+              "2026-03-18",
+              "2026-03-19",
+              "2026-03-20",
+              "2026-03-21",
+              "2026-03-22",
+              "2026-03-23",
+              "2026-03-24",
+              "2026-03-25",
+              "2026-03-26",
+              "2026-03-27",
+              "2026-03-28",
+              "2026-03-29",
+              "2026-03-30",
+              "2026-03-31",
+              "2026-04-01",
+              "2026-04-02",
+              "2026-04-03",
+              "2026-04-04",
+              "2026-04-05",
+              "2026-04-06",
+              "2026-04-07",
+              "2026-04-08",
+              "2026-04-09",
+              "2026-04-10",
+              "2026-04-11",
+              "2026-04-12",
+              "2026-04-13",
+              "2026-04-14",
+              "2026-04-15",
+              "2026-04-16",
+              "2026-04-17",
+              "2026-04-18",
+              "2026-04-19",
+              "2026-04-20",
+              "2026-04-21",
+              "2026-04-22",
+              "2026-04-23",
+              "2026-04-24",
+              "2026-04-25",
+              "2026-04-26",
+              "2026-04-27",
+              "2026-04-28",
+              "2026-04-29",
+              "2026-04-30",
+              "2026-05-01",
+              "2026-05-02",
+              "2026-05-03",
+              "2026-05-04",
+              "2026-05-05",
+              "2026-05-06",
+              "2026-05-07",
+              "2026-05-08",
+              "2026-05-09",
+              "2026-05-10",
+              "2026-05-11",
+              "2026-05-12",
+              "2026-05-13",
+              "2026-05-14",
+              "2026-05-15",
+              "2026-05-16",
+              "2026-05-17",
+              "2026-05-18",
+              "2026-05-19",
+              "2026-05-20",
+              "2026-05-21",
+              "2026-05-22",
+              "2026-05-23",
+              "2026-05-24",
+              "2026-05-25",
+              "2026-05-26",
+              "2026-05-27",
+              "2026-05-28",
+              "2026-05-29",
+              "2026-05-30",
+              "2026-05-31",
+              "2026-06-01",
+              "2026-06-02",
+              "2026-06-03",
+              "2026-06-04",
+              "2026-06-05",
+              "2026-06-06",
+              "2026-06-07",
+              "2026-06-08",
+              "2026-06-09"
+            ],
+            "equity": [
+              0,
+              0,
+              4.8878,
+              1.5003,
+              -2.0158,
+              -7,
+              -1.3547,
+              -4.3306,
+              -6.5097,
+              -7.7463,
+              -7.9535,
+              -7.1086,
+              -5.2539,
+              -2.4947,
+              1.0074,
+              5.0447,
+              9.3762,
+              13.7427,
+              17.8826,
+              21.5486,
+              29.4123,
+              29.4123,
+              29.4123,
+              29.4123,
+              29.4123,
+              29.4123,
+              29.4123,
+              29.4123,
+              34.2716,
+              30.7799,
+              27.3563,
+              22.4123,
+              27.9779,
+              25.7159,
+              24.3672,
+              24.0254,
+              24.7218,
+              26.4228,
+              29.0328,
+              32.3991,
+              36.3225,
+              40.5689,
+              44.8842,
+              49.0099,
+              52.6994,
+              60.8989,
+              60.8989,
+              60.8989,
+              60.8989,
+              60.8989,
+              60.8989,
+              60.8989,
+              60.8989,
+              65.5738,
+              62.2223,
+              58.9075,
+              53.8989,
+              59.2321,
+              56.9582,
+              55.5432,
+              55.0846,
+              55.6203,
+              57.1266,
+              59.5192,
+              62.6589,
+              66.3599,
+              70.4017,
+              74.5423,
+              78.5338,
+              82.1375,
+              85.1388,
+              90.4803,
+              90.4803,
+              90.4803,
+              90.4803,
+              90.4803,
+              90.4803,
+              90.4803,
+              94.9843,
+              91.7665,
+              88.556,
+              83.4803,
+              88.5991,
+              86.317,
+              84.8429,
+              84.2774,
+              84.665,
+              85.9905,
+              88.1806,
+              91.1083,
+              94.6006,
+              98.4495,
+              102.4248,
+              106.2884,
+              109.8091,
+              112.7772,
+              118.2761,
+              118.2761,
+              118.2761,
+              118.2761,
+              118.2761,
+              118.2761,
+              118.2761,
+              122.6215,
+              119.5312,
+              116.4212,
+              111.2761,
+              116.1965,
+              113.9097,
+              112.3829,
+              111.7198,
+              111.9703,
+              113.1276,
+              115.1285,
+              117.8573,
+              121.1532,
+              124.8198,
+              128.638,
+              132.3792,
+              135.8194,
+              138.7535,
+              144.3932,
+              144.3932,
+              144.3932,
+              144.3932,
+              144.3932,
+              144.3932,
+              144.3932,
+              148.5909,
+              145.6229,
+              142.6099,
+              137.3932,
+              142.1296,
+              139.8412,
+              138.2676,
+              137.515,
+              137.6386,
+              138.6391,
+              140.4627,
+              143.0045,
+              146.1148,
+              149.6087,
+              153.2773,
+              156.901,
+              160.2629,
+              163.1623,
+              168.9276,
+              168.9276,
+              168.9276,
+              168.9276,
+              168.9276
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 102.3,
+                "sellDate": "2026-01-15",
+                "sellPrice": 95.14,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-16",
+                "buyPrice": 88.57,
+                "sellDate": "2026-01-30",
+                "sellPrice": 120.82,
+                "pct": 36.41,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-02-07",
+                "buyPrice": 102.89,
+                "sellDate": "2026-02-10",
+                "sellPrice": 95.69,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-02-11",
+                "buyPrice": 89.84,
+                "sellDate": "2026-02-24",
+                "sellPrice": 124.41,
+                "pct": 38.49,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-04",
+                "buyPrice": 106.95,
+                "sellDate": "2026-03-07",
+                "sellPrice": 99.47,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-08",
+                "buyPrice": 93.75,
+                "sellDate": "2026-03-22",
+                "sellPrice": 128.05,
+                "pct": 36.58,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-29",
+                "buyPrice": 111.01,
+                "sellDate": "2026-04-01",
+                "sellPrice": 103.24,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-02",
+                "buyPrice": 97.68,
+                "sellDate": "2026-04-16",
+                "sellPrice": 131.67,
+                "pct": 34.8,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-23",
+                "buyPrice": 115.06,
+                "sellDate": "2026-04-26",
+                "sellPrice": 107.01,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-27",
+                "buyPrice": 101.62,
+                "sellDate": "2026-05-11",
+                "sellPrice": 135.27,
+                "pct": 33.12,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-05-18",
+                "buyPrice": 119.11,
+                "sellDate": "2026-05-21",
+                "sellPrice": 110.77,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-05-22",
+                "buyPrice": 105.57,
+                "sellDate": "2026-06-05",
+                "sellPrice": 138.86,
+                "pct": 31.53,
+                "forceClose": false
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test3",
+          "markers": [
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 102.29634,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04887760402767098,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-15",
+              "type": "sell",
+              "price": 95.1355962,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-07",
+              "type": "buy",
+              "price": 102.89406,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.9302325581395349,
+                "bodyPct": 0,
+                "penPct": 0.048593670033041755,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-10",
+              "type": "sell",
+              "price": 95.69147579999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-04",
+              "type": "buy",
+              "price": 106.95416,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.04674899975840117,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-07",
+              "type": "sell",
+              "price": 99.46736879999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-29",
+              "type": "buy",
+              "price": 111.01084,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.045040646481010325,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-01",
+              "type": "sell",
+              "price": 103.24008119999999,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-23",
+              "type": "buy",
+              "price": 115.06359,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.04345423256826942,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-26",
+              "type": "sell",
+              "price": 107.0091387,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-18",
+              "type": "buy",
+              "price": 119.11186,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04197734801555446,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-21",
+              "type": "sell",
+              "price": 110.77402979999998,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": -42,
+              "accuracy": 0,
+              "maxDrawdown": 46.89,
+              "tradeCount": 6
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16",
+              "2026-01-17",
+              "2026-01-18",
+              "2026-01-19",
+              "2026-01-20",
+              "2026-01-21",
+              "2026-01-22",
+              "2026-01-23",
+              "2026-01-24",
+              "2026-01-25",
+              "2026-01-26",
+              "2026-01-27",
+              "2026-01-28",
+              "2026-01-29",
+              "2026-01-30",
+              "2026-01-31",
+              "2026-02-01",
+              "2026-02-02",
+              "2026-02-03",
+              "2026-02-04",
+              "2026-02-05",
+              "2026-02-06",
+              "2026-02-07",
+              "2026-02-08",
+              "2026-02-09",
+              "2026-02-10",
+              "2026-02-11",
+              "2026-02-12",
+              "2026-02-13",
+              "2026-02-14",
+              "2026-02-15",
+              "2026-02-16",
+              "2026-02-17",
+              "2026-02-18",
+              "2026-02-19",
+              "2026-02-20",
+              "2026-02-21",
+              "2026-02-22",
+              "2026-02-23",
+              "2026-02-24",
+              "2026-02-25",
+              "2026-02-26",
+              "2026-02-27",
+              "2026-02-28",
+              "2026-03-01",
+              "2026-03-02",
+              "2026-03-03",
+              "2026-03-04",
+              "2026-03-05",
+              "2026-03-06",
+              "2026-03-07",
+              "2026-03-08",
+              "2026-03-09",
+              "2026-03-10",
+              "2026-03-11",
+              "2026-03-12",
+              "2026-03-13",
+              "2026-03-14",
+              "2026-03-15",
+              "2026-03-16",
+              "2026-03-17",
+              "2026-03-18",
+              "2026-03-19",
+              "2026-03-20",
+              "2026-03-21",
+              "2026-03-22",
+              "2026-03-23",
+              "2026-03-24",
+              "2026-03-25",
+              "2026-03-26",
+              "2026-03-27",
+              "2026-03-28",
+              "2026-03-29",
+              "2026-03-30",
+              "2026-03-31",
+              "2026-04-01",
+              "2026-04-02",
+              "2026-04-03",
+              "2026-04-04",
+              "2026-04-05",
+              "2026-04-06",
+              "2026-04-07",
+              "2026-04-08",
+              "2026-04-09",
+              "2026-04-10",
+              "2026-04-11",
+              "2026-04-12",
+              "2026-04-13",
+              "2026-04-14",
+              "2026-04-15",
+              "2026-04-16",
+              "2026-04-17",
+              "2026-04-18",
+              "2026-04-19",
+              "2026-04-20",
+              "2026-04-21",
+              "2026-04-22",
+              "2026-04-23",
+              "2026-04-24",
+              "2026-04-25",
+              "2026-04-26",
+              "2026-04-27",
+              "2026-04-28",
+              "2026-04-29",
+              "2026-04-30",
+              "2026-05-01",
+              "2026-05-02",
+              "2026-05-03",
+              "2026-05-04",
+              "2026-05-05",
+              "2026-05-06",
+              "2026-05-07",
+              "2026-05-08",
+              "2026-05-09",
+              "2026-05-10",
+              "2026-05-11",
+              "2026-05-12",
+              "2026-05-13",
+              "2026-05-14",
+              "2026-05-15",
+              "2026-05-16",
+              "2026-05-17",
+              "2026-05-18",
+              "2026-05-19",
+              "2026-05-20",
+              "2026-05-21",
+              "2026-05-22",
+              "2026-05-23",
+              "2026-05-24",
+              "2026-05-25",
+              "2026-05-26",
+              "2026-05-27",
+              "2026-05-28",
+              "2026-05-29",
+              "2026-05-30",
+              "2026-05-31",
+              "2026-06-01",
+              "2026-06-02",
+              "2026-06-03",
+              "2026-06-04",
+              "2026-06-05",
+              "2026-06-06",
+              "2026-06-07",
+              "2026-06-08",
+              "2026-06-09"
+            ],
+            "equity": [
+              0,
+              0,
+              4.8878,
+              1.5003,
+              -2.0158,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -7,
+              -2.1406,
+              -5.6323,
+              -9.0559,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -14,
+              -9.3251,
+              -12.6766,
+              -15.9914,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -21,
+              -16.4959,
+              -19.7138,
+              -22.9242,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -28,
+              -23.6546,
+              -26.7448,
+              -29.8548,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -35,
+              -30.8023,
+              -33.7703,
+              -36.7833,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42,
+              -42
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 102.3,
+                "sellDate": "2026-01-15",
+                "sellPrice": 95.14,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-02-07",
+                "buyPrice": 102.89,
+                "sellDate": "2026-02-10",
+                "sellPrice": 95.69,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-04",
+                "buyPrice": 106.95,
+                "sellDate": "2026-03-07",
+                "sellPrice": 99.47,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-29",
+                "buyPrice": 111.01,
+                "sellDate": "2026-04-01",
+                "sellPrice": 103.24,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-23",
+                "buyPrice": 115.06,
+                "sellDate": "2026-04-26",
+                "sellPrice": 107.01,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-05-18",
+                "buyPrice": 119.11,
+                "sellDate": "2026-05-21",
+                "sellPrice": 110.77,
+                "pct": -7,
+                "stopLoss": true,
+                "forceClose": false
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test4",
+          "markers": [
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 102.29634,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04887760402767098,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-16",
+              "type": "sell",
+              "price": 90.0207792,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-17",
+              "type": "buy",
+              "price": 85.93368,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.9302325581395349,
+                "bodyPct": 0,
+                "penPct": 0.058184404531494524,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-03",
+              "type": "sell",
+              "price": 118.55335,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 1,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 1.256281407035176,
+                "bodyPct": 0,
+                "penPct": 0.007188988022959245,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-07",
+              "type": "buy",
+              "price": 102.89406,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.9302325581395349,
+                "bodyPct": 0,
+                "penPct": 0.048593670033041755,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-11",
+              "type": "sell",
+              "price": 90.5467728,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-12",
+              "type": "buy",
+              "price": 87.80456,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.05694465071062369,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-02-28",
+              "type": "sell",
+              "price": 122.30914,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0.9302325581395349,
+                "bodyPct": 0,
+                "penPct": 0.006000367175367399,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-04",
+              "type": "buy",
+              "price": 106.95416,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.04674899975840117,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-08",
+              "type": "sell",
+              "price": 94.1196608,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-09",
+              "type": "buy",
+              "price": 91.61993,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.054573278979802756,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-25",
+              "type": "sell",
+              "price": 126.04949,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 1,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.00487294493194855,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-03-29",
+              "type": "buy",
+              "price": 111.01084,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.045040646481010325,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-02",
+              "type": "sell",
+              "price": 97.6895392,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-03",
+              "type": "buy",
+              "price": 95.44955,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.7065217391304348,
+                "bodyPct": 0,
+                "penPct": 0.052383693794260944,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-19",
+              "type": "sell",
+              "price": 129.77421,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 1,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.0038022705693341523,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-23",
+              "type": "buy",
+              "price": 115.06359,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.04345423256826942,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-28",
+              "type": "sell",
+              "price": 101.2559592,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-04-29",
+              "type": "buy",
+              "price": 97.74167,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.3461538461538463,
+                "bodyPct": 0,
+                "penPct": 0.051155254458001384,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-14",
+              "type": "sell",
+              "price": 133.48313,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0.5102040816326531,
+                "bodyPct": 0,
+                "penPct": 0.002784264442143836,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-18",
+              "type": "buy",
+              "price": 119.11186,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.04197734801555446,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-23",
+              "type": "sell",
+              "price": 104.8184368,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-05-24",
+              "type": "buy",
+              "price": 101.48925,
+              "breakLabel": "⚠假突破",
+              "score": 3,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1.0497237569060773,
+                "bodyPct": 0,
+                "penPct": 0.04926630160337179,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-06-08",
+              "type": "sell",
+              "price": 137.17611,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 1,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 1.1578947368421053,
+                "bodyPct": 0,
+                "penPct": 0.001815455053498101,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 150.53,
+              "accuracy": 50,
+              "maxDrawdown": 16.89,
+              "tradeCount": 12
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16",
+              "2026-01-17",
+              "2026-01-18",
+              "2026-01-19",
+              "2026-01-20",
+              "2026-01-21",
+              "2026-01-22",
+              "2026-01-23",
+              "2026-01-24",
+              "2026-01-25",
+              "2026-01-26",
+              "2026-01-27",
+              "2026-01-28",
+              "2026-01-29",
+              "2026-01-30",
+              "2026-01-31",
+              "2026-02-01",
+              "2026-02-02",
+              "2026-02-03",
+              "2026-02-04",
+              "2026-02-05",
+              "2026-02-06",
+              "2026-02-07",
+              "2026-02-08",
+              "2026-02-09",
+              "2026-02-10",
+              "2026-02-11",
+              "2026-02-12",
+              "2026-02-13",
+              "2026-02-14",
+              "2026-02-15",
+              "2026-02-16",
+              "2026-02-17",
+              "2026-02-18",
+              "2026-02-19",
+              "2026-02-20",
+              "2026-02-21",
+              "2026-02-22",
+              "2026-02-23",
+              "2026-02-24",
+              "2026-02-25",
+              "2026-02-26",
+              "2026-02-27",
+              "2026-02-28",
+              "2026-03-01",
+              "2026-03-02",
+              "2026-03-03",
+              "2026-03-04",
+              "2026-03-05",
+              "2026-03-06",
+              "2026-03-07",
+              "2026-03-08",
+              "2026-03-09",
+              "2026-03-10",
+              "2026-03-11",
+              "2026-03-12",
+              "2026-03-13",
+              "2026-03-14",
+              "2026-03-15",
+              "2026-03-16",
+              "2026-03-17",
+              "2026-03-18",
+              "2026-03-19",
+              "2026-03-20",
+              "2026-03-21",
+              "2026-03-22",
+              "2026-03-23",
+              "2026-03-24",
+              "2026-03-25",
+              "2026-03-26",
+              "2026-03-27",
+              "2026-03-28",
+              "2026-03-29",
+              "2026-03-30",
+              "2026-03-31",
+              "2026-04-01",
+              "2026-04-02",
+              "2026-04-03",
+              "2026-04-04",
+              "2026-04-05",
+              "2026-04-06",
+              "2026-04-07",
+              "2026-04-08",
+              "2026-04-09",
+              "2026-04-10",
+              "2026-04-11",
+              "2026-04-12",
+              "2026-04-13",
+              "2026-04-14",
+              "2026-04-15",
+              "2026-04-16",
+              "2026-04-17",
+              "2026-04-18",
+              "2026-04-19",
+              "2026-04-20",
+              "2026-04-21",
+              "2026-04-22",
+              "2026-04-23",
+              "2026-04-24",
+              "2026-04-25",
+              "2026-04-26",
+              "2026-04-27",
+              "2026-04-28",
+              "2026-04-29",
+              "2026-04-30",
+              "2026-05-01",
+              "2026-05-02",
+              "2026-05-03",
+              "2026-05-04",
+              "2026-05-05",
+              "2026-05-06",
+              "2026-05-07",
+              "2026-05-08",
+              "2026-05-09",
+              "2026-05-10",
+              "2026-05-11",
+              "2026-05-12",
+              "2026-05-13",
+              "2026-05-14",
+              "2026-05-15",
+              "2026-05-16",
+              "2026-05-17",
+              "2026-05-18",
+              "2026-05-19",
+              "2026-05-20",
+              "2026-05-21",
+              "2026-05-22",
+              "2026-05-23",
+              "2026-05-24",
+              "2026-05-25",
+              "2026-05-26",
+              "2026-05-27",
+              "2026-05-28",
+              "2026-05-29",
+              "2026-05-30",
+              "2026-05-31",
+              "2026-06-01",
+              "2026-06-02",
+              "2026-06-03",
+              "2026-06-04",
+              "2026-06-05",
+              "2026-06-06",
+              "2026-06-07",
+              "2026-06-08",
+              "2026-06-09"
+            ],
+            "equity": [
+              0,
+              0,
+              4.8878,
+              1.5003,
+              -2.0158,
+              -5.4333,
+              -12,
+              -6.1816,
+              -8.4274,
+              -9.7019,
+              -9.9156,
+              -9.0447,
+              -7.1331,
+              -4.2893,
+              -0.6798,
+              3.4813,
+              7.9457,
+              12.4461,
+              16.713,
+              20.4915,
+              23.5569,
+              25.7291,
+              26.8833,
+              26.9581,
+              25.9591,
+              25.9591,
+              25.9591,
+              25.9591,
+              30.8185,
+              27.3268,
+              23.9032,
+              20.7692,
+              13.9591,
+              19.6536,
+              18.2736,
+              17.9239,
+              18.6364,
+              20.3769,
+              23.0472,
+              26.4915,
+              30.5057,
+              34.8504,
+              39.2655,
+              43.4867,
+              47.2615,
+              50.3655,
+              52.6158,
+              53.8825,
+              54.097,
+              53.2561,
+              53.2561,
+              53.2561,
+              53.2561,
+              57.931,
+              54.5796,
+              51.2648,
+              48.201,
+              41.2561,
+              46.7135,
+              45.2655,
+              44.7962,
+              45.3444,
+              46.8858,
+              49.3341,
+              52.5468,
+              56.334,
+              60.4697,
+              64.7067,
+              68.7911,
+              72.4786,
+              75.5498,
+              77.8233,
+              79.1675,
+              79.5085,
+              78.8348,
+              78.8348,
+              78.8348,
+              78.8348,
+              83.3389,
+              80.121,
+              76.9106,
+              73.9152,
+              66.8348,
+              72.0732,
+              70.5646,
+              69.986,
+              70.3826,
+              71.7391,
+              73.9803,
+              76.9764,
+              80.5503,
+              84.4891,
+              88.5572,
+              92.511,
+              96.1139,
+              99.1513,
+              101.4437,
+              102.8577,
+              103.3148,
+              102.7959,
+              102.7959,
+              102.7959,
+              102.7959,
+              107.1413,
+              104.051,
+              100.9411,
+              98.0125,
+              95.455,
+              90.7959,
+              95.9114,
+              95.222,
+              95.4824,
+              96.6856,
+              98.7659,
+              101.6029,
+              105.0294,
+              108.8414,
+              112.811,
+              116.7005,
+              120.2771,
+              123.3276,
+              125.6713,
+              127.1717,
+              127.7444,
+              127.3631,
+              127.3631,
+              127.3631,
+              127.3631,
+              131.5609,
+              128.5929,
+              125.5798,
+              122.7166,
+              120.1886,
+              115.3631,
+              120.2898,
+              119.5069,
+              119.6355,
+              120.6762,
+              122.573,
+              125.2169,
+              128.4522,
+              132.0864,
+              135.9024,
+              139.6717,
+              143.1686,
+              146.1845,
+              148.5406,
+              150.0992,
+              150.7722,
+              150.5263,
+              150.5263
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 102.3,
+                "sellDate": "2026-01-16",
+                "sellPrice": 90.02,
+                "pct": -12,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-17",
+                "buyPrice": 85.93,
+                "sellDate": "2026-02-03",
+                "sellPrice": 118.55,
+                "pct": 37.96,
+                "confirmExit": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-02-07",
+                "buyPrice": 102.89,
+                "sellDate": "2026-02-11",
+                "sellPrice": 90.55,
+                "pct": -12,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-02-12",
+                "buyPrice": 87.8,
+                "sellDate": "2026-02-28",
+                "sellPrice": 122.31,
+                "pct": 39.3,
+                "confirmExit": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-04",
+                "buyPrice": 106.95,
+                "sellDate": "2026-03-08",
+                "sellPrice": 94.12,
+                "pct": -12,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-09",
+                "buyPrice": 91.62,
+                "sellDate": "2026-03-25",
+                "sellPrice": 126.05,
+                "pct": 37.58,
+                "confirmExit": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-03-29",
+                "buyPrice": 111.01,
+                "sellDate": "2026-04-02",
+                "sellPrice": 97.69,
+                "pct": -12,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-03",
+                "buyPrice": 95.45,
+                "sellDate": "2026-04-19",
+                "sellPrice": 129.77,
+                "pct": 35.96,
+                "confirmExit": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-23",
+                "buyPrice": 115.06,
+                "sellDate": "2026-04-28",
+                "sellPrice": 101.26,
+                "pct": -12,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-04-29",
+                "buyPrice": 97.74,
+                "sellDate": "2026-05-14",
+                "sellPrice": 133.48,
+                "pct": 36.57,
+                "confirmExit": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-05-18",
+                "buyPrice": 119.11,
+                "sellDate": "2026-05-23",
+                "sellPrice": 104.82,
+                "pct": -12,
+                "stopLoss": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-05-24",
+                "buyPrice": 101.49,
+                "sellDate": "2026-06-08",
+                "sellPrice": 137.18,
+                "pct": 35.16,
+                "confirmExit": true,
+                "forceClose": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "stop-gap",
+      "bars": [
+        {
+          "date": "2026-01-01",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-02",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-03",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-04",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-05",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-06",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-07",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-08",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-09",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-10",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-11",
+          "open": 90,
+          "high": 120,
+          "low": 85,
+          "close": 100,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-12",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-13",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-14",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-15",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-16",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        }
+      ],
+      "ideal": {
+        "period": "day",
+        "summary": {
+          "cumReturn": 51.18,
+          "accuracy": 100,
+          "maxDrawdown": 0,
+          "tradeCount": 2
+        },
+        "dates": [
+          "2026-01-10",
+          "2026-01-11",
+          "2026-01-12",
+          "2026-01-13",
+          "2026-01-14",
+          "2026-01-15",
+          "2026-01-16"
+        ],
+        "equity": [
+          10,
+          51.1765,
+          51.1765,
+          51.1765,
+          51.1765,
+          51.1765,
+          51.1765
+        ],
+        "trades": [
+          {
+            "buyDate": "2026-01-10",
+            "buyPrice": 100,
+            "sellDate": "2026-01-10",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-11",
+            "buyPrice": 85,
+            "sellDate": "2026-01-11",
+            "sellPrice": 120,
+            "pct": 41.18,
+            "forceClose": false
+          }
+        ]
+      },
+      "experiments": [
+        {
+          "kind": "osc-test",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 90,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": -10,
+              "accuracy": 0,
+              "maxDrawdown": 15,
+              "tradeCount": 1
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              -10,
+              -10,
+              -10,
+              -10,
+              -10,
+              -10
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 90,
+                "pct": -10,
+                "stopLoss": true,
+                "forceClose": false
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test2",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 90,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": -10,
+              "accuracy": 0,
+              "maxDrawdown": 15,
+              "tradeCount": 1
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              -10,
+              -10,
+              -10,
+              -10,
+              -10,
+              -10
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 90,
+                "pct": -10,
+                "stopLoss": true,
+                "forceClose": false
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test3",
+          "markers": [],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 0,
+              "accuracy": 0,
+              "maxDrawdown": 0,
+              "tradeCount": 0
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "trades": []
+          }
+        },
+        {
+          "kind": "osc-test4",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 88,
+              "stopLoss": true,
+              "breakLabel": null,
+              "score": 0,
+              "scoreDetail": {
+                "volScore": 0,
+                "bodyScore": 0,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 0,
+                "bodyPct": 0,
+                "penPct": 0,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": -12,
+              "accuracy": 0,
+              "maxDrawdown": 17,
+              "tradeCount": 1
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              -12,
+              -12,
+              -12,
+              -12,
+              -12,
+              -12
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 88,
+                "pct": -12,
+                "stopLoss": true,
+                "forceClose": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "pending-refresh",
+      "bars": [
+        {
+          "date": "2026-01-01",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-02",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-03",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-04",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-05",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-06",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-07",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-08",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-09",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-10",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-11",
+          "open": 105,
+          "high": 120,
+          "low": 100,
+          "close": 115,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-12",
+          "open": 110,
+          "high": 121,
+          "low": 100,
+          "close": 118,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-13",
+          "open": 110,
+          "high": 119,
+          "low": 100,
+          "close": 115,
+          "volume": 100
+        }
+      ],
+      "ideal": {
+        "period": "day",
+        "summary": {
+          "cumReturn": 51,
+          "accuracy": 100,
+          "maxDrawdown": 0,
+          "tradeCount": 3
+        },
+        "dates": [
+          "2026-01-10",
+          "2026-01-11",
+          "2026-01-12",
+          "2026-01-13"
+        ],
+        "equity": [
+          10,
+          30,
+          51,
+          51
+        ],
+        "trades": [
+          {
+            "buyDate": "2026-01-10",
+            "buyPrice": 100,
+            "sellDate": "2026-01-10",
+            "sellPrice": 110,
+            "pct": 10,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-11",
+            "buyPrice": 100,
+            "sellDate": "2026-01-11",
+            "sellPrice": 120,
+            "pct": 20,
+            "forceClose": false
+          },
+          {
+            "buyDate": "2026-01-12",
+            "buyPrice": 100,
+            "sellDate": "2026-01-12",
+            "sellPrice": 121,
+            "pct": 21,
+            "forceClose": false
+          }
+        ]
+      },
+      "experiments": [
+        {
+          "kind": "osc-test",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 120,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.041666666666666664,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.38095238095238093,
+                "penPct": 0.18,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 56,
+              "accuracy": 100,
+              "maxDrawdown": 3,
+              "tradeCount": 3
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13"
+            ],
+            "equity": [
+              5,
+              35,
+              59,
+              56
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 120,
+                "pct": 20,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-11",
+                "buyPrice": 100,
+                "sellDate": "2026-01-12",
+                "sellPrice": 121,
+                "pct": 21,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 100,
+                "sellDate": "2026-01-13",
+                "sellPrice": 115,
+                "pct": 15,
+                "buyBarIsLive": false,
+                "forceClose": true
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test2",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 110,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.041666666666666664,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.38095238095238093,
+                "penPct": 0.18,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 45,
+              "accuracy": 100,
+              "maxDrawdown": 3,
+              "tradeCount": 3
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13"
+            ],
+            "equity": [
+              5,
+              25,
+              48,
+              45
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 110,
+                "pct": 10,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-11",
+                "buyPrice": 100,
+                "sellDate": "2026-01-12",
+                "sellPrice": 120,
+                "pct": 20,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 100,
+                "sellDate": "2026-01-13",
+                "sellPrice": 115,
+                "pct": 15,
+                "buyBarIsLive": false,
+                "forceClose": true
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test3",
+          "markers": [
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.38095238095238093,
+                "penPct": 0.18,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 15,
+              "accuracy": 100,
+              "maxDrawdown": 3,
+              "tradeCount": 1
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13"
+            ],
+            "equity": [
+              0,
+              0,
+              18,
+              15
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-12",
+                "buyPrice": 100,
+                "sellDate": "2026-01-13",
+                "sellPrice": 115,
+                "pct": 15,
+                "buyBarIsLive": false,
+                "forceClose": true
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test4",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-13",
+              "type": "sell",
+              "price": 110,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 0,
+                "penScore": 1,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.2631578947368421,
+                "penPct": 0.025423728813559324,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 10,
+              "accuracy": 100,
+              "maxDrawdown": 8,
+              "tradeCount": 1
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13"
+            ],
+            "equity": [
+              5,
+              15,
+              18,
+              10
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-13",
+                "sellPrice": 110,
+                "pct": 10,
+                "confirmExit": true,
+                "forceClose": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "locked-target",
+      "bars": [
+        {
+          "date": "2026-01-01",
+          "open": 100,
+          "high": 120,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-02",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-03",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-04",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-05",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-06",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-07",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-08",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-09",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-10",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-11",
+          "open": 100,
+          "high": 115,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-12",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-13",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-14",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-15",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        },
+        {
+          "date": "2026-01-16",
+          "open": 100,
+          "high": 110,
+          "low": 100,
+          "close": 105,
+          "volume": 100
+        }
+      ],
+      "ideal": {
+        "period": "day",
+        "summary": {
+          "cumReturn": 20,
+          "accuracy": 100,
+          "maxDrawdown": 0,
+          "tradeCount": 1
+        },
+        "dates": [
+          "2026-01-10",
+          "2026-01-11",
+          "2026-01-12",
+          "2026-01-13",
+          "2026-01-14",
+          "2026-01-15",
+          "2026-01-16"
+        ],
+        "equity": [
+          0,
+          20,
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "trades": [
+          {
+            "buyDate": "2026-01-10",
+            "buyPrice": 100,
+            "sellDate": "2026-01-11",
+            "sellPrice": 120,
+            "pct": 20,
+            "forceClose": false
+          }
+        ]
+      },
+      "experiments": [
+        {
+          "kind": "osc-test",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 115,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.3333333333333333,
+                "penPct": 0.08695652173913043,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-12",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 20,
+              "accuracy": 100,
+              "maxDrawdown": 0,
+              "tradeCount": 2
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              20,
+              20,
+              20,
+              20,
+              20,
+              20
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-11",
+                "sellPrice": 115,
+                "pct": 15,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-11",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 105,
+                "pct": 5,
+                "buyBarIsLive": false,
+                "forceClose": true
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test2",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 5,
+              "accuracy": 100,
+              "maxDrawdown": 0,
+              "tradeCount": 1
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 105,
+                "pct": 5,
+                "buyBarIsLive": false,
+                "forceClose": true
+              }
+            ]
+          }
+        },
+        {
+          "kind": "osc-test3",
+          "markers": [],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 0,
+              "accuracy": 0,
+              "maxDrawdown": 0,
+              "tradeCount": 0
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "trades": []
+          }
+        },
+        {
+          "kind": "osc-test4",
+          "markers": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-12",
+              "type": "sell",
+              "price": 100,
+              "confirmExit": true,
+              "breakLabel": "⚠假突破",
+              "score": 2,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 0,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0,
+                "confirmed": false
+              }
+            },
+            {
+              "date": "2026-01-13",
+              "type": "buy",
+              "price": 100,
+              "breakLabel": "⚠真突破",
+              "score": 4,
+              "scoreDetail": {
+                "volScore": 1,
+                "bodyScore": 1,
+                "penScore": 2,
+                "confirmScore": 0,
+                "volRatio": 1,
+                "bodyPct": 0.5,
+                "penPct": 0.05,
+                "confirmed": false
+              }
+            }
+          ],
+          "ordinary": {
+            "period": "day",
+            "summary": {
+              "cumReturn": 5,
+              "accuracy": 50,
+              "maxDrawdown": 5,
+              "tradeCount": 2
+            },
+            "dates": [
+              "2026-01-10",
+              "2026-01-11",
+              "2026-01-12",
+              "2026-01-13",
+              "2026-01-14",
+              "2026-01-15",
+              "2026-01-16"
+            ],
+            "equity": [
+              5,
+              5,
+              0,
+              5,
+              5,
+              5,
+              5
+            ],
+            "trades": [
+              {
+                "buyDate": "2026-01-10",
+                "buyPrice": 100,
+                "sellDate": "2026-01-12",
+                "sellPrice": 100,
+                "pct": 0,
+                "confirmExit": true,
+                "forceClose": false
+              },
+              {
+                "buyDate": "2026-01-13",
+                "buyPrice": 100,
+                "sellDate": "2026-01-16",
+                "sellPrice": 105,
+                "pct": 5,
+                "buyBarIsLive": false,
+                "forceClose": true
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

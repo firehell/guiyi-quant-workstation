@@ -321,6 +321,27 @@ Bulk status reads SHALL share set-based queries across routes.
 - **THEN** one bounded MDS endpoint read serves all four routes
 - **AND** source failure remains UNKNOWN rather than a zero-gap or observed-success claim
 
+### Requirement: Fusion full input manifests bind transformed execution inputs
+
+Full saved-source fusion manifests SHALL use reader version
+`newow_fusion_saved_sources_v2`. Their `input_fingerprints` SHALL match the ordered
+fusion execution inputs after source actions are attached, and `input_sha256`
+SHALL hash that same ordered sequence. The original shadow sequence SHALL remain
+under `source_input_fingerprints`; source revisions, sequences and dependency
+digests SHALL remain frozen independently. Compact intraday manifests without an
+explicit fingerprint array retain their existing reader version and input hash.
+This is a lineage correction, not a formula, reference-return or stream-identity
+change. Published prior batches SHALL remain immutable; correction requires a
+new exact plan and revision with equivalent strategy and trade results.
+
+#### Scenario: Fusion inputs differ from their shadow market inputs
+
+- **GIVEN** a full daily or weekly fusion input snapshot with saved base actions
+- **WHEN** source actions transform the execution input fingerprints
+- **THEN** the full manifest array equals the returned execution sequence
+- **AND** the shadow sequence remains separately attributable without being
+  mistaken for fusion execution inputs
+
 ### Requirement: Daily owner-eligible quality-boundary projection is source-versioned
 
 Newow D1 historical input manifests SHALL include

@@ -1,4 +1,4 @@
-"""Versioned v3.3.59 price selection, separate from chart channel legends."""
+"""Versioned v3.3.81 price selection, separate from chart channel legends."""
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -6,8 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from .target_absorb_display import guard_page_price
 
-VERSION = "newow_target_absorb_selection_v3_3_59_v1"
-SOURCE_SHA256 = "a91f3a7685e0dadb95927229c45b7ecffeee052d1269b79207ccb9fa08612a9e"
+VERSION = "newow_target_absorb_selection_v3_3_81_v1"
+SOURCE_SHA256 = "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
 BUFFER = Decimal("1.005")
 
 
@@ -130,7 +130,7 @@ def select_cross_period_prices(
             raise ValueError("NEWOW_PRICE_SOURCE_CONFLICT")
         for f in weekly_override:
             validate(f, "1w", "canonical_channel")
-    sd, sw = daily_signal or "wait", weekly_signal or "wait"
+    sd, sw = str(daily_signal or "wait").lower(), str(weekly_signal or "wait").lower()
     da = sd not in ("wait", "sell")
     wa = sw not in ("wait", "sell") or cross_weekly_buy
     raw = current.value
@@ -183,6 +183,13 @@ def select_cross_period_prices(
             if high and high.value > raw
             else (target, "target_generic_fallback")
         )
+    # Public rawCost branches fall through when the guarded Number is zero.
+    def usable_cost(fact):
+        return fact if fact and guard_page_price(
+            fact.value, previous_close.value if previous_close else None
+        ) > 0 else None
+
+    cost_daily, cost_weekly, cost = map(usable_cost, (cost_daily, cost_weekly, cost))
     # Absorb uses signals alone, not cross_weekly.
     wa_cost = sw not in ("wait", "sell")
     absorb, absorb_branch = None, "absorb_unavailable"
@@ -214,27 +221,35 @@ def select_cross_period_prices(
             "absorb_flat",
         )
 
-    def wire(fact, why):
+    if absorb is None and cost is not None:
+        absorb, absorb_branch = cost, "absorb_generic_fallback"
+
+    def wire(fact, why, *, support_cap=False, apply_guard=True):
         if fact is None:
             return None
+        display = guard_page_price(
+            fact.value, previous_close.value if previous_close and apply_guard else None
+        )
+        capped = support_cap and float(display) > float(current.value)
+        if capped:
+            # Use the same binary Number/toFixed rounding as the public JS.
+            display = guard_page_price(current.value, None)
         return {
             **fact.wire(),
-            "display_value": format(
-                guard_page_price(
-                    fact.value, previous_close.value if previous_close else None
-                ),
-                "f",
-            ),
+            "display_value": format(display, "f"),
+            "support_cap_applied": capped,
             "branch": why,
         }
 
-    shared = {"target": wire(chosen, branch), "absorb": wire(absorb, absorb_branch)}
+    shared = {"target": wire(chosen, branch), "absorb": wire(absorb, absorb_branch, support_cap=True)}
     card = (
         shared
         if period != "week" or not weekly_override
         else {
-            "target": wire(weekly_override[0], "status_card_weekly_hhv10_override"),
-            "absorb": wire(weekly_override[1], "status_card_weekly_llv10_override"),
+            "target": shared["target"]
+            if shared["target"] and Decimal(shared["target"]["display_value"]) > 0
+            else wire(weekly_override[0], "status_card_weekly_hhv10_fallback", apply_guard=False),
+            "absorb": wire(weekly_override[1], "status_card_weekly_llv10_override", apply_guard=False),
         }
     )
     return {

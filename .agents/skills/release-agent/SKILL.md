@@ -37,17 +37,8 @@ worktree/dirty state、现役 root/commit、已有 tag/Release 和 Runtime Gate�
 
 ## 发布树位置与清理
 
-owner于2026-09-27指定：所有发布工作树与正式运行源码统一在扩展盘，按对应版本命名。默认路径为
-`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-vX.Y.Z`，使用本仓库linked worktree，让Codex的Linked Worktrees可见。
-最新发布树兼作正式服务源码根，不另建Application Support中的runtime-vX.Y.Z克隆；安全配置、共享launcher和日志仍使用既有Git外目录。
-外接卷launchd访问必须通过宿主权限和真实启动/读回验证；不因路径约定绕过宿主安全。使用既有`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`安装选项并验证所有required服务。
-
-发布后只保留最新发布树，不保留回滚树。创建新树、构建、render/preflight、切换及健康读回完成后，才删除旧树；
-仅发布尚未切换时，不能删除仍被服务引用的旧树，继续完成交办的切换或明确记录待切换。
-删除前逐树检查精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务及进程引用；有用户修改或引用则停止该树清理。
-保留必要运行JSON和日志证据文件，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
-应用管理的worktree用Codex archive工具；普通Git worktree用非force的`git worktree remove`；独立旧clone仅在精确清单和引用复核通过后清理。
-后续修复默认复用最新发布树的版本修复分支，发布新版本后改为新版本名称；正式运行始终绑定已验证commit，修复过程与运行身份分开验证。
+位置、保留策略、精确清理条件与恢复方式统一见 [部署合同：发布工作树存储](../../../deploy/README.md#发布工作树存储)。
+按该合同核对候选和现役引用后执行，技能不另存一份发布树政策。
 
 ## 交付
 

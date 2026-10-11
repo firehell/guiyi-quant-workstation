@@ -157,9 +157,9 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 
 | 能力 | 适用策略与周期 | formula identity | evidence status | warming / repaint / as-of 边界 |
 |---|---|---|---|---|
-| 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v2` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
+| 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v3` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
 | 趋势通道圆点 | `trend × 1w/1d/60m`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
-| 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v1` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10 与同 Bar `CLEAR → BUILD` |
+| 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v2` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10；主图 CLEAR 当根不再 BUILD（普通 AI 回测保留独立先清后建） |
 | 主升浪主状态 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
 | S 跑 / D1–D3 | `trend/main_rise × 1w/1d/60m`，Hint only | `newow_escape_d123_page_v2` | `ACTIVE_CODE_VERIFIED` | 必须报告公式所需 warming 与已验证 repaint 属性；只使用当时 completed 输入，不改变 BUILD/CLEAR |
 | D4–D6 | `main_rise × 1w/1d/60m`，Hint only | `newow_buy_d456_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；Low×0.99 仅为显示锚点，不产生加仓 |
@@ -211,7 +211,7 @@ Session/Calendar 缺失和未知错误 MUST 明确失败。映射缺失只有该
 | 合同 | 当前 page-v2 | 保留的 clean-room v1 身份 |
 |---|---|---|
 | Profile | `newow_trend_d1_page_v2` | `newow_trend_d1_v1` |
-| 趋势公式 | `newow_trend_band_page_v2` | `newow_trend_band_cleanroom_v1` |
+| 趋势公式 | `newow_trend_band_page_v3` | `newow_trend_band_cleanroom_v1` |
 | 典型价 T | `(Close + High + Low) / 3` | `(3*Close + Open + High + Low) / 6` |
 | 趋势线 | `A=MA(T,7)`，`B=MA(T,10)`；不足窗口按已有样本平均 | `B=WMA(T,20)`（新值权重大），`C=MA(B,5)`；不足完整窗口 unavailable |
 | 黄带条件 | `Close >= B` | `B >= C` |
@@ -354,7 +354,7 @@ Action MUST 带稳定 identity、策略及公式、周期、品种、物理合�
 动作类型和语义参考价。内核提供 `related_marker_ids` 时 MUST 优先精确验证并使用该关联；只有内核没有
 关联 ID 时，策略 adapter 才可在同一策略、周期、物理合约和有效 segment 内运行确定状态机。Web 不得
 模糊搜索最近 BUILD。完全相同的 identity/content MUST 幂等去重为一项；相同 identity 但 content 不同，
-或出现乱序、跨策略/周期/合约/区段关联时 MUST fail-closed。震荡同 Bar 顺序固定为 CLEAR 后 BUILD；
+或出现乱序、跨策略/周期/合约/区段关联时 MUST fail-closed。震荡主图 v2 的 CLEAR 当根不得重新 BUILD；独立普通 AI 回测仍按 CLEAR 后 BUILD；
 无法证明相对顺序的同 Bar Hint 只能作为 Bar 级提示。
 
 #### Scenario: A reduction hint occurs during an open reference trade
@@ -363,18 +363,18 @@ Action MUST 带稳定 identity、策略及公式、周期、品种、物理合�
 - **WHEN** 内核输出 J 或 D 风险提示
 - **THEN** 图表与过程列表保留提示，但 entry、参考持有状态和收益公式不因该提示改变
 
-#### Scenario: CLEAR then BUILD on the same Bar
+#### Scenario: Oscillation chart CLEAR cannot rebuild on the same Bar
 
-- **GIVEN** 震荡内核同 Bar 输出两个有序动作
-- **WHEN** 投影历史
-- **THEN** 先关闭原交易，再建立新交易并保留两个 ID；不按日期去重，也不反转顺序
+- **GIVEN** 震荡主图同 Bar 同时触及清仓和建仓阈值
+- **WHEN** v2 内核输出 CLEAR
+- **THEN** 当根只清仓；普通 AI 回测的独立同根先清后建不得改变主图 Marker
 
-### Requirement: Initial main-rise CLEAR without an entry remains an action-only fact
+### Requirement: Initial trend or main-rise CLEAR without an entry remains an action-only fact
 
-当主升浪某个物理 owner/segment 的完整、未左裁生命周期重放从有效黄带开始，之前没有任何真实或 warm-up
+当趋势或主升浪某个物理 owner/segment 的完整、未左裁生命周期重放从有效黄带开始，之前没有任何真实或 warm-up
 BUILD，且首次黄转蓝产生 CLEAR 时，产品 SHALL 输出
 `CLEAR + trade_eligibility=INITIAL_CLEAR_NO_ENTRY + related_build_id=null`。该资格只允许用于
-`main_rise`、eligible completed Bar、`main_state=CLEAR` 和同 Bar `sequence=0`；不得用于趋势、震荡、BUILD、
+`trend / main_rise`、eligible completed Bar、`main_state=CLEAR` 和同 Bar `sequence=0`；不得用于震荡、BUILD、
 已有 Action 的 owner、带关联 BUILD 或带持仓/收益事实的转换。
 
 生产 replay MUST 由 `NewowProductReader` 在既有 MDS lifecycle coverage 验证成功后传递按
@@ -383,7 +383,7 @@ evidence。adapter 与 ReferenceTradeProjector MUST 各自验证 evidence 与输
 左裁、Bar 替换、旧 cutoff 或重复 evidence 均 fail-closed。warm-up 中发生的初始 CLEAR 只消费一次资格而不输出，
 后续不能重建资格；物理 owner/segment 切换后独立重置。
 
-ReferenceTradeProjector SHALL 独立验证该 Action 的完整先前 frame/action 历史、MA35/MA45 状态和参考价；
+ReferenceTradeProjector SHALL 独立验证该 Action 的完整先前 frame/action 历史、对应趋势带或 MA35/MA45 状态和参考价；
 验证成功后只追加一次 `INITIAL_CLEAR_NO_ENTRY` diagnostic，不创建或关闭 ReferenceTrade，不制造零收益，
 closed/open/interrupted/initial-before-window 计数均不因此增加。之后真实 BUILD/CLEAR 仍按既有合同形成正常交易。
 未来 Action 不得泄露到较早 as-of；viewport、分页和 chart limit 只能在完整 replay 后裁剪。
@@ -1132,12 +1132,12 @@ All prices and returns SHALL remain server Decimal strings; no frontend return f
 - **WHEN** 主要事实冲突导致全部 section 失效
 - **THEN** chart current-window provenance、分页与 generation signature 被清除，旧 auxiliary cache 不得恢复结果，后续 token 选择不能命中失效快照
 
-### Independent dual-source fusion reference v1
+### Independent dual-source fusion reference v2
 
-`newow_dual_fusion_reference_zero_cost_v1` is an opt-in page-parity, non-executable long/flat reference model, not a new strategy kernel or account model. The reference section accepts `include_fusion=true` only for trend/oscillation, without a history cursor. It replays both formula identities over the same authoritative full input and cutoff and returns independent trend, oscillation and fusion summaries. Chart limits, viewport and history pagination do not enter fusion arithmetic.
+`newow_dual_fusion_reference_zero_cost_v2` is an opt-in page-parity, non-executable long/flat reference model, not a new strategy kernel or account model. The reference section accepts `include_fusion=true` only for trend/oscillation, without a history cursor. It replays both formula identities over the same authoritative full input and cutoff and returns independent trend, oscillation and fusion summaries. Chart limits, viewport and history pagination do not enter fusion arithmetic.
 
 - One fusion position. Within each completed observation-eligible bar, process CLEAR before BUILD. When holding, any source CLEAR exits; then a BUILD may reopen on that same bar. Flat CLEAR is ignored. Holding BUILD is ignored.
-- Multiple CLEARs or BUILDs on the same bar select oscillation before trend, then source sequence. Use the selected action's explicit reference price. Cross-strategy pairing is permitted. A source CLEAR with `NO_ELIGIBLE_ENTRY` can close a fusion entry; `WARMUP_ONLY` actions cannot enter fusion.
+- Multiple CLEARs or BUILDs on the same bar select oscillation before trend, then source sequence. Use the selected action's explicit reference price. Cross-strategy pairing is permitted. A source CLEAR with `NO_ELIGIBLE_ENTRY` or verified `INITIAL_CLEAR_NO_ENTRY` can close a fusion entry; `WARMUP_ONLY` actions cannot enter fusion.
 - Both replays must have identical market bars and input-quality identity. Owner lifecycle prewarm bars are excluded from transaction time ordering. Authoritative rollover/data interruptions break positions; owner/calculation identity changes fail closed by interrupting, never pairing across contracts or calculation segments.
 - Stable fusion trade identity includes model version, product/frequency, both formula versions and the selected entry signal. Original strategy pair relationships remain unchanged. Decimal precision 28 arithmetic, zero fees/slippage, `(exit/entry-1)*100`. Holding bars exclude the entry bar.
 - Window membership remains `entry_in_window_v1`; entries before the window are separately marked initial and excluded from all three summaries. Only CLOSED returns are simply added in percentage points. OPEN is not force-closed on the last bar. OPEN mark change and interruption-before mark change use the last eligible Close and are not realized reference returns.
@@ -1153,7 +1153,7 @@ The opt-in `explanation` request with `decision_v2=true` reads completed D1/W1 c
 
 `newow_composite_decision_cdv2_1_2_0_v1` replicates the public CDV2 1.2.0 priority chain: trend/oscillation bias, MM3→MM4→MM1→MM2, R4→R3→R2→R1→R0, five scores, explicit J/care/tent deductions, certainty/resonance exposure caps and bearish/insufficient overlays. R4 permits two known aligned cycles per axis. Exposure percentages express page-reference strength, never futures margin, hand count or probability. It cannot gate BUILD/CLEAR or alter reference trades. The futures adapter calculates age from the full same-calculation-segment prefix; it never invents the original page's batch cross age zero. Only recent same-owner main-rise J hints from the current view frequency contribute -5; care/tent are explicitly disabled. Daily mean TR/Close volatility reuses the existing public rounding implementation. Missing J or volatility sources are disclosed.
 
-`newow_target_absorb_selection_v3_3_59_v1` adds the public 1.005 inclusive upgrade buffer, preserves the daily double-HOLD non-upgrade branch, and keeps shared selection and weekly status-card HHV10/LLV10 override distinct. Explicit source facts bind role, frequency, physical owner, calculation segment, time and source family. The pure selector accepts monthly facts; the current futures adapter supplies no monthly input. Canonical HHV10/LLV10 candidates are labelled `canonical_channel` under `guiyi_canonical_channel_cross_period_v1`, never private batch facts. Chart-legend prices remain their independently sourced current-period channel surface. State-card output does not silently replace them.
+`newow_target_absorb_selection_v3_3_81_v1` (public strategy-calc SHA256 `f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0`) adds the public 1.005 inclusive upgrade buffer, preserves the daily double-HOLD non-upgrade branch, and keeps shared selection and weekly status-card channel fallback/override distinct. Explicit source facts bind role, frequency, physical owner, calculation segment, time and source family. The pure selector accepts monthly facts; the current futures adapter supplies no monthly input. Canonical HHV10/LLV10 candidates are labelled `canonical_channel` under `guiyi_canonical_channel_cross_period_v1`, never private batch facts. Chart-legend prices remain their independently sourced current-period channel surface. State-card output does not silently replace them. Shared absorb selection retains daily/weekly priority, applies generic cost fallback in every branch, then applies the previous-close guard and caps a positive guarded absorb above the valid current completed Close to that Close with public JS Number/toFixed(2) rounding. Raw value and provenance remain intact. Weekly status-card target uses the positive shared weekly-view target first, falling back to local HHV10 only when it is unavailable/non-positive. Absorb uses the direct local weekly LLV10 override. These direct local channel values receive only public toFixed(2) rounding, without the shared previous-close guard or support cap. This display change cannot modify BUILD prices, LLV channels or reference performance. The older `newow_target_absorb_display_selection_page_v2` surface remains frozen evidence-only, not an alternate active display formula.
 
 The guard baseline is a prior completed, observation-eligible D1 Close from the same physical owner/calculation segment. Missing baseline remains unavailable; no settlement, previous-close alias, synthetic roll price or current Close substitution. Shared selection, status-card selection, previous Close and current Close keep distinct source identities. Context owner conflicts become unknown/missing, never mixed prices. All outputs are read-only explanations, not account, execution or causal profitability facts.
 
@@ -1378,6 +1378,119 @@ semantics, page-parity and non-executable boundaries SHALL remain unchanged.
 - **WHEN** formal v3 AI or current cross-period decision is requested
 - **THEN** all six combinations or three periods use that exact cutoff
 - **AND** unavailable owner, quality or preheating facts remain explicit without substitution
+
+### Requirement: Independent v3.3.79 page performance projection
+
+P0 的 active 产品 envelope SHALL 为 `newow_product_detail_v4`，ReferenceTrade model 为
+`newow_marker_reference_zero_cost_v4`，趋势主动作政策为 `newow_trend_marker_initial_clear_v2`，
+profile 为 `newow_trend_d1_page_v4`。这些身份 SHALL 进入缓存、资产、快照和分页身份；旧响应与 token 不得跨版本复用。
+本节更新此前 v2/v3 envelope 身份，既有 ReferenceTrade 事实合同继续有效。
+趋势 MA7 / B10 SHALL 按公开 calcMAFrom 的最新到最旧顺序，以 binary64 逐次加法累加后除以周期；不得以补偿 sum、Decimal 或重排窗口替换。Close 与 B10 的边界比较保留原式，批量、增量和 checkpoint 重启必须一致。趋势带公式更新为 `newow_trend_band_page_v3`；旧 v2 候选不得复用。
+
+`newow_page_performance_v3379_v2` SHALL 独立返回 ordinary / ideal 的摘要、完整曲线和估值交易，
+绑定来源版本、源码 SHA-256、有序输入 SHA-256 和来源 evidence SHA-256。所有输出
+`page_parity=true / executable=false`。不得从 ReferenceTrade 已裁剪的列表反推页面收益。
+
+当全输入存在窗口起点之后的 eligible Bar 时，聚合层 SHALL 排除结束于起点之前的 owner，收益、曲线、回撤和未完成计数均不得因逐 owner 的 no-match fallback 回流。全输入没有起点匹配时保留原站单序列 fallback。此窗口适配修正使用独立页面投影 v2，不修改 ReferenceTrade 身份或原式单段过滤函数。
+
+ordinary SHALL 从权威完整物理生命周期前缀计算，按退出日期选择窗口，保留公开函数的标记权益归零及舍入。
+完整最终 owner 的末根 Close forceClose 只属于页面估值统计，不生成 CLEAR，不关闭 ReferenceTrade OPEN。
+缺口、换月或不完整末端不得估值平仓；跨 owner 的累计曲线拼接不得把中断的浮动权益丢失算成已成交亏损。
+回撤取各 owner 内部原式回撤最大值，此为显式期货适配差异。
+
+ideal SHALL 独立配对：趋势 entry 使用 B10 且最高 Close 包含退出 Bar；主升浪 entry 使用 Close 且峰值排除退出 Bar；
+震荡使用 rolling HHV，可包含建仓前高点，并保留公开 buy/update/sell 顺序；融合先 SELL 后 BUY，
+震荡来源优先，峰值 High 排除退出 Bar。ideal 不从 ordinary 或 ReferenceTrade 配对派生。
+
+Web ordinary / ideal 切换 SHALL 同时切换摘要、曲线和独立估值记录。末根估值明确标记；
+ReferenceTrade 状态和诊断保留独立展示，缺少新投影时不得用旧收益冒充新模式。
+
+#### Scenario: Window entry precedes the visible window
+
+- **GIVEN** 完整前缀在显示窗口前建仓，窗口内清仓
+- **WHEN** 计算独立页面收益
+- **THEN** 该退出属于页面窗口，保留真实前置买入价；ReferenceTrade 自身窗口成员合同不改变
+
+#### Scenario: Terminal valuation does not create an execution fact
+
+- **GIVEN** 完整末段最后一根仍持有
+- **WHEN** ordinary 包含 forceClose 估值记录
+- **THEN** 基础 ReferenceTrade 继续 OPEN，不创建 CLEAR、PaperFill 或账户收益
+
+
+### Requirement: Independent seven-pattern hindsight overlay
+The Newow chart SHALL expose the public v3.3.79 cup-handle, saucer, double-bottom, flat-base, ascending-base, consolidation and tight-area detectors as a separately versioned hindsight decoration, `newow_public_patterns_v3379_v1`.
+The overlay SHALL carry page-parity, non-executable and repainting identity, SHALL NOT replace the causal cup-handle facts, and SHALL NOT affect BUILD/CLEAR, reference returns or strategy decisions.
+
+#### Scenario: Complete loaded owner input
+- **WHEN** the user opens pattern recognition
+- **THEN** the detector evaluates all loaded completed bars of the selected contiguous physical-contract/segment/calculation-segment owner, without sampling or implicit truncation
+- **AND** scores, loop boundaries, first-on-tie choices and stable sorting follow the frozen public formulas
+- **AND** the highest-scoring candidate is the default overlay; each candidate can be drawn or cleared
+- **AND** the displayed input span is explicit, so a loaded window is not presented as whole-history evidence.
+
+#### Scenario: Chart changes during computation
+- **WHEN** product, frequency, strategy, snapshot or loaded window changes
+- **THEN** the old overlay is revoked and a cancelled Worker generation cannot publish old results
+- **AND** geometry anchors map only to accepted same-owner bars and their source identities.
+
+### Requirement: W1 D1 and 60m independent illustration
+The independently versioned `guiyi_daily_weekly_path_v2` SHALL include W1, D1 and 60m rows. A 60m score SHALL NOT substitute for its path facts.
+Each row SHALL use a same-period completed HHV10 target with physical-contract, segment, calculation-segment and as-of validation. A cost for buy, hold or sell SHALL require a proven same-period strategy BUILD identity. A wait row may expose ready current/target facts with cost=null, without drawing a complete cost path. Current completed Close may be shared across periods only with an explicit source identity and compatible owner.
+The target SHALL be labelled a futures adaptation, not the unavailable private page batch price. Cost→current→target uses stage coordinates 0/62/100 and SHALL NOT be represented as predicted times or executable prices.
+
+#### Scenario: Cleared or missing position reference
+- **WHEN** the strategy is in sell state
+- **THEN** the path may display the historical BUILD cost only from the exact same-owner CLEAR.related_build_id relationship, and uses a dashed path
+- **WHEN** required BUILD cost for buy/hold/sell, compatible owner or target cannot be proven
+- **THEN** the row is partial/unavailable and no complete path is invented
+- **AND** no ReferenceTrade OPEN/CLOSED fact or strategy state is altered.
+
+
+### Requirement: Orthogonal XP1 and shared period-basis display
+The CDV2 response SHALL expose independently versioned `newow_period_conflict_v3379_v1`: trend week up and day down alone yields XP1. Scores, R/MM, legacy action, exposure caps and strategy BUILD/CLEAR SHALL remain unchanged.
+The page SHALL use `newow_basis_decision_v3379_v1` as the shared source of action, strength, reason, conflict and status stance. Week basis uses W1/D1; day basis uses D1/60m. BUILD/HOLD are holding, CLEAR is cleared, FLAT is neutral for this display; CDV2 normalized down SHALL NOT substitute for neutral.
+
+#### Scenario: Selected basis changes
+- **WHEN** the user switches week/day basis
+- **THEN** both cards and price-progress orientation update from one decision row without changing strategy facts or rereading data
+- **AND** old action directions are hidden or explicitly identified as original weekly/daily background inside folded evidence
+- **AND** no exposure or account sizing is recomputed.
+
+#### Scenario: Missing inputs or incompatible fusion partner
+- **WHEN** required completed facts are missing, future, duplicate or incompatible by physical contract/segment
+- **THEN** the selected basis is unavailable and no state is invented
+- **AND** dual uses the same compatibility and dominant algorithm as the chart header; an unavailable partner is distinct from valid null dominance (trend fallback)
+- **AND** a different dominant snapshot cannot be mixed with the explanation snapshot.
+
+
+### Requirement: Independent four public oscillation experiments
+The page SHALL provide a T menu for `osc-test`, `osc-test2`, `osc-test3` and `osc-test4` with separate versioned experiment identity. These SHALL remain page-parity, non-executable projections and SHALL NOT expand the formal trend/oscillation/main-rise strategy registry, Recording scope or Runtime subscription.
+The channel SHALL require ten bars. Tests 1–3 SHALL use a 7% stop and test 4 a 12% stop, checked before other exits; stop reference is min(stop, open). Test 2 SHALL retain entry-bar HHV10 as its target and use max(target, open) on target exit. Test 3 SHALL gate entry on the previous MA10 being strictly above the earlier MA10, using partial windows for the MA. Test 4 SHALL refresh its stored Close on a fresh HHV hit before checking a subsequent-bar confirmation against the older reference; confirmation reference is min(stored reference, open).
+
+#### Scenario: Main chart and ordinary reference intentionally diverge
+- **WHEN** tests 1–3 clear on a non-stop HHV or fixed-target event and also touch LLV on that bar
+- **THEN** the main chart SHALL prohibit same-bar re-entry while the ordinary page reference SHALL allow it
+- **AND** stop exits and test-4 confirmed exits SHALL prohibit same-bar re-entry in both paths
+- **AND** terminal ordinary Close valuation SHALL NOT create a CLEAR Marker or an executable fill.
+
+#### Scenario: Theoretical mode uses the public base oscillation path
+- **WHEN** any experiment switches to theoretical value
+- **THEN** the page SHALL use the independent base oscillation ideal path without experiment stop, fixed target, MA gate or delayed-exit options
+- **AND** the displayed curve, summary and records SHALL use that same mode and identify this base ideal interpretation.
+
+#### Scenario: Futures owner and completed snapshot boundaries
+- **WHEN** an existing verified completed MDS snapshot is read for an experiment
+- **THEN** physical contract and calculation-segment boundaries SHALL reset its state and prevent cross-owner pairing
+- **AND** ordinary terminal valuation SHALL apply only to the eligible final segment, with interrupted open references excluded from realized results
+- **AND** warmup bars SHALL contribute to windows; marker-state warmup and page-reference eligible trading SHALL retain their separate existing semantics
+- **AND** missing inputs SHALL remain unavailable, never trigger download, asset construction or cross-frequency fallback.
+
+#### Scenario: Experiment selection invalidates former display facts
+- **WHEN** symbol, period, formal strategy or experiment selection changes
+- **THEN** pending requests SHALL be cancelled and stale or mismatched experiment responses SHALL be rejected
+- **AND** base strategy state, reference history and experimental results SHALL NOT be displayed under each other's identity.
+
 
 ## Intraday pilot contracts (P0–P6 candidate)
 

@@ -33,7 +33,7 @@ def test_formal_minutes_admit_only_closed_products(product, frequency):
 
 @pytest.mark.parametrize('product', ['zz'])
 @pytest.mark.parametrize('frequency', ['1m', '5m', '15m', '30m', '60m'])
-def test_unclosed_products_and_one_minute_fail_closed(product, frequency):
+def test_unknown_products_and_one_minute_fail_closed(product, frequency):
     with pytest.raises(ValueError, match='NEWOW_FREQUENCY_NOT_OPEN'):
         market_newow._enforce_product_frequency(SimpleNamespace(state=SimpleNamespace()), product, frequency)
 

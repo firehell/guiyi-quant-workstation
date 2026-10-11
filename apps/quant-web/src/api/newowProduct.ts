@@ -58,6 +58,7 @@ const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
   ['newow_product_capabilities_v7', { stage: 'ap_hourly_candidate', frequencies: ['1d', '60m'] }],
   ['newow_product_capabilities_v8', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V8 }],
   ['newow_product_capabilities_v9', { stage: 'daily_weekly_candidate', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V9 }],
+  ['newow_product_capabilities_v34', { stage: 'daily_weekly_candidate', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V9 }],
   ['newow_product_capabilities_v10', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V10 }],
   ['newow_product_capabilities_v11', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V11 }],
   ['newow_product_capabilities_v12', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V12 }],
@@ -166,7 +167,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
       || !['trend', 'oscillation', 'dual'].every(strategy => sameLiteralArray(strategies[strategy], profile.frequencies))) return false
   }
   const openFrequencies: readonly string[] = profile.frequencies
-  const deferred = (['1w', '60m'] as const).filter(frequency => !openFrequencies.includes(frequency))
+  const deferred = value.schema_version === 'newow_product_capabilities_v34' ? [] : (['1w', '60m'] as const).filter(frequency => !openFrequencies.includes(frequency))
   const deferredFrequencies = value.deferred_frequencies
   return Array.isArray(deferredFrequencies) && deferredFrequencies.length === deferred.length
     && deferred.every((frequency, index) => isDeferred(deferredFrequencies[index], frequency,

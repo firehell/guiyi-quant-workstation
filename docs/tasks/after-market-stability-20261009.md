@@ -42,3 +42,18 @@ partial/commit未知/持久化失败及通知异常。扩大盘后/历史保留/
 容量preflight在既有metadata前置同步之后、行情Bar请求/Canonical发布之前，使用同一冻结计划；不删除metadata authority。
 新版本发布、服务切换与自然验收结果分别补记，不以源码验证冒充Runtime事实。
 现场独立只读证据：`output/after-market-stability-20261009/`。
+
+### 发布与现场结果
+
+v1.14.8已由PR421合并main@3e1838e60ca95095137c5736f289b89a5f67a2ea，annotated tag及GitHub Release一致。
+发布tree与已Review候选完全一致，895 passed；独立隔离环境追加804 passed（23.89s）、Web build及version test通过。
+PyPI构建依赖超时后，离线克隆现役独立环境并重绑定两个本地editable包；57第三方版本与未变lock一致、
+实际import路径及RECORD哈希通过独立Review，不共享develop源码。
+60/60 snapshot preflight通过，现有9服务安装完成；日志轮转为共享脚本，其余8服务plist的root/commit一致。
+reference安装首次因新root缺原启用marker在mutation前停止；核实旧loaded identity及600 enabled marker后转移
+既有启用意图，安装器preimage/切换通过，未新增Scope。
+API/Web200，公开health业务身份matched、DB/Redis/Live正常；原10/9状态SHA仍
+31be5847069d92f4912bd5b213609d43041d9064a96d74b577441ebf236b8bfe，history保留同一failed来源。
+health因此degraded，不改写旧失败，新自然status不存在。下一次自然盘后尚待验收，不手工制造。
+证据：release-isolated-regression.txt、release-install-*.txt、services-after.txt、runtime-health-after.json；
+已封存旧Runtime原status/history及哈希，并保留所有本次测试日志。

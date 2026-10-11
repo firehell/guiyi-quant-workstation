@@ -65,7 +65,7 @@ def build(**overrides):
 
 def test_daily_weekly_cost_and_target_are_independent_with_exact_marker_provenance():
     result = build()
-    week, day = result["periods"]
+    week, day, _hour = result["periods"]
     assert day["cost"]["raw"] == "101"
     assert week["cost"]["raw"] == "90"
     assert day["cost"]["entry_marker_id"] == "daily-entry"
@@ -81,7 +81,7 @@ def test_flat_or_missing_period_does_not_fabricate_entry_or_reuse_other_period()
             "1w": (None, [], None),
         }
     )
-    week, day = result["periods"]
+    week, day, _hour = result["periods"]
     assert day["state"] == "wait" and day["cost"] is None
     assert day["reason"] == "FLAT_NO_OPEN_ENTRY"
     assert week["status"] == "unavailable" and week["current"] is None
@@ -129,3 +129,37 @@ def test_current_before_entry_or_wrong_source_family_cannot_draw_completed_path(
         periods={"1d": ("hold", [frame("1d", "101", "entry")], wrong_target)}
     )
     assert result["periods"][1]["target"] is None
+
+
+def test_hourly_path_has_own_build_target_and_same_completed_current():
+    result = build(periods={"60m": ("hold", [frame("60m", "105", "hour-entry")], price("119", "60m"))})
+    hour = result["periods"][2]
+    assert result["version"] == "guiyi_daily_weekly_path_v2"
+    assert hour["frequency"] == "60m"
+    assert hour["cost"]["raw"] == "105"
+    assert hour["target"]["raw"] == "119"
+    assert hour["current"]["raw"] == "110"
+
+
+def test_same_frequency_current_calculation_segment_must_match_hourly_owner():
+    result = build(current=replace(price("110", "60m", "canonical_completed_close"), calculation_segment_id="foreign"), periods={"60m": ("hold", [frame("60m", "105", "hour-entry")], price("119", "60m"))})
+    assert result["periods"][2]["status"] == "unavailable"
+
+
+def test_clear_path_cost_only_from_exact_paired_same_owner_build():
+    frames = [frame("60m", "105", "entry"), frame("60m", "112", "exit", "CLEAR", "entry")]
+    result = build(periods={"60m": ("sell", frames, price("119", "60m"))})
+    assert result["periods"][2]["cost"]["entry_marker_id"] == "entry"
+    frames[-1].actions[0].related_build_id = "foreign"
+    result = build(periods={"60m": ("sell", frames, price("119", "60m"))})
+    assert result["periods"][2]["cost"] is None
+
+
+def test_hourly_clear_pair_does_not_borrow_foreign_owner_or_ambiguous_open_entry():
+    foreign = frame("60m", "105", "old")
+    foreign.actions[0].segment_id = "foreign"
+    clear = frame("60m", "112", "exit", "CLEAR", "old")
+    result = build(periods={"60m": ("sell", [foreign, clear], price("119", "60m"))})
+    assert result["periods"][2]["cost"] is None
+    result = build(periods={"60m": ("hold", [frame("60m", "105", "a"), frame("60m", "106", "b")], price("119", "60m"))})
+    assert result["periods"][2]["cost"] is None

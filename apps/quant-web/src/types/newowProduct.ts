@@ -18,7 +18,7 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13' | 'newow_product_capabilities_v14' | 'newow_product_capabilities_v15' | 'newow_product_capabilities_v16' | 'newow_product_capabilities_v17' | 'newow_product_capabilities_v18' | 'newow_product_capabilities_v19' | 'newow_product_capabilities_v20' | 'newow_product_capabilities_v21' | 'newow_product_capabilities_v22' | 'newow_product_capabilities_v23' | 'newow_product_capabilities_v24' | 'newow_product_capabilities_v25' | 'newow_product_capabilities_v26' | 'newow_product_capabilities_v27' | 'newow_product_capabilities_v28' | 'newow_product_capabilities_v29' | 'newow_product_capabilities_v30' | 'newow_product_capabilities_v31' | 'newow_product_capabilities_v32' | 'newow_product_capabilities_v33'
+  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13' | 'newow_product_capabilities_v14' | 'newow_product_capabilities_v15' | 'newow_product_capabilities_v16' | 'newow_product_capabilities_v17' | 'newow_product_capabilities_v18' | 'newow_product_capabilities_v19' | 'newow_product_capabilities_v20' | 'newow_product_capabilities_v21' | 'newow_product_capabilities_v22' | 'newow_product_capabilities_v23' | 'newow_product_capabilities_v24' | 'newow_product_capabilities_v25' | 'newow_product_capabilities_v26' | 'newow_product_capabilities_v27' | 'newow_product_capabilities_v28' | 'newow_product_capabilities_v29' | 'newow_product_capabilities_v30' | 'newow_product_capabilities_v31' | 'newow_product_capabilities_v32' | 'newow_product_capabilities_v33' | 'newow_product_capabilities_v34'
   readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate' | 'daily_weekly' | 'rb_intraday_candidate' | 'black_steel_intraday_candidate' | 'single_product_intraday_candidate' | 'daily_weekly_intraday_history' | 'daily_weekly_hourly_current' | 'daily_weekly_intraday_current'
   readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m'] | readonly ['1m', '15m', '30m', '60m', '1d', '1w'] | readonly ['5m', '15m', '30m', '60m', '1d', '1w']
   readonly weekly_products?: readonly string[]
@@ -105,14 +105,14 @@ export interface NewowFeatureStatus {
 }
 
 export interface NewowProductMeta {
-  readonly schema_version: 'newow_product_detail_v3'
+  readonly schema_version: 'newow_product_detail_v4'
   readonly identity: NewowProductWireIdentity
   readonly as_of: string
   readonly read_at: string
   readonly input_content_sha256: string
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_daily_quality_segment_v4'
@@ -243,7 +243,7 @@ export interface NewowReferenceTrade {
   readonly segment_id: string
   readonly calculation_segment_id: string
   readonly formula_versions: readonly string[]
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_daily_quality_segment_v4'
@@ -272,6 +272,7 @@ export interface NewowReferenceTrade {
 }
 
 export interface NewowReferenceValue {
+  readonly page_performance?: import('../utils/newowPagePerformance').PagePerformance | null
   readonly holding_curve?: import('../utils/newowHoldingCurve').HoldingCurve | null
   readonly theoretical?: { readonly model_version: 'newow_hindsight_peak_reference_v1'; readonly hindsight: true; readonly executable: false; readonly returns: readonly { readonly reference_trade_id: string; readonly return_pct: string; readonly ideal_exit_price: string }[]; readonly sum_return_percentage_points: string; readonly win_rate_pct: string | null; readonly mean_return_pct: string | null } | null
   readonly fusion_comparison?: import('../api/newowFusion').FusionComparison

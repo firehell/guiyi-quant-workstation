@@ -133,7 +133,10 @@ def _service(product_cases, frequency="1d"):
             ),
         )
     replay = replay_strategy(case.identity, case.bars)
-    build, clear = replay.actions[:2]
+    build = next(action for action in replay.actions
+                 if action.kind is ActionKind.BUILD and action.trade_eligibility is TradeEligibility.ELIGIBLE)
+    clear = next(action for action in replay.actions
+                 if action.kind is ActionKind.CLEAR and action.related_build_id == build.signal_id)
     reader = _Reader(case.bars, build.bar_end, clear.bar_end)
     now = clear.bar_end.replace(year=2027)
     service = NewowProductService(lambda _context, _cancelled: reader, now=lambda: now)
@@ -566,7 +569,8 @@ def test_trend_chart_delivers_independent_channel_without_changing_strategy_iden
     assert CHANNEL_FORMULA_VERSION not in result.meta.identity.formula_versions
     assert result.meta.identity.formula_versions == (
         "newow_escape_d123_page_v2",
-        "newow_trend_band_page_v2",
+        "newow_trend_band_page_v3",
+        "newow_trend_marker_initial_clear_v2",
     )
 
 
@@ -1889,8 +1893,10 @@ def test_memoized_cache_hit_cannot_return_expired_or_different_bound_token(produ
     get = service._cache.get
     def raced_get(*args, **kwargs):
         cached = get(*args, **kwargs)
-        if race == 'expired': clock[0] = 300
-        elif hasattr(cached, 'meta'): cached = replace(cached, meta=replace(cached.meta, snapshot_token='new-generation'))
+        if race == 'expired':
+            clock[0] = 300
+        elif hasattr(cached, 'meta'):
+            cached = replace(cached, meta=replace(cached.meta, snapshot_token='new-generation'))
         return cached
     monkeypatch.setattr(service._cache, 'get', raced_get)
     monkeypatch.setattr(service._cache, 'refresh_verified_token', lambda *_: pytest.fail('memoized input renewed'))
@@ -1922,3 +1928,53 @@ def test_hourly_decision_never_replays_main_rise_and_uses_hourly_readiness(produ
     assert cd["extra_sources"]["j_reduce"] == "unavailable"
     assert any(f["role"] == "trend_m60" and f["status"] == "ready" for f in cd["facts"])
     assert result.explanation.status.status is FeatureRuntimeStatus.READY
+    path = result.explanation.value.decision_v2["daily_weekly_path"]
+    assert path["version"] == "guiyi_daily_weekly_path_v2"
+    assert [row["frequency"] for row in path["periods"]] == ["1w", "1d", "60m"]
+    hour = path["periods"][2]
+    assert hour["state"] == next(f["state"] for f in cd["facts"] if f["role"] == "trend_m60")
+    assert hour["current"]["frequency"] == "60m"
+    assert hour["target"]["frequency"] == "60m"
+    assert hour["target"]["source_category"] == "canonical_channel"
+    assert hour["target"]["physical_contract"] == hour["current"]["physical_contract"]
+    assert hour["target"]["segment_id"] == hour["current"]["segment_id"]
+    assert hour["target"]["calculation_segment_id"] == hour["current"]["calculation_segment_id"]
+
+
+def test_daily_decision_path_reads_hourly_context_from_same_product_reader(product_cases):
+    contexts = (ProductFrequency.WEEKLY, ProductFrequency.DAILY, ProductFrequency.HOURLY)
+    reader, _query, fake = product_cases.paged_reader(prefix_bars=120, frequency="1d", context_frequencies=contexts)
+    seen = []
+    def factory(context, cancelled):
+        seen.append(context)
+        return reader
+    service = NewowProductService(factory, now=lambda: fake.as_of)
+    result = service.query(ProductServiceQuery("rb", "trend", "1d", section="explanation", decision_v2=True, as_of=fake.as_of))
+    assert seen == [contexts]
+    path = result.explanation.value.decision_v2["daily_weekly_path"]
+    hour = path["periods"][2]
+    assert hour["frequency"] == "60m"
+    assert hour["target"] is not None
+    assert hour["target"]["frequency"] == "60m"
+    assert hour["current"]["frequency"] == "1d"
+    assert hour["current"] == path["periods"][1]["current"]
+    assert hour["target"]["physical_contract"] == hour["current"]["physical_contract"]
+    assert hour["target"]["segment_id"] == hour["current"]["segment_id"]
+
+
+def test_cdv2_weekly_status_card_retains_shared_target_and_direct_channel_absorb(product_cases):
+    from app.market_data.newow.decision_v2 import build_decision_v2
+    from guiyi_quant.newow.trend_channel_display import build_trend_channel_layer
+
+    case = product_cases.primitive_input('trend', '1w')
+    replay = replay_strategy(case.identity, case.bars)
+    last = replay.frames[-1]
+    read = SimpleNamespace(as_of=last.bar.bar.bar_end, boundaries=(), data_interruptions_by_frequency={})
+    result = build_decision_v2({ProductFrequency.WEEKLY: replay}, {}, None, read, case.identity)
+    prices = result['prices']
+    assert prices['formula_version'] == 'newow_target_absorb_selection_v3_3_81_v1'
+    assert prices['status_card']['target'] == prices['shared']['target']
+    layer = build_trend_channel_layer(tuple(f.bar for f in replay.frames), (last.bar,))
+    assert prices['status_card']['absorb']['raw'] == format(layer.points[-1].lower, 'f')
+    assert prices['status_card']['absorb']['branch'] == 'status_card_weekly_llv10_override'
+    assert prices['status_card']['absorb']['support_cap_applied'] is False

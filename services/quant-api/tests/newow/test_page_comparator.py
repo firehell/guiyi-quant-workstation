@@ -19,6 +19,7 @@ from guiyi_quant.newow.product_contracts import (
     ProductStrategy,
 )
 from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
+from guiyi_quant.newow.product_adapters import build_product_identity
 
 
 def _api():
@@ -35,15 +36,7 @@ def _api():
 
 
 def _identity(frequency: str = "1d") -> ProductIdentity:
-    return ProductIdentity(
-        "rb",
-        ProductStrategy.OSCILLATION,
-        ProductFrequency(frequency),
-        (
-            "newow_oscillation_hhv_llv10_page_v1",
-            "newow_hhv_llv_channel_page_v1",
-        ),
-    )
+    return build_product_identity("rb", "oscillation", frequency)
 
 
 def _bars(
