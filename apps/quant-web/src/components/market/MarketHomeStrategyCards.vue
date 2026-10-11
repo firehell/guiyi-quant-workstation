@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getNewowHomeCards } from '@/api/newowHomeCards'
-import { createHomeCardLoader, type CardDelivery, type HomePeriod, type HomePeriodFact, type HomeStrategy } from '@/utils/newowHomeCards'
+import { createHomeCardLoader, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, homeReferenceDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { newowReferencePrice } from '@/utils/newowPagePresentation'
+import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
 import type { MarketHomeLiveDisplayRow } from '@/utils/marketHomeLiveView'
 import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
@@ -11,70 +13,67 @@ const props = defineProps<{ rows: Row[]; authority: string; refreshSequence: num
 const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod]; sort: [sort: MarketHomeSort] }>()
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
 const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value })
-type Preferences = Record<string, { expanded: boolean; trend: HomePeriod; oscillation: HomePeriod }>
-const preferences = ref<Preferences>(restore())
-const strategies = [{ code: 'trend' as const, label: '趋势策略' }, { code: 'oscillation' as const, label: '震荡策略' }]
-const steps = ['FLAT', 'BUILD', 'HOLD', 'CLEAR'] as const
-const icons = { FLAT: '○', BUILD: '▲', HOLD: '✓', CLEAR: '↘' }
-const labels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' }
+const strategy = ref<HomeStrategy>('trend')
+const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
+const periods = ['1d', '1w'] as const
+const sortOptions = [{ code: 'default', label: '默认' }, { code: 'close', label: '价格' }, { code: 'change', label: '涨跌幅' }, { code: 'volume', label: '成交量' }, { code: 'oi', label: '持仓量' }] as const
 const productKey = computed(() => props.rows.map(row => row.symbol).sort().join(','))
 watch([productKey, () => props.authority, () => props.refreshSequence], () => { void loader.load(productKey.value ? productKey.value.split(',') : []) }, { immediate: true })
 onBeforeUnmount(() => loader.dispose())
-
-function restore(): Preferences {
-  try {
-    const value = JSON.parse(sessionStorage.getItem('guiyi.market-home.cards.v1') ?? '{}')
-    return Object.fromEntries(Object.entries(value).filter(([, item]) => {
-      const preference = item as Preferences[string]
-      return preference && typeof preference.expanded === 'boolean' && ['1d', '1w'].includes(preference.trend) && ['1d', '1w'].includes(preference.oscillation)
-    })) as Preferences
-  } catch { return {} }
-}
-function preference(symbol: string) { return preferences.value[symbol] ?? { expanded: false, trend: '1d', oscillation: '1d' } }
-function update(symbol: string, patch: Partial<Preferences[string]>) {
-  preferences.value = { ...preferences.value, [symbol]: { ...preference(symbol), ...patch } }
-  try { sessionStorage.setItem('guiyi.market-home.cards.v1', JSON.stringify(preferences.value)) } catch {}
-}
-function fact(symbol: string, strategy: HomeStrategy, period: HomePeriod): HomePeriodFact | undefined { return deliveries.value[symbol]?.card?.strategies[strategy][period] }
-function selected(symbol: string, strategy: HomeStrategy) { return fact(symbol, strategy, preference(symbol)[strategy]) }
-function status(value?: HomePeriodFact) { return value?.status === 'ready' && value.state ? labels[value.state] : value?.status === 'warming' ? '预热中' : value ? '不可用' : '加载中' }
-function stateClass(value?: HomePeriodFact) { return value?.status === 'ready' && value.state ? value.state.toLowerCase() : 'pending' }
-function price(value?: string | null) { return value == null ? '—' : Number(value).toFixed(2) }
-function space(value?: string | null) { return value == null ? '—' : `${Number(value).toFixed(1)}%` }
-function date(value?: string | null) {
-  if (!value || !Number.isFinite(Date.parse(value))) return '—'
-  return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))
-}
+function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
+function direction(symbol: string) { return homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) }
+function reference(symbol: string) { return homeReferenceDisplay(fact(symbol, '1d')) }
+function periodLabel(period: HomePeriod) { return period === '1d' ? '日' : '周' }
+function pending(symbol: string) { return periods.some(period => fact(symbol, period)?.freshness === 'pending_update') }
 </script>
 
 <template>
-  <div class="strategy-cards-toolbar"><span>日周策略卡</span><div>排序 <button v-for="option in [{code:'default', label:'默认'}, {code:'close', label:'价格'}, {code:'change', label:'涨跌幅'}, {code:'volume', label:'成交量'}, {code:'oi', label:'持仓量'}] as const" :key="option.code" :aria-pressed="sort === option.code" @click="emit('sort', option.code)">{{ option.label }}<span v-if="sort === option.code && sort !== 'default'">{{ sortDirection === 'desc' ? ' ↓' : ' ↑' }}</span></button></div></div>
-  <section class="strategy-cards" aria-label="品种日周策略卡">
-    <article v-for="row in rows" :key="row.symbol" class="strategy-card">
-      <header class="strategy-card-header">
-        <button class="strategy-card-name" @click="emit('open', row)"><strong>{{ row.product_name }}</strong><span>{{ row.symbol.toUpperCase() }} · {{ row.liveQuote?.physicalContract ?? row.actual_contract }}</span></button>
-        <div class="strategy-card-quote"><strong>{{ row.close }}</strong><span :class="row.price_change_1d == null ? '' : row.price_change_1d >= 0 ? 'up' : 'down'">{{ row.price_change_1d == null ? '—' : `${row.price_change_1d >= 0 ? '+' : ''}${(row.price_change_1d * 100).toFixed(2)}%` }}</span><small>{{ row.liveQuote ? `${liveStale ? '断线保留报价' : '最新完成行情'} · ${date(row.liveQuote.barEnd)}` : `日线收盘报价 · ${row.data_as_of}` }}</small></div>
-      </header>
-      <p v-if="deliveries[row.symbol]?.stale" class="card-notice" role="status">{{ deliveries[row.symbol]?.loading ? '策略刷新中，保留上次快照' : '策略刷新失败，保留上次快照' }}</p>
-      <p v-else-if="deliveries[row.symbol]?.failed" class="card-notice" role="status">策略读取失败，可刷新重试</p>
-      <div class="strategy-card-summary">
-        <div v-for="strategy in strategies" :key="strategy.code"><b>{{ strategy.label }}</b><span v-for="period in ['1d', '1w'] as const" :key="period" class="card-status" :class="stateClass(fact(row.symbol, strategy.code, period))">{{ period === '1d' ? '日' : '周' }} · {{ status(fact(row.symbol, strategy.code, period)) }}</span></div>
+  <div class="strategy-list-toolbar">
+    <div class="strategy-switch" aria-label="首页策略"><button v-for="option in strategies" :key="option.code" :aria-pressed="strategy === option.code" @click="strategy = option.code">{{ option.label }}</button></div>
+    <div class="strategy-sort" aria-label="行情排序">排序 <button v-for="option in sortOptions" :key="option.code" :aria-pressed="sort === option.code" @click="emit('sort', option.code)">{{ option.label }}<span v-if="sort === option.code && sort !== 'default'">{{ sortDirection === 'desc' ? ' ↓' : ' ↑' }}</span></button></div>
+  </div>
+  <section class="strategy-list" aria-label="品种日周策略列表">
+    <div class="strategy-list-columns" aria-hidden="true"><span>品种</span><span>价格</span><span>涨跌幅</span><span>目标/吸筹</span><span>日 / 周</span><span>趋势方向</span></div>
+    <article v-for="row in rows" :key="row.symbol" class="strategy-list-item">
+      <div class="strategy-list-row">
+        <button class="product-name" @click="emit('open', row)"><strong>{{ row.product_name }}</strong><small>{{ row.symbol.toUpperCase() }}</small></button>
+        <div class="list-price"><small class="mobile-label">价格</small><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
+        <div class="list-change" :class="row.price_change_1d == null ? '' : row.price_change_1d >= 0 ? 'up' : 'down'"><small class="mobile-label">涨跌幅</small>{{ formatMarketPercent(row.price_change_1d == null ? null : String(row.price_change_1d), 'ratio', true) }}</div>
+        <div class="list-reference"><small>{{ reference(row.symbol).label }}</small><strong>{{ reference(row.symbol).text }}</strong></div>
+        <div class="list-periods"><button v-for="period in periods" :key="period" :class="homePeriodDisplay(fact(row.symbol, period)).tone" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}${periodLabel(period)}线${homePeriodDisplay(fact(row.symbol, period)).label}，查看图表`" :title="`${periodLabel(period)}线 · ${homePeriodDisplay(fact(row.symbol, period)).label}`" @click="emit('chart', row.symbol, strategy, period)"><span>{{ periodLabel(period) }}</span><b>{{ homePeriodDisplay(fact(row.symbol, period)).icon }}</b></button></div>
+        <div class="list-direction" :class="direction(row.symbol).tone" title="日周已就绪策略状态汇总：建仓/持有为上行侧，清仓/空仓为下行侧；不是预测信号。"><small class="mobile-label">趋势方向</small>{{ direction(row.symbol).label }}</div>
       </div>
-      <button class="card-expand" :aria-expanded="preference(row.symbol).expanded" :aria-controls="`card-${row.symbol}`" @click="update(row.symbol, { expanded: !preference(row.symbol).expanded })">{{ preference(row.symbol).expanded ? '收起策略详情 −' : '展开策略详情 ＋' }}</button>
-      <div v-if="preference(row.symbol).expanded" :id="`card-${row.symbol}`" class="strategy-card-details">
-        <section v-for="strategy in strategies" :key="strategy.code" class="trade-card" :aria-label="`${row.product_name}${strategy.label}`">
-          <header class="trade-card-header"><strong>{{ strategy.label }}</strong><div class="period-switch" :aria-label="`${strategy.label}周期`"><button v-for="period in ['1d', '1w'] as const" :key="period" :aria-pressed="preference(row.symbol)[strategy.code] === period" @click="update(row.symbol, { [strategy.code]: period })">{{ period === '1d' ? '日线' : '周线' }}</button></div><span class="card-status" :class="stateClass(selected(row.symbol, strategy.code))">{{ status(selected(row.symbol, strategy.code)) }}</span></header>
-          <ol class="card-progress" aria-label="策略阶段"><li v-for="step in steps" :key="step" :class="{ active: selected(row.symbol, strategy.code)?.status === 'ready' && selected(row.symbol, strategy.code)?.state === step }" :aria-current="selected(row.symbol, strategy.code)?.status === 'ready' && selected(row.symbol, strategy.code)?.state === step ? 'step' : undefined"><i :class="step.toLowerCase()">{{ icons[step] }}</i><span>{{ labels[step] }}</span></li></ol>
-          <dl class="card-prices"><div><dt>目标价</dt><dd>{{ price(selected(row.symbol, strategy.code)?.target) }}</dd></div><div><dt>吸筹价</dt><dd>{{ price(selected(row.symbol, strategy.code)?.absorb) }}</dd></div><div><dt>参考成本</dt><dd>{{ price(selected(row.symbol, strategy.code)?.reference_cost) }}</dd></div><div><dt>目标空间</dt><dd>{{ space(selected(row.symbol, strategy.code)?.target_space_percent) }}</dd></div></dl>
-          <p class="card-facts">{{ selected(row.symbol, strategy.code)?.physical_contract ?? '合约待确认' }} · 策略截至 {{ date(selected(row.symbol, strategy.code)?.bar_end) }}<span v-if="selected(row.symbol, strategy.code)?.freshness === 'pending_update'"> · 等待最新周期更新</span></p>
-          <p class="card-facts">最近动作：{{ selected(row.symbol, strategy.code)?.recent_action ? `${labels[selected(row.symbol, strategy.code)!.recent_action!.kind]} · ${date(selected(row.symbol, strategy.code)?.recent_action?.bar_end)}` : '—' }}</p>
-          <footer><small>页面参考价格 · 非成交成本</small><button @click="emit('chart', row.symbol, strategy.code, preference(row.symbol)[strategy.code])">查看图表 →</button></footer>
-        </section>
+      <div class="list-notices" role="status">
+        <span v-if="homeDeliveryNotice(deliveries[row.symbol])">{{ homeDeliveryNotice(deliveries[row.symbol]) }}</span>
+        <span v-if="row.liveQuote && liveStale">断线保留最新完成报价</span>
+        <span v-if="pending(row.symbol)">等待最新周期更新</span>
+        <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ homePeriodDisplay(fact(row.symbol, period)).label }}</span>
       </div>
+      <details class="list-details"><summary>来源与合约详情</summary>
+        <p>{{ row.liveQuote ? `最新完成行情 · ${formatBeijingInstant(row.liveQuote.barEnd)}` : `日线收盘报价 · ${row.data_as_of}` }} · {{ row.liveQuote?.physicalContract ?? row.actual_contract }}</p>
+        <p v-for="period in periods" :key="period">{{ periodLabel(period) }}线 · {{ homePeriodDisplay(fact(row.symbol, period)).label }} · {{ fact(row.symbol, period)?.physical_contract ?? '合约待确认' }} · 截至 {{ formatBeijingInstant(fact(row.symbol, period)?.bar_end) }}<br>来源 {{ fact(row.symbol, period)?.source_identity ?? '—' }} · 计算段 {{ fact(row.symbol, period)?.calculation_segment_id ?? '—' }}</p>
+        <p>页面参考价格 · 非成交成本</p>
+      </details>
     </article>
   </section>
 </template>
 
 <style scoped>
-.strategy-cards-toolbar>div{display:flex;flex-wrap:wrap;align-items:center;gap:4px}.strategy-cards-toolbar{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin:12px 0;color:var(--gy-text-secondary);font-size:12px}.strategy-cards-toolbar button{margin-left:6px;border:1px solid var(--gy-border);border-radius:8px;padding:5px 9px;background:var(--gy-bg-panel);color:inherit}.strategy-cards-toolbar button[aria-pressed=true]{color:#007aff;border-color:#007aff}.strategy-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}.strategy-card{background:var(--gy-bg-panel,#fff);border:1px solid var(--gy-border,#e8e8ed);border-radius:14px;overflow:hidden}.strategy-card-header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;gap:12px}.strategy-card-name{display:grid;text-align:left;gap:5px;background:none;border:0;color:inherit;cursor:pointer}.strategy-card-name strong{font-size:17px}.strategy-card-name span,.strategy-card-quote small{font-size:11px;color:var(--gy-text-secondary)}.strategy-card-quote{display:grid;grid-template-columns:auto auto;text-align:right;gap:4px 9px;align-items:baseline}.strategy-card-quote strong{font-size:20px;font-variant-numeric:tabular-nums}.strategy-card-quote span{font-size:13px}.strategy-card-quote small{grid-column:1/-1}.up{color:#ff3b30}.down{color:#34a866}.strategy-card-summary{padding:0 16px 10px;display:grid;gap:8px}.strategy-card-summary>div{display:flex;align-items:center;gap:8px}.strategy-card-summary b{font-size:12px;margin-right:auto}.card-status{font-size:11px;padding:3px 8px;border-radius:8px;font-weight:600;white-space:nowrap}.build{color:#ff3b30;background:#ffebee}.hold{color:#df8100;background:#fff3e0}.clear{color:#26964a;background:#e8f5e9}.flat{color:#007aff;background:#e8f0fe}.pending{color:#888;background:#f0f0f3}.card-expand{border:0;border-top:1px solid var(--gy-border,#eee);background:none;width:100%;padding:9px;color:var(--gy-text-secondary);font-size:11px;cursor:pointer}.strategy-card-details{padding:0 12px 4px}.trade-card{border:1px solid var(--gy-border,#e8e8ed);border-radius:12px;padding:12px 14px;margin:0 0 8px}.trade-card-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.trade-card-header>strong{font-size:13px;margin-right:auto}.period-switch{display:flex;border-radius:7px;background:var(--gy-bg-body,#f5f5f7);padding:2px}.period-switch button{border:0;border-radius:5px;background:none;padding:4px 7px;color:var(--gy-text-secondary);font-size:11px}.period-switch button[aria-pressed=true]{color:#007aff;background:var(--gy-bg-panel,#fff);box-shadow:0 1px 4px #0001}.card-progress{display:flex;list-style:none;padding:0;margin:14px 0 12px}.card-progress li{position:relative;display:grid;justify-items:center;gap:5px;flex:1;opacity:.38;font-size:10px}.card-progress li:before{content:'';position:absolute;height:2px;top:11px;background:var(--gy-border,#e8e8ed);width:100%}.card-progress li:first-child:before{left:50%;width:50%}.card-progress li:last-child:before{right:50%;width:50%}.card-progress i{z-index:1;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;font-style:normal}.card-progress li.active{opacity:1;font-weight:600}.card-progress .active i{transform:scale(1.12)}.card-prices{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;border-top:1px solid var(--gy-border,#eee);padding-top:10px;margin:0 0 10px}.card-prices dt{font-size:10px;color:var(--gy-text-secondary)}.card-prices dd{margin:4px 0 0;font-size:14px;font-weight:600;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.card-facts{font-size:10px;color:var(--gy-text-secondary);line-height:1.5;margin:4px 0;overflow-wrap:anywhere}.trade-card footer{display:flex;align-items:center;justify-content:space-between;margin-top:9px;gap:4px}.trade-card footer small{font-size:10px;color:var(--gy-text-secondary)}.trade-card footer button{border:0;background:none;color:#007aff;font-size:11px;padding:4px 0;cursor:pointer}.card-notice{color:#a56500;background:#fff7e8;font-size:11px;margin:0 16px 8px;padding:6px 8px;border-radius:6px}button:focus-visible{outline:2px solid #007aff;outline-offset:2px}@media(max-width:767px){.strategy-cards{grid-template-columns:minmax(0,1fr);gap:9px}.strategy-card-header{padding:12px}.strategy-card-summary{padding:0 12px 10px}.trade-card{padding:12px}.strategy-card-quote strong{font-size:18px}}
+.strategy-list-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0;color:var(--gy-text-secondary);font-size:12px}
+.strategy-switch,.strategy-sort{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.strategy-list-toolbar button{border:1px solid var(--gy-border);border-radius:7px;padding:5px 9px;background:var(--gy-bg-panel);color:inherit;cursor:pointer}
+.strategy-list-toolbar button[aria-pressed=true]{color:#007aff;border-color:#007aff}
+.strategy-list{background:var(--gy-bg-panel,#fff);border:1px solid var(--gy-border,#e8e8ed);border-radius:12px;overflow:hidden}
+.strategy-list-columns,.strategy-list-row{display:grid;grid-template-columns:minmax(100px,1.2fr) minmax(78px,1fr) minmax(74px,.8fr) minmax(95px,1fr) 100px minmax(88px,.9fr);gap:10px;align-items:center;padding:10px 14px}
+.strategy-list-columns{font-size:11px;color:var(--gy-text-secondary);background:var(--gy-bg-body,#f5f5f7)}
+.strategy-list-item+.strategy-list-item{border-top:1px solid var(--gy-border,#e8e8ed)}
+.strategy-list-row{min-height:54px;font-size:13px;font-variant-numeric:tabular-nums}
+.product-name{display:flex;align-items:baseline;gap:7px;text-align:left;background:none;border:0;color:inherit;cursor:pointer;padding:0}
+.product-name strong{font-size:14px}.product-name small,.list-reference small{font-size:10px;color:var(--gy-text-secondary)}
+.list-price strong{font-size:15px}.list-reference{display:grid;gap:3px}.list-reference strong{font-size:13px}
+.list-periods{display:flex;gap:5px}.list-periods button{display:flex;align-items:center;justify-content:center;gap:5px;border:0;border-radius:6px;padding:5px 7px;cursor:pointer;font-size:11px}.list-periods b{font-size:13px}
+.up{color:#e63830}.down{color:#26964a}.mixed{color:#a56500}.build{color:#e63830;background:#ffebee}.hold{color:#c77900;background:#fff3e0}.clear{color:#26964a;background:#e8f5e9}.flat{color:#007aff;background:#e8f0fe}.pending{color:var(--gy-text-secondary,#888);background:var(--gy-bg-body,#f0f0f3)}
+.list-notices{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:#a56500;padding:0 14px}.list-notices:has(span){padding-bottom:7px}
+.list-details{font-size:10px;color:var(--gy-text-secondary);padding:0 14px 8px;line-height:1.6;overflow-wrap:anywhere}.list-details summary{cursor:pointer;width:fit-content}.list-details p{margin:6px 0}.mobile-label{display:none}button:focus-visible,summary:focus-visible{outline:2px solid #007aff;outline-offset:2px}
+@media(max-width:767px){.strategy-list-columns{display:none}.strategy-list-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:10px 7px;padding:11px 12px}.product-name{display:grid;gap:3px}.mobile-label{display:block;font-size:10px;color:var(--gy-text-secondary);margin-bottom:3px}.list-price,.list-change{text-align:right}.list-periods{justify-content:center}.list-direction{text-align:right;font-size:12px}.list-notices,.list-details{padding-left:12px;padding-right:12px}.strategy-sort{font-size:11px}.strategy-list-toolbar button{padding:5px 7px}}
 </style>

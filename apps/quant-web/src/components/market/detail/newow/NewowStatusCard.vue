@@ -3,14 +3,15 @@ import type { deriveBasisDecision } from '@/utils/newowBasisDecision'
 import { computed, ref, watch, useId } from 'vue'
 import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { buildStatusCard } from '@/utils/newowStatusCardPresentation'
-import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
+import { formatBeijingInstant } from '@/utils/marketDisplay'
+import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { decisionFactAge } from '@/utils/newowDecisionV2Presentation'
-const props=defineProps<{ decision:NewowDecisionV2|null; strategy:string; loading:boolean; error:string; background?:boolean; basis?:'week'|'day'; dominant?:'trend'|'oscillation'|null; basisDecision?:ReturnType<typeof deriveBasisDecision> }>()
+const props=defineProps<{ decision:NewowDecisionV2|null; strategy:string; loading:boolean; error:string; background?:boolean; backgroundLabel?:string; currentState?:string; mainRiseBackground?:boolean; basis?:'week'|'day'; dominant?:'trend'|'oscillation'|null; basisDecision?:ReturnType<typeof deriveBasisDecision> }>()
 const emit=defineEmits<{retry:[]}>()
 const bodyId=useId(), explanationId=useId()
 function preference() { try { return typeof localStorage!=='undefined'&&localStorage.getItem('guiyi_newow_status_card_collapsed')==='1' } catch { return false } }
 const collapsed=ref(preference()), expanded=ref(false)
-const card=computed(()=>buildStatusCard(props.decision,props.strategy,props.basisDecision ?? undefined))
+const card=computed(()=>buildStatusCard(props.decision,props.strategy,props.basisDecision ?? undefined, props.mainRiseBackground === true))
 const color=computed(()=>props.basisDecision?.stance.color ?? ({bullish:'#ff3b30',cautious:'#ff9500',warning:'#ff6b35',bearish:'#34c759',unknown:'#8e8e93'}[card.value.risk]))
 function toggle() { collapsed.value=!collapsed.value; try { localStorage.setItem('guiyi_newow_status_card_collapsed',collapsed.value?'1':'0') } catch { /* restricted storage: presentation still works */ } }
 watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false})
@@ -18,11 +19,12 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
 <template>
  <section class="newow-status-card" :aria-label="strategy==='oscillation'?'周日小时状态摘要':'日周状态摘要'" :data-risk="card.risk" :style="{ '--status-color':color }">
   <button type="button" class="newow-status-card__header" :aria-expanded="!collapsed" :aria-controls="bodyId" :aria-label="collapsed?'展开状态摘要':'收起状态摘要'" @click="toggle">
-   <span v-if="background">日周背景</span>
+   <span v-if="background || backgroundLabel">{{ backgroundLabel ?? '日周背景' }}</span>
+   <strong v-if="currentState">主升浪 · {{ currentState }}</strong>
    <strong>{{ loading?'状态读取中':card.name }}</strong>
    <span class="newow-status-card__tag" :data-state="card.week.state">周:{{ card.week.label }}</span>
    <span class="newow-status-card__tag" :data-state="card.day.state">日:{{ card.day.label }}</span>
-   <span class="newow-status-card__tag" :data-state="card.hour.state">时:{{ card.hour.label }}</span>
+   <span v-if="strategy==='oscillation'" class="newow-status-card__tag" :data-state="card.hour.state">时:{{ card.hour.label }}</span>
    <span class="newow-status-card__risk"><i aria-hidden="true" />{{ card.riskLabel }}</span>
    <span class="newow-status-card__exposure">建议仓位 {{ card.exposure }} <small>参考强度</small></span>
    <span class="newow-status-card__arrow" aria-hidden="true" :class="{collapsed}">▾</span>
@@ -35,9 +37,9 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
     <p class="newow-status-card__advice">{{ card.advice }}</p>
     <template v-if="card.progress">
      <div class="newow-status-card__prices">
-      <span>{{ card.progress.leftLabel }} <b>{{ formatMarketDecimal(card.progress.leftPrice.display_value??card.progress.leftPrice.raw) }}</b></span>
+      <span>{{ card.progress.leftLabel }} <b>{{ newowReferencePrice(card.progress.leftPrice.display_value??card.progress.leftPrice.raw) }}</b></span>
       <div class="newow-status-card__track" role="progressbar" aria-label="参考价格区间进度" :aria-valuenow="Number(card.progress.progress)" :aria-valuemin="0" :aria-valuemax="100"><i :style="{width:card.progress.progress+'%'}"/><em :style="{left:card.progress.progress+'%'}"/></div>
-      <span>{{ card.progress.rightLabel }} <b>{{ formatMarketDecimal(card.progress.rightPrice.display_value??card.progress.rightPrice.raw) }}</b> ~</span>
+      <span>{{ card.progress.rightLabel }} <b>{{ newowReferencePrice(card.progress.rightPrice.display_value??card.progress.rightPrice.raw) }}</b> ~</span>
      </div>
      <div class="newow-status-card__statistics"><span>{{ card.progress.leftStatisticLabel }} <b>{{ card.progress.leftStatistic }}</b></span><span>{{ card.progress.rightStatisticLabel }} <b>{{ card.progress.rightStatistic }}</b></span></div>
     </template>

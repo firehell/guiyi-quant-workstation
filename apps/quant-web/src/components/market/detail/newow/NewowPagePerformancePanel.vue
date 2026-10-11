@@ -2,7 +2,7 @@
 import { newowReferencePrice, newowReferencePercent } from '@/utils/newowPagePresentation'
 import { computed, ref, watch, useId } from 'vue'
 import type { PagePerformance } from '@/utils/newowPagePerformance'
-import { pagePerformancePlot } from '@/utils/newowPagePerformance'
+import { pagePerformancePlot, pagePerformanceAnnualized } from '@/utils/newowPagePerformance'
 import { newowReferenceWindow } from '@/utils/newowReferenceWindows'
 const props = defineProps<{ value: PagePerformance | null | undefined; since?: string; through?: string; floor?: string; loading?: boolean }>()
 const emit = defineEmits<{ reload: [window: {performanceSince: string; performanceThrough: string}] }>()
@@ -12,6 +12,7 @@ const analysisOpen = ref(false)
 const gradientId = `page-return-${useId()}`
 const windowSelection = ref('all')
 const active = computed(() => props.value?.[selection.value] ?? null)
+const annualized = computed(() => pagePerformanceAnnualized(active.value))
 const periodLabels: Readonly<Record<string, string>> = {
   day: '日K', week: '周K', hour: '60分',
   '1d': '日K', '1w': '周K', '5m': '5分', '15m': '15分', '30m': '30分', '60m': '60分',
@@ -55,13 +56,13 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
 </script>
 <template>
   <section class="page-performance newow-reference" aria-label="公开页面收益投影" :aria-busy="loading">
-    <header class="newow-reference__returns-heading"><strong>策略收益率走势</strong><button type="button" class="newow-reference__analysis-link" @click="analysisOpen = true">收益分析 ›</button></header>
+    <header class="newow-reference__returns-heading"><strong>策略收益率走势</strong><span class="newow-reference__annualized" title="当前页面曲线按自然日折算的年化，零手续费与滑点">年化{{ annualized === null ? ' --' : `${annualized.toFixed(1)}%` }}</span><button type="button" class="newow-reference__analysis-link" @click="analysisOpen = true">收益分析 ›</button></header>
     <div v-if="value" class="newow-reference__presets page-performance__toolbar" aria-label="页面统计快捷窗口">
       <button v-for="item in ([['three_months','近3月'], ['one_year','近1年'], ['three_years','近3年'], ['ytd','今年']] as const)" :key="item[0]" type="button" :aria-pressed="windowSelection === item[0]" :disabled="loading || !through" @click="preset(item[0])">{{ item[1] }}</button>
       <button type="button" class="newow-reference__ideal" :aria-pressed="selection === 'ideal'" @click="selection = selection === 'ideal' ? 'ordinary' : 'ideal'">理论值</button>
       <button type="button" :aria-pressed="windowSelection === 'all'" :disabled="loading || !through" @click="preset('all')">全部</button>
     </div>
-    <details class="page-performance__disclosure"><summary>页面参考口径</summary><p>页面乐观收益 · 零手续费、零滑点；{{ selection === 'ideal' ? idealExplanation : '包含末根估值平仓' }}，不代表模拟账户或可执行收益。</p></details>
+    <details class="page-performance__disclosure"><summary>详情与口径</summary><p>页面乐观收益 · 零手续费、零滑点；{{ selection === 'ideal' ? idealExplanation : '包含末根估值平仓' }}，不代表模拟账户或可执行收益。</p></details>
     <p v-if="!active" role="status">{{ loading ? '正在读取页面收益投影…' : '当前页面收益投影不可用。' }}</p>
     <template v-else>
 

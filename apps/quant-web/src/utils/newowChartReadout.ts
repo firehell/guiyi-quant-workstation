@@ -1,3 +1,4 @@
+import { newowReferencePrice } from './newowPagePresentation.ts'
 import type { Time } from 'lightweight-charts'
 import type { NewowProductChartModel, NewowAlignedAuxiliaryChartModel } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
 import { chartMarkerTime } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
@@ -14,7 +15,8 @@ export function newowChartReadout(model: NewowProductChartModel | null, auxiliar
   const bar = model.bars.find(item => newowTimeKey(chartMarkerTime(item.barEnd, model.identity.frequency, item.tradingDay)) === key)
   if (!bar) return []
   const number = (value: number) => Number.isFinite(value) ? String(value) : '—'
-  const rows = [bar.tradingDay, bar.physicalContract, `开 ${number(bar.open)} 高 ${number(bar.high)} 低 ${number(bar.low)} 收 ${number(bar.close)}`, `量 ${number(bar.volume)}`]
+  const price = (key: 'open' | 'high' | 'low' | 'close') => newowReferencePrice(bar.displayPrices?.[key] ?? String(bar[key]))
+  const rows = [bar.tradingDay, bar.physicalContract, `开 ${price('open')} 高 ${price('high')} 低 ${price('low')} 收 ${price('close')}`, `量 ${number(bar.volume)}`]
   const labels = new Set((auxiliary?.series ?? []).map(series => series.label))
   for (const label of labels) {
     const points = (auxiliary?.series ?? []).filter(series => series.label === label)

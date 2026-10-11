@@ -1,3 +1,5 @@
+import { newowReferencePrice } from './newowPagePresentation.ts'
+
 export type HomeStrategy = 'trend' | 'oscillation'
 export type HomePeriod = '1d' | '1w'
 export type HomeState = 'BUILD' | 'HOLD' | 'CLEAR' | 'FLAT'
@@ -28,6 +30,36 @@ export interface HomePeriodFact {
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
 export interface HomeCardsResponse { schema_version: 'newow_home_cards_v1'; requested_at: string; items: HomeCard[] }
 export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean }
+
+export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
+export const homeStateIcons = { BUILD: '▲', HOLD: '✓', CLEAR: '↘', FLAT: '○' } as const
+
+/** Presentation of the explicit daily state, never a new strategy calculation. */
+export function homeReferenceDisplay(fact?: HomePeriodFact) {
+  const target = fact?.status === 'ready' && (fact.state === 'BUILD' || fact.state === 'HOLD')
+  const absorb = fact?.status === 'ready' && (fact.state === 'CLEAR' || fact.state === 'FLAT')
+  return { label: target ? '目标' : absorb ? '吸筹' : '目标/吸筹', text: newowReferencePrice(target ? fact?.target : absorb ? fact?.absorb : null).replace(/^—$/, '--') }
+}
+
+export function homePeriodDisplay(fact?: HomePeriodFact) {
+  if (fact?.status === 'ready' && fact.state) return { label: homeStateLabels[fact.state], icon: homeStateIcons[fact.state], tone: fact.state.toLowerCase() }
+  return { label: fact?.status === 'warming' ? '预热中' : fact ? '不可用' : '加载中', icon: '—', tone: 'pending' }
+}
+
+/** Day/week state alignment only. It does not infer a trend from price or scores. */
+export function homeDirectionDisplay(day?: HomePeriodFact, week?: HomePeriodFact) {
+  const identified = (fact?: HomePeriodFact): fact is HomePeriodFact & { state: HomeState } => Boolean(fact?.status === 'ready' && fact.state && fact.physical_contract && fact.segment_id && fact.calculation_segment_id && fact.input_sha256 && fact.formula_versions?.length)
+  if (!identified(day) || !identified(week)) return { label: '待确认', tone: 'pending' }
+  const up = (state: HomeState) => state === 'BUILD' || state === 'HOLD'
+  if (up(day.state) !== up(week.state)) return { label: '日周分歧', tone: 'mixed' }
+  return up(day.state) ? { label: '日周向上', tone: 'up' } : { label: '日周向下', tone: 'down' }
+}
+
+export function homeDeliveryNotice(delivery?: CardDelivery) {
+  if (delivery?.stale) return delivery.loading ? '策略刷新中，保留上次快照' : '策略刷新失败，保留上次快照'
+  if (delivery?.failed) return '策略读取失败，可刷新重试'
+  return delivery?.loading || !delivery ? '策略读取中' : null
+}
 
 export function normalizeHomeCards(value: unknown, products: readonly string[]): HomeCardsResponse {
   const response = value as HomeCardsResponse

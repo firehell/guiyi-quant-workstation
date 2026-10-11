@@ -6,8 +6,9 @@ import type {
   NewowReferenceTrade,
   NewowResourceLifecycle,
 } from '../types/newowProduct.ts'
+import { newowReferencePrice } from './newowPagePresentation.ts'
 import { newowErrorDisplay } from './newowDataDiagnostics.ts'
-import { formatBeijingInstant, formatDecimalText, formatMarketDecimal } from './marketDisplay.ts'
+import { formatBeijingInstant, formatDecimalText } from './marketDisplay.ts'
 
 export interface NewowProductSectionViewModel {
   readonly section: NewowProductSection
@@ -464,7 +465,7 @@ function referenceRow(
     returnText: percentage,
     valuationText: trade.mark_bar_end === null || trade.mark_reference_price === null
       ? `不可用${trade.interruption_reason === null ? '' : `（${trade.interruption_reason}）`}`
-      : `${trade.mark_bar_end} · ${formatMarketDecimal(trade.mark_reference_price)}`,
+      : `${trade.mark_bar_end} · ${newowReferencePrice(trade.mark_reference_price)}`,
     hints: trade.hint_ids.map((id) => {
       const fact = loadedHints.get(id) ?? null
       if (!crossSectionCompatible) {

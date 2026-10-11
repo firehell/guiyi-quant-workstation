@@ -333,3 +333,38 @@ test('relocated path shares decision generation and clears when switching or unm
  assert.equal(contexts.at(-1).decision,null);assert.equal(contexts.at(-1).loading,true)
  app.unmount();assert.deepEqual(contexts.at(-1),{decision:null,loading:false,error:''})
 })
+
+
+test('explicit main-rise background binds request cutoff and owner; segment switches reject mismatched explanations', async () => {
+ const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root'), before=mock.calls.length
+ const owner=ref({asOf:input().meta.as_of,physicalContract:'JM2701',segmentId:'owner'}), contexts:any[]=[]
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input(),displayStrategy:'main_rise',mainRiseBackground:true,backgroundLabel:'趋势日周背景',currentState:'持有',expectedOwner:owner.value,showPath:false,onPathContext:(v:any)=>contexts.push(v)})}))
+ app.mount(root)
+ assert.equal(mock.calls[before].request.asOf,owner.value.asOf)
+ const first=output();first.value.decision_v2.cdv2.as_of=mock.calls[before].request.asOf
+ mock.calls[before].resolve(first);await nextTick();await nextTick()
+ assert.match(nodeText(root),/趋势日周背景/);assert.match(nodeText(root),/主升浪.*持有/)
+ assert.equal(contexts.at(-1).decision.cdv2.total,78)
+ owner.value={...owner.value,segmentId:'different'};await nextTick()
+ assert.equal(contexts.at(-1).decision,null)
+ const wrong=output();wrong.value.decision_v2.cdv2.as_of=mock.calls[before+1].request.asOf
+ mock.calls[before+1].resolve(wrong);await nextTick();await nextTick()
+ assert.equal(contexts.at(-1).decision,null);assert.match(contexts.at(-1).error,/快照不一致/)
+ app.unmount()
+})
+
+test('quality-only shared background switches clear the old state card and validate the new calculation owner',async()=>{
+ const Panel=await component('newow/NewowDecisionV2Panel'),root=element('root'),before=mock.calls.length
+ const owner=ref({asOf:input().meta.as_of,physicalContract:'JM2701',segmentId:'owner',calculationSegmentId:'quality',frequency:'1d'}),contexts:any[]=[]
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input(),displayStrategy:'main_rise',mainRiseBackground:true,expectedOwner:owner.value,onPathContext:(v:any)=>contexts.push(v)})}))
+ app.mount(root)
+ const first=output() as any;first.value.decision_v2.cdv2.as_of=owner.value.asOf
+ first.value.decision_v2.prices={current_price:{physical_contract:'JM2701',segment_id:'owner',calculation_segment_id:'quality',frequency:'1d',raw:'100',display_value:'100'},shared:{target:null,absorb:null},status_card:{target:null,absorb:null}}
+ mock.calls[before].resolve(first);await nextTick();await nextTick()
+ assert.ok(contexts.at(-1).decision)
+ owner.value={...owner.value,calculationSegmentId:'next-quality'};await nextTick()
+ assert.equal(contexts.at(-1).decision,null);assert.equal(mock.calls.length,before+2)
+ mock.calls[before+1].resolve(first);await nextTick();await nextTick()
+ assert.equal(contexts.at(-1).decision,null);assert.match(contexts.at(-1).error,/快照不一致/)
+ app.unmount()
+})

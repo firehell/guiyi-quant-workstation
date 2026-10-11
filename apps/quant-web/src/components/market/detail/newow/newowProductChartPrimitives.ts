@@ -16,11 +16,12 @@ import type {
   NewowResourceLifecycle,
 } from '../../../../types/newowProduct.ts'
 import { chartCoordinate } from '../../../../utils/newowProductTypes.ts'
-import { formatDecimalText } from '../../../../utils/marketDisplay.ts'
+import { newowReferencePrice } from '../../../../utils/newowPagePresentation.ts'
 
 export interface NewowProductChartBar {
   readonly barEnd: string
   readonly tradingDay: string
+  readonly displayPrices?: Readonly<Record<'open' | 'high' | 'low' | 'close', string>>
   readonly open: number
   readonly high: number
   readonly low: number
@@ -130,6 +131,7 @@ export function buildNewowProductChartModel(
   const bars = value.bars.map((bar): NewowProductChartBar => ({
     barEnd: bar.bar_end,
     tradingDay: bar.trading_day,
+    displayPrices: { open: bar.open, high: bar.high, low: bar.low, close: bar.close },
     open: chartCoordinate(bar.open),
     high: chartCoordinate(bar.high),
     low: chartCoordinate(bar.low),
@@ -269,7 +271,7 @@ export function buildNewowActionCallouts(
     physicalContract: action.physicalContract,
     price: action.referencePrice,
     title: newowInitialClearLabel(action.tradeEligibility) ?? (action.kind === 'BUILD' ? '建仓' : '清仓'),
-    detail: `参考价 ${formatDecimalText(action.referencePrice, { maximumFractionDigits: 0 })}`,
+    detail: `参考价 ${newowReferencePrice(action.referencePrice)}`,
     tone: action.kind === 'BUILD' ? 'gain' : 'loss',
     above: action.kind === 'CLEAR',
   }))

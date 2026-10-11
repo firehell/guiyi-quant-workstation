@@ -35,3 +35,19 @@ test('physical segments with the same legend yield one exact-time reading', () =
   const aux = { series } as unknown as Parameters<typeof newowChartReadout>[1]
   assert.deepEqual(newowChartReadout(model, aux, date).filter(row => row.startsWith('DIF')), ['DIF 12'])
 })
+
+
+test('OHLC cursor prices keep server Decimal text, fixed two digits, and unrounded coordinates', () => {
+  const raw = buildNewowFixtureEnvelopeForTest('chart')
+  const last = raw.chart.value.bars.at(-1)!
+  last.open = '9007199254740993.125'
+  last.high = '123.456789'
+  last.low = '100'
+  last.close = '101.005'
+  const model = buildNewowProductChartModel({ meta: raw.meta, section: 'chart', ...raw.chart })
+  const bar = model.bars.at(-1)!
+  assert.equal(newowChartReadout(model, null, bar.tradingDay)[2], '开 9007199254740993.13 高 123.46 低 100.00 收 101.01')
+  assert.equal(bar.high, 123.456789)
+  assert.equal(bar.displayPrices?.open, last.open)
+  assert.equal(last.close, '101.005')
+})

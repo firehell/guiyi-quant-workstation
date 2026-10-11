@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { deriveBasisDecision } from '@/utils/newowBasisDecision'
+import { previewInstant } from '@/utils/candidatePreviewInstant'
 import { historicalAnalysisAsOf } from '@/api/newowAiAnalysis'
 import { ref, computed, watch, onBeforeUnmount, useId } from 'vue'
+import { newowReferencePrice } from '@/utils/newowPagePresentation'
+import { sharedDecisionForOwner, type NewowDisplayOwner } from '@/utils/newowSharedPresentation'
 import NewowStatusCard from './NewowStatusCard.vue'
 import NewowDailyWeeklyPath from './NewowDailyWeeklyPath.vue'
 import { NewowProductRequestError, getNewowProductSection } from '@/api/newowProduct'
 import type { NewowProductSectionResponse, NewowProductFrequency } from '@/types/newowProduct'
 import type { NewowDecisionV2, DecisionPriceSource } from '@/types/newowDecisionV2'
-import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
+import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean }>(), { showPath: true })
+const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true })
 const emit = defineEmits<{ 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
-const decisionAsOf = computed(() => props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
+const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.asOf : props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
@@ -22,7 +25,7 @@ const bodyId = useId(), evidenceId = useId()
 watch([result, loading, error], () => emit('path-context', { decision: result.value, loading: loading.value, error: error.value }), { flush: 'sync' })
 function toggleCard() { collapsed.value = !collapsed.value }
 let generation = 0, controller: AbortController | null = null
-watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value].join('|'), () => {
+watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value, props.expectedOwner?.physicalContract, props.expectedOwner?.segmentId, props.expectedOwner?.calculationSegmentId, props.expectedOwner?.frequency].join('|'), () => {
   generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; evidenceExpanded.value = false; collapsed.value = true
   void load()
 }, { immediate: true })
@@ -34,6 +37,8 @@ async function load() {
     const asOf = decisionAsOf.value
     const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, asOf, ...(!context.value.background && asOf === props.response.meta.as_of && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal })
     if (next.section !== 'explanation' || !next.value?.decision_v2) throw new Error('missing decision')
+    if (props.expectedOwner && previewInstant(props.expectedOwner.asOf) !== previewInstant(props.response.meta.as_of)) throw new Error('shared cutoff mismatch')
+    if (props.expectedOwner && !sharedDecisionForOwner(next.value.decision_v2, props.expectedOwner, props.mainRiseBackground ? 'trend' : 'oscillation')) throw new Error('shared owner mismatch')
     if (token === generation) result.value = next.value.decision_v2
   } catch (failure) {
     if (token === generation) error.value = failure instanceof NewowProductRequestError && failure.classification === 'busy' ? '图表仍在计算，请稍后重试综合解释。' : '综合解释读取失败或输入快照不一致，请刷新后重试。'
@@ -57,7 +62,7 @@ const chipColor = (axis: string, period: string) => {
   const state = axis === 'trend' ? cd.value?.trend_state?.[period] : cd.value?.oscillation_state?.[period]
   return state === 'up' || state === 'holding' ? '#ff3b30' : state === 'down' || state === 'cleared' ? '#34c759' : '#8e8e93'
 }
-const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarketDecimal(p.display_value ?? p.raw) : '—'
+const showPrice = (p: DecisionPriceSource | null | undefined) => p ? newowReferencePrice(p.display_value ?? p.raw) : '—'
 </script>
 
 <template>
@@ -136,7 +141,7 @@ const showPrice = (p: DecisionPriceSource | null | undefined) => p ? formatMarke
     </div>
     <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
-  <div v-show="showStatus" data-testid="status-card-surface"><NewowStatusCard :background="context.background" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
+  <div v-show="showStatus" data-testid="status-card-surface"><NewowStatusCard :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
   <NewowDailyWeeklyPath v-if="showPath !== false" :decision="result" :loading="loading" :error="error" />
 </template>
 
