@@ -280,7 +280,7 @@ class NewowForwardBootstrap:
                 or expected_plan_hash != plan.get("plan_hash")):
             raise RepositoryConflict("PLAN_HASH_CONFLICT")
         with self._factory() as session, session.begin():
-            if session.get_bind().dialect.name == "sqlite":
+            if session.get_bind().dialect.name == "sqlite" and not isinstance(session, _BorrowedSession):
                 # sqlite legacy mode otherwise commits the first SAVEPOINT outside BEGIN.
                 session.execute(text("BEGIN IMMEDIATE"))
             if session.get_bind().dialect.name == "postgresql":
