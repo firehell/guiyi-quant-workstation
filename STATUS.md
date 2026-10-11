@@ -4,6 +4,27 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## v1.15.3 已发布当前 develop，Runtime 保持 v1.15.1/gen12
+
+2026-10-11：[PR #441](https://github.com/firehell/guiyi-quant-workstation/pull/441) 已合并 main，
+annotated tag 与 [Release v1.15.3](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.15.3)
+精确绑定 **c28438d3d7ad6d6c66272027996f4a25e2facdfe**，发布内容与验证候选 develop
+`3de7c66c4efa3e1942eccc9480f3e9b9a2692e0b` 相同。发布树为 `.worktrees/release-v1.15.3`。
+
+包括首页全量摘要与板块筛选解耦、v2 轻摘要和展开时按需收益、120项/32MiB/5分钟会话资源复用、
+列表提示和展开导航、综合决策/AI状态卡固定显示，以及主图4/7/11、J、B、S来源标记和MA10显示。
+LMS4.0.5证据约束研究工具与焦煤42格只读页面评估同时提交；未知公式和账户执行保持未实现。
+页面参考保持 `page_parity=true`、`executable=false`，不改策略动作和参考收益语义。
+
+当前候选验证：Web 1080 passed/3 skipped；后端产品/API/LMS/工程集成204 passed，产品服务91 passed；
+类型检查、Web build/topology、Ruff、uv lock离线校验、OpenSpec11/11、secret scan0和diff检查通过。
+独立发布审查及版本/工程清单修正审查无阻断；修正了首页收益接口清单和Newow单手册检查的领域范围。
+未重跑未受影响的全量慢内核，也不把这些验证作为自然业务验收。
+
+远端main、annotated tag peeled commit和非draft/非prerelease Release身份一致。
+本次仅发布，未更改launchd、服务绑定、Scope、通知或账户；现场十服务绑定仍为v1.15.1/gen12，
+保留被引用的 `.worktrees/release-v1.15.1`。自然盘中连续性和收件人送达仍PENDING，不声明RUNTIME_READY。
+
 ## v1.15.2 已发布 develop 全部内容，Runtime 仍为 v1.15.1/gen12
 
 2026-10-11：[PR #438](https://github.com/firehell/guiyi-quant-workstation/pull/438) 已合并 main，
