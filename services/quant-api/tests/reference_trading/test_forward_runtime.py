@@ -201,25 +201,24 @@ class GroupedRepository(_Repository):
         return next(key for key, routes in self.groups.items() if stream_id in routes)
 
 
-def test_initial_blocked_group_waits_full_rotation_while_queue_size_stays_112():
+def test_source_busy_group_is_really_retried_next_round_after_source_recovers():
     from app.reference_trading.forward_inputs import ForwardInputUnavailable
     repository = GroupedRepository(count=120)
     initial_busy = [True]
-    def service(stream_id):
-        if initial_busy[0] and stream_id.startswith('000-'):
+    seen = []
+    def read(stream_id, *_args):
+        seen.append(stream_id)
+        if initial_busy[0] and stream_id in ('000-trend', '000-oscillation'):
             raise ForwardInputUnavailable('SOURCE_BUSY')
-        return _Service()
-    worker = ForwardReferenceWorker(repository, service, lambda *_args: None, enabled=True)
+    worker = ForwardReferenceWorker(repository, lambda _: _Service(), read, enabled=True)
     worker.scan()
     worker.run_round()
     initial_busy[0] = False
-    assert len(worker.health().blocked) == 4 and worker.health().pending_keys == 112
-    for _ in range(14):
-        worker.scan()
-        worker.run_round()
-        assert len(worker.health().blocked) == 4 and worker.health().pending_keys == 112
+    assert len(worker.health().blocked) == 2 and worker.health().pending_keys == 112
     worker.scan()
+    before = len(seen)
     worker.run_round()
+    assert seen[before:before + 4] == list(repository.groups["newow:p000:60m"])
     assert not worker.health().blocked and worker.health().pending_keys == 112
 
 
@@ -374,3 +373,101 @@ def test_1260_routes_share_360_keys_and_keep_fusion_after_base_without_starvatio
     for routes in repository.groups.values():
         positions = [seen.index(sid) for sid in routes]
         assert positions == sorted(positions)
+
+
+def test_source_busy_priority_does_not_starve_fifo_at_single_unit_budget():
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    seen = []
+    def read(stream, *_args):
+        seen.append(stream)
+        if stream == "a":
+            raise ForwardInputUnavailable("SOURCE_BUSY")
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(), read, enabled=True,
+        budget=WorkerBudget(max_units_per_round=1))
+    for _ in range(6):
+        worker.scan()
+        before = len(seen)
+        worker.run_round()
+        assert len(seen) - before <= 1
+    assert {"b", "c"} <= set(seen)
+    assert worker.health().blocked == (("a", "SOURCE_BUSY"),)
+
+
+def test_source_busy_retry_cannot_preempt_target_observation():
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    seen = []
+    def read(stream, *_args):
+        seen.append(stream)
+        if stream == "a":
+            raise ForwardInputUnavailable("SOURCE_BUSY")
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(), read, enabled=True,
+        budget=WorkerBudget(max_units_per_round=1))
+    worker.scan()
+    worker.run_round()
+    worker.scan()
+    worker.process_live_observation(("c",), datetime(2026, 9, 23, 1, tzinfo=UTC))
+    assert seen == ["a", "c"]
+    assert worker.health().blocked == (("a", "SOURCE_BUSY"),)
+
+
+def test_source_busy_retry_preserves_remaining_deferred_event_and_pending_capture():
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    repository = GroupedRepository(count=2)
+    pending = {'000-oscillation'}
+    repository.read_pending_capture = lambda stream: object() if stream in pending else None
+    seen, consumed = [], []
+    busy = [True]
+    class Service:
+        def process_pending(self, stream):
+            assert stream in pending
+            pending.remove(stream)
+            consumed.append(stream)
+            return object()
+    def read(stream, kind, cutoff):
+        seen.append((stream, kind, cutoff))
+        if stream == '000-trend' and busy[0]:
+            raise ForwardInputUnavailable('SOURCE_BUSY')
+    worker = ForwardReferenceWorker(repository, lambda _: Service(), read, enabled=True,
+        budget=WorkerBudget(max_units_per_round=1))
+    worker.scan()
+    worker.run_round()
+    group = 'newow:p000:60m'
+    assert worker._remaining[group] == repository.groups[group][1:]
+    cutoff = datetime(2026, 9, 23, 1, tzinfo=UTC)
+    worker.wake('000-trend', kind='live_event', bar_end=cutoff)
+    assert worker._deferred[group] == ('live_event', cutoff)
+    busy[0] = False
+    for _ in range(16):
+        before = len(seen) + len(consumed)
+        worker.run_round()
+        assert len(seen) + len(consumed) - before <= 1
+        if not worker._queue:
+            break
+    assert consumed == ['000-oscillation'] and not pending
+    assert [item for item in seen if item[1] == 'live_event'] == [
+        (stream, 'live_event', cutoff) for stream in repository.groups[group]]
+    assert not worker.health().blocked and not worker._remaining and not worker._deferred
+    assert [stream for stream, _, _ in seen if stream.startswith('001-')] == list(repository.groups['newow:p001:60m'])
+
+
+def test_retry_resolver_failure_is_fail_closed_and_never_clears_busy():
+    import pytest
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    class Repository(_Repository):
+        fail = False
+        def forward_work_key(self, stream):
+            if self.fail:
+                raise ValueError('resolver-unavailable')
+            return stream
+    repository = Repository()
+    def read(*_):
+        raise ForwardInputUnavailable('SOURCE_BUSY')
+    worker = ForwardReferenceWorker(repository, lambda _: _Service(), read, enabled=True,
+        budget=WorkerBudget(max_units_per_round=1))
+    worker.scan()
+    worker.run_round()
+    before = (tuple(worker._queue), dict(worker._queued), worker.health().blocked)
+    repository.fail = True
+    with pytest.raises(ValueError, match='resolver-unavailable'):
+        worker.run_round()
+    assert (tuple(worker._queue), dict(worker._queued), worker.health().blocked) == before
