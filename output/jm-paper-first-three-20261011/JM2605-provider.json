@@ -1,0 +1,1474 @@
+{
+  "start": "2025-12-05",
+  "end": "2026-04-16",
+  "instrument": {
+    "contract_multiplier": "60",
+    "tick_size": "<bound method Instrument.tick_size of Instrument(type='Future', order_book_id='JM2605', exchange='DCE', symbol='\u7126\u71642605', underlying_symbol='JM', product='Commodity', maturity_date='2026-05-19', de_listed_date='2026-05-19', listed_date='2025-05-20', round_lot=1, margin_rate=0.2, contract_multiplier=60, trading_code='jm2605', market_tplus=0, start_delivery_date='2026-05-22', end_delivery_date='2026-05-22', trading_hours='21:01-23:00,09:01-10:15,10:31-11:30,13:31-15:00', industry_name='\u7126\u7164\u94a2\u77ff')>"
+  },
+  "parameters": [
+    {
+      "date": "2025-12-05",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-08",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-09",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-10",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-11",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-12",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-15",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-16",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-17",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-18",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-19",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-22",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-23",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-24",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-25",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-26",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-29",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-30",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2025-12-31",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-05",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-06",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-07",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-08",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-09",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-12",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-13",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-14",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-15",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-16",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-19",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-20",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-21",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-22",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-23",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-26",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-27",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-28",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-29",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-01-30",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-02",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-03",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-04",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-05",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-06",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-09",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-10",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-11",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-12",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-13",
+      "long_margin_ratio": "0.14",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-24",
+      "long_margin_ratio": "0.14",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-25",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-26",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-02-27",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-02",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-03",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-04",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-05",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-06",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-09",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-10",
+      "long_margin_ratio": "0.12",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-11",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-12",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-13",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-16",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-17",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-18",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-19",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-20",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-23",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-24",
+      "long_margin_ratio": "0.16",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-25",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-26",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-27",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-30",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-03-31",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-01",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-02",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-03",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-07",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-08",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-09",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-10",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-13",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-14",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-15",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    },
+    {
+      "date": "2026-04-16",
+      "long_margin_ratio": "0.13",
+      "commission_type": "by_money",
+      "open_commission": "0.0001",
+      "close_commission": "0.0001",
+      "close_commission_today": "0.0001",
+      "trade_unit": "60\u5428/\u624b",
+      "price_unit": "\u5143\uff08\u4eba\u6c11\u5e01\uff09/\u5428"
+    }
+  ],
+  "daily": [
+    {
+      "date": "2025-12-05",
+      "limit_up": "1260.0",
+      "limit_down": "1074.0",
+      "settlement": "1165.0",
+      "prev_settlement": "1167.0"
+    },
+    {
+      "date": "2025-12-08",
+      "limit_up": "1258.0",
+      "limit_down": "1072.0",
+      "settlement": "1107.0",
+      "prev_settlement": "1165.0"
+    },
+    {
+      "date": "2025-12-09",
+      "limit_up": "1195.5",
+      "limit_down": "1018.5",
+      "settlement": "1084.0",
+      "prev_settlement": "1107.0"
+    },
+    {
+      "date": "2025-12-10",
+      "limit_up": "1170.5",
+      "limit_down": "997.5",
+      "settlement": "1082.5",
+      "prev_settlement": "1084.0"
+    },
+    {
+      "date": "2025-12-11",
+      "limit_up": "1169.0",
+      "limit_down": "996.0",
+      "settlement": "1062.5",
+      "prev_settlement": "1082.5"
+    },
+    {
+      "date": "2025-12-12",
+      "limit_up": "1147.5",
+      "limit_down": "977.5",
+      "settlement": "1028.5",
+      "prev_settlement": "1062.5"
+    },
+    {
+      "date": "2025-12-15",
+      "limit_up": "1110.5",
+      "limit_down": "946.5",
+      "settlement": "1053.5",
+      "prev_settlement": "1028.5"
+    },
+    {
+      "date": "2025-12-16",
+      "limit_up": "1137.5",
+      "limit_down": "969.5",
+      "settlement": "1058.5",
+      "prev_settlement": "1053.5"
+    },
+    {
+      "date": "2025-12-17",
+      "limit_up": "1143.0",
+      "limit_down": "974.0",
+      "settlement": "1062.0",
+      "prev_settlement": "1058.5"
+    },
+    {
+      "date": "2025-12-18",
+      "limit_up": "1146.5",
+      "limit_down": "977.5",
+      "settlement": "1108.0",
+      "prev_settlement": "1062.0"
+    },
+    {
+      "date": "2025-12-19",
+      "limit_up": "1196.5",
+      "limit_down": "1019.5",
+      "settlement": "1110.0",
+      "prev_settlement": "1108.0"
+    },
+    {
+      "date": "2025-12-22",
+      "limit_up": "1198.5",
+      "limit_down": "1021.5",
+      "settlement": "1104.5",
+      "prev_settlement": "1110.0"
+    },
+    {
+      "date": "2025-12-23",
+      "limit_up": "1192.5",
+      "limit_down": "1016.5",
+      "settlement": "1125.0",
+      "prev_settlement": "1104.5"
+    },
+    {
+      "date": "2025-12-24",
+      "limit_up": "1215.0",
+      "limit_down": "1035.0",
+      "settlement": "1124.0",
+      "prev_settlement": "1125.0"
+    },
+    {
+      "date": "2025-12-25",
+      "limit_up": "1213.5",
+      "limit_down": "1034.5",
+      "settlement": "1127.0",
+      "prev_settlement": "1124.0"
+    },
+    {
+      "date": "2025-12-26",
+      "limit_up": "1217.0",
+      "limit_down": "1037.0",
+      "settlement": "1102.0",
+      "prev_settlement": "1127.0"
+    },
+    {
+      "date": "2025-12-29",
+      "limit_up": "1190.0",
+      "limit_down": "1014.0",
+      "settlement": "1108.5",
+      "prev_settlement": "1102.0"
+    },
+    {
+      "date": "2025-12-30",
+      "limit_up": "1197.0",
+      "limit_down": "1020.0",
+      "settlement": "1110.0",
+      "prev_settlement": "1108.5"
+    },
+    {
+      "date": "2025-12-31",
+      "limit_up": "1221.0",
+      "limit_down": "999.0",
+      "settlement": "1115.5",
+      "prev_settlement": "1110.0"
+    },
+    {
+      "date": "2026-01-05",
+      "limit_up": "1227.0",
+      "limit_down": "1004.0",
+      "settlement": "1097.0",
+      "prev_settlement": "1115.5"
+    },
+    {
+      "date": "2026-01-06",
+      "limit_up": "1184.5",
+      "limit_down": "1009.5",
+      "settlement": "1078.0",
+      "prev_settlement": "1097.0"
+    },
+    {
+      "date": "2026-01-07",
+      "limit_up": "1164.0",
+      "limit_down": "992.0",
+      "settlement": "1136.0",
+      "prev_settlement": "1078.0"
+    },
+    {
+      "date": "2026-01-08",
+      "limit_up": "1260.5",
+      "limit_down": "1011.5",
+      "settlement": "1204.0",
+      "prev_settlement": "1136.0"
+    },
+    {
+      "date": "2026-01-09",
+      "limit_up": "1300.0",
+      "limit_down": "1108.0",
+      "settlement": "1188.0",
+      "prev_settlement": "1204.0"
+    },
+    {
+      "date": "2026-01-12",
+      "limit_up": "1283.0",
+      "limit_down": "1093.0",
+      "settlement": "1221.5",
+      "prev_settlement": "1188.0"
+    },
+    {
+      "date": "2026-01-13",
+      "limit_up": "1319.0",
+      "limit_down": "1124.0",
+      "settlement": "1215.0",
+      "prev_settlement": "1221.5"
+    },
+    {
+      "date": "2026-01-14",
+      "limit_up": "1312.0",
+      "limit_down": "1118.0",
+      "settlement": "1199.5",
+      "prev_settlement": "1215.0"
+    },
+    {
+      "date": "2026-01-15",
+      "limit_up": "1295.0",
+      "limit_down": "1104.0",
+      "settlement": "1188.5",
+      "prev_settlement": "1199.5"
+    },
+    {
+      "date": "2026-01-16",
+      "limit_up": "1283.5",
+      "limit_down": "1093.5",
+      "settlement": "1184.0",
+      "prev_settlement": "1188.5"
+    },
+    {
+      "date": "2026-01-19",
+      "limit_up": "1278.5",
+      "limit_down": "1089.5",
+      "settlement": "1177.0",
+      "prev_settlement": "1184.0"
+    },
+    {
+      "date": "2026-01-20",
+      "limit_up": "1271.0",
+      "limit_down": "1083.0",
+      "settlement": "1150.0",
+      "prev_settlement": "1177.0"
+    },
+    {
+      "date": "2026-01-21",
+      "limit_up": "1242.0",
+      "limit_down": "1058.0",
+      "settlement": "1119.5",
+      "prev_settlement": "1150.0"
+    },
+    {
+      "date": "2026-01-22",
+      "limit_up": "1209.0",
+      "limit_down": "1030.0",
+      "settlement": "1125.0",
+      "prev_settlement": "1119.5"
+    },
+    {
+      "date": "2026-01-23",
+      "limit_up": "1215.0",
+      "limit_down": "1035.0",
+      "settlement": "1144.0",
+      "prev_settlement": "1125.0"
+    },
+    {
+      "date": "2026-01-26",
+      "limit_up": "1235.5",
+      "limit_down": "1052.5",
+      "settlement": "1151.0",
+      "prev_settlement": "1144.0"
+    },
+    {
+      "date": "2026-01-27",
+      "limit_up": "1243.0",
+      "limit_down": "1059.0",
+      "settlement": "1129.5",
+      "prev_settlement": "1151.0"
+    },
+    {
+      "date": "2026-01-28",
+      "limit_up": "1219.5",
+      "limit_down": "1039.5",
+      "settlement": "1121.0",
+      "prev_settlement": "1129.5"
+    },
+    {
+      "date": "2026-01-29",
+      "limit_up": "1210.5",
+      "limit_down": "1031.5",
+      "settlement": "1140.5",
+      "prev_settlement": "1121.0"
+    },
+    {
+      "date": "2026-01-30",
+      "limit_up": "1231.5",
+      "limit_down": "1049.5",
+      "settlement": "1175.5",
+      "prev_settlement": "1140.5"
+    },
+    {
+      "date": "2026-02-02",
+      "limit_up": "1269.5",
+      "limit_down": "1081.5",
+      "settlement": "1169.5",
+      "prev_settlement": "1175.5"
+    },
+    {
+      "date": "2026-02-03",
+      "limit_up": "1263.0",
+      "limit_down": "1076.0",
+      "settlement": "1167.0",
+      "prev_settlement": "1169.5"
+    },
+    {
+      "date": "2026-02-04",
+      "limit_up": "1260.0",
+      "limit_down": "1074.0",
+      "settlement": "1199.0",
+      "prev_settlement": "1167.0"
+    },
+    {
+      "date": "2026-02-05",
+      "limit_up": "1294.5",
+      "limit_down": "1103.5",
+      "settlement": "1182.0",
+      "prev_settlement": "1199.0"
+    },
+    {
+      "date": "2026-02-06",
+      "limit_up": "1276.5",
+      "limit_down": "1087.5",
+      "settlement": "1154.0",
+      "prev_settlement": "1182.0"
+    },
+    {
+      "date": "2026-02-09",
+      "limit_up": "1246.0",
+      "limit_down": "1062.0",
+      "settlement": "1138.0",
+      "prev_settlement": "1154.0"
+    },
+    {
+      "date": "2026-02-10",
+      "limit_up": "1229.0",
+      "limit_down": "1047.0",
+      "settlement": "1127.0",
+      "prev_settlement": "1138.0"
+    },
+    {
+      "date": "2026-02-11",
+      "limit_up": "1217.0",
+      "limit_down": "1037.0",
+      "settlement": "1126.0",
+      "prev_settlement": "1127.0"
+    },
+    {
+      "date": "2026-02-12",
+      "limit_up": "1216.0",
+      "limit_down": "1036.0",
+      "settlement": "1124.5",
+      "prev_settlement": "1126.0"
+    },
+    {
+      "date": "2026-02-13",
+      "limit_up": "1236.5",
+      "limit_down": "1012.5",
+      "settlement": "1120.0",
+      "prev_settlement": "1124.5"
+    },
+    {
+      "date": "2026-02-24",
+      "limit_up": "1232.0",
+      "limit_down": "1008.0",
+      "settlement": "1100.5",
+      "prev_settlement": "1120.0"
+    },
+    {
+      "date": "2026-02-25",
+      "limit_up": "1188.5",
+      "limit_down": "1012.5",
+      "settlement": "1117.5",
+      "prev_settlement": "1100.5"
+    },
+    {
+      "date": "2026-02-26",
+      "limit_up": "1206.5",
+      "limit_down": "1028.5",
+      "settlement": "1101.5",
+      "prev_settlement": "1117.5"
+    },
+    {
+      "date": "2026-02-27",
+      "limit_up": "1189.5",
+      "limit_down": "1013.5",
+      "settlement": "1082.5",
+      "prev_settlement": "1101.5"
+    },
+    {
+      "date": "2026-03-02",
+      "limit_up": "1169.0",
+      "limit_down": "996.0",
+      "settlement": "1083.5",
+      "prev_settlement": "1082.5"
+    },
+    {
+      "date": "2026-03-03",
+      "limit_up": "1170.0",
+      "limit_down": "997.0",
+      "settlement": "1099.5",
+      "prev_settlement": "1083.5"
+    },
+    {
+      "date": "2026-03-04",
+      "limit_up": "1187.0",
+      "limit_down": "1012.0",
+      "settlement": "1109.5",
+      "prev_settlement": "1099.5"
+    },
+    {
+      "date": "2026-03-05",
+      "limit_up": "1198.0",
+      "limit_down": "1021.0",
+      "settlement": "1102.5",
+      "prev_settlement": "1109.5"
+    },
+    {
+      "date": "2026-03-06",
+      "limit_up": "1190.5",
+      "limit_down": "1014.5",
+      "settlement": "1107.0",
+      "prev_settlement": "1102.5"
+    },
+    {
+      "date": "2026-03-09",
+      "limit_up": "1195.5",
+      "limit_down": "1018.5",
+      "settlement": "1166.5",
+      "prev_settlement": "1107.0"
+    },
+    {
+      "date": "2026-03-10",
+      "limit_up": "1259.5",
+      "limit_down": "1073.5",
+      "settlement": "1138.0",
+      "prev_settlement": "1166.5"
+    },
+    {
+      "date": "2026-03-11",
+      "limit_up": "1263.0",
+      "limit_down": "1013.0",
+      "settlement": "1129.0",
+      "prev_settlement": "1138.0"
+    },
+    {
+      "date": "2026-03-12",
+      "limit_up": "1253.0",
+      "limit_down": "1005.0",
+      "settlement": "1160.5",
+      "prev_settlement": "1129.0"
+    },
+    {
+      "date": "2026-03-13",
+      "limit_up": "1288.0",
+      "limit_down": "1033.0",
+      "settlement": "1178.5",
+      "prev_settlement": "1160.5"
+    },
+    {
+      "date": "2026-03-16",
+      "limit_up": "1308.0",
+      "limit_down": "1049.0",
+      "settlement": "1181.0",
+      "prev_settlement": "1178.5"
+    },
+    {
+      "date": "2026-03-17",
+      "limit_up": "1310.5",
+      "limit_down": "1051.5",
+      "settlement": "1170.0",
+      "prev_settlement": "1181.0"
+    },
+    {
+      "date": "2026-03-18",
+      "limit_up": "1298.5",
+      "limit_down": "1041.5",
+      "settlement": "1173.0",
+      "prev_settlement": "1170.0"
+    },
+    {
+      "date": "2026-03-19",
+      "limit_up": "1302.0",
+      "limit_down": "1044.0",
+      "settlement": "1167.0",
+      "prev_settlement": "1173.0"
+    },
+    {
+      "date": "2026-03-20",
+      "limit_up": "1295.0",
+      "limit_down": "1039.0",
+      "settlement": "1162.0",
+      "prev_settlement": "1167.0"
+    },
+    {
+      "date": "2026-03-23",
+      "limit_up": "1289.5",
+      "limit_down": "1034.5",
+      "settlement": "1250.5",
+      "prev_settlement": "1162.0"
+    },
+    {
+      "date": "2026-03-24",
+      "limit_up": "1425.5",
+      "limit_down": "1075.5",
+      "settlement": "1263.5",
+      "prev_settlement": "1250.5"
+    },
+    {
+      "date": "2026-03-25",
+      "limit_up": "1402.0",
+      "limit_down": "1125.0",
+      "settlement": "1244.0",
+      "prev_settlement": "1263.5"
+    },
+    {
+      "date": "2026-03-26",
+      "limit_up": "1380.5",
+      "limit_down": "1107.5",
+      "settlement": "1237.0",
+      "prev_settlement": "1244.0"
+    },
+    {
+      "date": "2026-03-27",
+      "limit_up": "1373.0",
+      "limit_down": "1101.0",
+      "settlement": "1218.0",
+      "prev_settlement": "1237.0"
+    },
+    {
+      "date": "2026-03-30",
+      "limit_up": "1351.5",
+      "limit_down": "1084.5",
+      "settlement": "1218.0",
+      "prev_settlement": "1218.0"
+    },
+    {
+      "date": "2026-03-31",
+      "limit_up": "1351.5",
+      "limit_down": "1084.5",
+      "settlement": "1175.5",
+      "prev_settlement": "1218.0"
+    },
+    {
+      "date": "2026-04-01",
+      "limit_up": "1304.5",
+      "limit_down": "1046.5",
+      "settlement": "1136.0",
+      "prev_settlement": "1175.5"
+    },
+    {
+      "date": "2026-04-02",
+      "limit_up": "1260.5",
+      "limit_down": "1011.5",
+      "settlement": "1126.0",
+      "prev_settlement": "1136.0"
+    },
+    {
+      "date": "2026-04-03",
+      "limit_up": "1249.5",
+      "limit_down": "1002.5",
+      "settlement": "1121.5",
+      "prev_settlement": "1126.0"
+    },
+    {
+      "date": "2026-04-07",
+      "limit_up": "1244.5",
+      "limit_down": "998.5",
+      "settlement": "1109.5",
+      "prev_settlement": "1121.5"
+    },
+    {
+      "date": "2026-04-08",
+      "limit_up": "1231.5",
+      "limit_down": "987.5",
+      "settlement": "1112.5",
+      "prev_settlement": "1109.5"
+    },
+    {
+      "date": "2026-04-09",
+      "limit_up": "1234.5",
+      "limit_down": "990.5",
+      "settlement": "1102.5",
+      "prev_settlement": "1112.5"
+    },
+    {
+      "date": "2026-04-10",
+      "limit_up": "1223.5",
+      "limit_down": "981.5",
+      "settlement": "1059.0",
+      "prev_settlement": "1102.5"
+    },
+    {
+      "date": "2026-04-13",
+      "limit_up": "1175.0",
+      "limit_down": "943.0",
+      "settlement": "1061.5",
+      "prev_settlement": "1059.0"
+    },
+    {
+      "date": "2026-04-14",
+      "limit_up": "1178.0",
+      "limit_down": "945.0",
+      "settlement": "1062.5",
+      "prev_settlement": "1061.5"
+    },
+    {
+      "date": "2026-04-15",
+      "limit_up": "1179.0",
+      "limit_down": "946.0",
+      "settlement": "1078.0",
+      "prev_settlement": "1062.5"
+    },
+    {
+      "date": "2026-04-16",
+      "limit_up": "1196.5",
+      "limit_down": "959.5",
+      "settlement": "1088.0",
+      "prev_settlement": "1078.0"
+    }
+  ]
+}

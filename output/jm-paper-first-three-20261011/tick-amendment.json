@@ -1,0 +1,12 @@
+{
+  "source": "rqdata.Instrument.tick_size()",
+  "captured_at": "2026-10-11T14:48:44.501531+00:00",
+  "original_sha256": "19be1118539df07bc42bc5b5d99ac7df876901b6f58c1e40ad07eb043c21c924",
+  "ticks": {
+    "JM2601": "0.5",
+    "JM2605": "0.5",
+    "JM2609": "0.5",
+    "JM2701": "0.5"
+  },
+  "calls": 5
+}

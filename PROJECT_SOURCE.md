@@ -2,7 +2,7 @@
 
 更新时间：2026-09-27
 
-归一量化是本地、单用户的国内期货研究工作站。稳定产品边界允许可信行情、Market Web、Newow 只读策略与参考交易、通用指标、HTDY/苏冰研究观察、Alert 与人工判断；当前不提供自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有图表、参考交易和通知都是研究观察，`auto_order=false`。具体代码、Release 与 Runtime 是否已经具备这些能力，仍以代码、测试和 `STATUS.md` 为准。
+归一量化是本地、单用户的国内期货研究工作站。稳定产品边界允许可信行情、Market Web、Newow 只读策略与参考交易、通用指标、HTDY/苏冰研究观察、Alert 与人工判断，以及独立 CLI 的 JM 本地 Paper 试点；当前不提供自动交易、实盘下单、Broker 账户管理、SaaS、多用户权限或 AI 自动晋升。所有图表、参考交易和通知都是研究观察，`auto_order=false`。Paper 模型订单、成交和账本不接入现有页面事实；合同见 [Paper 试点](docs/PAPER_PILOT.md)。具体代码、Release 与 Runtime 是否已经具备这些能力，仍以代码、测试和 `STATUS.md` 为准。
 
 长期允许按人工 Gate 分阶段评估 `研究观察 → Paper → Shadow → Broker Read-only → 订单草稿 → 人工确认 → 半自动 → 受控自动`；这不是当前能力或晋升授权。AI 可自动研究，不能自动晋升、修改 active 策略或决定真实账户持仓。苏冰课程 Knowledge Foundation 属于独立 AutoTrade 项目，不在本仓库维护课程开发计划、代码、私有数据或 Runtime 依赖。
 

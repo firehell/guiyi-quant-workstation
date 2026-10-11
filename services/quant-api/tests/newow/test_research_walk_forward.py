@@ -19,6 +19,7 @@ from guiyi_quant.newow.research_walk_forward import (
     WalkForwardFold,
     run_fixed_formula_walk_forward,
 )
+from guiyi_quant.newow.research_backtest import BacktestOffsetFees
 
 
 _START = date(2026, 1, 1)
@@ -171,6 +172,64 @@ def test_walk_forward_uses_training_only_as_warmup_and_scores_test_intents() -> 
     assert trade.exit.signal_bar_end == bars[3].bar_end
     assert trade.exit.fill_bar_end == bars[4].bar_end
     assert all(fill.signal_bar_end >= bars[2].bar_end for fill in evaluated.backtest.fills)
+
+
+def test_dual_walk_forward_requires_and_uses_sourced_offset_fees() -> None:
+    bars = _bars((100, 80, 120, 80, 90))
+    fold = WalkForwardFold(
+        "dual", _START, _START + timedelta(days=1),
+        _START + timedelta(days=2), _START + timedelta(days=4),
+    )
+    with pytest.raises(ValueError, match="EXECUTION_FACTS_MISSING"):
+        run_fixed_formula_walk_forward(
+            bars, (fold,), strategy=ResearchStrategy.DUAL_FUSION,
+            strategy_replay_segments=_replay(bars),
+            cost_snapshots=_costs(), execution_constraints=_constraints(bars),
+            require_offset_fees=True,
+        )
+
+    sourced = replace(
+        _costs()[0],
+        offset_fees=BacktestOffsetFees(
+            open_rate=Decimal("0"), open_per_contract=Decimal("1"),
+            close_today_rate=Decimal("0"), close_today_per_contract=Decimal("10"),
+            close_yesterday_rate=Decimal("0"),
+            close_yesterday_per_contract=Decimal("2"),
+        ),
+    )
+    result = run_fixed_formula_walk_forward(
+        bars, (fold,), strategy=ResearchStrategy.DUAL_FUSION,
+        strategy_replay_segments=_replay(bars),
+        cost_snapshots=(sourced,), execution_constraints=_constraints(bars),
+        require_offset_fees=True,
+    )
+    assert result.closed_trade_count == 1
+    assert [fill.fee for fill in result.folds[0].backtest.fills] == [
+        Decimal("1"), Decimal("2"),
+    ]
+
+
+def test_walk_forward_requires_costs_only_on_executable_rank1_bars() -> None:
+    bars, replay_bars = _physical_prefix_bars()
+    fold = WalkForwardFold(
+        "prefix", bars[0].trading_day, bars[1].trading_day,
+        bars[2].trading_day, bars[-1].trading_day,
+    )
+    cost = replace(_costs()[0], effective_from=bars[0].trading_day)
+    result = run_fixed_formula_walk_forward(
+        bars, (fold,), strategy=ResearchStrategy.TREND,
+        strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
+        cost_snapshots=(cost,), execution_constraints=_constraints(bars),
+    )
+    assert result.folds[0].physical_prefix_bar_count == len(replay_bars)
+
+    missing_eligible = replace(cost, effective_from=bars[1].trading_day)
+    with pytest.raises(ValueError, match="NEWOW_BACKTEST_COST_SNAPSHOT_MISSING"):
+        run_fixed_formula_walk_forward(
+            bars, (fold,), strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
+            cost_snapshots=(missing_eligible,), execution_constraints=_constraints(bars),
+        )
 
 
 def _dual_action_bars() -> tuple[NewowResearchBar, ...]:
@@ -495,7 +554,7 @@ def test_walk_forward_uses_noneligible_physical_prefix_for_strategy_state_only()
     assert result.folds[0].earliest_physical_prefix_trading_day == _START
 
 
-def test_walk_forward_requires_cost_snapshot_for_noneligible_physical_prefix() -> None:
+def test_walk_forward_does_not_require_fee_for_noneligible_physical_prefix() -> None:
     bars, replay_bars = _physical_prefix_bars()
     fold = WalkForwardFold(
         name="physical-prefix-missing-cost",
@@ -508,15 +567,15 @@ def test_walk_forward_requires_cost_snapshot_for_noneligible_physical_prefix() -
         replace(_costs()[0], effective_from=bars[0].trading_day),
     )
 
-    with pytest.raises(ValueError, match="NEWOW_BACKTEST_COST_SNAPSHOT_MISSING"):
-        run_fixed_formula_walk_forward(
-            bars,
-            (fold,),
-            strategy=ResearchStrategy.TREND,
-            strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
-            cost_snapshots=cost_snapshots,
-            execution_constraints=_constraints(bars),
-        )
+    result = run_fixed_formula_walk_forward(
+        bars,
+        (fold,),
+        strategy=ResearchStrategy.TREND,
+        strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
+        cost_snapshots=cost_snapshots,
+        execution_constraints=_constraints(bars),
+    )
+    assert result.folds[0].physical_prefix_bar_count == len(replay_bars)
 
 
 def test_walk_forward_validates_tick_for_noneligible_physical_prefix() -> None:

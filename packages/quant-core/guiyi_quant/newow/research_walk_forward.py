@@ -14,6 +14,7 @@ from .research_backtest import (
     ResearchBacktestResult,
     ResearchStrategy,
     _resolve_strict_cost_facts,
+    _validate_strict_bar_cost_facts,
     build_strategy_intents_from_replay_segments,
     run_causal_long_only_backtest,
     validate_research_bars,
@@ -105,6 +106,7 @@ def run_fixed_formula_walk_forward(
     strategy_replay_segments: tuple[NewowStrategyReplaySegment, ...],
     cost_snapshots: tuple[BacktestCostSnapshot, ...],
     execution_constraints: tuple[BacktestExecutionConstraint, ...],
+    require_offset_fees: bool = False,
 ) -> WalkForwardValidationResult:
     """Score fixed formulas OOS while using earlier fold Bars only as warm-up."""
 
@@ -199,14 +201,25 @@ def run_fixed_formula_walk_forward(
                 for bar in segment.bars
             )
         )
-        _resolve_strict_cost_facts(
+        eligible_cost_facts = _resolve_strict_cost_facts(
             tuple(
                 bar
                 for segment in replay_segments
                 for bar in segment.bars
+                if bar.observation_eligible
             ),
             cost_snapshots=cost_snapshots,
         )
+        # Physical prefixes warm indicators but cannot fill.  Their OHLC tick
+        # alignment still uses the first sourced executable tick for that owner.
+        for segment in replay_segments:
+            first_eligible = next(
+                bar for bar in segment.bars if bar.observation_eligible
+            )
+            first_costs, _ = eligible_cost_facts[first_eligible.source_identity]
+            for bar in segment.bars:
+                if not bar.observation_eligible:
+                    _validate_strict_bar_cost_facts(bar, first_costs)
         intents, versions = build_strategy_intents_from_replay_segments(
             replay_segments,
             strategy,
@@ -226,6 +239,7 @@ def run_fixed_formula_walk_forward(
             cost_snapshots=cost_snapshots,
             execution_constraints=execution_constraints,
             require_execution_facts=True,
+            require_offset_fees=require_offset_fees,
             strategy=strategy,
             signal_formula_versions=versions,
         )
