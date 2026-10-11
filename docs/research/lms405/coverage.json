@@ -1,0 +1,113 @@
+{
+  "version": "lms405-evidence-v0.1",
+  "mode": "author",
+  "observed_at": "2026-10-11T12:43:31.478696+00:00",
+  "results": [
+    {
+      "contract": "FG2609",
+      "frequency": "1m",
+      "window": [
+        "2026-08-10",
+        "2026-08-21"
+      ],
+      "status": "BLOCKED",
+      "bar_count": 0,
+      "prefix_status": "NOT_EVALUATED",
+      "source_timeframe": "UNKNOWN",
+      "k_signal_eligible": false,
+      "behavior_matches": null,
+      "eligible_behavior_cases": 0,
+      "reason": "DATASET_OR_PARTITION_MISSING"
+    },
+    {
+      "contract": "FG2701",
+      "frequency": "1m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "bar_count": 2865,
+      "prefix_status": "WINDOW_READABLE",
+      "source_timeframe": "UNKNOWN",
+      "k_signal_eligible": false,
+      "behavior_matches": null,
+      "eligible_behavior_cases": 0,
+      "coverage": [
+        "2026-09-18T13:01:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ],
+      "input_snapshot_hash": "cac26f5c4b0c0ac9d554bf9a99a7189ee57ebd361a75c20220260db0cfb80b5e",
+      "replay_output_hash": "a8ad209d5871b645e8ec29f5729a63119a72800a3283778f83bd9666e3157293",
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "fg",
+        "contract": "FG2701",
+        "frequency": "1m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "reason": null,
+      "prefix_count": 56100,
+      "prefix_coverage": [
+        "2026-01-16T13:01:00+00:00",
+        "2026-09-18T07:00:00+00:00"
+      ]
+    },
+    {
+      "contract": "JM2701",
+      "frequency": "1m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "bar_count": 2865,
+      "prefix_status": "WINDOW_READABLE",
+      "source_timeframe": "UNKNOWN",
+      "k_signal_eligible": false,
+      "behavior_matches": null,
+      "eligible_behavior_cases": 0,
+      "coverage": [
+        "2026-09-18T13:01:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ],
+      "input_snapshot_hash": "10e9f8d626e2e99511e8a1a7fc11385f5c2d5d5ceba16a0af6a9e5b8c64c4144",
+      "replay_output_hash": "a35e523a9a29d6f76997306c2370d893bf3ebfe32c3648bae9409c79b9c67a8f",
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "jm",
+        "contract": "JM2701",
+        "frequency": "1m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "reason": null,
+      "prefix_count": 56100,
+      "prefix_coverage": [
+        "2026-01-16T13:01:00+00:00",
+        "2026-09-18T07:00:00+00:00"
+      ]
+    }
+  ],
+  "conclusion": "PARTIAL_RECONSTRUCTION",
+  "causal_research": "EXECUTION_FACTS_MISSING",
+  "performance": null,
+  "signal_precision": null,
+  "signal_recall": null,
+  "node_tick_error": null,
+  "unresolved": [
+    "AUTHOR_ZONES_NOT_VERIFIABLY_AVAILABLE_IN_WINDOW",
+    "COMPLETE_ACTION_TIMELINE_MISSING",
+    "BBB_FORMULA_UNKNOWN",
+    "SCREENSHOT_PERIOD_UNKNOWN"
+  ],
+  "no_download": true,
+  "no_production_write": true,
+  "independent_mode_verified": true,
+  "verification": {
+    "pytest": "24 passed",
+    "ruff": "passed",
+    "review": "REVIEW_COMPLETE; 2 P2 and prefix status fixed; research integration approved"
+  }
+}
