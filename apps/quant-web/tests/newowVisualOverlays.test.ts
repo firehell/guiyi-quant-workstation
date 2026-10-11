@@ -22,3 +22,17 @@ test('overlay preferences default off and persist independently from business in
  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(key:string)=>store.get(key)??null,setItem:(key:string,value:string)=>store.set(key,value)}})
  try{assert.deepEqual(readVisualOverlayPreferences(),{donchian:false,window:20,stop:false});saveVisualOverlayPreferences({donchian:true,window:120,stop:true});assert.deepEqual(readVisualOverlayPreferences(),{donchian:true,window:120,stop:true});store.set([...store.keys()][0]!,'{"window":121}');assert.equal(readVisualOverlayPreferences().window,20)}finally{if(original)Object.defineProperty(globalThis,'localStorage',original);else Reflect.deleteProperty(globalThis,'localStorage')}
 })
+
+test('observed stop survives scrolling but cannot cross identity, owner or removed BUILD', async () => {
+ const { retainBuildStop, retainedStopPrice } = await import('../src/utils/newowVisualOverlays.ts')
+ const anchors = [{ time:'2026-01-01', owner:'contract:segment:calc', price:'100', action:'BUILD' }]
+ const observed = retainBuildStop(null, 'rb:day:dual', anchors, [{ time:'2026-01-01', owner:'contract:segment:calc' }])
+ const offscreen = [{ time:'2026-01-02', owner:'contract:segment:calc' }]
+ assert.equal(retainedStopPrice(retainBuildStop(observed,'rb:day:dual',anchors,offscreen),0.07),93)
+ assert.equal(retainedStopPrice(observed,0.12),88)
+ assert.equal(retainBuildStop(observed,'rb:week:dual',anchors,offscreen),null)
+ assert.equal(retainBuildStop(observed,'rb:day:dual',anchors,[{time:'2026-01-02',owner:'contract:segment:new-calc'}]),null)
+ assert.equal(retainBuildStop(observed,'rb:day:dual',[],offscreen),null)
+ assert.equal(retainBuildStop(null,'rb:day:dual',anchors,offscreen),null)
+ assert.equal(retainBuildStop(observed,'rb:day:dual',[{...anchors[0],price:'NaN'}],[{time:'2026-01-01',owner:'contract:segment:calc'}]),null)
+})

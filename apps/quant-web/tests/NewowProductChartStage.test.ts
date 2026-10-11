@@ -687,6 +687,10 @@ test('stop reference toggle defaults off, uses accepted BUILD, and revokes on ow
  const toggle=findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
  ;(toggle.props.onClick as ()=>void)();await nextTick()
  assert.deepEqual(stops().map(l=>[Number(Number(l.price).toFixed(8)),l.color,l.lineStyle]),[[83.7,'#3B82F6',2]])
+ response.value=prependBar(chartResponse());await nextTick()
+ range={from:0,to:0};changed(range)
+ assert.equal(Number(Number(stops()[0]!.price).toFixed(8)),83.7,'scrolling BUILD offscreen preserves observed stop in same owner')
+ range=null;response.value=chartResponse();await nextTick()
  loading.value=true;await nextTick();assert.equal(stops().length,0)
  loading.value=false;await nextTick();assert.equal(stops().length,1)
  const trend=strategyResponse('trend');trend.value!.actions[0]!.reference_price='200';partner.value=trend;await nextTick()

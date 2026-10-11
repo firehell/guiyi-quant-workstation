@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
-import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, visibleBuildStop } from '@/utils/newowVisualOverlays'
+import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import {newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
 import {createChart,CandlestickSeries,LineSeries,createSeriesMarkers,type IChartApi,type UTCTimestamp,type ISeriesMarkersPluginApi,type Time,type IPriceLine} from 'lightweight-charts'
@@ -8,7 +8,9 @@ import {getNewowExperiment} from '@/api/newowExperiments'
 import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
 import {formatMarketDecimal,formatMarketPercent} from '@/utils/marketDisplay'
 import {formatChartTimeInShanghai} from '@/utils/barTime'
+const emit=defineEmits<{ 'analyze-channel': [] }>()
 const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null}>()
+let retainedStop:RetainedBuildStop|null=null
 const data=shallowRef<ExperimentDetail|null>(null),loading=ref(false),error=ref<string|null>(null),container=ref<HTMLElement|null>(null)
 const visualOverlays=ref(readVisualOverlayPreferences())
 watch(visualOverlays,value=>{saveVisualOverlayPreferences(value);render()})
@@ -27,7 +29,7 @@ function renderCurves(){if(!curveChart)return;for(const series of curveSeries)cu
 watch([data,mode,selectedSegment],renderCurves)
 const option=computed(()=>EXPERIMENT_OPTIONS.find(x=>x.kind===props.kind)!)
 const generation=new ExperimentRequestGeneration()
-async function load(){const token=generation.begin();data.value=null;error.value=null;loading.value=true;if(!props.asOf){loading.value=false;return}try{const result=await getNewowExperiment({product:props.product,frequency:props.frequency,kind:props.kind,as_of:props.asOf,...experimentRangeParams(props.asOf,range.value)},token.signal);if(token.current())data.value=result}catch{if(token.current())error.value='实验数据暂不可用，请重试。'}finally{if(token.current())loading.value=false}}
+async function load(){const token=generation.begin();data.value=null;retainedStop=null;error.value=null;loading.value=true;if(!props.asOf){loading.value=false;return}try{const result=await getNewowExperiment({product:props.product,frequency:props.frequency,kind:props.kind,as_of:props.asOf,...experimentRangeParams(props.asOf,range.value)},token.signal);if(token.current())data.value=result}catch{if(token.current())error.value='实验数据暂不可用，请重试。'}finally{if(token.current())loading.value=false}}
 watch(()=>[props.product,props.frequency,props.kind,props.asOf,range.value],load,{immediate:true})
 let chart:IChartApi|null=null,observer:ResizeObserver|null=null
 let candles:ReturnType<IChartApi['addSeries']>|null=null,upper:ReturnType<IChartApi['addSeries']>|null=null,lower:ReturnType<IChartApi['addSeries']>|null=null
@@ -50,12 +52,12 @@ function renderVisual(){
    visualLines.push(line)
   }
  }
- if(!visualOverlays.value.stop)return
  const range=chart.timeScale().getVisibleLogicalRange()
  const visible=bars.filter((_,i)=>!range||(i>=Math.ceil(range.from)&&i<=Math.floor(range.to)))
  const pct=props.kind==='osc-test4'?0.12:0.07
- const price=visibleBuildStop((data.value?.markers??[]).map(m=>({time:m.bar_end,owner:`${m.physical_contract}:${m.segment_id}`,price:m.reference_price,action:m.action})),visible.map(b=>({time:b.bar_end,owner:`${b.physical_contract}:${b.segment_id}`})),pct)
- if(price!==null)stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
+ retainedStop=retainBuildStop(retainedStop, `${props.product}:${props.frequency}:${props.kind}`, (data.value?.markers??[]).map(m=>({time:m.bar_end,owner:`${m.physical_contract}:${m.segment_id}`,price:m.reference_price,action:m.action})),visible.map(b=>({time:b.bar_end,owner:`${b.physical_contract}:${b.segment_id}`})))
+ const price=retainedStopPrice(retainedStop,pct)
+ if(visualOverlays.value.stop&&price!==null)stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
 }
 function render(){if(!chart||!candles||!upper||!lower||!markers)return;const bars=data.value?.bars??[];candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})));upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}));lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}));markers.setMarkers((data.value?.markers??[]).map(m=>({time:time(m.bar_end),position:m.action==='BUILD'?'belowBar':'aboveBar',shape:m.action==='BUILD'?'arrowUp':'arrowDown',color:m.action==='BUILD'?'#ff403a':'#22b95d',text:(m.action==='BUILD'?'建仓':m.stop_loss?'止损':m.confirm_exit?'确认清仓':'清仓')+' '+formatMarketDecimal(m.reference_price)+' · '+m.score+'分'})));chart.timeScale().fitContent();renderVisual()}
 watch(data,render)
@@ -69,7 +71,7 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <template><section class="experiment-panel" aria-label="震荡实验策略">
 <header><strong>{{option.label}} · 震荡实验</strong><span>{{option.description}}</span><slot name="frequency" /></header>
 <p v-if="loading" role="status">正在读取实验策略…</p><p v-else-if="error" role="alert">{{error}} <button @click="load">重试</button></p><p v-else-if="!asOf" role="status">等待当前周期行情快照…</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='DATA_INSUFFICIENT'" role="status">当前合约段数据不足，暂时没有实验结果。</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='WARMUP'" role="status">当前合约段正在预热。</p>
-<NewowVisualOverlayControls v-model="visualOverlays" /><div ref="container" class="experiment-chart" /><p>黄线：HHV10 · 蓝线：LLV10 · 红箭头：建仓 · 绿箭头：清仓 / 止损</p>
+<NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /><div ref="container" class="experiment-chart" /><p>黄线：HHV10 · 蓝线：LLV10 · 红箭头：建仓 · 绿箭头：清仓 / 止损</p>
 <div class="experiment-mode"><button v-for="r in [{id:'3m',label:'近3月'},{id:'1y',label:'近1年'},{id:'3y',label:'近3年'},{id:'year',label:'今年'},{id:'all',label:'全部'}]" :key="r.id" :aria-pressed="range===r.id" @click="range=r.id as ExperimentRange">{{r.label}}</button></div><p v-if="data?.window">统计窗口 {{data.window.since}} 至 {{data.window.through}} · 主图最多显示最近2000根</p><div class="experiment-mode"><button :aria-pressed="mode==='ordinary'" @click="mode='ordinary'">普通收益</button><button :aria-pressed="mode==='theoretical'" @click="mode='theoretical'">理论收益</button><span>{{mode==='ordinary'?'末根收盘强制平仓计入统计':'基础震荡的回看理想模型，与四测试独立'}}</span></div><div ref="curveContainer" class="experiment-curve" />
 <template v-if="data"><label>合约计算段 <select v-model="selectedSegment"><option :value="null">当前计算段 · {{data.segments.at(-1)?.physical_contract}}</option><option v-for="s in data.segments.slice(0,-1)" :key="s.segment_id" :value="s.segment_id">{{s.physical_contract}} · {{date(s.statistics_window?.through)}}</option></select></label><p>截至 {{formatChartTimeInShanghai(Math.floor(Date.parse(data.as_of)/1000) as UTCTimestamp)}} · 页面参考，零手续费与滑点</p>
 <section v-for="segment in visibleSegments" :key="segment.segment_id" class="experiment-segment"><h4>{{segment.physical_contract}} <small v-if="segment.status==='ROLLOVER_INTERRUPTED'">换月中断</small><small v-else-if="segment.status==='DATA_CONFLICT'">数据中断</small></h4>

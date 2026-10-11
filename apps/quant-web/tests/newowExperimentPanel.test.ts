@@ -55,10 +55,27 @@ test('experiment graph keeps HHV10 facts and renders independent saved overlays 
  const stop=findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='止损参考线')!
  ;(stop.props.onClick as ()=>void)();await flush()
  assert.deepEqual([...chartMock.prices].map((x:any)=>[x.price,x.color,x.title]),[[88,'#3B82F6','止损价（−12%）']])
- const channel=findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='唐奇安通道')!
+ const channel=findNode(root,n=>n.type==='button'&&n.props['aria-label']==='唐奇安通道')!
  ;(channel.props.onClick as ()=>void)();await flush()
  assert.ok(chartMock.series.some((s:any)=>s.options?.color==='rgba(52,199,89,0.7)'&&s.data.at(-1)?.value===129))
  assert.ok(chartMock.series.some((s:any)=>s.options?.color==='#f7bb23'&&s.data.at(-1)?.value===888),'business channel stays supplied HHV10')
  kind.value='osc-test';await flush();assert.equal(chartMock.prices.size,0,'request invalidation removes old anchor')
+ app.unmount()
+})
+
+
+test('mounted channel popup applies drafts explicitly and invokes existing analysis',async()=>{
+ const Controls=(await import(await compiledModule(new URL('../src/components/market/detail/newow/NewowVisualOverlayControls.vue',import.meta.url)))).default
+ const root=element('root'),preferences=ref({donchian:false,window:20,stop:false});let analysis=0
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Controls,{modelValue:preferences.value,'onUpdate:modelValue':v=>{preferences.value=v},onAnalyze:()=>analysis++})}))
+ app.mount(root);await flush()
+ const click=async(label:string)=>{const button=findNode(root,n=>n.type==='button'&&nodeText(n).trim()===label)!;(button.props.onClick as ()=>void)();await flush()}
+ const draft=async(value:number)=>{const input=findNode(root,n=>n.type==='input')!;(input.props.onInput as (v:unknown)=>void)({target:{value:String(value)}});await flush()}
+ assert.equal(findNode(root,n=>n.props.role==='dialog'),undefined)
+ await click('通道');await draft(24);assert.equal(preferences.value.window,20)
+ await click('关闭');assert.equal(preferences.value.window,20)
+ await click('通道');await draft(121);await click('应用');assert.ok(findNode(root,n=>n.props.role==='alert'));assert.equal(preferences.value.window,20)
+ await draft(24);await click('应用');assert.equal(preferences.value.window,24);assert.equal(findNode(root,n=>n.props.role==='dialog'),undefined)
+ await click('通道');await click('分析最佳目标价/吸筹价周期');assert.equal(analysis,1);assert.equal(findNode(root,n=>n.props.role==='dialog'),undefined)
  app.unmount()
 })

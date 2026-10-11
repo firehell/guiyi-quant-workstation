@@ -35,3 +35,18 @@ export function visibleBuildStop(anchors: readonly VisualBuildAnchor[], visible:
   const price = Number(anchor.price)
   return Number.isFinite(price) && price > 0 ? price * (1 - pct) : null
 }
+
+// Retain only an observed BUILD from the same view identity and calculation owner.
+export interface RetainedBuildStop { scope: string; anchor: VisualBuildAnchor }
+export function retainBuildStop(previous: RetainedBuildStop | null, scope: string, anchors: readonly VisualBuildAnchor[], visible: readonly { time: string; owner: string }[]): RetainedBuildStop | null {
+  const owner = visible.at(-1)?.owner
+  if (!owner) return null
+  const times = new Set(visible.filter(b => b.owner === owner).map(b => b.time))
+  const candidate = anchors.filter(a => a.action === 'BUILD' && a.owner === owner && times.has(a.time)).sort((a,b) => Date.parse(a.time)-Date.parse(b.time)).at(-1)
+  if (candidate) return visibleBuildStop([candidate], visible, 0.07) === null ? null : { scope, anchor: { ...candidate } }
+  if (previous?.scope !== scope || previous.anchor.owner !== owner) return null
+  return anchors.some(a => a.action === 'BUILD' && a.owner === owner && a.time === previous.anchor.time && a.price === previous.anchor.price) ? previous : null
+}
+export function retainedStopPrice(value: RetainedBuildStop | null, pct: number): number | null {
+  return value ? visibleBuildStop([value.anchor], [{ time: value.anchor.time, owner: value.anchor.owner }], pct) : null
+}
