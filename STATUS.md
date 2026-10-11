@@ -4,7 +4,56 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.21 已发布并完成 gen7 休息段切换，自然盘中验收待交易时段
+## v1.15.1 已发布并完成 gen12 正式服务切换，自然盘中验收待交易时段
+
+[PR #436](https://github.com/firehell/guiyi-quant-workstation/pull/436) 与
+[PR #437](https://github.com/firehell/guiyi-quant-workstation/pull/437) 已合并，annotated tag 和
+[Release v1.15.1](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.15.1) 精确绑定
+**v1.15.1@386031757f37f5f4d373b68c47d50c5dc3215b07 / generation12**。
+正式运行树为 `.worktrees/release-v1.15.1`，API 实际返回 version=1.15.1/status=ok，Web HTTP 200。
+
+v1.15.0 已发布 develop 中的牛哇首页日周卡、三策略/融合参考交易与页面收益、
+公开震荡实验、XP1/基差与周日分钟解释、公开回看形态、T 菜单及 Donchian 配置、
+保留止损锚点、v4 身份/融合指纹与标签。页面参考为 page_parity=true、executable=false；
+1260 路固定截止历史资产的构建验收不代表 Runtime 启用，540 路短分钟仍关闭。
+
+原 720 路已在 gen8 单次事务升级：旧身份禁用、新身份启用，旧交易和发送事实保留；
+新版 flat seed 不继承旧 OPEN，录制开始为 2026-10-11T06:00:00Z。
+首次 gen8 健康超时，原 journal 保留 outcome_unknown；Reference 的未来开始边界错误已在
+v1.15.1 修复，Live 增加固定安全失败码而不放宽健康判定。
+gen9 在旧 API 合作停驻的十秒期限超时，未 bootout、未更新绑定；API 随后自然完成连接关闭并停驻。
+gen10 已更新绑定至 v1.15.1，六旧进程退出，但健康控制器在完整 720 路读回后要求先前成功周期仍在
+30 秒内，引发 HEALTHY_CYCLE_TIMEOUT；真实证据已捕获 Reference/feed 成功周期，Reference 零阻断且两线程存活。
+gen11 移出完整事实核查后仍在复合健康 Gate 超时；六服务成功周期均在失败前两秒内，
+原记录未区分 heartbeat 与二次 ready 快照失败，不倒推唯一原因。gen12 将重身份/HTTP 前置，
+短窗口一次当前 owner 快照保留全部 ready=true、30 秒新鲜度、零阻断、两线程及 typed failure 校验，
+同时保存逐 Gate 布尔、耗时和安全 heartbeat 身份；独立回读不改正式 journal。
+gen8–11 四份 unknown 均原字节保留，没有重试原 attempt、Scope 升级或历史状态重置。
+
+gen12 计划 **4bd7e635116894d340df449482badf0ff0e42b1aff7c734d09fb3f747c540083**
+经独审和整份独立现场重算相等后单次执行，实际结果 **generation12_ready_calendars_idle / failure=null**。
+六旧 PID 已退出；十绑定/plist 精确一致，六连续服务运行，四个原日历注册 idle。
+API75685/Web75691/Live75697/Alert75704/Reference75711/feed75677。
+最终六服务成功周期为 05:17:34–05:17:35Z；HTTP、loaded PID、registry、heartbeat 和 owner-ready 均通过。
+两输入 heartbeat available=true/operational_count=60，身份精确 gen12/v1.15.1；Reference blocked0，
+历史刷新与通知线程存活且错误为空。独立新鲜周期回读再次通过，正式 journal 字节不变；
+720 路身份、旧 revision/batch/action/trade/marks/capture、notification policy/delivery、历史归档均保护通过。
+服务启动验收不代表自然 completed Bar、策略 Event、provider accepted 或收件人送达已发生。
+
+两次旧树 retention 只读扫描相等 **cfdb74e462d77bb5d0b1a9c51fa3779c12d0bf613afc87b97d101ba144a91a61**；
+无引用/unknown、clean/exact tag、五运行资产在 v1.15.1 逐字节相等后，non-force 移除 v1.14.21/v1.15.0 旧源码树。
+保留所有 tag/Release、共享 Runtime journal 和原数据；仅最新 v1.15.1 发布树作为正式运行源码。
+任务 worktree 已通过 Codex 归档为可恢复快照；恢复边界测试均已集成 develop。
+
+实际验证：Web 1037 passed/3 skipped；Newow/Reference/工程定向 3825 passed/55 skipped；
+v1.15.1 Reference 与运行入口 676 passed/54 skipped；首页 E2E 3 passed、T 菜单 1 passed；
+gen9–12 恢复边界 49 passed。精确树依赖、Web 类型/构建/拓扑、OpenSpec 11/11、secret scan 与 diff 检查通过。
+最终 repository hygiene/canonical consistency 29 passed。
+旧大范围 Web E2E 含旧 DOM/默认指标预期失败，未将其声明为全通过。
+证据：`output/newow-v1150-release-20261011/`、`output/newow-v1151-recovery-20261011/`。
+自然盘中观察、720 路连续性与接收人实际送达仍 PENDING，不能宣布 RUNTIME_READY。
+
+## v1.14.21 gen7 休息段切换（历史检查点）
 
 [PR #435](https://github.com/firehell/guiyi-quant-workstation/pull/435) 已合并，annotated tag、
 [Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.21) 与干净发布树一致：
