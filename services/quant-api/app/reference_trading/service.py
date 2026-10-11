@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -670,14 +670,23 @@ class HistoricalReferenceService:
         return BatchReport(self._overall(reports), reports)
 
     def _rebuild_stream(self, plan, stream_plan, deadline):
+        from app.market_data.newow.product_reader import NewowProductReadCancelled
         stream_id = stream_plan.request.identity.stream_id
         pin = getattr(self._reader, "pin_stream", None)
-        with pin(stream_plan.request) if callable(pin) else nullcontext():
+        with ExitStack() as inputs:
             # Acquire and verify the exact frozen source before changing the old
             # active revision. The same lease and snapshot serve the whole build.
-            snapshot = self._reader.load_stream(
-                stream_plan.request, expected_source_token=stream_plan.source_token,
-            )
+            try:
+                inputs.enter_context(pin(stream_plan.request) if callable(pin) else nullcontext())
+                snapshot = self._reader.load_stream(
+                    stream_plan.request, expected_source_token=stream_plan.source_token,
+                )
+            except NewowProductReadCancelled:
+                # This boundary precedes invalidation, candidate/seed creation,
+                # and every batch mutation. Later read cancellation has no such proof.
+                return StreamBatchReport(
+                    stream_id, "partial", "INPUT_READ_INTERRUPTED", 0, None, None, None, None,
+                )
             if not self._snapshot_matches(stream_plan, snapshot):
                 return StreamBatchReport(
                     stream_id, "blocked", "SOURCE_CHANGED", 0, None, None, None, None,
@@ -774,8 +783,18 @@ class HistoricalReferenceService:
         resume: ResumeToken | None,
         deadline: float,
     ) -> StreamBatchReport:
+        from app.market_data.newow.product_reader import NewowProductReadCancelled
         pin = getattr(self._reader, "pin_stream", None)
-        with pin(stream_plan.request) if callable(pin) else nullcontext():
+        with ExitStack() as inputs:
+            try:
+                inputs.enter_context(pin(stream_plan.request) if callable(pin) else nullcontext())
+            except NewowProductReadCancelled:
+                return StreamBatchReport(
+                    stream_plan.request.identity.stream_id, "partial", "INPUT_READ_INTERRUPTED",
+                    0 if resume is None else resume.next_input_index,
+                    None if resume is None else resume.revision_id, None,
+                    None if resume is None else resume.last_batch_key, resume,
+                )
             return self._build_stream_from_input(plan, stream_plan, resume, deadline)
 
     def _build_stream_from_input(
@@ -783,18 +802,35 @@ class HistoricalReferenceService:
         resume: ResumeToken | None, deadline: float, *, verified_snapshot=None,
     ) -> StreamBatchReport:
         stream = stream_plan.request.identity
-        if resume is not None and not self._reader.revalidate(
-            stream_plan.request, expected_source_token=resume.source_token,
-        ):
-            return StreamBatchReport(
-                stream.stream_id, "blocked", "SOURCE_CHANGED", resume.next_input_index,
-                resume.revision_id, None, resume.last_batch_key, resume,
-            )
+        from app.market_data.newow.product_reader import NewowProductReadCancelled
+        if resume is not None:
+            try:
+                valid_source = self._reader.revalidate(
+                    stream_plan.request, expected_source_token=resume.source_token,
+                )
+            except NewowProductReadCancelled:
+                return StreamBatchReport(
+                    stream.stream_id, "partial", "INPUT_READ_INTERRUPTED", resume.next_input_index,
+                    resume.revision_id, None, resume.last_batch_key, resume,
+                )
+            if not valid_source:
+                return StreamBatchReport(
+                    stream.stream_id, "blocked", "SOURCE_CHANGED", resume.next_input_index,
+                    resume.revision_id, None, resume.last_batch_key, resume,
+                )
         snapshot = verified_snapshot
         if snapshot is None:
-            snapshot = self._reader.load_stream(
-                stream_plan.request, expected_source_token=stream_plan.source_token,
-            )
+            try:
+                snapshot = self._reader.load_stream(
+                    stream_plan.request, expected_source_token=stream_plan.source_token,
+                )
+            except NewowProductReadCancelled:
+                return StreamBatchReport(
+                    stream.stream_id, "partial", "INPUT_READ_INTERRUPTED",
+                    0 if resume is None else resume.next_input_index,
+                    None if resume is None else resume.revision_id, None,
+                    None if resume is None else resume.last_batch_key, resume,
+                )
         if not self._snapshot_matches(stream_plan, snapshot):
             return StreamBatchReport(
                 stream.stream_id, "blocked", "SOURCE_CHANGED",
@@ -1152,7 +1188,7 @@ class HistoricalReferenceService:
                 stream.stream_id, state.revision_id,
             )
             chunk = tail[index:index + plan.batch_size]
-            presentation = []
+            presentation: list[dict[str, object]] = []
             next_checkpoint, sources, transitions, schema = _advance_batch(
                 stream, checkpoint, chunk, presentation,
             )
@@ -1207,6 +1243,9 @@ class HistoricalReferenceService:
             dependency_advance = None
             index += len(chunk)
             last_batch_key = batch_key
+            self._after_batch("committed", {
+                "stream_id": stream.stream_id, "revision_id": state.revision_id, "batch_key": batch_key,
+            })
         final, _ = self._repository.load_checkpoint(stream.stream_id, state.revision_id)
         return StreamBatchReport(
             stream.stream_id, "completed", None, index, state.revision_id,
