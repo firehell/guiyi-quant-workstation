@@ -31,10 +31,15 @@ const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(c
 const apiUrl = moduleUrl('export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
 const api = await import(apiUrl)
 async function loadList() {
+  const iconSource = readFileSync(new URL('../src/components/market/MarketStateIcon.vue', import.meta.url), 'utf8')
+  const iconCompiled = compileScript(parse(iconSource).descriptor, { id: 'home-icon-test', inlineTemplate: true })
+  const iconCode = ts.transpileModule(iconCompiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`).replace(/from ['"]@\/utils\/marketHomeIcons['"]/g, `from '${new URL('../src/utils/marketHomeIcons.ts', import.meta.url).href}'`)
+  const iconUrl = moduleUrl(iconCode)
   const source = readFileSync(new URL('../src/components/market/MarketHomeStrategyCards.vue', import.meta.url), 'utf8')
   const compiled = compileScript(parse(source).descriptor, { id: 'home-list-test', inlineTemplate: true })
   const root = fileURLToPath(new URL('../src/', import.meta.url))
   const code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+    .replace(/from ['"]\.\/MarketStateIcon\.vue['"]/g, `from '${iconUrl}'`)
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
     .replace(/from ['"]@\/api\/newowHomeCards['"]/g, `from '${apiUrl}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_m, name) => `from '${pathToFileURL(resolve(root, name + '.ts')).href}'`)
