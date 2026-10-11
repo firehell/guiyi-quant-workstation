@@ -80,6 +80,7 @@ class ForwardReferenceWorker:
         self._queue: deque[str] = deque()
         self._queued: dict[str, tuple[str, datetime | None]] = {}
         self._blocked: dict[str, str] = {}
+        self._source_retry_turn = True
         self._last_success: datetime | None = None
         self._scan_after: str | None = None
 
@@ -176,9 +177,28 @@ class ForwardReferenceWorker:
         if any(key in self._blocked for key in (*keys, *routes)):
             raise RuntimeError("REFERENCE_BUFFER_PROCESSING_BLOCKED")
 
+    def _prefer_source_retry(self) -> None:
+        # A resource failure is cleared only by a real successful read. Let one
+        # already queued work group retry before a full scope rotation, without
+        # adding work, discarding continuation, or changing the unit budget.
+        # Alternate with ordinary FIFO even at a one-unit budget so a persistent
+        # busy source cannot starve other groups.
+        if not self._source_retry_turn:
+            self._source_retry_turn = True
+            return
+        retry_keys = {self._work_key(stream_id) for stream_id, reason in self._blocked.items()
+                      if reason == 'SOURCE_BUSY'}
+        selected = next((key for key in self._queue if key in retry_keys), None)
+        if selected is not None:
+            self._queue.remove(selected)
+            self._queue.appendleft(selected)
+            self._source_retry_turn = False
+
     def run_round(self, *, only_keys: tuple[str, ...] | None = None) -> int:
         if not self._enabled:
             return 0
+        if only_keys is None:
+            self._prefer_source_retry()
         completed, units = 0, 0
         for _ in range(len(self._queue)):
             if not self._queue or units >= self._budget.max_units_per_round:
