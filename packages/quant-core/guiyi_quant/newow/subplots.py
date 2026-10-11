@@ -43,6 +43,7 @@ class ZhaoyaoMirrorResult:
     repainting: bool = True
     formal_signal_eligible: bool = False
     formula_version: str = ZHAOYAO_MIRROR_FORMULA_VERSION
+    confirmed_peak_events: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +207,7 @@ def calculate_zhaoyao_mirror(
     ]
 
     confirmed_peaks: list[int] = []
+    confirmed_peak_events: list[tuple[int, int]] = []
     trend = 1
     candidate_peak = candidate_trough = 0
     peak_value = trough_value = closes[0]
@@ -215,6 +217,7 @@ def calculate_zhaoyao_mirror(
                 peak_value, candidate_peak = closes[index], index
             elif closes[index] <= peak_value * 0.95:
                 confirmed_peaks.append(candidate_peak)
+                confirmed_peak_events.append((candidate_peak, index))
                 trend, candidate_trough, trough_value = -1, index, closes[index]
         elif closes[index] < trough_value:
             trough_value, candidate_trough = closes[index], index
@@ -250,6 +253,7 @@ def calculate_zhaoyao_mirror(
         tuple(inducement),
         tuple(peaks),
         tuple(caution),
+        confirmed_peak_events=tuple(confirmed_peak_events),
     )
 
 

@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
 
@@ -115,9 +115,10 @@ test('rows expand and summary cards navigate with selected strategy while retain
   try {
     app.mount(root)
     const call = api.calls.at(-1)
-    call.resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': ready('HOLD'), '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
+    call.resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:true, executable:false, items:[{kind:'caution', peak_day:'2026-10-08', event_day:'2026-10-09', formula_version:'mirror'}]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
     await settle()
     assert.match(nodeText(root), /3100.13/)
+    assert.equal(nodeText(findNode(root, n => n.props.class === 'row-hint')!), '小心')
     assert.match(nodeText(root), /9007199254740993.13/)
     assert.match(nodeText(root), /趋势来源未确认/)
     assert.doesNotMatch(nodeText(root), /日周向上/)
@@ -262,3 +263,13 @@ function nodeOperations() {
     insertStaticContent: () => [element('#static'), element('#static')] as const,
   }
 }
+
+
+test('row hints require exact daily ownership and do not create a trend source', () => {
+  const day = { ...ready('FLAT'), row_hints: { status: 'ready', bar_end: ready('FLAT').bar_end!, physical_contract: 'RB2701', calculation_segment_id: 'c', page_parity: true, executable: false, items: [{kind: 'caution' as const, peak_day: '2026-10-08', event_day: '2026-10-09', formula_version: 'mirror'}, {kind: 'reduce' as const, event_day: '2026-10-09', j_value: '98.1', reference_price: '3000', formula_version: 'j'}] } }
+  assert.deepEqual(homeRowHints(day).map(hint => hint.label), ['小心', '减仓'])
+  assert.match(homeRowHints(day)[0].title, /2026-10-08.*2026-10-09/)
+  assert.deepEqual(homeRowHints({...day, row_hints: {...day.row_hints, physical_contract: 'RB2601'}}), [])
+  assert.deepEqual(homeRowHints({...day, row_hints: {...day.row_hints, executable: true}}), [])
+  assert.equal(homeTrendDisplay().tone, 'pending')
+})

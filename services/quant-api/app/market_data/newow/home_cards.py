@@ -2,6 +2,8 @@
 from decimal import Decimal
 
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
+from guiyi_quant.newow.main_rise import calculate_main_rise_series
+from guiyi_quant.newow.subplots import calculate_zhaoyao_mirror
 
 from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, MainState, TradeEligibility
 
@@ -63,6 +65,7 @@ def project_home_summary(replay, anchor, status, prices):
             'formula_version': control.formula_version, 'bar_end': bar.bar_end,
             'physical_contract': bar.physical_contract, 'calculation_segment_id': anchor.bar.calculation_segment_id,
             'page_parity': True, 'executable': False},
+        'row_hints': project_row_hints(replay, anchor, ready),
         'recent_action': {'kind': latest.kind.value, 'bar_end': latest.bar_end, 'signal_id': latest.signal_id} if latest else None,
         'page_parity': True, 'executable': False,
     }
@@ -86,3 +89,49 @@ def project_home_performance(result):
         'through': ordinary['trading_days'][-1] if ordinary['trading_days'] else None,
         'cum_return_percent': summary['cumReturn'], 'trade_count': summary['tradeCount'],
         'page_parity': True, 'executable': False}
+
+
+def project_row_hints(replay, anchor, ready):
+    """Public home icon window: confirmation/action on the latest two D1 bars."""
+    if not ready or replay.identity.frequency.value != '1d':
+        return None
+    bars = tuple(frame.bar.bar for frame in replay.frames
+                 if frame.bar.calculation_segment_id == anchor.bar.calculation_segment_id
+                 and frame.bar.bar.physical_contract == anchor.bar.bar.physical_contract
+                 and frame.bar.bar.bar_end <= anchor.bar.bar.bar_end)
+    if len(bars) < 20 or bars[-1].bar_end != anchor.bar.bar.bar_end:
+        return None
+    mirror = calculate_zhaoyao_mirror(bars)
+    hints = []
+    if mirror and mirror.confirmed_peak_events:
+        peak, confirmed = mirror.confirmed_peak_events[-1]
+        if len(bars) - confirmed <= 2:
+            hints.append({'kind': 'caution', 'peak_day': bars[peak].trading_day,
+                          'event_day': bars[confirmed].trading_day,
+                          'formula_version': mirror.formula_version})
+    series = calculate_main_rise_series(bars)
+    event = project_home_j_hint(series)
+    if event is not None and len(bars) - event <= 2:
+        hints.append({'kind': 'reduce', 'event_day': bars[event].trading_day,
+                      'j_value': str(series[event].j_value), 'reference_price': str(bars[event].high),
+                      'formula_version': 'newow_home_j_hint_page_v1'})
+    return {'status': 'ready', 'bar_end': bars[-1].bar_end,
+            'physical_contract': bars[-1].physical_contract,
+            'calculation_segment_id': anchor.bar.calculation_segment_id,
+            'page_parity': True, 'executable': False, 'items': hints}
+
+
+def project_home_j_hint(series):
+    """Home calcMainRiseJ uses previous hint, not previous band CLEAR."""
+    latest = None
+    previous_hint = False
+    for index in range(1, len(series)):
+        prior, current = series[index - 1], series[index]
+        hint = (prior.j_value is not None and current.j_value is not None
+                and prior.j_value - 0.01 > current.j_value
+                and current.j_value < prior.j_value
+                and prior.state.previous_bdgd and not previous_hint)
+        if hint:
+            latest = index
+        previous_hint = hint
+    return latest

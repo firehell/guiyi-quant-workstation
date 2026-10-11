@@ -162,3 +162,39 @@ def test_home_reference_summary_reuses_ordinary_page_performance(product_cases):
     assert summary['trade_count'] == ordinary['summary']['tradeCount']
     assert summary['input_sha256'] == result.reference.value.page_performance['input_sha256']
     assert summary['page_parity'] is True and summary['executable'] is False
+
+
+def test_home_j_hint_uses_previous_hint_not_main_rise_clear():
+    from types import SimpleNamespace
+    from app.market_data.newow.home_cards import project_home_j_hint
+    def item(j, bdgd, clear=False):
+        return SimpleNamespace(j_value=j, state=SimpleNamespace(previous_bdgd=bdgd, previous_was_sell=clear))
+    # Prior CLEAR must not hide a public home J hint.
+    assert project_home_j_hint([item(110, True, True), item(100, False)]) == 1
+    # Adjacent hints are suppressed; a subsequent independent hint is allowed.
+    assert project_home_j_hint([item(110, True), item(100, True), item(90, True), item(80, False)]) == 3
+    assert project_home_j_hint([item(None, False), item(90, True)]) is None
+
+
+def test_row_caution_uses_confirmation_window_and_current_owner():
+    from types import SimpleNamespace
+    from tests.newow.test_oscillation_channel import golden_bars
+    from app.market_data.newow.home_cards import project_row_hints
+    template = golden_bars()
+    closes = [100] * 20 + [110, 108, 104, 103, 109]
+    bars = tuple(replace(template[i], open=Decimal(c), high=Decimal(c+1), low=Decimal(c-1), close=Decimal(c)) for i,c in enumerate(closes))
+    frames = tuple(SimpleNamespace(bar=SimpleNamespace(bar=bar, calculation_segment_id='owner')) for bar in bars)
+    def project(count, ready=True):
+        replay = SimpleNamespace(identity=SimpleNamespace(frequency=SimpleNamespace(value='1d')), frames=frames[:count])
+        return project_row_hints(replay, frames[count-1], ready)
+    assert not [item for item in project(22)['items'] if item['kind'] == 'caution']
+    caution = [item for item in project(23)['items'] if item['kind'] == 'caution'][0]
+    assert caution['peak_day'] == bars[20].trading_day
+    assert caution['event_day'] == bars[22].trading_day
+    assert any(item['kind'] == 'caution' for item in project(24)['items'])
+    assert not any(item['kind'] == 'caution' for item in project(25)['items'])
+    assert project(23, False) is None
+    foreign = replace(bars[-1], physical_contract='OTHER')
+    anchor = SimpleNamespace(bar=SimpleNamespace(bar=foreign, calculation_segment_id='other'))
+    replay = SimpleNamespace(identity=SimpleNamespace(frequency=SimpleNamespace(value='1d')), frames=frames)
+    assert project_row_hints(replay, anchor, True) is None
