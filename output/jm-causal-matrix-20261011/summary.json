@@ -1,0 +1,453 @@
+{
+  "matrix_cells": 42,
+  "complete_annual_accounts": 22,
+  "rollover_interrupted": 20,
+  "positive_complete_accounts": 8,
+  "requested_since": "2025-10-11",
+  "actual_through": "2026-10-09",
+  "all_execution_inputs_identical": true,
+  "all_cost_facts_identical": true,
+  "selection_overlap": true,
+  "independent_oos": false,
+  "promotion": false,
+  "ranking": [
+    {
+      "frequency": "1w",
+      "strategy": "osc-test3",
+      "net_pnl": "7150.41600",
+      "account_return_pct": "14.30083200",
+      "mark_to_market_max_drawdown_pct": "7.618992930065524383510128520",
+      "closed_trades": 3,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "14.20166400",
+          "mark_to_market_max_drawdown_pct": "7.635260962526664716030200679",
+          "closed_trades": 3
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "13.94083800",
+          "mark_to_market_max_drawdown_pct": "7.682225520741897896662966584",
+          "closed_trades": 3
+        }
+      }
+    },
+    {
+      "frequency": "1w",
+      "strategy": "osc-test2",
+      "net_pnl": "6433.58700",
+      "account_return_pct": "12.86717400",
+      "mark_to_market_max_drawdown_pct": "7.713717893828377363163650690",
+      "closed_trades": 5,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "12.71434800",
+          "mark_to_market_max_drawdown_pct": "7.733832426756124799511693032",
+          "closed_trades": 5
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "9.98740800",
+          "mark_to_market_max_drawdown_pct": "7.943455868586721197243838969",
+          "closed_trades": 5
+        }
+      }
+    },
+    {
+      "frequency": "60m",
+      "strategy": "osc-test2",
+      "net_pnl": "4889.45100",
+      "account_return_pct": "9.77890200",
+      "mark_to_market_max_drawdown_pct": "13.91367820226177646843079278",
+      "closed_trades": 35,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "10.3174800",
+          "mark_to_market_max_drawdown_pct": "14.14021499264206054876875129",
+          "closed_trades": 35
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "8.0386800",
+          "mark_to_market_max_drawdown_pct": "14.84927600518139463769365356",
+          "closed_trades": 35
+        }
+      }
+    },
+    {
+      "frequency": "30m",
+      "strategy": "oscillation",
+      "net_pnl": "4448.62200",
+      "account_return_pct": "8.89724400",
+      "mark_to_market_max_drawdown_pct": "21.08464756727526911379006346",
+      "closed_trades": 111,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "3.5148600",
+          "mark_to_market_max_drawdown_pct": "24.83956998368160176148353541",
+          "closed_trades": 111
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "-1.54310400",
+          "mark_to_market_max_drawdown_pct": "28.23007578446051521749437538",
+          "closed_trades": 111
+        }
+      }
+    },
+    {
+      "frequency": "1d",
+      "strategy": "osc-test",
+      "net_pnl": "3660.471000000000000000",
+      "account_return_pct": "7.320942000000000000",
+      "mark_to_market_max_drawdown_pct": "12.93327426955532892572571518",
+      "closed_trades": 13,
+      "position_qty": 1,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "7.681728000000000000",
+          "mark_to_market_max_drawdown_pct": "12.80916207120417285406204061",
+          "closed_trades": 13
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "1.441374000000000000",
+          "mark_to_market_max_drawdown_pct": "13.02871487245225792709730381",
+          "closed_trades": 13
+        }
+      }
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "net_pnl": "3119.71500",
+      "account_return_pct": "6.2394300",
+      "mark_to_market_max_drawdown_pct": "5.938399658813466652629280753",
+      "closed_trades": 6,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "6.0588600",
+          "mark_to_market_max_drawdown_pct": "5.966596681193171540985688986",
+          "closed_trades": 6
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "5.5194300",
+          "mark_to_market_max_drawdown_pct": "6.082294618600161424441604619",
+          "closed_trades": 6
+        }
+      }
+    },
+    {
+      "frequency": "30m",
+      "strategy": "osc-test",
+      "net_pnl": "1753.44300",
+      "account_return_pct": "3.50688600",
+      "mark_to_market_max_drawdown_pct": "24.97429966826527389321319462",
+      "closed_trades": 112,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "1.4935200",
+          "mark_to_market_max_drawdown_pct": "27.08076770049828536784070025",
+          "closed_trades": 112
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "-7.473300",
+          "mark_to_market_max_drawdown_pct": "35.12622644736258246122255232",
+          "closed_trades": 112
+        }
+      }
+    },
+    {
+      "frequency": "1d",
+      "strategy": "oscillation",
+      "net_pnl": "1502.35500",
+      "account_return_pct": "3.0047100",
+      "mark_to_market_max_drawdown_pct": "12.08974899772026201700579710",
+      "closed_trades": 10,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "2.52945600",
+          "mark_to_market_max_drawdown_pct": "12.43800578732098469964172668",
+          "closed_trades": 10
+        },
+        "double_slippage": {
+          "status": "COMPLETE",
+          "annual_eligible": true,
+          "account_return_pct": "1.26476400",
+          "mark_to_market_max_drawdown_pct": "13.34226113301100804421754870",
+          "closed_trades": 10
+        }
+      }
+    },
+    {
+      "frequency": "1d",
+      "strategy": "osc-test4",
+      "net_pnl": "-1243.93200",
+      "account_return_pct": "-2.48786400",
+      "mark_to_market_max_drawdown_pct": "15.86215531641256833300987280",
+      "closed_trades": 13,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "1d",
+      "strategy": "osc-test2",
+      "net_pnl": "-2282.319000000000000000",
+      "account_return_pct": "-4.564638000000000000",
+      "mark_to_market_max_drawdown_pct": "17.95781744691375584301550071",
+      "closed_trades": 9,
+      "position_qty": 1,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "1d",
+      "strategy": "osc-test3",
+      "net_pnl": "-2520.21900",
+      "account_return_pct": "-5.04043800",
+      "mark_to_market_max_drawdown_pct": "10.20269143894562114247091254",
+      "closed_trades": 6,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "30m",
+      "strategy": "osc-test3",
+      "net_pnl": "-6529.94400",
+      "account_return_pct": "-13.05988800",
+      "mark_to_market_max_drawdown_pct": "28.68254549335419321103991538",
+      "closed_trades": 73,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "60m",
+      "strategy": "oscillation",
+      "net_pnl": "-8525.59800",
+      "account_return_pct": "-17.05119600",
+      "mark_to_market_max_drawdown_pct": "23.48119513340394996965125427",
+      "closed_trades": 54,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "60m",
+      "strategy": "osc-test",
+      "net_pnl": "-8533.32600",
+      "account_return_pct": "-17.06665200",
+      "mark_to_market_max_drawdown_pct": "23.49545302008810407209339521",
+      "closed_trades": 59,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "60m",
+      "strategy": "osc-test3",
+      "net_pnl": "-9189.30600",
+      "account_return_pct": "-18.37861200",
+      "mark_to_market_max_drawdown_pct": "24.33473889386375377706626578",
+      "closed_trades": 42,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "15m",
+      "strategy": "osc-test",
+      "net_pnl": "-20745.93300",
+      "account_return_pct": "-41.49186600",
+      "mark_to_market_max_drawdown_pct": "49.27454205656152953492449175",
+      "closed_trades": 189,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "15m",
+      "strategy": "oscillation",
+      "net_pnl": "-21339.64200",
+      "account_return_pct": "-42.67928400",
+      "mark_to_market_max_drawdown_pct": "51.75769873331425104181116241",
+      "closed_trades": 187,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "5m",
+      "strategy": "osc-test2",
+      "net_pnl": "-27476.33700",
+      "account_return_pct": "-54.95267400",
+      "mark_to_market_max_drawdown_pct": "56.50955705390821849984149423",
+      "closed_trades": 91,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "5m",
+      "strategy": "osc-test3",
+      "net_pnl": "-37028.562000000000000000",
+      "account_return_pct": "-74.057124000000000000",
+      "mark_to_market_max_drawdown_pct": "74.69987942769957528297122369",
+      "closed_trades": 332,
+      "position_qty": 1,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "5m",
+      "strategy": "osc-test",
+      "net_pnl": "-39584.70600",
+      "account_return_pct": "-79.16941200",
+      "mark_to_market_max_drawdown_pct": "79.25367237977643320758472295",
+      "closed_trades": 435,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "5m",
+      "strategy": "oscillation",
+      "net_pnl": "-39739.17300",
+      "account_return_pct": "-79.47834600",
+      "mark_to_market_max_drawdown_pct": "79.99052767148337712314941358",
+      "closed_trades": 399,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    },
+    {
+      "frequency": "5m",
+      "strategy": "osc-test4",
+      "net_pnl": "-41453.45700",
+      "account_return_pct": "-82.90691400",
+      "mark_to_market_max_drawdown_pct": "83.35769103560271303551806783",
+      "closed_trades": 332,
+      "position_qty": 0,
+      "stress": {
+        "double_commission": {
+          "status": "NOT_RUN"
+        },
+        "double_slippage": {
+          "status": "NOT_RUN"
+        }
+      }
+    }
+  ]
+}

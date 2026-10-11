@@ -60,9 +60,9 @@ class PaperProfile:
             _str(getattr(self, name), name)
         _positive(self.initial_cash, 'initial_cash')
         _positive(self.daily_loss_fraction, 'daily_loss_fraction')
-        if (self.product.lower() != 'jm' or self.frequency != '5m' or
+        if (self.product.lower() != 'jm' or self.frequency not in ('5m', '15m', '30m', '60m', '1d', '1w') or
             self.daily_loss_fraction != Decimal('0.02') or self.initial_cash != Decimal('50000')):
-            raise ValueError('this Paper profile is limited to JM 5m with a 2% daily loss stop')
+            raise ValueError('this Paper profile is limited to JM research frequencies with a 2% daily loss stop')
 
 
 @dataclass(frozen=True)

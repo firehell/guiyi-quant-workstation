@@ -24,6 +24,26 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 event、command、fill数量不变；事实或窗口改变须新账户身份。
 这些 CLI 仅做 HISTORICAL_REPLAY，不订阅实时行情，不连接 SimNow。
 
+七策略六周期矩阵增量验证：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_causal_matrix_signals.py \
+  services/quant-api/tests/newow/test_jm_matrix_input.py \
+  services/quant-api/tests/paper/test_matrix.py \
+  services/quant-api/tests/paper/test_matrix_report.py tests/unit/paper
+```
+
+`scripts/research/jm_causal_matrix.py` 按 `--frequency`、可选 `--strategy` 列表和 `--scenario`
+读取固定近一年窗口，输出每格事件内核验算；`--owner-diagnostics` 额外生成独立物理段结果。
+显式提供已有 `--facts`、`--market-env`、`--canonical-root` 与 `--out`，不下载、不写数据库。
+已有结果文件拒绝覆盖。`jm_causal_matrix_report.py <结果目录>` 只有在42格齐全、执行时钟和
+费用hash一致、输入readback成立后才汇总排名；换月中断及无闭合交易组不列为年度赢家。
+`jm_causal_matrix_cost_trace.py` 接收相同facts/env/Canonical参数及 `--root <结果目录>`，
+对60m测试2和1d测试1重放基线/双费，记录逐笔成交与首次日停机时刻；年度结果须与原JSON完全
+一致（仅排除独立合约诊断），否则不输出trace。该诊断不写账户或改原始结果。
+
 ## 牛哇 v3.3.79 手册同输入验证
 
 该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，
