@@ -92,7 +92,7 @@ async function loadList() {
 function nodeText(node: TestNode): string { return [node.text, ...node.children.map(nodeText)].join(' ').trim() }
 const settle = async () => { await new Promise(resolve => setImmediate(resolve)); await nextTick() }
 
-test('real list switches strategy, routes day/week icons and retains failure/pending notices', async () => {
+test('rows expand and summary cards navigate with selected strategy while retaining notices', async () => {
   const List = await loadList(), root = element('root'), chart: unknown[] = [], sorts: unknown[] = []
   const sequence = ref(0)
   const rows = [{ symbol: 'rb', product_name: '螺纹钢', close: 3100.125, price_change_1d: .0125, actual_contract: 'RB2701', data_as_of: '2026-10-09', liveQuote: { physicalContract: 'RB2701', barEnd: '2026-10-09T00:00:00Z' } }]
@@ -106,7 +106,7 @@ test('real list switches strategy, routes day/week icons and retains failure/pen
     assert.match(nodeText(root), /9007199254740993.13/)
     assert.match(nodeText(root), /趋势来源未确认/)
     assert.doesNotMatch(nodeText(root), /日周向上/)
-    const summary = findNode(root, n => n.type === 'button' && n.props['aria-label'] === '螺纹钢综合摘要')!
+    const summary = findNode(root, n => n.props['aria-label'] === '螺纹钢展开策略摘要')!
     assert.equal(summary.props['aria-expanded'], false)
     ;(summary.props.onClick as Function)(); await nextTick()
     assert.equal(summary.props['aria-expanded'], true)
@@ -116,16 +116,19 @@ test('real list switches strategy, routes day/week icons and retains failure/pen
     assert.match(nodeText(root), /原站私有价格逐值一致未证明/)
     assert.match(nodeText(root), /断线保留最新完成报价/)
     assert.equal(findNode(root, n => n.type === 'details')?.props.open, undefined)
-    const day = findNode(root, n => n.type === 'button' && String(n.props['aria-label']).includes('趋势日线'))!
-    ;(day.props.onClick as Function)()
+    assert.deepEqual(chart, [])
+    assert.equal(findNode(root, n => n.props.class === 'summary-toggle'), null)
+    const card = findNode(root, n => n.props.role === 'link')!
+    ;(card.props.onClick as Function)()
     const switcher = findNode(root, n => n.type === 'button' && nodeText(n) === '震荡')!
     ;(switcher.props.onClick as Function)(); await nextTick()
     assert.match(nodeText(root), /3000.00/)
     assert.match(nodeText(root), /日周向下/)
     assert.match(nodeText(root), /等待最新周期更新/)
-    const week = findNode(root, n => n.type === 'button' && String(n.props['aria-label']).includes('震荡周线'))!
-    ;(week.props.onClick as Function)()
-    assert.deepEqual(chart, [['rb', 'trend', '1d'], ['rb', 'oscillation', '1w']])
+    ;(findNode(root, n => n.props.role === 'link')!.props.onClick as Function)()
+    assert.deepEqual(chart, [['rb', 'trend', '1d'], ['rb', 'oscillation', '1d']])
+    assert.match(nodeText(root), /空仓.*建仓.*持有.*清仓/)
+    assert.match(nodeText(root), /日线参考收益未提供/)
     const sort = findNode(root, n => n.type === 'button' && nodeText(n).startsWith('涨跌幅'))!
     ;(sort.props.onClick as Function)(); assert.deepEqual(sorts, ['change'])
     sequence.value++; await nextTick()
@@ -176,7 +179,7 @@ test('sector filtering keeps the full product load alive and reuses completed ca
     ;(switcher.props.onClick as Function)(); await nextTick()
     products.value = ['rb', 'cu', 'a']; await nextTick()
     assert.equal(api.calls.length, loaded)
-    assert.ok(findNode(root, n => n.type === 'button' && nodeText(n) === 'rb RB'))
+    assert.ok(findNode(root, n => n.props.class === 'product-name' && nodeText(n) === 'rb RB'))
     sequence.value++; await nextTick()
     assert.equal(api.calls.length, loaded + 2)
     const refresh = api.calls.slice(loaded)
