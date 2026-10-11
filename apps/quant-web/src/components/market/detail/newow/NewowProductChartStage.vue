@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
 import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
-import { newowSimpleDualLabel } from '@/utils/newowPagePresentation'
+import { newowSimpleDualLabel, newowReferencePrice, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
 import { newowVolumeColors, newowVolumeScores } from '@/utils/newowVolumeDisplay'
 import { newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
 import { newowChartReadout, newowTimeKey } from '@/utils/newowChartReadout'
 import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
-import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { projectNewowAuxiliaryReadiness } from '@/utils/newowDetailPresentation'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
@@ -217,7 +216,7 @@ function renderVisualOverlays(): void {
   if (visualOverlays.value.donchian) {
     const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), visualOverlays.value.window)
     for (const [side,color] of [['upper','rgba(52,199,89,0.7)'],['lower','rgba(255,59,48,0.7)']] as const) {
-      const line = chart.addSeries(LineSeries,{ color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false })
+      const line = chart.addSeries(LineSeries,{ priceFormat: NEWOW_CHART_PRICE_FORMAT, color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false })
       line.setData(points.map((p,i) => ({ time:chartMarkerTime(p.time,value.identity.frequency,value.bars[i]!.tradingDay), ...(p[side] === null ? {} : {value:p[side]!}) })))
       visualLines.set(side,line)
     }
@@ -248,6 +247,7 @@ onMounted(async () => {
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
   })
   candles = chart.addSeries(CandlestickSeries, {
+    priceFormat: NEWOW_CHART_PRICE_FORMAT,
     upColor: theme.candleUp, downColor: theme.candleDown,
     borderUpColor: theme.candleUp, borderDownColor: theme.candleDown,
     wickUpColor: theme.candleUp, wickDownColor: theme.candleDown,
@@ -467,6 +467,7 @@ function syncMainLines(value: NewowProductChartModel): void {
     let series = mainLines.get(line.id)
     if (series === undefined) {
       series = chart.addSeries(LineSeries, {
+        priceFormat: NEWOW_CHART_PRICE_FORMAT,
         color: mainLineColors[line.key] ?? '#64748B',
         lineWidth: line.key === 'a' || line.key === 'b' ? 1 : 2,
         lineVisible: line.key !== 'upper' && line.key !== 'lower',
@@ -773,8 +774,8 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
   >
     <div class="newow-product-chart-stage__reference-prices" aria-label="主图参考价格">
-      <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ formatMarketDecimal(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
-      <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ formatMarketDecimal(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
+      <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ newowReferencePrice(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
+      <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ newowReferencePrice(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
       <div class="newow-product-chart-stage__reference-controls"><slot name="reference-controls" /></div>
     </div>
     <div v-if="comparisonActive" class="newow-product-chart-stage__dual-summary" aria-label="双策略本视图摘要" :title="`统计仅含已绘制清仓标签对应的 ${comparisonStats.samples} 笔已完成参考交易，不含融合配对收益`">主导：{{ comparisonDominant === 'trend' ? '趋势' : comparisonDominant === 'oscillation' ? '震荡' : '—' }} · 上=趋势 下=震荡 · 本视图 {{ comparisonStats.count }} 个信号 · 平均盈亏 {{ comparisonStats.average }} · 胜率 {{ comparisonStats.winRate }} · 最大 {{ comparisonStats.maximum }} · 背景深色=趋势蓝带<div class="newow-product-chart-stage__dual-controls"><slot name="main-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /><button :aria-pressed="detailLabels" @click="detailLabels = true">详</button><button :aria-pressed="!detailLabels" @click="detailLabels = false">简</button><details><summary>图层</summary><div class="newow-product-chart-stage__dual-layer-menu"><button :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button><button :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button><button :aria-pressed="oscillationTrack" @click="oscillationTrack = !oscillationTrack">震荡标记</button><button :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button><button :aria-pressed="showActions" @click="showActions = !showActions">建仓 / 清仓</button></div></details><button v-if="hasMoreBefore" :disabled="loading" @click="emit('loadEarlier')">加载更早</button><button v-if="!followLatest" @click="scrollToLatest">最新</button><button :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">全屏</button></div></div>
@@ -829,7 +830,7 @@ defineExpose({ revealSignal, scrollToLatest })
     <div v-if="comparisonActive" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双策略叠加">
       <svg aria-hidden="true"><line v-for="(item,index) in comparisonSwitches" :key="`switch:${index}`" :x1="item.x" y1="20" :x2="item.x" :y2="actionOverlayHeight" stroke-dasharray="4 3" class="dual-switch-line" /><polyline v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" :points="`${item.x},${item.y} ${item.x},${(item.y + item.lineY) / 2} ${item.lineX},${(item.y + item.lineY) / 2} ${item.lineX},${item.lineY}`" fill="none" /><circle v-for="item in positionedComparison" :key="`anchor:${item.origin}:${item.callout.id}`" :cx="item.x" :cy="item.y" r="2.5" :fill="item.callout.above ? '#34c759' : '#ff3b30'" stroke="none" /></svg>
       <div v-for="(item,index) in comparisonSwitches" :key="index" class="newow-product-chart-stage__dual-switch" :style="{ left: `${item.x}px` }" :title="`${item.from === 'trend' ? '趋势' : '震荡'}切换至${item.to === 'trend' ? '趋势' : '震荡'}，仅主图展示主导策略`"><b :class="item.from">{{ item.from === 'trend' ? '趋' : '震' }}</b><span>⇄</span><b :class="item.to">{{ item.to === 'trend' ? '趋' : '震' }}</b></div>
-      <div v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" class="newow-product-chart-stage__action-label" :class="[`return-${actionDisplay(item.callout, item.origin).direction}`, `origin-${item.origin}`]" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :data-anchor-y="item.y" :title="`${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`"><strong>{{ detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price) }}</strong><span v-if="detailLabels">{{ actionDisplay(item.callout, item.origin).text }}</span></div>
+      <div v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" class="newow-product-chart-stage__action-label" :class="[`return-${actionDisplay(item.callout, item.origin).direction}`, `origin-${item.origin}`]" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :data-anchor-y="item.y" :title="`${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`"><strong>{{ detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price) }}</strong><span v-if="detailLabels">{{ actionDisplay(item.callout, item.origin).text }}</span></div>
     </div>
     <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量 <button v-if="yellowVolumeIndexes.length" class="newow-product-chart-stage__volume-help" type="button" @click="showLatestVolumeScore">黄色柱说明</button></span>
@@ -837,7 +838,7 @@ defineExpose({ revealSignal, scrollToLatest })
       <header><strong>成交量突破评分</strong><button type="button" aria-label="关闭突破评分" @click="volumeScoreIndex = null">×</button></header>
       <p>{{ volumeScoreBar.tradingDay }} · {{ volumeScoreBar.physicalContract }} · 成交量 {{ volumeScoreBar.volume }}</p>
       <article v-for="score in selectedVolumeScores" :key="score.actionId">
-        <strong>{{ score.kind === 'BUILD' ? '建仓 · 下沿' : '清仓 · 上沿' }} {{ score.reference }} · {{ score.total }}/6 分</strong>
+        <strong>{{ score.kind === 'BUILD' ? '建仓 · 下沿' : '清仓 · 上沿' }} {{ newowReferencePrice(String(score.reference)) }} · {{ score.total }}/6 分</strong>
         <dl><div><dt>量比</dt><dd>{{ score.volumeRatio.toFixed(2) }} 倍 · {{ score.volumeScore }} 分</dd></div><div><dt>实体占比</dt><dd>{{ (score.bodyRatio * 100).toFixed(2) }}% · {{ score.bodyScore }} 分</dd></div><div><dt>穿透率</dt><dd>{{ (score.penetrationRatio * 100).toFixed(2) }}% · {{ score.penetrationScore }} 分</dd></div></dl>
         <p>{{ score.total >= 4 ? '总分 ≥ 4，该动作达到黄色条件。' : '总分 < 4，该动作未达到黄色条件。' }}</p>
         <details><summary>查看计算依据</summary><p>量比 = 当前量 / 同段近10根均量（含本根），均量 {{ score.averageVolume.toFixed(2) }}；≥1.5 得2分，≥1 得1分。实体 = |收−开| / max(高−低, 0.001)；>60% 得2分，>30% 得1分。穿透 = |收−通道沿| / 通道沿；>3% 得2分，>1% 得1分。其余0分，确认项固定0分。</p></details>
@@ -873,8 +874,8 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage__dual-layer-menu { position:absolute; top:100%; right:0; min-width:128px; padding:4px; border:1px solid #ebedf0; border-radius:4px; background:#fff; box-shadow:0 6px 18px #20242b14; }
 .newow-product-chart-stage__dual-layer-menu button { display:block; width:100%; text-align:left; white-space:nowrap; }
 .newow-product-chart-stage__dual-layer-menu button[aria-pressed="true"] { color:#ff6b35; }
-.newow-product-chart-stage__dual-tracks .origin-trend { border-color:#0a84ff; border-radius:3px; background:#fffffff0; }
-.newow-product-chart-stage__dual-tracks .origin-oscillation { border-color:#ff9500; border-radius:3px; background:#fffffff0; }
+.newow-product-chart-stage__dual-tracks .origin-trend { pointer-events:auto; color:#0a84ff; border-color:#0a84ff; border-radius:3px; background:#fffffff0; }
+.newow-product-chart-stage__dual-tracks .origin-oscillation { pointer-events:auto; color:#ff9500; border-color:#ff9500; border-radius:3px; background:#fffffff0; }
 .newow-product-chart-stage__dual-switch { position:absolute; top:1px; transform:translateX(-50%); display:flex; height:16px; border-radius:4px; overflow:hidden; color:white; font-size:10px; line-height:16px; }
 .newow-product-chart-stage__dual-switch b { padding:0 3px; }.newow-product-chart-stage__dual-switch .trend { background:#0a84ff; }.newow-product-chart-stage__dual-switch .oscillation { background:#ff9500; }.newow-product-chart-stage__dual-switch span { padding:0 2px; background:#666; }
 .newow-product-chart-stage__dual-tracks .dual-switch-line { stroke:#8e8e93; }

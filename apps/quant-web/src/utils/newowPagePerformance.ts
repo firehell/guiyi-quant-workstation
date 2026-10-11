@@ -15,6 +15,42 @@ export interface PagePerformance {
   readonly segment_count: number; readonly ordinary_interrupted_count: number; readonly ideal_open_count: number
   readonly ordinary: PagePerformanceMode | null; readonly ideal: PagePerformanceMode | null
 }
+
+/** Display-only annualization of the selected page curve; never ReferenceTrade PnL. */
+export function pagePerformanceAnnualized(mode: { readonly dates: readonly string[]; readonly equity: readonly string[]; readonly segment_ids?: readonly string[] } | null | undefined): number | null {
+  if (!mode || mode.dates.length < 2 || mode.dates.length !== mode.equity.length) return null
+  if (mode.segment_ids && (mode.segment_ids.length !== mode.dates.length || new Set(mode.segment_ids).size !== 1)) return null
+  const calendar = (raw: string): number | null => {
+    let day = raw
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      // A timestamp must carry an explicit zone; a host-local date is not authoritative.
+      if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(raw) || !Number.isFinite(Date.parse(raw))) return null
+      day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(raw))
+    }
+    const time = Date.parse(`${day}T00:00:00Z`)
+    return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === day ? time : null
+  }
+  const days = mode.dates.map(calendar), values = mode.equity.map(value => value.trim() === '' ? NaN : Number(value))
+  if (days.some((day, index) => day === null || (index > 0 && day < days[index - 1]!)) || values.some(value => !Number.isFinite(value))) return null
+  const span = (days.at(-1)! - days[0]!) / 86_400_000
+  const start = 1 + values[0]! / 100, end = 1 + values.at(-1)! / 100
+  if (span <= 0 || start <= 0 || end <= 0) return null
+  const annual = 100 * (Math.pow(end / start, 365 / span) - 1)
+  return Number.isFinite(annual) ? annual : null
+}
+/** Independent segment annuals; the page curve and its projection remain unchanged. */
+export function pagePerformanceSegmentAnnualized(mode: { readonly dates: readonly string[]; readonly equity: readonly string[]; readonly segment_ids: readonly string[] } | null | undefined) {
+  if (!mode || mode.segment_ids.length !== mode.dates.length || mode.equity.length !== mode.dates.length) return []
+  const parts: Array<{ segmentId: string; dates: string[]; equity: string[] }> = []
+  for (let i = 0; i < mode.dates.length; i++) {
+    const segmentId = mode.segment_ids[i]!
+    if (parts.at(-1)?.segmentId !== segmentId) parts.push({ segmentId, dates: [], equity: [] })
+    const part = parts.at(-1)!
+    part.dates.push(mode.dates[i]!); part.equity.push(mode.equity[i]!)
+  }
+  if (new Set(parts.map(part => part.segmentId)).size !== parts.length) return []
+  return parts.map(part => ({ segmentId: part.segmentId, since: part.dates[0]!, through: part.dates.at(-1)!, annualized: pagePerformanceAnnualized(part) }))
+}
 const sourceHash = '3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d'
 function obj(v: unknown): Record<string, unknown> { if (!v || typeof v !== 'object' || Array.isArray(v)) throw Error('page_performance object invalid'); return v as Record<string, unknown> }
 function exact(v: Record<string, unknown>, fields: string[]) { if (Object.keys(v).some(k => !fields.includes(k)) || fields.some(k => !Object.hasOwn(v, k))) throw Error('page_performance fields invalid') }

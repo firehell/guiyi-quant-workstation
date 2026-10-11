@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { priceDirection } from '@/utils/newowDetailPresentation'
 import {
   formatMarketNumber,
@@ -31,6 +32,10 @@ function number(value: number | null, digits = 2): string {
   return formatMarketNumber(value, digits)
 }
 
+function price(value: number | null): string {
+  return props.newow ? newowReferencePrice(value === null ? null : String(value)) : number(value)
+}
+
 function integer(value: number | null): string {
   return value === null ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: 0 })
 }
@@ -40,8 +45,8 @@ function integer(value: number | null): string {
   <section class="quote-header" :class="{ 'quote-header--unified': unified, 'quote-header--newow': newow }" data-detail-section="quote">
     <div class="quote-header__primary">
       <div class="quote-header__price" :class="`quote-header__price--${direction}`">
-        <strong>{{ number(header.close) }}</strong>
-        <span>{{ header.change === null ? `${changeBasis} —` : `${changeBasis} ${header.change >= 0 ? '+' : ''}${number(header.change)}` }}</span>
+        <strong>{{ price(header.close) }}</strong>
+        <span>{{ header.change === null ? `${changeBasis} —` : `${changeBasis} ${header.change >= 0 ? '+' : ''}${price(header.change)}` }}</span>
         <span>{{ header.pct === null ? '比例 —' : `${header.pct >= 0 ? '+' : ''}${number(header.pct)}%` }}</span>
       </div>
       <span class="quote-header__status" :class="`quote-header__status--${header.afterMarketFailed ? 'stale' : header.freshness}`">
@@ -55,9 +60,9 @@ function integer(value: number | null): string {
         <p v-if="!newow" class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
         <div v-if="newow" class="quote-header__newow-facts">
           <dl class="quote-header__facts quote-header__facts--prices">
-            <div><dt>最高</dt><dd>{{ number(header.high) }}</dd></div>
-            <div><dt>最低</dt><dd>{{ number(header.low) }}</dd></div>
-            <div><dt>开盘</dt><dd>{{ number(header.open) }}</dd></div>
+            <div><dt>最高</dt><dd>{{ price(header.high) }}</dd></div>
+            <div><dt>最低</dt><dd>{{ price(header.low) }}</dd></div>
+            <div><dt>开盘</dt><dd>{{ price(header.open) }}</dd></div>
           </dl>
           <dl class="quote-header__facts quote-header__facts--activity">
             <div><dt>成交量</dt><dd>{{ integer(header.volume) }}</dd></div>
@@ -65,9 +70,9 @@ function integer(value: number | null): string {
           </dl>
         </div>
         <dl v-else class="quote-header__facts">
-          <div><dt>开</dt><dd>{{ number(header.open) }}</dd></div>
-          <div><dt>高</dt><dd>{{ number(header.high) }}</dd></div>
-          <div><dt>低</dt><dd>{{ number(header.low) }}</dd></div>
+          <div><dt>开</dt><dd>{{ price(header.open) }}</dd></div>
+          <div><dt>高</dt><dd>{{ price(header.high) }}</dd></div>
+          <div><dt>低</dt><dd>{{ price(header.low) }}</dd></div>
           <div><dt>成交量</dt><dd>{{ integer(header.volume) }}</dd></div>
           <div><dt>持仓量</dt><dd>{{ integer(header.openInterest) }}</dd></div>
         </dl>

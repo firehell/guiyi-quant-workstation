@@ -38,7 +38,7 @@ function nodeOperations() {
 test('page records show latest three, expand and collapse, reset mode/window without changing prices',async()=>{
  const Panel=await component(),root=element('root')
  const trades=Array.from({length:5},(_,i)=>({segment_id:'s',buyDate:`2026-09-0${i+1}`,sellDate:`2026-09-1${i+1}`,buyPrice:'3100.123456',sellPrice:'3200',pct:'3.22',forceClose:false}))
- const model={trades,segment_ids:['s','s'],equity:['0','3.22'],trading_days:['2026-09-01','2026-09-30'],summary:{cumReturn:'16.10',accuracy:'100',maxDrawdown:'0',tradeCount:5}}
+ const model={trades,dates:['2026-09-01','2026-09-30'],segment_ids:['s','s'],equity:['0','3.22'],trading_days:['2026-09-01','2026-09-30'],summary:{cumReturn:'16.10',accuracy:'100',maxDrawdown:'0',tradeCount:5}}
  const value=ref({strategy:'trend',ordinary:model,ideal:{...model,trades:trades.slice(0,4)},ordinary_interrupted_count:0,ideal_open_count:0})
  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{value:value.value,since:'2025-09-30',through:'2026-09-30'})}));app.mount(root);await nextTick()
  const cards=()=>findNodes(root,n=>n.type==='article')
@@ -58,8 +58,8 @@ test('page records show latest three, expand and collapse, reset mode/window wit
 })
 
 test('simple dual labels retain the reference price and Decimal display preserves precision',()=>{
- assert.equal(newowSimpleDualLabel('trend',false,'3100.123456'),'趋建 3100.12')
- assert.equal(newowSimpleDualLabel('oscillation',true,'3200'),'震清 3200.00')
+ assert.equal(newowSimpleDualLabel('trend',false,'3100.123456'),'建仓 3100.12')
+ assert.equal(newowSimpleDualLabel('oscillation',true,'3200'),'清仓 3200.00')
  assert.equal(newowReferencePrice('9007199254740993.125'),'9007199254740993.13')
  assert.equal(newowReferencePrice(null),'—')
  assert.equal(newowReferencePercent('1.4'),'+1.40%')

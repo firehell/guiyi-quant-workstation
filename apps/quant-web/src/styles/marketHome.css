@@ -208,3 +208,14 @@
 .market-home-coverage { margin: 8px 0 12px; color: var(--gy-text-secondary); font-size: 12px; }
 .market-home-coverage summary { cursor: pointer; }
 .market-home-coverage p { margin: 6px 0; }
+
+/* Newow list: one right-aligned quote cluster, with snapshot status outside rows. */
+.market-dashboard-page .market-home-main { padding:0; }
+.market-home-snapshot { display:flex; align-items:center; justify-content:center; gap:6px; min-height:24px; background:#f5f5f5; color:#b1b1b5; font-size:11px; }
+.market-home-snapshot__dot { width:10px; height:10px; border-radius:50%; background:#8e8e93; flex-shrink:0; }
+.market-home-snapshot__dot.market-home-live-status--stale,.market-home-snapshot__dot.market-home-live-status--unavailable { background:#ff9500; }
+.market-home-snapshot button { border:0; font-size:10px; color:#8e8e93; padding:0; }
+.market-home-snapshot details { position:relative; }
+.market-home-snapshot summary { font-size:10px; cursor:pointer; }
+.market-home-snapshot details p { position:absolute; z-index:6; right:0; top:100%; width:280px; max-width:80vw; background:#fff; padding:12px; border:1px solid #eee; box-shadow:0 4px 15px #0001; color:#8e8e93; line-height:1.6; }
+@media(max-width:600px){.market-home-snapshot{font-size:9px;gap:4px;padding:3px 10px;flex-wrap:wrap}.market-home-snapshot__dot{width:7px;height:7px}}

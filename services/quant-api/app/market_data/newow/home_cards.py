@@ -19,7 +19,14 @@ def project_home_summary(replay, anchor, status, prices):
     entry = latest if ready and anchor.main_state in {MainState.BUILD, MainState.HOLD} and latest and latest.kind.value == 'BUILD' else None
     target = prices.target.raw if ready and prices else None
     absorb = prices.absorb.raw if ready and prices else None
+    # Only the confirmed anchor event may override the display stage. Recent
+    # history remains available for provenance, never as a fresh crossing.
+    current = next((action for action in reversed(actions) if action.bar_end == bar.bar_end), None) if ready else None
+    ma10 = dict(anchor.main_values).get('b') if replay.identity.strategy.value == 'trend' and ready else None
     return {
+        'display_projection_version': 'newow_home_display_v1',
+        'current_event': {'kind': current.kind.value, 'bar_end': current.bar_end, 'signal_id': current.signal_id} if current else None,
+        'guard_ma10': ma10,
         'state': anchor.main_state.value if ready else None,
         'status': status.status.value, 'reason_code': status.reason_code,
         'bar_end': bar.bar_end, 'physical_contract': bar.physical_contract,
@@ -27,6 +34,17 @@ def project_home_summary(replay, anchor, status, prices):
         'source_identity': bar.source_identity,
         'reference_current': bar.close if ready else None,
         'target': target, 'absorb': absorb,
+        'price_sources': {kind: {
+            'raw': value.raw, 'display_value': value.display,
+            'frequency': prices.frequency.value, 'as_of': prices.as_of,
+            'bar_end': prices.anchor_bar_end, 'physical_contract': prices.physical_contract,
+            'segment_id': prices.segment_id, 'calculation_segment_id': prices.calculation_segment_id,
+            'input_sha256': prices.input_sha256, 'formula_version': prices.formula_version,
+            'branch': 'chart_hhv10' if kind == 'target' else 'chart_llv10',
+            'source_category': 'canonical_channel',
+        } if ready and value.status.status is FeatureRuntimeStatus.READY else None
+            for kind, value in [('target', prices.target), ('absorb', prices.absorb)]} if prices else None,
+        'price_input_sha256': prices.input_sha256 if prices else None,
         'price_formula_version': prices.formula_version if prices else None,
         'reference_cost': entry.reference_price if entry else None,
         'entry_signal_id': entry.signal_id if entry else None,

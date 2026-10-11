@@ -52,6 +52,9 @@ test('trend A/B boundaries render as lightweight one-pixel lines above the colum
   const lineOptions: Array<Record<string, unknown>> = []
   const fakeChart = {
     addSeries(definition: { type: string }, options: Record<string, unknown>) {
+      if (definition.type === 'Candlestick' || definition.type === 'Line' && options.lineVisible !== false) {
+        assert.deepEqual(options.priceFormat, { type: 'price', precision: 2, minMove: 0.01 })
+      }
       if (definition.type === 'Line' && options.lineVisible !== false) lineOptions.push(options)
       return { setData() {}, attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {} }
     },
@@ -589,6 +592,15 @@ test('dual overlay projects both strategies at prices, exposes blue/orange label
     assert.equal(label.props['data-anchor-y'], 180)
     assert.match(String(label.props.class), new RegExp(`origin-${origin}`))
   }
+  const simple = findNode(root, n => n.type === 'button' && textContent(n) === '简')!
+  ;(simple.props.onClick as () => void)(); await nextTick(); await nextTick()
+  for (const origin of ['trend', 'oscillation']) {
+    const label = findNode(root, n => n.props['data-origin-strategy'] === origin)!
+    assert.equal(textContent(findNode(label, n => n.type === 'strong')!), '建仓 90.00')
+    assert.match(String(label.props.title), new RegExp(origin === 'trend' ? '趋势策略' : '震荡策略'))
+    assert.equal(label.props['data-reference-price'], '90')
+    assert.equal(label.props['data-anchor-y'], 180)
+  }
   const background = attached.find(p => p.constructor.name === 'NewowDualBackgroundPrimitive')!
   assert.ok(background)
   partner.value = null; await nextTick(); await nextTick()
@@ -615,7 +627,9 @@ test('reference price lines use supplied values and remove stale levels on repla
     response: response.value, strategy: 'trend', selectedSignalId: null, targetPrice: target.value, absorbPrice: absorb.value,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
-  app.mount(element('root')); await nextTick()
+  const root = element('root'); app.mount(root); await nextTick()
+  const priceStrip = findNode(root, n => n.props['aria-label'] === '主图参考价格')!
+  assert.match(textContent(priceStrip), /目标价: 3143\.00.*吸筹价: 3088\.00/)
   const prices = () => [...active].filter(line => line.title === '目标价' || line.title === '吸筹价')
   assert.deepEqual(prices().map(line => [line.title, line.price, line.lineStyle, line.axisLabelVisible]), [['目标价', 3143, 1, true], ['吸筹价', 3088, 1, true]])
   target.value = null; absorb.value = '3090'; await nextTick()

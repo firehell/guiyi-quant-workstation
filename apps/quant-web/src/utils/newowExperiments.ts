@@ -239,3 +239,13 @@ export function experimentRangeParams(asOf: string, range: ExperimentRange) {
     else start.setUTCFullYear(start.getUTCFullYear() - (range === '1y' ? 1 : 3))
     return { from: start.toISOString().slice(0, 10), through: day, chart_limit: 2000 }
 }
+
+/** Presentation only: retain the chosen contract and the model's original result object. */
+export function experimentVisibleSegments(detail: ExperimentDetail | null, selected: string | null) {
+    const all = detail?.segments ?? []
+    return all.filter(segment => segment.segment_id === (selected ?? all.at(-1)?.segment_id))
+}
+
+export function experimentMarkerLabel(marker: ExperimentMarker) {
+    return marker.action === 'BUILD' ? '建仓' : marker.stop_loss ? '止损清仓' : marker.confirm_exit ? '确认清仓' : '清仓'
+}

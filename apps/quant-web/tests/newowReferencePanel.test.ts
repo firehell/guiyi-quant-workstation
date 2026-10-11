@@ -105,7 +105,7 @@ test('zero CLOSED stays unavailable while negative interruption and initial-posi
   })
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.category, 'interrupted')
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.returnText, '-12.5%（中断浮动）')
-  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.valuationText, '2026-04-30T07:00:00Z · 87.5')
+  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.valuationText, '2026-04-30T07:00:00Z · 87.50')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.category, 'closed')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.initial, true)
   assert.equal(model.rows.find((row) => row.id === 'initial')?.lifecycle, 'CLOSED')
