@@ -85,7 +85,7 @@ def test_new_history_namespace_rejects_old_ids(driver, tmp_path, monkeypatch):
         'cursor':'','routes':{'old':{'status':'pending'}}}).encode())
     monkeypatch.setattr(driver, 'current_attempt', lambda: {'history_archive': str(archive),
         'drained_historical_preimage': {'sha256': driver.h.digest(b'old pending facts')}})
-    plan = {'scope': {'mapping':[{'new':{'target_stream_id':'new'}}]}}
+    plan = {'scope': {'expected_count':1,'mapping':[{'new':{'source':{'stream_id':'new-history'}}}]}}
     with pytest.raises(driver.h.ResumeBlocked, match='HISTORY_NEW_NAMESPACE_DRIFT'):
         driver.historical_protected(plan)
 
@@ -94,3 +94,65 @@ def test_full_publication_preserves_every_changed_blob(driver, monkeypatch):
     monkeypatch.setattr(driver.h, '_tracked', lambda p: {'formula':'old'} if str(p)=='old' else {'formula':'new','web':'blob'})
     assert driver.reviewed_changes(Path('old'),Path('new')) == {
         'formula':{'previous':'old','candidate':'new'},'web':{'previous':None,'candidate':'blob'}}
+
+
+def exercise_actual_bootstrap_and_history_namespace(driver, monkeypatch, tmp_path, engine=None):
+    from tests.reference_trading.test_newow_scope_upgrade import fixture
+    from tests.reference_trading.test_newow_bootstrap import NOW
+    import app.db.session as db_session
+    factory, repo, service, plan, old, newplan = fixture(monkeypatch, engine)
+    result = service.apply(plan, expected_plan_hash=plan['plan_hash'], now=NOW, clock=lambda: NOW)
+    assert result['receipts'][0]['activation_plan_hash'] != newplan['plan_hash']
+    monkeypatch.setattr(db_session, 'SessionLocal', factory)
+    actual = driver.core_readback(plan, applied=True, receipts=result['receipts'])
+    assert actual['new_enabled'] == actual['old_disabled'] == 1
+    from copy import deepcopy
+    wrong = deepcopy(result['receipts'])
+    wrong[0]['activation_plan_hash'] = newplan['plan_hash']
+    with pytest.raises(driver.h.ResumeBlocked, match='NEW_ACTIVATION_RECEIPT_DRIFT'):
+        driver.core_readback(plan, applied=True, receipts=wrong)
+    import app.market_data.operational_universe as universe
+    import app.reference_trading.newow_bootstrap as bootstrap
+    from app.reference_trading.historical_refresh import build_historical_refresh
+    monkeypatch.setattr(universe, 'load_operational_products', lambda: ('rb',))
+    monkeypatch.setattr(universe, 'load_active_products', lambda: ('rb',))
+    monkeypatch.setattr(bootstrap, 'validate_product_scope', lambda a, b: tuple(a))
+    state_path = tmp_path / 'newow-historical-refresh-state.json'
+    worker = build_historical_refresh(factory, state_path=state_path)
+    routes = worker._routes()
+    assert len(routes) == 1
+    historical_id = routes[0].identity.stream_id
+    assert historical_id == newplan['source']['stream_id']
+    assert historical_id != newplan['target_stream_id']
+    # Actual worker-derived historical stream identity, not a hand-written forward ID.
+    driver.write_exclusive(state_path, json.dumps({'version':'newow_historical_refresh_v1',
+        'cursor':historical_id, 'routes':{historical_id:{'status':'pending'}}}).encode())
+    archive = tmp_path / 'old.bytes'
+    driver.write_exclusive(archive, b'old pending plan retained')
+    monkeypatch.setattr(driver.h, 'runtime_directory', lambda: tmp_path)
+    monkeypatch.setattr(driver, 'current_attempt', lambda: {'history_archive':str(archive),
+        'drained_historical_preimage':{'sha256':driver.h.digest(b'old pending plan retained')}})
+    driver.historical_protected({'scope':plan})
+
+
+def test_actual_bootstrap_receipts_and_history_namespace(driver, monkeypatch, tmp_path):
+    exercise_actual_bootstrap_and_history_namespace(driver, monkeypatch, tmp_path)
+
+
+from tests.alembic.conftest import isolated_postgres_engine
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_actual_bootstrap_driver_readback_and_history_namespace(
+    driver, isolated_postgres_engine, monkeypatch, tmp_path,
+):
+    from uuid import uuid4
+    engine = isolated_postgres_engine
+    schema = 'newow_driver_' + uuid4().hex
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+    scoped = engine.execution_options(schema_translate_map={None:schema})
+    try:
+        exercise_actual_bootstrap_and_history_namespace(driver, monkeypatch, tmp_path, scoped)
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')
