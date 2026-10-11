@@ -91,6 +91,11 @@ def build_forward_reference_worker(
         if kind == "scan" and identity.frequency in LIVE_FREQUENCIES and not worker.scan_live:
             return None
         observed = (worker.source_observed_at if kind == "live_event" else None) or cache.observed_at or now()
+        # Activation may be committed before its agreed observation start.
+        # Park scans and queued live wakes until their observed time is eligible;
+        # do not read market/fusion input or create a premature capture.
+        if observed < recording_start:
+            return None
         after = (
             computed_through if computed_through is not None
             else recording_start - timedelta(microseconds=1)
