@@ -64,6 +64,7 @@ class ForwardReferenceWorker:
         self.scan_live = True
         self.mark_ready = lambda: None
         self.after_healthy_round: Callable[[], None] = lambda: None
+        self.poll_observations: Callable[[], bool] = lambda: False
         self.report_health: Callable[[dict], None] = lambda _proof: None
         self._repository = repository
         self._service_for = service_for
@@ -153,14 +154,37 @@ class ForwardReferenceWorker:
         if keys:
             self._scan_after = keys[-1]
 
-    def run_round(self) -> int:
+    def process_live_observation(self, stream_ids: tuple[str, ...], bar_end: datetime) -> None:
+        """Finish this observation's work groups without draining unrelated scans."""
+        if not self._enabled:
+            raise RuntimeError("REFERENCE_WORKER_NOT_ENABLED")
+        keys = tuple(dict.fromkeys(self._work_key(stream_id) for stream_id in stream_ids))
+        routes = {route for key in keys for route in self._work_routes(key)}
+        for stream_id in stream_ids:
+            self.wake(stream_id, kind="live_event", bar_end=bar_end)
+        while any(key in self._queued for key in keys):
+            self.assert_owned()
+            self.run_round(only_keys=keys)
+            if any(key in self._blocked for key in (*keys, *routes)):
+                raise RuntimeError("REFERENCE_BUFFER_PROCESSING_BLOCKED")
+        if any(key in self._blocked for key in (*keys, *routes)):
+            raise RuntimeError("REFERENCE_BUFFER_PROCESSING_BLOCKED")
+
+    def run_round(self, *, only_keys: tuple[str, ...] | None = None) -> int:
         if not self._enabled:
             return 0
         completed, units = 0, 0
         for _ in range(len(self._queue)):
-            if units >= self._budget.max_units_per_round:
+            if not self._queue or units >= self._budget.max_units_per_round:
                 break
-            key = self._queue.popleft()
+            if only_keys is None:
+                key = self._queue.popleft()
+            else:
+                selected = next((candidate for candidate in self._queue if candidate in only_keys), None)
+                if selected is None:
+                    break
+                key = selected
+                self._queue.remove(key)
             kind, event_bar_end = self._queued.pop(key)
             routes = self._remaining.pop(key, None)
             if routes is None:
@@ -185,6 +209,8 @@ class ForwardReferenceWorker:
                             self.assert_owned()
                             result = service.process_pending(stream_id)
                             needs_scan = True
+                            if only_keys is not None and kind == "live_event" and key not in self._deferred:
+                                self._deferred[key] = (kind, event_bar_end)
                         else:
                             capture = self._read_input(stream_id, kind, event_bar_end)
                             result = None
@@ -224,6 +250,8 @@ class ForwardReferenceWorker:
                     self.wake(key, kind=deferred[0], bar_end=deferred[1])
                 elif needs_scan:
                     self.wake(key, kind="scan")
+            if only_keys is None and self.poll_observations():
+                break
         return completed
 
     def serve(
@@ -237,7 +265,11 @@ class ForwardReferenceWorker:
             return
         while not should_stop():
             self.report_health(self.diagnostic_health(stage='scan', ready=False))
+            if self.poll_observations():
+                continue
             self.scan()
+            if self.poll_observations():
+                continue
             self.run_round()
             healthy = not self.health().blocked
             self.report_health(self.diagnostic_health(stage='cycle', ready=healthy))

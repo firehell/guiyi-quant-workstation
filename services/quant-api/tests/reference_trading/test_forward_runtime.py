@@ -40,6 +40,73 @@ def test_worker_defaults_off_and_rotates_bounded_wakes():
     assert seen[-1] == ("c", "scan", None)
 
 
+def test_target_observation_finishes_remaining_group_then_deferred_live_once():
+    class Repository(_Repository):
+        def forward_work_key(self, stream_id):
+            return 'newow:rb:60m' if stream_id in ('a', 'b', 'c') else stream_id
+
+        def enabled_forward_work_routes(self, key):
+            return ('a', 'b', 'c') if key == 'newow:rb:60m' else (key,)
+
+    seen = []
+    worker = ForwardReferenceWorker(Repository(), lambda _: _Service(),
+        lambda stream, kind, end: seen.append((stream, kind, end)), enabled=True,
+        budget=WorkerBudget(max_units_per_round=1))
+    worker.wake('a')
+    worker.run_round()
+    worker.wake('background-1')
+    worker.wake('background-2')
+    end = datetime(2026, 9, 23, 1, tzinfo=UTC)
+    worker.process_live_observation(('a', 'b', 'c'), end)
+    assert seen == [(stream, 'scan', None) for stream in ('a', 'b', 'c')] + [
+        (stream, 'live_event', end) for stream in ('a', 'b', 'c')]
+    assert tuple(worker._queue) == ('background-1', 'background-2')
+    assert worker.health().pending_keys == 2
+
+
+def test_disabled_worker_cannot_ack_target_observation():
+    import pytest
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(), lambda *_: None)
+    with pytest.raises(RuntimeError, match='REFERENCE_WORKER_NOT_ENABLED'):
+        worker.process_live_observation(('a',), datetime(2026, 9, 23, 1, tzinfo=UTC))
+
+
+def test_serve_prioritizes_nonblocking_observation_budget_before_background_scan():
+    timeline = []
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(),
+        lambda *_: timeline.append('background'), enabled=True)
+    def poll():
+        timeline.append('live')
+        return True
+    worker.poll_observations = poll
+    worker.serve(should_stop=lambda: bool(timeline), wait=lambda _: timeline.append('wait'))
+    assert timeline == ['live']
+
+
+def test_group_boundary_polls_after_cache_cleanup_without_recursive_callback():
+    active = [False]
+    timeline, polls = [], []
+    def begin():
+        assert not active[0]
+        active[0] = True
+    def end():
+        active[0] = False
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(),
+        lambda stream, *_: timeline.append(stream), enabled=True, begin_unit=begin, end_unit=end)
+    worker.wake('background-a')
+    worker.wake('background-b')
+    def poll():
+        assert active[0] is False
+        polls.append('poll')
+        if len(polls) == 1:
+            worker.process_live_observation(('live',), datetime(2026, 9, 23, 1, tzinfo=UTC))
+        return False
+    worker.poll_observations = poll
+    worker.run_round()
+    assert timeline == ['background-a', 'live', 'background-b']
+    assert polls == ['poll', 'poll'] and active[0] is False
+
+
 def test_scan_rotates_past_first_page_of_enabled_streams():
     class Many(_Repository):
         def enabled_forward_stream_ids(self, *, limit=512, after=None):

@@ -16,13 +16,16 @@ import os
 from pathlib import Path
 from threading import Event, Thread
 
-from guiyi_quant.reference_trading import RecordingMode
+from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
 
 from app.reference_trading.planning import (
     HistoricalReferenceRequest, HistoricalStreamRequest, WorkBudget,
     _canonical_identity, plan_from_dict, plan_to_dict,
 )
 from app.reference_trading.service import ResumeToken
+from app.reference_trading.refresh_plan_codec import (
+    RefreshPlanCodecError, decode_plan, encode_plan, validate_encoded_plan,
+)
 
 VERSION = 'newow_historical_refresh_v1'
 STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion')
@@ -40,7 +43,7 @@ def _reason(error):
 
 @dataclass(frozen=True)
 class RefreshRoute:
-    identity: object
+    identity: StreamIdentity
     since: date | None
     computed_through: datetime | None
     reason: str | None = None
@@ -51,6 +54,10 @@ class RefreshRoute:
                 STRATEGIES.index(_strategy(self.identity)))
 
 
+class RefreshStateError(ValueError):
+    """Storage failure stops processing without overwriting unknown commit evidence."""
+
+
 class RefreshStateStore:
     def __init__(self, path: Path):
         self.path = path
@@ -59,25 +66,42 @@ class RefreshStateStore:
         if not self.path.exists():
             return {'version': VERSION, 'cursor': '', 'routes': {}}
         if self.path.is_symlink() or self.path.stat().st_size > 64_000_000:
-            raise ValueError('REFRESH_STATE_INVALID')
+            raise RefreshStateError('REFRESH_STATE_INVALID')
         value = json.loads(self.path.read_text(encoding='utf-8'))
         if (not isinstance(value, dict) or set(value) != {'version', 'cursor', 'routes'}
                 or value['version'] != VERSION or not isinstance(value['cursor'], str)
                 or not isinstance(value['routes'], dict) or len(value['routes']) > MAX_ROUTES):
-            raise ValueError('REFRESH_STATE_INVALID')
+            raise RefreshStateError('REFRESH_STATE_INVALID')
         for stream_id, item in value['routes'].items():
             if (not isinstance(stream_id, str) or not isinstance(item, dict)
                     or item.get('status') not in {'pending', 'inflight', 'blocked'}):
-                raise ValueError('REFRESH_STATE_INVALID')
+                raise RefreshStateError('REFRESH_STATE_INVALID')
+            if isinstance(item.get('plan'), dict) and 'codec' in item['plan']:
+                try:
+                    validate_encoded_plan(item['plan'])
+                except RefreshPlanCodecError as error:
+                    raise RefreshStateError(str(error)) from error
         return value
 
     def write(self, value):
+        try:
+            self._write(value)
+        except OSError as error:
+            raise RefreshStateError('REFRESH_STATE_WRITE_UNKNOWN') from error
+
+    def _write(self, value):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.is_symlink():
-            raise ValueError('REFRESH_STATE_INVALID')
-        data = json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
+            raise RefreshStateError('REFRESH_STATE_INVALID')
+        # Encode a copy: callers retain full plans for committed callbacks.
+        try:
+            stored = {**value, 'routes': {key: ({**item, 'plan': encode_plan(item['plan'])}
+                if 'plan' in item else dict(item)) for key, item in value['routes'].items()}}
+            data = json.dumps(stored, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+        except (RefreshPlanCodecError, TypeError, ValueError) as error:
+            raise RefreshStateError('REFRESH_STATE_INVALID') from error
         if len(data) > 64_000_000:
-            raise ValueError('REFRESH_STATE_BUDGET_EXCEEDED')
+            raise RefreshStateError('REFRESH_STATE_BUDGET_EXCEEDED')
         temporary = self.path.with_name(self.path.name + '.tmp')
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
         try:
@@ -91,6 +115,8 @@ class RefreshStateStore:
                 os.fsync(directory)
             finally:
                 os.close(directory)
+        except OSError as error:
+            raise RefreshStateError('REFRESH_STATE_WRITE_UNKNOWN') from error
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -163,6 +189,8 @@ class HistoricalRefresh:
                                             for item in base)):
                         continue
                 self._execute(route, endpoint, trading_day, prior, state, now, cancelled)
+            except RefreshStateError:
+                raise  # Retain the last durable inflight/resume proof; never replace it.
             except Exception as error:
                 reason = _reason(error)
                 if reason != 'SOURCE_BUSY':
@@ -173,14 +201,39 @@ class HistoricalRefresh:
 
     def _execute(self, route, endpoint, trading_day, prior, state, now, cancelled):
         key = route.identity.stream_id
+        storage_failure: RefreshStateError | None = None
         def after_batch(stage, context):
+            nonlocal storage_failure
             if stage == 'committed' and context.get('resume_token'):
                 state['routes'][key]['resume'] = asdict(context['resume_token'])
-                self.state.write(state)  # Still inflight until a known report.
-        with self._components(cancelled=cancelled, after_batch=after_batch,
-                              now=lambda: now) as (planner, service):
+                try:
+                    self.state.write(state)  # Still inflight until a known report.
+                except RefreshStateError as error:
+                    storage_failure = error
+                    raise
+        @contextmanager
+        def protected_components():
+            nonlocal storage_failure
+            try:
+                with self._components(cancelled=cancelled, after_batch=after_batch,
+                                      now=lambda: now) as components:
+                    try:
+                        yield components
+                    except RefreshStateError as error:
+                        storage_failure = error
+                        raise
+            except BaseException:
+                # Lease/component cleanup must not replace a proven storage
+                # unknown and send it through the generic blocked-state writer.
+                if storage_failure is not None:
+                    raise storage_failure
+                raise
+        with protected_components() as (planner, service):
             if prior:
-                plan = plan_from_dict(prior['plan'])
+                try:
+                    plan = plan_from_dict(decode_plan(prior['plan']))
+                except ValueError as error:
+                    raise RefreshStateError('REFRESH_PLAN_READBACK_REQUIRED') from error
                 if (len(plan.streams) != 1 or plan.streams[0].request.identity != route.identity
                         or plan.streams[0].request.since != route.since):
                     raise ValueError('REFRESH_PLAN_SCOPE_DRIFT')
@@ -217,6 +270,10 @@ class HistoricalRefresh:
                 report = service.resume(plan, token, plan.plan_hash)
             else:
                 report = getattr(service, plan.operation)(plan, plan.plan_hash)
+            # HistoricalReferenceService isolates exceptions into stream reports.
+            # A committed callback's control-storage failure must survive that boundary.
+            if storage_failure is not None:
+                raise storage_failure
             if len(report.streams) != 1:
                 raise ValueError('REFRESH_REPORT_INVALID')
             result = report.streams[0]
