@@ -43,6 +43,15 @@ export function formatDecimalText(
   return `${sign}${whole}${fraction ? `.${fraction}` : ''}`
 }
 
+/** Exact comparison of positive source prices, including Decimal exponent lexemes. */
+export function comparePositiveDecimalText(left: string | null | undefined, right: string | null | undefined): number | null {
+  const a = parseDecimal(left), b = parseDecimal(right)
+  if (!a || !b || a.negative || b.negative || isZero(a) || isZero(b)) return null
+  const scale = Math.max(a.scale, b.scale)
+  const x = BigInt(a.digits) * 10n ** BigInt(scale - a.scale), y = BigInt(b.digits) * 10n ** BigInt(scale - b.scale)
+  return x < y ? -1 : x > y ? 1 : 0
+}
+
 /** Calculated/reference prices use at most four display decimals. */
 export function formatMarketDecimal(value: string | null | undefined): string {
   return formatDecimalText(value, { maximumFractionDigits: 4 })

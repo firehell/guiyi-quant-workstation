@@ -650,7 +650,7 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                     if summary is None:
                         strategies[strategy][frequency] = {'status': 'warming', 'state': None, 'reason_code': 'NEWOW_CHART_WARMING'}
                     else:
-                        strategies[strategy][frequency] = {**summary, 'as_of': result.meta.as_of,
+                        strategies[strategy][frequency] = {**summary, 'display_as_of': now, 'as_of': result.meta.as_of,
                             'freshness': snapshot.freshness, 'formula_versions': result.meta.identity.formula_versions,
                             'input_sha256': result.meta.input_content_sha256, 'snapshot_token': result.meta.snapshot_token}
                 except Exception as exc:

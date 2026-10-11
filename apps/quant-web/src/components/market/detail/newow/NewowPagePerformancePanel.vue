@@ -2,7 +2,7 @@
 import { newowReferencePrice, newowReferencePercent } from '@/utils/newowPagePresentation'
 import { computed, ref, watch, useId } from 'vue'
 import type { PagePerformance } from '@/utils/newowPagePerformance'
-import { pagePerformancePlot, pagePerformanceAnnualized } from '@/utils/newowPagePerformance'
+import { pagePerformanceSegmentAnnualized, pagePerformancePlot, pagePerformanceAnnualized } from '@/utils/newowPagePerformance'
 import { newowReferenceWindow } from '@/utils/newowReferenceWindows'
 const props = defineProps<{ value: PagePerformance | null | undefined; since?: string; through?: string; floor?: string; loading?: boolean }>()
 const emit = defineEmits<{ reload: [window: {performanceSince: string; performanceThrough: string}] }>()
@@ -12,6 +12,7 @@ const analysisOpen = ref(false)
 const gradientId = `page-return-${useId()}`
 const windowSelection = ref('all')
 const active = computed(() => props.value?.[selection.value] ?? null)
+const segmentAnnuals = computed(() => pagePerformanceSegmentAnnualized(active.value))
 const annualized = computed(() => pagePerformanceAnnualized(active.value))
 const periodLabels: Readonly<Record<string, string>> = {
   day: '日K', week: '周K', hour: '60分',
@@ -56,7 +57,7 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
 </script>
 <template>
   <section class="page-performance newow-reference" aria-label="公开页面收益投影" :aria-busy="loading">
-    <header class="newow-reference__returns-heading"><strong>策略收益率走势</strong><span class="newow-reference__annualized" title="当前页面曲线按自然日折算的年化，零手续费与滑点">年化{{ annualized === null ? ' --' : `${annualized.toFixed(1)}%` }}</span><button type="button" class="newow-reference__analysis-link" @click="analysisOpen = true">收益分析 ›</button></header>
+    <header class="newow-reference__returns-heading"><strong>策略收益率走势</strong><span class="newow-reference__annualized" title="当前页面曲线按自然日折算的年化，零手续费与滑点">年化{{ annualized === null ? ' --' : `${annualized.toFixed(1)}%` }}{{ segmentAnnuals.length > 1 ? ' · 多合约段' : '' }}</span><button type="button" class="newow-reference__analysis-link" @click="analysisOpen = true">收益分析 ›</button></header>
     <div v-if="value" class="newow-reference__presets page-performance__toolbar" aria-label="页面统计快捷窗口">
       <button v-for="item in ([['three_months','近3月'], ['one_year','近1年'], ['three_years','近3年'], ['ytd','今年']] as const)" :key="item[0]" type="button" :aria-pressed="windowSelection === item[0]" :disabled="loading || !through" @click="preset(item[0])">{{ item[1] }}</button>
       <button type="button" class="newow-reference__ideal" :aria-pressed="selection === 'ideal'" @click="selection = selection === 'ideal' ? 'ordinary' : 'ideal'">理论值</button>
@@ -81,6 +82,7 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
           </div>
         </div>
       </section>
+      <details v-if="segmentAnnuals.length > 1" class="page-performance__segment-annuals"><summary>各合约段年化 · 不跨段计算</summary><p v-for="(segment,index) in segmentAnnuals" :key="segment.segmentId" :title="segment.segmentId">合约段 {{ index + 1 }} · {{ shortDate(segment.since) }} → {{ shortDate(segment.through) }} · 年化 {{ segment.annualized === null ? '--' : `${segment.annualized.toFixed(1)}%` }}</p></details>
       <section class="newow-reference__summary">
       <dl class="newow-reference__metrics" data-testid="page-performance-summary">
         <div><dt>累计收益</dt><dd :data-direction="Number(active.summary.cumReturn) >= 0 ? 'up' : 'down'">{{ newowReferencePercent(active.summary.cumReturn) }}</dd></div>
@@ -119,6 +121,8 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
 </template>
 <style scoped src="./newowReferencePanel.css"></style>
 <style scoped>
+.page-performance__segment-annuals{padding:8px 12px;font-size:11px;color:#8e8e93}.page-performance__segment-annuals summary{cursor:pointer}
+
 .page-performance { gap:6px; }
 .page-performance > p,.page-performance__disclosure { font-size:11px; color:#8e8e93; margin:2px 0; }
 .page-performance__disclosure summary { cursor:pointer; }
@@ -129,6 +133,7 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
 </style>
 
 <style scoped>
+
 .page-performance__toolbar { justify-content:center; margin:6px 0 8px; flex-wrap:nowrap; }
 .page-performance__records-heading { display:flex; align-items:center; justify-content:space-between; margin-top:14px; gap:12px; }
 .page-performance__records-heading h3 { margin:0; font-size:13px; }

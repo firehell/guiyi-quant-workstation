@@ -146,6 +146,7 @@ async function loadPage() {
     .replace(/from ['"]@\/utils\/marketHomeViewModel['"]/g, `from '${viewModelModule}'`)
     .replace(/from ['"]@\/utils\/marketHomePreferences['"]/g, `from '${preferencesModule}'`)
     .replace(/from ['"]@\/utils\/marketHomeRoutes['"]/g, `from '${routesUrl}'`)
+    .replace(/from ['"]@\/utils\/newowHomeCards['"]/g, `from '${new URL('../src/utils/newowHomeCards.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/utils\/marketHomeWorkspace['"]/g, `from '${workspaceModule}'`)
     .replace(/from ['"]@\/utils\/marketHomeLiveView['"]/g, `from '${new URL('../src/utils/marketHomeLiveView.ts', import.meta.url).href}'`)
   return (await import(moduleUrl(transpiled))).default

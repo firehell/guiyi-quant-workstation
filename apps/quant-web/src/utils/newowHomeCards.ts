@@ -1,3 +1,5 @@
+import { comparePositiveDecimalText } from './marketDisplay.ts'
+import { previewInstant } from './candidatePreviewInstant.ts'
 import { newowReferencePrice } from './newowPagePresentation.ts'
 
 export type HomeStrategy = 'trend' | 'oscillation'
@@ -23,6 +25,10 @@ export interface HomePeriodFact {
   target?: string | null
   absorb?: string | null
   target_space_percent?: string | null
+  display_as_of?: string
+  display_projection_version?: 'newow_home_display_v1'
+  current_event?: { kind: 'BUILD' | 'CLEAR'; bar_end: string; signal_id: string } | null
+  guard_ma10?: string | null
   recent_action?: { kind: 'BUILD' | 'CLEAR'; bar_end: string; signal_id: string } | null
   page_parity?: boolean
   executable?: boolean
@@ -55,6 +61,40 @@ export function homeDirectionDisplay(day?: HomePeriodFact, week?: HomePeriodFact
   return up(day.state) ? { label: '日周向上', tone: 'up' } : { label: '日周向下', tone: 'down' }
 }
 
+/** trendMap is an independent source fact; alignment cannot stand in for it. */
+export function homeTrendDisplay() { return { label: '趋势来源未确认', tone: 'pending' } as const }
+
+const identifiedHomeFact = (fact?: HomePeriodFact): fact is HomePeriodFact & { state: HomeState } => Boolean(
+  fact?.status === 'ready' && fact.state && fact.physical_contract && fact.segment_id && fact.calculation_segment_id && fact.input_sha256 && fact.formula_versions?.length
+  && fact.page_parity === true && fact.executable === false && fact.display_projection_version === 'newow_home_display_v1'
+  && fact.as_of && previewInstant(fact.as_of) !== null && fact.bar_end && previewInstant(fact.bar_end) !== null
+  && fact.display_as_of && previewInstant(fact.display_as_of) !== null
+  && previewInstant(fact.bar_end)! <= previewInstant(fact.as_of)! && previewInstant(fact.as_of)! <= previewInstant(fact.display_as_of)!
+  && fact.current_event !== undefined)
+
+/** Public buildCard precedence, applied only to an authenticated display projection. */
+export function homeCompositeDisplay(day?: HomePeriodFact, week?: HomePeriodFact) {
+  const reference = homeReferenceDisplay(day)
+  const unavailable = { state: null, label: '综合状态不可用', reference, reason: '日周展示事实、截止时间或合约身份不完整' } as const
+  if (!identifiedHomeFact(day) || !identifiedHomeFact(week) || previewInstant(day.display_as_of!) !== previewInstant(week.display_as_of!) || day.physical_contract !== week.physical_contract) return unavailable
+  for (const fact of [day, week]) {
+    const event = fact.current_event
+    if (event && (!['BUILD', 'CLEAR'].includes(event.kind) || !event.signal_id || previewInstant(event.bar_end) === null || previewInstant(event.bar_end) !== previewInstant(fact.bar_end!))) return unavailable
+  }
+  let state: HomeState = day.state === 'CLEAR' || week.state === 'CLEAR' ? 'CLEAR'
+    : week.state === 'BUILD' || week.state === 'HOLD' ? week.state
+    : day.state === 'BUILD' || day.state === 'HOLD' ? day.state : 'FLAT'
+  const cross = day.current_event?.kind
+  const comparison = comparePositiveDecimalText(day.reference_current, day.guard_ma10)
+  const dayValid = cross === 'BUILD' ? (comparison === null ? day.state !== 'FLAT' : comparison >= 0)
+    : cross === 'CLEAR' ? (comparison === null ? day.state !== 'HOLD' : comparison <= 0) : false
+  if (cross && dayValid) state = cross
+  else if (week.current_event) state = week.current_event.kind
+  // Frozen source contradiction guard runs after weekly event override too.
+  if (day.state === 'HOLD' && cross === 'BUILD' && !dayValid) state = 'HOLD'
+  return { state, label: homeStateLabels[state], reference, reason: '' }
+}
+
 export function homeDeliveryNotice(delivery?: CardDelivery) {
   if (delivery?.stale) return delivery.loading ? '策略刷新中，保留上次快照' : '策略刷新失败，保留上次快照'
   if (delivery?.failed) return '策略读取失败，可刷新重试'
@@ -72,11 +112,16 @@ export function normalizeHomeCards(value: unknown, products: readonly string[]):
       const fact = item.strategies?.[strategy]?.[period]
       if (!fact || !['ready', 'warming', 'unavailable'].includes(fact.status)) throw new Error('INVALID_HOME_CARDS')
       if (fact.status === 'ready' && (!['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(fact.state ?? '') || !fact.physical_contract || !fact.segment_id || !fact.calculation_segment_id || !fact.input_sha256 || !fact.formula_versions?.length || !Number.isFinite(Date.parse(fact.as_of ?? '')) || !Number.isFinite(Date.parse(fact.bar_end ?? '')) || fact.page_parity !== true || fact.executable !== false)) throw new Error('INVALID_HOME_CARDS')
-      for (const key of ['target', 'absorb', 'reference_cost', 'reference_current', 'target_space_percent'] as const) if (fact[key] != null && (typeof fact[key] !== 'string' || !Number.isFinite(Number(fact[key])))) throw new Error('INVALID_HOME_CARDS')
+      for (const key of ['target', 'absorb', 'reference_cost', 'reference_current', 'target_space_percent', 'guard_ma10'] as const) if (fact[key] != null && (typeof fact[key] !== 'string' || !Number.isFinite(Number(fact[key])))) throw new Error('INVALID_HOME_CARDS')
       if (fact.status !== 'ready' && fact.state !== null) throw new Error('INVALID_HOME_CARDS')
     }
   }
   return response
+}
+
+/** Reload on overview facts, not the wall-clock time of an identical readback. */
+export function homeCardsReloadIdentity(overview: { target_as_of: string; items: readonly { symbol: string }[] } | null | undefined) {
+  return overview ? JSON.stringify([overview.target_as_of, [...overview.items].sort((a, b) => a.symbol.localeCompare(b.symbol))]) : ''
 }
 
 /** Two workers; late/cancelled generations cannot replace a newer snapshot. */

@@ -19,7 +19,14 @@ def project_home_summary(replay, anchor, status, prices):
     entry = latest if ready and anchor.main_state in {MainState.BUILD, MainState.HOLD} and latest and latest.kind.value == 'BUILD' else None
     target = prices.target.raw if ready and prices else None
     absorb = prices.absorb.raw if ready and prices else None
+    # Only the confirmed anchor event may override the display stage. Recent
+    # history remains available for provenance, never as a fresh crossing.
+    current = next((action for action in reversed(actions) if action.bar_end == bar.bar_end), None) if ready else None
+    ma10 = dict(anchor.main_values).get('b') if replay.identity.strategy.value == 'trend' and ready else None
     return {
+        'display_projection_version': 'newow_home_display_v1',
+        'current_event': {'kind': current.kind.value, 'bar_end': current.bar_end, 'signal_id': current.signal_id} if current else None,
+        'guard_ma10': ma10,
         'state': anchor.main_state.value if ready else None,
         'status': status.status.value, 'reason_code': status.reason_code,
         'bar_end': bar.bar_end, 'physical_contract': bar.physical_contract,

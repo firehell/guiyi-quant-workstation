@@ -6,9 +6,9 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
-const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995' })
+const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
 
 test('daily target/absorb follows only the ready state and uses Decimal rounding', () => {
   for (const state of ['BUILD', 'HOLD'] as const) assert.deepEqual(homeReferenceDisplay(ready(state)), { label: '目标', text: '9007199254740993.13' })
@@ -25,6 +25,45 @@ test('direction is an identity-bound day/week state summary and unavailable does
   assert.equal(homeDirectionDisplay(ready('HOLD'), { ...ready('HOLD'), input_sha256: undefined }).label, '待确认')
   assert.equal(homePeriodDisplay({ status: 'unavailable', state: null }).tone, 'pending')
   assert.equal(homeDeliveryNotice({ card: null, failed: true, loading: false, stale: false }), '策略读取失败，可刷新重试')
+})
+
+test('composite covers all stage pairs without changing daily reference selection', () => {
+  const states: HomeState[] = ['BUILD', 'HOLD', 'CLEAR', 'FLAT']
+  for (const day of states) for (const week of states) {
+    const expected = day === 'CLEAR' || week === 'CLEAR' ? 'CLEAR' : week === 'BUILD' || week === 'HOLD' ? week : day === 'BUILD' || day === 'HOLD' ? day : 'FLAT'
+    const value = homeCompositeDisplay(ready(day), ready(week))
+    assert.equal(value.state, expected, `${day}/${week}`)
+    assert.deepEqual(value.reference, homeReferenceDisplay(ready(day)))
+  }
+  assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_as_of: '2026-10-11T00:00:00.000001Z' }).state, null)
+  assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), physical_contract: 'RB2705' }).state, null)
+  assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_projection_version: undefined }).state, null)
+  assert.equal(homeTrendDisplay().label, '趋势来源未确认')
+})
+
+test('current events are exact-bar owned, price guarded and historical recent actions never override', () => {
+  const day = { ...ready('HOLD'), reference_current: '99', guard_ma10: '100', current_event: { kind: 'BUILD' as const, bar_end: ready('HOLD').bar_end!, signal_id: 'build' } }
+  assert.equal(homeCompositeDisplay(day, ready('FLAT')).state, 'HOLD')
+  assert.equal(homeCompositeDisplay({ ...day, reference_current: '100' }, ready('FLAT')).state, 'BUILD')
+  assert.equal(homeCompositeDisplay({ ...day, reference_current: '100', current_event: { ...day.current_event, bar_end: '2026-10-08T00:00:00Z' } }, ready('FLAT')).state, null)
+  assert.equal(homeCompositeDisplay({ ...day, current_event: null, recent_action: day.current_event }, ready('FLAT')).state, 'HOLD')
+  const clear = { ...day, current_event: { ...day.current_event, kind: 'CLEAR' as const }, reference_current: '101' }
+  assert.equal(homeCompositeDisplay(clear, ready('HOLD')).state, 'HOLD')
+  assert.equal(homeCompositeDisplay({ ...clear, reference_current: '99' }, ready('HOLD')).state, 'CLEAR')
+})
+
+test('MA10 guard preserves Decimal scientific notation, plus signs and sub-cent boundaries', () => {
+  const day = { ...ready('HOLD'), reference_current: '99', current_event: { kind: 'BUILD' as const, bar_end: ready('HOLD').bar_end!, signal_id: 'build' } }
+  for (const guard_ma10 of ['100', '1E+2', '+100.00', ' .1e3 ']) assert.equal(homeCompositeDisplay({ ...day, guard_ma10 }, ready('FLAT')).state, 'HOLD')
+  assert.equal(homeCompositeDisplay({ ...day, reference_current: '9007199254740993.124999', guard_ma10: '9007199254740993.125' }, ready('FLAT')).state, 'HOLD')
+  assert.equal(homeCompositeDisplay({ ...day, reference_current: '9007199254740993.125', guard_ma10: '9007199254740993.125' }, ready('FLAT')).state, 'BUILD')
+})
+
+test('completed D1 and W1 cutoffs can differ under one exact display owner', () => {
+  const day = ready('HOLD'), week = { ...ready('FLAT'), as_of: '2026-10-02T07:00:00Z', bar_end: '2026-10-02T07:00:00Z' }
+  assert.equal(homeCompositeDisplay(day, week).state, 'HOLD')
+  assert.equal(homeCompositeDisplay(day, { ...week, bar_end: '2026-10-03T07:00:00Z' }).state, null)
+  assert.equal(homeCompositeDisplay(day, { ...week, display_as_of: undefined }).state, null)
 })
 
 const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -60,7 +99,14 @@ test('real list switches strategy, routes day/week icons and retains failure/pen
     await settle()
     assert.match(nodeText(root), /3100.13/)
     assert.match(nodeText(root), /9007199254740993.13/)
+    assert.match(nodeText(root), /趋势来源未确认/)
+    assert.doesNotMatch(nodeText(root), /日周向上/)
+    const summary = findNode(root, n => n.type === 'button' && n.props['aria-label'] === '螺纹钢综合摘要')!
+    assert.equal(summary.props['aria-expanded'], false)
+    ;(summary.props.onClick as Function)(); await nextTick()
+    assert.equal(summary.props['aria-expanded'], true)
     assert.match(nodeText(root), /日周向上/)
+    assert.match(nodeText(root), /日周综合/)
     assert.match(nodeText(root), /断线保留最新完成报价/)
     assert.equal(findNode(root, n => n.type === 'details')?.props.open, undefined)
     const day = findNode(root, n => n.type === 'button' && String(n.props['aria-label']).includes('趋势日线'))!
@@ -86,8 +132,12 @@ test('real list switches strategy, routes day/week icons and retains failure/pen
     await settle()
     assert.match(nodeText(root), /日线预热中/)
     assert.match(nodeText(root), /周线不可用/)
-    assert.match(nodeText(root), /待确认/)
+    assert.match(nodeText(root), /日周一致性不可用/)
     assert.doesNotMatch(nodeText(root), /日周向下|策略刷新失败/)
+    assert.match(nodeText(root), /综合状态不可用/)
+    ;(summary.props.onClick as Function)(); await nextTick()
+    assert.equal(summary.props['aria-expanded'], false)
+    assert.doesNotMatch(nodeText(root), /日周综合/)
   } finally { app.unmount() }
 })
 

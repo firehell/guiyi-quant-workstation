@@ -53,6 +53,7 @@ def test_batch_card_is_exact_projection_and_weekly_failure_is_isolated(monkeypat
             trend = body['items'][0]['strategies']['trend']
             assert trend['1d']['state'] == 'CLEAR'
             assert trend['1d']['recent_action']['signal_id'] == clear.signal_id
+            assert trend['1d']['display_as_of'] == body['requested_at']
             assert trend['1d']['page_parity'] is True
             assert trend['1d']['executable'] is False
             assert trend['1d']['formula_versions']
@@ -93,3 +94,20 @@ def test_open_cost_cannot_borrow_a_different_calculation_segment(product_cases):
     anchor = replace(anchor, bar=replace(anchor.bar, calculation_segment_id='different-prefix'), actions=())
     summary = project_home_summary(chart.replay, anchor, chart.replay.frames[-1].availability, None)
     assert summary['reference_cost'] is None and summary['recent_action'] is None
+
+
+def test_display_event_only_belongs_to_anchor_and_guard_uses_trend_ma10(product_cases):
+    service, _, build, _ = _service(product_cases)
+    result = service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=build.bar_end))
+    chart = result.chart.value
+    anchor = chart.replay.frames[-1]
+    summary = project_home_summary(chart.replay, anchor, anchor.availability, chart.price_reference)
+    assert summary['display_projection_version'] == 'newow_home_display_v1'
+    assert summary['current_event']['signal_id'] == build.signal_id
+    assert summary['current_event']['bar_end'] == anchor.bar.bar.bar_end
+    assert summary['guard_ma10'] == dict(anchor.main_values)['b']
+    # The full replay may contain a recent action; a later confirmed bar is not a new event.
+    later = replace(anchor, bar=replace(anchor.bar, bar=replace(anchor.bar.bar, bar_end=anchor.bar.bar.bar_end.replace(hour=23))), actions=())
+    summary = project_home_summary(chart.replay, later, later.availability, None)
+    assert summary['recent_action']['signal_id'] == build.signal_id
+    assert summary['current_event'] is None

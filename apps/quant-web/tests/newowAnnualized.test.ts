@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { pagePerformanceAnnualized } from '../src/utils/newowPagePerformance.ts'
+import { pagePerformanceSegmentAnnualized, pagePerformanceAnnualized } from '../src/utils/newowPagePerformance.ts'
 
 test('page annualization uses selected curve endpoints, not summary or trade returns', () => {
   const mode = { dates: ['2025-01-01', '2026-01-01'], equity: ['20', '32'] }
@@ -27,4 +27,15 @@ test('missing, invalid, nonpositive and overflowing curves cannot show fabricate
     { dates: ['2026-01-01', '2026-01-02'], equity: ['0', '1e300'] },
     { dates: ['2026-01-01T00:00:00', '2026-01-02T00:00:00'], equity: ['0', '1'] },
   ]) assert.equal(pagePerformanceAnnualized(mode), null)
+})
+
+
+test('annualized page values never bridge physical calculation segments', () => {
+  const mode = { dates: ['2024-01-01', '2024-12-31', '2025-01-01', '2026-01-01'], equity: ['0', '10', '10', '32'], segment_ids: ['a', 'a', 'b', 'b'] }
+  assert.equal(pagePerformanceAnnualized(mode), null)
+  const values = pagePerformanceSegmentAnnualized(mode)
+  assert.equal(values.length, 2)
+  assert.ok(Math.abs(values[0]!.annualized! - 10) < 1e-10)
+  assert.ok(Math.abs(values[1]!.annualized! - 20) < 1e-10)
+  assert.equal(pagePerformanceAnnualized({ ...mode, segment_ids: ['a'] }), null)
 })

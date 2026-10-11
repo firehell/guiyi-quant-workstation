@@ -5,6 +5,7 @@ import '@/styles/marketHome.css'
 import MarketHomeHeader from '@/components/market/MarketHomeHeader.vue'
 import { normalizeProductOptions } from '@/utils/productSearch'
 import { productSectorLabel } from '@/utils/productDirectory'
+import { homeCardsReloadIdentity } from '@/utils/newowHomeCards'
 import MarketHomeStrategyCards from '@/components/market/MarketHomeStrategyCards.vue'
 import { newowMessageChartQuery, type NewowMessage } from '@/api/newowMessages'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
@@ -189,7 +190,7 @@ onBeforeUnmount(() => {
       <p v-else-if="home.overview.stale.value" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />
       <template v-else>
-        <MarketHomeStrategyCards :rows="rows" :authority="`${home.overview.data.value?.target_as_of ?? ''}|${home.overview.updatedAt?.value ?? ''}`" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart">
+        <MarketHomeStrategyCards :rows="rows" :authority="homeCardsReloadIdentity(home.overview.data.value)" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart">
           <template #status><div class="market-home-snapshot" aria-live="polite"><span class="market-home-snapshot__dot" :class="`market-home-live-status--${live.connection.value}`" /><span>{{ liveStatus }} · {{ rows.some(row => row.liveQuote) ? '日周指标为收盘口径' : '数据为上一完整交易日收盘价' }}</span><button v-if="live.connection.value === 'stale' || live.connection.value === 'unavailable'" type="button" @click="live.restart">重连</button><details v-if="home.overview.data.value"><summary>口径</summary><p>日线报价可用 {{ home.overview.data.value.participant_count }} / {{ home.overview.data.value.active_count }} · 过期 {{ home.overview.data.value.stale_count }} · 报价不可用 {{ home.overview.data.value.unavailable_count }}；截至 {{ home.overview.data.value.target_as_of }}。日周策略单独预热，报价可用不代表策略就绪。</p></details></div></template>
         </MarketHomeStrategyCards>
         <p v-if="!rows.length && home.overview.data.value" class="market-home-empty">当前{{ sector ? productSectorLabel(sector) : '快照' }}暂无可用品种。<span v-if="selectedSector">可用 {{ selectedSector.participant_count }} / 总数 {{ selectedSector.active_count }}；缺失品种不生成行情行。</span></p>
