@@ -1,0 +1,80 @@
+{
+  "identity": "lms405-evidence-batch2",
+  "observed_date": "2026-10-11",
+  "new_detail_count": 5,
+  "reread_detail_ids": [
+    "E10",
+    "E11"
+  ],
+  "keywords": [
+    "FG2701",
+    "JM2701",
+    "锁定",
+    "解锁"
+  ],
+  "development": [
+    "E45",
+    "E46",
+    "E47",
+    "E11"
+  ],
+  "reserved_validation": [
+    "E48",
+    "E49"
+  ],
+  "blind_test": false,
+  "rule_fitting_performed": false,
+  "publication_time_basis": "Asia/Shanghai visible page time; current body not proven historical original; capture time unknown",
+  "snapshots": [
+    {
+      "source": "E11",
+      "url": "https://weibo.com/1885745060/RlS8pn2fR",
+      "published": "2026-10-09T15:24:00+08:00",
+      "image_number": 3,
+      "contract": "JM2701",
+      "long": "20",
+      "short": "20",
+      "capture_at": null,
+      "account_identity": null,
+      "image": "evidence/day-holdings.png"
+    },
+    {
+      "source": "E49",
+      "published": "2026-10-09T21:58:00+08:00",
+      "image_number": 2,
+      "contract": "JM2701",
+      "long": "20",
+      "short_listed": false,
+      "capture_at": null,
+      "account_identity": null,
+      "image": "evidence/night-holdings.png"
+    }
+  ],
+  "transition": {
+    "candidate": "UNLOCK_LONG",
+    "confirmed_action": false,
+    "alternatives": [
+      "多个开平操作得到相同终态",
+      "快照账户或拍摄顺序不同",
+      "截图未完整披露账户状态"
+    ],
+    "replay_events": []
+  },
+  "skipped": [
+    "RkcZHD2nw重复E46",
+    "RkcXBEfop重复E47",
+    "RkaD9stsV重复E47且评论螺纹",
+    "RlRKVswmg重复E48",
+    "LH6.0及SH材料不扩展当前合约窗口",
+    "E49宣传图不记录"
+  ],
+  "restrictions": [
+    "E10部分评论暂不展示",
+    "未检查完整搜索结果或达到饱和",
+    "截图没有逐Bar时间和OHLC",
+    "新来源未见编辑标记不证明未编辑"
+  ],
+  "complete_action_cases": 0,
+  "signal_matches": null,
+  "performance": null
+}
