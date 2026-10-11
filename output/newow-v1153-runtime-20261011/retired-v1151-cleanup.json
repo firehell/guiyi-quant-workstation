@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "readonly": true,
+  "dry_run": true,
+  "targets": [
+    {
+      "root": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/.worktrees/release-v1.15.1",
+      "identity": {
+        "root": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/.worktrees/release-v1.15.1",
+        "commit": "386031757f37f5f4d373b68c47d50c5dc3215b07",
+        "tag": "v1.15.1"
+      },
+      "status": "eligible",
+      "references": [],
+      "error_code": null
+    }
+  ],
+  "eligible_roots": [
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/.worktrees/release-v1.15.1"
+  ],
+  "recovery": "git worktree removal only after an unchanged exact plan readback; never force",
+  "plan_sha256": "bc8b0b6a26417f46c14c0cb8973859ae3b308a53f257b11f902e4a43098472d9",
+  "result": "NONFORCE_REMOVED",
+  "restoration": "Recreate detached worktree from annotated v1.15.1; no tag/history removal."
+}

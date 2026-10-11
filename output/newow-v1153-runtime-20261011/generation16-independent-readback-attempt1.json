@@ -1,0 +1,11 @@
+{
+  "status": "BLOCKED",
+  "code": "HEALTHY_CYCLE_TIMEOUT",
+  "exit_code": 2,
+  "plan_hash": "934a41f454c8ce8ef495ecb01d696eb1e9b4a279290c82cf56a373d82c25f674",
+  "controller_sha256": "52d77202ca7d6a2a4ffab12e52bd5834ec6f52481c72133a123f373b50738989",
+  "readonly": true,
+  "production_mutation_performed": false,
+  "formal_gate_budget_seconds": 30,
+  "apply_journal_modified": false
+}

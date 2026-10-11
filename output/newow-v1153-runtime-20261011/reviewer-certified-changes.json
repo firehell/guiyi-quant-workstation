@@ -1,0 +1,501 @@
+{
+  "status": "REVIEW_COMPLETE",
+  "old_commit": "386031757f37f5f4d373b68c47d50c5dc3215b07",
+  "candidate_commit": "c28438d3d7ad6d6c66272027996f4a25e2facdfe",
+  "changes": {
+    ".gitignore": {
+      "previous": "2c14a9643b4a897e2dcae15828a09b7bdaaf8e7d",
+      "candidate": "c05e60543299053553b0f0d37cec24f1cd1cd7d5"
+    },
+    "STATUS.md": {
+      "previous": "30a9bc9cec249b717bd1f3f211fc3188e413a421",
+      "candidate": "b91b10280deb9e52dc2974979e0274817af958d4"
+    },
+    "TESTING.md": {
+      "previous": "4144112ca4f2d5f9b9cc164e3782f6c7eeaf1bc1",
+      "candidate": "9c6f43d5aabbd5d6462e38c0381433236b69a83f"
+    },
+    "apps/quant-web/package.json": {
+      "previous": "96eae795759508e9c0e633c14137a8c5841f3a03",
+      "candidate": "1b1d36dd6bcdc976addf101a157f74967fa7b32e"
+    },
+    "apps/quant-web/src/api/newowHomeCards.ts": {
+      "previous": "e057052874c99e48b3d4bfa3e0284b31af846104",
+      "candidate": "40ded22bb121046c912cc61e9d99ae142e8fe349"
+    },
+    "apps/quant-web/src/api/newowProduct.ts": {
+      "previous": "af46c4a80ebf176571e673b27bd3ebbce748b2a4",
+      "candidate": "e5b3a2947c52e344a7f64435e949c9671a5ecfef"
+    },
+    "apps/quant-web/src/components/market/MarketHomeStrategyCards.vue": {
+      "previous": "7a6ddbb5255da81fc8dd21d15eed79477942a6d6",
+      "candidate": "96ea0d55b4217e073e9346def82bfb25ce58a662"
+    },
+    "apps/quant-web/src/components/market/detail/MarketDetailQuoteHeader.vue": {
+      "previous": "54612f5c26f7acb4b2f49d38aab8d0f160527cd7",
+      "candidate": "508e402ed6bffd3df1dd9d9b70829553a185e97c"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowDecisionV2Panel.vue": {
+      "previous": "9396c6c992ca3cc3099ddcd8ee6b511bde66b6a2",
+      "candidate": "e01503ed7b78fcdde4c0a2ac753e490546bf5fba"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowExperimentPanel.vue": {
+      "previous": "477753a599df65840946afb2e45c224fae9304b7",
+      "candidate": "4859ab0b3ce4f809880721a65e1217120673e7f8"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowPagePerformancePanel.vue": {
+      "previous": "afdbdd97ae6234ca4d39bf999af4d9187516f3eb",
+      "candidate": "50a5778237eb9880f393a4d56959ba546aa0af60"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowPriceSources.vue": {
+      "previous": null,
+      "candidate": "5492e8b9d345e149206ed29031546665a721d65a"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowProductChartStage.vue": {
+      "previous": "23046057802d6d7b2f633d8a3a398168d071ae43",
+      "candidate": "811a171b3e60ff77f12de3369cd22632e38010c2"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowProductWorkspace.vue": {
+      "previous": "6bd67c4f97b811ff6bbeeced9cd8aa26412ff0ce",
+      "candidate": "93eb410fd9b5574378d40f5cd050fa91960789b6"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowSharedAuxiliaryStage.vue": {
+      "previous": null,
+      "candidate": "75fb859145bd50688e459804f30566051232066e"
+    },
+    "apps/quant-web/src/components/market/detail/newow/NewowStatusCard.vue": {
+      "previous": "161728ed81e559c5675db17ed1dd23effea2cb0e",
+      "candidate": "a43285d0ec4dc64a6822652377c0fe2b68315dca"
+    },
+    "apps/quant-web/src/components/market/detail/newow/newowProductChartPrimitives.ts": {
+      "previous": "76b83b05dcd30567a29820129f9d8984aa92d18f",
+      "candidate": "f519b63222bf38b120272cc79e645b11eb0acbc7"
+    },
+    "apps/quant-web/src/composables/useNewowProduct.ts": {
+      "previous": "4ab3fa39d9201fa33358adfebbdc2c78503f6d5e",
+      "candidate": "97677946e1eb412dbef3e453c04af39cd88fe13f"
+    },
+    "apps/quant-web/src/pages/market/index.vue": {
+      "previous": "158bba4840802367f7a11b6a20c21e99e3104fd5",
+      "candidate": "56b70006d20cdb52baabbf0c229712bb5abf6224"
+    },
+    "apps/quant-web/src/styles/marketHome.css": {
+      "previous": "6bd0e59839796553a152d26f68e939812dcc3c89",
+      "candidate": "8c3238465c08f56d962be6d4aa7afccad0e77530"
+    },
+    "apps/quant-web/src/utils/marketDisplay.ts": {
+      "previous": "43c9b1363c865b31c713fd030e7ac5b7a2a523b7",
+      "candidate": "f005706b3d232cecddb02ea2555628e675116039"
+    },
+    "apps/quant-web/src/utils/newowChartReadout.ts": {
+      "previous": "32bfb4787138dfc7415af455c234d36a5c7d9593",
+      "candidate": "1c6e75fc8191ac02fe4816f3b78c4fc68a9ca39a"
+    },
+    "apps/quant-web/src/utils/newowExperiments.ts": {
+      "previous": "22a06eb6b87624c4699948738912d9b1d73d39d1",
+      "candidate": "96c1673a9fcccaafa6e5faea6238f0211143ba7a"
+    },
+    "apps/quant-web/src/utils/newowHomeCards.ts": {
+      "previous": "9709bc7a007e77284947742e63f4fe032cf90f4b",
+      "candidate": "1d42b2fae4e2b118abf6bfd8d82fa6f01aa3ef05"
+    },
+    "apps/quant-web/src/utils/newowPagePerformance.ts": {
+      "previous": "99c45e84177a90073eca31fb8748f779bb3b2a0c",
+      "candidate": "d1fea7712f6649bfc99f5978f03fabb13bd43abe"
+    },
+    "apps/quant-web/src/utils/newowPagePresentation.ts": {
+      "previous": "6782e9cb24b71b99dbdf22e77c61c36ee6de71c5",
+      "candidate": "3598dd80a5760a3faf88cb6f9fbff7cc6b243829"
+    },
+    "apps/quant-web/src/utils/newowPriceSources.ts": {
+      "previous": null,
+      "candidate": "113cbe7d0c06212927d7f8fb0ac7b008ece2668a"
+    },
+    "apps/quant-web/src/utils/newowProcessHintDisplay.ts": {
+      "previous": null,
+      "candidate": "013050c64fbfd9ea492dc21e770b9ad317ce1a28"
+    },
+    "apps/quant-web/src/utils/newowProductViewModel.ts": {
+      "previous": "fd91c69de7f12931992e7c8ff565a7848dd7d937",
+      "candidate": "e7ba1cf2e0f6ad76bcd933a0962944ea4bc60df9"
+    },
+    "apps/quant-web/src/utils/newowSessionResources.ts": {
+      "previous": null,
+      "candidate": "031fb0e90f18ff6bb9031052d0aee7df72031abe"
+    },
+    "apps/quant-web/src/utils/newowSharedPresentation.ts": {
+      "previous": null,
+      "candidate": "958ef59fdc45f6bb0748c01943536faecbe32b05"
+    },
+    "apps/quant-web/src/utils/newowStatusCardPresentation.ts": {
+      "previous": "6b670f1e79d8458da649afb7c15fdd15d2f34dc1",
+      "candidate": "96be4a3c0d50a34e0da90e53829465351452b63e"
+    },
+    "apps/quant-web/tests/NewowProductChartStage.test.ts": {
+      "previous": "8c10ec7d84a42ace90561f429fdbfa0efd535c64",
+      "candidate": "c2438981438436d7c8ea06f0524729b5335094a2"
+    },
+    "apps/quant-web/tests/marketHomePageRoute.test.ts": {
+      "previous": "d64a90d58d6e315a7d6e586c4e8760356449909d",
+      "candidate": "f514c750336beb97d09cbee3c208d37f45bb099a"
+    },
+    "apps/quant-web/tests/newowAnnualized.test.ts": {
+      "previous": null,
+      "candidate": "9b94daac0f7161ba9ab971f84189153d5539c88e"
+    },
+    "apps/quant-web/tests/newowChartReadout.test.ts": {
+      "previous": "d096955dfc583c73e34fa6379279b5fcad9dd7ae",
+      "candidate": "f9795c5751c51cda97cec6ba4093434bb309ba4c"
+    },
+    "apps/quant-web/tests/newowDecisionV2Panel.test.ts": {
+      "previous": "fc429f7f3bb31cfe190a42c49586d2b4e3409dfa",
+      "candidate": "8a0d977d09d23f037e852a495d61892eb83a71dd"
+    },
+    "apps/quant-web/tests/newowExperimentPanel.test.ts": {
+      "previous": "172228b3c7fcea66da25f78a25598a88113232b0",
+      "candidate": "683f1e153c8cb46160fe11c68dbda084fb56c4ee"
+    },
+    "apps/quant-web/tests/newowExplanationPanel.test.ts": {
+      "previous": "699b6869d1a8924848e7d1929679ffda21b98f62",
+      "candidate": "f0327a1e2bef2381416d10747e2d11a1eb8638e3"
+    },
+    "apps/quant-web/tests/newowHomeCards.test.ts": {
+      "previous": "116cf84840296b99554c3e656272dba89708bd5f",
+      "candidate": "ffba27dc9064449f1e66566e1bca7e5c36dc15b9"
+    },
+    "apps/quant-web/tests/newowHomeList.test.ts": {
+      "previous": null,
+      "candidate": "d2106168e45abb3f3fdf1d57c9fa0e35afe901cc"
+    },
+    "apps/quant-web/tests/newowPagePresentation.test.ts": {
+      "previous": "aa4c19c35f4a39e7bff9a8f032b66e646025c9b7",
+      "candidate": "41410367832b6a93af0ce0724d04b87f22e256a3"
+    },
+    "apps/quant-web/tests/newowPriceSources.test.ts": {
+      "previous": null,
+      "candidate": "e1ee2ee2e329161fcfa93cbae826d9166add5def"
+    },
+    "apps/quant-web/tests/newowProcessHintDisplay.test.ts": {
+      "previous": null,
+      "candidate": "dd9a4e7d76f8f0963a31b222cc132e736a1d075f"
+    },
+    "apps/quant-web/tests/newowProductChartPrimitives.test.ts": {
+      "previous": "44fb1d6963daa7756e7b7ae517d5f1e1ee40ce29",
+      "candidate": "095d02f9d47967d221c373846a5c90c821fbf994"
+    },
+    "apps/quant-web/tests/newowReferencePanel.test.ts": {
+      "previous": "7f03e7a750fccdb2125ddbb87f4b6195bcd580f2",
+      "candidate": "17c282114cd564ec12338ccef61de5515ada3883"
+    },
+    "apps/quant-web/tests/newowSessionResources.test.ts": {
+      "previous": null,
+      "candidate": "6553a29470c80611daf748099febcb327e1a0458"
+    },
+    "apps/quant-web/tests/newowSharedPresentation.test.ts": {
+      "previous": null,
+      "candidate": "d2c0825a962a189aebce9c4bbf36a9742c34f6d0"
+    },
+    "apps/quant-web/tests/useNewowProduct.test.ts": {
+      "previous": "2fdfab43c0488bb66250c93923bc8ea28c0437cb",
+      "candidate": "a764118f89856f07f69bc7c6d49036a303b9f465"
+    },
+    "apps/quant-web/vite.config.ts": {
+      "previous": "30204e8020195559cc366078307e5929469d7acb",
+      "candidate": "982c12f424854133d486b81af27fad3c014483ac"
+    },
+    "docs/DEVELOPMENT.md": {
+      "previous": "611eaaa1f8fec011047e20a44265100649590812",
+      "candidate": "f7609a4993a982bf532265eaf2c1a7926f27da68"
+    },
+    "docs/research/lms405/.gitignore": {
+      "previous": null,
+      "candidate": "a1e03960fbab48212b55ec49115fef7bdb95515d"
+    },
+    "docs/research/lms405/REPLICATION_MANUAL.md": {
+      "previous": null,
+      "candidate": "eab23d5a9794ebe94ef1ca3be4b8c1ab3e36e5f2"
+    },
+    "docs/research/lms405/comparison.html": {
+      "previous": null,
+      "candidate": "f378c13e52cd55a37cbd2f1270ddd996a891ea9d"
+    },
+    "docs/research/lms405/coverage.json": {
+      "previous": null,
+      "candidate": "8666e01f3e76f83ecbb16ed9f14588874fba8cbf"
+    },
+    "docs/research/lms405/evidence/batch2.json": {
+      "previous": null,
+      "candidate": "682373c47d2a93e1c16a8e4434c98d27ce0975e0"
+    },
+    "docs/research/lms405/evidence/day-holdings.png": {
+      "previous": null,
+      "candidate": "c42faa9b92c186d09d20e1c2d3ab9693171cc18c"
+    },
+    "docs/research/lms405/evidence/night-holdings.png": {
+      "previous": null,
+      "candidate": "0ea3b0be83769285f9cc46ed9933cc862475f62a"
+    },
+    "docs/research/lms405/evidence/node-audit.json": {
+      "previous": null,
+      "candidate": "60bc0450254e35cd22f3b09f81601456ef286e5e"
+    },
+    "docs/research/lms405/evidence/split-before-jm-search.md": {
+      "previous": null,
+      "candidate": "0da5488b71829a225acf7aafa7d03fd0d63d6303"
+    },
+    "docs/research/lms405/sources.csv": {
+      "previous": null,
+      "candidate": "ac31cbab7945800f8892b7d459bffa818ec02137"
+    },
+    "docs/research/newow-v3.2.82/REPLICATION_MANUAL.md": {
+      "previous": "fb8bb82fc3eda0656939dba3ccbc4cdd8f0eb1ae",
+      "candidate": "f8ba936b2eb0da4024879f64f2f17c2dfb7e17b8"
+    },
+    "docs/superpowers/plans/2026-09-17-newow-w1-60m-per-product.md": {
+      "previous": "f1a0d5b279b6d95ddf3db0919bf528697d7f07ac",
+      "candidate": null
+    },
+    "docs/superpowers/plans/2026-09-19-unified-reference-trading-plan.md": {
+      "previous": "c652e094982668f8c22c4a6d303d95e8aebd1a59",
+      "candidate": null
+    },
+    "docs/superpowers/specs/2026-09-19-unified-reference-trading-design.md": {
+      "previous": "a4bab815d1a3bc07cae57ae2d78cd8575ee157c7",
+      "candidate": null
+    },
+    "docs/tasks/after-market-recovery-20260922/implementation-plan.md": {
+      "previous": "7dc91368917ebb7a4a690559035799fc30967e97",
+      "candidate": null
+    },
+    "docs/tasks/newow-d1-completed-snapshot/design-and-plan.md": {
+      "previous": "8ea3cb7d87e5e5b54e6a499ed045f9d7f4ff4f6f",
+      "candidate": null
+    },
+    "docs/tasks/newow-initial-clear/acceptance.md": {
+      "previous": null,
+      "candidate": "0d490a9ae7fb66c2770b0a5fd5ef93348343264a"
+    },
+    "docs/tasks/newow-initial-clear/design.md": {
+      "previous": "612f998f528e015d1b49cd19493970a4a47ea314",
+      "candidate": null
+    },
+    "docs/tasks/newow-initial-clear/implementation-plan.md": {
+      "previous": "fc2de04619c56fdee06055b102a53548d5f293b3",
+      "candidate": null
+    },
+    "docs/tasks/newow-weekly-closeout/acceptance.md": {
+      "previous": null,
+      "candidate": "22975c3dccc182f0d5cedaa320b82773be55daeb"
+    },
+    "docs/tasks/newow-weekly-closeout/design.md": {
+      "previous": "e01d98532530f2c6b93df59c6f5b4d3bf6b04793",
+      "candidate": null
+    },
+    "docs/tasks/newow-weekly-closeout/implementation-plan.md": {
+      "previous": "e967d5a553c0b7846f6edc31ebb4fcac667c6ad1",
+      "candidate": null
+    },
+    "docs/tasks/preopen-reliability/acceptance.md": {
+      "previous": null,
+      "candidate": "75a5ad771320f794b17f7cae6899c6fdf7c970ba"
+    },
+    "docs/tasks/preopen-reliability/implementation-plan.md": {
+      "previous": "d4aa972a89c3c969cd272fbd2731160c0e176e11",
+      "candidate": null
+    },
+    "openspec/specs/market-home-overview/spec.md": {
+      "previous": "c42229a4e29757c1419932d4b0886a8413cc951a",
+      "candidate": "969e52799fc58d8e124425e0b991ee7b4c3f4d15"
+    },
+    "openspec/specs/newow-product-reference-trading/spec.md": {
+      "previous": "6b498b2f855521f90c4081afbb371904f89ef9ca",
+      "candidate": "181abfa75cb99080bae975cf5ccf0eb55b226e22"
+    },
+    "output/simnow-jm-readiness-20261011/15m.json": {
+      "previous": null,
+      "candidate": "1fec245409f58aedb07e6225533e41b58750a961"
+    },
+    "output/simnow-jm-readiness-20261011/1d.json": {
+      "previous": null,
+      "candidate": "ea46d6c49e242243e0ca0f147ca78939c32077fc"
+    },
+    "output/simnow-jm-readiness-20261011/1w.json": {
+      "previous": null,
+      "candidate": "4bd3eea8eec0f7967c9928d18945f90be0cdd0c7"
+    },
+    "output/simnow-jm-readiness-20261011/30m.json": {
+      "previous": null,
+      "candidate": "17356d5588964152b00a556917add497effe6f86"
+    },
+    "output/simnow-jm-readiness-20261011/5m.json": {
+      "previous": null,
+      "candidate": "d76c4584a618f057edb768fef282b49ca5f7b7c5"
+    },
+    "output/simnow-jm-readiness-20261011/60m.json": {
+      "previous": null,
+      "candidate": "61a0fc2d45aee5ae2a80d0b73abfd4edb6a968f6"
+    },
+    "output/simnow-jm-readiness-20261011/read_page_matrix.py": {
+      "previous": null,
+      "candidate": "579562c0085f1d425b8fd0c503f58ff15baade06"
+    },
+    "output/simnow-jm-readiness-20261011/readiness.md": {
+      "previous": null,
+      "candidate": "ede9ac517e94742fe56c45d77744f3f5e3ed43e0"
+    },
+    "packages/quant-core/guiyi_quant/lms405/__init__.py": {
+      "previous": null,
+      "candidate": "4c33de5a55d3ddd07ea5f4406584b48b07151198"
+    },
+    "packages/quant-core/guiyi_quant/newow/main_rise.py": {
+      "previous": "c5d0ca958996e0a8b310e7dc2b602db0c93b275d",
+      "candidate": "0f88277f0946c3975878cfb2fe73e4bd42783caf"
+    },
+    "packages/quant-core/guiyi_quant/newow/product_adapters.py": {
+      "previous": "8972fefd2765c62a06a62389db36a18e6bc9334e",
+      "candidate": "cbb23dbd4f95a0603a62741574193177ef37c4a5"
+    },
+    "packages/quant-core/guiyi_quant/newow/subplots.py": {
+      "previous": "f1d6cdaea96dd03cae7023457a2857f73f875227",
+      "candidate": "80b6723ba8960cdeb4b473a61dd7ecef90e8c2fd"
+    },
+    "scripts/research/lms405_node_audit.py": {
+      "previous": null,
+      "candidate": "01bfc7431d19045a3231ea5d40a09e8ac1ab51b7"
+    },
+    "scripts/research/lms405_replay.py": {
+      "previous": null,
+      "candidate": "e4984c588bf053bce59cd03b52ca622cc5eb6011"
+    },
+    "services/quant-api/app/api/market_newow.py": {
+      "previous": "c02ef71c0eaef3542fdfbd422f09e7e1d7adb4c4",
+      "candidate": "dda61c4dff8a8cce63223f7fcaca185950d305b6"
+    },
+    "services/quant-api/app/market_data/newow/home_cards.py": {
+      "previous": "7ddecb14712675f8b25be9f0d235dd8456d1cfad",
+      "candidate": "70c0b995cf883a6fc818d476fc4fafd4d68d1478"
+    },
+    "services/quant-api/app/market_data/newow/product_service.py": {
+      "previous": "9bd9faa1bf2c2bc0ed328f1be437f9e8e94f5314",
+      "candidate": "7413055a1a891115997a38284b42af874a7a26e8"
+    },
+    "services/quant-api/app/version.py": {
+      "previous": "b8bc8e77481d86a0f2b6b367fadc97901676771c",
+      "candidate": "17bb08b1e7b1f3ef242a03f78f85f3c76a508a00"
+    },
+    "services/quant-api/tests/lms405/test_node_audit.py": {
+      "previous": null,
+      "candidate": "09870a3130e54df898be07d181b47d4d33c6f36f"
+    },
+    "services/quant-api/tests/lms405/test_reader.py": {
+      "previous": null,
+      "candidate": "f37951fddb806684441707df50ae3396a1288490"
+    },
+    "services/quant-api/tests/lms405/test_replay.py": {
+      "previous": null,
+      "candidate": "fe2b1a091399a64ab80d92b87d54386f8429ffd1"
+    },
+    "services/quant-api/tests/newow/product_fixtures.py": {
+      "previous": "740acb1136611d787b19c2c10f806d44a0702da3",
+      "candidate": "625c87f339c889f3a3972a9fa77269b33a9ebdc3"
+    },
+    "services/quant-api/tests/newow/test_home_cards.py": {
+      "previous": "eaac46bb8fac5c23b808f8fa2ee06e4634ceb218",
+      "candidate": "d3aa9c1f8f3fdcc47f06be0166083ea68359cd02"
+    },
+    "services/quant-api/tests/newow/test_market_newow_product_api.py": {
+      "previous": "66d3ca4d31256190631cf120bf9605b9ced035c5",
+      "candidate": "5ae2971137a18664fb334245fb4f03784d230a60"
+    },
+    "services/quant-api/tests/newow/test_product_adapters.py": {
+      "previous": "f99bd92184372dc8f29470a51cc024e38b310aa5",
+      "candidate": "2170bab74ec3a47e2dd911f7ef269c439cf02192"
+    },
+    "services/quant-api/tests/newow/test_subplots_page_v1.py": {
+      "previous": "8290abaa2385e9e294a324ea7a94dd7e3ef23b92",
+      "candidate": "3cf8fe8c8b863a6ffa4161cb7ef7173d28137172"
+    },
+    "services/quant-api/tests/test_generation10_recovery_driver.py": {
+      "previous": null,
+      "candidate": "db62775ccab8bb4dd9ead8c4834e3e2539e075b3"
+    },
+    "services/quant-api/tests/test_generation11_recovery_driver.py": {
+      "previous": null,
+      "candidate": "754e28ade3c29dd261697451d3e05f4f8393b8d1"
+    },
+    "services/quant-api/tests/test_generation12_recovery_driver.py": {
+      "previous": null,
+      "candidate": "2bf6c22069a61dde0b690f4b32231de4b34b9f15"
+    },
+    "services/quant-api/tests/test_generation9_recovery_driver.py": {
+      "previous": null,
+      "candidate": "9548954b1df69d6ea55c6c1227f96cd445600975"
+    },
+    "tests/engineering/test_canonical_consistency.py": {
+      "previous": "92ab259fec905de45d431ac1550305d4a5c2451e",
+      "candidate": "34712842528f1f3976e961b24bdf6a9e68e9ec5a"
+    },
+    "tests/engineering/test_repository_hygiene.py": {
+      "previous": "1b6d044ebdd5f07390d2c83572dec97d32e45e34",
+      "candidate": "b51cc6d07d99a422abf655c82f37c30e1543ee1a"
+    }
+  },
+  "contract_changes": {
+    "formula": {
+      "old": "df25b33198dd48df966467170d459f65cfadcaa8ac80a4fe5e406579536f2ee5",
+      "new": "fb4941965fa089a8a1768bf351b3a646146de91ad2dcb9c0bcbd0722d234d5db"
+    }
+  },
+  "action_semantics_preserved": true,
+  "reference_trade_semantics_preserved": true,
+  "scope_identity_preserved": true,
+  "history_state_codec_preserved": true,
+  "notification_policy_preserved": true,
+  "reviewed_modules": [
+    "packages/quant-core/guiyi_quant/lms405/__init__.py",
+    "packages/quant-core/guiyi_quant/newow/main_rise.py",
+    "packages/quant-core/guiyi_quant/newow/product_adapters.py",
+    "packages/quant-core/guiyi_quant/newow/subplots.py"
+  ],
+  "evidence": {
+    "status": "PASS",
+    "scenarios": 9,
+    "incremental_steps": 810,
+    "subplot_prefixes": 810,
+    "dimensions": [
+      "trend",
+      "oscillation",
+      "main_rise"
+    ],
+    "frequencies": [
+      "1d",
+      "1w",
+      "60m"
+    ],
+    "normalized_output_sha256": "847a7382d577fa88f754fcb32e75e19523cdfc4a5635f9d8578d4c0bc9ecfa9b",
+    "normalization": [
+      "exclude newly-added ma10_display_v1 result field",
+      "exclude newly-added confirmed_peak_events result field",
+      "exclude new ma10_display_v1/magic11_count display metrics"
+    ],
+    "compared": [
+      "all old replay fields and formula identity",
+      "all checkpoint strategy states at every step",
+      "actions markers hints eligibility diagnostics and input_progress",
+      "all old subplot fields at every prefix"
+    ],
+    "limitations": [
+      "synthetic representative OHLC fixture; not production evidence",
+      "new display fields intentionally differ; compatibility is semantic not identical whole Frame wire"
+    ]
+  },
+  "static_findings": [
+    "MainRiseState and ProductReplayState unchanged; added display is StepResult-only",
+    "existing formula/profile/marker policies unchanged",
+    "checkpoint codec and all reference execution/notification modules exact unchanged blobs",
+    "LMS module is research-only: no imports in active services/app or scripts/ops",
+    "home_cards/API/product_service changes are display projection and request-local reuse; do not modify Reference notification policy"
+  ],
+  "controller_review_status": "PENDING",
+  "production_mutation_performed": false
+}

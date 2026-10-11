@@ -1,0 +1,81 @@
+{
+  "status": "DIAGNOSTIC_ONLY_READBACK_GATE_FAILED",
+  "readback_code": "HEALTHY_CYCLE_TIMEOUT",
+  "samples": 285,
+  "ready_counts": {
+    "api": 285,
+    "web": 285,
+    "live": 146,
+    "alert": 285,
+    "reference-worker": 30,
+    "market-feed": 150
+  },
+  "same_round_all_ready_count": 7,
+  "first_same_round_all_ready": {
+    "api": "2026-10-11T15:40:09.262834+00:00",
+    "web": "2026-10-11T15:40:09.418797+00:00",
+    "live": "2026-10-11T15:40:09.331572+00:00",
+    "alert": "2026-10-11T15:40:09.325138+00:00",
+    "reference-worker": "2026-10-11T15:40:08.571621+00:00",
+    "market-feed": "2026-10-11T15:40:09.393065+00:00"
+  },
+  "errors": [],
+  "last_snapshot": {
+    "api": {
+      "ready": true,
+      "phase": "active",
+      "at": "2026-10-11T15:40:34.378933+00:00",
+      "reference_runtime": null
+    },
+    "web": {
+      "ready": true,
+      "phase": "active",
+      "at": "2026-10-11T15:40:34.445491+00:00",
+      "reference_runtime": null
+    },
+    "live": {
+      "ready": false,
+      "phase": "active",
+      "at": "2026-10-11T15:40:34.129854+00:00",
+      "reference_runtime": null
+    },
+    "alert": {
+      "ready": true,
+      "phase": "active",
+      "at": "2026-10-11T15:40:34.441146+00:00",
+      "reference_runtime": null
+    },
+    "reference-worker": {
+      "ready": false,
+      "phase": "active",
+      "at": "2026-10-11T15:40:30.441971+00:00",
+      "reference_runtime": {
+        "blocked_count": 0,
+        "blocked_counts": {},
+        "enabled_count": 720,
+        "historical_refresh_alive": true,
+        "historical_refresh_error": null,
+        "last_success": null,
+        "notifications_alive": true,
+        "pending_keys": 112,
+        "ready": false,
+        "stage": "scan"
+      }
+    },
+    "market-feed": {
+      "ready": false,
+      "phase": "active",
+      "at": "2026-10-11T15:40:34.276252+00:00",
+      "reference_runtime": null
+    }
+  },
+  "loaded_pids_unchanged": true,
+  "registry_exact": true,
+  "production_mutation_performed": false,
+  "poll_sleep_seconds": 0.1,
+  "sample_window_seconds": 30,
+  "average_iteration_seconds": 0.10526315789473684,
+  "official_readback_passed": false,
+  "natural_intraday_acceptance": "PENDING",
+  "recipient_delivery_acceptance": "PENDING"
+}

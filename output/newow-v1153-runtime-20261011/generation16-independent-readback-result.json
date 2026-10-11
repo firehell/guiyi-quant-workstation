@@ -1,0 +1,145 @@
+{
+  "phase": "GENERATION16_INDEPENDENT_READBACK",
+  "cycle_evidence": {
+    "api": "2026-10-11T15:42:14.048066+00:00",
+    "web": "2026-10-11T15:42:14.027017+00:00",
+    "live": "2026-10-11T15:42:13.714092+00:00",
+    "alert": "2026-10-11T15:42:13.345450+00:00",
+    "market-feed": "2026-10-11T15:42:13.357385+00:00",
+    "reference-worker": "2026-10-11T15:42:13.849061+00:00"
+  },
+  "natural_intraday_acceptance": "PENDING",
+  "recipient_delivery_acceptance": "PENDING",
+  "health_preflight": {
+    "identity": true,
+    "http": true,
+    "identity_seconds": 1.5187336669914657,
+    "http_startup": {
+      "ready": true,
+      "polls": 1,
+      "seconds": 0.2825165829999605,
+      "at": "2026-10-11T15:42:05.459989+00:00"
+    },
+    "at": "2026-10-11T15:42:06.978746+00:00"
+  },
+  "health_gate_evidence": {
+    "at": "2026-10-11T15:42:14.077543+00:00",
+    "registry": true,
+    "loaded_pids": true,
+    "heartbeat": true,
+    "heartbeat_proof": {
+      "live": {
+        "present": true,
+        "age_seconds": 1.677426,
+        "available": true,
+        "operational_count": 60,
+        "runtime_root": "/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.15.3",
+        "runtime_commit": "c28438d3d7ad6d6c66272027996f4a25e2facdfe",
+        "runtime_tag": "v1.15.3",
+        "runtime_generation": 16,
+        "identity_matches": {
+          "runtime_root": true,
+          "runtime_commit": true,
+          "runtime_tag": true,
+          "runtime_generation": true
+        },
+        "accepted": true
+      },
+      "market-feed": {
+        "present": true,
+        "age_seconds": 2.060806,
+        "available": true,
+        "operational_count": 60,
+        "runtime_root": "/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.15.3",
+        "runtime_commit": "c28438d3d7ad6d6c66272027996f4a25e2facdfe",
+        "runtime_tag": "v1.15.3",
+        "runtime_generation": 16,
+        "identity_matches": {
+          "runtime_root": true,
+          "runtime_commit": true,
+          "runtime_tag": true,
+          "runtime_generation": true
+        },
+        "accepted": true
+      }
+    },
+    "owners": {
+      "api": {
+        "phase": "active",
+        "ready": true,
+        "generation": 16,
+        "at": "2026-10-11T15:42:14.048066+00:00",
+        "failure_code": null,
+        "typed_proof": {}
+      },
+      "web": {
+        "phase": "active",
+        "ready": true,
+        "generation": 16,
+        "at": "2026-10-11T15:42:14.027017+00:00",
+        "failure_code": null,
+        "typed_proof": {}
+      },
+      "live": {
+        "phase": "active",
+        "ready": true,
+        "generation": 16,
+        "at": "2026-10-11T15:42:13.714092+00:00",
+        "failure_code": null,
+        "typed_proof": {}
+      },
+      "alert": {
+        "phase": "active",
+        "ready": true,
+        "generation": 16,
+        "at": "2026-10-11T15:42:13.345450+00:00",
+        "failure_code": null,
+        "typed_proof": {}
+      },
+      "reference-worker": {
+        "phase": "active",
+        "ready": true,
+        "generation": 16,
+        "at": "2026-10-11T15:42:13.849061+00:00",
+        "failure_code": null,
+        "typed_proof": {
+          "reference_runtime": {
+            "stage": "cycle",
+            "ready": true,
+            "blocked_count": 0,
+            "blocked_counts": {},
+            "historical_refresh_alive": true,
+            "notifications_alive": true,
+            "historical_refresh_error": null
+          }
+        }
+      },
+      "market-feed": {
+        "phase": "active",
+        "ready": true,
+        "generation": 16,
+        "at": "2026-10-11T15:42:13.357385+00:00",
+        "failure_code": null,
+        "typed_proof": {}
+      }
+    },
+    "owner_ready": true,
+    "seconds": 0.3550588749931194
+  },
+  "status": "PASS",
+  "exit_code": 0,
+  "readonly": true,
+  "production_mutation_performed": false,
+  "formal_gate_budget_seconds": 30,
+  "first_formal_readback_failure_retained": true,
+  "verifications": {
+    "bindings_and_plists_all10_exact_v1153_generation16": true,
+    "continuous_loaded_pids_all6_exact": true,
+    "calendars_all4_idle": true,
+    "scope_full_proof_equals_frozen_plan": true,
+    "history_protected_preimage_preserved": true,
+    "prior_journals_and_archives_byte_equal": true,
+    "gen13_14_15_unknown_original_sha_preserved": true,
+    "all_generation15_old_pids_exited": true
+  }
+}
