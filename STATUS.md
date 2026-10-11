@@ -28,6 +28,9 @@ gen7计划 **ca6c55328a5b78863bed5ff3c5f49936c71b3e6ac96d31d70c79faac7363bd7a**
 （02:24:27–02:24:31Z，各≤30秒），Reference当次scan blocked0/{}、pending112、两线程alive/error=null。
 所有原journal/archives、schema、输入进度、720scope和发送事实匹配，旧六PID已退出；
 该结果不证明永久无争用，也没有把一次完整SOURCE_BUSY episode或自然信号闭环虚报通过。
+后续02:28:32–02:30:31Z独立120秒只读采样：116个样本均blocked0/SOURCE_BUSY0，
+同一Reference PID42445/gen7取得11次新健康周期；三次真实Catalog维护锁持有后释放，随后均出现健康周期。
+采样前后保护事实与原journal逐字节匹配；本窗口未捕获此前忙碌阶段，不声称完整忙→释放→清除因果链。
 无引用v20发布树经两次精确引用证明一致（清理计划f673e373…43733）、五资产在v21逐字节相等后
 non-force移除；已合并任务树/本地分支也在clean/祖先/全引用检查后清理。仅保留develop与正式v21树。
 现场证据与控制器：`output/reference-continuity-20261011/`。
