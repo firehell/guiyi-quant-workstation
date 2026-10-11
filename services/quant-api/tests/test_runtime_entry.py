@@ -122,3 +122,48 @@ def test_actual_runtime_launch_module_imports_no_offline_research() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "0"
+
+
+def _run_owned_live_poll_results(monkeypatch, results):
+    from contextlib import nullcontext
+    from app import runtime_entry
+    snapshots = []
+    class Owner:
+        def assert_owned(self):
+            pass
+        def mark_not_ready(self, proof=None):
+            snapshots.append({'ready': False, 'proof': proof or {}})
+        def mark_ready(self, proof=None):
+            snapshots.append({'ready': True, 'proof': proof or {'cycle_ok': True}})
+    class Live:
+        def poll(self, now):
+            return results[now]
+        def run_forever(self, *, should_stop):
+            for index in range(len(results)):
+                assert self.poll(index) is results[index]
+    monkeypatch.setenv('GUIYI_RUNTIME_HANDOVER_ENABLED', '1')
+    monkeypatch.setattr(runtime_entry, '_owned_runner', lambda service, run: run(Owner(), lambda: False))
+    runtime_entry.run_live(session_factory=lambda: nullcontext(object()), live_service_factory=lambda _: Live())
+    return snapshots
+
+
+def test_live_poll_failure_proof_preserves_existing_fixed_codes_and_recovers(monkeypatch):
+    from app import runtime_entry
+    for code in sorted(runtime_entry._LIVE_POLL_FAILURE_CODES):
+        snapshots = _run_owned_live_poll_results(monkeypatch, [code, None])
+        assert snapshots == [
+            {'ready': False, 'proof': {}},
+            {'ready': False, 'proof': {'failure_code': code}},
+            {'ready': False, 'proof': {}},
+            {'ready': True, 'proof': {'cycle_ok': True}},
+        ]
+
+
+def test_live_poll_unknown_text_or_payload_is_redacted_without_claiming_ready(monkeypatch):
+    results = ['postgresql://private-user:private-password@private-host/db',
+               'LIVE_NEW_UNREVIEWED_CODE', {'secret': 'private-password'}, ['private-password'], False, 0]
+    snapshots = _run_owned_live_poll_results(monkeypatch, results)
+    assert all(snapshot['ready'] is False for snapshot in snapshots)
+    failures = [snapshot['proof'] for snapshot in snapshots if snapshot['proof']]
+    assert failures == [{'failure_code': 'LIVE_POLL_FAILED'}] * len(results)
+    assert 'private' not in json.dumps(snapshots)

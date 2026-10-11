@@ -48,6 +48,63 @@ _COMMANDS = {
 }
 
 
+# Internal owner diagnostics accept only existing fixed Live/feed/day-preparation
+# codes. Never copy an arbitrary poll result (including exception or provider text).
+_LIVE_POLL_FAILURE_CODES = frozenset({
+    'LIVE_BAR_CONFLICT',
+    'LIVE_BAR_FINALIZED',
+    'LIVE_BAR_OUTSIDE_SESSION',
+    'LIVE_BAR_PROVENANCE_INVALID',
+    'LIVE_CONTRACT_NOT_SUBSCRIBED',
+    'LIVE_MAPPING_INVALID',
+    'LIVE_PROVIDER_CLOSED',
+    'LIVE_PROVIDER_CLOSE_UNKNOWN',
+    'LIVE_PROVIDER_LISTENER_STOPPED',
+    'LIVE_PROVIDER_RETRY_SCHEDULED',
+    'LIVE_PROVIDER_UNAVAILABLE',
+    'LIVE_RANK1_CATALOG_CONFLICT',
+    'LIVE_RANK1_CATALOG_UNAVAILABLE',
+    'LIVE_RANK1_CONTRACT_INVALID',
+    'LIVE_RAW_DATETIME_INVALID',
+    'LIVE_RAW_TRADING_DATE_INVALID',
+    'LIVE_RECOVERY_AUTHORITY_REQUIRED',
+    'LIVE_RECOVERY_BUSY',
+    'LIVE_RECOVERY_STATE_INVALID',
+    'LIVE_REDIS_UNAVAILABLE',
+    'LIVE_TIMEZONE_REQUIRED',
+    'LIVE_TRADING_DAY_INCONSISTENT',
+    'METADATA_PREPARATION_ARCHIVE_INVALID',
+    'METADATA_PREPARATION_AUTHORITY_UNAVAILABLE',
+    'METADATA_PREPARATION_CATALOG_DRIFT',
+    'METADATA_PREPARATION_CLOCK_INVALID',
+    'METADATA_PREPARATION_COMMIT_OUTCOME_UNKNOWN',
+    'METADATA_PREPARATION_DAY_CONFLICT',
+    'METADATA_PREPARATION_FAILED',
+    'METADATA_PREPARATION_NOT_PREPARED',
+    'METADATA_PREPARATION_PHASE_INVALID',
+    'METADATA_PREPARATION_PLAN_DRIFT',
+    'METADATA_PREPARATION_READBACK_FAILED',
+    'METADATA_PREPARATION_READBACK_REQUIRED',
+    'METADATA_PREPARATION_SCOPE_INVALID',
+    'METADATA_PREPARATION_SOURCE_BUSY',
+    'METADATA_PREPARATION_STATE_INVALID',
+    'OBSERVATION_CAPACITY_EXCEEDED',
+    'OBSERVATION_COMMIT_UNKNOWN',
+    'OBSERVATION_CONTENT_CONFLICT',
+    'OBSERVATION_CURSOR_DRIFT',
+    'OBSERVATION_DAY_AWAITING_FEED',
+    'OBSERVATION_DAY_MISSING',
+    'OBSERVATION_KEY_TYPE_INVALID',
+    'OBSERVATION_SOURCE_IDENTITY_INVALID',
+    'OBSERVATION_SUBSCRIPTION_CONFLICT',
+    'OBSERVATION_SUBSCRIPTION_MISSING',
+})
+
+
+def _live_poll_failure_code(result: object) -> str:
+    return result if type(result) is str and result in _LIVE_POLL_FAILURE_CODES else 'LIVE_POLL_FAILED'
+
+
 def build_market_feed_service(session):
     from app.market_data.composition import build_market_feed_service as factory
     return factory(session)
@@ -93,6 +150,8 @@ def run_live(
                         else:
                             owner.mark_ready({'input_read_frontier': source.after,
                                 'trading_day': source.day.isoformat() if source.day else None})
+                    else:
+                        owner.mark_not_ready({'failure_code': _live_poll_failure_code(result)})
                     return result
                 instance.poll = checked_poll
                 instance.run_forever(should_stop=should_stop)
