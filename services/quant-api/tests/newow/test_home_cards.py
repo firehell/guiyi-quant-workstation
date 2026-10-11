@@ -136,3 +136,29 @@ def test_home_prices_expose_existing_channel_provenance(product_cases):
         assert source['formula_version'] == prices.formula_version
         assert source['source_category'] == 'canonical_channel'
         assert source['branch'] == branch
+
+
+def test_home_absorb_space_and_control_are_existing_confirmed_facts(product_cases):
+    service, _, _, clear = _service(product_cases)
+    result = service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end))
+    chart = result.chart.value
+    summary = chart.home_summary
+    if chart.price_reference.absorb.raw is not None:
+        assert summary['absorb_space_percent'] == (chart.price_reference.absorb.raw - chart.bars[-1].bar.close) / chart.bars[-1].bar.close * Decimal(100)
+    control = summary['main_force_control']
+    assert control['formula_version'] == 'newow_main_force_control_page_v1'
+    assert control['bar_end'] == chart.bars[-1].bar.bar_end
+    assert control['physical_contract'] == summary['physical_contract']
+    assert control['page_parity'] is True and control['executable'] is False
+
+
+def test_home_reference_summary_reuses_ordinary_page_performance(product_cases):
+    from app.market_data.newow.home_cards import project_home_performance
+    service, _, build, clear = _service(product_cases)
+    result = service.query(ProductServiceQuery('rb', 'trend', '1d', section='reference', performance_since=build.trading_day, performance_through=clear.trading_day, as_of=clear.bar_end))
+    summary = project_home_performance(result)
+    ordinary = result.reference.value.page_performance['ordinary']
+    assert summary['cum_return_percent'] == ordinary['summary']['cumReturn']
+    assert summary['trade_count'] == ordinary['summary']['tradeCount']
+    assert summary['input_sha256'] == result.reference.value.page_performance['input_sha256']
+    assert summary['page_parity'] is True and summary['executable'] is False

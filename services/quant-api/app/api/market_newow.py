@@ -628,6 +628,7 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
 
     items = []
     for product in names:
+        daily_service = None
         strategies = {strategy: {} for strategy in ('trend', 'oscillation')}
         for frequency in ('1d', '1w'):
             if cancelled():
@@ -638,6 +639,8 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                 resolver = (_build_daily_resolver if frequency == '1d' else _build_weekly_resolver)(session, cancelled, lambda: now, policy)
                 snapshot = resolver.resolve(product, ProductStrategy.TREND, ProductFrequency(frequency))
                 service = _build_product_service(session, cancelled, policy)
+                if frequency == '1d':
+                    daily_service = service
             except Exception as exc:
                 for strategy in strategies:
                     strategies[strategy][frequency] = unavailable(exc, product, frequency)
@@ -655,6 +658,20 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                             'input_sha256': result.meta.input_content_sha256, 'snapshot_token': result.meta.snapshot_token}
                 except Exception as exc:
                     strategies[strategy][frequency] = unavailable(exc, product, frequency)
+        # One independent daily page projection per strategy. A failed history
+        # read cannot discard already authenticated day/week state facts.
+        from app.market_data.newow.home_cards import project_home_performance
+        for strategy in strategies:
+            daily = strategies[strategy]['1d']
+            if daily['status'] != 'ready':
+                daily['page_performance'] = {'status': 'unavailable', 'reason_code': 'NEWOW_DAILY_STATE_UNAVAILABLE'}
+                continue
+            try:
+                reference = daily_service.query(ProductServiceQuery(product, ProductStrategy(strategy), ProductFrequency('1d'),
+                    section=ProductSection.REFERENCE, as_of=daily['as_of'], history_limit=1))
+                daily['page_performance'] = project_home_performance(reference)
+            except Exception as exc:
+                daily['page_performance'] = unavailable(exc, product, '1d')
         items.append({'product': product, 'strategies': strategies})
     return JSONResponse(_json_value({'schema_version': 'newow_home_cards_v1', 'requested_at': now, 'items': items}))
 

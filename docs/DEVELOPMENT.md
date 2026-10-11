@@ -160,3 +160,15 @@ Web 正确性随对应功能版本完成，不能延后到视觉优化；体验�
 已完成的实现笔记只从 Git history 追溯，不把 `docs/superpowers/` 或 `.superpowers/` 当当前设计源。
 已完成 OpenSpec change 在确认全部 delta 已同步到 `openspec/specs/`、实现已集成后移除，历史从 Git 追溯。
 研究报告、原始截图和冻结验收脚本按证据用途保留；本机 `node_modules` 目录或符号链接不进入 Git。
+
+### 独立 develop 首页联调
+
+在 develop checkout 的仓库根目录启动独立 API：
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m uvicorn app.main:app --app-dir services/quant-api --host 127.0.0.1 --port 8002 --workers 1
+```
+
+在同一 checkout 的 `apps/quant-web` 运行 `npm run dev:develop`，页面为 `http://localhost:5175/market`，HTTP 与 WebSocket 默认代理到同一 develop API8002。正式5173/8000不随此命令切换。
+
+首页控盘复用确认 Bar 的现有控盘指标；日线收益展示现有 ordinary 页面参考收益及参考交易数，零手续费与滑点，不是牛哇私有最佳周期准确率或账户收益。目标／吸筹空间以确认收盘价计算；日周综合信号与日线参考价格分别表达。缺失或身份不匹配的数据继续显示待确认。

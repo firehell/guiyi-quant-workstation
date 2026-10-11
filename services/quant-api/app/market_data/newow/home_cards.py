@@ -1,6 +1,8 @@
 """Small display projection of an authenticated replay, never a strategy engine."""
 from decimal import Decimal
 
+from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
+
 from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, MainState, TradeEligibility
 
 
@@ -23,6 +25,12 @@ def project_home_summary(replay, anchor, status, prices):
     # history remains available for provenance, never as a fresh crossing.
     current = next((action for action in reversed(actions) if action.bar_end == bar.bar_end), None) if ready else None
     ma10 = dict(anchor.main_values).get('b') if replay.identity.strategy.value == 'trend' and ready else None
+    control = calculate_auxiliary_component(
+        replay.identity, tuple(frame.bar for frame in replay.frames if frame.bar.bar.bar_end <= bar.bar_end),
+        'main_force_control', as_of=bar.bar_end,
+    )
+    tail = control.segments[-1] if control.segments else None
+    control_ready = ready and tail is not None and tail.status.status is FeatureRuntimeStatus.READY and tail.value is not None and tail.physical_contract == bar.physical_contract and tail.segment_id == anchor.bar.calculation_segment_id and tail.bar_ends[-1] == bar.bar_end
     return {
         'display_projection_version': 'newow_home_display_v1',
         'current_event': {'kind': current.kind.value, 'bar_end': current.bar_end, 'signal_id': current.signal_id} if current else None,
@@ -49,6 +57,32 @@ def project_home_summary(replay, anchor, status, prices):
         'reference_cost': entry.reference_price if entry else None,
         'entry_signal_id': entry.signal_id if entry else None,
         'target_space_percent': (target - bar.close) / bar.close * Decimal(100) if target is not None and bar.close > 0 else None,
+        'absorb_space_percent': (absorb - bar.close) / bar.close * Decimal(100) if absorb is not None and bar.close > 0 else None,
+        'main_force_control': {'status': 'ready' if control_ready else 'warming',
+            'label': tail.value.current_status.value if control_ready else None,
+            'formula_version': control.formula_version, 'bar_end': bar.bar_end,
+            'physical_contract': bar.physical_contract, 'calculation_segment_id': anchor.bar.calculation_segment_id,
+            'page_parity': True, 'executable': False},
         'recent_action': {'kind': latest.kind.value, 'bar_end': latest.bar_end, 'signal_id': latest.signal_id} if latest else None,
         'page_parity': True, 'executable': False,
     }
+
+
+def project_home_performance(result):
+    """Copy the ordinary page projection; never substitute ReferenceSummary PnL."""
+    delivery = result.reference
+    value = delivery.value
+    page = (value.payload.get('page_performance') if hasattr(value, 'payload')
+            else getattr(value, 'page_performance', None))
+    ordinary = page.get('ordinary') if page else None
+    if not ordinary or delivery.status is None:
+        return {'status': 'unavailable', 'reason_code': 'NEWOW_PAGE_PERFORMANCE_UNAVAILABLE'}
+    summary = ordinary['summary']
+    return {'status': delivery.status.status.value,
+        'version': page['version'], 'strategy': result.meta.identity.strategy.value,
+        'frequency': result.meta.identity.frequency.value, 'as_of': result.meta.as_of,
+        'input_sha256': page['input_sha256'], 'source_evidence_sha256': page['source_evidence_sha256'],
+        'since': ordinary['trading_days'][0] if ordinary['trading_days'] else None,
+        'through': ordinary['trading_days'][-1] if ordinary['trading_days'] else None,
+        'cum_return_percent': summary['cumReturn'], 'trade_count': summary['tradeCount'],
+        'page_parity': True, 'executable': False}

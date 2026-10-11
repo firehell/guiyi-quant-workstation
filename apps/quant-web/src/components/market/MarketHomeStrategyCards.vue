@@ -4,7 +4,7 @@ import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getNewowHomeCards } from '@/api/newowHomeCards'
-import { createHomeCardLoader, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { createHomeCardLoader, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
@@ -28,6 +28,15 @@ onBeforeUnmount(() => loader.dispose())
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
 function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
 function composite(symbol: string) { return homeCompositeDisplay(fact(symbol, '1d'), fact(symbol, '1w')) }
+function space(symbol: string) { return homeCardSpace(fact(symbol, '1d')) }
+function performance(symbol: string) { return homePagePerformance(fact(symbol, '1d'), strategy.value) }
+function narrative(symbol: string) {
+  const state = composite(symbol).state, referenceSpace = space(symbol)
+  const signal = state === 'CLEAR' ? '清仓参考信号已出现' : state === 'BUILD' ? '建仓参考信号已出现' : state === 'HOLD' ? '持有观察' : state === 'FLAT' ? '空仓观察' : '日周综合状态待确认'
+  if (referenceSpace.value == null) return `${signal}，日线参考价空间待确认`
+  const price = referenceSpace.target ? '目标' : '吸筹'
+  return `${signal}，日线${price}参考价相对确认收盘价 ${formatMarketPercent(referenceSpace.value, 'percentage_points', true)}`
+}
 function reference(symbol: string) { return composite(symbol).reference }
 function periodLabel(period: HomePeriod) { return period === '1d' ? '日' : '周' }
 function change(row: Row) { return formatMarketPercent(row.price_change_1d == null ? null : String(row.price_change_1d), 'ratio', true).replace(/^([+-]?\d+)(?:\.(\d+))?%$/, (_match, whole: string, fraction: string | undefined) => `${whole}.${(fraction ?? '').padEnd(2, '0')}%`) }
@@ -63,21 +72,21 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
       <section v-if="expanded.has(row.symbol)" :id="`home-summary-${row.symbol}`" class="list-composite" :aria-label="`${row.product_name}日周综合摘要`">
         <div class="composite-card" role="link" tabindex="0" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}策略详情`" @click="openSummary(row)" @keydown.enter.self.prevent="openSummary(row)" @keydown.space.self.prevent="openSummary(row)">
           <div class="composite-heading">
-            <strong v-if="reference(row.symbol).text !== '--'">{{ reference(row.symbol).label === '目标' ? '预计目标价' : '预计吸筹参考价' }} <span :class="reference(row.symbol).label === '目标' ? 'composite-target' : 'composite-absorb'">{{ reference(row.symbol).text }}</span></strong>
+            <strong v-if="reference(row.symbol).text !== '--'">{{ reference(row.symbol).label === '目标' ? '预估目标价' : '预估吸筹参考价' }} <span :class="reference(row.symbol).label === '目标' ? 'composite-target' : 'composite-absorb'">{{ reference(row.symbol).text }}</span></strong>
             <strong v-else>目标／吸筹参考价待确认</strong>
             <span class="composite-signal" :class="composite(row.symbol).state?.toLowerCase() ?? 'pending'">{{ composite(row.symbol).label }}{{ composite(row.symbol).state ? '信号' : '' }}</span>
           </div>
-          <p class="composite-context">日周综合 · {{ strategy === 'trend' ? '趋势' : '震荡' }}背景 · {{ direction(row.symbol).label }}</p>
+          <p class="composite-context">{{ narrative(row.symbol) }}</p>
           <div class="composite-stages" aria-label="策略状态阶段">
             <div v-for="stage in stages" :key="stage.state" class="composite-stage" :class="{ 'is-active': composite(row.symbol).state === stage.state }" :aria-current="composite(row.symbol).state === stage.state ? 'step' : undefined">
               <MarketStateIcon v-if="composite(row.symbol).state === stage.state" :state="stage.icon" />
               <span v-else class="stage-idle" aria-hidden="true">−</span><span>{{ stage.label }}</span>
             </div>
           </div>
-          <div class="composite-footer"><div class="composite-tags"><span>控盘数据未提供</span><span>日线参考收益未提供</span></div><strong v-if="reference(row.symbol).label === '目标' && fact(row.symbol, '1d')?.target_space_percent != null" class="composite-target">目标空间 {{ formatMarketPercent(fact(row.symbol, '1d')?.target_space_percent, 'percentage_points', true) }}</strong><span v-else>空间数据未提供</span></div>
-          <p class="composite-disclaimer">页面参考 · 非成交记录或可执行指令 <span>查看策略详情 →</span></p>
+          <div class="composite-footer"><div class="composite-tags"><span class="control-tag">{{ homeControlLabel(fact(row.symbol, '1d')) }}</span><span class="performance-tag" :title="performance(row.symbol) ? `页面普通参考收益 · ${performance(row.symbol)?.since} 至 ${performance(row.symbol)?.through} · 零手续费与滑点` : '日线页面参考收益暂不可用'">日线 <template v-if="performance(row.symbol)">{{ performance(row.symbol)?.trade_count ? formatMarketPercent(performance(row.symbol)?.cum_return_percent, 'percentage_points', false) : '—' }}（{{ performance(row.symbol)?.trade_count }} 笔参考交易）</template><template v-else>参考收益待确认</template></span></div><strong v-if="space(row.symbol).value != null" :class="space(row.symbol).target ? 'composite-target' : 'space-down'">{{ space(row.symbol).label }} {{ formatMarketPercent(space(row.symbol).value, 'percentage_points', true) }}</strong><span v-else>空间待确认</span></div>
+          <p class="composite-disclaimer">历史页面参考 · 零手续费与滑点 · 非可执行指令 <span>查看策略详情 →</span></p>
         </div>
-        <details class="composite-evidence" @click.stop @keydown.stop><summary>详情与口径</summary><p v-if="composite(row.symbol).reason" class="composite-reason" role="status">{{ composite(row.symbol).reason }}</p><NewowPriceSources :rows="homePriceSources(fact(row.symbol, '1d'))" /></details>
+        <details class="composite-evidence" @click.stop @keydown.stop><summary>详情与口径</summary><p>日周综合 · {{ direction(row.symbol).label }}</p><p v-if="composite(row.symbol).reason" class="composite-reason" role="status">{{ composite(row.symbol).reason }}</p><NewowPriceSources :rows="homePriceSources(fact(row.symbol, '1d'))" /></details>
       </section>
     </article>
     <details class="list-details"><summary>详情与口径</summary><p v-if="liveStale && rows.some(row => row.liveQuote)">断线保留最新完成报价</p>
@@ -105,6 +114,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 @media(max-width:600px){.strategy-list-columns,.strategy-list-row{grid-template-columns:minmax(68px,1fr) 62px 54px 52px 28px 28px 28px;column-gap:3px;padding:0 10px}.strategy-list-row{height:60px}.product-name strong{font-size:13px}.list-price strong{font-size:13px}.list-change>span{font-size:10px;padding:3px}.list-reference strong{font-size:10px;padding:3px}.list-periods :deep(.market-state-icon){width:24px;height:24px;flex-basis:24px}.list-direction :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px}.list-notices{left:10px;max-width:calc(100% - 268px);font-size:8px}.strategy-list-columns{font-size:10px}}
 .strategy-list-row{cursor:pointer}.strategy-list-row:hover{background:#fafafa}.strategy-list-row:focus-visible,.composite-card:focus-visible{outline:2px solid #ff6535;outline-offset:-2px}
 .list-composite{padding:0 12px 12px;background:white;border:0}.composite-card{border:1px solid #e6e6eb;border-radius:12px;padding:10px 14px;cursor:pointer}.composite-card:hover{border-color:#d0d0d8}.composite-heading{justify-content:space-between}.composite-heading strong{font-size:13px;font-weight:500}.composite-heading strong>span{font-size:16px;font-weight:650}.composite-signal{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600;line-height:1.5}.composite-signal.flat{color:#1681ff;background:#eaf1ff}.composite-signal.build{color:#ef493b;background:#ffebe9}.composite-signal.hold{color:#ff9500;background:#fff3e6}.composite-signal.clear{color:#30c759;background:#eaf8ec}.composite-signal.pending{background:#f2f2f4}.composite-context{color:#8e8e93;font-size:10px;line-height:1.5}.composite-stages{position:relative;display:flex;justify-content:space-around;margin:8px 0 6px}.composite-stages:before{content:'';position:absolute;left:1%;right:1%;top:11px;height:2px;background:#e9e9ed}.composite-stage{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;color:#c5c5c9;font-size:10px;line-height:1.4}.composite-stage.is-active{color:#252525;font-weight:600}.stage-idle{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#eee;color:#bbb}.composite-stage.is-active :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px;box-shadow:0 0 0 3px #eaf1ff}.composite-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f2f2f4;padding-top:6px;color:#8e8e93;font-size:10px}.composite-tags{display:flex;flex-wrap:wrap;gap:6px}.composite-tags>span{border-radius:10px;padding:1px 6px;background:#f4f5f7;font-size:10px}.composite-disclaimer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:10px;line-height:1.5}.composite-disclaimer>span{color:#1681ff}.composite-reason{color:#b88134;font-size:11px}
+.composite-tags>.control-tag{color:#ff9500;background:#fff3e6}.composite-tags>.performance-tag{color:#1681ff;background:#eaf1ff}.space-down{color:#30c759}
 .composite-evidence{font-size:10px;color:#8e8e93;padding:5px 2px 0;line-height:1.5}.composite-evidence>summary{cursor:pointer}.list-composite p{margin:4px 0}.composite-heading{gap:6px}.composite-footer strong{font-size:13px}.composite-evidence :deep(.price-sources){padding:4px 0}
 @media(max-width:600px){.composite-card{padding:10px}.composite-heading strong{font-size:13px}.composite-heading strong>span{font-size:16px}.composite-heading{gap:6px}.composite-signal{font-size:11px}}
 </style>

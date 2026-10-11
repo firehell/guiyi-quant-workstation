@@ -29,6 +29,9 @@ export interface HomePeriodFact {
   target?: string | null
   absorb?: string | null
   target_space_percent?: string | null
+  absorb_space_percent?: string | null
+  main_force_control?: { status: string; label: string | null; formula_version: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean }
+  page_performance?: { status: string; reason_code?: string; version?: string; strategy?: HomeStrategy; frequency?: HomePeriod; as_of?: string; input_sha256?: string; source_evidence_sha256?: string | null; since?: string | null; through?: string | null; cum_return_percent?: string; trade_count?: number; page_parity?: boolean; executable?: boolean }
   display_as_of?: string
   display_projection_version?: 'newow_home_display_v1'
   current_event?: { kind: 'BUILD' | 'CLEAR'; bar_end: string; signal_id: string } | null
@@ -116,7 +119,11 @@ export function normalizeHomeCards(value: unknown, products: readonly string[]):
       const fact = item.strategies?.[strategy]?.[period]
       if (!fact || !['ready', 'warming', 'unavailable'].includes(fact.status)) throw new Error('INVALID_HOME_CARDS')
       if (fact.status === 'ready' && (!['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(fact.state ?? '') || !fact.physical_contract || !fact.segment_id || !fact.calculation_segment_id || !fact.input_sha256 || !fact.formula_versions?.length || !Number.isFinite(Date.parse(fact.as_of ?? '')) || !Number.isFinite(Date.parse(fact.bar_end ?? '')) || fact.page_parity !== true || fact.executable !== false)) throw new Error('INVALID_HOME_CARDS')
-      for (const key of ['target', 'absorb', 'reference_cost', 'reference_current', 'target_space_percent', 'guard_ma10'] as const) if (fact[key] != null && (typeof fact[key] !== 'string' || !Number.isFinite(Number(fact[key])))) throw new Error('INVALID_HOME_CARDS')
+      for (const key of ['target', 'absorb', 'reference_cost', 'reference_current', 'target_space_percent', 'absorb_space_percent', 'guard_ma10'] as const) if (fact[key] != null && (typeof fact[key] !== 'string' || !Number.isFinite(Number(fact[key])))) throw new Error('INVALID_HOME_CARDS')
+      const performance = fact.page_performance
+      if (performance?.status === 'ready' && (!performance.version || !performance.input_sha256 || performance.frequency !== '1d' || performance.strategy !== strategy || performance.as_of !== fact.as_of || performance.page_parity !== true || performance.executable !== false || !Number.isInteger(performance.trade_count) || performance.trade_count! < 0 || typeof performance.cum_return_percent !== 'string' || !Number.isFinite(Number(performance.cum_return_percent)))) throw new Error('INVALID_HOME_PERFORMANCE')
+      const control = fact.main_force_control
+      if (control?.status === 'ready' && (!control.formula_version || !['无庄控盘','开始控盘','有庄控盘','高度控盘','主力出货','高控+出货'].includes(control.label ?? '') || control.bar_end !== fact.bar_end || control.physical_contract !== fact.physical_contract || control.calculation_segment_id !== fact.calculation_segment_id || control.page_parity !== true || control.executable !== false)) throw new Error('INVALID_HOME_CONTROL')
       if (fact.status !== 'ready' && fact.state !== null) throw new Error('INVALID_HOME_CARDS')
     }
   }
@@ -163,4 +170,28 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
     },
     dispose() { ++generation; controller?.abort() },
   }
+}
+
+
+/** Presentation only: space uses the confirmed daily anchor, never live ticks. */
+export function homeCardSpace(day?: HomePeriodFact) {
+  const target = homeReferenceDisplay(day).label === '目标'
+  const value = target ? day?.target_space_percent : day?.absorb_space_percent
+  if (day?.status !== 'ready' || value == null) return { label: '空间待确认', value: null, target }
+  return { label: target ? '预计上涨空间' : '预计下跌空间', value, target }
+}
+
+export function homeControlLabel(day?: HomePeriodFact) {
+  const control = day?.main_force_control
+  return day?.status === 'ready' && control?.status === 'ready' && control.page_parity === true && control.executable === false
+    && control.physical_contract === day.physical_contract && control.calculation_segment_id === day.calculation_segment_id && control.bar_end === day.bar_end
+    ? control.label ?? '控盘待确认' : '控盘待确认'
+}
+
+export function homePagePerformance(day: HomePeriodFact | undefined, strategy: HomeStrategy) {
+  const value = day?.page_performance
+  return value?.status === 'ready' && value.page_parity === true && value.executable === false && value.frequency === '1d' && value.strategy === strategy
+    && value.version && value.input_sha256 && value.as_of === day?.as_of
+    && Number.isInteger(value.trade_count) && value.trade_count! >= 0 && typeof value.cum_return_percent === 'string'
+    ? value : null
 }

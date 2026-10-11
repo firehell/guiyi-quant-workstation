@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
 
@@ -64,6 +64,21 @@ test('completed D1 and W1 cutoffs can differ under one exact display owner', () 
   assert.equal(homeCompositeDisplay(day, week).state, 'HOLD')
   assert.equal(homeCompositeDisplay(day, { ...week, bar_end: '2026-10-03T07:00:00Z' }).state, null)
   assert.equal(homeCompositeDisplay(day, { ...week, display_as_of: undefined }).state, null)
+})
+
+test('home supplemental facts keep daily ownership and ordinary page return', () => {
+  const day = { ...ready('FLAT'), absorb_space_percent: '-1.1717085641244141457', target_space_percent: '4.1755',
+    main_force_control: { status: 'ready', label: '无庄控盘', formula_version: 'newow_main_force_control_page_v1', bar_end: ready('FLAT').bar_end!, physical_contract: 'RB2701', calculation_segment_id: 'c', page_parity: true, executable: false },
+    page_performance: { status: 'ready', strategy: 'trend' as const, frequency: '1d' as const, as_of: ready('FLAT').as_of!, version: 'newow_page_performance_v3379_v2', input_sha256: 'hash', source_evidence_sha256: null, cum_return_percent: '20.59', trade_count: 55, page_parity: true, executable: false },
+  }
+  assert.equal(homeCardSpace(day).value, day.absorb_space_percent)
+  assert.equal(homeControlLabel(day), '无庄控盘')
+  assert.equal(homeControlLabel({ ...day, main_force_control: { ...day.main_force_control, physical_contract: 'RB2705' } }), '控盘待确认')
+  assert.equal(homePagePerformance(day, 'trend')?.cum_return_percent, '20.59')
+  assert.equal(homePagePerformance(day, 'oscillation'), null)
+  assert.equal(homePagePerformance({ ...day, page_performance: { ...day.page_performance, executable: true } }, 'trend'), null)
+  assert.equal(homePagePerformance({ ...day, page_performance: { ...day.page_performance, status: 'warming' } }, 'trend'), null)
+  assert.equal(homeCardSpace({ ...day, status: 'warming', state: null }).value, null)
 })
 
 const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -127,8 +142,16 @@ test('rows expand and summary cards navigate with selected strategy while retain
     assert.match(nodeText(root), /等待最新周期更新/)
     ;(findNode(root, n => n.props.role === 'link')!.props.onClick as Function)()
     assert.deepEqual(chart, [['rb', 'trend', '1d'], ['rb', 'oscillation', '1d']])
+    sequence.value++; await nextTick()
+    api.calls.at(-1).resolve({ schema_version: 'newow_home_cards_v1', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': { ...ready('HOLD'), target_space_percent: '4' }, '1w': ready('CLEAR') }, oscillation: { '1d': { ...ready('FLAT'), absorb_space_percent: '-3' }, '1w': ready('HOLD') } } }] })
+    await settle()
+    assert.match(nodeText(root), /日线吸筹参考价相对确认收盘价 -3/)
+    ;(findNode(root, n => n.type === 'button' && nodeText(n) === '趋势')!.props.onClick as Function)(); await nextTick()
+    assert.match(nodeText(root), /日线目标参考价相对确认收盘价 \+4/)
+    ;(switcher.props.onClick as Function)(); await nextTick()
+
     assert.match(nodeText(root), /空仓.*建仓.*持有.*清仓/)
-    assert.match(nodeText(root), /日线参考收益未提供/)
+    assert.match(nodeText(root), /参考收益待确认/)
     const sort = findNode(root, n => n.type === 'button' && nodeText(n).startsWith('涨跌幅'))!
     ;(sort.props.onClick as Function)(); assert.deepEqual(sorts, ['change'])
     sequence.value++; await nextTick()
