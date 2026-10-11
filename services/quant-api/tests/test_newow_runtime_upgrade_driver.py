@@ -156,3 +156,66 @@ def test_postgresql_actual_bootstrap_driver_readback_and_history_namespace(
     finally:
         with engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+def test_actual_controller_proof_accepts_safe_0644_sources(driver):
+    proof = driver.controller_proof()
+    assert proof[str(DRIVER.resolve())] == driver.h.digest(DRIVER.read_bytes())
+    assert proof[str(driver.ENGINE_SOURCE)] == driver.ENGINE_SHA
+    for name, digest in driver.HELPER_PINS.items():
+        source = DRIVER.parent.parent / 'intraday-v11414-runtime-20261010' / name
+        assert proof[str(source)] == digest
+
+
+def test_source_reader_rejects_symlink_hardlink_and_writable_mode(driver, tmp_path):
+    source = tmp_path / 'source.py'
+    source.write_bytes(b'actual source bytes')
+    os.chmod(source, 0o644)
+    assert driver.secure_source_bytes(source) == b'actual source bytes'
+    with pytest.raises(driver.h.ResumeBlocked, match='PRIVATE_FILE_INVALID'):
+        driver.secure_bytes(source)
+    os.chmod(source, 0o664)
+    with pytest.raises(RuntimeError, match='SOURCE_FILE_INVALID'):
+        driver.secure_source_bytes(source)
+    os.chmod(source, 0o644)
+    link = tmp_path / 'link.py'
+    link.symlink_to(source)
+    with pytest.raises(OSError):
+        driver.secure_source_bytes(link)
+    hardlink = tmp_path / 'hardlink.py'
+    os.link(source, hardlink)
+    with pytest.raises(RuntimeError, match='SOURCE_FILE_INVALID'):
+        driver.secure_source_bytes(source)
+
+
+def test_freeze_reads_actual_controller_source_bytes(driver, monkeypatch, tmp_path):
+    # Enter the real freeze source-proof boundary without DB/Runtime mutations.
+    observed = []
+    def engine(root, tag, commit):
+        observed.append(driver.controller_proof())
+        return {'journals': {}, 'candidate':{'root':str(root),'tag':tag,'commit':commit}}
+    monkeypatch.setattr(driver, '_BASE_FREEZE', engine)
+    monkeypatch.setattr(driver, 'SCOPE_OPTIONS', {'host':'local','environment':'production'})
+    monkeypatch.setattr(driver.h, 'runtime_directory', lambda: tmp_path)
+    monkeypatch.setattr(driver, 'facts', lambda plan: None)
+    plan = driver.freeze(driver.CANDIDATE_ROOT, 'v1.15.0', '8aae1460fce5c7541ff84c2e61229cc55d47a21e')
+    assert observed[0][str(DRIVER.resolve())] == driver.h.digest(DRIVER.read_bytes())
+    assert plan['plan_hash'] == driver.h.plan_hash(plan)
+
+
+def test_source_reader_detects_in_place_bytes_drift(driver, monkeypatch, tmp_path):
+    source = tmp_path / 'source.py'
+    source.write_bytes(b'original source')
+    os.chmod(source, 0o644)
+    original = os.read
+    changed = False
+    def read_then_mutate(fd, size):
+        nonlocal changed
+        raw = original(fd, size)
+        if not changed:
+            changed = True
+            source.write_bytes(b'changed source bytes')
+        return raw
+    monkeypatch.setattr(driver.os, 'read', read_then_mutate)
+    with pytest.raises(RuntimeError, match='SOURCE_FILE_DRIFT'):
+        driver.secure_source_bytes(source)
