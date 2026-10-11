@@ -4,7 +4,69 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.19 Reference 修复已发布，gen5 切换待恢复读回
+## v1.14.21 已发布并完成 gen7 休息段切换，自然盘中验收待交易时段
+
+[PR #435](https://github.com/firehell/guiyi-quant-workstation/pull/435) 已合并，annotated tag、
+[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.21) 与干净发布树一致：
+**v1.14.21@534a8a4492ac7822f365308b545a221aeb6af5c1 / generation7**。
+修复已真实复现的队列重检延迟：来源恢复后SOURCE_BUSY失败路由仍等整轮FIFO才重读。
+普通轮次最多优先一个已排队失败工作组，并与FIFO交替；不清阻断、不变预算，只有真实重读成功才恢复。
+剩余路由、pending capture、真实completed观察优先级、原cutoff和one-shot claim保持。
+654 Reference/交接通过、53可选隔离skip；专用非生产PostgreSQL/队列60通过无skip；
+独立Review、Ruff/Mypy、OpenSpec11/11、secret0/diff通过；exact树46定向、Web类型/构建/拓扑通过；
+480路日周只读预热54.59秒通过。
+
+gen7计划 **ca6c55328a5b78863bed5ff3c5f49936c71b3e6ac96d31d70c79faac7363bd7a**
+经独立完整重算相等、59项切换控制器测试和独立Review后执行。
+第一次SOURCE_BUSY仅在preflight停止，未创建attempt或mutation；锁自然释放后完整重验，唯一attempt成功。
+旧六PID合作退出，十绑定/plist换代，原四日历注册idle，实际journal为
+**generation7_ready_calendars_idle / failure=null**。
+新PID API42421/Web42427/Live42433/Alert42439/Reference42445/feed42451。
+18条历史计划的已知成功恢复和原gen6成功证明保留，所有旧unknown journal及精确归档保持。
+未重复迁移或初始化，schema0051、60品种/720路、启用时间、policy和旧发送事实不变；没有测试广播或补发。
+独立只读读回通过：以02:24:05.659677Z为本次采样边界，约25秒内取得六服务新的真实健康周期
+（02:24:27–02:24:31Z，各≤30秒），Reference当次scan blocked0/{}、pending112、两线程alive/error=null。
+所有原journal/archives、schema、输入进度、720scope和发送事实匹配，旧六PID已退出；
+该结果不证明永久无争用，也没有把一次完整SOURCE_BUSY episode或自然信号闭环虚报通过。
+无引用v20发布树经两次精确引用证明一致（清理计划f673e373…43733）、五资产在v21逐字节相等后
+non-force移除；已合并任务树/本地分支也在clean/祖先/全引用检查后清理。仅保留develop与正式v21树。
+现场证据与控制器：`output/reference-continuity-20261011/`。
+今天权威Session为休息段，source/completed无自然观察，Live/Alert/Reference真实盘中独立切换、
+60品种completed端点与720路自然连续性仍待交易，不能宣布 `RUNTIME_READY`。
+
+## v1.14.20 gen6 切换、18路恢复与后续队列阻断（历史检查点）
+
+[PR #434](https://github.com/firehell/guiyi-quant-workstation/pull/434) 已合并，annotated tag、
+[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.20) 与干净发布树一致：
+**v1.14.20@f950d72b8559dd0801bb3d54df7854a1b03957ea / generation6**。
+历史刷新改为健康前台轮许可、全60权威休息段领取、一个已提交批次后保存并让出；
+真实观察/收尾协作取消，写入前中断与写入后未知严格区分，实际 Canonical 维护锁保留。
+629 Reference/交接、71通知测试通过；专用非生产 PostgreSQL 50 passed 无跳过；
+独立 Review、Ruff/Mypy、OpenSpec11/11、secret0/diff 通过。精确树47定向测试、Web类型/构建/拓扑、
+480路日周只读预热46.33秒通过。
+
+gen6计划 **64dfdec3e0dbf23a82773992ad204e35734aaaf4f01f1dadbe5d2c55cb656670**
+经独立现场整份重算一致后一次执行，原六PID退出、新六PID启动、十服务绑定/plist换代。
+真实结果 **generation6_ready_calendars_idle / failure=null**，独立只读读回再次通过：
+API26728/Web26734/Live26740/Alert26746/Reference26752/feed26758，最近六服务成功周期均≤30秒；
+Reference blocked0，通知/历史线程存活且error=null，四个原定时服务idle。
+schema0051未重复迁移，观察未初始化，720路/激活时间/通知policy/发送事实/旧unknown归档保持。
+18条历史bareblocked已按原始事实、冻结精确计划恢复为pending，三锁内重算和写后读回通过；
+恢复journal为 **exact_pending_plans_restored_reference_parked**。随后原Reference PID26752同代恢复领取，
+独立恢复journal为 **generation6_reference_history_resumed / failure=null**，
+本次六服务实际健康周期02:03:37–02:03:39Z且验收时均≤30秒。
+后续独立120秒新健康周期复核超时：Reference仍保留2路SOURCE_BUSY/ready=false，
+两后台线程存活且error=null；现场Canonical维护锁采样为空。203条历史状态均pending、0blocked/0inflight，
+18条精确恢复成功不等于前台持续恢复，正定位失败路由在队列中的重检延迟。
+未执行数据库迁移、初始化、测试广播或补发；历史刷新继续按原身份推进，不宣称全部历史资产已完成。
+旧未知attempt及精确归档保留，未将旧失败改写为成功。恢复控制器定向37及25项测试、独立Review通过；
+JSON序列化身份差异曾在mutation前被PLAN_DRIFT拦截，修复并冻结新计划后才一次执行成功。
+旧v18/v19发布树经两次引用证明一致后non-force清理，正式服务只引用干净v20树。
+现场证据与控制器：`output/reference-continuity-20261011/`。今天权威休息段，
+Live/Alert/Reference真实盘中切换、60品种completed端点与720路连续性仍待自然交易，
+不能宣布 `RUNTIME_READY`。
+
+## v1.14.19 发布与 gen5 失败恢复（历史检查点）
 
 [PR #433](https://github.com/firehell/guiyi-quant-workstation/pull/433) 已合并，annotated tag、
 [Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.19) 和干净发布树一致：
@@ -16,8 +78,11 @@ OpenSpec11/11、secret0、diff 检查通过。精确发布树 63 passed/2 条条
 实际休息段切换已完成旧六 PID 退出、新六 PID 启动及十服务绑定/plist 更新至 gen5。
 首次启动读回触发 `OWNER_IDENTITY_DRIFT`，原 attempt 保留 `outcome_unknown`；不能改写为成功。
 Reference 已停驻且通知/历史线程退出；其余输入服务保留运行，四个定时服务尚未重新加载。
-刷新状态仍为原 SHA `548b8b9a...`、199 路（181 pending/18 blocked），没有清空或盲重试。
-下一步按新同代恢复计划证明身份、锁、输入及发送事实后恢复 Reference，再恢复 18 条历史计划。
+随后独立同代恢复再次以 `HEALTHY_CYCLE_TIMEOUT` 阻断并安全停驻 Reference：后台整条历史计算
+持 Canonical 独占锁，每 30 秒运行，前台旋转队列未清完又遇 `SOURCE_BUSY`。两份失败 journal 均保留，未重试。
+容量修复已实际生效，当前状态为 16,390,402 字节／SHA `cbec7fd8...`，181 pending/18 blocked/0 inflight；
+未清空或增加预算。18 路完整 typed 来源只读计划曾通过，但控制/代码已变化，不能复用该计划 apply。
+下一步在隔离修复树实现前台优先与历史协作让出，独审和验证后前向发布，再恢复 18 条历史计划。
 证据与精确控制器：`output/reference-continuity-20261011/`；自然盘中 Live/Alert/Reference 切换、
 60 品种 completed 端点与现有 720 路连续性仍待真实交易 Session，不能宣布 `RUNTIME_READY`。
 
