@@ -1,10 +1,27 @@
 # 当前状态
 
-更新：2026-10-10。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-11。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.14.18 已发布、绑定并恢复；自然连续性待验收
+## v1.14.19 Reference 修复已发布，gen5 切换待恢复读回
+
+[PR #433](https://github.com/firehell/guiyi-quant-workstation/pull/433) 已合并，annotated tag、
+[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.19) 和干净发布树一致：
+**v1.14.19@3bfe072de4c180f057df4b10ec64d560e6678433**。修复持久观察优先消费、收尾停止领取、
+刷新计划有界无损存储和未知提交保护；不夹带 develop 尚未发布公式/UI，未重复迁移或初始化。
+665 项专用 Redis/PostgreSQL 联合测试全部通过、无跳过；独立 Review、Ruff/Mypy、Web 构建/类型/拓扑、
+OpenSpec11/11、secret0、diff 检查通过。精确发布树 63 passed/2 条条件 skip，480 路日/周只读预热 63.15 秒通过。
+
+实际休息段切换已完成旧六 PID 退出、新六 PID 启动及十服务绑定/plist 更新至 gen5。
+首次启动读回触发 `OWNER_IDENTITY_DRIFT`，原 attempt 保留 `outcome_unknown`；不能改写为成功。
+Reference 已停驻且通知/历史线程退出；其余输入服务保留运行，四个定时服务尚未重新加载。
+刷新状态仍为原 SHA `548b8b9a...`、199 路（181 pending/18 blocked），没有清空或盲重试。
+下一步按新同代恢复计划证明身份、锁、输入及发送事实后恢复 Reference，再恢复 18 条历史计划。
+证据与精确控制器：`output/reference-continuity-20261011/`；自然盘中 Live/Alert/Reference 切换、
+60 品种 completed 端点与现有 720 路连续性仍待真实交易 Session，不能宣布 `RUNTIME_READY`。
+
+## v1.14.18 已发布、绑定并恢复（历史检查点）
 
 当前10服务绑定 **v1.14.18@8d8904e9bdc962f167f5f330eb90343f7640178c / generation4**，由[PR432](https://github.com/firehell/guiyi-quant-workstation/pull/432)、annotated tag及[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.14.18)发布并已集成develop。生产schema仍 **20261009_0051**，未重复migration/观察初始化，按owner要求未做DB备份；macOS已开启 `/bin/bash` 完全磁盘访问。
 
