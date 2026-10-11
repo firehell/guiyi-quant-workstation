@@ -31,6 +31,7 @@ def test_existing_evidence_reports_gaps_without_fake_match_or_profit(tmp_path):
     m.publish(report, tmp_path / "new")
     assert json.loads((tmp_path / "new/report.json").read_text()) == report
     assert (tmp_path / "new/failures.csv").is_file()
+    assert b"\r" not in (tmp_path / "new/failures.csv").read_bytes()
     assert "BLOCKED" in (tmp_path / "new/report.md").read_text()
     with pytest.raises(FileExistsError):
         m.publish(report, tmp_path / "new")

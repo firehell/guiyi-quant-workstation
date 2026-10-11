@@ -169,7 +169,7 @@ def publish(report: dict, output: Path):
     # Never overwrite an earlier run. report.json is written last as completion artifact.
     with (output / "failures.csv").open("w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["category", "reason", "sources", "source_urls"]
+            f, fieldnames=["category", "reason", "sources", "source_urls"], lineterminator="\n"
         )
         writer.writeheader()
         writer.writerows(report["failures"])

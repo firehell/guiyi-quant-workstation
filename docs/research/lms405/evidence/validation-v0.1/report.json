@@ -2,8 +2,8 @@
   "identity": "lms405-validation-package-v0.1",
   "status": "PARTIAL",
   "frozen_at": "2026-10-11T14:39:31+00:00",
-  "rule_scope_fingerprint": "cab2aabb3b67fc40418450b7288a58ae76dedd5bd3b0e1d90ea96b9bd2f90604",
-  "definition_digest": "2b2735d8f2da4c4e868bcd4bdb76d1448f1fe51c14136dac1d05faee8b8b5608",
+  "rule_scope_fingerprint": "7c01efae3d5e2b7d872a1922503469b88c1b25f064738cfd356e809afc2f52fa",
+  "definition_digest": "7a14deb9fadbf6a8b52cbacf2d96eedf4244a12554dd715d0cf8f055c83aaba3",
   "input_hashes": {
     "docs/research/lms405/sources.csv": "e3dbee809c51e531d1ebf93078f7d9aeca241fdc180f5dafbc4e22f3bacadc85",
     "docs/research/lms405/evidence/action-timeline.csv": "d6ea2758869ec68e25a17045df5d02327089c2d144b88297415290a2e7bc4d49",
@@ -11,7 +11,7 @@
     "docs/research/lms405/evidence/batch3.json": "044da6b6d4d6fc5ce0f7f84ea28b7770b1bec2f09c3ff9db9d26075508ee4b3e",
     "packages/quant-core/guiyi_quant/lms405/__init__.py": "67b0b8c0934a3a8f33b19d7dcb40ad8af222e1a2cdeec806fcd548616e469791",
     "packages/quant-core/guiyi_quant/lms405/validation.py": "54525e0002415b98e509c8f715e4e6e873953644ab0bf51b18f455d600bac39f",
-    "scripts/research/lms405_validation_package.py": "84fa7d2feeedbfa5f45c0f0e404ffd4034f079dea51a653b5ea94c0dfd962fe0"
+    "scripts/research/lms405_validation_package.py": "550593881e18ffa73350d550dff0f338978e39dbd6056459e4cf76878562cd86"
   },
   "source_count": 58,
   "constraint_count": 11,
