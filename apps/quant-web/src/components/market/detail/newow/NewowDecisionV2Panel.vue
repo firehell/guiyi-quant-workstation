@@ -21,7 +21,6 @@ const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.as
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
 const collapsed = ref(true), evidenceExpanded = ref(false)
-const showComposite = ref(false), showStatus = ref(true)
 const bodyId = useId(), evidenceId = useId()
 watch([result, loading, error], () => emit('path-context', { decision: result.value, loading: loading.value, error: error.value }), { flush: 'sync' })
 function toggleCard() { collapsed.value = !collapsed.value }
@@ -67,8 +66,7 @@ const chipColor = (axis: string, period: string) => {
 </script>
 
 <template>
-  <details class="decision-card-settings"><summary>卡片显示</summary><label><input type="checkbox" aria-label="显示综合决策卡" :checked="showComposite" @change="showComposite = ($event.target as HTMLInputElement).checked" />综合决策卡</label><label><input type="checkbox" aria-label="显示AI状态卡" :checked="showStatus" @change="showStatus = ($event.target as HTMLInputElement).checked" />AI状态卡</label></details>
-  <section v-show="showComposite" data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
+  <section data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
         <strong>综合决策</strong>
@@ -137,15 +135,12 @@ const chipColor = (axis: string, period: string) => {
     </div>
     <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
-  <div v-show="showStatus" data-testid="status-card-surface"><NewowStatusCard :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
+  <div data-testid="status-card-surface"><NewowStatusCard :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
   <NewowPriceSources :rows="decisionPriceSources(prices)" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
   <NewowDailyWeeklyPath v-if="showPath !== false" :decision="result" :loading="loading" :error="error" />
 </template>
 
 <style scoped>
-.decision-card-settings { font-size:11px; color:#8e8e93; padding:2px 10px; }
-.decision-card-settings summary { cursor:pointer; }
-.decision-card-settings label { display:inline-flex; align-items:center; gap:4px; margin:6px 12px 2px 0; }
 .decision-v2 { margin:8px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:#1c1c1e; }
 .decision-v2__header { display:flex; align-items:center; gap:6px; padding:9px 14px; }
 button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid #007aff; outline-offset:2px; } button:disabled { cursor:wait; opacity:.5; }
@@ -196,9 +191,6 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 </style>
 
 <style scoped>
-.decision-card-settings { font-size:11px; color:#8e8e93; padding:2px 10px; }
-.decision-card-settings summary { cursor:pointer; }
-.decision-card-settings label { display:inline-flex; align-items:center; gap:4px; margin:6px 12px 2px 0; }
 .decision-v2__header { padding:12px 14px; min-height:44px; box-sizing:border-box; }
 .decision-v2__toggle { flex-wrap:nowrap; min-height:24px; }
 .decision-v2__action { margin-left:auto; font-size:20px; font-weight:700; color:#ff3b30; }
@@ -218,9 +210,6 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 </style>
 
 <style scoped>
-.decision-card-settings { font-size:11px; color:#8e8e93; padding:2px 10px; }
-.decision-card-settings summary { cursor:pointer; }
-.decision-card-settings label { display:inline-flex; align-items:center; gap:4px; margin:6px 12px 2px 0; }
 .decision-v2__period-choice { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px;color:#8e8e93 }
 .decision-v2__period-choice button { border:1px solid #ddd;border-radius:5px;background:white;color:inherit;padding:5px 9px;cursor:pointer }
 .decision-v2__period-choice button[aria-pressed=true] { border-color:#ff9500;color:#ff9500;background:#ff950010 }
