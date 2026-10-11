@@ -159,7 +159,8 @@ class NewowForwardScopeUpgrade:
             ids = [x['old']['stream_id'] for x in mapping]
             if _facts(session, ids) != plan['protected_facts']:
                 raise RepositoryConflict('UPGRADE_PROTECTED_FACT_DRIFT')
-            factory = lambda: _BorrowedSession(session)
+            def factory():
+                return _BorrowedSession(session)
             bootstrap = NewowForwardBootstrap(factory)
             # Validate every preimage before the first mutation. apply() also performs
             # locked source/target CAS and rolls the entire outer transaction back.
