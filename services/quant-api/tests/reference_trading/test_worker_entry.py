@@ -133,3 +133,30 @@ def test_main_signal_stops_batch_after_current_observation(monkeypatch):
     monkeypatch.setenv('GUIYI_RUNTIME_LEGACY_MODE', '0')
     assert worker_entry.main() == 0
     assert reads == ['read'] and len(acknowledgements) == 1
+
+
+def test_main_signal_during_round_does_not_grant_or_start_history(monkeypatch):
+    from contextlib import contextmanager
+    import signal
+    from types import SimpleNamespace
+    from app import runtime_bindings, runtime_handover
+    handlers, starts = {}, []
+    monkeypatch.setattr(worker_entry.signal, 'signal', lambda name, handler: handlers.setdefault(name, handler))
+    worker = SimpleNamespace()
+    worker_entry.defer_historical_refresh(worker, SimpleNamespace(start=lambda: starts.append(True)),
+        should_stop=lambda: False)
+    def serve(*, should_stop, wait):
+        handlers[signal.SIGTERM](signal.SIGTERM, None)
+        worker.after_healthy_round()
+        assert should_stop()
+    worker.serve = serve
+    @contextmanager
+    def opened(**_):
+        yield worker, SimpleNamespace(), SimpleNamespace()
+    monkeypatch.setattr(worker_entry, 'open_forward_worker', opened)
+    monkeypatch.setattr(runtime_bindings, 'read_bindings', lambda: object())
+    monkeypatch.setattr(runtime_handover, 'run_supervised', lambda _name, run, **_: run(
+        SimpleNamespace(should_drain=lambda: False)))
+    monkeypatch.setenv('GUIYI_RUNTIME_LEGACY_MODE', '0')
+    assert worker_entry.main() == 0
+    assert starts == []

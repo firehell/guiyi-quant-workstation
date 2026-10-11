@@ -150,13 +150,26 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
 
             @contextmanager
             def canonical_guard():
-                session.rollback()  # Refresh read-only Catalog state after natural publication.
-                lease = _acquire_canonical_lease(catalog, deadline=warmup_deadline if warmup else None)
-                try:
-                    yield
-                finally:
-                    session.rollback()
-                    lease.release()
+                with refresh_priority.foreground():
+                    session.rollback()  # Refresh Catalog after natural publication.
+                    lease = _acquire_canonical_lease(catalog, deadline=warmup_deadline if warmup else None)
+                    try:
+                        yield
+                    finally:
+                        session.rollback()
+                        lease.release()
+
+            from app.reference_trading.refresh_priority import RefreshPriority
+            refresh_priority = RefreshPriority()
+
+            def history_can_run():
+                if not refresh_priority.can_run():
+                    return False
+                from app.reference_trading.refresh_priority import historical_rest_allowed
+                if not historical_rest_allowed(SessionLocal, products, now=datetime.now(UTC)):
+                    refresh_priority.withdraw()
+                    return False
+                return True
 
             from app.reference_trading.newow_fusion_forward import SavedForwardFusionSources
 
@@ -188,6 +201,7 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                         'notifications_alive': notifications.is_alive()}
                     report_health(proof)
                 worker.report_health = report
+            worker.observation_priority = refresh_priority.observation
             from app.reference_trading.live_wake import StreamForwardLiveWake
             durable_observations = os.getenv("GUIYI_OBSERVATION_STREAM_ENABLED", "0") == "1"
             worker.scan_live = not durable_observations
@@ -199,7 +213,8 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
             from app.reference_trading.historical_refresh import build_historical_refresh, RefreshThread
             refresh = RefreshThread(build_historical_refresh(
                 SessionLocal, state_path=historical_refresh_state_path(),
-            ))
+            ), batch_limit=1, can_run=history_can_run, yield_requested=refresh_priority.yield_requested,
+                on_tick_started=refresh_priority.begin, on_tick_finished=refresh_priority.finish)
             from app.notifications.newow import NewowNotificationDispatcher
             from app.notifications.newow_thread import NotificationThread
             notifications = NotificationThread(NewowNotificationDispatcher(SessionLocal,
@@ -212,7 +227,8 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                     publish_stage('notifications_start')
                     notifications.start()
                     defer_historical_refresh(worker, refresh,
-                        should_stop=ownership.should_drain if ownership else lambda: False)
+                        should_stop=ownership.should_drain if ownership else lambda: False,
+                        priority=refresh_priority)
                 publish_stage('running')
                 yield worker, wake, reconciliation
             finally:
@@ -242,12 +258,16 @@ def close_worker_resources(notifications, refresh, wake, *, warmup):
             wake.close()
 
 
-def defer_historical_refresh(worker, refresh, *, should_stop):
+def defer_historical_refresh(worker, refresh, *, should_stop, priority=None):
     """The first committed healthy foreground proof precedes background startup."""
     attempted = False
     def after_healthy_round():
         nonlocal attempted
-        if attempted or should_stop():
+        if should_stop():
+            return
+        if priority is not None:
+            priority.grant()
+        if attempted:
             return
         attempted = True  # A failed/unknown thread start is never retried.
         refresh.start()
@@ -268,6 +288,11 @@ def main() -> int:
             def should_stop():
                 return stopped or bool(ownership and ownership.should_drain())
             wake.stop_requested = should_stop
+            healthy_round = worker.after_healthy_round
+            def after_healthy_round():
+                if not should_stop():
+                    healthy_round()
+            worker.after_healthy_round = after_healthy_round
             def wait(seconds):
                 if ownership:
                     ownership.assert_owned()
