@@ -4,6 +4,26 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## JM 前三步：因果验证与本地 Paper 工程完成，策略不晋升
+
+2026-10-11 owner交办前三步，风险固定50000元、一手long、较交易日初权益亏损2%停开并安排清仓。
+新增版本化双策略因果目标、开/平今/平昨费用、纯Paper状态机、独立PostgreSQL不可变账本与历史回放CLI。
+合同见 [Paper试点](docs/PAPER_PILOT.md)，证据见 [验收结果](output/jm-paper-first-three-20261011/acceptance.md)。
+
+近一年JM5m双策略1430笔已平仓因果交易，1tick滑点基线复利净回报 **-79.1812%**，
+双手续费 **-84.6940%**，双滑点 **-93.4562%**。这是closed-trade研究口径，不是50000元账户收益；
+一笔换月中断和一笔期末未平仓单列排除。筛选年与诊断WF重叠，不能称独立未见OOS。
+因此页面赢家不满足进入执行阶段的研究证据，不自动换候选或启用策略。
+
+独立本地Paper实例端口15462（未改生产5432），账户`jm-dual-5m-20260928`完成
+2026-09-28..2026-10-09真实Canonical历史回放：1551命令/事件、55次模型成交、
+期末权益49364.702元、保留JM2701一手及一个未完成平仓意图。9月29日触发2%停机并平仓，当日未再开仓。
+相同计划重复执行事件/成交数不变，新进程独立重放一致。这是HISTORICAL_REPLAY，不是实时Paper/Shadow。
+
+Paper/研究116项（含真实隔离PostgreSQL）及工程合同29项通过；独立高风险Review问题已修复。
+没有发布、运行切换、Broker接入、通知、真实资金订单或后台自动执行。`auto_order=false`。
+下一最小步骤：以同一因果成本口径重新筛选JM候选；当前5m双策略不进入SimNow自动交易。
+
 ## v1.15.3 已发布当前 develop，Runtime 保持 v1.15.1/gen12
 
 2026-10-11：[PR #441](https://github.com/firehell/guiyi-quant-workstation/pull/441) 已合并 main，

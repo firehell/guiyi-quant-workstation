@@ -1,0 +1,391 @@
+{
+  "status": "RESEARCH_COMPLETE_NOT_PROMOTED",
+  "product": "jm",
+  "frequency": "5m",
+  "requested_since": "2025-10-11",
+  "requested_through": "2026-10-10",
+  "as_of": "2026-10-11T00:00:00+08:00",
+  "actual_completed_through": "2026-10-09",
+  "completed_cutoff": "2026-10-09T07:00:00+00:00",
+  "window_complete": true,
+  "window_reason": null,
+  "scored_bar_count": 16461,
+  "physical_segments": [
+    {
+      "contract": "JM2601",
+      "replay_bar_count": 7290,
+      "eligible_bar_count": 2691,
+      "first_replay_trading_day": "2025-07-02",
+      "last_replay_trading_day": "2025-12-04"
+    },
+    {
+      "contract": "JM2605",
+      "replay_bar_count": 7380,
+      "eligible_bar_count": 5862,
+      "first_replay_trading_day": "2025-11-05",
+      "last_replay_trading_day": "2026-04-16"
+    },
+    {
+      "contract": "JM2609",
+      "replay_bar_count": 7173,
+      "eligible_bar_count": 5748,
+      "first_replay_trading_day": "2026-03-18",
+      "last_replay_trading_day": "2026-08-18"
+    },
+    {
+      "contract": "JM2701",
+      "replay_bar_count": 3678,
+      "eligible_bar_count": 2160,
+      "first_replay_trading_day": "2026-07-20",
+      "last_replay_trading_day": "2026-10-09"
+    }
+  ],
+  "input_sha256": "aaf7118da7607e93bb16b898df3160f55a3497fc191bd80876d15c7661090ab1",
+  "facts_file_sha256": "b15ec9ad682f0ce6f7d40749bc395f8bf2269935235c0900b50aa87316785d5e",
+  "facts_canonical_sha256": "bfa51b9f92ed3a7ba8983879e9614a40ba12118d3a6b678992845ecc13232e2b",
+  "facts_plan_hash": "579ecbe75777f0ce1e3dd3424d3da2aa548d2028f4edd0bbabf28e024dc290cb",
+  "facts_captured_at": "2026-10-11T14:47:35.217528+00:00",
+  "facts_composed_at": "2026-10-11T14:48:44.501531+00:00",
+  "tick_amendment_original_sha256": "19be1118539df07bc42bc5b5d99ac7df876901b6f58c1e40ad07eb043c21c924",
+  "fee_offsets": [
+    "OPEN",
+    "CLOSE_TODAY",
+    "CLOSE_YESTERDAY"
+  ],
+  "slippage_assumption": "one adverse tick per fill; double_slippage uses two",
+  "retrospective_execution_facts": true,
+  "selection_overlap": true,
+  "selection_note": "The page ranking used this same historical year; folds are diagnostic, not an independent unseen OOS acceptance.",
+  "account_semantics": false,
+  "formula_versions": [
+    "newow_dual_fusion_causal_target_v1",
+    "newow_trend_band_page_v3",
+    "newow_oscillation_hhv_llv10_page_v2",
+    "newow_hhv_llv_channel_page_v1"
+  ],
+  "research_formula_version": "newow_causal_next_open_offset_costed_v2",
+  "baseline": {
+    "closed_trades": 1430,
+    "wins": 501,
+    "losses": 929,
+    "breakevens": 0,
+    "compounded_net_return_pct": "-79.18118736523612413052391251",
+    "closed_trade_drawdown_pct": "80.20400444572932925889953745",
+    "rejected_fills": 28,
+    "roll_exclusions": 1,
+    "end_exclusions": 1,
+    "cancelled_intents": 1,
+    "ignored_intents": 28
+  },
+  "full_sample_cost_stress": {
+    "baseline_sourced_costs": {
+      "closed_trades": 1430,
+      "wins": 501,
+      "losses": 929,
+      "breakevens": 0,
+      "compounded_net_return_pct": "-79.18118736523612413052391251",
+      "closed_trade_drawdown_pct": "80.20400444572932925889953745",
+      "rejected_fills": 28,
+      "roll_exclusions": 1,
+      "end_exclusions": 1,
+      "cancelled_intents": 1,
+      "ignored_intents": 28
+    },
+    "double_commission": {
+      "closed_trades": 1430,
+      "wins": 470,
+      "losses": 960,
+      "breakevens": 0,
+      "compounded_net_return_pct": "-84.69396337362086896294968657",
+      "closed_trade_drawdown_pct": "85.33782801429878096201416634",
+      "rejected_fills": 28,
+      "roll_exclusions": 1,
+      "end_exclusions": 1,
+      "cancelled_intents": 1,
+      "ignored_intents": 28
+    },
+    "double_slippage": {
+      "closed_trades": 1430,
+      "wins": 399,
+      "losses": 1031,
+      "breakevens": 0,
+      "compounded_net_return_pct": "-93.45624117707769443607956546",
+      "closed_trade_drawdown_pct": "93.67175015233853410507677581",
+      "rejected_fills": 28,
+      "roll_exclusions": 1,
+      "end_exclusions": 1,
+      "cancelled_intents": 1,
+      "ignored_intents": 28
+    }
+  },
+  "walk_forward_cost_stress": {
+    "baseline_sourced_costs": [
+      {
+        "name": "2026Q2",
+        "train_since": "2025-10-13",
+        "train_through": "2026-03-31",
+        "test_since": "2026-04-01",
+        "test_through": "2026-06-30",
+        "warmup_bars": 7818,
+        "test_bars": 4068,
+        "physical_prefix_bars": 19428,
+        "summary": {
+          "closed_trades": 335,
+          "wins": 121,
+          "losses": 214,
+          "breakevens": 0,
+          "compounded_net_return_pct": "-31.20173396780955711523901870",
+          "closed_trade_drawdown_pct": "31.81727424536759062711355182",
+          "rejected_fills": 18,
+          "roll_exclusions": 0,
+          "end_exclusions": 0,
+          "cancelled_intents": 0,
+          "ignored_intents": 18
+        }
+      },
+      {
+        "name": "2026Q3",
+        "train_since": "2025-10-13",
+        "train_through": "2026-06-30",
+        "test_since": "2026-07-01",
+        "test_through": "2026-09-30",
+        "warmup_bars": 11886,
+        "test_bars": 4461,
+        "physical_prefix_bars": 25407,
+        "summary": {
+          "closed_trades": 401,
+          "wins": 142,
+          "losses": 259,
+          "breakevens": 0,
+          "compounded_net_return_pct": "-29.90371992872023753158810378",
+          "closed_trade_drawdown_pct": "31.00959462469468324898413476",
+          "rejected_fills": 0,
+          "roll_exclusions": 0,
+          "end_exclusions": 0,
+          "cancelled_intents": 0,
+          "ignored_intents": 0
+        }
+      },
+      {
+        "name": "2026Oct",
+        "train_since": "2025-10-13",
+        "train_through": "2026-09-30",
+        "test_since": "2026-10-01",
+        "test_through": "2026-10-09",
+        "warmup_bars": 16347,
+        "test_bars": 114,
+        "physical_prefix_bars": 25521,
+        "summary": {
+          "closed_trades": 10,
+          "wins": 2,
+          "losses": 8,
+          "breakevens": 0,
+          "compounded_net_return_pct": "2.061214498044484364400171000",
+          "closed_trade_drawdown_pct": "1.557278959695411490625656480",
+          "rejected_fills": 0,
+          "roll_exclusions": 0,
+          "end_exclusions": 1,
+          "cancelled_intents": 1,
+          "ignored_intents": 0
+        }
+      }
+    ],
+    "double_commission": [
+      {
+        "name": "2026Q2",
+        "train_since": "2025-10-13",
+        "train_through": "2026-03-31",
+        "test_since": "2026-04-01",
+        "test_through": "2026-06-30",
+        "warmup_bars": 7818,
+        "test_bars": 4068,
+        "physical_prefix_bars": 19428,
+        "summary": {
+          "closed_trades": 335,
+          "wins": 112,
+          "losses": 223,
+          "breakevens": 0,
+          "compounded_net_return_pct": "-35.66019184698911255760506984",
+          "closed_trade_drawdown_pct": "36.04426245602940682710664356",
+          "rejected_fills": 18,
+          "roll_exclusions": 0,
+          "end_exclusions": 0,
+          "cancelled_intents": 0,
+          "ignored_intents": 18
+        }
+      },
+      {
+        "name": "2026Q3",
+        "train_since": "2025-10-13",
+        "train_through": "2026-06-30",
+        "test_since": "2026-07-01",
+        "test_through": "2026-09-30",
+        "warmup_bars": 11886,
+        "test_bars": 4461,
+        "physical_prefix_bars": 25407,
+        "summary": {
+          "closed_trades": 401,
+          "wins": 133,
+          "losses": 268,
+          "breakevens": 0,
+          "compounded_net_return_pct": "-35.30591827670684237679528058",
+          "closed_trade_drawdown_pct": "36.14802967913571318176226769",
+          "rejected_fills": 0,
+          "roll_exclusions": 0,
+          "end_exclusions": 0,
+          "cancelled_intents": 0,
+          "ignored_intents": 0
+        }
+      },
+      {
+        "name": "2026Oct",
+        "train_since": "2025-10-13",
+        "train_through": "2026-09-30",
+        "test_since": "2026-10-01",
+        "test_through": "2026-10-09",
+        "warmup_bars": 16347,
+        "test_bars": 114,
+        "physical_prefix_bars": 25521,
+        "summary": {
+          "closed_trades": 10,
+          "wins": 2,
+          "losses": 8,
+          "breakevens": 0,
+          "compounded_net_return_pct": "1.857296050710445147544684100",
+          "closed_trade_drawdown_pct": "1.675339377280718797571322710",
+          "rejected_fills": 0,
+          "roll_exclusions": 0,
+          "end_exclusions": 1,
+          "cancelled_intents": 1,
+          "ignored_intents": 0
+        }
+      }
+    ],
+    "double_slippage": [
+      {
+        "name": "2026Q2",
+        "train_since": "2025-10-13",
+        "train_through": "2026-03-31",
+        "test_since": "2026-04-01",
+        "test_through": "2026-06-30",
+        "warmup_bars": 7818,
+        "test_bars": 4068,
+        "physical_prefix_bars": 19428,
+        "summary": {
+          "closed_trades": 335,
+          "wins": 91,
+          "losses": 244,
+          "breakevens": 0,
+          "compounded_net_return_pct": "-47.43609545570207133140636335",
+          "closed_trade_drawdown_pct": "47.56962112581159902299374995",
+          "rejected_fills": 18,
+          "roll_exclusions": 0,
+          "end_exclusions": 0,
+          "cancelled_intents": 0,
+          "ignored_intents": 18
+        }
+      },
+      {
+        "name": "2026Q3",
+        "train_since": "2025-10-13",
+        "train_through": "2026-06-30",
+        "test_since": "2026-07-01",
+        "test_through": "2026-09-30",
+        "warmup_bars": 11886,
+        "test_bars": 4461,
+        "physical_prefix_bars": 25407,
+        "summary": {
+          "closed_trades": 401,
+          "wins": 120,
+          "losses": 281,
+          "breakevens": 0,
+          "compounded_net_return_pct": "-47.46061076718093822928952407",
+          "closed_trade_drawdown_pct": "47.72580749612535523379553442",
+          "rejected_fills": 0,
+          "roll_exclusions": 0,
+          "end_exclusions": 0,
+          "cancelled_intents": 0,
+          "ignored_intents": 0
+        }
+      },
+      {
+        "name": "2026Oct",
+        "train_since": "2025-10-13",
+        "train_through": "2026-09-30",
+        "test_since": "2026-10-01",
+        "test_through": "2026-10-09",
+        "warmup_bars": 16347,
+        "test_bars": 114,
+        "physical_prefix_bars": 25521,
+        "summary": {
+          "closed_trades": 10,
+          "wins": 2,
+          "losses": 8,
+          "breakevens": 0,
+          "compounded_net_return_pct": "1.383678005477763270410275800",
+          "closed_trade_drawdown_pct": "1.955242811499732743023825880",
+          "rejected_fills": 0,
+          "roll_exclusions": 0,
+          "end_exclusions": 1,
+          "cancelled_intents": 1,
+          "ignored_intents": 0
+        }
+      }
+    ]
+  },
+  "causal_parity": {
+    "status": "PASS",
+    "source_formula_versions": [
+      "newow_dual_fusion_causal_target_v1",
+      "newow_trend_band_page_v3",
+      "newow_oscillation_hhv_llv10_page_v2",
+      "newow_hhv_llv_channel_page_v1"
+    ],
+    "intent_count": 2919,
+    "prefix_checkpoints": [
+      {
+        "physical_contract": "JM2601",
+        "through": "2025-11-07T01:55:00+00:00",
+        "intent_count": 248
+      },
+      {
+        "physical_contract": "JM2601",
+        "through": "2025-12-04T07:00:00+00:00",
+        "intent_count": 481
+      },
+      {
+        "physical_contract": "JM2605",
+        "through": "2026-02-05T06:05:00+00:00",
+        "intent_count": 520
+      },
+      {
+        "physical_contract": "JM2605",
+        "through": "2026-04-16T07:00:00+00:00",
+        "intent_count": 1030
+      },
+      {
+        "physical_contract": "JM2609",
+        "through": "2026-06-22T01:05:00+00:00",
+        "intent_count": 502
+      },
+      {
+        "physical_contract": "JM2609",
+        "through": "2026-08-18T07:00:00+00:00",
+        "intent_count": 1030
+      },
+      {
+        "physical_contract": "JM2701",
+        "through": "2026-09-09T03:05:00+00:00",
+        "intent_count": 175
+      },
+      {
+        "physical_contract": "JM2701",
+        "through": "2026-10-09T07:00:00+00:00",
+        "intent_count": 378
+      }
+    ],
+    "segment_batch_parity": true,
+    "deterministic_restart_replay": true,
+    "scope_note": "Pure research replay; no daemon or Paper persistence restart tested here."
+  }
+}

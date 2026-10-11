@@ -7,7 +7,7 @@
 | 主题 | 长期决策 | 不变量 |
 |---|---|---|
 | 产品 | 本地、单用户的国内期货研究工作站 | 当前研究观察阶段 `auto_order=false`；不做 SaaS，不跳过人工 Gate 进入无人值守真实下单 |
-| 分阶段演进 | 研究观察 → Paper → Shadow → Broker Read-only → 订单草稿 → 人工确认 → 半自动 → 受控自动 | AI 可以自动研究但不能自动晋升；每阶段独立人工 Gate，当前不新增账户或执行能力 |
+| 分阶段演进 | 研究观察 → Paper → Shadow → Broker Read-only → 订单草稿 → 人工确认 → 半自动 → 受控自动 | AI 可以自动研究但不能自动晋升；owner 交办 JM 单手本地 Paper，独立模型账本不接 Broker/Shadow/Runtime；合同见 [Paper 试点](docs/PAPER_PILOT.md) |
 | 数据事实链 | `RQData -> Canonical Parquet -> 八表 Catalog + MainContractMap -> MarketDataService` | Historical consumer 不得 glob、自选 active、自判主力、绕过质量或跨频回退 |
 | 数据维护职责 | 每日增量维护最新数据，每周 operational 全历史只读审计，发现后的修复按明确范围独立处理；语义见 `docs/DATA_CENTER.md` | 日常成功不证明全历史完整；周检不下载、不自动修复、不通知；复用既有锁和权威数据链，不建立第二套缺口事实或后台补数平台 |
 | Canonical 月发布 | 每 DatasetKey 每月唯一 active Catalog pointer，指向不可变 `part.<sha256>.parquet` | 完整校验与文件 durability 先于既有事务 register/flush/真实 MDS strict-read；commit 为单 partition 可见点；commit 异常停批并以独立只读事务核实；保留旧文件，无 GC/version table/global snapshot；legacy 固定 URI 只按 Catalog 明确引用兼容 |

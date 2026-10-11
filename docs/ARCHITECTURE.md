@@ -166,3 +166,11 @@ Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`�
 one-shot 身份不变。稳定 service-bindings 按服务固定发布根/commit/tag/代次；稳定 dispatcher 不再要求业务服务同根。
 候选只读预热、旧版收尾、OS 独占锁、新代次核对、进度现场读回组成单机交接 seam，避免引入消息平台或第二正式 API。
 部署与首次迁移见 `deploy/README.md`。旧一根模式仅在 registry 不存在时兼容，corrupt registry 不回退。
+
+## 本地 Paper 试点依赖
+
+JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原动作，使用版本化
+因果目标适配；`guiyi_quant.paper` 负责纯 Decimal 风控、模型撮合和事件重放，
+`app.paper.ledger` 在专用本地 PostgreSQL 保存不可变命令与事件。
+本域不接 Alert、Redis、普通 API 启动、Broker 或后台 Runtime；不改变 ReferenceTrade。
+领域合同与恢复边界见 [PAPER_PILOT.md](PAPER_PILOT.md)。

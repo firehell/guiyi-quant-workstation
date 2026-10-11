@@ -34,12 +34,15 @@ from .trend_band import initial_trend_band_state, step_trend_band
 
 
 CAUSAL_BACKTEST_FORMULA_VERSION = "newow_causal_next_open_costed_v1"
+OFFSET_COSTED_BACKTEST_FORMULA_VERSION = "newow_causal_next_open_offset_costed_v2"
+DUAL_FUSION_CAUSAL_SIGNAL_VERSION = "newow_dual_fusion_causal_target_v1"
 FORMAL_FREQUENCIES = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 CAUSAL_SIGNAL_FORMULAS = frozenset(
     {
         NEWOW_TREND_D1_PAGE_V2.trend_band_formula,
         OSCILLATION_FORMULA_VERSION,
         MAIN_RISE_PAGE_V1.band_formula,
+        DUAL_FUSION_CAUSAL_SIGNAL_VERSION,
     }
 )
 _PHYSICAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
@@ -48,6 +51,7 @@ _PHYSICAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 class ResearchStrategy(StrEnum):
     TREND = "trend"
     OSCILLATION = "oscillation"
+    DUAL_FUSION = "dual_fusion"
     MAIN_RISE = "main_rise"
 
 
@@ -67,6 +71,13 @@ def _formula_versions_for_strategy(
         return (NEWOW_TREND_D1_PAGE_V2.trend_band_formula,)
     if strategy is ResearchStrategy.OSCILLATION:
         return (OSCILLATION_FORMULA_VERSION, CHANNEL_FORMULA_VERSION)
+    if strategy is ResearchStrategy.DUAL_FUSION:
+        return (
+            DUAL_FUSION_CAUSAL_SIGNAL_VERSION,
+            NEWOW_TREND_D1_PAGE_V2.trend_band_formula,
+            OSCILLATION_FORMULA_VERSION,
+            CHANNEL_FORMULA_VERSION,
+        )
     return (
         MAIN_RISE_PAGE_V1.band_formula,
         MAIN_RISE_PAGE_V1.j_reduce_formula,
@@ -79,6 +90,7 @@ def _formula_versions_for_strategy(
 _INTENT_STRATEGY_BY_FORMULA = {
     NEWOW_TREND_D1_PAGE_V2.trend_band_formula: ResearchStrategy.TREND,
     OSCILLATION_FORMULA_VERSION: ResearchStrategy.OSCILLATION,
+    DUAL_FUSION_CAUSAL_SIGNAL_VERSION: ResearchStrategy.DUAL_FUSION,
     MAIN_RISE_PAGE_V1.band_formula: ResearchStrategy.MAIN_RISE,
 }
 
@@ -237,6 +249,49 @@ class BacktestCosts:
             raise ValueError("NEWOW_BACKTEST_PRICE_TICK_REQUIRED")
 
 
+class BacktestFeeOffset(StrEnum):
+    OPEN = "OPEN"
+    CLOSE_TODAY = "CLOSE_TODAY"
+    CLOSE_YESTERDAY = "CLOSE_YESTERDAY"
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestOffsetFees:
+    """Sourced per-offset commission facts for one physical contract interval."""
+
+    open_rate: Decimal
+    open_per_contract: Decimal
+    close_today_rate: Decimal
+    close_today_per_contract: Decimal
+    close_yesterday_rate: Decimal
+    close_yesterday_per_contract: Decimal
+
+    def __post_init__(self) -> None:
+        rates = (self.open_rate, self.close_today_rate, self.close_yesterday_rate)
+        fixed = (
+            self.open_per_contract,
+            self.close_today_per_contract,
+            self.close_yesterday_per_contract,
+        )
+        if not all(
+            isinstance(value, Decimal) and value.is_finite() for value in (*rates, *fixed)
+        ) or any(value < 0 or value >= 1 for value in rates) or any(
+            value < 0 for value in fixed
+        ):
+            raise ValueError("NEWOW_BACKTEST_OFFSET_FEES_INVALID")
+
+    def fee(self, offset: BacktestFeeOffset, price: Decimal, multiplier: Decimal) -> Decimal:
+        if offset is BacktestFeeOffset.OPEN:
+            rate, fixed = self.open_rate, self.open_per_contract
+        elif offset is BacktestFeeOffset.CLOSE_TODAY:
+            rate, fixed = self.close_today_rate, self.close_today_per_contract
+        elif offset is BacktestFeeOffset.CLOSE_YESTERDAY:
+            rate, fixed = self.close_yesterday_rate, self.close_yesterday_per_contract
+        else:
+            raise ValueError("NEWOW_BACKTEST_FEE_OFFSET_INVALID")
+        return price * multiplier * rate + fixed
+
+
 @dataclass(frozen=True, slots=True)
 class BacktestCostSnapshot:
     product: str
@@ -246,6 +301,7 @@ class BacktestCostSnapshot:
     captured_at: datetime
     source_identity: str
     costs: BacktestCosts
+    offset_fees: BacktestOffsetFees | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -260,6 +316,7 @@ class BacktestCostSnapshot:
             or self.captured_at.utcoffset() is None
             or not self.source_identity
             or not isinstance(self.costs, BacktestCosts)
+            or (self.offset_fees is not None and not isinstance(self.offset_fees, BacktestOffsetFees))
         ):
             raise ValueError("NEWOW_BACKTEST_COST_SNAPSHOT_INVALID")
 
@@ -299,6 +356,69 @@ class BacktestIntent:
     signal_formula_version: str
 
 
+def fuse_causal_intents(
+    bars: tuple[NewowResearchBar, ...],
+    trend_intents: tuple[BacktestIntent, ...],
+    oscillation_intents: tuple[BacktestIntent, ...],
+    *,
+    flat_from: date | None = None,
+) -> tuple[BacktestIntent, ...]:
+    """Fold source actions to one long/flat target per completed observation."""
+    validate_research_bars(bars)
+    if flat_from is not None and type(flat_from) is not date:
+        raise ValueError("NEWOW_BACKTEST_FLAT_FROM_INVALID")
+    by_end = {bar.bar_end: bar for bar in bars}
+    events: dict[datetime, list[tuple[int, int, int, BacktestIntent]]] = {}
+    for source_priority, (source, expected_formula) in enumerate((
+        (oscillation_intents, OSCILLATION_FORMULA_VERSION),
+        (trend_intents, NEWOW_TREND_D1_PAGE_V2.trend_band_formula),
+    )):
+        for sequence, intent in enumerate(source):
+            bar = by_end.get(intent.signal_bar_end)
+            if (
+                bar is None
+                or intent.signal_formula_version != expected_formula
+                or intent.action not in (BacktestAction.BUILD, BacktestAction.CLEAR)
+            ):
+                raise ValueError("NEWOW_DUAL_FUSION_SOURCE_INVALID")
+            events.setdefault(intent.signal_bar_end, []).append((
+                0 if intent.action is BacktestAction.CLEAR else 1,
+                source_priority,
+                sequence,
+                intent,
+            ))
+    output: list[BacktestIntent] = []
+    holding = False
+    previous_owner: tuple[str, str] | None = None
+    flattened = flat_from is None
+    for bar in bars:
+        owner = (bar.physical_contract, bar.segment_id)
+        if previous_owner is not None and previous_owner != owner:
+            holding = False
+        previous_owner = owner
+        if (
+            flat_from is not None
+            and not flattened
+            and bar.observation_eligible
+            and bar.trading_day >= flat_from
+        ):
+            holding = False
+            flattened = True
+        before = holding
+        for _, _, _, intent in sorted(events.get(bar.bar_end, ())):
+            if intent.action is BacktestAction.CLEAR:
+                holding = False
+            else:
+                holding = True
+        if bar.observation_eligible and holding != before:
+            output.append(BacktestIntent(
+                BacktestAction.BUILD if holding else BacktestAction.CLEAR,
+                bar.bar_end,
+                DUAL_FUSION_CAUSAL_SIGNAL_VERSION,
+            ))
+    return tuple(output)
+
+
 @dataclass(frozen=True, slots=True)
 class BacktestFill:
     action: BacktestAction
@@ -311,6 +431,7 @@ class BacktestFill:
     contract_multiplier: Decimal
     cost_source_identity: str | None
     signal_formula_version: str
+    fee_offset: BacktestFeeOffset | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -395,6 +516,8 @@ def _fill(
     *,
     cost_source_identity: str | None,
     constraint: BacktestExecutionConstraint | None,
+    offset_fees: BacktestOffsetFees | None = None,
+    fee_offset: BacktestFeeOffset | None = None,
 ) -> BacktestFill:
     proportional_slip = bar.open * costs.slippage_bps / Decimal("10000")
     tick_slip = (costs.price_tick or Decimal("0")) * costs.slippage_ticks
@@ -420,7 +543,9 @@ def _fill(
     if price <= 0:
         raise ValueError("NEWOW_BACKTEST_FILL_PRICE_NONPOSITIVE")
     fee = (
-        price * costs.contract_multiplier * costs.commission_rate
+        offset_fees.fee(fee_offset, price, costs.contract_multiplier)
+        if offset_fees is not None and fee_offset is not None
+        else price * costs.contract_multiplier * costs.commission_rate
         + costs.commission_per_contract
     )
     return BacktestFill(
@@ -434,6 +559,7 @@ def _fill(
         costs.contract_multiplier,
         cost_source_identity,
         intent.signal_formula_version,
+        fee_offset,
     )
 
 
@@ -630,6 +756,7 @@ def run_causal_long_only_backtest(
     cost_snapshots: tuple[BacktestCostSnapshot, ...] = (),
     execution_constraints: tuple[BacktestExecutionConstraint, ...] = (),
     require_execution_facts: bool = False,
+    require_offset_fees: bool = False,
     strategy: ResearchStrategy | None = None,
     signal_formula_versions: tuple[str, ...] = (),
 ) -> ResearchBacktestResult:
@@ -685,6 +812,10 @@ def run_causal_long_only_backtest(
             raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
     if type(require_execution_facts) is not bool:
         raise ValueError("NEWOW_BACKTEST_EXECUTION_CONSTRAINT_INVALID")
+    if type(require_offset_fees) is not bool or (
+        require_offset_fees and not require_execution_facts
+    ):
+        raise ValueError("NEWOW_BACKTEST_OFFSET_FEE_MODE_INVALID")
     constraints_by_bar = _index_execution_constraints(execution_constraints)
     sourced_costs_required = require_execution_facts or bool(cost_snapshots)
     constraints_required = require_execution_facts or bool(execution_constraints)
@@ -697,12 +828,25 @@ def run_causal_long_only_backtest(
         )
     else:
         _validate_cost_snapshots(cost_snapshots)
+    offset_fees_by_bar: dict[str, BacktestOffsetFees] = {}
+    if require_offset_fees:
+        for bar in bars:
+            matched = tuple(
+                snapshot for snapshot in cost_snapshots
+                if snapshot.product == bar.product
+                and snapshot.physical_contract == bar.physical_contract
+                and snapshot.effective_from <= bar.trading_day < snapshot.effective_to
+            )
+            if len(matched) != 1 or matched[0].offset_fees is None:
+                raise ValueError("EXECUTION_FACTS_MISSING")
+            offset_fees_by_bar[bar.source_identity] = matched[0].offset_fees
     fills: list[BacktestFill] = []
     rejected_fills: list[RejectedFill] = []
     trades: list[BacktestTrade] = []
     incomplete: list[IncompletePosition] = []
     pending: list[BacktestIntent] = []
     entry: BacktestFill | None = None
+    entry_trading_day: date | None = None
     entry_bar_index = -1
     cancelled = 0
     ignored = 0
@@ -723,6 +867,7 @@ def run_causal_long_only_backtest(
                     )
                 )
                 entry = None
+                entry_trading_day = None
                 entry_bar_index = -1
 
         if entry is not None and require_execution_facts:
@@ -760,6 +905,14 @@ def run_causal_long_only_backtest(
                     fill_costs,
                     cost_source_identity=cost_source_identity,
                     constraint=constraint,
+                    offset_fees=offset_fees_by_bar.get(bar.source_identity),
+                    fee_offset=(
+                        BacktestFeeOffset.OPEN
+                        if intent.action is BacktestAction.BUILD
+                        else BacktestFeeOffset.CLOSE_TODAY
+                        if entry_trading_day == bar.trading_day
+                        else BacktestFeeOffset.CLOSE_YESTERDAY
+                    ) if require_offset_fees else None,
                 )
                 if cost_source_identity is not None:
                     used_cost_sources.add(cost_source_identity)
@@ -768,6 +921,7 @@ def run_causal_long_only_backtest(
                         ignored += 1
                         continue
                     entry = fill
+                    entry_trading_day = bar.trading_day
                     entry_bar_index = index
                     fills.append(fill)
                     continue
@@ -800,6 +954,7 @@ def run_causal_long_only_backtest(
                     )
                 )
                 entry = None
+                entry_trading_day = None
                 entry_bar_index = -1
             pending = []
 
@@ -815,7 +970,11 @@ def run_causal_long_only_backtest(
     return ResearchBacktestResult(
         frequency=bars[0].frequency,
         strategy=strategy,
-        formula_version=CAUSAL_BACKTEST_FORMULA_VERSION,
+        formula_version=(
+            OFFSET_COSTED_BACKTEST_FORMULA_VERSION
+            if require_offset_fees
+            else CAUSAL_BACKTEST_FORMULA_VERSION
+        ),
         signal_formula_versions=signal_formula_versions,
         costs=costs,
         cost_snapshot_identities=tuple(sorted(used_cost_sources)),
@@ -885,6 +1044,20 @@ def build_strategy_intents(
                     BacktestIntent(action, bar.bar_end, signal.formula_version)
                 )
         return tuple(intents), _formula_versions_for_strategy(strategy)
+
+    if strategy is ResearchStrategy.DUAL_FUSION:
+        trend_intents, _ = build_strategy_intents(
+            bars, ResearchStrategy.TREND, flat_from=flat_from
+        )
+        oscillation_intents, _ = build_strategy_intents(
+            bars, ResearchStrategy.OSCILLATION, flat_from=flat_from
+        )
+        return (
+            fuse_causal_intents(
+                bars, trend_intents, oscillation_intents, flat_from=flat_from
+            ),
+            _formula_versions_for_strategy(strategy),
+        )
 
     main_rise_state = initial_main_rise_state()
     for bar in bars:

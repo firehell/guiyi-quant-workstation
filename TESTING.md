@@ -1,5 +1,29 @@
 # 测试与验证命令
 
+## JM 因果候选与本地 Paper
+
+合同见 [Paper 试点](docs/PAPER_PILOT.md)。仅用本次独立本地 PostgreSQL 测试实例，
+显式非5432端口，数据库必须为 `guiyi_paper_isolated_test`；不配置时数据库项跳过，不算验收。
+
+```bash
+GUIYI_ISOLATED_PAPER_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:15462/guiyi_paper_isolated_test' \
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/unit/paper services/quant-api/tests/paper \
+  services/quant-api/tests/newow/test_research_backtest.py \
+  services/quant-api/tests/newow/test_research_evidence.py \
+  services/quant-api/tests/newow/test_research_walk_forward.py \
+  services/quant-api/tests/newow/test_jm_pilot_research.py
+```
+
+`scripts/research/jm_pilot_research.py` 读取精确 facts 文件、显式 market env 与 Canonical root，
+输出固定研究窗口的成本压力、诊断 WF 与 prefix parity；不会下载行情或更新 Catalog。
+`scripts/research/jm_paper.py` 的 `init` 仅创建专用 Paper schema，`run --dry-run` 完整内存预检，
+去掉 `--dry-run` 才写模型账本，`reconcile` 在新进程只读重放。必须单独提供
+`GUIYI_PAPER_DATABASE_URL`，不能复用生产 DATABASE_URL。同账户/同计划重跑必须保持
+event、command、fill数量不变；事实或窗口改变须新账户身份。
+这些 CLI 仅做 HISTORICAL_REPLAY，不订阅实时行情，不连接 SimNow。
+
 ## 牛哇 v3.3.79 手册同输入验证
 
 该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，
