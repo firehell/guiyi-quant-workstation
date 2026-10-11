@@ -4,7 +4,22 @@
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.15.1 已发布并完成 gen12 正式服务切换，自然盘中验收待交易时段
+## v1.15.2 已发布 develop 全部内容，Runtime 仍为 v1.15.1/gen12
+
+2026-10-11：[PR #438](https://github.com/firehell/guiyi-quant-workstation/pull/438) 已合并 main，
+annotated tag 与 [Release v1.15.2](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.15.2)
+精确绑定 **ca8b0f43d3b2a0f5ac821b55dffcb198aef3478a**，发布树内容与候选 develop 完全相同。
+包括牛哇首页列表与详情布局、日周综合展示、页面曲线分段年化、价格来源展示及 gen9–12 恢复边界测试。
+页面参考保持 page_parity=true、executable=false；本次未切换 Runtime、启用资产或发送真实通知。
+
+实际验证：Web 1063 passed/3 skipped；首页投影、工程一致性与恢复边界 86 passed；
+产品/API/价格来源集成 286 passed；Web 类型、build/topology、uv lock 离线校验、Ruff、
+来源投影 Mypy、OpenSpec 11/11、secret scan 0、diff 检查通过。两份独立合同/工程 Review 无发布阻断。
+额外 Newow 大组回归在未改动的杯柄长期状态计算中中断，已执行 795 passed，不声明整组通过。
+工作区发布前无未提交内容；清理 11 个未跟踪系统 `.DS_Store`，保留数据、配置、缓存依赖与历史 evidence。
+现役正式服务仍绑定下述 v1.15.1/gen12；发布与运行切换分别记录，自然验收保持 PENDING。
+
+## v1.15.1 gen12 正式服务切换，自然盘中验收待交易时段
 
 [PR #436](https://github.com/firehell/guiyi-quant-workstation/pull/436) 与
 [PR #437](https://github.com/firehell/guiyi-quant-workstation/pull/437) 已合并，annotated tag 和
