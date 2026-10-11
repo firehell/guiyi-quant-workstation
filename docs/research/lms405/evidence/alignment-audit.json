@@ -1,0 +1,197 @@
+{
+  "identity": "lms405-alignment-audit-v0.1",
+  "results": [
+    {
+      "contract": "FG2701",
+      "frequency": "1m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "author_period_verified": false,
+      "signal_eligible": false,
+      "bar_count": 2865,
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "fg",
+        "contract": "FG2701",
+        "frequency": "1m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "input_snapshot_hash": "3313d43e5a4b35ed507231e4e36f873de4655a23cbbd3b07817d1134e085e367",
+      "coverage": [
+        "2026-09-18T13:01:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ]
+    },
+    {
+      "contract": "FG2701",
+      "frequency": "5m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "author_period_verified": false,
+      "signal_eligible": false,
+      "bar_count": 573,
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "fg",
+        "contract": "FG2701",
+        "frequency": "5m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "input_snapshot_hash": "602d330750ff99dcc7c57ee4fa158a55448f9a24a63295a1bbc586d7e2e68d1c",
+      "coverage": [
+        "2026-09-18T13:05:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ]
+    },
+    {
+      "contract": "FG2701",
+      "frequency": "15m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "author_period_verified": false,
+      "signal_eligible": false,
+      "bar_count": 191,
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "fg",
+        "contract": "FG2701",
+        "frequency": "15m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "input_snapshot_hash": "5ede4f1a67d995e3dac8952680a61636202b369f86840fd2e8b6ca601e39e106",
+      "coverage": [
+        "2026-09-18T13:15:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ]
+    },
+    {
+      "contract": "JM2701",
+      "frequency": "1m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "author_period_verified": false,
+      "signal_eligible": false,
+      "bar_count": 2865,
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "jm",
+        "contract": "JM2701",
+        "frequency": "1m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "input_snapshot_hash": "f7afb8f5af33c75c2ed2f83c63ece59fb4e6315d70b44e81fa2005507074759a",
+      "coverage": [
+        "2026-09-18T13:01:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ],
+      "E51": {
+        "basis": "Shanghai calendar-day 09:00 < bar_end <= 15:00; night excluded",
+        "source": "E51",
+        "author_low": "1487",
+        "author_high": "1533.5",
+        "bar_count": 225,
+        "high": "1533.500000000000000000",
+        "low": "1503.500000000000000000",
+        "low_price_delta": "16.500000000000000000",
+        "high_price_delta": "0E-18",
+        "bar_ohlc_parity": "UNKNOWN",
+        "author_time_basis_verified": false,
+        "signal_eligible": false
+      },
+      "E51_trading_day": {
+        "basis": "MarketDataService trading day 2026-09-21, including preceding night",
+        "request_identity": {
+          "series_kind": "contract",
+          "symbol": "jm",
+          "contract": "JM2701",
+          "frequency": "1m",
+          "start": "2026-09-18T13:00:00+00:00",
+          "end": "2026-09-21T07:00:00+00:00"
+        },
+        "source": "E51",
+        "author_low": "1487",
+        "author_high": "1533.5",
+        "bar_count": 345,
+        "low": "1487.000000000000000000",
+        "high": "1533.500000000000000000",
+        "low_price_delta": "0E-18",
+        "high_price_delta": "0E-18",
+        "bar_ohlc_parity": "UNKNOWN",
+        "author_time_basis_verified": false,
+        "signal_eligible": false
+      }
+    },
+    {
+      "contract": "JM2701",
+      "frequency": "5m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "author_period_verified": false,
+      "signal_eligible": false,
+      "bar_count": 573,
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "jm",
+        "contract": "JM2701",
+        "frequency": "5m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "input_snapshot_hash": "ceee0d0fd72f732c0ddb8e3428a3e2b0610044456c97b4cd5c8ae91b744b1c31",
+      "coverage": [
+        "2026-09-18T13:05:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ]
+    },
+    {
+      "contract": "JM2701",
+      "frequency": "15m",
+      "window": [
+        "2026-09-21",
+        "2026-10-09"
+      ],
+      "status": "WINDOW_READABLE",
+      "author_period_verified": false,
+      "signal_eligible": false,
+      "bar_count": 191,
+      "request_identity": {
+        "series_kind": "contract",
+        "symbol": "jm",
+        "contract": "JM2701",
+        "frequency": "15m",
+        "start": "2026-09-18T13:00:00+00:00",
+        "end": "2026-10-09T07:00:00+00:00"
+      },
+      "input_snapshot_hash": "9855f5631c545099e59fdc799a68a07958867e529f9b2f7224ed661fdd7004cf",
+      "coverage": [
+        "2026-09-18T13:15:00+00:00",
+        "2026-10-09T07:00:00+00:00"
+      ]
+    }
+  ],
+  "no_download": true,
+  "no_production_write": true,
+  "author_bar_samples": 0,
+  "signal_matches": null,
+  "action_matches": null,
+  "performance": null
+}
