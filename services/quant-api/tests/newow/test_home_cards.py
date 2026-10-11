@@ -111,3 +111,28 @@ def test_display_event_only_belongs_to_anchor_and_guard_uses_trend_ma10(product_
     summary = project_home_summary(chart.replay, later, later.availability, None)
     assert summary['recent_action']['signal_id'] == build.signal_id
     assert summary['current_event'] is None
+
+
+def test_home_prices_expose_existing_channel_provenance(product_cases):
+    service, _, _, clear = _service(product_cases)
+    result = service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end, chart_limit=1))
+    prices = result.chart.value.price_reference
+    summary = result.chart.value.home_summary
+    assert summary['price_input_sha256'] == prices.input_sha256
+    assert result.meta.input_content_sha256 != prices.input_sha256
+    for kind, branch in [('target', 'chart_hhv10'), ('absorb', 'chart_llv10')]:
+        value = getattr(prices, kind)
+        source = summary['price_sources'][kind]
+        if value.raw is None:
+            assert source is None
+            continue
+        assert source['raw'] == value.raw
+        assert source['display_value'] == value.display
+        assert source['frequency'] == prices.frequency.value
+        assert source['bar_end'] == prices.anchor_bar_end
+        assert source['physical_contract'] == prices.physical_contract
+        assert source['calculation_segment_id'] == prices.calculation_segment_id
+        assert source['input_sha256'] == prices.input_sha256
+        assert source['formula_version'] == prices.formula_version
+        assert source['source_category'] == 'canonical_channel'
+        assert source['branch'] == branch

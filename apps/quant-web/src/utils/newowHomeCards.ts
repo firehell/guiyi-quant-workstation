@@ -1,3 +1,4 @@
+import type { PriceProvenance } from './newowPriceSources.ts'
 import { comparePositiveDecimalText } from './marketDisplay.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
 import { newowReferencePrice } from './newowPagePresentation.ts'
@@ -22,6 +23,9 @@ export interface HomePeriodFact {
   reference_current?: string | null
   reference_cost?: string | null
   entry_signal_id?: string | null
+  price_sources?: { target: PriceProvenance | null; absorb: PriceProvenance | null } | null
+  price_input_sha256?: string
+  price_formula_version?: string
   target?: string | null
   absorb?: string | null
   target_space_percent?: string | null

@@ -15,8 +15,10 @@ async function componentUrl(name: string): Promise<string> {
   const { descriptor } = parse(source)
   const compiled = compileScript(descriptor, { id: 'dual-test', inlineTemplate: true })
   const nested = compiled.content.includes('./NewowStatusCard.vue') ? await componentUrl('newow/NewowStatusCard') : null
+  const pricePanel = compiled.content.includes('./NewowPriceSources.vue') ? await componentUrl('newow/NewowPriceSources') : null
   const pathPanel = compiled.content.includes('./NewowDailyWeeklyPath.vue') ? await componentUrl('newow/NewowDailyWeeklyPath') : null
   const code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+    .replace(/from ['"]\.\/NewowPriceSources\.vue['"]/g, `from '${pricePanel}'`)
     .replace(/from ['"]\.\/NewowStatusCard\.vue['"]/g, `from '${nested}'`)
     .replace(/from ['"]\.\/NewowDailyWeeklyPath\.vue['"]/g, `from '${pathPanel}'`)
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
@@ -366,5 +368,23 @@ test('quality-only shared background switches clear the old state card and valid
  assert.equal(contexts.at(-1).decision,null);assert.equal(mock.calls.length,before+2)
  mock.calls[before+1].resolve(first);await nextTick();await nextTick()
  assert.equal(contexts.at(-1).decision,null);assert.match(contexts.at(-1).error,/快照不一致/)
+ app.unmount()
+})
+
+test('price proof preserves guards and visibly distinguishes a frozen background cutoff', async () => {
+ const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root')
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input()})}))
+ app.mount(root)
+ const result=output() as any
+ const source={raw:'100',display_value:'100.00',frequency:'1d',bar_end:'2026-09-24T07:00:00Z',physical_contract:'JM2701',segment_id:'owner',calculation_segment_id:'calc',source_identity:'canonical',source_category:'canonical_channel',branch:'target_daily',support_cap_applied:false}
+ const absorb={...source,raw:'99',display_value:'99.00',branch:'absorb_daily',support_cap_applied:true}
+ result.value.decision_v2.prices={as_of:source.bar_end,formula_version:'selection',current_price:source,previous_close:{...source,bar_end:'2026-09-23T07:00:00Z'},guard_status:'verified_previous_close',shared:{target:source,absorb},status_card:{target:source,absorb}}
+ mock.calls.at(-1).resolve(result); await nextTick();await nextTick();await nextTick()
+ assert.match(nodeText(root),/原站私有价格逐值一致未证明/)
+ assert.match(nodeText(root),/同合约前一有效日线昨收/)
+ assert.match(nodeText(root),/守卫状态 verified_previous_close/)
+ assert.equal(findNodes(root,n=>n.type==='p'&&nodeText(n).includes('吸筹现价上限')).length,2,'cap explanation is only for absorb rows')
+ assert.equal(findNodes(root,n=>n.props.class==='source-conflict'&&nodeText(n).includes('与主图截止不同')).length,1)
+ assert.equal(findNode(root,n=>n.type==='details'&&n.props.class==='price-sources')?.props.open,undefined)
  app.unmount()
 })

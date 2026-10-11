@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import NewowPriceSources from './detail/newow/NewowPriceSources.vue'
+import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getNewowHomeCards } from '@/api/newowHomeCards'
@@ -62,6 +64,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
         <p :class="reference(row.symbol).label === '目标' ? 'composite-target' : 'composite-absorb'">{{ reference(row.symbol).label }} {{ reference(row.symbol).text }}<span> · 按日线状态选择，页面参考价格</span></p>
         <p v-if="composite(row.symbol).reason" role="status">{{ composite(row.symbol).reason }}</p>
         <p v-else>清仓优先，周线确认、日线补强；仅当前已确认 Bar 的有效穿越参与展示。</p>
+        <NewowPriceSources :rows="homePriceSources(fact(row.symbol, '1d'))" />
         <p class="composite-disclaimer">非成交记录或可执行指令 · 趋势箭头来源仍待确认</p>
       </section>
     </article>

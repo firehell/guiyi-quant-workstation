@@ -34,6 +34,17 @@ def project_home_summary(replay, anchor, status, prices):
         'source_identity': bar.source_identity,
         'reference_current': bar.close if ready else None,
         'target': target, 'absorb': absorb,
+        'price_sources': {kind: {
+            'raw': value.raw, 'display_value': value.display,
+            'frequency': prices.frequency.value, 'as_of': prices.as_of,
+            'bar_end': prices.anchor_bar_end, 'physical_contract': prices.physical_contract,
+            'segment_id': prices.segment_id, 'calculation_segment_id': prices.calculation_segment_id,
+            'input_sha256': prices.input_sha256, 'formula_version': prices.formula_version,
+            'branch': 'chart_hhv10' if kind == 'target' else 'chart_llv10',
+            'source_category': 'canonical_channel',
+        } if ready and value.status.status is FeatureRuntimeStatus.READY else None
+            for kind, value in [('target', prices.target), ('absorb', prices.absorb)]} if prices else None,
+        'price_input_sha256': prices.input_sha256 if prices else None,
         'price_formula_version': prices.formula_version if prices else None,
         'reference_cost': entry.reference_price if entry else None,
         'entry_signal_id': entry.signal_id if entry else None,
