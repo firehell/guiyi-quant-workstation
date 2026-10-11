@@ -143,6 +143,7 @@ ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 ACTIVE_MARKET_ROUTE_OWNERS = {
     ("GET", "/api/v1/market/newow/home-cards", "app.api.market_newow:newow_home_cards"),
+    ("GET", "/api/v1/market/newow/home-card-performance", "app.api.market_newow:newow_home_card_performance"),
     ("GET", "/api/v1/market/newow/experiments", "app.api.market_newow:newow_experiments"),
     (
         "WEBSOCKET",

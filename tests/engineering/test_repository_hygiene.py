@@ -298,7 +298,8 @@ def test_newow_replication_manual_uses_the_approved_screenshot_scope() -> None:
 def test_newow_replication_manual_has_one_maintained_body() -> None:
     maintained = tuple(
         path for path in _tracked_paths("docs/research/**/*.md")
-        if (ROOT / path).is_file() and "MANUAL" in Path(path).name.upper()
+        if path.startswith("docs/research/newow")
+        and (ROOT / path).is_file() and "MANUAL" in Path(path).name.upper()
     )
     assert maintained == (NEWOW_REPLICATION_MANUAL.relative_to(ROOT).as_posix(),)
     assert _tracked_paths("docs/research/newow-v3.2.82/*.pdf") == ()
