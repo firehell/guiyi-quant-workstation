@@ -12,6 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 from math import floor
+from typing import Any, cast
 
 from .page_performance import _number, _sum_js
 
@@ -152,7 +153,7 @@ def _validate_state(state: ExperimentState) -> None:
 def restore_experiment_state(payload: Mapping[str, object]) -> ExperimentState:
     """Restore dataclass payload; corrupted checkpoints fail closed, never reset quietly."""
     try:
-        state = ExperimentState(**dict(payload))
+        state = ExperimentState(**cast(dict[str, Any], dict(payload)))
         _validate_state(state)
     except (TypeError, ValueError) as exc:
         raise ValueError("NEWOW_EXPERIMENT_STATE_INVALID") from exc
@@ -263,7 +264,7 @@ def step_experiment(
         if n.holding:
             stop_price = Decimal(
                 str(
-                    float(n.entry_price)
+                    float(cast(Decimal, n.entry_price))
                     * (1 - (0.12 if kind is ExperimentKind.TEST4 else 0.07))
                 )
             )
@@ -277,7 +278,7 @@ def step_experiment(
                     )
                 elif (
                     n.sell_reference is not None
-                    and n.index > n.sell_reference_index
+                    and n.index > cast(int, n.sell_reference_index)
                     and bar.low <= n.sell_reference
                 ):
                     clear(min(n.sell_reference, bar.open), confirm=True)
@@ -366,7 +367,7 @@ def _reference(
         force: bool = False,
     ) -> None:
         nonlocal entry, cumulative, wins, drawdown
-        start, purchase = entry
+        start, purchase = cast(tuple[int, Decimal], entry)
         pct = (float(price) - float(purchase)) / float(purchase) * 100
         cumulative += pct
         wins += int(pct > 0)

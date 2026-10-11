@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from math import floor, isfinite
-from typing import Sequence
+from typing import Any, Sequence, cast
 
 from .ai_analysis import fixed
 
@@ -111,10 +111,10 @@ def _segment(
 
     def exit_(i: int, price: float, force=False):
         nonlocal buy, cum, wins, drawdown
-        pct = (price - buy) / buy * 100
+        pct = (price - cast(float, buy)) / cast(float, buy) * 100
         trade = {
             "buyDate": buy_date,
-            "buyPrice": _number(buy, 2),
+            "buyPrice": _number(cast(float, buy), 2),
             "sellDate": bars[i].date,
             "sellPrice": _number(price, 2),
             "pct": _number(pct, 2),
@@ -356,7 +356,7 @@ def compute_page_performance(
         for segment in segments for bar in segment.bars
     )
     for ideal in (False, True):
-        aggregate = {
+        aggregate: dict[str, Any] = {
             "period": period,
             "dates": [],
             "equity": [],
@@ -391,7 +391,7 @@ def compute_page_performance(
                 result["_drawdown"],
             )
             interrupted += result["_interrupted"]
-            result = filter_page_by_date(result, since, through)
+            result = cast(dict[str, Any], filter_page_by_date(result, since, through))
             if (since or through) and "_cum" not in result:
                 raw_cum = float(result["summary"]["cumReturn"])
                 raw_wins = sum(float(t["pct"]) > 0 for t in result["trades"])

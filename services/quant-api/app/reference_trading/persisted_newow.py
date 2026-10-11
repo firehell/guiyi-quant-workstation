@@ -6,6 +6,7 @@ from collections import OrderedDict
 from hashlib import sha256
 import json
 from threading import Lock
+from typing import Any
 from contextlib import closing
 from datetime import date, datetime, timedelta
 
@@ -24,7 +25,7 @@ class PersistedNewowReference:
     def __init__(self, session_factory) -> None:
         self._factory = session_factory
         self._query = HistoricalReferenceQuery(session_factory)
-        self._page_reads = OrderedDict()
+        self._page_reads: OrderedDict[tuple, Any] = OrderedDict()
         self._page_read_lock = Lock()
 
     def _manifest(self, stream_id: str, revision_id: str, seq: int):
@@ -143,9 +144,9 @@ class PersistedNewowReference:
             key = (value["physical_contract"], value["segment_id"], value["bar_end"])
             action_bars.add(key)
             positions.add((*key, value["sequence"]))
-        attached = {item["reference_trade_id"]: [] for item in trades}
+        attached: dict[str, list[Any]] = {item["reference_trade_id"]: [] for item in trades}
         from bisect import bisect_right
-        indexed = {}
+        indexed: dict[tuple, list[tuple[datetime, datetime, Any]]] = {}
         for trade in trades:
             key = (trade["physical_contract"], trade["owner_segment_id"], trade.get("calculation_segment_id", trade["owner_segment_id"]))
             entry = datetime.fromisoformat(trade["entry_bar_end"])
@@ -154,7 +155,7 @@ class PersistedNewowReference:
         groups = {}
         for key, rows in indexed.items():
             rows.sort(key=lambda row: row[0])
-            maximum = []
+            maximum: list[datetime] = []
             for _, end, _ in rows:
                 maximum.append(max(end, maximum[-1]) if maximum else end)
             groups[key] = (rows, [row[0] for row in rows], maximum)

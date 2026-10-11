@@ -142,6 +142,8 @@ RETIRED_MODULE_ATTRIBUTES = {
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 ACTIVE_MARKET_ROUTE_OWNERS = {
+    ("GET", "/api/v1/market/newow/home-cards", "app.api.market_newow:newow_home_cards"),
+    ("GET", "/api/v1/market/newow/experiments", "app.api.market_newow:newow_experiments"),
     (
         "WEBSOCKET",
         "/api/v1/market/research/home-live/ws",
@@ -495,7 +497,7 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
     assert subing.display_name == "苏冰预警"
     assert subing.kind.value == "indicator_observation"
     assert subing.event_mode.value == "exact"
-    assert subing.input_frequencies == ("15m",)
+    assert subing.input_frequencies == ("5m", "15m", "30m", "60m", "1d", "1w")
     assert subing.series_kind == "actual_dominant"
 
     kernel = kernel_module.SubingThs15mKernel
