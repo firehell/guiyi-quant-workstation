@@ -243,3 +243,28 @@ def test_old_drain_still_fails_closed_at_bounded_deadline(driver,monkeypatch):
     with pytest.raises(driver.h.ResumeBlocked,match='OLD_DRAIN_TIMEOUT'):
         driver.wait_parked({}, {})
     assert 120<=clock[0]<121
+
+
+@pytest.mark.parametrize('false_gate',('http','heartbeat','second_poll'))
+def test_existing_wait_distinguishes_no_gate_and_can_reject_fresh_first_success(driver,monkeypatch,false_gate):
+    import app.services.deployment_identity as identity
+    import app.runtime_deployment as deployment
+    clock=[0.0];calls=[]
+    new=SimpleNamespace(services={n:SimpleNamespace(root='/new',commit='f'*40,service=n) for n in driver.h.CONTINUOUS})
+    owners={n:'42' for n in driver.h.CONTINUOUS}
+    monkeypatch.setattr(driver,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(driver,'sleep',lambda _:clock.__setitem__(0,1.0))
+    def poll(*args):
+        calls.append('poll')
+        return not (false_gate=='second_poll' and calls.count('poll')==2)
+    monkeypatch.setattr(driver,'poll_cycles',poll)
+    monkeypatch.setattr(driver.h,'read_bindings',lambda:new)
+    monkeypatch.setattr(driver.h,'read_service_state',lambda _: {})
+    monkeypatch.setattr(driver.h,'loaded_identity',lambda _: '42')
+    monkeypatch.setattr(deployment,'owner_process_matches',lambda *a:True)
+    monkeypatch.setattr(identity,'deployment_identity_health',lambda **kw:{'services':{('live_market' if n=='live' else 'reference_worker' if n=='reference-worker' else n):{'status':'matched'} for n in owners}})
+    monkeypatch.setattr(driver.h,'http_ready',lambda:false_gate!='http')
+    monkeypatch.setattr(driver.b,'heartbeats_ready',lambda _:false_gate!='heartbeat')
+    with pytest.raises(driver.h.ResumeBlocked,match='HEALTHY_CYCLE_TIMEOUT'):
+        driver.await_cycles(new,{}, {'owners':owners},{},.5)
+    assert calls.count('poll')==(2 if false_gate=='second_poll' else 1)
