@@ -220,3 +220,26 @@ def test_short_health_window_never_calls_slow_full_scope_facts(driver,monkeypatc
     monkeypatch.setattr(driver.b,'heartbeats_ready',lambda _:True)
     driver.await_cycles(new,{}, {'owners':owners},{},driver.monotonic()+1)
     assert calls==['poll','poll']
+
+
+def test_old_api_graceful_shutdown_after_ten_seconds_is_still_proven(driver,monkeypatch):
+    clock=[0.0];checks=[]
+    monkeypatch.setattr(driver,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(driver,'sleep',lambda seconds:clock.__setitem__(0,clock[0]+seconds))
+    def parked(plan,requests):
+        checks.append(clock[0])
+        return clock[0]>=14.5
+    monkeypatch.setattr(driver,'parked',parked)
+    driver.wait_parked({'owners':{}},{})
+    assert 14.5<=clock[0]<15
+    assert any(t>10 for t in checks)
+
+
+def test_old_drain_still_fails_closed_at_bounded_deadline(driver,monkeypatch):
+    clock=[0.0]
+    monkeypatch.setattr(driver,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(driver,'sleep',lambda seconds:clock.__setitem__(0,clock[0]+seconds))
+    monkeypatch.setattr(driver,'parked',lambda *a:False)
+    with pytest.raises(driver.h.ResumeBlocked,match='OLD_DRAIN_TIMEOUT'):
+        driver.wait_parked({}, {})
+    assert 120<=clock[0]<121
