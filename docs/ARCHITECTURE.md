@@ -137,6 +137,10 @@ bootstrap 或 worker 已启用。当前生产状态与未完成验收见 `STATUS
 
 ## 新苏冰固定参数历史研究
 
+V2纯新包 `guiyi_quant.new_subing_v2` 复用不可变输入类型与行情适配器，独立维护阶段、分层账户与身份；
+逐prefix指标准备不缓存账户状态。新脚本只读重测并验证V1输入/执行事实哈希，既有结果库与页面区分版本和两档本金。
+V2合同见 [NEW_SUBING_STRATEGY_V2.md](NEW_SUBING_STRATEGY_V2.md)；V1公式与结果保持原样。
+
 `MarketDataService -> app.market_data.new_subing_research -> guiyi_quant.new_subing`
 提供同物理合约 lifecycle 指标前缀、completed 多周期决策与后续1m双向整数手研究模型。
 成本、限价与多空保证金来自独立冻结的 RQData facts，缺事实不回退。

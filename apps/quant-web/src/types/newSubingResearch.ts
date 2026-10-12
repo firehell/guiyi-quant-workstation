@@ -4,6 +4,8 @@ export interface NewSubingMetadata {
   scenario: string
   status: string
   strategy_code: string
+  initial_cash?: string
+  account_model_version?: string
   formula_version: string
   profile_id: string
   risk_profile_version: string
@@ -19,6 +21,9 @@ export interface NewSubingMetadata {
   oos_status: string
 }
 export interface NewSubingProfile {
+  strategy_code: string
+  formula_version?: string
+  account_model_version?: string | null
   profile_id: string
   product: string
   initial_cash: string

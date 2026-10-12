@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -42,13 +43,17 @@ def _read(run_id: str) -> dict:
 @router.get("/profiles")
 def profiles() -> dict:
     # Rule authority remains in the pure core; do not copy it into this API.
-    from guiyi_quant.new_subing import profile_payload
+    from guiyi_quant.new_subing import profile_payload as v1_payload
+    from guiyi_quant.new_subing_v2 import Profile as V2Profile, profile_payload as v2_payload
 
-    rules = profile_payload()
+    rulesets = [v1_payload(), v2_payload(V2Profile(initial_cash=Decimal("100000"))),
+                v2_payload(V2Profile(initial_cash=Decimal("1000000")))]
     return {"strategy_code": "new_subing_v1", "profiles": [
-        {"profile_id": str(rules["profile_id"]), "product": product,
-         "initial_cash": str(rules["initial_cash"]), "validation_status": "HISTORICAL_RESEARCH_ONLY", "rules": rules["rules"]}
-        for product in ("AL", "RB", "TA")
+        {"strategy_code": str(rules["strategy_code"]), "formula_version": str(rules["formula_version"]),
+         "profile_id": str(rules["profile_id"]), "product": product,
+         "initial_cash": str(rules["initial_cash"]), "validation_status": "HISTORICAL_RESEARCH_ONLY",
+         "account_model_version": rules.get("account_model_version"), "rules": rules["rules"]}
+        for rules in rulesets for product in ("AL", "RB", "TA")
     ], "case_parity": "PENDING", "oos_status": "NOT_PROVEN", "auto_order": False}
 
 
