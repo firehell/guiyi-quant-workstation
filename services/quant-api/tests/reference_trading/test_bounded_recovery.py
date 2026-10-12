@@ -61,12 +61,14 @@ def _exercise(engine=None, *, preactivation=False):
         assert session.get(ReferenceBatch, plan.checkpoint_batch_id).checkpoint_text == old_batch
         assert len(session.scalars(select(ReferenceActivationReceipt)).all()) == 2
     assert repo.forward_source_context(identity.stream_id)[5] == 'block'
+    assert service.consumed_calculation(plan) is None
     worker = build_forward_reference_worker(repository=repo, market_read=None, newow_reader=None,
         owner_segments=lambda *_: ('owner', 'calc'), expected_endpoints=lambda *args: (args[-1],),
         newow_capability_ready=lambda _: True, now=lambda: observed, enabled=True)
     worker.wake(identity.stream_id)
     worker.run_round()
     assert not worker.health().blocked
+    assert service.consumed_calculation(plan) is not None
     _, checkpoint = repo.load_checkpoint(identity.stream_id, revision)
     assert checkpoint.computed_through == endpoints[-1]
     from guiyi_quant.newow.product_adapters import seed_replay_state
