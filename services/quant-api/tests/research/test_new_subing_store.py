@@ -157,3 +157,25 @@ def test_fifo_parent_is_rejected_before_read(tmp_path):
     os.mkfifo(parent)
     with pytest.raises(ResultStoreError):
         list_results(parent / "nested")
+
+
+@pytest.mark.parametrize("field,value", [("account_return_pct", "0"), ("final_equity", "100000"), ("max_drawdown_pct", "0"), ("total_fees", "0"), ("annual_eligible", True)])
+def test_blocked_trace_cannot_claim_performance(tmp_path, field, value):
+    payload = packet()
+    payload["metadata"]["status"] = "EXECUTION_FACTS_MISSING"
+    payload["metadata"]["input_snapshot_hash"] = None
+    payload["metadata"]["execution_facts_hash"] = None
+    payload["summary"] = {"status": "EXECUTION_FACTS_MISSING", field: value}
+    with pytest.raises(ResultStoreError):
+        publish_result(tmp_path, payload)
+
+
+def test_blocked_run_identity_includes_typed_gap(tmp_path):
+    first = packet()
+    first["metadata"].update(status="DATA_INSUFFICIENT", input_snapshot_hash=None, execution_facts_hash=None)
+    first["summary"] = {"status": "DATA_INSUFFICIENT"}
+    first["diagnostics"] = {"gap": {"code": "DATASET_OR_PARTITION_MISSING", "contract": "AL2411"}}
+    second = {**first, "diagnostics": {"gap": {"code": "DATASET_OR_PARTITION_MISSING", "contract": "AL2412"}}}
+    first_id = publish_result(tmp_path, first)["metadata"]["run_id"]
+    second_id = publish_result(tmp_path, second)["metadata"]["run_id"]
+    assert first_id != second_id

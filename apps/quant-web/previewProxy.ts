@@ -36,7 +36,8 @@ export function previewTarget(
 ): string | null {
   if (method !== 'GET' || upgrade) return null
   const [path] = rawURL.split('?')
-  if (path && (candidatePaths.has(path) || /^\/api\/v1\/market\/[a-z]{1,8}\/subing\/reference$/.test(path))) {
+  if (path && (candidatePaths.has(path) || /^\/api\/v1\/market\/[a-z]{1,8}\/subing\/reference$/.test(path)
+    || /^\/api\/v1\/research\/new-subing\/(?:profiles|runs(?:\/[0-9a-f]{64}(?:\/(?:decisions|trades|equity))?)?)$/.test(path))) {
     return origin
   }
   if (rawURL === '/api/runtime/health' || rawURL === '/api/alerts/current-events?limit=30') {
@@ -78,6 +79,7 @@ export function candidatePreviewPlugin(origin = resolveCandidateOrigin()): Plugi
 export function candidatePreviewProxy(origin = resolveCandidateOrigin()): Record<string, ProxyOptions> {
   return {
     '^/api/(preview/identity|v1/market/)': { target: origin, ws: false },
+    '^/api/v1/research/new-subing/': { target: origin, ws: false },
     '^/api/(runtime/health|alerts/current-events)': { target: STATUS_ORIGIN, ws: false },
   }
 }

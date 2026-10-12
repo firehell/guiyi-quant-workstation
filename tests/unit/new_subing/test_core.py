@@ -5,11 +5,12 @@ from decimal import Decimal as D, getcontext, localcontext
 import pytest
 
 from guiyi_quant.paper import FeeSchedule
+from guiyi_quant.indicators.macd import macd_series
 from guiyi_quant.new_subing import (
     ExecutionBar, ExecutionFacts, Profile, StrategyBar, profile_payload, run_research,
 )
 from guiyi_quant.new_subing.account import ResearchAccount
-from guiyi_quant.new_subing.signals import Snapshot, divergence_events
+from guiyi_quant.new_subing.signals import Snapshot, build_snapshots, divergence_events
 
 
 TZ = timezone(timedelta(hours=8))
@@ -221,6 +222,16 @@ def test_completed_one_minute_stop_closes_at_later_open_with_gap_loss():
     assert D(result['trades'][0]['net_pnl']) < 0
 
 
+def test_full_close_cash_is_last_equity_and_drawdown_includes_gap_fee():
+    histories, execution = scenario_bars(stopped=True)
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    final = D(result['summary']['final_equity'])
+    assert D(result['equity'][-1]['equity']) == final
+    assert result['equity'][-1]['qty'] == 0
+    assert D(result['summary']['max_drawdown_pct']) >= (D('100000') - final) / D('1000')
+
+
 def test_two_percent_day_loss_clear_has_priority_over_hard_stop():
     histories, execution = scenario_bars(stopped=True)
     for i in range(150, len(histories['1m'])):
@@ -406,6 +417,26 @@ def test_divergence_waits_for_two_completed_right_bars():
     assert events[8] == (2, 6)
 
 
+def test_macd_projection_uses_shared_six_digit_indicator_values():
+    histories, _ = legal_add_scenario_bars()
+    bars = histories['5m']
+    snapshots = build_snapshots(bars)
+    shared = macd_series([float(b.close) for b in bars], 12, 26, 9,
+                         ema_seed_policy='sma_window', histogram_scale=2,
+                         round_digits=6)
+    ready = [(snapshot, dif, dea, histogram)
+             for snapshot, dif, dea, histogram in zip(
+                 snapshots, shared.dif.points, shared.dea.points,
+                 shared.histogram.points, strict=True)
+             if histogram.ready and histogram.valid]
+    assert ready
+    for snapshot, dif, dea, histogram in ready:
+        assert (snapshot.dif, snapshot.dea, snapshot.histogram) == \
+            (D(str(dif.value)), D(str(dea.value)), D(str(histogram.value)))
+        assert all(value == value.quantize(D('.000001'))
+                   for value in (snapshot.dif, snapshot.dea, snapshot.histogram))
+
+
 def test_owner_roll_with_position_interrupts_without_synthetic_exit():
     histories, execution = scenario_bars()
     later = bar(T0 + timedelta(minutes=172), contract='RB2509')
@@ -503,7 +534,7 @@ def test_single_lot_records_unsplittable_reduction_without_closing():
     assert not any(f['action'] == 'CLOSE' for f in result['fills'])
 
 
-def test_add_waits_three_closes_after_rebreakout_and_uses_first_fill_cap():
+def add_scenario_bars():
     histories, execution = scenario_bars()
     five = histories['5m']
     pattern = {28: D('103'), 29: D('102'), 30: D('104'),
@@ -531,6 +562,25 @@ def test_add_waits_three_closes_after_rebreakout_and_uses_first_fill_cap():
         price = D('103') if i < 150 else D('102') if i < 155 else D('104')
         one[i] = replace(b, open=price, high=price, low=price, close=price)
     execution = [ExecutionBar(b, facts()) for b in one]
+    return histories, execution
+
+
+def legal_add_scenario_bars():
+    histories, execution = add_scenario_bars()
+    histories['5m'] = [replace(b, low=D('96')) if i < 28 else b
+                       for i, b in enumerate(histories['5m'])]
+    previous = histories['15m'][-1]
+    for minutes, price in ((150, D('98.0')), (165, D('98.1'))):
+        end = T0 + timedelta(minutes=minutes)
+        histories['15m'].append(replace(previous, bar_end=end, confirmed_at=end,
+                                        open=price, high=price + D('.5'),
+                                        low=price - D('.5'), close=price,
+                                        source_identity=f'15m-{minutes}'))
+    return histories, execution
+
+
+def test_add_waits_three_closes_after_rebreakout_and_uses_first_fill_cap():
+    histories, execution = legal_add_scenario_bars()
     result = run_research(histories, execution,
                           since=date(2025, 1, 2), through=date(2025, 1, 2))
     adds = [d for d in result['decisions'] if d['action'] == 'ADD']
@@ -539,3 +589,165 @@ def test_add_waits_three_closes_after_rebreakout_and_uses_first_fill_cap():
     opening = next(f for f in result['fills'] if f['action'] == 'OPEN')
     add_fill = next(f for f in result['fills'] if f['action'] == 'OPEN' and f is not opening)
     assert 1 <= add_fill['qty'] <= opening['qty'] * 2 // 3
+
+
+@pytest.mark.parametrize('invalid', ['stale_15m', 'far_ma'])
+def test_add_cannot_bypass_stale_fifteen_minute_or_far_ma_constraint(invalid):
+    histories, execution = legal_add_scenario_bars()
+    if invalid == 'stale_15m':
+        histories['15m'] = histories['15m'][:-2]
+    else:
+        histories['5m'] = [replace(b, low=b.close - D('.5')) if i < 28 else b
+                           for i, b in enumerate(histories['5m'])]
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    assert not any(d['action'] in ('ADD_SETUP', 'ADD') for d in result['decisions'])
+
+
+def test_add_third_confirmation_rechecks_ma_distance():
+    histories, execution = legal_add_scenario_bars()
+    third = histories['5m'][33]
+    histories['5m'][33] = replace(third, high=D('108.5'), close=D('108'))
+    execution = [ExecutionBar(e.bar, replace(e.facts, long_margin_ratio=D('.3')))
+                 for e in execution]
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    assert any(d['action'] == 'ADD_SETUP' for d in result['decisions'])
+    assert any(d['action'] == 'SETUP_INVALIDATED' and d['reason'] == 'ADD_CONFIRMATION_FAILED'
+               and d['at'] == (T0 + timedelta(minutes=170)).isoformat()
+               for d in result['decisions'])
+    assert not any(d['action'] == 'ADD' for d in result['decisions'])
+
+
+def test_add_confirmation_invalidates_when_latest_fifteen_minute_direction_disagrees():
+    histories, execution = legal_add_scenario_bars()
+    latest = histories['15m'][-1]
+    histories['15m'][-1] = replace(latest, open=D('95'), high=D('95.5'),
+                                    low=D('94.5'), close=D('95'))
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    assert any(d['action'] == 'ADD_SETUP' for d in result['decisions'])
+    assert any(d['action'] == 'SETUP_INVALIDATED' and d['reason'] == 'ADD_CONFIRMATION_FAILED'
+               for d in result['decisions'])
+    assert not any(d['action'] == 'ADD' for d in result['decisions'])
+
+
+def test_completed_stop_at_next_open_cancels_pending_add_before_execution():
+    histories, execution = legal_add_scenario_bars()
+    prior_close = histories['1m'][170]
+    stopped = replace(prior_close, open=D('104'), high=D('104'),
+                      low=D('98'), close=D('98'))
+    histories['1m'][170] = stopped
+    execution[170] = ExecutionBar(stopped, facts())
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    initial_fill = next(f for f in result['fills'] if f['action'] == 'OPEN')
+    assert any(d['action'] == 'ADD' for d in result['decisions'])
+    assert any(d['action'] == 'CLEAR' and d['reason'] == 'HARD_STOP'
+               for d in result['decisions'])
+    assert len([f for f in result['fills'] if f['action'] == 'OPEN']) == 1
+    closing = next(f for f in result['fills'] if f['action'] == 'CLOSE')
+    assert closing['qty'] == initial_fill['qty']
+    assert datetime.fromisoformat(closing['at']) > stopped.bar_end
+
+
+def test_old_day_five_minute_close_is_processed_before_new_day_open_at_same_time():
+    histories, execution = scenario_bars(stopped=True)
+    boundary = T0 + timedelta(minutes=160)
+    histories['5m'] = [b for b in histories['5m'] if b.bar_end <= boundary]
+    for i in range(160, len(execution)):
+        old = execution[i].bar
+        new = replace(old, trading_day=date(2025, 1, 3),
+                      session_open_at=boundary,
+                      session_close_at=T0 + timedelta(hours=4))
+        histories['1m'][i] = new
+        execution[i] = ExecutionBar(new, facts(date(2025, 1, 3)))
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 3))
+    assert result['summary']['status'] == 'COMPLETED'
+    assert not any(d['reason'] == 'EXECUTION_FACTS_MISSING' for d in result['decisions'])
+    assert any(d['at'] == boundary.isoformat() for d in result['decisions'])
+
+
+def test_new_day_loss_uses_previous_held_contract_mark_before_first_new_close():
+    histories, execution = scenario_bars()
+    next_open = T0 + timedelta(days=1)
+    for minute in (1, 2, 3):
+        end = next_open + timedelta(minutes=minute)
+        low = D('70')
+        next_bar = StrategyBar('RB', 'RB2505', '1m', end, date(2025, 1, 3),
+                               low, low, low, low, D('100'), D('1000'),
+                               f'next-day-{minute}', end,
+                               session_open_at=next_open,
+                               session_close_at=next_open + timedelta(hours=4))
+        histories['1m'].append(next_bar)
+        execution.append(ExecutionBar(next_bar,
+                                      replace(facts(date(2025, 1, 3)), limit_down=D('50'))))
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 3))
+    assert any(d['action'] == 'CLEAR' and d['reason'] == 'DAILY_2_PERCENT_HALT' and
+               d['at'] == (next_open + timedelta(minutes=1)).isoformat()
+               for d in result['decisions'])
+
+
+def test_old_owner_close_at_new_owner_start_keeps_old_contract_facts():
+    histories, execution = scenario_bars()
+    boundary = T0 + timedelta(minutes=170)
+    template = histories['5m'][-1]
+    for minutes, price in ((165, D('101')), (170, D('90'))):
+        end = T0 + timedelta(minutes=minutes)
+        histories['5m'].append(replace(template, bar_end=end, confirmed_at=end,
+                                       open=price, high=price + D('.5'),
+                                       low=price - D('.5'), close=price,
+                                       source_identity=f'owner-boundary-{minutes}'))
+    histories['1m'] = histories['1m'][:170]
+    execution = execution[:170]
+    new_owner = replace(execution[-1].bar, physical_contract='RB2509',
+                        bar_end=boundary + timedelta(minutes=1),
+                        confirmed_at=boundary + timedelta(minutes=1),
+                        source_identity='new-owner-start')
+    histories['1m'].append(new_owner)
+    execution.append(ExecutionBar(new_owner, facts(contract='RB2509')))
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    assert result['summary']['status'] == 'ROLLOVER_INTERRUPTED'
+    assert any(d['action'] == 'CLEAR' and d['at'] == boundary.isoformat() and
+               d['physical_contract'] == 'RB2505' for d in result['decisions'])
+    assert not any(d['reason'] == 'EXECUTION_FACTS_MISSING' for d in result['decisions'])
+
+
+def test_add_accepts_older_held_pullback_without_hidden_five_bar_window():
+    histories, execution = legal_add_scenario_bars()
+    five = histories['5m']
+    for i in range(30, 34):
+        five[i] = replace(five[i], volume=D('100'), open_interest=D('1000'))
+    for i in range(34, 43):
+        end = T0 + timedelta(minutes=(i + 1) * 5)
+        price = D('105') if i >= 39 else D('104')
+        five.append(StrategyBar('RB', 'RB2505', '5m', end, end.date(), price,
+                                price + D('.5'), price - D('.5'), price,
+                                D('400') if i == 39 else D('100'),
+                                D('1010') if i >= 39 else D('1000'),
+                                f'5m-{i}', end, session_open_at=T0,
+                                session_close_at=T0 + timedelta(hours=4)))
+    for i in range(176, 217):
+        end = T0 + timedelta(minutes=i + 1)
+        price = D('105') if i >= 200 else D('104')
+        one = StrategyBar('RB', 'RB2505', '1m', end, end.date(), price,
+                          price, price, price, D('100'), D('1000'), f'1m-{i}', end,
+                          session_open_at=T0, session_close_at=T0 + timedelta(hours=4))
+        histories['1m'].append(one)
+        execution.append(ExecutionBar(one, facts()))
+    previous = histories['15m'][-1]
+    for minutes, price in ((180, D('98.2')), (195, D('98.3')), (210, D('98.4'))):
+        end = T0 + timedelta(minutes=minutes)
+        histories['15m'].append(replace(previous, bar_end=end, confirmed_at=end,
+                                        open=price, high=price + D('.5'),
+                                        low=price - D('.5'), close=price,
+                                        source_identity=f'15m-{minutes}'))
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    assert any(d['action'] == 'ADD_SETUP' and d['at'] ==
+               (T0 + timedelta(minutes=200)).isoformat() for d in result['decisions'])
+    assert any(d['action'] == 'ADD' and d['at'] ==
+               (T0 + timedelta(minutes=215)).isoformat() for d in result['decisions'])

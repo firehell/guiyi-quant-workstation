@@ -144,8 +144,11 @@ def _validate_packet(payload: dict[str, Any], *, published: bool) -> None:
             raise ResultStoreError("RESULT_SCHEMA_INVALID")
     if "annual_eligible" in summary and type(summary["annual_eligible"]) is not bool:
         raise ResultStoreError("RESULT_SCHEMA_INVALID")
-    if meta["status"] in BLOCKED and (payload["decisions"] or payload["trades"] or payload["equity"]):
-        raise ResultStoreError("RESULT_SCHEMA_INVALID")
+    if meta["status"] in BLOCKED:
+        if any(summary.get(key) is not None for key in ("final_equity", "account_return_pct", "max_drawdown_pct", "total_fees")):
+            raise ResultStoreError("RESULT_SCHEMA_INVALID")
+        if summary.get("annual_eligible", False) is not False:
+            raise ResultStoreError("RESULT_SCHEMA_INVALID")
     _json_bytes(payload)
 
 
@@ -156,7 +159,7 @@ def _run_id(payload: dict[str, Any]) -> str:
     identity: dict[str, Any] = {key: metadata[key] for key in sorted(REQUIRED_METADATA)}
     if metadata["status"] in BLOCKED:
         diagnostic = payload["diagnostics"]
-        identity["gap"] = {key: diagnostic.get(key) for key in ("reason", "stage", "context", "status") if key in diagnostic}
+        identity["gap"] = {key: diagnostic.get(key) for key in ("gap", "reason", "stage", "context", "status") if key in diagnostic}
     return hashlib.sha256(_json_bytes(identity)).hexdigest()
 
 

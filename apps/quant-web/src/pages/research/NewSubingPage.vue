@@ -53,6 +53,7 @@ async function selectRun() {
   const token = selectionToken(run?.run_id ?? '', current)
   detail.value = null
   pages.value = { decisions: null, trades: null, equity: null }
+  pageLoading.value = false
   error.value = null
   if (!run) { loading.value = false; return }
   loading.value = true
@@ -107,8 +108,8 @@ onMounted(loadCatalog)
       <section class="card intro">
         <h3>规则与来源</h3>
         <p>日线定方向，15m 确认，5m 决策；满足基础约束、五项至少三票及新触发后建立 setup，连续三根 5m 保持后确认。完成 1m 收盘用于退出检测，模型成交只在后续可交易 1m 开盘。</p>
-        <p>规则来源：苏冰《交易从此开始》公开文章；MA21、三票、统一净仓及执行细节为归一补充或用户选择。页面收益仅为模型历史回放，不代表苏冰本人收益、Paper、Shadow 或实盘。</p>
-        <p class="sources">原文：<a href="https://app.notion.com/p/3705b8452a1a80509c01fd074770af4b" target="_blank" rel="noopener noreferrer">交易系统</a> · <a href="https://app.notion.com/p/3715b8452a1a8041a21aea76318a18ec" target="_blank" rel="noopener noreferrer">不同周期</a> · <a href="https://app.notion.com/p/3715b8452a1a8045b1b7c378482ec5bb" target="_blank" rel="noopener noreferrer">周期选择</a> · <a href="https://app.notion.com/p/3715b8452a1a806bb63df413405c30e3" target="_blank" rel="noopener noreferrer">原则</a></p>
+        <p>规则来源：用户提供的苏冰《交易从此开始》Notion 笔记原文；MA21、三票、统一净仓及执行细节为归一补充或用户选择。原案例逐案一致性尚未验证。页面收益仅为模型历史回放，不代表苏冰本人收益、Paper、Shadow 或实盘。</p>
+        <p class="sources">笔记原文：<a href="https://app.notion.com/p/3705b8452a1a80509c01fd074770af4b" target="_blank" rel="noopener noreferrer">交易系统</a> · <a href="https://app.notion.com/p/3715b8452a1a8041a21aea76318a18ec" target="_blank" rel="noopener noreferrer">不同周期</a> · <a href="https://app.notion.com/p/3715b8452a1a8045b1b7c378482ec5bb" target="_blank" rel="noopener noreferrer">周期选择</a> · <a href="https://app.notion.com/p/3715b8452a1a806bb63df413405c30e3" target="_blank" rel="noopener noreferrer">原则</a></p>
         <details v-if="ruleProfile"><summary>查看 {{ selectedProduct }} 固定 Profile 原始规则</summary><pre>{{ JSON.stringify(ruleProfile.rules, null, 2) }}</pre></details>
         <p v-else class="muted">Profile 规则暂不可读取。</p>
       </section>

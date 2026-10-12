@@ -40,13 +40,17 @@ PREVIEW_PATHS = frozenset(
 _SUBING_REFERENCE_PATH = re.compile(
     r"^/api/v1/market/[a-z]{1,8}/subing/reference$"
 )
+_NEW_SUBING_RESEARCH_PATH = re.compile(
+    r"^/api/v1/research/new-subing/(?:profiles|runs(?:/[0-9a-f]{64}(?:/(?:decisions|trades|equity))?)?)$"
+)
 _LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[012]$")
 DEFAULT_CANDIDATE_ORIGIN = "http://127.0.0.1:8010"
 DEFAULT_STATUS_ORIGIN = "http://127.0.0.1:8000"
 
 
 def _preview_path_allowed(path: str) -> bool:
-    return path in PREVIEW_PATHS or _SUBING_REFERENCE_PATH.fullmatch(path) is not None
+    return (path in PREVIEW_PATHS or _SUBING_REFERENCE_PATH.fullmatch(path) is not None
+            or _NEW_SUBING_RESEARCH_PATH.fullmatch(path) is not None)
 
 
 def _instant(value: str | None) -> datetime:

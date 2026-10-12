@@ -362,6 +362,11 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
         fill['observed_at'] = bar.confirmed_at.isoformat()
         fill['source_bar_end'] = bar.bar_end.isoformat()
         all_fills.append(fill)
+        fill_at = bar.bar_end - timedelta(minutes=1)
+        equity_rows.append({'at': fill_at.isoformat(),
+                            'equity': str(account.equity(price, facts)),
+                            'cash': str(account.cash), 'qty': account.qty,
+                            'physical_contract': account.contract or bar.physical_contract})
         pending = None
 
     def process_5m(s: Snapshot, index: int) -> None:
@@ -392,6 +397,14 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
             ready_observation = True
         daily_side = direction(daily) if daily else 0
         confirm_side = direction(confirm) if confirm else 0
+        direction_ready = (daily_side != 0 and confirm_side == daily_side and
+                           direction(s) == daily_side)
+        indicator_ready = (s.atr is not None and s.atr > 0 and s.ma is not None and
+                           not s.chop and
+                           abs(bar.close - s.ma) / s.atr <= profile.max_ma_distance_atr)
+        opening_ready = (bar.session_open_at is not None and
+                         completed_session_minutes(bar, at) >= profile.opening_minutes)
+        basic_ready = direction_ready and indicator_ready and opening_ready
         # Owner and temporal guards are evaluated at the completed 5m observation.
         if account.qty:
             side = account.side
@@ -430,12 +443,12 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
                 queue(at, 'REDUCE', side, reasons[0], {'all_reasons': reasons})
                 add_setup = None
                 return
-            if completed_session_minutes(bar, at) < profile.opening_minutes:
+            if not opening_ready:
                 add_setup = None
                 return
             if add_setup:
                 level = D(str(add_setup['level']))
-                if bar.session_open_at != add_setup['session_open_at'] or \
+                if not basic_ready or bar.session_open_at != add_setup['session_open_at'] or \
                    (bar.close - level) * side <= 0 or s.macd_cross == -side or s.chop or \
                    net_profit <= 0 or reduced or pending:
                     record(at, 'SETUP_INVALIDATED', side, 'ADD_CONFIRMATION_FAILED', account.qty)
@@ -448,13 +461,13 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
                            'volume': str(add_setup['volume']), 'oi_growth': str(add_setup['oi_growth'])})
                     add_setup = None
                 return
-            if not pending and not reduced and adds < profile.max_adds and net_profit > 0 and frozen_level is not None and \
+            if basic_ready and not pending and not reduced and adds < profile.max_adds and net_profit > 0 and frozen_level is not None and \
                (bar.close - frozen_level) * side > 0 and s.breakout == side and s.volume_spike and \
                not s.chop and index > 0 and bar.open_interest is not None:
                 prev = local['5m'][index-1].bar.open_interest
                 if prev is not None and prev > 0 and (bar.open_interest - prev) / prev >= profile.add_oi_growth:
                     # A pullback must follow the preceding breakout but hold the frozen level.
-                    begin = max(entry_5m_index + 1, index - 5)
+                    begin = entry_5m_index + 1
                     pull_indices = range(begin, index)
                     pulled = any((local['5m'][k].bar.close - local['5m'][k-1].bar.close) * side < 0
                                  for k in pull_indices)
@@ -475,11 +488,11 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
         if account.daily_halt or account.closed_loss_streak >= profile.consecutive_losses_halt:
             reject(at, 'OPENING_HALT')
             return
-        if daily_side == 0 or confirm_side == 0 or daily_side != confirm_side or direction(s) != daily_side:
+        if not direction_ready:
             reject(at, 'MULTI_TIMEFRAME_DIRECTION_UNREADY')
             setup = None
             return
-        if s.atr is None or s.atr <= 0 or s.ma is None or s.chop or abs(bar.close - s.ma) / s.atr > profile.max_ma_distance_atr:
+        if not indicator_ready:
             reject(at, 'BASE_CONSTRAINT')
             setup = None
             return
@@ -487,7 +500,7 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
             reject(at, 'SESSION_FACT_MISSING')
             setup = None
             return
-        if completed_session_minutes(bar, at) < profile.opening_minutes:
+        if not opening_ready:
             reject(at, 'OPENING_20_MINUTES', daily_side)
             setup = None
             return
@@ -501,7 +514,9 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
             if cast(int, setup['held']) == profile.confirmation_bars:
                 frozen_level = level
                 entry_atr = s.atr
-                stop = min(s.ma, level) - current_facts.tick_size if daily_side > 0 else max(s.ma, level) + current_facts.tick_size
+                confirmed_ma = cast(D, s.ma)
+                stop = (min(confirmed_ma, level) - current_facts.tick_size if daily_side > 0 else
+                        max(confirmed_ma, level) + current_facts.tick_size)
                 if (bar.close - stop) * daily_side <= 0:
                     reject(at, 'INVALID_STOP_SIDE', daily_side)
                 else:
@@ -526,15 +541,15 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
     events: list[tuple[datetime, int, str, object]] = []
     for e in execution_bars:
         start = e.bar.bar_end - timedelta(minutes=1)
-        events.append((start, 0, 'EXECUTE', e))
-        events.append((e.bar.confirmed_at, 1, 'ONE_MINUTE_CLOSE', e))
+        events.append((start, 3, 'EXECUTE', e))
+        events.append((e.bar.confirmed_at, 0, 'ONE_MINUTE_CLOSE', e))
     for contract, frequencies in snapshots.items():
         for index, s in enumerate(frequencies.get('5m', [])):
             if s.bar.observation_eligible and since <= s.bar.trading_day <= through:
-                events.append((s.bar.confirmed_at, 2, 'FIVE_MINUTE_CLOSE', (contract, index, s)))
+                events.append((s.bar.confirmed_at, 1, 'FIVE_MINUTE_CLOSE', (contract, index, s)))
         for s in frequencies.get('1d', []):
             if s.bar.observation_eligible and since <= s.bar.trading_day <= through:
-                events.append((s.bar.confirmed_at, 3, 'DAILY_CLOSE', (contract, s)))
+                events.append((s.bar.confirmed_at, 2, 'DAILY_CLOSE', (contract, s)))
     events.sort(key=lambda x: (x[0], x[1]))
 
     for at, _, kind, payload in events:
@@ -619,6 +634,12 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
               'DATA_INSUFFICIENT' if not ready_observation else
               'PENDING_UNFILLED' if pending else
               'COMPLETED')
+    if status == 'COMPLETED' and not account.qty:
+        terminal_at = execution_bars[-1].bar.confirmed_at
+        if not equity_rows or datetime.fromisoformat(str(equity_rows[-1]['at'])) < terminal_at:
+            equity_rows.append({'at': terminal_at.isoformat(), 'equity': str(account.cash),
+                                'cash': str(account.cash), 'qty': 0,
+                                'physical_contract': current_contract})
     if status == 'COMPLETED' and account.qty:
         last_equity = str(equity_rows[-1]['equity']) if equity_rows else None
     else:
