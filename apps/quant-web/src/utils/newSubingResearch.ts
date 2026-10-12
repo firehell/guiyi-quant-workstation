@@ -1,9 +1,21 @@
 export type ResearchSummary = Record<string, unknown> & { status: string }
 
+const DECIMAL_TEXT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+const ZERO_TEXT = /^[+-]?0*(?:\.0*)?(?:[eE][+-]?\d+)?$/
+
 export function metricText(summary: ResearchSummary | null, key: string, suffix = ''): string {
   if (!summary || summary.status !== 'COMPLETED') return '不可评价'
   const value = summary[key]
-  return typeof value === 'string' || typeof value === 'number' ? `${value}${suffix}` : '未提供'
+  if (typeof value !== 'string' && typeof value !== 'number') return '未提供'
+  const original = String(value)
+  const digits = key === 'account_return_pct' || key === 'max_drawdown_pct' ? 3
+    : key === 'final_equity' || key === 'initial_cash' || key === 'total_fees' ? 2 : null
+  if (digits === null || !DECIMAL_TEXT.test(original)) return `${original}${suffix}`
+  const numeric = Number(original)
+  const safe = Number.isFinite(numeric) && Math.abs(numeric) <= Number.MAX_SAFE_INTEGER / (10 ** digits)
+    && (numeric !== 0 || ZERO_TEXT.test(original))
+  if (!safe) return `${original}${suffix}`
+  return `${new Intl.NumberFormat('en-US', { useGrouping: false, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(numeric)}${suffix}`
 }
 
 export function runStateText(status: string): string {

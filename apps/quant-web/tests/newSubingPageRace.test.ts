@@ -68,3 +68,20 @@ test('switching run during deferred pagination unlocks new run and discards old 
   assert.equal(state.pages.decisions.items[0].reason, 'RB-NEXT')
   app.unmount()
 })
+
+test('decision action selector offers core trace actions without BUILD', () => {
+  const source = readFileSync(new URL('../src/pages/research/NewSubingPage.vue', import.meta.url), 'utf8')
+  const descriptor = parse(source).descriptor
+  const walk = (node: any): any[] => [node, ...(node.children ?? []).flatMap(walk)]
+  const nodes = walk(descriptor.template!.ast)
+  const selector = nodes.find(node => node.tag === 'select' && node.props?.some((prop: any) => prop.name === 'model' && prop.exp?.content === 'actionFilter'))
+  assert.ok(selector, 'actionFilter select is present')
+  const options = selector.children.map((option: any) => option.children.map((child: any) => child.content).join(''))
+  assert.deepEqual(options, ['ALL', 'SETUP', 'ADD_SETUP', 'SETUP_INVALIDATED', 'OPEN', 'ADD', 'REDUCE', 'REDUCE_SKIPPED', 'CLEAR', 'CANCEL', 'REJECT', 'INTERRUPTED'])
+  assert.ok(!options.includes('BUILD'))
+})
+
+test('metric cards wrap exact fallback values rather than clipping them', () => {
+  const source = readFileSync(new URL('../src/pages/research/NewSubingPage.vue', import.meta.url), 'utf8')
+  assert.match(source, /\.metrics strong\{[^}]*overflow-wrap:anywhere/)
+})
