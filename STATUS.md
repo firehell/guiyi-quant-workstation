@@ -1,26 +1,36 @@
 # 当前状态
 
 更新：2026-10-13。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
-下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
+下文保留的旧候选与旧版本运行检查点均按历史证据阅读，不作为当前状态或待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## v1.15.4 数据运行恢复补丁候选（尚未发布/切换）
+## 数据完整性修复完成；v1.15.5/gen18 已运行并独立读回
 
-10/12自然盘后passed，当天operational60七周期420组独立读回完整。JD2612生命周期缺口经受控维护补齐：
-1m42075、5m8415、15m2805、30m1496、60m935、D1 187，原当日Bar逐字段保持。
-Newow日线消费者独立复查180/180，无失败；原自然盘后177/180记录不改写。
-10/13权威Calendar/Session/rank1均齐；sm新主力SM2701原七周期完全缺失，已单次维护70分区/30真实请求，
-52063根Bar、质量0、剩余缺口0；唯一MDS七周期物理前缀与12个现役profile输入独立通过。
+10/12自然盘后passed，operational60七周期420组、27,145个预期端点独立读回通过。
+JD2612生命周期缺口已补齐并保护原当日Bar；Newow日线消费者180/180复查通过，原自然177/180记录不改写。
+10/13 Calendar/Session/rank1均齐；新主力SM2701七周期70分区/52,063 Bar修复并独立读回，剩余缺口0，12个现役profile输入完整。
 
-候选只在v1.15.3上叠加Decimal幂等CAS、durable封套消费、精确观察中断和排它恢复入口，
-不夹带develop未部署的研究功能。Live150、Reference/恢复控制器全链114、CLI/工程40 passed；Web类型/build/topology、
-Mypy、Ruff、OpenSpec11/11、secret0、diff及独立Review通过。
-当前正式绑定仍v1.15.3/gen16；新版本仅RELEASE_CANDIDATE，尚未发布、投影恢复或Runtime切换。
-待旧日source排空、Reference精确恢复、13日过去夜盘有界中断与真实行情投影补齐、跨日握手及新自然观察读回；
-旧失败、原journal和receipt保留，标记中断不等于补造旧观察。
-12个普通日线Alert键涉及PRICE_UNAVAILABLE/不支持的source-quality分类，不能伪造正常价格。
-owner明确此次只保证数据完整，不验收实际收件；不补发过期信号，不改公式、Scope或账户执行。
-证据：output/after-market-normalization-20261012/；来源说明见docs/releases/v1.15.4.md。
+v1.15.4@b1c1b182eff58dee063dd7909339cf5dccf50722/gen17已完成受控恢复及独立运行读回。
+13,500条原Source保留，旧日Completed正常追至17,880条，Live/Alert/Reference三个旧游标均到真实尾部。
+45个夜盘品种过去完整前缀经45次真实RQData恢复、逐品种独立读回通过（1m6,990、5m1,398、15m466、30m233、60m118）；
+修复投影不冒充自然观察，不写Canonical或Source/Completed，不推进游标、不补发通知。
+原180条停机中断及ag/au/sc实际02:30追加12条均提交消费，旧receipt保持；当日60真实合约订阅与官方NEW_DAY登记独立验收通过。
+原stop-install未知attempt不改写，新受控续接已完成；原自然盘后状态、旧日志、原始时间和发送事实保留。
+
+永久修复包含Decimal幂等、durable消费及精确中断，以及重启恢复权威Session、持锁Reference验收和producer闭市订阅/NEW_DAY初始化。
+v1.15.5已通过PR #446合入main、annotated tag及GitHub Release发布，精确提交dc32c020d328ab81d4d65a959603f4ab66965f52；
+候选81项定向测试通过，正式发布树39项复验通过，Web类型/build/topology、Mypy/Ruff、secret及独立Review通过。
+精确闭市预检通过，六旧服务真实drain、十旧标签/PID退出；v1.15.5十个正式绑定已一次CAS切至gen18。
+六新服务bootstrap已真实提交；启动验收的旧状态及首健康轮后台线程启动顺序问题经真实Worker组合测试定位。
+原start及首续接unknown字节保留；新独立续接仅取消精确停驻请求、未重复bootstrap，实际committed且独立readback通过。
+正式六服务均同PID/gen18恢复，Live/Feed新鲜60品种心跳通过，Reference两线程存活且blocked0，四既有Calendar已注册idle。
+原Source/Completed/三个游标、60订阅、receipt、Scope及配置前像不变。切换工具28项、真实冷启动续接15项验证通过。
+新版本首根自然completed观察仍待10/13开盘发生，不能把修复/运行读回称为自然业务RUNTIME_READY。
+
+12个普通日线Alert输入拒绝（4 PRICE_UNAVAILABLE、8不支持的source-quality分类）保留，不制造正常价格或改变公式/Scope。
+owner此次只保证数据完整，不验收实际收件；不补发过期信号，不改账户执行。
+证据：output/after-market-normalization-20261012/；实施边界见docs/tasks/runtime-data-recovery-20261012.md，发布说明见docs/releases/v1.15.5.md。
+
 ## 新苏冰固定参数研究版：工程与历史回放验收完成，未晋升
 
 新增独立 `new_subing_v1`，规则见 [策略合同](docs/NEW_SUBING_STRATEGY.md)，
@@ -58,9 +68,9 @@ CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE，未进入Paper持续运行、S
 不连接SimNow、不启用Shadow/自动订单、不发布或切换Runtime。
 下一最小步骤：冻结60m测试2研究身份，在未参与筛选的数据上验证；本次不自动晋升。
 
-## v1.15.3/gen16 正式运行副本已切换并独立回读通过
+## 历史：v1.15.3/gen16 运行检查点（已由 v1.15.5/gen18 替代）
 
-2026-10-11 owner明确交办切换到v1.15.3。十服务绑定、磁盘plist和正式运行根现为
+2026-10-11 owner明确交办切换到v1.15.3。当时十服务绑定、磁盘plist和正式运行根为
 `.worktrees/release-v1.15.3`，精确commit **c28438d3d7ad6d6c66272027996f4a25e2facdfe**，generation16。
 单次gen16恢复执行成功：六常驻服务通过同轮当前ready与30秒freshness检查，四定时任务恢复enabled-idle；
 API8000报告1.15.3、Web5173返回200。未改变Scope、策略动作、参考收益、通知策略、历史资产或账户执行。
@@ -77,7 +87,7 @@ gen13–15的失败/未知原记录逐字节保留，未重试原attempt；gen16
 旧v1.15.1发布树在两轮精确引用扫描一致、无binding/plist/loaded/进程引用后，以non-force
 `git worktree remove`清理；保留tag、历史与运行证据，可从v1.15.1重建。
 
-整体Runtime health仍degraded：保留的盘后failure、weekly audit missed、Alert degraded及log-rotate
+当时整体Runtime health为degraded：保留的盘后failure、weekly audit missed、Alert degraded及log-rotate
 自然identity未产生；不为消除历史状态主动运行定时任务。60品种当前休市，首根自然completed Bar、
 策略事件和收件人送达验收仍PENDING，**不声明RUNTIME_READY**。
 
