@@ -1,8 +1,23 @@
 # 当前状态
 
-更新：2026-10-11。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-12。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
+
+## v1.15.4 数据运行恢复补丁候选（尚未发布/切换）
+
+10/12自然盘后passed，当天operational60七周期420组独立读回完整。JD2612生命周期缺口经受控维护补齐：
+1m42075、5m8415、15m2805、30m1496、60m935、D1 187，原当日Bar逐字段保持。
+Newow日线消费者独立复查180/180，无失败；原自然盘后177/180记录不改写。
+
+候选只在v1.15.3上叠加Decimal幂等CAS、durable封套消费、精确观察中断和排它恢复入口，
+不夹带develop未部署的研究功能。Live150、Reference89、CLI/工程57 passed；Web类型/build/topology、
+Mypy、Ruff、OpenSpec11/11、secret0、diff及独立Review通过。
+当前正式绑定仍v1.15.3/gen16；新版本仅RELEASE_CANDIDATE，尚未发布、投影恢复或Runtime切换。
+待旧日source排空、Reference精确恢复、跨日握手及新自然观察读回；旧失败、原journal和receipt保留。
+12个普通日线Alert键涉及PRICE_UNAVAILABLE/不支持的source-quality分类，不能伪造正常价格。
+owner明确此次只保证数据完整，不验收实际收件；不补发过期信号，不改公式、Scope或账户执行。
+证据：output/after-market-normalization-20261012/；来源说明见docs/releases/v1.15.4.md。
 
 ## v1.15.2 已发布 develop 全部内容，Runtime 仍为 v1.15.1/gen12
 
