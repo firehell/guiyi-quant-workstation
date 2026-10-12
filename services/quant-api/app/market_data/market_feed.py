@@ -240,6 +240,30 @@ class DurableLiveMarketService(LiveMarketService):
         self.source_provider = source_provider
         self.completed_stream = ObservationStream(self._store._redis, kind='completed')
         self._halted: str | None = None
+        self._durable_session_day: date | None = None
+
+    def _restore_frozen_day(self, trading_day: date) -> str | None:
+        failure = super()._restore_frozen_day(trading_day)
+        if failure or self._durable_session_day == trading_day:
+            return failure
+        if self._coverage_session_source is not None:
+            # Restarted journal consumers have not observed the old Session.
+            # Load its existing Calendar/Session authority before accepting a
+            # final raw bar in the unchanged Session-end arrival grace.
+            restored = {}
+            try:
+                for symbol in self._contracts:
+                    windows = self._coverage_session_source(symbol, trading_day)
+                    if not windows or tuple(sorted(windows, key=lambda w: w.start)) != windows:
+                        raise ValueError("LIVE_SESSION_AUTHORITY_INVALID")
+                    if any(left.end > right.start for left, right in zip(windows, windows[1:])):
+                        raise ValueError("LIVE_SESSION_AUTHORITY_INVALID")
+                    restored[(symbol, trading_day)] = windows
+            except Exception:
+                return "LIVE_SESSION_AUTHORITY_UNAVAILABLE"
+            self._known_sessions.update(restored)
+        self._durable_session_day = trading_day
+        return None
 
     def poll(self, now: datetime) -> str | None:
         if self._halted:
