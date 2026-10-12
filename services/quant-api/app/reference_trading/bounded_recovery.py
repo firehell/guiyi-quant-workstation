@@ -133,6 +133,25 @@ class BoundedForwardRecovery:
                 raise RepositoryConflict("RECOVERY_READBACK_CONFLICT")
             return receipt.receipt_id, capture.batch_id
 
+    def consumed_calculation(self, plan):
+        """Prove the exact gap capture is consumed by its committed calculation."""
+        with self._factory() as session:
+            capture = session.scalar(select(ReferenceBatch).where(
+                ReferenceBatch.stream_id == plan.capture.stream_id,
+                ReferenceBatch.revision_id == plan.capture.revision_id,
+                ReferenceBatch.batch_key == plan.capture.batch_key))
+            if capture is None or capture.consumed_by_batch_id is None:
+                return None
+            calculation = session.get(ReferenceBatch, capture.consumed_by_batch_id)
+            proof = calculation.source_evidence.get("forward_capture_v1", {}) if calculation else {}
+            if (capture.payload_hash != plan.capture.capture_hash or calculation is None
+                    or calculation.kind != "calculation" or calculation.outcome != "committed"
+                    or calculation.stream_id != capture.stream_id or calculation.revision_id != capture.revision_id
+                    or proof.get("capture_id") != capture.batch_id
+                    or proof.get("hash") != capture.payload_hash):
+                raise RepositoryConflict("RECOVERY_READBACK_CONFLICT")
+            return calculation.batch_id, calculation.seq
+
     def apply(self, plan, *, expected_plan_hash, now):
         try:
             return self._apply(plan, expected_plan_hash=expected_plan_hash, now=now)
