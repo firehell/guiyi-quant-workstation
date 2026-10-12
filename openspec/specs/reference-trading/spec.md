@@ -25,6 +25,27 @@ An unknown commit result SHALL be read back by exact batch identity before any r
 An interruption boundary SHALL NOT be presented as a completed market Bar watermark; coverage and health
 SHALL expose it separately from the last completed Bar.
 
+#### Scenario: Bounded renewal after a proven missing forward interval
+
+- **WHEN** an exact unexpired recovery plan freezes the active checkpoint, immutable old activation receipt,
+  retained completed-journal cursor/envelope identity and authoritative missing Session endpoints
+- **THEN** renewal appends a new generation receipt and its single hash-bound interruption capture atomically
+- **AND** the old receipt, checkpoint and batches remain immutable; the active revision remains the same
+- **AND** the interruption advances the internal resume boundary only to the last missing endpoint, while
+  recording its actual recovery observation time separately; coverage excludes it from completed market Bars
+- **AND** the new receipt permits only that exact interruption capture, and later automatic gaps remain blocked
+- **AND** no journal cursor is skipped and no missing Bar or notification is manufactured
+
+#### Scenario: Completed journal consumption after Live cleanup
+
+- **WHEN** an original retained completed envelope is consumed after Live cache/subscription cleanup or
+  Canonical advancement
+- **THEN** Newow consumes its frozen Bar, physical contract, original confirmed/raw receipt timestamps and
+  journal identity directly, still validating the authoritative owner and expected Session endpoints
+- **AND** all routes commit before the journal cursor acknowledges the observation
+- **AND** a predictable blocked route retains its unacknowledged envelope and fixed diagnostic with bounded
+  backoff in the same worker process, without claiming readiness or repeatedly crashing
+
 #### Scenario: A worker finishes after disable
 
 - **WHEN** disable increments activation generation before a prepared calculation commits
@@ -468,3 +489,30 @@ Candidate prewarm SHALL read scoped checkpoints/input facts and run pure evaluat
 without capture, batch, historical refresh or notification writes. When caught up, it
 MAY recalculate an immutable prior capture from its actual predecessor checkpoint;
 missing preimage SHALL fail closed and SHALL NOT create a synthetic observation.
+
+## Requirement: Explicit stopped-publisher interruption remains one-shot
+
+A task-local fault repair MAY append a new activation receipt and exact
+`observation_interruption` capture for proven missing completed Session endpoints.
+It SHALL preserve every previous receipt, checkpoint and original envelope time.
+A previous bounded receipt MAY be renewed only after its unique generation/hash
+capture is linked to a committed calculation in the same active revision with the
+exact sequence. Pending, unknown, changed budget, broken receipt hash chain or
+unproven source SHALL block. The effective source policy remains `block` for all
+future unplanned gaps.
+
+For the exact generation16 to17 repair, `SERVICE_OUTAGE` authority SHALL require
+old publishers stopped, actual Feed close, released old owners, parked new
+Reference, calendars absent and old source/completed consumers at retained tails.
+It SHALL freeze authoritative rank1/Session past endpoints at one fixed cutoff
+and check the entire real completed journal for saved originals and integrity.
+No future endpoint, synthetic Bar or historical observation may fill the gap.
+Before normal Feed NEW_DAY, absent day13 journal/cursor/identity keys SHALL remain
+absent and registration SHALL remain on the drained old day. Only the existing
+Feed NEW_DAY initializes the new day.
+
+The interruption boundary SHALL be the last missing completed endpoint, not repair
+wall time. It is interrupted evidence, never natural observation. Saved originals
+require durable replay with original confirmed/raw times; missing observations
+cannot be given original first-seen times. These task-local proofs SHALL NOT
+authorize automatic failover, new Scope, notification replay or formula/return changes.

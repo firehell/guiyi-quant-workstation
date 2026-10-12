@@ -17,6 +17,7 @@ from app.reference_trading.repository import ReferenceRepository
 DIAGNOSTIC_REASONS = frozenset({
     'SOURCE_BUSY', 'REFERENCE_CANONICAL_MISMATCH', 'FORWARD_CHECKPOINT_INVALID',
     'WORKER_QUEUE_FULL', 'FORWARD_STRATEGY_UNSUPPORTED', 'NEWOW_CAPABILITY_CLOSED',
+    'LIVE_SOURCE_UNAVAILABLE', 'LIVE_EVENT_IDENTITY_CONFLICT',
     'OBSERVATION_GAP', 'FIRST_SEEN_NOT_PROVEN', 'CANONICAL_READ_GUARD_MISSING',
     'REFERENCE_BUFFER_PROCESSING_BLOCKED', 'REFERENCE_COMPLETED_TIME_MISSING',
     'OBSERVATION_CURSOR_MISSING', 'OBSERVATION_STREAM_EXPIRED',
@@ -58,6 +59,7 @@ class ForwardReferenceWorker:
         begin_unit: Callable[[], None] = lambda: None,
         end_unit: Callable[[], None] = lambda: None,
     ) -> None:
+        self.source_envelope = None
         self.source_observed_at: datetime | None = None
         self.raw_received_at: datetime | None = None
         self.assert_owned = lambda: None

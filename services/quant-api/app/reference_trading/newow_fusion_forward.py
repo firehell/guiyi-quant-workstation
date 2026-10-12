@@ -516,6 +516,7 @@ class SavedForwardFusionSources:
                 generation=generation,
                 previous_watermark=after,
                 observed_at=_timestamp(base["observed_at"]),
+                interruption_end=_timestamp(base["bar_end"]),
                 reason=base["input_payload"]["reason"],
                 trading_day=date.fromisoformat(base["input_payload"]["trading_day"]),
                 endpoints=tuple(

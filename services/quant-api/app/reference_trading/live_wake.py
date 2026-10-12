@@ -86,6 +86,7 @@ class StreamForwardLiveWake(ForwardLiveWake):
         from app.market_data.observation_stream import ObservationStream
         self._stream = ObservationStream(redis, kind="completed")
         self.stop_requested = lambda: False
+        self._retry_after = 0.0
 
     def subscribe(self):
         for day in self._stream.days():
@@ -96,6 +97,8 @@ class StreamForwardLiveWake(ForwardLiveWake):
         if type(limit) is not int or not 1 <= limit <= 128:
             raise ValueError("REFERENCE_OBSERVATION_POLL_BUDGET_INVALID")
         self._last_poll_count = 0
+        if monotonic() < self._retry_after:
+            return False
         if self.stop_requested():
             return True
         for day in self._stream.days():
@@ -107,15 +110,26 @@ class StreamForwardLiveWake(ForwardLiveWake):
                     confirmed = getattr(observation, "confirmed_at", None)
                     if confirmed is None:
                         raise RuntimeError("REFERENCE_COMPLETED_TIME_MISSING")
+                    self._worker.source_envelope = observation
                     self._worker.source_observed_at = confirmed
-                    self._worker.raw_received_at = observation.source_observed_at
+                    self._worker.raw_received_at = getattr(observation, "raw_received_at", None) or observation.source_observed_at
                     try:
                         validated = self._validated_routes(observation.channel, json.dumps(observation.data))
                         if validated is None:
                             raise RuntimeError("REFERENCE_BUFFER_IDENTITY_INVALID")
                         end, routes = validated
                         self._worker.process_live_observation(routes, end)
+                    except RuntimeError as error:
+                        if str(error) != "REFERENCE_BUFFER_PROCESSING_BLOCKED":
+                            raise
+                        # Keep the durable cursor and process alive. No ack, no ready,
+                        # no repeated capture attempts during the bounded backoff.
+                        self._retry_after = monotonic() + 5.0
+                        self._worker.report_health(self._worker.diagnostic_health(
+                            stage="observation_blocked", ready=False))
+                        return False
                     finally:
+                        self._worker.source_envelope = None
                         self._worker.source_observed_at = None
                         self._worker.raw_received_at = None
                 self._worker.assert_owned()

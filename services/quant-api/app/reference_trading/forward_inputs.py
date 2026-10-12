@@ -257,6 +257,58 @@ def capture_newow_live(
     )
 
 
+def capture_newow_envelope(
+    observation, identity: StreamIdentity, *, revision_id: str, generation: int,
+    after: datetime | None, now: datetime, owner_segments, expected_endpoints,
+    capability_ready,
+) -> ForwardCapture | None:
+    """Consume a frozen journal observation; current Live/cache cleanup is irrelevant."""
+    from dataclasses import replace
+    from app.market_data.live_market import _bar_from_payload
+    from app.market_data.domain import normalize_contract_for_symbol
+
+    _newow_strategy(identity)
+    if identity.frequency not in LIVE_FREQUENCIES or not capability_ready(identity):
+        raise ForwardInputUnavailable("NEWOW_CAPABILITY_CLOSED")
+    raw = observation.data
+    confirmed = observation.confirmed_at
+    received = observation.raw_received_at or observation.source_observed_at
+    try:
+        bar = _bar_from_payload(json.dumps(raw, allow_nan=False))
+        contract = raw["contract"]
+        if (observation.channel != f"live:bar:{identity.product}:{identity.frequency}"
+                or observation.trading_day != bar.trading_day
+                or not observation.notification_eligible or not observation.stream_id
+                or confirmed != now or confirmed is None or received > confirmed
+                or bar.bar_end > confirmed
+                or normalize_contract_for_symbol(identity.product, contract) != contract):
+            raise ValueError("identity")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ForwardInputUnavailable("LIVE_EVENT_IDENTITY_CONFLICT") from error
+    # Validate physical owner and Session even for an already committed prefix.
+    owner_id, calculation_id = owner_segments(identity, contract, bar.trading_day, bar.bar_end)
+    if after is not None and bar.bar_end <= after:
+        return None
+    endpoints = expected_endpoints(identity, contract, bar.trading_day, after, bar.bar_end)
+    if endpoints != (bar.bar_end,):
+        raise ForwardInputUnavailable("OBSERVATION_GAP", trading_day=bar.trading_day,
+                                      endpoints=endpoints or (bar.bar_end,))
+    wire = _bar_wire(bar)
+    digest = sha256(json.dumps(wire, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    capture = _newow_capture(
+        identity, revision_id=revision_id, generation=generation, now=confirmed,
+        after=after, bar=wire, contract=contract, owner_id=owner_id,
+        calculation_id=calculation_id, source_kind="completed_live",
+        source_identity="market_read_service:completed_live:v1",
+        source_bar_sha256=digest, input_quality_policy=InputQualityPolicy.V1,
+    )
+    return replace(capture, source_proof={**capture.source_proof,
+        "journal_observation_id": observation.observation_id,
+        "journal_stream_id": observation.stream_id,
+        "journal_envelope_sha256": sha256(observation.to_json().encode()).hexdigest(),
+        "raw_received_at": received.isoformat(), "confirmed_at": confirmed.isoformat()})
+
+
 def capture_newow_canonical(
     reader, identity: StreamIdentity, *,
     revision_id: str, generation: int, after: datetime | None,
