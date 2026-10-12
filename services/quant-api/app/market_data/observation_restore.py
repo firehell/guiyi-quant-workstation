@@ -244,8 +244,8 @@ def build_projection_restore_plan(
     additions = []
     for key in {key for key, _ in projected}:
         for payload, score in redis.zrange(key, 0, -1, withscores=True):
-            expected = projected.get((key, int(score)))
-            if score != int(score) or expected is None or not _equivalent_bar_payload(json.loads(payload), json.loads(expected)):
+            expected_payload = projected.get((key, int(score)))
+            if score != int(score) or expected_payload is None or not _equivalent_bar_payload(json.loads(payload), json.loads(expected_payload)):
                 raise ValueError('RESTORE_EXISTING_PROJECTION_CONFLICT')
     for (key, score), payload in projected.items():
         existing = redis.zrangebyscore(key, score, score)
