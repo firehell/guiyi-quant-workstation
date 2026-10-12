@@ -48,12 +48,20 @@ class FaultRecoveryHost:
         projection_sha256=None,
         reference_plan=None,
         reference_attempt=None,
+        outage_plan=None,
+        outage_plan_hash=None,
+        outage_attempt=None,
         reference_plan_hash=None,
     ):
         self.projection_sha256 = projection_sha256
         self.reference_plan = reference_plan
         self.reference_attempt = reference_attempt
         self.reference_plan_hash = reference_plan_hash
+        self.outage_plan, self.outage_plan_hash, self.outage_attempt = (
+            outage_plan,
+            outage_plan_hash,
+            outage_attempt,
+        )
         self.directory = runtime_directory()
         self.home = Path.home()
 
@@ -912,9 +920,65 @@ class FaultRecoveryHost:
                 and recovery.consumed_calculation(plan) is not None,
                 "FAULT_RECOVERY_REFERENCE_DB_READBACK_FAILED",
             )
+        require(
+            self.outage_plan is not None
+            and self.outage_plan_hash is not None
+            and self.outage_attempt is not None,
+            "FAULT_RECOVERY_OUTAGE_READBACK_REQUIRED",
+        )
+        outage = json.loads(self.bytes(Path(self.outage_plan), limit=16 * 1024 * 1024))
+        outage_plans = validate_campaign(outage, expected_hash=self.outage_plan_hash)
+        require(
+            outage["day"] == "2026-10-13"
+            and len(outage_plans) == 180
+            and len({item.capture.stream_id for item in outage_plans}) == 180
+            and {item.capture.stream_id for item in outage_plans}
+            == {item.capture.stream_id for item in plans}
+            and {group["product"] for group in outage["groups"]}
+            == {group["product"] for group in frozen["groups"]}
+            and outage["identity"]["binding"] == asdict(binding)
+            and outage["identity"]["code_root"] == binding.root
+            and outage["identity"]["code_commit"] == binding.commit
+            and outage["identity"]["outage_controller_plan_hash"]
+            == effects["controller_plan_hash"]
+            and all(
+                item.journal_proof.get("kind") == "SERVICE_OUTAGE"
+                and item.capture.input_payload["reason"] == "SERVICE_OUTAGE"
+                and item.journal_proof["fence"]["old_feed_close"]
+                == effects["parked_proof"]["feed_close"]
+                and datetime.fromisoformat(item.journal_proof["cutoff"])
+                <= datetime.now(UTC)
+                for item in outage_plans
+            ),
+            "FAULT_RECOVERY_OUTAGE_IDENTITY_DRIFT",
+        )
+        outage_events = [
+            json.loads(line)
+            for line in self.bytes(
+                Path(self.outage_attempt) / "progress.jsonl"
+            ).splitlines()
+        ]
+        require(
+            outage_events
+            and outage_events[0].get("plan_hash") == self.outage_plan_hash
+            and outage_events[-1].get("stage") == "finished"
+            and not any(
+                item.get("stage") == "stopped_no_retry" for item in outage_events
+            ),
+            "FAULT_RECOVERY_OUTAGE_ATTEMPT_UNPROVEN",
+        )
+        require(
+            all(
+                recovery.readback(item) is not None
+                and recovery.consumed_calculation(item) is not None
+                for item in outage_plans
+            ),
+            "FAULT_RECOVERY_OUTAGE_DB_READBACK_FAILED",
+        )
         return {
             "plan_hash": self.reference_plan_hash,
             "streams": 180,
+            "outage_plan_hash": self.outage_plan_hash,
             "progress_sha256": sha256(
                 self.bytes(Path(self.reference_attempt) / "progress.jsonl")
             ).hexdigest(),

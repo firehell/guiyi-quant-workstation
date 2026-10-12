@@ -48,6 +48,9 @@ def main():
     parser.add_argument("--reference-plan", type=Path)
     parser.add_argument("--reference-plan-hash")
     parser.add_argument("--reference-attempt", type=Path)
+    parser.add_argument("--outage-plan", type=Path)
+    parser.add_argument("--outage-plan-hash")
+    parser.add_argument("--outage-attempt", type=Path)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     mutation = args.phase not in ("freeze", "readback")
@@ -95,6 +98,9 @@ def main():
         reference_plan=args.reference_plan,
         reference_plan_hash=args.reference_plan_hash,
         reference_attempt=args.reference_attempt,
+        outage_plan=args.outage_plan,
+        outage_plan_hash=args.outage_plan_hash,
+        outage_attempt=args.outage_attempt,
     )
     if args.phase == "freeze":
         if args.projection_readback is None:

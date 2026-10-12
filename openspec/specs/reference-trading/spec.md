@@ -489,3 +489,30 @@ Candidate prewarm SHALL read scoped checkpoints/input facts and run pure evaluat
 without capture, batch, historical refresh or notification writes. When caught up, it
 MAY recalculate an immutable prior capture from its actual predecessor checkpoint;
 missing preimage SHALL fail closed and SHALL NOT create a synthetic observation.
+
+## Requirement: Explicit stopped-publisher interruption remains one-shot
+
+A task-local fault repair MAY append a new activation receipt and exact
+`observation_interruption` capture for proven missing completed Session endpoints.
+It SHALL preserve every previous receipt, checkpoint and original envelope time.
+A previous bounded receipt MAY be renewed only after its unique generation/hash
+capture is linked to a committed calculation in the same active revision with the
+exact sequence. Pending, unknown, changed budget, broken receipt hash chain or
+unproven source SHALL block. The effective source policy remains `block` for all
+future unplanned gaps.
+
+For the exact generation16 to17 repair, `SERVICE_OUTAGE` authority SHALL require
+old publishers stopped, actual Feed close, released old owners, parked new
+Reference, calendars absent and old source/completed consumers at retained tails.
+It SHALL freeze authoritative rank1/Session past endpoints at one fixed cutoff
+and check the entire real completed journal for saved originals and integrity.
+No future endpoint, synthetic Bar or historical observation may fill the gap.
+Before normal Feed NEW_DAY, absent day13 journal/cursor/identity keys SHALL remain
+absent and registration SHALL remain on the drained old day. Only the existing
+Feed NEW_DAY initializes the new day.
+
+The interruption boundary SHALL be the last missing completed endpoint, not repair
+wall time. It is interrupted evidence, never natural observation. Saved originals
+require durable replay with original confirmed/raw times; missing observations
+cannot be given original first-seen times. These task-local proofs SHALL NOT
+authorize automatic failover, new Scope, notification replay or formula/return changes.
