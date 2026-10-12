@@ -1,6 +1,7 @@
 # Quant Web
 
-Vue 3 + TypeScript 的 Market Web，公开页面为 `/market` 与 `/market/chart`。
+Vue 3 + TypeScript 的 Market Web，页面为 `/market`、`/market/chart`，
+独立固定参数历史研究页为 `/research/new-subing`。
 
 - 首页：completed D1/W1 市场概览、Runtime 状态与当前 Alert Events，共三项资源读取。
 - 详情：Newow、HTDY、苏冰、Free 四视角，共享品种、行情身份、周期与历史定位。
@@ -10,6 +11,7 @@ Vue 3 + TypeScript 的 Market Web，公开页面为 `/market` 与 `/market/chart
 - 苏冰：Event-backed `S↑/S↓` 与独立的“历史重算·乐观参考”；HTDY 保留 retrospective
   overlay、Scope/Runtime 只读事实和不可变 Event；Free 提供通用行情与指标。
 - 通用 Overlay 只有 `none | htdy`；Newow 使用独立 Workspace 图层。通用指标包括 EMA、MACD、Range。
+- 新苏冰策略：规则来源、AL/RB/TA固定结果、模型决策与权益；明确区别于旧苏冰预警、Paper与实盘。
 
 Web 消费后端策略和参考交易结果，不自行计算策略动作；建仓/清仓标记与参考收益不表示模拟或真实
 持仓、订单、成交和账户收益。四层事实边界见 [PROJECT_SOURCE.md](../../PROJECT_SOURCE.md)，

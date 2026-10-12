@@ -18,6 +18,7 @@ from app.api.market_subing_reference import router as market_subing_reference_ro
 from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
 from app.api.reference_trading import router as reference_trading_router
+from app.api.research_new_subing import router as research_new_subing_router
 from app.middleware.request_timing import RequestTimingMiddleware
 from app.version import APP_VERSION
 
@@ -64,6 +65,7 @@ app.include_router(market_live_router)
 app.include_router(alerts_router)
 app.include_router(runtime_router)
 app.include_router(reference_trading_router)
+app.include_router(research_new_subing_router)
 
 
 @app.get("/health")

@@ -135,7 +135,7 @@ def create_preview_app(
     code_sha = _code_sha()
     candidate_origin = _candidate_origin()
 
-    from app.api import market, market_newow, market_subing_reference
+    from app.api import market, market_newow, market_subing_reference, research_new_subing
     from app.db.session import SessionLocal, get_db
 
     if _intraday_preview_products() is not None:
@@ -266,6 +266,7 @@ def create_preview_app(
     app.include_router(market.router)
     app.include_router(market_newow.router)
     app.include_router(market_subing_reference.router)
+    app.include_router(research_new_subing.router)
     return app
 
 

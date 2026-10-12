@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[2]
 
-PUBLIC_WEB_ROUTES = {"/market", "/market/chart"}
+PUBLIC_WEB_ROUTES = {"/market", "/market/chart", "/research/new-subing"}
 PUBLIC_OVERLAYS = {"none", "htdy"}
 MARKET_TABLES = {
     "exchanges",

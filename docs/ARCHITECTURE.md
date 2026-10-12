@@ -135,6 +135,16 @@ flowchart LR
 显式 activation、reconciliation、worker entry 和恢复入口具有独立用途；HTTP 路由存在不证明生产
 bootstrap 或 worker 已启用。当前生产状态与未完成验收见 `STATUS.md`。
 
+## 新苏冰固定参数历史研究
+
+`MarketDataService -> app.market_data.new_subing_research -> guiyi_quant.new_subing`
+提供同物理合约 lifecycle 指标前缀、completed 多周期决策与后续1m双向整数手研究模型。
+成本、限价与多空保证金来自独立冻结的 RQData facts，缺事实不回退。
+离线 CLI 写任务结果；`app.new_subing_research.store` 的精确 SHA index 是结果读取入口，
+只读 `/api/v1/research/new-subing/*` 与 `/research/new-subing` 不导入 provider 或运行研究。
+本链没有生产数据库、Paper账本、Alert Rule、Live订阅或订单传输依赖；旧苏冰算法和 JM Paper
+保持既有身份。业务与时序定义见 [新苏冰合同](NEW_SUBING_STRATEGY.md)。
+
 ## Preserved seams
 
 Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`、Live/Historical isolation、Newow ReferenceTrade、Alert Application Domain 与 Runtime authorization 保持分离。Market Home projection 与 Newow ReferenceTrade 都不改变行情 authority；ReferenceTrade 是新只读产品身份，不恢复已退役 Historical Projection、账户或策略 Event。Alembic migrations 是 schema lineage，不是已退役域的 active application dependency。

@@ -6,6 +6,7 @@ FastAPI 后端提供统一行情读取、只读策略/参考交易、Alert 与 R
 - `/api/alerts/*`：HTDY 与 SuBing 两种 observation Rule、symbol × frequency Scope、immutable Event。
   Scope mutation 和首次 SuBing activation 仍须对应明确授权。
 - `/api/runtime/*`：只读 Runtime 状态。
+- `/api/v1/research/new-subing/*`：独立新苏冰策略固定历史结果、规则与分页模型记录，只读。
 - CLI：`guiyi data ...` 与 `guiyi runtime ...`；数据维护、恢复及真实操作合同见
   [DATA_CENTER.md](../../docs/DATA_CENTER.md) 和 [部署合同](../../deploy/README.md)。
 

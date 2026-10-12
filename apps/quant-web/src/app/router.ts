@@ -20,6 +20,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '品种行情' },
       },
       {
+        path: 'research/new-subing',
+        name: 'new-subing-research',
+        component: () => import('@/pages/research/NewSubingPage.vue'),
+        meta: { title: '新苏冰历史研究' },
+      },
+      {
         path: ':pathMatch(.*)*',
         name: 'not-found',
         component: () => import('@/pages/NotFound.vue'),

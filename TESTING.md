@@ -1754,3 +1754,24 @@ PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
 使用专用非生产Redis，覆盖CLOSED/BREAK空Stream的已有登记日恢复、冻结订阅缺失/合约冲突、cursor缺失不创建，以及未确认来源只刷新heartbeat、不生成completed或推进cursor。
 
 真实CLOSED空日合同：`services/quant-api/tests/data_foundation/test_durable_live_closed_session.py`，SQLite真实MarketPhaseResolver核验周末下一Session，未知/缺失/窗口错位/多品种日冲突不创建进度。发布前另只读核验现场operational集合的实际nextSession、登记日与冻结订阅，不以CLOSED带日的测试替代。
+
+## 新苏冰固定参数历史研究
+
+合同只维护 [NEW_SUBING_STRATEGY.md](docs/NEW_SUBING_STRATEGY.md)。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/unit/new_subing services/quant-api/tests/research tests/unit/paper \
+  services/quant-api/tests/test_subing_ths_kernel.py tests/engineering/test_canonical_consistency.py
+```
+
+`scripts/research/new_subing_execution_facts.py --plan /exact/plan.json --project-env /private/project.env --out /new/attempt`
+先核对当前 Catalog 所有权与精确计划，再在预算内一次采集 RQData instrument、交易参数、
+交易所结算与独立日限价事实。已有或失败 attempt 不复用、不自动重试，不写 Canonical/Catalog。
+`scripts/research/new_subing.py --project-env /private/project.env --facts-dir /exact/attempt --out /new/results`
+只读固定 AL/RB/TA、2024-10-14..2026-10-09，与独立三成本场景、前后年及季度诊断。
+要求已提交代码身份；缺行情/成本时仍输出哈希绑定缺口包，不虚构零收益。
+`GUIYI_NEW_SUBING_RESULTS_ROOT=/exact/results` 仅配置本地候选 API 读取已有结果，HTTP不会启动研究。
+Web 定向验证：`node --test tests/newSubingResearch.test.ts`，以及通常的 Web build。
+工程构造数据不证明原案例一致性；固定历史验证不自动称未见 OOS，收益不触发策略晋升。
