@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from collections import deque
+from dataclasses import replace
 from hashlib import sha256
 import json
 from typing import Any
@@ -19,6 +21,33 @@ from app.market_data.market_phase import MarketPhase
 from app.market_data.observation_stream import (
     DAILY_LIMIT, TTL_SECONDS, ObservationEnvelope, ObservationStream,
 )
+
+
+_DECIMAL_BAR_FIELDS = frozenset(('open', 'high', 'low', 'close', 'volume', 'turnover', 'open_interest'))
+
+
+def _equivalent_bar_payload(left: dict, right: dict) -> bool:
+    """Compare exact identity and finite Decimal facts without a binary-float conversion."""
+    if type(left) is not dict or type(right) is not dict or left.keys() != right.keys():
+        return False
+    for field, value in left.items():
+        other = right[field]
+        if field not in _DECIMAL_BAR_FIELDS:
+            if type(value) is not type(other) or value != other:
+                return False
+        elif value is None or other is None:
+            if value is not other:
+                return False
+        else:
+            if type(value) is not str or type(other) is not str:
+                return False
+            try:
+                a, b = Decimal(value), Decimal(other)
+            except InvalidOperation:
+                return False
+            if not a.is_finite() or not b.is_finite() or a != b:
+                return False
+    return True
 
 
 class FeedLiveStore(RedisLiveStore):
@@ -374,6 +403,17 @@ class DurableLiveMarketService(LiveMarketService):
             payload = _bar_payload(bar, contract=contract)
             channel = live_bar_channel(symbol, frequency)
             identity = f'{bar.trading_day}:{contract}:{frequency.value}:{bar.bar_end.isoformat()}'
+            score = _epoch_millis(bar.bar_end)
+            serialized_payload = _compact_json(payload)
+            existing_bars = stream.redis.zrangebyscore(key, score, score)
+            if existing_bars:
+                if len(existing_bars) != 1 or not _equivalent_bar_payload(json.loads(existing_bars[0]), payload):
+                    raise ValueError('OBSERVATION_CONTENT_CONFLICT')
+                # The Lua transaction still requires this exact value: a later writer cannot bypass CAS.
+                serialized_payload = existing_bars[0]
+                if isinstance(serialized_payload, bytes):
+                    serialized_payload = serialized_payload.decode()
+            expected_payload = serialized_payload if existing_bars else None
             original_confirmation = confirmed_at
             existing = stream.redis.hget(self.completed_stream.identity_key(source.day), identity)
             if existing is not None:
@@ -382,9 +422,16 @@ class DurableLiveMarketService(LiveMarketService):
                 original_confirmation = prior.confirmed_at
             envelope = ObservationEnvelope(identity, bar.trading_day, observed_at, channel, payload, True,
                                            raw_received_at=observed_at, confirmed_at=original_confirmation)
-            plan.append({'key_index': keys.index(key) + 1, 'score': _epoch_millis(bar.bar_end),
-                         'payload': _compact_json(payload), 'identity': identity,
-                         'channel': channel, 'envelope': envelope.to_json()})
+            serialized_envelope = envelope.to_json()
+            if existing is not None:
+                # Preserve the old envelope byte-for-byte, including first arrival and confirmation.
+                if (not _equivalent_bar_payload(prior.data, payload)
+                        or replace(prior, data=payload, stream_id='').to_json() != serialized_envelope):
+                    raise ValueError('OBSERVATION_CONTENT_CONFLICT')
+                serialized_envelope = record['payload']
+            plan.append({'key_index': keys.index(key) + 1, 'score': score,
+                         'payload': serialized_payload, 'expected_payload': expected_payload, 'identity': identity,
+                         'channel': channel, 'envelope': serialized_envelope})
         if hasattr(self, 'assert_owned'):
             self.assert_owned()
         result = stream.redis.eval(COMMIT_OBSERVATIONS, len(keys), *keys, old, next_id,
