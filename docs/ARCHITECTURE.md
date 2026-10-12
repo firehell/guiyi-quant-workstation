@@ -141,13 +141,13 @@ V2纯新包 `guiyi_quant.new_subing_v2` 复用不可变输入类型与行情适�
 逐prefix指标准备不缓存账户状态。新脚本只读重测并验证V1输入/执行事实哈希，既有结果库与页面区分版本和两档本金。
 V2合同见 [NEW_SUBING_STRATEGY_V2.md](NEW_SUBING_STRATEGY_V2.md)；V1公式与结果保持原样。
 
-`MarketDataService -> app.market_data.new_subing_research -> guiyi_quant.new_subing`
+`MarketDataService -> app.market_data.new_subing_research -> guiyi_quant.new_subing / new_subing_v2`
 提供同物理合约 lifecycle 指标前缀、completed 多周期决策与后续1m双向整数手研究模型。
 成本、限价与多空保证金来自独立冻结的 RQData facts，缺事实不回退。
 离线 CLI 写任务结果；`app.new_subing_research.store` 的精确 SHA index 是结果读取入口，
 只读 `/api/v1/research/new-subing/*` 与 `/research/new-subing` 不导入 provider 或运行研究。
 本链没有生产数据库、Paper账本、Alert Rule、Live订阅或订单传输依赖；旧苏冰算法和 JM Paper
-保持既有身份。业务与时序定义见 [新苏冰合同](NEW_SUBING_STRATEGY.md)。
+保持既有身份。V1业务与时序定义见 [基线合同](NEW_SUBING_STRATEGY.md)，V2见上文独立合同。
 
 ## Preserved seams
 
