@@ -118,6 +118,7 @@ def _durable_wake_with_backlog(*, background_busy=False):
         data={'bar_end': end.isoformat(), 'trading_day': '2026-09-23', 'contract': 'RB2610'})
     wake = StreamForwardLiveWake.__new__(StreamForwardLiveWake)
     wake.stop_requested = lambda: False
+    wake._retry_after = 0.0
     wake._repository, wake._worker, wake._market_data = repository, worker, Market()
     wake._stream = SimpleNamespace(days=lambda: (end.date(),), cursor=lambda *_: '0-0',
         read=lambda *_, **__: (observation,), ack=lambda *args, **kwargs: acknowledgements.append((args, kwargs)))
@@ -148,8 +149,11 @@ def test_target_failure_keeps_observation_unacknowledged_and_resets_timing():
     def unavailable(*_):
         raise ForwardInputUnavailable('LIVE_EVENT_IDENTITY_CONFLICT')
     worker._read_input = unavailable
-    with pytest.raises(RuntimeError, match='REFERENCE_BUFFER_PROCESSING_BLOCKED'):
-        wake.wait(1)
+    wake.wait(1)
+    retry_after = wake._retry_after
+    assert retry_after > 0
+    assert wake.poll() is False
+    assert wake._retry_after == retry_after
     assert seen == [] and acknowledgements == []
     assert worker.source_observed_at is None and worker.raw_received_at is None
     assert ('rb-60m', 'LIVE_EVENT_IDENTITY_CONFLICT') in worker.health().blocked

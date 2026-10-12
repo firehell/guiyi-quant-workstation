@@ -25,6 +25,27 @@ An unknown commit result SHALL be read back by exact batch identity before any r
 An interruption boundary SHALL NOT be presented as a completed market Bar watermark; coverage and health
 SHALL expose it separately from the last completed Bar.
 
+#### Scenario: Bounded renewal after a proven missing forward interval
+
+- **WHEN** an exact unexpired recovery plan freezes the active checkpoint, immutable old activation receipt,
+  retained completed-journal cursor/envelope identity and authoritative missing Session endpoints
+- **THEN** renewal appends a new generation receipt and its single hash-bound interruption capture atomically
+- **AND** the old receipt, checkpoint and batches remain immutable; the active revision remains the same
+- **AND** the interruption advances the internal resume boundary only to the last missing endpoint, while
+  recording its actual recovery observation time separately; coverage excludes it from completed market Bars
+- **AND** the new receipt permits only that exact interruption capture, and later automatic gaps remain blocked
+- **AND** no journal cursor is skipped and no missing Bar or notification is manufactured
+
+#### Scenario: Completed journal consumption after Live cleanup
+
+- **WHEN** an original retained completed envelope is consumed after Live cache/subscription cleanup or
+  Canonical advancement
+- **THEN** Newow consumes its frozen Bar, physical contract, original confirmed/raw receipt timestamps and
+  journal identity directly, still validating the authoritative owner and expected Session endpoints
+- **AND** all routes commit before the journal cursor acknowledges the observation
+- **AND** a predictable blocked route retains its unacknowledged envelope and fixed diagnostic with bounded
+  backoff in the same worker process, without claiming readiness or repeatedly crashing
+
 #### Scenario: A worker finishes after disable
 
 - **WHEN** disable increments activation generation before a prepared calculation commits

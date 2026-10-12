@@ -22,7 +22,7 @@ def build_forward_reference_worker(
     """Compose a default-off worker; callers provide authoritative read seams."""
     from app.reference_trading.forward_inputs import (
         ForwardInputUnavailable, capture_htdy_live, capture_newow_canonical,
-        capture_newow_live, capture_subing_live,
+        capture_newow_live, capture_newow_envelope, capture_subing_live,
     )
     from app.reference_trading.forward_service import ForwardReferenceService
     from app.reference_trading.htdy import evaluate_htdy_capture
@@ -125,6 +125,12 @@ def build_forward_reference_worker(
                 return fusion_sources(identity, **common)
             if code.startswith("newow_"):
                 if identity.frequency in LIVE_FREQUENCIES:
+                    if kind == "live_event" and worker.source_envelope is not None:
+                        return capture_newow_envelope(
+                            worker.source_envelope, identity, owner_segments=owner_segments,
+                            expected_endpoints=expected_endpoints,
+                            capability_ready=newow_capability_ready, **common,
+                        )
                     return capture_newow_live(
                         cached_live, identity, wake_kind=kind,
                         owner_segments=owner_segments,

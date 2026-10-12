@@ -292,17 +292,22 @@ class HistoricalReferenceQuery:
             ~ReferenceBatch.batch_key.like("forward:observation-gap:%"),
             ReferenceBatch.seq <= snapshot.seq,
         )).one()
-        gap_at = session.scalar(select(func.max(ReferenceBatch.observed_at)).where(
+        gap = session.scalar(select(ReferenceBatch).where(
             ReferenceBatch.stream_id == snapshot.stream_id,
             ReferenceBatch.revision_id == snapshot.revision_id,
             ReferenceBatch.kind == "calculation",
             ReferenceBatch.batch_key.like("forward:observation-gap:%"),
             ReferenceBatch.seq <= snapshot.seq,
-        ))
+        ).order_by(ReferenceBatch.seq.desc()).limit(1))
+        gap_at = None
+        if gap is not None:
+            gap_at = gap.source_evidence.get("observation_gap_v1", {}).get("interruption_end")
+            if gap_at is None and gap.observed_at is not None:
+                gap_at = gap.observed_at.isoformat()
         return {
             "first_computed_through": first.isoformat() if first else None,
             "computed_through": last.isoformat() if last else None,
-            "observation_boundary_at": gap_at.isoformat() if gap_at else None,
+            "observation_boundary_at": gap_at,
             "complete_window_proven": False,
         }
 
