@@ -1773,5 +1773,6 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
 只读固定 AL/RB/TA、2024-10-14..2026-10-09，与独立三成本场景、前后年及季度诊断。
 要求已提交代码身份；缺行情/成本时仍输出哈希绑定缺口包，不虚构零收益。
 `GUIYI_NEW_SUBING_RESULTS_ROOT=/exact/results` 仅配置本地候选 API 读取已有结果，HTTP不会启动研究。
-Web 定向验证：`node --test tests/newSubingResearch.test.ts`，以及通常的 Web build。
+Web 定向验证：`node --test tests/newSubingResearch.test.ts tests/newSubingPageRace.test.ts tests/candidatePreview.test.ts`，以及通常的 Web build。
+隔离候选预览只放行精确 GET profiles/runs/SHA详情与 decisions/trades/equity 分页；POST、未知动作和编码路径不可转发。
 工程构造数据不证明原案例一致性；固定历史验证不自动称未见 OOS，收益不触发策略晋升。

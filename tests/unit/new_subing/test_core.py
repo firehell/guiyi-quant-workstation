@@ -11,6 +11,7 @@ from guiyi_quant.new_subing import (
 )
 from guiyi_quant.new_subing.account import ResearchAccount
 from guiyi_quant.new_subing.signals import Snapshot, build_snapshots, divergence_events
+import guiyi_quant.new_subing.engine as research_engine
 
 
 TZ = timezone(timedelta(hours=8))
@@ -630,6 +631,114 @@ def test_add_confirmation_invalidates_when_latest_fifteen_minute_direction_disag
     assert any(d['action'] == 'SETUP_INVALIDATED' and d['reason'] == 'ADD_CONFIRMATION_FAILED'
                for d in result['decisions'])
     assert not any(d['action'] == 'ADD' for d in result['decisions'])
+
+
+def pending_add_reduction_scenario(kind):
+    histories, execution = legal_add_scenario_bars()
+    end = T0 + timedelta(minutes=175)
+    price = D('105') if kind == 'peak' else D('104') if kind == 'divergence' else D('107')
+    bar_5m = StrategyBar('RB', 'RB2505', '5m', end, end.date(), D('104'),
+                         D('110') if kind == 'peak' else D('108'), D('103.5'),
+                         price, D('500'), D('1010'),
+                         'reduce-collision-5m', end, session_open_at=T0,
+                         session_close_at=T0 + timedelta(hours=4))
+    histories['5m'].append(bar_5m)
+    for i in range(171, 175):
+        old = histories['1m'][i]
+        minute_price = D('110') if kind == 'peak' and i == 171 else \
+            D('105') if kind == 'peak' else D('104') if kind == 'divergence' else D('108')
+        changed = replace(old, open=minute_price, high=minute_price,
+                          low=minute_price, close=minute_price)
+        histories['1m'][i] = changed
+        execution[i] = ExecutionBar(changed, replace(facts(), limit_up=minute_price))
+    first_after = histories['1m'][175]
+    histories['1m'][175] = replace(first_after, open=price, high=price,
+                                   low=price, close=price)
+    execution[175] = ExecutionBar(histories['1m'][175], facts())
+    last_end = T0 + timedelta(minutes=177)
+    last = StrategyBar('RB', 'RB2505', '1m', last_end, last_end.date(), price,
+                       price, price, price, D('100'), D('1010'),
+                       'after-reduce-1m', last_end, session_open_at=T0,
+                       session_close_at=T0 + timedelta(hours=4))
+    histories['1m'].append(last)
+    execution.append(ExecutionBar(last, facts()))
+    return histories, execution
+
+
+@pytest.mark.parametrize('kind,reason', [('fast', 'FAST_PROFIT'),
+                                         ('peak', 'PEAK_DRAWDOWN'),
+                                         ('divergence', 'DIVERGENCE:28:32')])
+def test_five_minute_reduce_supersedes_pending_add(kind, reason, monkeypatch):
+    histories, execution = pending_add_reduction_scenario(kind)
+    if kind == 'divergence':
+        original = research_engine.build_snapshots
+
+        def with_reverse_cross(bars, profile):
+            snapshots = original(bars, profile)
+            if bars and bars[0].frequency == '5m':
+                snapshots[-1] = replace(snapshots[-1], macd_cross=-1)
+            return snapshots
+
+        def with_confirmed_divergence(snapshots, side, profile):
+            events = [None] * len(snapshots)
+            if side == 1:
+                events[-1] = (28, 32)
+            return events
+
+        monkeypatch.setattr(research_engine, 'build_snapshots', with_reverse_cross)
+        monkeypatch.setattr(research_engine, 'divergence_events', with_confirmed_divergence)
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    at = (T0 + timedelta(minutes=175)).isoformat()
+    assert any(d['action'] == 'ADD' for d in result['decisions'])
+    reductions = [d for d in result['decisions'] if d['action'] == 'REDUCE']
+    assert len(reductions) == 1
+    assert reductions[0]['at'] == at
+    assert reductions[0]['reason'] == reason
+    assert len([d for d in result['decisions'] if d['action'] == 'CANCEL' and
+                d['reason'] == 'SUPERSEDED_BY_REDUCE']) == 1
+    if kind == 'fast':
+        assert reductions[0]['facts']['all_reasons'] == ['FAST_PROFIT', 'PEAK_DRAWDOWN']
+    assert len([f for f in result['fills'] if f['action'] == 'OPEN']) == 1
+    close = next(f for f in result['fills'] if f['action'] == 'CLOSE')
+    assert datetime.fromisoformat(close['at']) > datetime.fromisoformat(at)
+
+
+@pytest.mark.parametrize('prior_action,close_price', [('CLEAR', D('98')),
+                                                      ('REDUCE', D('104'))])
+def test_existing_higher_priority_intent_is_not_replaced_by_five_minute_reduce(
+        prior_action, close_price):
+    histories, execution = pending_add_reduction_scenario('fast')
+    if prior_action == 'REDUCE':
+        histories['5m'] = [replace(b, low=D('95')) if i < 28 else b
+                           for i, b in enumerate(histories['5m'])]
+        final_confirmation = histories['5m'][33]
+        histories['5m'][33] = replace(final_confirmation, open=D('105'),
+                                      high=D('105.5'), low=D('104.5'), close=D('105'))
+        for i in range(165, 171):
+            previous = histories['1m'][i]
+            histories['1m'][i] = replace(previous, open=D('105'), high=D('105'),
+                                         low=D('105'), close=D('105'))
+            execution[i] = ExecutionBar(histories['1m'][i], execution[i].facts)
+    prior_index = 174 if prior_action == 'REDUCE' else 173
+    prior = histories['1m'][prior_index]
+    changed = replace(prior, low=close_price, close=close_price)
+    histories['1m'][prior_index] = changed
+    execution[prior_index] = ExecutionBar(changed, execution[prior_index].facts)
+    histories['5m'][-1] = replace(histories['5m'][-1], low=close_price)
+    result = run_research(histories, execution,
+                          since=date(2025, 1, 2), through=date(2025, 1, 2))
+    matching = [d for d in result['decisions'] if d['action'] == prior_action]
+    assert len(matching) == 1
+    expected_at = T0 + timedelta(minutes=175 if prior_action == 'REDUCE' else 174)
+    assert matching[0]['at'] == expected_at.isoformat()
+    assert not any(d['action'] == ('REDUCE' if prior_action == 'CLEAR' else 'CLEAR')
+                   for d in result['decisions'])
+    assert len([f for f in result['fills'] if f['action'] == 'OPEN']) == 1
+    assert len([f for f in result['fills'] if f['action'] == 'CLOSE']) == 1
+    if prior_action == 'REDUCE':
+        assert datetime.fromisoformat(next(f for f in result['fills']
+                                           if f['action'] == 'CLOSE')['at']) > expected_at
 
 
 def test_completed_stop_at_next_open_cancels_pending_add_before_execution():

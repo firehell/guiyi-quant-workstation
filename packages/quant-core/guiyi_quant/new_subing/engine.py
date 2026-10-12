@@ -219,8 +219,9 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
         priority = {'CLEAR': 4, 'REDUCE': 3, 'ADD': 2, 'OPEN': 1}
         if pending and priority[action] <= priority[str(pending['action'])]:
             return
-        if pending and action == 'CLEAR':
-            record(at, 'CANCEL', side, 'SUPERSEDED_BY_CLEAR', account.qty)
+        if pending:
+            record(at, 'CANCEL', cast(int, pending['side']), f'SUPERSEDED_BY_{action}', account.qty,
+                   {'cancelled_action': pending['action'], 'cancelled_reason': pending['reason']})
         pending = {'at': at, 'effective_after': at, 'action': action, 'side': side,
                    'reason': reason, 'facts': facts or {}, 'contract': current_contract,
                    'trading_day': current_facts.trading_day if current_facts else None,
@@ -434,8 +435,10 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
                 key = f'DIVERGENCE:{divergence[0]}:{divergence[1]}'
                 if key not in reduction_used:
                     reasons.append(key)
-            if reasons and not pending:
+            if reasons:
                 if abs(account.qty) == 1:
+                    if pending and pending['action'] in ('CLEAR', 'REDUCE'):
+                        return
                     reduction_used.update(reasons)
                     record(at, 'REDUCE_SKIPPED', side, 'UNSPLITTABLE_ONE_LOT', account.qty,
                            {'all_reasons': reasons})
