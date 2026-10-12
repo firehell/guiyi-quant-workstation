@@ -111,6 +111,13 @@ for _,item in ipairs(plan) do
  local parsed,envelope=pcall(cjson.decode,item.envelope)
  if not parsed or type(envelope)~='table' then return -4 end
  local existing=redis.call('ZRANGEBYSCORE',KEYS[item.key_index],item.score,item.score)
+ if item.expected_payload~=nil then
+  if item.expected_payload==cjson.null then
+   if #existing~=0 then return -1 end
+  elseif type(item.expected_payload)~='string' or #existing~=1 or existing[1]~=item.expected_payload then
+   return -1
+  end
+ end
  if #existing>0 and (#existing~=1 or existing[1]~=item.payload) then return -1 end
  local old=redis.call('HGET',KEYS[4],item.identity)
  if old then
