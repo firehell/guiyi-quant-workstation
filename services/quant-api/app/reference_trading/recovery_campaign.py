@@ -84,7 +84,9 @@ class AttemptProgress:
 def freeze_campaign(repository, recovery, journal_authority, *, products, day,
                     observed_at, expires_at, identity):
     journal = journal_authority.journal
-    cursor, tail = journal.cursor('reference', day), journal.tail(day)
+    cursor = (journal_authority.current_cursor(day) if hasattr(journal_authority, 'current_cursor')
+              else journal.cursor('reference', day))
+    tail = journal.tail(day)
     groups = []
     codes = {'newow_trend','newow_oscillation','newow_main_rise','newow_dual_fusion'}
     for product in sorted(products):
@@ -172,7 +174,15 @@ def apply_campaign(frozen, *, recovery, worker, wake, progress, now, assert_guar
                 break
         else:
             raise RecoveryCampaignError('RECOVERY_ACK_BUDGET_EXCEEDED')
-        if wake._stream.cursor('reference', date.fromisoformat(frozen['day'])) != frozen['tail_id']:
+        day = date.fromisoformat(frozen['day'])
+        if frozen['reference_cursor'] is None:
+            # A pre-NEW_DAY outage has no day cursor. Preserve real absence;
+            # only normal Feed NEW_DAY may initialize it later.
+            if (wake._stream.redis.exists(wake._stream.cursor_key('reference', day))
+                    or wake._stream.redis.exists(wake._stream.key(day))
+                    or wake._stream.registered_day('reference') >= day):
+                raise RecoveryCampaignError('RECOVERY_ACK_BLOCKED')
+        elif wake._stream.cursor('reference', day) != frozen['tail_id']:
             raise RecoveryCampaignError('RECOVERY_ACK_BLOCKED')
         progress.record('finished', cursor=frozen['tail_id'])
     except Exception:

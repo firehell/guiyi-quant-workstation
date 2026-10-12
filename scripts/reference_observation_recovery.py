@@ -80,12 +80,18 @@ def load_dependencies(path):
         if not isinstance(value, str) or not value:
             raise RuntimeError('RECOVERY_DEPENDENCY_CONFIG_INVALID')
         os.environ[key] = value
+    if os.environ['REDIS_URL'] == 'redis://127.0.0.1:6379/0':
+        from urllib.parse import quote
+        password = values.get('REDIS_PASSWORD') or values.get('POSTGRES_PASSWORD')
+        if not isinstance(password, str) or not password:
+            raise RuntimeError('RECOVERY_DEPENDENCY_CONFIG_INVALID')
+        os.environ['REDIS_URL'] = 'redis://:' + quote(password, safe='') + '@127.0.0.1:6379/0'
     os.environ['GUIYI_OBSERVATION_STREAM_ENABLED'] = '1'
     return sha256(raw).hexdigest()
 
 
 @contextmanager
-def components(assert_guard):
+def components(assert_guard, *, outage=None):
     from app.db.session import SessionLocal
     from app.redis_connections import get_redis_connection
     from app.market_data.composition import build_market_data_service, canonical_root
@@ -114,6 +120,19 @@ def components(assert_guard):
             authority = ForwardMarketAuthority(mds)
             journal = ObservationStream(redis, kind='completed')
             journal_authority = JournalRecoveryAuthority(journal, authority)
+            if outage is not None:
+                from app.reference_trading.fenced_outage_recovery import FencedOutageAuthority
+                def verify_outage_fence():
+                    proof = outage['verify_fence']()
+                    source = ObservationStream(redis, kind='source')
+                    day = date(2026,10,13)
+                    if (any(redis.exists(key) for key in (source.key(day), source.identity_key(day), source.cursor_key('live',day)))
+                            or source.registered_day('live') != date(2026,10,12)):
+                        raise RuntimeError('OUTAGE_SOURCE_ABSENCE_UNPROVEN')
+                    return {**proof, 'source_day13_keys_absent':True, 'source_registered_day':'2026-10-12'}
+                journal_authority = FencedOutageAuthority(journal, authority,
+                    verify_fence=verify_outage_fence, cutoff=outage['cutoff'],
+                    contract_for_day=lambda product, day: mds.dominant_segment_for_day(product.lower(), day).contract)
             recovery = BoundedForwardRecovery(SessionLocal, verify_gap=journal_authority.verify_gap)
             # No historical scan, background thread or notification transport is composed.
             reconciliation = ScheduledCanonicalReconciliation(SessionLocal,
@@ -149,6 +168,9 @@ def main():
     parser.add_argument('--attempt', type=Path)
     parser.add_argument('--expires-minutes', type=int, default=60)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--outage-controller-plan', type=Path)
+    parser.add_argument('--outage-controller-hash')
+    parser.add_argument('--outage-controller-attempt', type=Path)
     args = parser.parse_args()
     if (args.phase == 'apply') != args.apply or not 1 <= args.expires_minutes <= 120:
         raise RuntimeError('RECOVERY_PHASE_INVALID')
@@ -169,7 +191,52 @@ def main():
     with parked_reference_guard(directory=directory, expected_binding=asdict(binding)) as (assert_guard, binding_hash):
         identity = {'code_root':str(args.exact_root),'code_commit':args.exact_commit,
                     'binding':asdict(binding),'binding_sha256':binding_hash,'config_sha256':config_hash}
-        with components(assert_guard) as (repository, recovery, journal_authority, worker, wake):
+        outage = None
+        if args.outage_controller_plan is not None:
+            from app.runtime_fault_recovery import validate, registry
+            from app.runtime_fault_recovery_host import FaultRecoveryHost
+            host = FaultRecoveryHost()
+            controller_raw = host.bytes(args.outage_controller_plan)
+            controller = json.loads(controller_raw)
+            validate(controller)
+            if controller['plan_hash'] != args.outage_controller_hash:
+                raise RuntimeError('OUTAGE_CONTROLLER_HASH_CONFLICT')
+            if args.outage_controller_attempt is None or binding.generation != 17:
+                raise RuntimeError('OUTAGE_CONTROLLER_REQUIRED')
+            state_path = args.outage_controller_attempt/'state.json'
+            state_raw = host.bytes(state_path)
+            state = json.loads(state_raw)
+            if (state.get('plan_hash') != controller['plan_hash']
+                    or state.get('completed') != ['drain','stop-install','start']
+                    or state.get('phase') != 'reference_recovery_pending'):
+                raise RuntimeError('OUTAGE_CONTROLLER_NOT_FENCED')
+            new = registry(controller['new'])
+            def verify_fence():
+                assert_guard()
+                if host.bytes(state_path) != state_raw or host.bindings() != new:
+                    raise RuntimeError('OUTAGE_CONTROLLER_DRIFT')
+                host.assert_protected(controller)
+                host.assert_new_installed(new)
+                host.await_new_reference_parked(binding, state['effects']['reference17_request'])
+                if not host.definition_absent(new.services['market-feed']):
+                    raise RuntimeError('OUTAGE_PUBLISHER_PRESENT')
+                from app.runtime_fault_recovery import CALENDARS
+                if not all(host.definition_absent(new.services[name]) for name in CALENDARS):
+                    raise RuntimeError('OUTAGE_CALENDAR_PRESENT')
+                host.assert_old_consumers_at_boundary(controller, new)
+                host.assert_old_pids_exited(state['effects']['parked_proof'])
+                sealed = state['effects']['parked_proof']['feed_close']
+                if sealed.get('input_pending_count') != 0 or sealed.get('subscribed_count') != 0 or sealed.get('runtime_generation') != 16:
+                    raise RuntimeError('OUTAGE_OLD_PUBLISHER_UNPROVEN')
+                return {'controller_plan_hash':controller['plan_hash'],
+                        'controller_state_sha256':sha256(state_raw).hexdigest(),
+                        'old_feed_close':sealed,'generation':17,'feed_definition_absent':True,
+                        'old_consumers_at_tail':True}
+            cutoff = (datetime.now(UTC) - timedelta(seconds=2) if args.phase == 'freeze'
+                      else datetime.fromisoformat(json.loads(args.plan.read_bytes())['groups'][0]['proof']['cutoff']))
+            outage = {'verify_fence':verify_fence,'cutoff':cutoff}
+            identity['outage_controller_plan_hash'] = controller['plan_hash']
+        with components(assert_guard, outage=outage) as (repository, recovery, journal_authority, worker, wake):
             if args.phase == 'freeze':
                 if args.scope_file is None or args.scope_sha256 is None:
                     raise RuntimeError('RECOVERY_SCOPE_REQUIRED')
@@ -181,7 +248,7 @@ def main():
                     raise RuntimeError('RECOVERY_SCOPE_INVALID')
                 now = datetime.now(UTC)
                 frozen = freeze_campaign(repository, recovery, journal_authority, products=products,
-                    day=date(2026,10,12), observed_at=now, expires_at=now+timedelta(minutes=args.expires_minutes),
+                    day=date(2026,10,13) if outage else date(2026,10,12), observed_at=now, expires_at=now+timedelta(minutes=args.expires_minutes),
                     identity=identity)
                 assert_guard()
                 write_once(args.plan, frozen)

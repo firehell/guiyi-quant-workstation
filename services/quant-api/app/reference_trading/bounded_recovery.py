@@ -32,6 +32,48 @@ def _receipt_hash(receipt):
                   for column in receipt.__table__.columns})
 
 
+def _consumed_bound_receipt(session, receipt, revision):
+    """A previous one-shot interruption grants no automatic future recovery.
+
+    It may be renewed only after its exact generation/hash capture was consumed
+    by a committed calculation in this active revision. Uncertain/pending work
+    can never grant the next explicit task-local plan.
+    """
+    bound = receipt.budget.get("bounded_recovery_capture_sha256")
+    if receipt.recovery_policy != "interrupt_and_restart" or not isinstance(bound, str) or len(bound) != 64:
+        return False
+    previous = session.scalar(select(ReferenceActivationReceipt).where(
+        ReferenceActivationReceipt.stream_id == receipt.stream_id,
+        ReferenceActivationReceipt.generation == receipt.generation - 1))
+    if previous is None or receipt.budget.get("previous_receipt_sha256") != _receipt_hash(previous):
+        return False
+    additions = {"bounded_recovery_capture_sha256", "previous_receipt_sha256", "journal_proof_sha256"}
+    if ({k: v for k, v in receipt.budget.items() if k not in additions}
+            != {k: v for k, v in previous.budget.items() if k not in additions}
+            or not isinstance(receipt.budget.get("journal_proof_sha256"), str)
+            or len(receipt.budget["journal_proof_sha256"]) != 64):
+        return False
+    captures = session.scalars(select(ReferenceBatch).where(
+        ReferenceBatch.stream_id == receipt.stream_id,
+        ReferenceBatch.revision_id == receipt.revision_id,
+        ReferenceBatch.kind == "capture", ReferenceBatch.payload_hash == bound)).all()
+    if len(captures) != 1:
+        return False
+    capture = captures[0]
+    source = capture.source_evidence.get("forward_capture_v1", {})
+    calculation = session.get(ReferenceBatch, capture.consumed_by_batch_id) if capture.consumed_by_batch_id else None
+    proof = calculation.source_evidence.get("forward_capture_v1", {}) if calculation else {}
+    return (source.get("generation") == receipt.generation
+            and source.get("hash") == bound and source.get("source_kind") == "observation_interruption"
+            and calculation is not None and calculation.kind == "calculation"
+            and calculation.outcome == "committed"
+            and calculation.stream_id == capture.stream_id and calculation.revision_id == capture.revision_id
+            and proof.get("capture_id") == capture.batch_id and proof.get("hash") == bound
+            and proof.get("generation") == receipt.generation
+            and capture.expected_seq is not None and calculation.seq == capture.expected_seq + 1
+            and calculation.seq <= revision.last_seq)
+
+
 @dataclass(frozen=True)
 class BoundedRecoveryPlan:
     capture: ForwardCapture
@@ -79,11 +121,13 @@ class BoundedForwardRecovery:
             ReferenceActivationReceipt.generation == stream.activation_generation,
         ))
         batch = session.get(ReferenceBatch, revision.checkpoint_batch_id) if revision else None
-        if (receipt is None or receipt.disabled_at is not None or receipt.recovery_policy != "block"
+        if (receipt is None or receipt.disabled_at is not None
                 or receipt.revision_id != revision.revision_id
                 or observed_at.timestamp() < stream.recording_start.timestamp()
                 or batch is None or not batch.checkpoint_text or revision.status != "active"
                 or revision.last_seq != stream.latest_seq or batch.seq != revision.last_seq):
+            raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
+        if receipt.recovery_policy != "block" and not _consumed_bound_receipt(session, receipt, revision):
             raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
         identity = _identity_from_row(stream)
         if not identity.strategy_code.replace("-", "_").startswith("newow_") or identity.frequency != "60m":
@@ -103,7 +147,7 @@ class BoundedForwardRecovery:
         capture = capture_observation_gap(identity, revision_id=revision.revision_id,
             generation=stream.activation_generation + 1,
             previous_watermark=checkpoint.computed_through, observed_at=observed_at,
-            reason="OBSERVATION_GAP", trading_day=trading_day, endpoints=endpoints,
+            reason=("SERVICE_OUTAGE" if journal_proof.get("kind") == "SERVICE_OUTAGE" else "OBSERVATION_GAP"), trading_day=trading_day, endpoints=endpoints,
             interruption_end=endpoints[-1])
         values = (capture.capture_hash, stream.row_version, batch.batch_id,
                   batch.post_state_hash, receipt.receipt_id, _receipt_hash(receipt),

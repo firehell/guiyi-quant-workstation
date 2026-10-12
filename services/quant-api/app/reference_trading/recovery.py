@@ -20,7 +20,7 @@ def capture_observation_gap(
     trading_day: date | None, endpoints: tuple[datetime, ...],
     interruption_end: datetime | None = None,
 ) -> ForwardCapture:
-    if reason not in {"OBSERVATION_GAP", "FIRST_SEEN_NOT_PROVEN"}:
+    if reason not in {"OBSERVATION_GAP", "FIRST_SEEN_NOT_PROVEN", "SERVICE_OUTAGE"}:
         raise ValueError("RECOVERY_REASON_INVALID")
     if previous_watermark is not None and observed_at <= previous_watermark:
         raise ValueError("RECOVERY_TIME_INVALID")
@@ -64,7 +64,7 @@ def evaluate_observation_gap(token, checkpoint, evidence, *, dependency_manifest
     if stream is None or prior is None or not isinstance(proof, dict) or not isinstance(payload, dict):
         raise ValueError("RECOVERY_CAPTURE_INVALID")
     if proof.get("recovery_policy") != "interrupt_and_restart" or payload.get("reason") not in {
-        "OBSERVATION_GAP", "FIRST_SEEN_NOT_PROVEN",
+        "OBSERVATION_GAP", "FIRST_SEEN_NOT_PROVEN", "SERVICE_OUTAGE",
     }:
         raise ValueError("RECOVERY_POLICY_INVALID")
     if not isinstance(proof.get("gap_endpoints"), list) or not proof["gap_endpoints"]:

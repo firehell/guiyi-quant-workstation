@@ -193,6 +193,7 @@ def run_stage(plan, phase, *, backend, attempt):
     with backend.deployment_guard():
         state, progress = attempt.begin(phase)
         effects = state["effects"]
+        effects["controller_plan_hash"] = plan["plan_hash"]
         intent_written = False
 
         def mutate(name, action):
