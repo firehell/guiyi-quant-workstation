@@ -209,6 +209,9 @@ class ReferenceRepository:
                 ))
                 if receipt is None or receipt.recovery_policy != "interrupt_and_restart":
                     raise RepositoryConflict("RECOVERY_POLICY_NOT_APPROVED")
+                bound = receipt.budget.get("bounded_recovery_capture_sha256")
+                if bound is not None and bound != capture.capture_hash:
+                    raise RepositoryConflict("RECOVERY_PLAN_CONFLICT")
             existing = session.scalar(select(ReferenceBatch).where(
                 ReferenceBatch.stream_id == capture.stream_id,
                 ReferenceBatch.revision_id == capture.revision_id,
@@ -366,7 +369,7 @@ class ReferenceRepository:
                 identity, revision.revision_id, stream.activation_generation,
                 _required_aware(stream.recording_start, "RECORDING_START"),
                 checkpoint.computed_through,
-                receipt.recovery_policy,
+                "block" if receipt.budget.get("bounded_recovery_capture_sha256") else receipt.recovery_policy,
                 checkpoint.owner_segment_id,
                 checkpoint.calculation_segment_id,
             )
