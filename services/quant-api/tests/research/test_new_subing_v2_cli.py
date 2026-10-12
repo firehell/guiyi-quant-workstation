@@ -21,6 +21,15 @@ def test_capital_identity_and_blocked_no_return(tmp_path):
     assert ids[0] != ids[1]
 
 
+def test_packet_preserves_auditable_stage_layer_projection():
+    result = {'summary': {'status': 'DATA_INSUFFICIENT'}, 'stages': [{'stage': 'TRIAL'}],
+              'layers': [{'layer_id': 'test', 'qty': 1}], 'projection': {'open_layers': []}}
+    packet = cli.build_packet(product='al', scenario='baseline', profile=Profile(),
+                              code_revision='a'*40, status='DATA_INSUFFICIENT', result=result)
+    for key in ('stages', 'layers', 'projection'):
+        assert packet[key] == result[key]
+
+
 @pytest.mark.parametrize('input_hash,facts_hash,code', [
     ('b'*64, 'c'*64, 'COMPARISON_INPUT_HASH_MISMATCH'),
     ('a'*64, 'd'*64, 'COMPARISON_FACTS_HASH_MISMATCH'),

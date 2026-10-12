@@ -156,6 +156,24 @@ def test_future_daily_and_fifteen_minute_facts_cannot_make_past_setup():
     assert result['fills'] == []
 
 
+def test_daily_snapshot_without_ma_blocks_trial_even_after_future_warmup():
+    histories, execution = scenario_bars()
+    histories['1d'] = histories['1d'][-1:]
+    prefix = run_research(histories, execution, since=DAY, through=DAY)
+    assert not any(d['action'] == 'OPEN' for d in prefix['decisions'])
+    assert prefix['fills'] == []
+    last = histories['1d'][-1]
+    for i in range(1, 22):
+        end = T0 + timedelta(days=i, hours=6)
+        price = D('100') + D(i)
+        histories['1d'].append(replace(last, bar_end=end, confirmed_at=end,
+                                      trading_day=end.date(), open=price, high=price,
+                                      low=price, close=price, source_identity=f'future-day-{i}'))
+    after = run_research(histories, execution, since=DAY, through=DAY)
+    assert after['decisions'] == prefix['decisions']
+    assert after['fills'] == prefix['fills']
+
+
 def test_held_roll_interrupts_but_flat_roll_keeps_cash():
     histories, execution = scenario_bars()
     for i in range(24, len(histories['5m'])):
@@ -227,6 +245,23 @@ def test_boll_vote_needs_prior_compression_and_current_volume():
     assert setup_evidence(no_volume, 22, 1, Profile()) is None
 
 
+def test_boll_cross_volume_and_compression_bind_to_the_same_bar():
+    from guiyi_quant.new_subing_v2.signals import build_snapshots
+    bars = [bar(5*(i+1), '5m', D('100')) for i in range(21)]
+    bars.append(bar(110, '5m', D('101'), D('100')))
+    bars.append(bar(115, '5m', D('102'), D('400')))
+    snapshots = list(build_snapshots(bars, Profile()))
+    for i, width in ((18, D('10')), (19, D('9')), (20, D('8')), (21, D('7'))):
+        snapshots[i] = replace(snapshots[i], boll_upper=D('100')+width/2,
+                               boll_lower=D('100')-width/2,
+                               ma=D('100')+D(min(i-18, 2))/10)
+    snapshots[21] = replace(snapshots[21], ma_cross=1, boll_cross=1,
+                            breakout=0, breakout_level=None)
+    snapshots[22] = replace(snapshots[22], ma=D('100.2'), ma_cross=0,
+                            boll_cross=0, breakout=0, breakout_level=None)
+    assert setup_evidence(snapshots, 22, 1, Profile()) is None
+
+
 def test_chop_trial_requires_volume_breakout_and_layer_guard_is_named():
     from guiyi_quant.new_subing_v2.signals import build_snapshots
     bars = [bar(5 * (i+1), '5m', D('100')) for i in range(22)]
@@ -269,7 +304,7 @@ def test_known_opposite_week_blocks_trial_but_unknown_week_allows_it():
     assert blocked['diagnostics']['rejections']['MULTI_TIMEFRAME_DIRECTION_UNREADY'] > 0
 
 
-def test_add_layer_uses_fill_basis_and_guard_removes_only_that_layer():
+def _layer_histories():
     histories, _ = scenario_bars()
     warm = []
     for k in range(16):
@@ -300,6 +335,11 @@ def test_add_layer_uses_fill_basis_and_guard_removes_only_that_layer():
                                         close=price, source_identity=f'15m-{n}'))
     execution_facts = replace(facts(), tick_size=D('.1'),
                               long_margin_ratio=D('.3'), short_margin_ratio=D('.3'))
+    return histories, execution_facts
+
+
+def test_add_layer_uses_fill_basis_and_guard_removes_only_that_layer():
+    histories, execution_facts = _layer_histories()
     execution = [ExecutionBar(b, execution_facts) for b in histories['1m']]
     result = run_research(histories, execution, since=DAY, through=DAY)
     adds = [d for d in result['decisions'] if d['action'] == 'ADD']
@@ -351,3 +391,45 @@ def test_short_daily_anchor_and_macd_reaction_are_symmetric():
     weak = replace(snapshots[-1], histogram=D('-2'))
     assert daily_macd_reaction(weak, before, -1, D('10')) == 'REDUCE'
     assert daily_macd_reaction(weak, before, -1, D('-1')) == 'CLEAR'
+
+
+def test_reduction_discards_prior_pullback_before_a_later_breakout():
+    histories, execution_facts = _layer_histories()
+    for i, price, volume, oi in ((30, D('108.5'), D('100'), D('1001')),
+                                 (31, D('110'), D('400'), D('1002'))):
+        b = histories['5m'][16+i]
+        histories['5m'][16+i] = replace(b, open=price, high=price+D('.5'),
+                                        low=D('106.8') if i == 30 else price-D('.5'), close=price,
+                                        volume=volume, open_interest=oi)
+    for i in range(150, len(histories['1m'])):
+        b = histories['1m'][i]
+        price = D('106.8') if i < 154 else D('108.5') if i == 154 else D('110')
+        histories['1m'][i] = replace(b, open=price, high=price, low=price, close=price)
+    execution = [ExecutionBar(b, execution_facts) for b in histories['1m']]
+    result = run_research(histories, execution, since=DAY, through=DAY)
+    assert any(d['action'] == 'REDUCE' and d['at'] > (T0+timedelta(minutes=150)).isoformat()
+               for d in result['decisions'])
+    assert any(row['stage'] == 'PULLBACK' and
+               row['at'] == (T0+timedelta(minutes=150)).isoformat()
+               for row in result['stages'])
+    assert not any(d['action'] == 'ADD' for d in result['decisions'])
+
+
+@pytest.mark.parametrize(('low', 'reason'), [
+    (D('99'), 'PULLBACK_LEVEL_BROKEN'),
+    (D('108'), 'PULLBACK_CONTEXT_UNREADY'),
+])
+def test_invalid_pullback_is_cleared_before_context_early_return(low, reason):
+    histories, execution_facts = _layer_histories()
+    failing = histories['5m'][16+30]
+    histories['5m'][16+30] = replace(failing, low=low, close=D('109'),
+                                     session_open_at=None)
+    later = histories['5m'][16+31]
+    histories['5m'][16+31] = replace(later, open=D('110'), high=D('111'),
+                                    low=D('109.5'), close=D('110'),
+                                    volume=D('400'), open_interest=D('1002'))
+    execution = [ExecutionBar(b, execution_facts) for b in histories['1m']]
+    result = run_research(histories, execution, since=DAY, through=DAY)
+    assert any(d['action'] == 'SETUP_INVALIDATED' and d['reason'] == reason
+               for d in result['decisions'])
+    assert not any(d['action'] == 'ADD' for d in result['decisions'])

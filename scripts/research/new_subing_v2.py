@@ -66,7 +66,9 @@ def build_packet(*, product: str, scenario: str, profile: Profile, code_revision
         'case_parity': 'PENDING', 'oos_status': 'NOT_PROVEN'},
         'summary': result['summary'], 'decisions': result.get('decisions', []),
         'trades': result.get('trades', []), 'equity': result.get('equity', []),
-        'fills': result.get('fills', []), 'diagnostics': diagnostics}
+        'fills': result.get('fills', []), 'diagnostics': diagnostics,
+        'stages': result.get('stages', []), 'layers': result.get('layers', []),
+        'projection': result.get('projection', {})}
 
 
 def progress(**values: Any) -> None:

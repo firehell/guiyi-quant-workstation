@@ -147,27 +147,40 @@ def setup_evidence(snapshots: Sequence[Snapshot], index: int, side: int,
                s.histogram * side > 0 and previous_hist * side > 0 and
                abs(s.histogram) > abs(previous_hist))
     ma_triggers = [x for x in recent if x.ma_cross == side]
-    widths = [(x.boll_upper - x.boll_lower) if x.boll_upper is not None and x.boll_lower is not None else None
-              for x in snapshots[max(0, index-4):index]]
-    compressed = (len(widths) >= 3 and all(w is not None for w in widths[-3:]) and
-                  cast(D, widths[-3]) >= cast(D, widths[-2]) >= cast(D, widths[-1]))
-    ma_changes = [abs(cast(D, snapshots[j].ma) - cast(D, snapshots[j-1].ma))
-                  for j in range(max(1, index-2), index+1)
-                  if snapshots[j].ma is not None and snapshots[j-1].ma is not None]
-    ma_calm = len(ma_changes) >= 2 and ma_changes[-1] <= ma_changes[-2]
-    volume_above = False
-    current_volume_above = False
-    for j in range(max(1, index-p.trigger_window+1), index+1):
-        previous = snapshots[j-1]
-        prior_twenty = snapshots[j-p.volume_window:j] if j >= p.volume_window else ()
-        if (len(prior_twenty) == p.volume_window and
-            all(x.bar.physical_contract == snapshots[j].bar.physical_contract for x in prior_twenty) and
-            previous.bar.physical_contract == snapshots[j].bar.physical_contract):
-            mean_volume = sum((x.bar.volume for x in prior_twenty), D('0')) / p.volume_window
-            if snapshots[j].bar.volume > mean_volume and snapshots[j].bar.volume > previous.bar.volume:
-                volume_above = True
-                current_volume_above = j == index
-    boll_triggers = [x for x in recent if x.boll_cross == side] if compressed and ma_calm and current_volume_above else []
+
+    def volume_above_at(j: int) -> bool:
+        if j < p.volume_window:
+            return False
+        candidate = snapshots[j]
+        prior = snapshots[j-p.volume_window:j]
+        if any(x.bar.physical_contract != candidate.bar.physical_contract for x in prior):
+            return False
+        mean = sum((x.bar.volume for x in prior), D('0')) / p.volume_window
+        return candidate.bar.volume > mean and candidate.bar.volume > snapshots[j-1].bar.volume
+
+    def boll_valid_at(j: int) -> bool:
+        candidate = snapshots[j]
+        if j < max(3, p.volume_window) or candidate.boll_cross != side or \
+           candidate.ma is None or (candidate.bar.close - candidate.ma) * side <= 0 or \
+           not volume_above_at(j):
+            return False
+        before = snapshots[j-3:j]
+        if any(x.bar.physical_contract != candidate.bar.physical_contract or
+               x.boll_upper is None or x.boll_lower is None for x in before):
+            return False
+        widths = [cast(D, x.boll_upper) - cast(D, x.boll_lower) for x in before]
+        if not widths[0] >= widths[1] >= widths[2]:
+            return False
+        ma_earlier, ma_prior = snapshots[j-2].ma, snapshots[j-1].ma
+        if ma_earlier is None or ma_prior is None:
+            return False
+        return abs(candidate.ma - ma_prior) <= abs(ma_prior - ma_earlier)
+
+    recent_indices = range(max(0, index-p.trigger_window+1), index+1)
+    volume_above = any(snapshots[j].bar.physical_contract == s.bar.physical_contract and
+                       volume_above_at(j) for j in recent_indices)
+    boll_triggers = [snapshots[j] for j in recent_indices
+                     if snapshots[j].bar.physical_contract == s.bar.physical_contract and boll_valid_at(j)]
     breakout_triggers = [x for x in recent if x.breakout == side and x.breakout_level is not None and
                          (s.bar.close - x.breakout_level) * side > 0]
     votes = {'trend': direction(s) == side, 'macd': bool(macd_triggers and hist_ok),

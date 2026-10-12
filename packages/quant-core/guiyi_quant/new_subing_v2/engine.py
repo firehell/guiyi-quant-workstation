@@ -268,7 +268,7 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
 
     def queue(at: datetime, action: str, side: int, reason: str,
               facts: dict[str, object] | None = None) -> None:
-        nonlocal pending
+        nonlocal pending, pullback_index, stage
         priority = {'CLEAR': 5, 'LAYER_CLEAR': 4, 'REDUCE': 3, 'ADD': 2, 'OPEN': 1}
         if pending and priority[action] <= priority[str(pending['action'])]:
             return
@@ -279,6 +279,12 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
                    'reason': reason, 'facts': facts or {}, 'contract': current_contract,
                    'trading_day': current_facts.trading_day if current_facts else None,
                    'session_open_at': last_5m.bar.session_open_at if last_5m else None}
+        if action in ('REDUCE', 'LAYER_CLEAR', 'CLEAR'):
+            pullback_index = None
+            if stage == 'PULLBACK' and hold_frequency == '5m' and action != 'CLEAR':
+                stage = 'BREAKOUT_CONFIRMED'
+                stage_rows.append({'at': at.isoformat(), 'stage': stage,
+                                   'source_identity': reason})
         record(at, action, side, reason, account.qty, facts)
 
     def margin_used(facts: ExecutionFacts, mark: D) -> D:
@@ -432,6 +438,7 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
             account.mark(price, facts)
             if action == 'REDUCE':
                 add_setup = None
+                pullback_index = None
                 reduction_used.add(str(pending['reason']))
             if account.qty == 0:
                 stop = entry_atr = first_entry_atr = frozen_level = None
@@ -457,7 +464,7 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
     def process_5m(s: Snapshot, index: int) -> None:
         nonlocal setup, add_setup, stop, entry_atr, frozen_level, last_5m, last_5m_index
         nonlocal peak_profit, ready_observation, fact_blocked, stage, confirmed_count
-        nonlocal pullback_index, hold_frequency
+        nonlocal pullback_index, hold_frequency, pending
         bar = s.bar
         at = bar.confirmed_at
         if not bar.observation_eligible or not since <= bar.trading_day <= through:
@@ -485,10 +492,12 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
         daily_side = direction(daily) if daily else 0
         weekly_side = direction(weekly) if weekly else 0
         confirm_side = direction(confirm) if confirm else 0
-        trial_side = direction(s) if daily is not None and (daily.chop or daily_side == 0) else daily_side
-        direction_ready = (daily is not None and trial_side != 0 and direction(s) == trial_side and
+        daily_ready = daily is not None and daily.ma is not None
+        trial_side = direction(s) if daily is not None and daily_ready and \
+            (daily.chop or daily_side == 0) else daily_side
+        direction_ready = (daily_ready and trial_side != 0 and direction(s) == trial_side and
                            confirm_side == trial_side and weekly_side != -trial_side and
-                           (daily_side != -trial_side or daily.chop))
+                           (daily_side != -trial_side or (daily is not None and daily.chop)))
         indicator_ready = s.atr is not None and s.atr > 0 and s.ma is not None
         opening_ready = (bar.session_open_at is not None and
                          completed_session_minutes(bar, at) >= profile.opening_minutes)
@@ -498,6 +507,19 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
             net_profit = net_unrealized(bar.close, current_facts)
             profit_per_lot = net_profit / abs(account.qty)
             peak_profit = max(peak_profit, profit_per_lot)
+            if pullback_index is not None:
+                broken = frozen_level is None or \
+                    (bar.low < frozen_level if side > 0 else bar.high > frozen_level)
+                if broken or not basic_ready or net_profit <= 0:
+                    reason = ('PULLBACK_LEVEL_BROKEN' if broken else
+                              'PULLBACK_CONTEXT_UNREADY' if not basic_ready else 'PULLBACK_NONPROFIT')
+                    record(at, 'SETUP_INVALIDATED', side, reason, account.qty)
+                    pullback_index = None
+                    if hold_frequency == '5m' and stage == 'PULLBACK':
+                        stage = 'BREAKOUT_CONFIRMED'
+                    if pending and pending['action'] == 'ADD':
+                        record(at, 'CANCEL', side, 'STALE_ADD_SETUP', account.qty)
+                        pending = None
             if stage == 'TRIAL' and index > entry_5m_index and frozen_level is not None:
                 if (bar.close - frozen_level) * side > 0:
                     confirmed_count += 1
@@ -561,12 +583,6 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
                 return
             if stage == 'TRIAL':
                 return
-            if pullback_index is not None and \
-               (bar.low < frozen_level if side > 0 else bar.high > frozen_level):
-                record(at, 'SETUP_INVALIDATED', side, 'PULLBACK_LEVEL_BROKEN', account.qty)
-                pullback_index = None
-                if hold_frequency == '5m':
-                    stage = 'BREAKOUT_CONFIRMED'
             if index > entry_5m_index and (bar.close - local['5m'][index-1].bar.close) * side < 0 and \
                (bar.low >= frozen_level if side > 0 else bar.high <= frozen_level):
                 pullback_index = index
