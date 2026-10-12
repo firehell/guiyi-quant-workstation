@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from app.market_data.aggregation import aggregate_from_1m, bucket_window_for_bar
-from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
 from app.market_data.live_market import (
     LiveMarketService, LiveProvider, RedisLiveStore, _bar_from_payload, _bar_payload, _compact_json,
@@ -124,10 +124,61 @@ class MarketFeedService(LiveMarketService):
             self.assert_owned()
         return super()._reconcile_prepared(now)
 
+    def _restore_break_identity(self, phases):
+        # CLOSED still carries the proven current Calendar day; it must not
+        # initialize a future day inferred from an upcoming Session.
+        if phases and all(p.phase in (MarketPhase.BREAK, MarketPhase.CLOSED) for p in phases.values()):
+            days = {p.trading_day for p in phases.values() if p.trading_day is not None}
+            if len(days) > 1:
+                return "LIVE_TRADING_DAY_INCONSISTENT"
+            if days:
+                return self._restore_frozen_day(next(iter(days)))
+        return super()._restore_break_identity(phases)
+
     def _restore_frozen_day(self, trading_day):
         if self._trading_day != trading_day:
-            self.source_stream.prepare_registered_day(trading_day)
-            ObservationStream(self.source_stream.redis, kind='completed').prepare_registered_day(trading_day)
+            streams = (self.source_stream, ObservationStream(self.source_stream.redis, kind='completed'))
+            # Prove every registered prior consumer is at its real tail before
+            # the producer creates even the target subscription snapshot.
+            for stream in streams:
+                prefix = f"live:observations:registered:{stream.kind}:"
+                for raw in stream.redis.scan_iter(match=prefix + '*'):
+                    key = raw.decode() if isinstance(raw, bytes) else raw
+                    consumer = key[len(prefix):]
+                    previous = stream.registered_day(consumer)
+                    if previous > trading_day:
+                        return "OBSERVATION_DAY_REGRESSION"
+                    if previous < trading_day and stream.cursor(consumer, previous) != stream.tail(previous):
+                        return "OBSERVATION_DAY_BASELINE_UNPROVEN"
+                    if previous < trading_day and any(stream.redis.exists(key) for key in
+                            (stream.key(trading_day), stream.identity_key(trading_day), stream.cursor_key(consumer, trading_day))):
+                        return "OBSERVATION_DAY_BASELINE_UNPROVEN"
+            mapping = {}
+            try:
+                for symbol in self._products:
+                    contract = self._dominant_source.dominant_for_day(symbol, trading_day)
+                    if normalize_contract_for_symbol(symbol, contract) != contract:
+                        raise ValueError("LIVE_RANK1_CONTRACT_INVALID")
+                    if self._coverage_session_source is None or not self._coverage_session_source(symbol, trading_day):
+                        raise ValueError("LIVE_SESSION_AUTHORITY_UNAVAILABLE")
+                    mapping[symbol] = contract
+            except Exception:
+                return "LIVE_RANK1_CATALOG_UNAVAILABLE"
+            if hasattr(self, 'assert_owned'):
+                self.assert_owned()
+            snapshot = self._store.subscriptions(trading_day)
+            if snapshot is None:
+                # Atomic absence-only creation. Another mapping is never replaced.
+                self.source_stream.redis.eval(
+                    "if redis.call('EXISTS', KEYS[1]) == 0 then "
+                    "redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2]); return 1 end; return 0",
+                    1, self._store._subscription_key(trading_day), _compact_json(mapping), TTL_SECONDS,
+                )
+                snapshot = self._store.subscriptions(trading_day)
+            if snapshot != mapping:
+                return "OBSERVATION_SUBSCRIPTION_CONFLICT"
+            for stream in streams:
+                stream.prepare_registered_day(trading_day)
         return super()._restore_frozen_day(trading_day)
 
     def ingest(self, contract: str, bar: CanonicalBar, *, now: datetime) -> str | None:
@@ -240,6 +291,30 @@ class DurableLiveMarketService(LiveMarketService):
         self.source_provider = source_provider
         self.completed_stream = ObservationStream(self._store._redis, kind='completed')
         self._halted: str | None = None
+        self._durable_session_day: date | None = None
+
+    def _restore_frozen_day(self, trading_day: date) -> str | None:
+        failure = super()._restore_frozen_day(trading_day)
+        if failure or self._durable_session_day == trading_day:
+            return failure
+        if self._coverage_session_source is not None:
+            # Restarted journal consumers have not observed the old Session.
+            # Load its existing Calendar/Session authority before accepting a
+            # final raw bar in the unchanged Session-end arrival grace.
+            restored = {}
+            try:
+                for symbol in self._contracts:
+                    windows = self._coverage_session_source(symbol, trading_day)
+                    if not windows or tuple(sorted(windows, key=lambda w: w.start)) != windows:
+                        raise ValueError("LIVE_SESSION_AUTHORITY_INVALID")
+                    if any(left.end > right.start for left, right in zip(windows, windows[1:])):
+                        raise ValueError("LIVE_SESSION_AUTHORITY_INVALID")
+                    restored[(symbol, trading_day)] = windows
+            except Exception:
+                return "LIVE_SESSION_AUTHORITY_UNAVAILABLE"
+            self._known_sessions.update(restored)
+        self._durable_session_day = trading_day
+        return None
 
     def poll(self, now: datetime) -> str | None:
         if self._halted:

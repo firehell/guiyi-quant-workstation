@@ -904,6 +904,10 @@ D1/W1 继续既有 Canonical 与持久捕获；恢复下载保留 recovery 身�
 两类 Stream 按交易日分区，三天保留、每日每类 120,000 条上限；Lua mutation 前验证键类型、身份、内容、容量及 cursor。
 不静默 trim 未消费条目。相同身份内容幂等，冲突/过期/进度缺失/提交未知显式阻断。跨日先排空旧注册分区，再由 Feed
 在新空分区推进注册日；不能从最新一根假装恢复。source 中未完成的 future preview 不阻止前面已确认的连续 cursor 前缀。
+重启排旧分区前，Live 从既有 Calendar/Session 权威入口恢复该日 Session 缓存；合法末 Bar 仍按原始接收时间
+和原有 60 秒 Session-end arrival grace 校验，不使用当前墙钟窗口替代旧日窗口，也不扩大宽限。
+Feed 在闭市启动也只使用当前 Calendar 证明的交易日；先证明旧注册消费者到达真实尾部及目标分区无孤儿内容，
+再以当日权威 rank1/Session 原子创建缺失订阅，随后执行既有 NEW_DAY 注册协议；不从 next Session 推断未来日。
 
 `raw_received_at` 与 `source_observed_at` 保留真实原始接收时间；`confirmed_at` 是首次正常 completed 原子提交时刻，
 幂等重放复用已提交值。Reference 捕获以 confirmed 时刻证明 completed 合法性，通知时效仍用原始接收时间，

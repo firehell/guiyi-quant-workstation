@@ -826,9 +826,17 @@ class FaultRecoveryHost:
         BootstrapBackend()._assert_recovery_calendar_safe(payload)
         return self.start(binding)
 
-    def await_new_reference_parked(self, binding, request):
+    def await_new_reference_parked(self, binding, request, *, held_guard=None):
+        """Prove parked ownership using the caller's actual held fd, or a free lock.
+
+        Controller calls leave held_guard unset and still require release. The
+        maintenance Reference CLI passes its inode-validating guard while it
+        owns the kernel lock; probing a second fd would conflict with itself.
+        """
         deadline = monotonic() + 30
         while monotonic() < deadline:
+            if held_guard is not None:
+                held_guard()
             state, control = (
                 read_service_state("reference-worker"),
                 _read(self.directory / "reference-worker.handover.json"),
@@ -842,7 +850,7 @@ class FaultRecoveryHost:
                 and control.get("request_id") == request
                 and control.get("generation") == 17
                 and control.get("phase") == "drain"
-                and owner_lock_available("reference-worker")
+                and (held_guard is not None or owner_lock_available("reference-worker"))
                 and str(state.get("pid")) == str(self.loaded(binding))
             ):
                 return

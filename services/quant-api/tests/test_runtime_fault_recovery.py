@@ -533,3 +533,52 @@ def test_host_fault_window_accepts_authoritative_night_only_when_fenced(
     monkeypatch.setattr(scheduled.ScheduledBackend, "idle", lambda self, binding: False)
     with pytest.raises(FaultRecoveryError, match="CALENDAR_BUSY"):
         host.fault_window(plan, effects)
+
+
+def test_new_reference_park_check_accepts_actual_held_guard_and_default_requires_free_lock(
+    tmp_path, monkeypatch
+):
+    import app.runtime_fault_recovery_host as module
+
+    backend, plan, _ = setup(tmp_path)
+    binding = registry(plan["new"]).services["reference-worker"]
+    host = FaultRecoveryHost()
+    host.loaded = lambda item: 42
+    monkeypatch.setattr(
+        module,
+        "read_service_state",
+        lambda name: {"phase": "parked", "ready": False, "generation": 17, "pid": 42},
+    )
+    monkeypatch.setattr(
+        module,
+        "_read",
+        lambda path: {"phase": "drain", "generation": 17, "request_id": "request17"},
+    )
+    monkeypatch.setattr(module, "owner_lock_available", lambda name: False)
+    calls = []
+    host.await_new_reference_parked(
+        binding, "request17", held_guard=lambda: calls.append("held_inode_checked")
+    )
+    assert calls == ["held_inode_checked"]
+    times = iter([0, 0, 31])
+    monkeypatch.setattr(module, "monotonic", lambda: next(times))
+    monkeypatch.setattr(module, "sleep", lambda seconds: None)
+    with pytest.raises(FaultRecoveryError, match="NEW_REFERENCE_PARK_TIMEOUT"):
+        host.await_new_reference_parked(binding, "request17")
+
+
+def test_new_reference_held_inode_guard_failure_cannot_be_bypassed(
+    tmp_path, monkeypatch
+):
+    backend, plan, _ = setup(tmp_path)
+    host = FaultRecoveryHost()
+
+    def changed():
+        raise FaultRecoveryError("OWNER_INODE_CHANGED")
+
+    with pytest.raises(FaultRecoveryError, match="OWNER_INODE_CHANGED"):
+        host.await_new_reference_parked(
+            registry(plan["new"]).services["reference-worker"],
+            "request17",
+            held_guard=changed,
+        )
