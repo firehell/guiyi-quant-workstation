@@ -217,7 +217,7 @@ def main():
                     raise RuntimeError('OUTAGE_CONTROLLER_DRIFT')
                 host.assert_protected(controller)
                 host.assert_new_installed(new)
-                host.await_new_reference_parked(binding, state['effects']['reference17_request'])
+                host.await_new_reference_parked(binding, state['effects']['reference17_request'], held_guard=assert_guard)
                 if not host.definition_absent(new.services['market-feed']):
                     raise RuntimeError('OUTAGE_PUBLISHER_PRESENT')
                 from app.runtime_fault_recovery import CALENDARS
