@@ -40,6 +40,7 @@ class BoundedRecoveryPlan:
     checkpoint_hash: str
     receipt_id: str
     receipt_hash: str
+    dependency_digest: str
     expires_at: datetime
     journal_proof: dict
     plan_hash: str
@@ -81,7 +82,8 @@ class BoundedForwardRecovery:
         if (receipt is None or receipt.disabled_at is not None or receipt.recovery_policy != "block"
                 or receipt.revision_id != revision.revision_id
                 or observed_at.timestamp() < stream.recording_start.timestamp()
-                or batch is None or not batch.checkpoint_text or revision.status != "active"):
+                or batch is None or not batch.checkpoint_text or revision.status != "active"
+                or revision.last_seq != stream.latest_seq or batch.seq != revision.last_seq):
             raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
         identity = _identity_from_row(stream)
         if not identity.strategy_code.replace("-", "_").startswith("newow_") or identity.frequency != "60m":
@@ -105,10 +107,10 @@ class BoundedForwardRecovery:
             interruption_end=endpoints[-1])
         values = (capture.capture_hash, stream.row_version, batch.batch_id,
                   batch.post_state_hash, receipt.receipt_id, _receipt_hash(receipt),
-                  expires_at.isoformat(), journal_proof)
+                  revision.dependency_digest, expires_at.isoformat(), journal_proof)
         return BoundedRecoveryPlan(capture, stream.row_version, batch.batch_id,
             batch.post_state_hash, receipt.receipt_id, _receipt_hash(receipt),
-            expires_at, dict(journal_proof), _hash(values))
+            revision.dependency_digest, expires_at, dict(journal_proof), _hash(values))
 
     def readback(self, plan):
         """Independent exact readback; None never grants an unknown attempt retry."""
