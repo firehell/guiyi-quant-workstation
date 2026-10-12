@@ -32,14 +32,16 @@ def daily_anchor_trigger(qty: int, close: D, prior: StrategyBar) -> bool:
 
 
 def daily_macd_reaction(current: Snapshot, previous: Snapshot | None,
-                        side: int, net_profit: D) -> str | None:
-    weak = (current.macd_cross == -side or
-            (previous is not None and current.histogram is not None and
-             previous.histogram is not None and
-             (current.histogram - previous.histogram) * side < 0))
-    if not weak:
-        return None
-    return 'CLEAR' if net_profit <= 0 else 'REDUCE'
+                        side: int, net_profit: D) -> tuple[str, str] | None:
+    if current.macd_cross == -side:
+        return (('CLEAR', 'MACD_REVERSE_LOSS') if net_profit <= 0 else
+                ('REDUCE', 'MACD_REVERSE_REDUCE'))
+    histogram_weak = (previous is not None and current.histogram is not None and
+                      previous.histogram is not None and
+                      (current.histogram - previous.histogram) * side < 0)
+    if histogram_weak and net_profit > 0:
+        return 'REDUCE', 'HIST_WEAKEN_REDUCE'
+    return None
 
 
 def _fees(f: FeeSchedule, scenario: str) -> FeeSchedule:
@@ -561,14 +563,17 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
                 key = f'DIVERGENCE:{divergence[0]}:{divergence[1]}'
                 if key not in reduction_used:
                     reasons.append(key)
-            if hold_frequency == '5m' and s.histogram is not None and index > 0 and \
-               local['5m'][index-1].histogram is not None and \
-               (s.macd_cross == -side or (s.histogram - cast(D, local['5m'][index-1].histogram)) * side < 0):
-                if net_profit <= 0:
-                    queue(at, 'CLEAR', side, 'FIVE_MINUTE_MACD_LOSS')
-                    return
-                if 'FIVE_MINUTE_MACD_REDUCE' not in reduction_used:
-                    reasons.append('FIVE_MINUTE_MACD_REDUCE')
+            if hold_frequency == '5m':
+                prior_5m = local['5m'][index-1] if index > 0 else None
+                reaction = daily_macd_reaction(s, prior_5m, side, net_profit)
+                if reaction is not None:
+                    action, reaction_reason = reaction
+                    reason = f'FIVE_MINUTE_{reaction_reason}'
+                    if action == 'CLEAR':
+                        queue(at, 'CLEAR', side, reason)
+                        return
+                    if reason not in reduction_used:
+                        reasons.append(reason)
             if reasons:
                 if abs(account.qty) == 1:
                     if pending and pending['action'] in ('CLEAR', 'REDUCE'):
@@ -762,15 +767,18 @@ def run_research_impl(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
                     profit = net_unrealized(s.bar.close, cast(ExecutionFacts, current_facts))
                     reaction = daily_macd_reaction(s, previous_snapshot, account.side, profit)
                     if reaction is not None:
-                        if reaction == 'CLEAR':
-                            queue(at, 'CLEAR', account.side, 'DAILY_MACD_LOSS')
-                        elif 'DAILY_MACD_REDUCE' not in reduction_used:
+                        action, reaction_reason = reaction
+                        reason = f'DAILY_{reaction_reason}'
+                        if action == 'CLEAR':
+                            queue(at, 'CLEAR', account.side, reason)
+                        elif reason not in reduction_used:
                             if abs(account.qty) > 1:
-                                queue(at, 'REDUCE', account.side, 'DAILY_MACD_REDUCE')
+                                queue(at, 'REDUCE', account.side, reason)
                             else:
-                                reduction_used.add('DAILY_MACD_REDUCE')
+                                reduction_used.add(reason)
                                 record(at, 'REDUCE_SKIPPED', account.side,
-                                       'UNSPLITTABLE_ONE_LOT', account.qty)
+                                       'UNSPLITTABLE_ONE_LOT', account.qty,
+                                       {'source_reason': reason})
 
     if current_contract is not None:
         segments.append({'physical_contract': current_contract, 'closed_trades': len(account.closed_trades),

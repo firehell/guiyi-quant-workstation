@@ -87,6 +87,7 @@ def profile_payload(profile: Profile | None = None) -> dict[str, object]:
             'ma21': 'simple; direction is completed close relative to MA21',
             'boll21': 'population standard deviation times 2; prior 3 widths nonexpanding for BOLL vote',
             'macd': '12/26/9, SMA seed, 6 digits; DIF zero cross and signal cross',
+            'macd_exit': 'reverse cross: nonpositive net PnL clear, positive net PnL reduce; histogram weakening alone: positive net PnL reduce only',
             'stage': 'TRIAL -> BREAKOUT_CONFIRMED -> PULLBACK -> TREND',
             'trial_confirmation': 'three later completed 5m closes outside frozen level',
             'entry': 'at least three of five votes plus MA/MACD/breakout event; 5m chop requires volume breakout',

@@ -36,6 +36,9 @@ def bar(i, frequency='1m', price=D('100'), volume=D('100'), oi=D('1000')):
 
 def test_profile_identity_and_cash_choices():
     assert profile_payload(Profile())['account_model_version'] == 'new_subing_layers_v2'
+    assert profile_payload(Profile())['rules']['macd_exit'] == (
+        'reverse cross: nonpositive net PnL clear, positive net PnL reduce; '
+        'histogram weakening alone: positive net PnL reduce only')
     assert Profile(initial_cash=D('1000000')).profile_id == 'new_subing_stage_v2_1m'
     with pytest.raises(ValueError):
         Profile(initial_cash=D('200000'))
@@ -389,8 +392,29 @@ def test_short_daily_anchor_and_macd_reaction_are_symmetric():
     snapshots = build_snapshots(history, Profile())
     before = replace(snapshots[-2], histogram=D('-3'))
     weak = replace(snapshots[-1], histogram=D('-2'))
-    assert daily_macd_reaction(weak, before, -1, D('10')) == 'REDUCE'
-    assert daily_macd_reaction(weak, before, -1, D('-1')) == 'CLEAR'
+    assert daily_macd_reaction(weak, before, -1, D('10')) == ('REDUCE', 'HIST_WEAKEN_REDUCE')
+    assert daily_macd_reaction(weak, before, -1, D('-1')) is None
+
+
+@pytest.mark.parametrize('side', [1, -1])
+@pytest.mark.parametrize(('reverse', 'weakening', 'profit', 'expected'), [
+    (True, True, D('-1'), ('CLEAR', 'MACD_REVERSE_LOSS')),
+    (True, False, D('0'), ('CLEAR', 'MACD_REVERSE_LOSS')),
+    (True, True, D('1'), ('REDUCE', 'MACD_REVERSE_REDUCE')),
+    (False, True, D('-1'), None),
+    (False, True, D('0'), None),
+    (False, True, D('1'), ('REDUCE', 'HIST_WEAKEN_REDUCE')),
+    (False, False, D('-1'), None),
+])
+def test_macd_reverse_is_loss_stop_while_histogram_weakening_is_profit_take(
+    side, reverse, weakening, profit, expected,
+):
+    from guiyi_quant.new_subing_v2.signals import build_snapshots
+    snapshots = build_snapshots([bar(5*(i+1), '5m', D('100')) for i in range(23)], Profile())
+    previous = replace(snapshots[-2], histogram=D(3*side))
+    current = replace(snapshots[-1], macd_cross=-side if reverse else 0,
+                      histogram=D(2*side) if weakening else D(4*side))
+    assert daily_macd_reaction(current, previous, side, profit) == expected
 
 
 def test_reduction_discards_prior_pullback_before_a_later_breakout():
