@@ -3,10 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import PageShell from '@/components/common/PageShell.vue'
 import { getNewSubingPage, getNewSubingProfiles, getNewSubingRun, getNewSubingRuns } from '@/api/newSubingResearch'
 import type { NewSubingMetadata, NewSubingPage, NewSubingProfiles, NewSubingRunDetail } from '@/types/newSubingResearch'
-import { decisionMatches, equityPoints, metricText, runStateText, selectionToken } from '@/utils/newSubingResearch'
+import { decisionMatches, equityPoints, matchingProfile, matchingRun, metricText, runStateText, selectionToken } from '@/utils/newSubingResearch'
 
 const products = ['AL', 'RB', 'TA'] as const
 const scenarios = ['baseline', 'double_commission', 'double_slippage'] as const
+const versions = ['new_subing_v2', 'new_subing_v1'] as const
+const selectedVersion = ref<(typeof versions)[number]>('new_subing_v2')
+const selectedCapital = ref('100000')
 const selectedProduct = ref<(typeof products)[number]>('AL')
 const selectedScenario = ref<string>('baseline')
 const runs = ref<NewSubingMetadata[]>([])
@@ -21,9 +24,9 @@ const loading = ref(false)
 const pageLoading = ref(false)
 let generation = 0
 
-const available = computed(() => runs.value.filter(run => run.product === selectedProduct.value && run.scenario === selectedScenario.value))
+const available = computed(() => runs.value.filter(run => matchingRun(run, selectedVersion.value, selectedCapital.value, selectedProduct.value, selectedScenario.value)))
 const latest = computed(() => available.value.at(-1) ?? null)
-const ruleProfile = computed(() => profiles.value?.profiles.find(profile => profile.product === selectedProduct.value) ?? null)
+const ruleProfile = computed(() => profiles.value?.profiles.find(profile => matchingProfile(profile, selectedVersion.value, selectedCapital.value, selectedProduct.value)) ?? null)
 const visibleItems = computed(() => {
   const items = pages.value[pageKind.value]?.items ?? []
   return pageKind.value === 'decisions' ? items.filter(item => decisionMatches(item, actionFilter.value, query.value)) : items
@@ -72,6 +75,11 @@ async function selectRun() {
   }
 }
 
+function selectVersion() {
+  if (selectedVersion.value === 'new_subing_v1') selectedCapital.value = '100000'
+  void selectRun()
+}
+
 async function nextPage() {
   const runId = detail.value?.metadata.run_id
   const kind = pageKind.value
@@ -100,27 +108,31 @@ onMounted(loadCatalog)
 </script>
 
 <template>
-  <PageShell title="新苏冰策略 · 历史研究" subtitle="固定参数顺势波段 V1 · 冻结结果只读" :error="error" :loading="loading" @retry="loadCatalog">
+  <PageShell title="新苏冰策略 · 历史研究" subtitle="V1 / V2 冻结结果只读" :error="error" :loading="loading" @retry="loadCatalog">
     <template #badges>
       <span class="badge">historical_replay</span><span class="badge">auto_order=false</span><span class="badge">案例一致性待验</span><span class="badge">独立 OOS 未证明</span>
     </template>
     <div class="research-page">
       <section class="card intro">
         <h3>规则与来源</h3>
-        <p>日线定方向，15m 确认，5m 决策；满足基础约束、五项至少三票及新触发后建立 setup，连续三根 5m 保持后确认。完成 1m 收盘用于退出检测，模型成交只在后续可交易 1m 开盘。</p>
+        <p v-if="selectedVersion === 'new_subing_v2'">V2 按交易阶段记录试探、突破确认、回调和趋势；5m 切入、15m 确认，1m 完成事实用于硬止损，模型成交只在严格后续可交易 1m 开盘。10 万元为主结果；100 万元仅供方法诊断，不是主结果。</p>
+        <p v-else>V1：日线定方向，15m 确认，5m 决策；满足基础约束、五项至少三票及新触发后建立 setup，连续三根 5m 保持后确认。完成 1m 收盘用于退出检测，模型成交只在后续可交易 1m 开盘。</p>
         <p>规则来源：用户提供的苏冰《交易从此开始》Notion 笔记原文；MA21、三票、统一净仓及执行细节为归一补充或用户选择。原案例逐案一致性尚未验证。页面收益仅为模型历史回放，不代表苏冰本人收益、Paper、Shadow 或实盘。</p>
+        <p v-if="selectedVersion === 'new_subing_v2'" class="notice">来源口径：原文披露顺势、阶段与风控思想；本页精确阈值、事件仲裁和分层账户是归一量化 V2 映射。阶段记录与拒绝原因以本次冻结运行的诊断为准。</p>
         <p class="sources">笔记原文：<a href="https://app.notion.com/p/3705b8452a1a80509c01fd074770af4b" target="_blank" rel="noopener noreferrer">交易系统</a> · <a href="https://app.notion.com/p/3715b8452a1a8041a21aea76318a18ec" target="_blank" rel="noopener noreferrer">不同周期</a> · <a href="https://app.notion.com/p/3715b8452a1a8045b1b7c378482ec5bb" target="_blank" rel="noopener noreferrer">周期选择</a> · <a href="https://app.notion.com/p/3715b8452a1a806bb63df413405c30e3" target="_blank" rel="noopener noreferrer">原则</a></p>
-        <details v-if="ruleProfile"><summary>查看 {{ selectedProduct }} 固定 Profile 原始规则</summary><pre>{{ JSON.stringify(ruleProfile.rules, null, 2) }}</pre></details>
+        <details v-if="ruleProfile"><summary>查看 {{ selectedProduct }} {{ selectedCapital }} 元 Profile 原始规则</summary><pre>{{ JSON.stringify(ruleProfile.rules, null, 2) }}</pre></details>
         <p v-else class="muted">Profile 规则暂不可读取。</p>
       </section>
       <section class="card">
-        <div class="chooser"><label>品种 <select v-model="selectedProduct" @change="selectRun"><option v-for="product in products" :key="product">{{ product }}</option></select></label><label>成本场景 <select v-model="selectedScenario" @change="selectRun"><option v-for="scenario in scenarios" :key="scenario">{{ scenario }}</option></select></label></div>
-        <p v-if="!latest" class="empty">该品种与场景尚无冻结运行结果；不可评价收益与交易。</p>
+        <div class="chooser"><label>版本 <select v-model="selectedVersion" @change="selectVersion"><option v-for="version in versions" :key="version" :value="version">{{ version === 'new_subing_v2' ? 'V2 阶段修正' : 'V1 对照' }}</option></select></label><label>本金 <select v-model="selectedCapital" @change="selectRun"><option value="100000">10 万元 · 主结果</option><option v-if="selectedVersion === 'new_subing_v2'" value="1000000">100 万元 · 方法诊断</option></select></label><label>品种 <select v-model="selectedProduct" @change="selectRun"><option v-for="product in products" :key="product">{{ product }}</option></select></label><label>成本场景 <select v-model="selectedScenario" @change="selectRun"><option v-for="scenario in scenarios" :key="scenario">{{ scenario }}</option></select></label></div>
+        <p v-if="!latest" class="empty">该版本、本金、品种与成本场景尚无冻结运行结果；不可评价收益与交易。</p>
         <template v-else-if="detail">
-          <div class="run-head"><strong>{{ selectedProduct }} · {{ runStateText(detail.metadata.status) }}</strong><span class="muted">{{ detail.metadata.requested_since }} — {{ detail.metadata.requested_through }}</span></div>
+          <div class="run-head"><strong>{{ selectedProduct }} · {{ selectedVersion === 'new_subing_v2' ? 'V2' : 'V1' }} · {{ selectedCapital }} 元 · {{ runStateText(detail.metadata.status) }}</strong><span class="muted">{{ detail.metadata.requested_since }} — {{ detail.metadata.requested_through }}</span></div>
+          <p v-if="selectedVersion === 'new_subing_v2' && selectedCapital === '1000000'" class="notice">100 万元为方法诊断，非 10 万元主结果。</p>
           <div class="metrics"><div><small>模型账户收益</small><strong>{{ metricText(detail.summary, 'account_return_pct', '%') }}</strong></div><div><small>期末权益</small><strong>{{ metricText(detail.summary, 'final_equity') }}</strong></div><div><small>已平模型交易</small><strong>{{ metricText(detail.summary, 'closed_trades') }}</strong></div><div><small>最大回撤</small><strong>{{ metricText(detail.summary, 'max_drawdown_pct', '%') }}</strong></div></div>
           <p v-if="detail.metadata.status !== 'COMPLETED'" class="notice">{{ runStateText(detail.metadata.status) }}：该结果不可用于收益判断。请查看诊断缺口。</p>
-          <details><summary>身份、输入与执行事实</summary><dl><dt>run_id</dt><dd>{{ detail.metadata.run_id }}</dd><dt>代码 SHA</dt><dd>{{ detail.metadata.code_revision }}</dd><dt>公式 / Profile</dt><dd>{{ detail.metadata.formula_version }} / {{ detail.metadata.profile_id }}</dd><dt>风险 / 执行</dt><dd>{{ detail.metadata.risk_profile_version }} / {{ detail.metadata.execution_profile_version }}</dd><dt>行情输入 hash</dt><dd>{{ detail.metadata.input_snapshot_hash ?? '未证明' }}</dd><dt>执行事实 hash</dt><dd>{{ detail.metadata.execution_facts_hash ?? '未证明' }}</dd><dt>OOS</dt><dd>{{ detail.metadata.oos_status }}</dd><dt>案例</dt><dd>{{ detail.metadata.case_parity }}</dd></dl></details>
+          <details><summary>身份、输入与执行事实</summary><dl><dt>run_id</dt><dd>{{ detail.metadata.run_id }}</dd><dt>代码 SHA</dt><dd>{{ detail.metadata.code_revision }}</dd><dt>公式 / Profile</dt><dd>{{ detail.metadata.formula_version }} / {{ detail.metadata.profile_id }}</dd><dt>风险 / 执行</dt><dd>{{ detail.metadata.risk_profile_version }} / {{ detail.metadata.execution_profile_version }}</dd><dt>账户模型</dt><dd>{{ detail.metadata.account_model_version ?? 'V1 旧账户模型' }}</dd><dt>行情输入 hash</dt><dd>{{ detail.metadata.input_snapshot_hash ?? '未证明' }}</dd><dt>执行事实 hash</dt><dd>{{ detail.metadata.execution_facts_hash ?? '未证明' }}</dd><dt>OOS</dt><dd>{{ detail.metadata.oos_status }}</dd><dt>案例</dt><dd>{{ detail.metadata.case_parity }}</dd></dl></details>
+          <details v-if="selectedVersion === 'new_subing_v2'"><summary>阶段与层级记录</summary><pre>{{ JSON.stringify({ stages: detail.diagnostics.stages ?? detail.diagnostics.stage_summary ?? '未提供', layers: detail.diagnostics.layers ?? detail.diagnostics.layer_summary ?? '未提供' }, null, 2) }}</pre></details>
           <details><summary>诊断与拒绝背景</summary><pre>{{ JSON.stringify(detail.diagnostics, null, 2) }}</pre></details>
         </template>
       </section>

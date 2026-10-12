@@ -1757,7 +1757,7 @@ PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
 
 ## 新苏冰固定参数历史研究
 
-合同只维护 [NEW_SUBING_STRATEGY.md](docs/NEW_SUBING_STRATEGY.md)。
+V1基线合同为 [NEW_SUBING_STRATEGY.md](docs/NEW_SUBING_STRATEGY.md)，V2独立版本为 [NEW_SUBING_STRATEGY_V2.md](docs/NEW_SUBING_STRATEGY_V2.md)。
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
@@ -1776,3 +1776,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
 Web 定向验证：`node --test tests/newSubingResearch.test.ts tests/newSubingPageRace.test.ts tests/candidatePreview.test.ts`，以及通常的 Web build。
 隔离候选预览只放行精确 GET profiles/runs/SHA详情与 decisions/trades/equity 分页；POST、未知动作和编码路径不可转发。
 工程构造数据不证明原案例一致性；固定历史验证不自动称未见 OOS，收益不触发策略晋升。
+
+V2追加 `tests/unit/new_subing_v2` 与 `services/quant-api/tests/research/test_new_subing_v2_cli.py`。
+`scripts/research/new_subing_v2.py --project-env /private/project.env --facts-dir /exact/v1-facts --reference-root /exact/v1-results --out /new/v2-results`
+核对V1已索引结果的输入和执行事实哈希；同一逐prefix指标准备复用于两本金、三成本和七个独立账户窗口。
+10万元为主账户，100万元是单独诊断，不合并本金/收益。新attempt只写任务结果，不下载provider或改Canonical。

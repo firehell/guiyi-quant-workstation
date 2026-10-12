@@ -8,16 +8,16 @@ import { createRenderer, h, nextTick } from 'vue'
 const vueUrl = import.meta.resolve('vue')
 const apiUrl = `data:text/javascript;base64,${Buffer.from(`
 export const pending=[];
-const meta=(product)=>({run_id:product.repeat(64),product,scenario:'baseline',status:'COMPLETED'});
+const meta=(product,cash='100000')=>({run_id:(product+cash).repeat(64).slice(0,64),product,scenario:'baseline',status:'COMPLETED',strategy_code:'new_subing_v2',initial_cash:cash});
 export function getNewSubingProfiles(){return Promise.resolve({strategy_code:'new_subing_v1',profiles:[]})}
-export function getNewSubingRuns(){return Promise.resolve({runs:[meta('AL'),meta('RB')]})}
-export function getNewSubingRun(id){return Promise.resolve({metadata:meta(id.startsWith('A')?'AL':'RB'),summary:{status:'COMPLETED'},diagnostics:{}})}
+export function getNewSubingRuns(){return Promise.resolve({runs:[meta('AL'),meta('RB'),meta('AL','1000000')]})}
+export function getNewSubingRun(id){return Promise.resolve({metadata:meta(id.startsWith('R')?'RB':'AL',id.includes('1000000')?'1000000':'100000'),summary:{status:'COMPLETED'},diagnostics:{}})}
 export function getNewSubingPage(id,kind,cursor){
   if(cursor)return new Promise(resolve=>pending.push({id,kind,cursor,resolve}));
   return Promise.resolve({items:[{reason:id.startsWith('A')?'AL-FIRST':'RB-FIRST'}],next_cursor:'more-'+id,run_id:id,sha256:id});
 }
 `).toString('base64')}`
-const utilUrl = `data:text/javascript;base64,${Buffer.from(`export const selectionToken=(id,n)=>n+':'+id;export const decisionMatches=()=>true;export const equityPoints=()=>'';export const metricText=()=>'';export const runStateText=()=>'';`).toString('base64')}`
+const utilUrl = `data:text/javascript;base64,${Buffer.from(`export const selectionToken=(id,n)=>n+':'+id;export const decisionMatches=()=>true;export const equityPoints=()=>'';export const metricText=()=>'';export const runStateText=()=>'';export const matchingRun=(r,s,c,p,x)=>r.strategy_code===s&&r.initial_cash===c&&r.product===p&&r.scenario===x;export const matchingProfile=()=>false;`).toString('base64')}`
 const shellUrl = `data:text/javascript;base64,${Buffer.from('export default {}').toString('base64')}`
 const api = await import(apiUrl)
 
@@ -66,6 +66,26 @@ test('switching run during deferred pagination unlocks new run and discards old 
   api.pending[1].resolve({items:[{reason:'RB-NEXT'}],next_cursor:null,run_id:'R'.repeat(64),sha256:'new'})
   await settle()
   assert.equal(state.pages.decisions.items[0].reason, 'RB-NEXT')
+  app.unmount()
+})
+
+test('capital switch discards late pagination and unlocks selected account', async () => {
+  const Page = await component()
+  Page.render = () => h('div')
+  const app = renderer().createApp(Page)
+  app.mount({})
+  await settle()
+  const state = (app as unknown as { _instance: { setupState: Record<string, any> } })._instance.setupState
+  void state.nextPage()
+  const old = api.pending.at(-1)
+  state.selectedCapital = '1000000'
+  await state.selectRun()
+  await settle()
+  assert.equal(state.detail.metadata.initial_cash, '1000000')
+  assert.equal(state.pageLoading, false)
+  old.resolve({items:[{reason:'OLD-CASH'}],next_cursor:null,run_id:old.id,sha256:'old'})
+  await settle()
+  assert.notEqual(state.pages.decisions.items[0].reason, 'OLD-CASH')
   app.unmount()
 })
 

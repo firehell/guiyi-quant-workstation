@@ -1,5 +1,17 @@
 export type ResearchSummary = Record<string, unknown> & { status: string }
 
+type RunSelection = { product: string; scenario: string; strategy_code: string; initial_cash?: string }
+type ProfileSelection = { product: string; strategy_code?: string; initial_cash: string }
+
+export function matchingRun(run: RunSelection, strategy: string, cash: string, product: string, scenario: string): boolean {
+  return run.strategy_code === strategy && run.product === product && run.scenario === scenario
+    && (strategy === 'new_subing_v1' ? cash === '100000' && (run.initial_cash === undefined || run.initial_cash === '100000') : run.initial_cash === cash)
+}
+
+export function matchingProfile(profile: ProfileSelection, strategy: string, cash: string, product: string): boolean {
+  return (profile.strategy_code ?? 'new_subing_v1') === strategy && profile.initial_cash === cash && profile.product === product
+}
+
 const DECIMAL_TEXT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
 const ZERO_TEXT = /^[+-]?0*(?:\.0*)?(?:[eE][+-]?\d+)?$/
 

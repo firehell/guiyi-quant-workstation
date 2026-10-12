@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { decisionMatches, metricText, runStateText, selectionToken } from '../src/utils/newSubingResearch.ts'
+import { decisionMatches, metricText, runStateText, selectionToken, matchingRun, matchingProfile } from '../src/utils/newSubingResearch.ts'
 
 test('blocked result never renders fabricated return or zero trades', () => {
   assert.equal(metricText({ status: 'DATA_INSUFFICIENT' }, 'account_return_pct'), '不可评价')
@@ -43,4 +43,13 @@ test('unknown and unsafe numeric strings retain exact fallback', () => {
   assert.equal(metricText({ status: 'COMPLETED', final_equity: '1e999' }, 'final_equity'), '1e999')
   assert.equal(metricText({ status: 'COMPLETED', final_equity: '1e-999' }, 'final_equity'), '1e-999')
   assert.equal(metricText({ status: 'COMPLETED', final_equity: 'unknown' }, 'final_equity'), 'unknown')
+})
+
+test('selection isolates V1 legacy cash from both V2 accounts and cost', () => {
+  const base = { product: 'AL', scenario: 'baseline', strategy_code: 'new_subing_v1' }
+  assert.equal(matchingRun(base, 'new_subing_v1', '100000', 'AL', 'baseline'), true)
+  assert.equal(matchingRun(base, 'new_subing_v2', '100000', 'AL', 'baseline'), false)
+  assert.equal(matchingRun({ ...base, strategy_code: 'new_subing_v2', initial_cash: '1000000' }, 'new_subing_v2', '100000', 'AL', 'baseline'), false)
+  assert.equal(matchingRun({ ...base, strategy_code: 'new_subing_v2', initial_cash: '1000000' }, 'new_subing_v2', '1000000', 'AL', 'double_slippage'), false)
+  assert.equal(matchingProfile({ ...base, profile_id: 'new_subing_stage_v2_1m', strategy_code: 'new_subing_v2', initial_cash: '1000000' }, 'new_subing_v2', '1000000', 'AL'), true)
 })

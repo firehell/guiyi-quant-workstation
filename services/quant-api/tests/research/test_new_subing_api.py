@@ -5,7 +5,39 @@ from fastapi.testclient import TestClient
 
 from app.api.research_new_subing import router
 from app.new_subing_research.store import publish_result
-from research.test_new_subing_store import packet
+from research.test_new_subing_store import packet, v2_packet
+
+
+def test_profiles_include_v1_and_both_v2_accounts_for_all_products():
+    app = FastAPI()
+    app.include_router(router)
+    response = TestClient(app).get("/api/v1/research/new-subing/profiles")
+    assert response.status_code == 200
+    profiles = response.json()["profiles"]
+    assert len(profiles) == 9
+    assert {(item["strategy_code"], item["initial_cash"], item["product"]) for item in profiles} == {
+        (version, cash, product)
+        for version, cash in (("new_subing_v1", "100000"), ("new_subing_v2", "100000"), ("new_subing_v2", "1000000"))
+        for product in ("AL", "RB", "TA")
+    }
+    assert all(item["rules"] for item in profiles)
+
+
+def test_v2_read_only_detail_and_pages_keep_account_identity(tmp_path, monkeypatch):
+    monkeypatch.setenv("GUIYI_NEW_SUBING_RESULTS_ROOT", str(tmp_path))
+    first = publish_result(tmp_path, v2_packet())
+    second = publish_result(tmp_path, v2_packet("1000000"))
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    runs = client.get("/api/v1/research/new-subing/runs").json()["runs"]
+    assert {run["initial_cash"] for run in runs} == {"100000", "1000000"}
+    for item in (first, second):
+        run_id = item["metadata"]["run_id"]
+        detail = client.get(f"/api/v1/research/new-subing/runs/{run_id}").json()
+        assert detail["metadata"]["account_model_version"] == "new_subing_layers_v2"
+        assert detail["metadata"]["initial_cash"] == item["metadata"]["initial_cash"]
+        assert client.get(f"/api/v1/research/new-subing/runs/{run_id}/decisions").json()["items"] == item["decisions"]
 
 
 def test_readonly_api_lists_detail_and_paginates(tmp_path, monkeypatch):

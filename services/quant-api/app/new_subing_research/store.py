@@ -28,6 +28,8 @@ REQUIRED_METADATA = {
     "requested_through", "input_snapshot_hash", "execution_facts_hash", "source",
     "auto_order", "case_parity", "oos_status",
 }
+V2_IDENTITY = {"initial_cash", "account_model_version"}
+V2_PROFILES = {"100000": "new_subing_stage_v2_100k", "1000000": "new_subing_stage_v2_1m"}
 
 
 class ResultStoreError(ValueError):
@@ -99,11 +101,24 @@ def _validate_packet(payload: dict[str, Any], *, published: bool) -> None:
     if payload.get("schema_version") != 1 or not isinstance(payload.get("metadata"), dict):
         raise ResultStoreError("RESULT_SCHEMA_INVALID")
     meta = payload["metadata"]
-    if not REQUIRED_METADATA <= meta.keys() or meta["strategy_code"] != "new_subing_v1":
+    if (not REQUIRED_METADATA <= meta.keys() or type(meta["strategy_code"]) is not str
+            or meta["strategy_code"] not in {"new_subing_v1", "new_subing_v2"}):
         raise ResultStoreError("RESULT_SCHEMA_INVALID")
-    if meta["status"] not in STATUSES or meta["source"] != "historical_replay" or meta["auto_order"] is not False:
+    if meta["strategy_code"] == "new_subing_v2":
+        if not V2_IDENTITY <= meta.keys() or type(meta["initial_cash"]) is not str or meta["initial_cash"] not in V2_PROFILES:
+            raise ResultStoreError("RESULT_SCHEMA_INVALID")
+        if (meta["formula_version"] != "new_subing_formula_v2"
+                or meta["profile_id"] != V2_PROFILES[meta["initial_cash"]]
+                or meta["risk_profile_version"] != "new_subing_risk_v2"
+                or meta["execution_profile_version"] != "new_subing_next_1m_open_v2"
+                or meta["account_model_version"] != "new_subing_layers_v2"):
+            raise ResultStoreError("RESULT_SCHEMA_INVALID")
+    if (type(meta["status"]) is not str or meta["status"] not in STATUSES
+            or meta["source"] != "historical_replay" or meta["auto_order"] is not False):
         raise ResultStoreError("RESULT_SCHEMA_INVALID")
-    if meta["product"] not in {"AL", "RB", "TA"} or meta["scenario"] not in {"baseline", "double_commission", "double_slippage"}:
+    if (type(meta["product"]) is not str or meta["product"] not in {"AL", "RB", "TA"}
+            or type(meta["scenario"]) is not str
+            or meta["scenario"] not in {"baseline", "double_commission", "double_slippage"}):
         raise ResultStoreError("RESULT_SCHEMA_INVALID")
     for key in ("formula_version", "profile_id", "risk_profile_version", "execution_profile_version", "code_revision", "requested_since", "requested_through"):
         if not isinstance(meta[key], str) or not meta[key]:
@@ -124,6 +139,8 @@ def _validate_packet(payload: dict[str, Any], *, published: bool) -> None:
     if not isinstance(payload.get("diagnostics"), dict):
         raise ResultStoreError("RESULT_SCHEMA_INVALID")
     summary = payload["summary"]
+    if meta["strategy_code"] == "new_subing_v2" and summary.get("initial_cash") not in (None, meta["initial_cash"]):
+        raise ResultStoreError("RESULT_SCHEMA_INVALID")
     if meta["status"] == "COMPLETED":
         required = DECIMAL_FIELDS | COUNT_FIELDS | {"annual_eligible"}
         if not required <= summary.keys():
@@ -157,6 +174,8 @@ def _run_id(payload: dict[str, Any]) -> str:
     # A different calculation for the same identity must conflict at publication.
     metadata = payload["metadata"]
     identity: dict[str, Any] = {key: metadata[key] for key in sorted(REQUIRED_METADATA)}
+    if metadata["strategy_code"] == "new_subing_v2":
+        identity.update({key: metadata[key] for key in sorted(V2_IDENTITY)})
     if metadata["status"] in BLOCKED:
         diagnostic = payload["diagnostics"]
         identity["gap"] = {key: diagnostic.get(key) for key in ("gap", "reason", "stage", "context", "status") if key in diagnostic}

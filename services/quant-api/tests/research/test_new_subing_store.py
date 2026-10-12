@@ -28,6 +28,48 @@ def packet():
     }
 
 
+def v2_packet(cash="100000"):
+    item = packet()
+    item["metadata"].update(
+        strategy_code="new_subing_v2", formula_version="new_subing_formula_v2",
+        profile_id="new_subing_stage_v2_100k" if cash == "100000" else "new_subing_stage_v2_1m",
+        risk_profile_version="new_subing_risk_v2",
+        execution_profile_version="new_subing_next_1m_open_v2",
+        account_model_version="new_subing_layers_v2", initial_cash=cash,
+    )
+    item["summary"].update(initial_cash=cash, final_equity=cash)
+    return item
+
+
+def test_v2_identity_binds_cash_and_account_model_without_changing_v1(tmp_path):
+    from app.new_subing_research.store import _run_id
+    original = packet()
+    v1_id = _run_id(original)
+    assert v1_id == "1597ec28c6ce186d335fa410fc85b41b4dd9c7a887de572de92fc75df5b44a01"
+    assert _run_id({**original, "metadata": {**original["metadata"], "initial_cash": "100000"}}) == v1_id
+    first = publish_result(tmp_path, v2_packet())
+    million = publish_result(tmp_path, v2_packet("1000000"))
+    assert first["metadata"]["run_id"] != million["metadata"]["run_id"]
+    assert read_result(tmp_path, million["metadata"]["run_id"]) == million
+    assert _run_id(original) == v1_id
+
+
+@pytest.mark.parametrize("change", [
+    {"initial_cash": None}, {"initial_cash": "1000000"},
+    {"account_model_version": None}, {"account_model_version": "wrong"},
+    {"profile_id": "new_subing_stage_v2_1m"},
+    {"strategy_code": ["new_subing_v2"]},
+    {"status": ["COMPLETED"]},
+    {"product": ["AL"]},
+    {"formula_version": "new_subing_formula_v1"},
+])
+def test_v2_unsafe_identity_refused(tmp_path, change):
+    item = v2_packet()
+    item["metadata"].update(change)
+    with pytest.raises(ResultStoreError, match="RESULT_SCHEMA_INVALID"):
+        publish_result(tmp_path, item)
+
+
 def test_publish_is_indexed_immutable_and_paged(tmp_path):
     item = publish_result(tmp_path, packet())
     run_id = item["metadata"]["run_id"]
