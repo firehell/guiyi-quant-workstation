@@ -239,3 +239,19 @@ def test_unknown_recovery_commit_reads_once_and_never_retries_mutation():
         service.apply(plan, expected_plan_hash=plan.plan_hash, now=observed)
     assert calls == ['apply']
     assert service.readback(plan) is None
+
+
+def test_dependency_digest_drift_invalidates_frozen_recovery_plan():
+    from app.reference_trading.models import ReferenceRevision
+    factory, repo, identity, revision, start, observed, _ = _setup(frequency='60m')
+    endpoints = (start+timedelta(seconds=1),)
+    service = BoundedForwardRecovery(factory, verify_gap=lambda *_:endpoints)
+    plan = service.plan(identity.stream_id, endpoints=endpoints, trading_day=start.date(),
+        observed_at=observed, expires_at=observed+timedelta(minutes=5), journal_proof={'cursor':'0-0'})
+    with factory() as session:
+        session.get(ReferenceRevision, (identity.stream_id, revision)).dependency_digest = '0'*64
+        session.commit()
+    with pytest.raises(RepositoryConflict, match='RECOVERY_PREIMAGE_DRIFT'):
+        service.apply(plan, expected_plan_hash=plan.plan_hash, now=observed)
+    assert repo.forward_source_context(identity.stream_id)[2] == 1
+    assert repo.read_pending_capture(identity.stream_id) is None
