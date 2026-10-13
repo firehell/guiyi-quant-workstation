@@ -124,9 +124,22 @@ class ForwardReferenceHealth:
             state_sources = {}
             observed_days = {}
             starts = {stream.stream_id: stream.recording_start for stream in streams}
-            for batch in session.scalars(select(b).join(
+            from app.reference_trading.original_conflict import original_conflict_evidence, PENDING_MANIFEST, PREFIX
+            typed_rows, pending_warmup_ids = [], set()
+            for batch in session.scalars(select(b).outerjoin(
                 latest, (b.stream_id == latest.c.stream_id) & (b.seq == latest.c.seq),
-            ).join(s, active)):
+            ).join(s, active).where(
+                b.stream_id.in_(ids),
+                latest.c.seq.is_not(None) | (b.kind == "seed_seal")
+                | ((b.kind == "diagnostic") & b.batch_key.like(PREFIX + "%")),
+            )):
+                if batch.kind == "diagnostic":
+                    typed_rows.append(batch)
+                    continue
+                if batch.kind == "seed_seal":
+                    if PENDING_MANIFEST in batch.dependency_manifest:
+                        pending_warmup_ids.add(batch.stream_id)
+                    continue
                 presentation = batch.source_evidence.get("presentation_v1")
                 if presentation is not None:
                     points = require_envelope(presentation)
@@ -147,6 +160,14 @@ class ForwardReferenceHealth:
                             except ValueError as error:
                                 raise PresentationUnavailable("PRESENTATION_CORRUPT") from error
                             observed_days[batch.stream_id] = day
+            original_conflicts = original_conflict_evidence(session, ids, rows=typed_rows)
+            original_conflict_counts: dict[str, int] = {}
+            for conflict in original_conflicts:
+                for binding in conflict["evidence"]["bindings"]:
+                    route = binding["stream_id"]
+                    original_conflict_counts[route] = original_conflict_counts.get(route, 0) + 1
+            conflict_groups.update((stream.product.lower(), stream.frequency) for stream in streams
+                                   if original_conflict_counts.get(stream.stream_id, 0))
             items = []
             for stream in streams:
                 count, oldest, quarantine_count, quarantine_processed = pending.get(stream.stream_id, (0, None, 0, None))
@@ -158,6 +179,8 @@ class ForwardReferenceHealth:
                 })
                 status = _recording_status(stream, endpoint, observed_end) if self._endpoint_reader else stream.health
                 conflicted = (stream.product.lower(), stream.frequency) in conflict_groups
+                if stream.stream_id in pending_warmup_ids:
+                    status = "PENDING_WARMUP"
                 if conflicted:
                     status = "DATA_CONFLICT"
                 items.append({
@@ -180,9 +203,12 @@ class ForwardReferenceHealth:
                     "oldest_pending_observed_at": _iso(oldest),
                     "reconciliation_mismatch_count": mismatches.get(stream.stream_id, 0),
                     "quarantined_observation_count": quarantine_count,
+                    "original_conflict_terminal_count": original_conflict_counts.get(stream.stream_id, 0),
                     "last_quarantined_processed_at": _iso(quarantine_processed),
-                    "unavailable_reason": "REFERENCE_CANONICAL_MISMATCH" if conflicted else None,
-                    "status": status, "latest_state": None if conflicted else states.get(stream.stream_id),
+                    "unavailable_reason": ("ORIGINAL_OBSERVATION_CANONICAL_CONFLICT" if original_conflict_counts.get(stream.stream_id, 0)
+                                           else "REFERENCE_CANONICAL_MISMATCH" if conflicted
+                                           else "PENDING_WARMUP" if stream.stream_id in pending_warmup_ids else None),
+                    "status": status, "latest_state": None if conflicted or stream.stream_id in pending_warmup_ids else states.get(stream.stream_id),
                 })
             return {"enabled_count": sum(item["enabled"] is True for item in items), "streams": items,
                     "source_endpoints": public_endpoints}

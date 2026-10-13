@@ -102,3 +102,12 @@ Live明确OBSERVATION_SUBSCRIPTION_MISSING。不能把旧日静态尾部或Refer
 provider=None无fresh heartbeat时仍拒绝生产数据写入；不伪造心跳、不手工ACK、不补发旧事件。
 安装器ALL60CLOSED条件不改变；权威Calendar下个全闭市窗口02:35，下一开盘09:00。
 当前仍v1.15.5/gen18，不声明RUNTIME_READY；新恢复准备和运行切换仍待实际执行及读回。
+
+
+2026-10-14 候选续接：002业务提交已独立核对，正常Reference恢复后剩余CF旧冲突阻塞。
+新增original_observation_conflict_v1保留原始观察及最终Canonical差异，四路原子终止；
+匹配的后续观察依靠明确关联终止，不伪称其数值冲突。新段使用真实Canonical策略预热，
+先PENDING_WARMUP允许旧日消费，完成Day14 Live尾部后独立新revision final；无交易/Marker/通知。
+独立Review75 passed含真实PG4，无Confirmed；root五文件回归51 passed，
+Ruff、五source Mypy、OpenSpec11/11、secret scan0、diff通过。
+生产39组caller、15基线重建、正常ACK与初始化后立即重新停驻、45夜盘前缀及final仍待实际验收。
