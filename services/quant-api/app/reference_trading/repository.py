@@ -813,8 +813,42 @@ class ReferenceRepository:
             stream.row_version += 1
             if stream.active_revision_id == revision.revision_id:
                 stream.latest_seq = seq
+            if capture_row is not None and stream.health == "RECOVERY_PENDING":
+                self._finish_bounded_recovery_health(session, stream, revision, capture_row)
             self._fault_injector("before_commit")
         return CommitResult("committed", prepared.revision_id, seq, post_hash)
+
+    @staticmethod
+    def _finish_bounded_recovery_health(session, stream, revision, capture):
+        """Clear only the exact one-shot interruption consumed in this transaction."""
+        from app.reference_trading.bounded_recovery import _consumed_bound_receipt
+        from app.reference_trading.scheduled_reconciliation import ScheduledCanonicalReconciliation
+
+        evidence = capture.source_evidence.get("forward_capture_v1", {})
+        if (stream.active_revision_id != revision.revision_id or revision.status != "active"
+                or evidence.get("source_kind") != "observation_interruption"
+                or evidence.get("eligibility") != "gap_recovery"):
+            return
+        receipt = session.scalar(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id == stream.stream_id,
+            ReferenceActivationReceipt.generation == stream.activation_generation,
+            ReferenceActivationReceipt.revision_id == revision.revision_id,
+            ReferenceActivationReceipt.disabled_at.is_(None),
+        ))
+        if (receipt is None or receipt.budget.get("bounded_recovery_capture_sha256") != capture.payload_hash
+                or evidence.get("generation") != receipt.generation
+                or not _consumed_bound_receipt(session, receipt, revision)):
+            return
+        pending = session.scalar(select(ReferenceBatch.batch_id).where(
+            ReferenceBatch.stream_id == stream.stream_id,
+            ReferenceBatch.revision_id == revision.revision_id,
+            ReferenceBatch.kind == "capture", ReferenceBatch.consumed_by_batch_id.is_(None),
+        ).limit(1))
+        if pending is not None:
+            return
+        guard = ScheduledCanonicalReconciliation(lambda: session, None, read_guard=None)
+        guard.assert_source_allowed(stream.stream_id, session=session)
+        stream.health = "READY"
 
     def read_batch(
         self, stream_id: str, revision_id: str, batch_key: str,

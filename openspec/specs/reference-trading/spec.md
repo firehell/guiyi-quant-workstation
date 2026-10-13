@@ -34,6 +34,7 @@ SHALL expose it separately from the last completed Bar.
 - **AND** the interruption advances the internal resume boundary only to the last missing endpoint, while
   recording its actual recovery observation time separately; coverage excludes it from completed market Bars
 - **AND** the new receipt permits only that exact interruption capture, and later automatic gaps remain blocked
+- **AND** `RECOVERY_PENDING` returns to `READY` only in the transaction that commits and consumes that receipt-bound interruption under the current revision, generation and checkpoint token, with no remaining pending capture or current source conflict; rollback and unrelated health states never grant readiness
 - **AND** no journal cursor is skipped and no missing Bar or notification is manufactured
 
 #### Scenario: Completed journal consumption after Live cleanup
