@@ -15,12 +15,16 @@ SA10:12负成交额已由RQData源自行修正；正式Canonical及新一次源�
 原盘中缺口、恢复预算、69次真实Live/Canonical冲突和全部历史交易保留。
 
 隔离Redis、真实隔离PostgreSQL、Web定向/type/build、版本一致性及11个OpenSpec检查已通过；
-高风险Source后缀及实际恢复caller正在独立审查，正式40路Source/新forward恢复尚未执行。
+高风险Source后缀独立Review通过；正式40路Source/新forward恢复尚未执行。
 同输入240条充分预热计算从约44秒降至29.3/28.5秒，策略结果完全一致；这是历史计算测量，
 不证明自然Live突发批次、真实发送延迟或收件人送达。
 
 当前正式版本仍v1.15.5/gen18。候选验证、生产恢复、补丁发布、gen19切换及自然夜盘验收分别记录，
 不能把候选构建或闭市健康称为RUNTIME_READY。
+补丁已集成develop；从精确v1.15.5提取的独立候选树543项回归通过，草稿PR #447尚未合入main。
+原恢复计划20:55过期，未创建执行attempt、停驻或写生产。22:53生产只读确认Reference旧日游标落后，
+阻止Day14初始化：45品种TRADING，但Day14订阅、Source、Completed均为空；Feed心跳缺失，
+不能将未知缓冲视为零。新双服务停驻证明与恢复准备尚未完成，未发布、未切换。
 证据：output/runtime-intraday-repair-20261013/；详见
 [修复与验证](docs/tasks/runtime-intraday-repair-20261013.md)、[补丁说明](docs/releases/v1.15.6.md)。
 

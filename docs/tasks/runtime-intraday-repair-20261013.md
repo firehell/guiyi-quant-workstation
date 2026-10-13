@@ -78,3 +78,27 @@ Mypy11个Alert/数据Runtime source + 9个API/Reference/identity source通过
 Ruff实际生产改动通过、秘密扫描0 findings、OpenSpec 11/11、diff check通过。
 
 独立高风险Review最终：suffix406项复验通过，MDS SHA3fa3a3bea81b；无Confirmed Issue，允许此范围集成。API类型标注/cast复核为纯类型变化。Reference/Web/CLOSED_CLEANED此前已独审通过。实际恢复caller独审仍单独待验，不以工程Review代替真实恢复。
+
+## 22:53现场：候选已集成，生产恢复与发布未完成
+
+工程提交64fdaa02464288575acc0e6a9e6a74c052589c90已集成并推送develop。
+从正式v1.15.5提取的独立补丁候选bd3c2b7cc4f26f054ce9d220f12ca636de6bb172已推送，
+草稿PR https://github.com/firehell/guiyi-quant-workstation/pull/447 。该候选隔离Redis/PG回归543 passed，
+Web35项、类型/build/topology、版本/lock/OpenSpec/secret检查通过；尚未main merge/tag/Release。
+恢复helper定向112 passed（4项真实隔离PG），不代替生产执行。
+
+原计划20:55 expiry已过；两次只读freeze预检失败，未创建one-recovery-attempt-001，
+未执行停驻、数据库修复、游标修改或通知。旧计划不延长，不复用其attempt。
+
+22:53生产只读读回：45品种TRADING、15 CLOSED；目标10品种仍CLOSED，下一时段09:00。
+Day14元数据20:30已passed，但订阅不存在、Source/Completed均0。
+Day13 Source13499条，Live游标到尾；Completed17875条，Alert到尾；
+Reference游标1791856805416-3落后尾1791874804726-4，4组REFERENCE_CANONICAL_MISMATCH。
+Feed旧PID62811仍active但ready=false，心跳TTL=-2，不足以证明pending/subscription为零；
+Live明确OBSERVATION_SUBSCRIPTION_MISSING。不能把旧日静态尾部或Reference单独停驻当作producer停写证明。
+
+下一恢复采用独立双停驻证明准备：Feed正规drain/同PID parked、真实owner锁及新鲜实际close heartbeat，
+再冻结完整旧日前缀、等待Live/Alert自然到尾，之后Reference正规停驻并持维护锁。
+provider=None无fresh heartbeat时仍拒绝生产数据写入；不伪造心跳、不手工ACK、不补发旧事件。
+安装器ALL60CLOSED条件不改变；权威Calendar下个全闭市窗口02:35，下一开盘09:00。
+当前仍v1.15.5/gen18，不声明RUNTIME_READY；新恢复准备和运行切换仍待实际执行及读回。
