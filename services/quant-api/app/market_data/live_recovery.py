@@ -380,6 +380,11 @@ class LiveRecoveryWorker:
                     "LIVE_BAR_CONFLICT",
                     "LIVE_RECOVERY_COVERAGE_INVALID",
                     "LIVE_RECOVERY_SESSION_INVALID",
+                    "LIVE_RECOVERY_SOURCE_INVALID",
+                    "LIVE_RECOVERY_CONTRACT_INVALID",
+                    "LIVE_RECOVERY_TRADING_DAY_INVALID",
+                    "PROVIDER_UNAVAILABLE",
+                    "RQDATA_TURNOVER_INVALID",
                 }
                 result = str(exc) if str(exc) in allowed else "LIVE_RECOVERY_FAILED"
             if result != "NO_GAP":

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -107,7 +108,8 @@ def test_closed_nontrading_day_never_infers_future_day(isolated_redis):
     source.initialize("live", old, cursor="0-0")
     new = old + timedelta(days=1)
     feed = build(isolated_redis, new, current_day=None)
-    assert feed.poll(_bar(1).bar_end + timedelta(days=1)) is None
+    assert feed.poll(_bar(1).bar_end + timedelta(days=1)) == 'OBSERVATION_CLEANUP_UNPROVEN'
+    assert feed._available is False
     assert source.registered_day("live") == old
     assert RedisLiveStore(isolated_redis).subscriptions(new) is None
 
@@ -167,3 +169,45 @@ def test_orphan_target_partition_never_receives_new_authority(isolated_redis, ki
     )
     assert RedisLiveStore(isolated_redis).subscriptions(new) is None
     assert source.registered_day("live") == new - timedelta(days=1)
+
+
+def test_feed_restart_does_not_recreate_cleaned_same_day_snapshot(isolated_redis):
+    day = _bar(1).trading_day
+    source = ObservationStream(isolated_redis, kind='source')
+    source.initialize('live', day, cursor='0-0')
+    completed = ObservationStream(isolated_redis, kind='completed')
+    completed.initialize('alert', day, cursor='0-0')
+    completed.initialize('reference', day, cursor='0-0')
+    service = build(isolated_redis, day, current_day=day)
+    now = _bar(1).bar_end + timedelta(hours=3)
+    service.closed_cleanup_evidence = lambda *_: dict(trading_day=day.isoformat(), cleanup_verified=True,
+        cleanup_checked_at=now.isoformat(), evidence_kind='retained')
+    assert service.poll(now) is None
+    assert service.closed_cleaned_proof['status'] == 'CLOSED_CLEANED'
+    assert RedisLiveStore(isolated_redis).subscriptions(day) is None
+    assert service._provider is None
+    assert source.cursor('live', day) == source.tail(day) == '0-0'
+    # Only a newly proven Session day permits the feed's existing initialization.
+    new_day = day + timedelta(days=1)
+    for symbol in service._products:
+        service._phase_resolver.phases[symbol] = replace(service._phase_resolver.phases[symbol], trading_day=new_day)
+        service._dominant_source.mapping[(symbol, new_day)] = 'RB2505' if symbol == 'rb' else 'JM2505'
+    assert service.poll(now + timedelta(seconds=1)) is None
+    assert service.closed_cleaned_proof is None
+    assert source.registered_day('live') == completed.registered_day('alert') == new_day
+    assert RedisLiveStore(isolated_redis).subscriptions(new_day) == {'rb': 'RB2505', 'jm': 'JM2505'}
+    assert RedisLiveStore(isolated_redis).subscriptions(day) is None
+    assert service._provider is None
+
+
+def test_unproven_closed_feed_does_not_rebuild_registered_day(isolated_redis):
+    day = _bar(1).trading_day
+    source = ObservationStream(isolated_redis, kind='source')
+    source.initialize('live', day, cursor='0-0')
+    completed = ObservationStream(isolated_redis, kind='completed')
+    completed.initialize('alert', day, cursor='0-0')
+    completed.initialize('reference', day, cursor='0-0')
+    service = build(isolated_redis, day, current_day=day)
+    assert service.poll(_bar(1).bar_end + timedelta(hours=3)) == 'OBSERVATION_CLEANUP_UNPROVEN'
+    assert RedisLiveStore(isolated_redis).subscriptions(day) is None
+    assert service._provider is None

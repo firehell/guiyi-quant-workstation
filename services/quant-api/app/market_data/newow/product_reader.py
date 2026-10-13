@@ -615,9 +615,13 @@ class NewowProductReader:
         start = datetime.combine(
             min(lower, cutoff.astimezone(_SHANGHAI).date()), time.min, _SHANGHAI
         )
-        days = self._market_data.trading_days_overlapping_window(
+        day_windows = self._market_data.session_windows_overlapping_window(
             symbol=query.product, start=start, end=cutoff + _MICROSECOND
         )
+        # Catalog already resolved and validated these exact Session windows.
+        # Retain that request-local proof instead of issuing one query per day.
+        session_cache.update(day_windows)
+        days = tuple(day for day, _ in day_windows)
         if not days or any(
             current <= previous for previous, current in zip(days, days[1:])
         ):
@@ -1060,6 +1064,9 @@ class NewowProductReader:
         )
         if through <= start_day:
             return None
+        through = self._forward_published_through(product, frequency, through, as_of)
+        if through <= start_day:
+            return None
         args = {}
         if policy is InputQualityPolicy.WEEKLY_V2:
             args["weekly_classification_version"] = source_classification_version(
@@ -1112,6 +1119,37 @@ class NewowProductReader:
             _product_bar(product, frequency, owner.contract, owner_id, bar, True),
             calculation_segment_id=calculation_id,
         ), policy
+
+    def _forward_published_through(self, product, frequency, through, as_of):
+        """Session completion is not publication. Read the existing MDS endpoint.
+
+        Only the current natural day's unpublished tail may wait before the
+        scheduled 18:05 publication. Missing prior periods remain failures.
+        """
+        page = self._market_data.query_page(SeriesPageQuery(
+            SeriesKind.ACTUAL_DOMINANT, product, BarFrequency(frequency), limit=1,
+        ))
+        if not page.bars or page.bars[-1].bar_end > as_of:
+            raise NewowProductReadError("CANONICAL_PUBLICATION_ENDPOINT_INVALID")
+        published = page.bars[-1].trading_day
+        if published >= through:
+            return through
+        local = as_of.astimezone(_SHANGHAI)
+        waiting_today = local.time() < time(18, 5)
+        if frequency is ProductFrequency.WEEKLY:
+            candidates = self.weekly_snapshot_candidates(product, as_of=as_of, limit=2)
+            due = tuple(day for day, _ in candidates if day <= through
+                        and not (waiting_today and day == local.date()))
+        else:
+            due = self._market_data.completed_trading_days(
+                symbol=product,
+                start=datetime.combine(published, time.min, _SHANGHAI),
+                as_of=as_of, latest=through,
+            )
+            due = tuple(day for day in due if not (waiting_today and day == local.date()))
+        if any(day > published for day in due):
+            raise NewowProductReadError("CANONICAL_PUBLICATION_LAGGING")
+        return published
 
     def historical_metadata_evidence(
         self, *, product: str, since: date, through: date,

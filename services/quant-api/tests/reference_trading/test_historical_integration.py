@@ -292,7 +292,8 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
                 )
             assert incremental == (expected, full.input_quality_policy)
             assert physical_read.call_args_list
-            assert 1 <= partition_read.call_count + quality_partition_read.call_count <= 4
+            # One additional bounded MDS endpoint read separates publication from Session completion.
+            assert 1 <= partition_read.call_count + quality_partition_read.call_count <= 5
             oldest = min(
                 call.args[0].start.astimezone(ZoneInfo("Asia/Shanghai")).date()
                 for call in physical_read.call_args_list

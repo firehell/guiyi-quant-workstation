@@ -1414,3 +1414,19 @@ def test_reference_window_keeps_full_future_requested_session_horizon(product_ca
             "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6),
             datetime(2023, 1, 4, 7, tzinfo=UTC),
         )
+
+
+def test_reader_retains_authoritative_batch_session_windows(product_cases, monkeypatch):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=50, frequency='1d')
+    expected = reader.load(query, fake.as_of)
+    calls = []
+    original = fake.session_windows
+    def batch(*, symbol, start, end):
+        calls.append((symbol, start, end))
+        return tuple((day, original(symbol=symbol, trading_day=day)) for day in fake.trading_days_overlapping_window(symbol, start, end))
+    monkeypatch.setattr(fake, 'session_windows_overlapping_window', batch, raising=False)
+    def forbidden(**kwargs):
+        raise AssertionError('resolved session windows must not be read again per day')
+    monkeypatch.setattr(fake, 'session_windows', forbidden)
+    assert reader.load(query, fake.as_of) == expected
+    assert len(calls) == 1

@@ -26,6 +26,83 @@ from app.market_data.observation_stream import (
 _DECIMAL_BAR_FIELDS = frozenset(('open', 'high', 'low', 'close', 'volume', 'turnover', 'open_interest'))
 
 
+def _closed_cleaned_idle_proof(service, source_stream, now, phases):
+    """Prove a terminal cleaned day; never manufacture its missing snapshot."""
+    callback = service.closed_cleanup_evidence
+    if (callback is None or set(phases) != set(service._products) or not phases
+            or service._pending or service._provider is not None
+            or getattr(service, '_input_failure', None) is not None
+            or getattr(service, '_halted', None) is not None
+            or getattr(service, '_metadata_preparation_error', None) is not None
+            or getattr(service, '_last_flush_failed', False)
+            or any(phase.phase is not MarketPhase.CLOSED
+                   or phase.next_session_start is None or phase.next_session_start <= now
+                   for phase in phases.values())):
+        return None
+    try:
+        day = source_stream.registered_day('live')
+        if any(phase.trading_day is not None and phase.trading_day != day for phase in phases.values()):
+            return None
+        evidence = callback(day, now)
+        if (not isinstance(evidence, dict) or evidence.get('trading_day') != day.isoformat()
+                or evidence.get('cleanup_verified') is not True):
+            return None
+        count = 0
+        for stream in (source_stream, ObservationStream(source_stream.redis, kind='completed')):
+            prefix = f'live:observations:registered:{stream.kind}:'
+            consumers = set()
+            for raw in stream.redis.scan_iter(match=prefix + '*'):
+                key = raw.decode() if isinstance(raw, bytes) else raw
+                consumer = key[len(prefix):]
+                if (stream.registered_day(consumer) != day
+                        or stream.cursor(consumer, day) != stream.tail(day)):
+                    return None
+                consumers.add(consumer)
+            if not consumers or stream.kind == 'source' and 'live' not in consumers:
+                return None
+            count += len(consumers)
+        return {**evidence, 'status': 'CLOSED_CLEANED', 'consumer_count': count,
+                'source_cursor': source_stream.cursor('live', day), 'pending_count': 0,
+                'natural_bar_verified': False}
+    except Exception:
+        return None
+
+
+def _accept_closed_cleaned(service, proof, now, phases):
+    service.closed_cleaned_proof = proof
+    service._trading_day = date.fromisoformat(proof['trading_day'])
+    service._closed_cleaned_day = service._trading_day
+    service._contracts = {}
+    service._channels = set()
+    service._available = service._provider_available = True
+    service._publish_heartbeat(now, phases)
+
+
+def _closed_cleanup_requires_proof(service, stream, phases):
+    try:
+        day = stream.registered_day('live')
+        if getattr(service, '_closed_cleaned_day', None) == day:
+            # Only authoritative advancement to a new day releases this fence.
+            return not any(phase.trading_day is not None and phase.trading_day > day
+                           for phase in phases.values())
+        if not phases or any(phase.phase is not MarketPhase.CLOSED for phase in phases.values()):
+            return False
+        if any(phase.trading_day is not None and phase.trading_day != day for phase in phases.values()):
+            return False
+        # A terminal cleaned day cannot return to a normal snapshot happy path,
+        # including after someone recreates that snapshot or proof is revoked.
+        return service._store.subscriptions(day) is None
+    except Exception:
+        return True
+
+
+def _reject_closed_cleanup(service, now, phases):
+    service.closed_cleaned_proof = None
+    service._available = False
+    service._publish_heartbeat(now, phases)
+    return service._reject('OBSERVATION_CLEANUP_UNPROVEN')
+
+
 def _equivalent_bar_payload(left: dict, right: dict) -> bool:
     """Compare exact identity and finite Decimal facts without a binary-float conversion."""
     if type(left) is not dict or type(right) is not dict or left.keys() != right.keys():
@@ -64,11 +141,15 @@ class MarketFeedService(LiveMarketService):
     _provider: LiveProvider | None
     _channels: set[str]
 
-    def __init__(self, *, source_stream: ObservationStream, **kwargs: Any) -> None:
+    def __init__(self, *, source_stream: ObservationStream, closed_cleanup_evidence=None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.source_stream = source_stream
         self._input_failure: str | None = None
         self._last_input_received_at: datetime | None = None
+        self.closed_cleanup_evidence = closed_cleanup_evidence
+        self.closed_cleaned_proof = None
+        self._closed_restore_day = None
+        self._closed_cleaned_day = None
 
     def _discard_provider(self) -> None:
         """Never declare the feed parked until the sole reader actually retires."""
@@ -112,11 +193,23 @@ class MarketFeedService(LiveMarketService):
                 all(item.phase is not MarketPhase.UNKNOWN for item in phases.values())),
             'input_failure': self._input_failure,
             'input_pending_count': len(self._pending) + len(getattr(self._provider, '_messages', ())),
+            'closed_cleaned': self.closed_cleaned_proof,
         })
 
     def poll(self, now):
         if self._input_failure is not None:
             return self._reject(self._input_failure)
+        phases = self._phases(now)
+        proof = _closed_cleaned_idle_proof(self, self.source_stream, now, phases)
+        if proof is not None:
+            if hasattr(self, 'assert_owned'):
+                self.assert_owned()
+            _accept_closed_cleaned(self, proof, now, phases)
+            return None
+        if _closed_cleanup_requires_proof(self, self.source_stream, phases):
+            return _reject_closed_cleanup(self, now, phases)
+        self.closed_cleaned_proof = None
+        self._closed_restore_day = None
         return super().poll(now)
 
     def _reconcile_prepared(self, now):
@@ -132,6 +225,8 @@ class MarketFeedService(LiveMarketService):
             if len(days) > 1:
                 return "LIVE_TRADING_DAY_INCONSISTENT"
             if days:
+                if all(phase.phase is MarketPhase.CLOSED for phase in phases.values()):
+                    self._closed_restore_day = next(iter(days))
                 return self._restore_frozen_day(next(iter(days)))
         return super()._restore_break_identity(phases)
 
@@ -168,6 +263,9 @@ class MarketFeedService(LiveMarketService):
                 self.assert_owned()
             snapshot = self._store.subscriptions(trading_day)
             if snapshot is None:
+                if (self._closed_restore_day == trading_day
+                        and self.source_stream.registered_day('live') == trading_day):
+                    return 'OBSERVATION_CLEANUP_UNPROVEN'
                 # Atomic absence-only creation. Another mapping is never replaced.
                 self.source_stream.redis.eval(
                     "if redis.call('EXISTS', KEYS[1]) == 0 then "
@@ -286,12 +384,15 @@ class StreamLiveProvider:
 
 
 class DurableLiveMarketService(LiveMarketService):
-    def __init__(self, *, source_provider: StreamLiveProvider, **kwargs: Any) -> None:
+    def __init__(self, *, source_provider: StreamLiveProvider, closed_cleanup_evidence=None, **kwargs: Any) -> None:
         super().__init__(provider_factory=lambda: source_provider, **kwargs)
         self.source_provider = source_provider
         self.completed_stream = ObservationStream(self._store._redis, kind='completed')
         self._halted: str | None = None
         self._durable_session_day: date | None = None
+        self.closed_cleanup_evidence = closed_cleanup_evidence
+        self.closed_cleaned_proof = None
+        self._closed_cleaned_day = None
 
     def _restore_frozen_day(self, trading_day: date) -> str | None:
         failure = super()._restore_frozen_day(trading_day)
@@ -319,6 +420,18 @@ class DurableLiveMarketService(LiveMarketService):
     def poll(self, now: datetime) -> str | None:
         if self._halted:
             return self._reject(self._halted)
+        phases = self._phases(now)
+        if not self.source_provider.records and not self.source_provider.events:
+            proof = _closed_cleaned_idle_proof(self, self.source_provider.stream, now, phases)
+            if proof is not None:
+                if hasattr(self, 'assert_owned'):
+                    self.assert_owned()
+                _accept_closed_cleaned(self, proof, now, phases)
+                self.source_provider.select_day(self._trading_day)
+                return None
+        if _closed_cleanup_requires_proof(self, self.source_provider.stream, phases):
+            return _reject_closed_cleanup(self, now, phases)
+        self.closed_cleaned_proof = None
         failure = self._prepare_metadata(now)
         if failure:
             return failure

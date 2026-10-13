@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, deque
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ from time import monotonic, sleep
 from app.reference_trading.capture import ForwardCapture
 from app.reference_trading.forward_service import ForwardReferenceService
 from app.reference_trading.forward_inputs import ForwardInputUnavailable
-from app.reference_trading.repository import ReferenceRepository
+from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
 
 
 DIAGNOSTIC_REASONS = frozenset({
@@ -26,7 +27,18 @@ DIAGNOSTIC_REASONS = frozenset({
 
 
 def diagnostic_reason(reason: str) -> str:
-    return reason if reason in DIAGNOSTIC_REASONS else 'UNCLASSIFIED_FAILURE'
+    return reason if re.fullmatch(r'[A-Z][A-Z0-9_]{1,95}', reason) else 'UNCLASSIFIED_FAILURE'
+
+
+def failure_reason(error: Exception) -> str:
+    # Domain codes are bounded identifiers; never propagate SQL/connection text.
+    from app.market_data.market_data_service import MarketDataError
+    from app.market_data.newow.product_reader import NewowProductReadError
+    if isinstance(error, (ForwardInputUnavailable, RepositoryConflict, MarketDataError, NewowProductReadError)):
+        candidate = getattr(error, 'code', None) or str(error)
+        if isinstance(candidate, str) and diagnostic_reason(candidate) != 'UNCLASSIFIED_FAILURE':
+            return candidate
+    return type(error).__name__
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,7 +231,7 @@ class ForwardReferenceWorker:
                 try:
                     routes = self._work_routes(key)
                 except Exception as error:  # noqa: BLE001 - isolate scope conflicts
-                    self._blocked[key] = type(error).__name__
+                    self._blocked[key] = failure_reason(error)
                     continue
             self._blocked.pop(key, None)
             started, consumed, needs_scan = monotonic(), 0, False
@@ -256,10 +268,7 @@ class ForwardReferenceWorker:
                             self._last_success = datetime.now(UTC)
                         self._blocked.pop(stream_id, None)
                     except Exception as error:  # noqa: BLE001
-                        self._blocked[stream_id] = (
-                            str(error) if isinstance(error, ForwardInputUnavailable)
-                            else type(error).__name__
-                        )
+                        self._blocked[stream_id] = failure_reason(error)
                     if monotonic() - started >= self._budget.max_stream_seconds:
                         needs_scan = True
                         break

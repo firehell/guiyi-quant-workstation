@@ -169,10 +169,9 @@ def build_runtime_health(
         after_market=components["after_market"],
     )
 
-    # Operational health follows the market-data path. Alert processing and
-    # delivery remain visible diagnostics, not prerequisites for healthy data.
+    # Observation and notification failures must be visible at the top level.
     overall = _overall_status(
-        components[name] for name in ("db", "redis", "live_market", "after_market")
+        components[name] for name in ("db", "redis", "live_market", "after_market", "alert")
     )
     # Historical audit is optional and does not redefine operational service health.
     components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
@@ -200,6 +199,12 @@ def build_runtime_health(
         )
         if core_identity_unverified and overall != RUNTIME_STATUS_FAILED:
             overall = RUNTIME_STATUS_DEGRADED
+    components["reference_worker"] = _collect_reference_owner_health(current_time, runtime_identity)
+    observed_overall = _overall_status(
+        components[name] for name in ("db", "redis", "live_market", "after_market", "alert", "reference_worker")
+    )
+    if observed_overall == RUNTIME_STATUS_FAILED or (observed_overall == RUNTIME_STATUS_DEGRADED and overall != RUNTIME_STATUS_FAILED):
+        overall = observed_overall
     return {
         "runtime_identity": runtime_identity,
         "status": overall,
@@ -210,6 +215,58 @@ def build_runtime_health(
         "would_send_notifications": False,
         "components": components,
     }
+
+
+def _collect_reference_owner_health(now, runtime_identity):
+    """Read one owner proof; never load the recording matrix on health polling."""
+    from app.runtime_handover import read_service_state
+    try:
+        binding = resolve_service_binding("reference-worker")
+        if binding is None:
+            marker = PROJECT_ROOT / ".run/reference-worker-enabled"
+            try:
+                enabled = marker.read_text() == "enabled\n"
+            except OSError:
+                enabled = False
+            return {"status": "degraded" if enabled else "disabled", "error_type": "reference_identity_unavailable" if enabled else None}
+        if not binding.enabled:
+            return {"status": "disabled", "error_type": None}
+        identity = (runtime_identity or {}).get("services", {}).get("reference_worker", {})
+        return _reference_owner_health(binding, identity, read_service_state("reference-worker"), now)
+    except Exception:
+        return {"status": "degraded", "error_type": "reference_owner_proof_unavailable"}
+
+
+def _reference_owner_health(binding, identity, state, now):
+    unavailable = {"status": "degraded", "error_type": "reference_owner_proof_unavailable"}
+    if (not isinstance(state, Mapping) or identity.get("status") != "matched"
+            or type(identity.get("loaded_pid")) is not int
+            or state.get("pid") != identity["loaded_pid"]
+            or state.get("generation") != binding.generation or state.get("phase") != "active"):
+        return unavailable
+    stamp = _optional_timestamp(state.get("at"))
+    if stamp is None or stamp > now or now - stamp > timedelta(seconds=300):
+        return {**unavailable, "error_type": "reference_owner_proof_stale"}
+    outer_proof = state.get("proof")
+    if not isinstance(outer_proof, Mapping):
+        return unavailable
+    proof = outer_proof.get("reference_runtime")
+    if not isinstance(proof, Mapping):
+        return unavailable
+    blocked = proof.get("blocked_count", 0 if proof.get("stage") == "compose" else None)
+    if type(blocked) is not int:
+        return unavailable
+    counts = proof.get("blocked_counts", {})
+    if (blocked < 0 or not isinstance(counts, Mapping) or any(
+            not isinstance(k, str) or type(v) is not int or v < 0 for k, v in counts.items())
+            or sum(counts.values()) != blocked):
+        return unavailable
+    fault = blocked > 0 or proof.get("failure_code") is not None
+    return {"status": "degraded" if fault else "ok" if state.get("ready") is True else "pending",
+            "error_type": "reference_routes_blocked" if fault else None,
+            "last_heartbeat_at": _iso(stamp), "stage": proof.get("stage"),
+            "blocked_count": blocked, "blocked_counts": dict(counts),
+            "quarantined_route_count": counts.get("REFERENCE_CANONICAL_MISMATCH", 0)}
 
 
 def _market_runtime_activation_enabled() -> bool:

@@ -1,8 +1,57 @@
 # 当前状态
 
 更新：2026-10-13。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
-下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
+下文保留的旧候选与旧版本运行检查点均按历史证据阅读，不作为当前状态或待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
+
+## 10/13 盘中可靠性补丁 v1.15.6：候选收尾，尚未发布
+
+修复 Reference 冲突隔离与独立新段、日周发布等待、Alert重复读取、日周coverage初始化、
+首页可见卡片优先与独立行情刷新、Reference健康诊断、自然盘后清理后的同日闭市启动。
+范围保持60品种、既有规则/收件人、苏冰推送关闭及auto_order=false；旧过期事件不补发。
+
+10/13自然盘后18:05:05至18:07:22第一次passed、60品种cleanup真实通过。
+SA10:12负成交额已由RQData源自行修正；正式Canonical及新一次源查询相等，严格质量规则不变。
+原盘中缺口、恢复预算、69次真实Live/Canonical冲突和全部历史交易保留。
+
+隔离Redis、真实隔离PostgreSQL、Web定向/type/build、版本一致性及11个OpenSpec检查已通过；
+Source后缀独立406项复验通过；实际恢复caller正在独立审查，正式40路Source/新forward恢复尚未执行。
+同输入240条充分预热计算从约44秒降至29.3/28.5秒，策略结果完全一致；这是历史计算测量，
+不证明自然Live突发批次、真实发送延迟或收件人送达。
+
+当前正式版本仍v1.15.5/gen18。候选验证、生产恢复、补丁发布、gen19切换及自然夜盘验收分别记录，
+不能把候选构建或闭市健康称为RUNTIME_READY。
+证据：output/runtime-intraday-repair-20261013/；详见
+[修复与验证](docs/tasks/runtime-intraday-repair-20261013.md)、[补丁说明](docs/releases/v1.15.6.md)。
+
+## 数据完整性修复完成；v1.15.5/gen18 已运行并独立读回
+
+10/12自然盘后passed，operational60七周期420组、27,145个预期端点独立读回通过。
+JD2612生命周期缺口已补齐并保护原当日Bar；Newow日线消费者180/180复查通过，原自然177/180记录不改写。
+10/13 Calendar/Session/rank1均齐；新主力SM2701七周期70分区/52,063 Bar修复并独立读回，剩余缺口0，12个现役profile输入完整。
+
+v1.15.4@b1c1b182eff58dee063dd7909339cf5dccf50722/gen17已完成受控恢复及独立运行读回。
+13,500条原Source保留，旧日Completed正常追至17,880条，Live/Alert/Reference三个旧游标均到真实尾部。
+45个夜盘品种过去完整前缀经45次真实RQData恢复、逐品种独立读回通过（1m6,990、5m1,398、15m466、30m233、60m118）；
+修复投影不冒充自然观察，不写Canonical或Source/Completed，不推进游标、不补发通知。
+原180条停机中断及ag/au/sc实际02:30追加12条均提交消费，旧receipt保持；当日60真实合约订阅与官方NEW_DAY登记独立验收通过。
+原stop-install未知attempt不改写，新受控续接已完成；原自然盘后状态、旧日志、原始时间和发送事实保留。
+
+永久修复包含Decimal幂等、durable消费及精确中断，以及重启恢复权威Session、持锁Reference验收和producer闭市订阅/NEW_DAY初始化。
+v1.15.5已通过PR #446合入main、annotated tag及GitHub Release发布，精确提交dc32c020d328ab81d4d65a959603f4ab66965f52；
+候选81项定向测试通过，正式发布树39项复验通过，Web类型/build/topology、Mypy/Ruff、secret及独立Review通过。
+精确闭市预检通过，六旧服务真实drain、十旧标签/PID退出；v1.15.5十个正式绑定已一次CAS切至gen18。
+六新服务bootstrap已真实提交；启动验收的旧状态及首健康轮后台线程启动顺序问题经真实Worker组合测试定位。
+原start及首续接unknown字节保留；新独立续接仅取消精确停驻请求、未重复bootstrap，实际committed且独立readback通过。
+正式六服务均同PID/gen18恢复，Live/Feed新鲜60品种心跳通过，Reference两线程存活且blocked0，四既有Calendar已注册idle。
+原Source/Completed/三个游标、60订阅、receipt、Scope及配置前像不变。切换工具28项、真实冷启动续接15项验证通过。
+新版本首根自然completed观察仍待10/13开盘发生，不能把修复/运行读回称为自然业务RUNTIME_READY。
+
+12个普通日线Alert输入拒绝（4 PRICE_UNAVAILABLE、8不支持的source-quality分类）保留，不制造正常价格或改变公式/Scope。
+owner此次只保证数据完整，不验收实际收件；不补发过期信号，不改账户执行。
+证据：output/after-market-normalization-20261012/；实施边界见docs/tasks/runtime-data-recovery-20261012.md，发布说明见docs/releases/v1.15.5.md。
+
+## 历史检查点（保留当时状态，以下不代表现役）
 
 ## v1.15.4 数据运行恢复补丁候选（尚未发布/切换）
 

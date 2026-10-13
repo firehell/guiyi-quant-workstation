@@ -244,3 +244,22 @@ test('directory loads once independently of a pending overview and keeps its acc
   assert.equal(home.overview.stale.value, false)
   home.dispose()
 })
+
+
+test('market refresh completes while independent runtime health remains pending', async () => {
+  let finishRuntime!: (value: string) => void
+  const home = useMarketHome({
+    fetchOverview: async () => 'overview',
+    fetchDirectory: async () => 'directory',
+    fetchRuntime: () => new Promise<string>(resolve => { finishRuntime = resolve }),
+  })
+  await home.refreshAll()
+  assert.equal(home.overview.data.value, 'overview')
+  assert.equal(home.directory.data.value, 'directory')
+  assert.equal(home.runtime.loading.value, true)
+  assert.equal(home.runtime.data.value, null)
+  finishRuntime('runtime')
+  await home.refreshRuntime()
+  assert.equal(home.runtime.data.value, 'runtime')
+  home.dispose()
+})

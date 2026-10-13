@@ -50,6 +50,9 @@ class MarketPageReader(Protocol):
 
     def query_alert_history_prefix(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
 
+    def read_alert_physical_prefix(self, *, symbol: str, contract: str, frequency: BarFrequency,
+                                   trading_day: date, cutoff: datetime, after: datetime | None) -> tuple[CanonicalBar, ...]: ...
+
     def validate_contract_replay_coverage(
         self,
         *,
@@ -450,6 +453,7 @@ class MarketReadService:
             contract=contract,
             cutoff=cutoff,
             after=normalized_after,
+            trading_day=decision_window.trading_day,
         )
         live = () if frequency in {BarFrequency.D1, BarFrequency.W1} else self._verified_live_bars(
             trading_day=decision_window.trading_day,
@@ -517,6 +521,7 @@ class MarketReadService:
         canonical = self._current_contract_history(
             symbol=decision.symbol, frequency=frequency, contract=decision.contract,
             cutoff=cutoff, after=None,
+            trading_day=endpoint_day,
         )
         live = () if frequency in {BarFrequency.D1, BarFrequency.W1} else self._verified_live_bars(
             trading_day=decision.trading_day, symbol=decision.symbol, frequency=frequency,
@@ -551,7 +556,16 @@ class MarketReadService:
         contract: str,
         cutoff: datetime,
         after: datetime | None,
+        trading_day: date,
     ) -> tuple[CanonicalBar, ...]:
+        if frequency in INTRADAY_FREQUENCIES:
+            try:
+                return self._market_data.read_alert_physical_prefix(
+                    symbol=symbol, contract=contract, frequency=frequency,
+                    trading_day=trading_day, cutoff=cutoff, after=after,
+                )
+            except MarketDataError as exc:
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE") from exc
         before: datetime | None = None
         collected: dict[datetime, CanonicalBar] = {}
         while True:
@@ -618,7 +632,8 @@ class MarketReadService:
 
         try:
             history = self._current_contract_history(symbol=symbol, contract=contract,
-                                                     frequency=BarFrequency.M15, cutoff=cutoff, after=None)
+                                                     frequency=BarFrequency.M15, cutoff=cutoff, after=None,
+                                                     trading_day=trading_day)
             row["historical_15m_gap"] = gap(tuple(item for item in expected if item[1] < trading_day), history)
             if row["historical_15m_gap"]["count"]:
                 row["error_codes"].append("HISTORICAL_PREFIX_MISSING")

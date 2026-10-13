@@ -67,12 +67,16 @@ class ForwardReferenceHealth:
             ids = [stream.stream_id for stream in streams]
             b, s = ReferenceBatch, ReferenceStream
             active = and_(b.stream_id == s.stream_id, b.revision_id == s.active_revision_id)
+            is_pending = and_(b.kind == "capture", b.consumed_by_batch_id.is_(None))
+            is_quarantine = and_(b.kind == "diagnostic", b.batch_key.like("quarantine:%"))
             pending = {
                 row[0]: row[1:] for row in session.execute(select(
-                    b.stream_id, func.count(b.batch_id), func.min(b.observed_at),
+                    b.stream_id, func.count(case((is_pending, b.batch_id))),
+                    func.min(case((is_pending, b.observed_at))),
+                    func.count(case((is_quarantine, b.batch_id))),
+                    func.max(case((is_quarantine, b.processed_at))),
                 ).join(s, active).where(
-                    b.stream_id.in_(ids), b.kind == "capture",
-                    b.consumed_by_batch_id.is_(None),
+                    b.stream_id.in_(ids), is_pending | is_quarantine,
                 ).group_by(b.stream_id))
             }
             observed = and_(b.kind == "calculation", b.observed_at.is_not(None),
@@ -99,6 +103,8 @@ class ForwardReferenceHealth:
             ).join(r, r.capture_batch_id == b.batch_id).join(s, active).where(
                 b.stream_id.in_(ids), b.kind == "capture", r.status == "mismatch",
             ).group_by(b.stream_id)).all())
+            conflict_groups = {(stream.product.lower(), stream.frequency) for stream in streams
+                               if mismatches.get(stream.stream_id, 0) or pending.get(stream.stream_id, (0, None, 0, None))[2]}
             latest = select(b.stream_id, func.max(b.seq).label("seq")).join(s, active).where(
                 b.stream_id.in_(ids), b.kind == "calculation", b.seq <= s.latest_seq,
                 ~b.batch_key.like("forward:observation-gap:%"),
@@ -143,7 +149,7 @@ class ForwardReferenceHealth:
                             observed_days[batch.stream_id] = day
             items = []
             for stream in streams:
-                count, oldest = pending.get(stream.stream_id, (0, None))
+                count, oldest, quarantine_count, quarantine_processed = pending.get(stream.stream_id, (0, None, 0, None))
                 success, computed, _seq, historical, observed_end, last_observed = calculations.get(stream.stream_id, (None,) * 6)
                 gap = gaps.get(stream.stream_id)
                 endpoint = endpoints.get((stream.product.lower(), stream.frequency), {
@@ -151,6 +157,9 @@ class ForwardReferenceHealth:
                     "endpoint_status": "UNKNOWN", "endpoint_reason": "ENDPOINT_NOT_VERIFIED",
                 })
                 status = _recording_status(stream, endpoint, observed_end) if self._endpoint_reader else stream.health
+                conflicted = (stream.product.lower(), stream.frequency) in conflict_groups
+                if conflicted:
+                    status = "DATA_CONFLICT"
                 items.append({
                     "stream_id": stream.stream_id, "enabled": stream.enabled,
                     "strategy_code": stream.strategy_code, "product": stream.product,
@@ -170,7 +179,10 @@ class ForwardReferenceHealth:
                     "pending_capture_count": count,
                     "oldest_pending_observed_at": _iso(oldest),
                     "reconciliation_mismatch_count": mismatches.get(stream.stream_id, 0),
-                    "status": status, "latest_state": states.get(stream.stream_id),
+                    "quarantined_observation_count": quarantine_count,
+                    "last_quarantined_processed_at": _iso(quarantine_processed),
+                    "unavailable_reason": "REFERENCE_CANONICAL_MISMATCH" if conflicted else None,
+                    "status": status, "latest_state": None if conflicted else states.get(stream.stream_id),
                 })
             return {"enabled_count": sum(item["enabled"] is True for item in items), "streams": items,
                     "source_endpoints": public_endpoints}

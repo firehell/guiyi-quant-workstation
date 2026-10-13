@@ -111,8 +111,8 @@ def deployment_identity_health(*, root: Path, commit: str, home: Path | None = N
             working_directory = account_home if binding is not None and service in {"api", "web"} else installed_root
             if payload.get("WorkingDirectory") != str(working_directory):
                 raise ValueError
-            _verify_loaded_service(output, root=installed_root, commit=installed_commit,
-                allow_idle=service in {"after-market", "weekly-audit", "late-provider-recovery"},
+            loaded_fields = _verify_loaded_service(output, root=installed_root, commit=installed_commit,
+                allow_idle=service in {"after-market", "weekly-audit", "late-provider-recovery", "log-rotate"},
                 working_directory=working_directory)
             if _arguments(output) != arguments or _snapshot(path)[1] != stamp:
                 raise ValueError
@@ -128,6 +128,7 @@ def deployment_identity_health(*, root: Path, commit: str, home: Path | None = N
             matched = installed_root == expected_root and installed_commit == expected_commit
             result = {"status": "matched" if matched else "mismatch",
                 "runtime_root": str(installed_root), "runtime_commit": installed_commit,
+                "loaded_pid": int(loaded_fields["pid"]) if loaded_fields.get("state") == "running" else None,
                 "error_type": None if matched else "runtime_identity_mismatch"}
             if binding is not None:
                 result.update(runtime_generation=binding.generation, runtime_tag=binding.tag)

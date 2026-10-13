@@ -1901,3 +1901,96 @@ def test_buffer_notification_delay_uses_send_check_after_processing():
     assert sent[0].detected_at == detected
     assert sent[0].notification_checked_at == checked
     assert '处理延迟：7.0秒' in format_alert_message(sent[0])
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+@pytest.mark.parametrize("error_kind", [None, "source_quality", "infrastructure"])
+def test_startup_primes_authoritative_canonical_coverage_without_events(frequency, error_kind):
+    """A new generation must assess existing Canonical, without sending history."""
+    from app.market_data.domain import BarFrequency
+    day = date(2026, 10, 12) if frequency == "1d" else date(2026, 10, 9)
+    at = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    bar = CanonicalBar(at, day, "1", "1", "1", "1", "1", None, None)
+    window = MarketReadWindow(symbol="rb", series_kind="actual_dominant", frequency=frequency,
+        trading_day=day, contract="RB2701", cutoff=at, bars=(bar,), bar_contracts=("RB2701",))
+    engine = create_engine("sqlite://")
+    for table in (AlertRule.__table__, AlertEvent.__table__, SubingSignalAlignment.__table__):
+        table.create(engine)
+    with OrmSession(engine) as session:
+        session.add(AlertRule(rule_code=HTDY_ALERT_RULE_CODE, enabled=True,
+                              scope_product_frequencies={"rb": [frequency]}))
+        session.commit()
+    class Reader:
+        def history_page(self, query):
+            assert query.frequency is BarFrequency(frequency)
+            if error_kind == "source_quality":
+                from app.market_data.market_data_service import MarketDataError
+                raise MarketDataError("PARTITION_PRICE_UNAVAILABLE")
+            if error_kind == "infrastructure":
+                from app.market_data.errors import InfrastructureError
+                raise InfrastructureError("CATALOG_UNAVAILABLE")
+            return SimpleNamespace(bars=(bar,))
+        def latest_canonical_window(self, query, *, trading_day, limit):
+            assert trading_day == day
+            return window
+        def assert_window_current(self, candidate):
+            assert candidate is window
+    class Evaluator:
+        def evaluate_candidates(self, reader, candidate):
+            assert candidate is window
+            return (AlertObservationCandidate(at, day, "RB2701", ("buy",)),)
+    runtime = AlertRuntime(session_factory=lambda: OrmSession(engine),
+        market_read_factory=lambda _s: Reader(), evaluators={HTDY_ALERT_RULE_CODE: Evaluator()},
+        sender=SimpleNamespace(send=lambda _message: pytest.fail("startup cannot send")),
+        operational_products=("rb",), taxonomy={}, clock=lambda: datetime(2026, 10, 13, tzinfo=UTC))
+    runtime._prime_canonical_coverage()
+    progress = runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "rb", frequency)]
+    if error_kind is None:
+        assert progress["trading_day"] == day.isoformat()
+        assert progress["state"] == "ok"
+    else:
+        assert progress["state"] == "evaluation_failed"
+        assert progress["last_evaluated_bar_at"] is None
+        assert progress["input_error_code"] == ("PARTITION_PRICE_UNAVAILABLE" if error_kind == "source_quality" else "CATALOG_UNAVAILABLE")
+    with OrmSession(engine) as session:
+        assert session.scalar(select(func.count()).select_from(AlertEvent)) == 0
+    engine.dispose()
+
+
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
+def test_live_rules_share_one_cutoff_window_and_recheck_authority(frequency):
+    from app.market_data.domain import BarFrequency
+    at = datetime(2026, 10, 13, 2, tzinfo=UTC)
+    bar = CanonicalBar(at, at.date(), "1", "1", "1", "1", "1", None, None)
+    window = MarketReadWindow(symbol="rb", series_kind="actual_dominant", frequency=frequency,
+        trading_day=at.date(), contract="RB2701", cutoff=at, bars=(bar,), bar_contracts=("RB2701",))
+    engine = create_engine("sqlite://")
+    for table in (AlertRule.__table__, AlertEvent.__table__, SubingSignalAlignment.__table__):
+        table.create(engine)
+    with OrmSession(engine) as session:
+        for code in (HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE):
+            session.add(AlertRule(rule_code=code, enabled=True, scope_product_frequencies={"rb": [frequency]}))
+        session.commit()
+    reads = []
+    checks = []
+    class Reader:
+        def bars_until(self, query, *, trading_day, end, limit):
+            assert query.frequency is BarFrequency(frequency) and end == at
+            reads.append((query, trading_day))
+            return window
+        def assert_window_current(self, candidate):
+            checks.append(candidate)
+    class Evaluator:
+        def evaluate_candidates(self, reader, candidate):
+            assert candidate is window
+            return ()
+    runtime = AlertRuntime(session_factory=lambda: OrmSession(engine), market_read_factory=lambda _s: Reader(),
+        evaluators={code: Evaluator() for code in (HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE)},
+        sender=SimpleNamespace(send=lambda _message: pytest.fail("zero candidates")),
+        operational_products=("rb",), taxonomy={}, clock=lambda: at)
+    payload = dict(bar_end=at.isoformat(), trading_day=at.date().isoformat(),
+                   open="1", high="1", low="1", close="1", volume="1", turnover=None, open_interest=None)
+    assert runtime.process_message(f"live:bar:rb:{frequency}", payload)
+    assert len(reads) == 1
+    assert len(checks) == 4  # Before and after each rule; reuse does not bypass current ownership.
+    engine.dispose()

@@ -138,3 +138,37 @@ def test_real_daily_weekly_direction_uses_completed_session_and_week(tmp_path):
         assert daily.bars == tuple(bar for bar in full[BarFrequency.D1] if bar.bar_end <= decision_end)
         assert weekly.bars == full[BarFrequency.W1][:1]
     engine.dispose()
+
+
+def test_alignment_derived_cache_reuses_only_identical_verified_input(monkeypatch):
+    from dataclasses import replace
+    from decimal import Decimal
+    import app.alerts.subing_alignment as alignment
+    bars = tuple(_bar(LIVE_END - timedelta(minutes=15 * offset), DAY_2) for offset in range(30, -1, -1))
+    expected = alignment._verified_period_facts("RB2610", "15m", LIVE_END, bars)
+    original = alignment.step_ema
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("same verified EMA prefix must not be recomputed")
+    monkeypatch.setattr(alignment, "step_ema", forbidden)
+    reused = alignment._verified_period_facts("RB2610", "15m", LIVE_END, bars)
+    assert reused == expected
+    reused["direction"] = "mutated"
+    assert alignment._verified_period_facts("RB2610", "15m", LIVE_END, bars) == expected
+    monkeypatch.setattr(alignment, "step_ema", original)
+    changed = (*bars[:-1], replace(bars[-1], close=Decimal("1000"), high=Decimal("1000")))
+    assert alignment._verified_period_facts("RB2610", "15m", LIVE_END, changed)["input_snapshot_hash"] != expected["input_snapshot_hash"]
+    assert alignment._verified_period_facts("RB2701", "15m", LIVE_END, bars)["input_snapshot_hash"] != expected["input_snapshot_hash"]
+    assert alignment._verified_period_facts("RB2610", "30m", LIVE_END, bars)["input_snapshot_hash"] != expected["input_snapshot_hash"]
+
+
+def test_intraday_replay_reads_one_authoritative_physical_prefix():
+    service, reader = _replay_service((_bar(LIVE_END - timedelta(minutes=15), DAY_2),), (_bar(LIVE_END, DAY_2),))
+    calls = []
+    def prefix(**kwargs):
+        calls.append(kwargs)
+        return tuple(bar for bar in reader._bars if bar.bar_end <= kwargs["cutoff"])
+    reader.read_alert_physical_prefix = prefix
+    reader.query_page = lambda *_args: pytest.fail("intraday full prefix must not repeatedly paginate/validate")
+    assert len(service.current_contract_replay_window(_replay_window(), after=None).bars) == 2
+    assert len(calls) == 1
+    assert calls[0]["cutoff"] == LIVE_END and calls[0]["after"] is None

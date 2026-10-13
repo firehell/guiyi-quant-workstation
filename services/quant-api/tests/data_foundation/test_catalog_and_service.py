@@ -2989,3 +2989,17 @@ def test_daily_snapshot_cache_keeps_quality_union_and_window_distinct(monkeypatc
         with pytest.raises(MarketDataError):
             market.query_contract_replay_quality_union(**{**args, 'contract': 'FAIL'})
     assert len(calls) == 7
+
+
+def test_market_session_batch_matches_day_authority_and_does_not_survive_updates(session, tmp_path):
+    market = _listing_market(session, tmp_path, 'pd')
+    start = datetime(2025, 11, 27, 1, tzinfo=UTC)
+    end = datetime(2025, 11, 28, 7, tzinfo=UTC)
+    values = market.session_windows_overlapping_window(symbol='pd', start=start, end=end)
+    assert tuple(day for day, _ in values) == market.trading_days_overlapping_window(symbol='pd', start=start, end=end)
+    assert all(windows == market.session_windows(symbol='pd', trading_day=day) for day, windows in values)
+    session.execute(update(TradingSession).where(TradingSession.instrument_symbol == 'pd').values(end_time=time(14)))
+    session.commit()
+    changed = market.session_windows_overlapping_window(symbol='pd', start=start, end=end)
+    assert changed != values
+    assert all(windows[-1].end.hour == 6 for _, windows in changed)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
@@ -478,6 +480,10 @@ class _RecordingMarketDataService:
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         self.requests.append(request)
         return self._delegate.query_page(request)
+
+    def read_alert_physical_prefix(self, **kwargs):
+        self.requests.append(SimpleNamespace(**kwargs))
+        return self._delegate.read_alert_physical_prefix(**kwargs)
 
     def validate_contract_replay_coverage(self, **kwargs) -> None:
         self._delegate.validate_contract_replay_coverage(**kwargs)
@@ -1614,6 +1620,13 @@ class _ContractReplayPageReader:
         self._stalled = stalled
         self.requests: list[SeriesPageQuery] = []
 
+    def read_alert_physical_prefix(self, **kwargs):
+        self.requests.append(SimpleNamespace(**kwargs))
+        if self._stalled:
+            raise MarketDataError("CONTRACT_REPLAY_PREFIX_INCOMPLETE")
+        return tuple(bar for bar in self._bars if bar.bar_end <= kwargs["cutoff"]
+                     and (kwargs["after"] is None or bar.bar_end > kwargs["after"]))
+
     def validate_contract_replay_coverage(self, **kwargs) -> None:
         # Paging/merge unit fixtures use an explicit successful metadata boundary.
         # Coverage rejection itself is exercised above with real Catalog/Parquet.
@@ -1775,7 +1788,7 @@ def test_current_contract_replay_bootstraps_latest_canonical_before_live_cutoff(
     assert replay.bars == (*fixture.canonical, fixture.cutoff)
     assert fixture.canonical[-1].trading_day == DAY_1
     assert fixture.cutoff.trading_day == DAY_2
-    assert fixture.market_data.requests[0].before is None
+    assert fixture.market_data.requests[0].cutoff == fixture.cutoff.bar_end
 
 
 def test_current_contract_replay_clips_future_tail_and_honors_after() -> None:
@@ -1793,7 +1806,7 @@ def test_current_contract_replay_clips_future_tail_and_honors_after() -> None:
         after=HISTORICAL_END_1,
     )
 
-    assert reader.requests[0].before is None
+    assert reader.requests[0].cutoff == LIVE_END
     assert replay.bars == (_bar(HISTORICAL_END_2, DAY_2), _bar(LIVE_END, DAY_2))
     assert all(HISTORICAL_END_1 < bar.bar_end <= LIVE_END for bar in replay.bars)
 
@@ -1812,7 +1825,7 @@ def test_current_contract_replay_includes_predominant_same_contract_only() -> No
     assert all(request.contract == "RB2610" for request in reader.requests)
 
 
-def test_current_contract_replay_pages_back_to_all_same_contract_history() -> None:
+def test_current_contract_replay_reads_all_same_contract_history_once() -> None:
     start = datetime(2024, 1, 1, tzinfo=UTC)
     historical = tuple(
         _bar(start + timedelta(minutes=15 * index), DAY_1) for index in range(2001)
@@ -1825,9 +1838,8 @@ def test_current_contract_replay_pages_back_to_all_same_contract_history() -> No
     )
 
     assert replay.bars == historical
-    assert len(reader.requests) == 2
-    assert reader.requests[0].before is None
-    assert reader.requests[1].before == historical[2].bar_end
+    assert len(reader.requests) == 1
+    assert reader.requests[0].cutoff == LIVE_END
 
 
 def test_current_contract_replay_filters_after() -> None:
@@ -1898,7 +1910,7 @@ def test_current_contract_replay_allows_stale_duplicate_cutoff() -> None:
     assert replay.bars == ()
 
 
-def test_current_contract_replay_fails_closed_for_missing_cutoff_and_stalled_cursor() -> (
+def test_current_contract_replay_fails_closed_for_missing_cutoff_and_prefix_failure() -> (
     None
 ):
     missing, _reader = _replay_service((_bar(HISTORICAL_END_2, DAY_2),), ())
@@ -1908,7 +1920,7 @@ def test_current_contract_replay_fails_closed_for_missing_cutoff_and_stalled_cur
     stalled, _reader = _replay_service(
         (_bar(HISTORICAL_END_2, DAY_2),), (), stalled=True
     )
-    with pytest.raises(MarketReadWindowError, match="MARKET_READ_PAGINATION_STALLED"):
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE"):
         stalled.current_contract_replay_window(_replay_window(), after=None)
 
 
@@ -1931,7 +1943,7 @@ def test_current_contract_replay_maps_only_market_data_history_errors(
     """Catches leaking storage failure codes or swallowing unrelated programming errors."""
 
     class FailingHistoryReader:
-        def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        def read_alert_physical_prefix(self, **kwargs):
             raise error
 
     service = MarketReadService(
@@ -2014,3 +2026,63 @@ def test_alert_window_joins_published_history_before_current_rank1_is_catalogued
             with pytest.raises(MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"):
                 service.bars_until(query, trading_day=current, end=cutoff, limit=limit)
     engine.dispose()
+
+
+def test_alert_physical_prefix_rejects_retired_product_before_catalog(monkeypatch):
+    from app.market_data.domain import BarFrequency
+    from app.market_data.product_retirement import ProductRetiredError
+    def retired(_symbol):
+        raise ProductRetiredError("PRODUCT_RETIRED")
+    monkeypatch.setattr("app.market_data.market_data_service.assert_not_retired", retired)
+    market = MarketDataService(object(), object())
+    with pytest.raises(MarketDataError, match="PRODUCT_RETIRED"):
+        market.read_alert_physical_prefix(symbol="rb", contract="RB2610", frequency=BarFrequency.M15,
+            trading_day=DAY_2, cutoff=LIVE_END, after=None)
+
+
+def test_alert_incremental_prefix_reads_only_suffix_after_verified_cursor(production_contract_replay_fixture, monkeypatch):
+    fixture = production_contract_replay_fixture
+    market = fixture.market_data._delegate
+    after = fixture.canonical[0].bar_end
+    original = market._read_physical
+    queries = []
+    def read(key, query, **kwargs):
+        queries.append(query)
+        return original(key, query, **kwargs)
+    monkeypatch.setattr(market, '_read_physical', read)
+    replay = fixture.service.current_contract_replay_window(_replay_window(fixture.cutoff.bar_end), after=after)
+    assert replay.bars == (*fixture.canonical[1:], fixture.cutoff)
+    assert len(queries) == 1
+    assert queries[0].start == after
+
+
+def test_live_only_suffix_requires_verified_canonical_tail_without_rereading_lifecycle(production_contract_replay_fixture, monkeypatch):
+    fixture = production_contract_replay_fixture
+    market = fixture.market_data._delegate
+    monkeypatch.setattr(market, '_read_physical', lambda *_args, **_kwargs: pytest.fail('Live-only suffix should use verified published tail'))
+    replay = fixture.service.current_contract_replay_window(_replay_window(fixture.cutoff.bar_end), after=fixture.canonical[-1].bar_end)
+    assert replay.bars == (fixture.cutoff,)
+
+
+@pytest.mark.parametrize('defect', ['missing_dataset', 'corrupt_tail', 'invalid_tail_endpoint'])
+def test_live_only_suffix_never_substitutes_missing_or_invalid_canonical_authority(production_contract_replay_fixture, defect):
+    from dataclasses import replace
+    from app.market_data.domain import DatasetKey
+    from app.market_data.storage import PublishRequest
+    fixture = production_contract_replay_fixture
+    market = fixture.market_data._delegate
+    key = DatasetKey('contract', 'rb', 'RB2610', '15m')
+    catalog = market.catalog
+    if defect == 'missing_dataset':
+        catalog.session.delete(catalog.dataset_row(key))
+        catalog.session.commit()
+    elif defect == 'corrupt_tail':
+        partition = catalog.partitions_before(key, None)[0]
+        partition.file_path.write_bytes(b'corrupt immutable tail')
+    else:
+        values = (*fixture.canonical[:-1], replace(fixture.canonical[-1], bar_end=fixture.canonical[-1].bar_end + timedelta(seconds=1)))
+        published = market.store.publish(PublishRequest(key, 2026, 8, values, tuple(bar.bar_end for bar in values)))
+        catalog.register_partition(published)
+        catalog.session.commit()
+    with pytest.raises(MarketReadWindowError, match='MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE'):
+        fixture.service.current_contract_replay_window(_replay_window(fixture.cutoff.bar_end), after=fixture.canonical[-1].bar_end)

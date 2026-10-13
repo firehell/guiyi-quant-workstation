@@ -14,18 +14,18 @@ def test_guard_excludes_another_process_and_kernel_releases_after_crash(tmp_path
 from pathlib import Path
 from app.market_data.live_recovery_guard import recovery_guard
 try:
-    with recovery_guard('jm', root=Path(sys.argv[1])):
+    with recovery_guard('jm', root=Path(sys.argv[1]), legacy_root=True):
         os._exit(0)
 except RuntimeError:
     sys.exit(7)
 """
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
-    with recovery_guard("jm", root=tmp_path):
+    with recovery_guard("jm", root=tmp_path, legacy_root=True):
         result = subprocess.run([sys.executable, "-c", code, str(tmp_path)], env=env, capture_output=True)
         assert result.returncode == 7
     result = subprocess.run([sys.executable, "-c", code, str(tmp_path)], env=env, capture_output=True)
     assert result.returncode == 0
-    with recovery_guard("jm", root=tmp_path):
+    with recovery_guard("jm", root=tmp_path, legacy_root=True):
         pass  # os._exit did not leave a lease that could expire during Event commit
 
 
@@ -33,13 +33,13 @@ def test_guard_rejects_linked_or_unbounded_names(tmp_path):
     from app.market_data.live_recovery_guard import recovery_guard
 
     with pytest.raises(ValueError):
-        with recovery_guard("../escape", root=tmp_path):
+        with recovery_guard("../escape", root=tmp_path, legacy_root=True):
             pass
     target = tmp_path / "target"
     target.write_text("keep")
     (tmp_path / "jm.lock").symlink_to(target)
     with pytest.raises(ValueError):
-        with recovery_guard("jm", root=tmp_path):
+        with recovery_guard("jm", root=tmp_path, legacy_root=True):
             pass
     assert target.read_text() == "keep"
 
@@ -47,11 +47,11 @@ def test_guard_rejects_linked_or_unbounded_names(tmp_path):
 def test_after_market_guard_is_global_and_uses_existing_safe_directory(tmp_path):
     from app.market_data.live_recovery_guard import after_market_recovery_guard, recovery_guard
 
-    with after_market_recovery_guard(root=tmp_path):
+    with after_market_recovery_guard(root=tmp_path, legacy_root=True):
         with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
-            with after_market_recovery_guard(root=tmp_path):
+            with after_market_recovery_guard(root=tmp_path, legacy_root=True):
                 pytest.fail("captured operation must not race after-market")
-        with recovery_guard("jm", root=tmp_path):
+        with recovery_guard("jm", root=tmp_path, legacy_root=True):
             pass  # Global guard and symbol guard are separate locks with fixed ordering.
     assert (tmp_path / "after-market.lock").stat().st_mode & 0o777 == 0o600
 
@@ -63,7 +63,7 @@ def test_after_market_guard_rejects_symlink(tmp_path):
     target.write_text("keep")
     (tmp_path / "after-market.lock").symlink_to(target)
     with pytest.raises(ValueError, match="LIVE_RECOVERY_GUARD_UNSAFE"):
-        with after_market_recovery_guard(root=tmp_path):
+        with after_market_recovery_guard(root=tmp_path, legacy_root=True):
             pass
     assert target.read_text() == "keep"
 
@@ -86,10 +86,10 @@ def test_close_failure_does_not_leave_process_holding_product_lock(tmp_path, mon
         with monkeypatch.context() as patch:
             patch.setattr(os, "close", fail_close)
             with pytest.raises(OSError, match="injected close failure"):
-                with recovery_guard("jm", root=tmp_path):
+                with recovery_guard("jm", root=tmp_path, legacy_root=True):
                     pass
         # This must work BEFORE test cleanup closes a potentially still-open fd.
-        with recovery_guard("jm", root=tmp_path):
+        with recovery_guard("jm", root=tmp_path, legacy_root=True):
             pass
     finally:
         if failed_fd is not None and not closed_before_error:
@@ -110,9 +110,9 @@ def test_unlock_failure_still_closes_descriptor_and_releases_kernel_lock(tmp_pat
     with monkeypatch.context() as patch:
         patch.setattr(fcntl, "flock", fail_unlock)
         with pytest.raises(OSError, match="injected unlock failure"):
-            with recovery_guard("jm", root=tmp_path):
+            with recovery_guard("jm", root=tmp_path, legacy_root=True):
                 pass
-    with recovery_guard("jm", root=tmp_path):
+    with recovery_guard("jm", root=tmp_path, legacy_root=True):
         pass
 
 

@@ -149,7 +149,9 @@ def run_live(
                             owner.mark_ready()
                         else:
                             owner.mark_ready({'input_read_frontier': source.after,
-                                'trading_day': source.day.isoformat() if source.day else None})
+                                'trading_day': source.day.isoformat() if source.day else None,
+                                **({'closed_cleaned': instance.closed_cleaned_proof}
+                                   if getattr(instance, 'closed_cleaned_proof', None) else {})})
                     else:
                         owner.mark_not_ready({'failure_code': _live_poll_failure_code(result)})
                     return result
@@ -237,7 +239,8 @@ def main(
                             owner.mark_not_ready()
                             result = poll(now)
                             if result is None:
-                                owner.mark_ready()
+                                owner.mark_ready({'closed_cleaned': feed.closed_cleaned_proof}
+                                    if getattr(feed, 'closed_cleaned_proof', None) else None)
                             return result
                         feed.poll = checked_poll
                     feed.run_forever(should_stop=should_stop)
