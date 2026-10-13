@@ -197,7 +197,7 @@ def build_market_data_service(session: Session) -> MarketDataService:
     return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
 
 
-def build_database_coverage_source(session: Session):
+def build_database_coverage_source(session: Session, *, reuse_session_windows: bool = False):
     """Compose the shared read-only coverage authority for product queries."""
 
     from app.market_data.coverage_source import DatabaseCoverageSource
@@ -206,6 +206,7 @@ def build_database_coverage_source(session: Session):
         session,
         _PRODUCT_STARTS,
         history_floor_path=_HISTORY_FLOOR,
+        reuse_session_windows=reuse_session_windows,
     )
 
 
@@ -359,12 +360,14 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
         redis = get_redis_connection()
         common_kwargs.update(store=FeedLiveStore(cast(RedisClient, redis)), recovery_fetch_factory=None,
                              recovery_sessions=None, recovery_guard_factory=None)
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
         return MarketFeedService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
                                  source_stream=ObservationStream(redis, kind='source'), **common_kwargs)
     if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1':
         from app.market_data.market_feed import DurableLiveMarketService, StreamLiveProvider
         from app.market_data.observation_stream import ObservationStream
         common_kwargs['prepare_trading_day'] = None
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
         return DurableLiveMarketService(source_provider=StreamLiveProvider(
             ObservationStream(get_redis_connection(), kind='source')), **common_kwargs)
     return LiveMarketService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
@@ -375,6 +378,64 @@ def build_market_feed_service(session: Session) -> LiveMarketService:
     if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') != '1':
         raise ValueError('OBSERVATION_STREAM_NOT_ENABLED')
     return build_live_market_service(session, _feed=True)
+
+
+def build_closed_cleanup_evidence(store, products):
+    """Bind existing terminal cleanup evidence; this never runs maintenance."""
+    from app.market_data.after_market import public_after_market_status
+    from app.market_data.after_market_history import NAME, _bytes, read_history
+    from app.runtime_bindings import resolve_service_binding
+    import json
+    import os
+
+    def read(day, now):
+        try:
+            binding = resolve_service_binding('after-market')
+            if binding is None or not binding.enabled:
+                return None
+            path = Path(binding.root) / '.run/after-market-status.json'
+            current = os.path.lexists(path)
+            if current:
+                content = _bytes(path)
+                public = public_after_market_status(json.loads(content))
+                source_commit = binding.commit
+                kind = 'current'
+            else:
+                history = read_history(path.with_name(NAME), products=products, now=now)
+                if history is None:
+                    return None
+                public = history['status']
+                source_commit = history['source_commit']
+                kind = 'retained'
+            last = public.get('last_run')
+            if (not public or public.get('current_run') is not None or public.get('last_failure') is not None
+                    or not isinstance(last, dict) or last.get('status') != 'passed'
+                    or last.get('trading_day') != day.isoformat()
+                    or tuple(last.get('products', ())) != products
+                    or public.get('last_successful_trading_day') != day.isoformat()):
+                return None
+            evidence = last.get('live_evidence')
+            if (not isinstance(evidence, dict) or evidence.get('cleanup_verified') is not True
+                    or evidence.get('code_commit') != source_commit
+                    or evidence.get('canonical_live_exclusion') == 'not_verified'):
+                return None
+            checked = datetime.fromisoformat(evidence['cleanup_checked_at'])
+            if checked.tzinfo is None or checked > now:
+                return None
+            actual = store.cleanup_readback(day)
+            if (type(actual.get('remaining_bar_keys')) is not int or actual['remaining_bar_keys'] != 0
+                    or actual.get('subscription_present') is not False
+                    or resolve_service_binding('after-market') != binding
+                    or current and _bytes(path) != content
+                    or not current and os.path.lexists(path)):
+                return None
+            return dict(trading_day=day.isoformat(), cleanup_verified=True,
+                        cleanup_checked_at=evidence['cleanup_checked_at'], source_commit=source_commit,
+                        evidence_kind=kind, after_market_generation=binding.generation,
+                        remaining_bar_keys=0, subscription_present=False)
+        except Exception:
+            return None
+    return read
 
 
 def build_session_anchor_repair_service(session: Session) -> SessionAnchorRepairService:

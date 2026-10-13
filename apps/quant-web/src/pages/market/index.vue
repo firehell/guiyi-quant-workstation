@@ -44,10 +44,10 @@ const productOptions = computed(() => normalizeProductOptions(home.directory.dat
 const directoryStatus = computed(() => home.directory.unavailable.value ? 'error' : home.directory.data.value == null ? 'loading' : 'ready')
 const model = computed(() => buildMarketHomeViewModel({ overview: home.overview.data.value ?? null, overviewStale: home.overview.stale.value ?? false, runtime: home.runtime.data.value ?? null, runtimeStale: home.runtime.stale.value ?? false }))
 const live = useMarketHomeLive({ onAuthorityChanged: () => { home.invalidateOverview(); void home.refreshOverviewIfExpired() } })
-const loading = computed(() => Boolean(home.overview.loading.value || home.runtime.loading.value))
+const loading = computed(() => Boolean(home.overview.loading.value))
 const displayRows = computed(() => projectMarketHomeLiveRows(model.value.rows, live.items.value))
-const strategyProducts = computed(() => model.value.rows.map(row => row.symbol))
 const rows = computed(() => filterAndSortMarketHomeRows(displayRows.value, { query: '', sector: sector.value, filter: 'all', sort: sort.value, sortDirection: sortDirection.value }))
+const strategyProducts = computed(() => rows.value.map(row => row.symbol))
 const sectors = computed(() => home.overview.data.value?.sectors ?? [])
 const selectedSector = computed(() => sectors.value.find((item) => item.sector === sector.value))
 const liveStatus = computed(() => {

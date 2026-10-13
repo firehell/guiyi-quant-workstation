@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
 
@@ -38,7 +38,7 @@ test('composite covers all stage pairs without changing daily reference selectio
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_as_of: '2026-10-11T00:00:00.000001Z' }).state, null)
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), physical_contract: 'RB2705' }).state, null)
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_projection_version: undefined }).state, null)
-  assert.equal(homeTrendDisplay().label, '趋势来源未确认')
+  assert.equal(homeTrendDisplay().label, '独立趋势来源未确认')
 })
 
 test('current events are exact-bar owned, price guarded and historical recent actions never override', () => {
@@ -176,43 +176,27 @@ test('rows expand and summary cards navigate with selected strategy while retain
   } finally { app.unmount() }
 })
 
-test('sector filtering keeps the full product load alive and reuses completed cards', async () => {
+test('sector changes cancel obsolete requests and preserve displayed product order', async () => {
   const List = await loadList(), root = element('root')
-  const all = ['a', 'cu', 'rb'].map(symbol => ({ symbol, product_name: symbol, close: 100, price_change_1d: 0 }))
-  const rows = ref(all), products = ref(all.map(row => row.symbol)), authority = ref('')
-  const sequence = ref(0), sort = ref('default')
+  const all = ['rb', 'cu', 'a'].map(symbol => ({ symbol, product_name: symbol, close: 100, price_change_1d: 0 }))
+  const rows = ref(all), authority = ref('one')
   const start = api.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, {
-    rows: rows.value, products: products.value, authority: authority.value,
-    refreshSequence: sequence.value, liveStale: false, sort: sort.value, sortDirection: 'desc',
+    rows: rows.value, products: rows.value.map(row => row.symbol), authority: authority.value,
+    refreshSequence: 0, liveStale: false, sort: 'default', sortDirection: 'desc',
   }) }))
-  const respond = (call: any) => call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: call.products.map((product: string) => ({ product, strategies: { trend: { '1d': ready('HOLD'), '1w': ready('HOLD') }, oscillation: { '1d': ready('FLAT'), '1w': ready('FLAT') } } })) })
   try {
     app.mount(root)
-    assert.equal(api.calls.length, start)
-    assert.notEqual(api.authorityCalls.at(-1)?.[0], '')
-    authority.value = 'one'; await nextTick()
     const initial = api.calls.slice(start)
-    assert.equal(initial.length, 2)
-    rows.value = [all[0]!]; await nextTick()
-    rows.value = [all[1]!]; await nextTick()
-    assert.equal(api.calls.length - start, 2)
-    assert.ok(initial.every(call => !call.signal.aborted))
-    initial.forEach(respond); await settle()
-    const third = api.calls.at(-1)
-    assert.deepEqual(third.products, ['rb']); respond(third); await settle()
-    const loaded = api.calls.length
-    rows.value = all; sort.value = 'close'; await nextTick()
-    const switcher = findNode(root, n => n.type === 'button' && nodeText(n) === '震荡')!
-    ;(switcher.props.onClick as Function)(); await nextTick()
-    products.value = ['rb', 'cu', 'a']; await nextTick()
-    assert.equal(api.calls.length, loaded)
-    assert.ok(findNode(root, n => n.props.class === 'product-name' && nodeText(n) === 'rb RB'))
-    sequence.value++; await nextTick()
-    assert.equal(api.calls.length, loaded + 2)
-    const refresh = api.calls.slice(loaded)
-    authority.value = 'two'; await nextTick()
-    assert.ok(refresh.every(call => call.signal.aborted))
+    assert.deepEqual(initial.map(call => call.products), [['rb'], ['cu']])
+    rows.value = [all[2]!]; await nextTick()
+    assert.ok(initial.every(call => call.signal.aborted))
+    assert.deepEqual(api.calls.at(-1).products, ['a'])
+    const before = api.calls.length
+    initial.forEach(call => call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: call.products.map((product: string) => ({ product, strategies: { trend: { '1d': ready('HOLD'), '1w': ready('HOLD') }, oscillation: { '1d': ready('FLAT'), '1w': ready('FLAT') } } })) }))
+    await settle()
+    assert.equal(api.calls.length, before, 'obsolete queue must not start hidden a product')
+    assert.doesNotMatch(nodeText(root), /rb RB/)
   } finally { app.unmount() }
 })
 
@@ -311,4 +295,11 @@ test('expanded performance is lazy, deduplicated, authority isolated and recover
     assert.match(nodeText(root), /62.14%/); assert.doesNotMatch(nodeText(root), /999/)
     toggle(); toggle(); await settle(); assert.equal(api.performanceCalls.length, before)
   } finally { app.unmount() }
+})
+
+
+test('period disclosure distinguishes a data conflict from an unconfirmed private source', () => {
+  assert.match(homePeriodReason({ status: 'unavailable', state: null, reason_code: 'REFERENCE_CANONICAL_MISMATCH' })!, /身份冲突/)
+  assert.equal(homePeriodReason({ status: 'ready', state: 'HOLD' }), null)
+  assert.equal(homeTrendDisplay().label, '独立趋势来源未确认')
 })

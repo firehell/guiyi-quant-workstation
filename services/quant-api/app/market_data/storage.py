@@ -7,6 +7,7 @@ an explicitly selected offline repair shadow; normal publication never replaces.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
@@ -14,6 +15,7 @@ import json
 import os
 import re
 import stat
+from threading import Lock
 from pathlib import Path
 from typing import Protocol
 import uuid
@@ -35,6 +37,18 @@ CANONICAL_SCHEMA = pa.schema([
     pa.field("bar_end", pa.timestamp("us", tz="UTC"), nullable=False), pa.field("trading_day", pa.date32(), nullable=False),
     *[pa.field(name, pa.decimal128(38, 18), nullable=name in {"turnover", "open_interest"}) for name in CANONICAL_COLUMNS[2:]],
 ])
+
+# Immutable decoded facts only; active selection and Catalog quality are always
+# rechecked by the caller. Bounded across short-lived request/service instances.
+_DECODE_CACHE: OrderedDict[tuple[object, ...], tuple[CanonicalBar, ...]] = OrderedDict()
+_DECODE_CACHE_LOCK = Lock()
+_DECODE_CACHE_BARS = 200_000
+_DECODE_CACHE_ENTRIES = 128
+_PARTITION_VALIDATION_CACHE: OrderedDict[tuple[object, ...], tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]] = OrderedDict()
+
+
+def _file_identity(info: os.stat_result) -> tuple[int, ...]:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
 class StorageError(RuntimeError):
@@ -260,6 +274,14 @@ class CanonicalMonthlyStore:
     @staticmethod
     def _read_bytes(directory_fd: int, name: str) -> bytes:
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+        try:
+            return CanonicalMonthlyStore._read_file_snapshot(fd)
+        finally:
+            os.close(fd)
+
+    @staticmethod
+    def _read_file_snapshot(fd: int) -> bytes:
+        fd = os.dup(fd)
         with os.fdopen(fd, "rb") as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 raise StorageError("PARTITION_UNREADABLE")
@@ -316,7 +338,26 @@ class CanonicalMonthlyStore:
         try:
             fd = self._directory_fd(path.parent)
             try:
-                payload = self._read_bytes(fd, path.name)
+                file_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+                with os.fdopen(file_fd, "rb") as stream:
+                    info = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(info.st_mode):
+                        raise StorageError("PARTITION_UNREADABLE")
+                    # Legacy mutable paths are deliberately never reused.
+                    cache_key = (str(path), *_file_identity(info)) if re.fullmatch(
+                        r"part\.[0-9a-f]{64}\.parquet", path.name
+                    ) else None
+                    if cache_key is not None:
+                        with _DECODE_CACHE_LOCK:
+                            cached = _DECODE_CACHE.get(cache_key)
+                            if cached is not None:
+                                _DECODE_CACHE.move_to_end(cache_key)
+                                return cached
+                    payload = self._read_file_snapshot(stream.fileno())
+                    if _file_identity(os.fstat(stream.fileno())) != _file_identity(info):
+                        # The returned byte snapshot still undergoes hash/schema
+                        # validation, but a concurrent change cannot be cached.
+                        cache_key = None
             finally:
                 os.close(fd)
             if path.name != "part.parquet":
@@ -331,10 +372,18 @@ class CanonicalMonthlyStore:
             # attach UTC once per Python value instead.
             bar_ends = table.column("bar_end").cast(pa.timestamp("us")).to_pylist()
             records = table.drop(["bar_end"]).to_pylist()
-            return tuple(
+            values = tuple(
                 CanonicalBar(bar_end=bar_end.replace(tzinfo=UTC), **record)
                 for bar_end, record in zip(bar_ends, records, strict=True)
             )
+            if cache_key is not None and len(values) <= _DECODE_CACHE_BARS:
+                with _DECODE_CACHE_LOCK:
+                    _DECODE_CACHE[cache_key] = values
+                    _DECODE_CACHE.move_to_end(cache_key)
+                    while (len(_DECODE_CACHE) > _DECODE_CACHE_ENTRIES or
+                           sum(len(item) for item in _DECODE_CACHE.values()) > _DECODE_CACHE_BARS):
+                        _DECODE_CACHE.popitem(last=False)
+            return values
         except (OSError, pa.ArrowException, ContractError, TypeError, ValueError) as exc:
             raise StorageError("PARTITION_UNREADABLE") from exc
 
@@ -362,6 +411,21 @@ class CanonicalMonthlyStore:
             raise StorageError("PARTITION_CATALOG_MISMATCH")
         values = self._read_path(path)
         exceptions = tuple(partition.source_quality)
+        # The file snapshot was verified above. Reuse its already completed
+        # publication validation only for exactly the same Catalog contract.
+        # Holding values in the entry prevents id reuse while this key exists.
+        validation_key = (
+            partition.dataset, partition.year, partition.month, str(path), id(values),
+            partition.row_count, partition.coverage_start, partition.coverage_end,
+            partition.source_coverage_start, partition.source_coverage_end,
+            exceptions, partition.source_quality_sha256,
+        )
+        with _DECODE_CACHE_LOCK:
+            verified = (_PARTITION_VALIDATION_CACHE.get(validation_key)
+                        if self.boundary_validator is None and path.name != "part.parquet" else None)
+            if verified is not None and verified[0] is values:
+                _PARTITION_VALIDATION_CACHE.move_to_end(validation_key)
+                return verified
         if not values and not exceptions:
             raise StorageError("PARTITION_EMPTY")
         if exceptions and (
@@ -390,6 +454,13 @@ class CanonicalMonthlyStore:
             if values else None
         ) or partition.coverage_end != (values[-1].bar_end if values else None)):
             raise StorageError("PARTITION_COVERAGE_MISMATCH")
+        if self.boundary_validator is None and path.name != "part.parquet":
+            with _DECODE_CACHE_LOCK:
+                _PARTITION_VALIDATION_CACHE[validation_key] = (values, exceptions)
+                _PARTITION_VALIDATION_CACHE.move_to_end(validation_key)
+                while (len(_PARTITION_VALIDATION_CACHE) > _DECODE_CACHE_ENTRIES or
+                       sum(len(item[0]) for item in _PARTITION_VALIDATION_CACHE.values()) > _DECODE_CACHE_BARS):
+                    _PARTITION_VALIDATION_CACHE.popitem(last=False)
         return values, exceptions
 
     def month_path(self, dataset: DatasetKey, year: int, month: int) -> Path:

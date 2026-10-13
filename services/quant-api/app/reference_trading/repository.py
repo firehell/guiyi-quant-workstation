@@ -241,6 +241,10 @@ class ReferenceRepository:
             ))
             return batch_id
 
+    def quarantine_forward_observation(self, routes, observation, *, assert_owned) -> bool:
+        from app.reference_trading.quarantine import quarantine_observation
+        return quarantine_observation(self._session_factory, routes, observation, assert_owned=assert_owned)
+
     def read_pending_capture(self, stream_id: str) -> tuple[str, dict[str, object]] | None:
         with self._session_factory() as session:
             stream = session.get(ReferenceStream, stream_id)

@@ -23,7 +23,7 @@ from app.alerts.runtime import (
 )
 from app.core.env import PROJECT_ROOT
 from app.db.session import SessionLocal
-from app.market_data.composition import build_market_read_service
+from app.market_data.composition import build_database_coverage_source, build_market_read_service
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.product_taxonomy import load_product_taxonomy
 from app.redis_connections import get_redis_connection
@@ -217,7 +217,7 @@ def build_alert_runtime(*, assert_owned=None) -> AlertRuntime:
         live_processing_guard=(partial(recovery_guard, wait=True)
                                if os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1" else None),
         session_factory=SessionLocal,
-        market_read_factory=build_market_read_service,
+        market_read_factory=build_alert_market_read_service,
         evaluators={
             HTDY_ALERT_RULE_CODE: HtdyOriginalEvaluator(),
             SUBING_THS_ALERT_RULE_CODE: SubingThsEvaluator(),
@@ -229,6 +229,13 @@ def build_alert_runtime(*, assert_owned=None) -> AlertRuntime:
         heartbeat_store=RedisAlertHeartbeatStore(redis),
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )
+
+
+def build_alert_market_read_service(session):
+    """Share Session endpoint assembly only within one rule's read transaction."""
+    market = build_market_read_service(session)
+    market._market_data.replay_coverage = build_database_coverage_source(session, reuse_session_windows=True)
+    return market
 
 
 def warmup_alert_runtime():

@@ -672,3 +672,43 @@ For each missing physical-contract W1 endpoint, read-only audit MUST use the exi
 #### Scenario: Other missing weeks and invalid source context remain findings
 - **WHEN** another week in the same month lacks a complete proof, or its D1 source is incomplete or physically invalid
 - **THEN** audit SHALL retain the missing-W1 finding and SHALL NOT download, mutate, or waive the month
+
+## Requirement: Closed observation services preserve verified after-market cleanup
+
+After successful terminal cleanup, Market Feed and durable Live MAY report
+`CLOSED_CLEANED` readiness only while every operational product is authoritatively
+CLOSED and its next Session begins strictly after the observation time. This state
+SHALL identify idle readiness and SHALL NOT claim a newly observed natural Bar.
+
+The services SHALL verify the exact registered source day, zero pending/provider
+buffer and no unknown processing outcome, source cursor at its journal tail, and
+every existing source/completed consumer at its corresponding registered-day tail.
+The existing public after-market parser SHALL prove same-day passed status, exact
+operational scope and verified cleanup. Current status SHALL bind the approved
+after-market commit; when current status is absent, the existing validated retained
+history MAY bind its source commit instead. Retained history SHALL remain historical
+provenance, never a new version's natural maintenance run. Current running, failed,
+interrupted, malformed or conflicting evidence SHALL NOT fall back to retained success.
+
+Actual Redis cleanup readback SHALL independently confirm zero same-day Bar keys
+and absent subscription snapshot. Binding and current status SHALL be rechecked
+before accepting idle proof. No provider, source append, acknowledgement, historical
+replay, synthetic Bar or same-day subscription recreation is permitted by this path.
+
+#### Scenario: Restart after verified terminal cleanup
+
+- **WHEN** the same-day cleanup and every closed-service fence are verified
+- **THEN** Feed and durable Live publish explicit `CLOSED_CLEANED` heartbeat/owner proof without recreating the removed snapshot
+- **AND** journal cursors remain unchanged and natural-Bar acceptance remains unverified
+
+#### Scenario: Existing consumer is behind its journal tail
+
+- **WHEN** source processing, Alert or Reference progress is unresolved, or a cleanup/readback/identity fence cannot be proved
+- **THEN** cleaned idle readiness is refused and missing identity remains an explicit failure
+- **AND** the producer does not recreate the cleaned same-day snapshot to hide that failure
+
+#### Scenario: Authoritative next trading day begins
+
+- **WHEN** the Feed's existing Calendar/Session authority selects a new trading day and all prior consumers are drained
+- **THEN** only the Feed performs the existing next-day snapshot and journal initialization
+- **AND** consumers retain their existing no-replay and cursor-proof contracts

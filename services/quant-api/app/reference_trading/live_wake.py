@@ -80,7 +80,7 @@ class ForwardLiveWake:
 
 
 class StreamForwardLiveWake(ForwardLiveWake):
-    """Do not acknowledge a durable observation until every route is committed."""
+    """Ack only committed calculations or append-only known-conflict transfers."""
     def __init__(self, redis, repository, worker, market_data):
         super().__init__(redis, repository, worker, market_data)
         from app.market_data.observation_stream import ObservationStream
@@ -122,12 +122,22 @@ class StreamForwardLiveWake(ForwardLiveWake):
                     except RuntimeError as error:
                         if str(error) != "REFERENCE_BUFFER_PROCESSING_BLOCKED":
                             raise
-                        # Keep the durable cursor and process alive. No ack, no ready,
-                        # no repeated capture attempts during the bounded backoff.
-                        self._retry_after = monotonic() + 5.0
+                        # Transfer only proven conflicts. Unknown transaction outcomes,
+                        # unavailable input and gaps retain the journal cursor.
+                        keys = tuple(dict.fromkeys(self._worker._work_key(route) for route in routes))
+                        group_routes = tuple(dict.fromkeys(route for key in keys
+                            for route in self._worker._work_routes(key)))
+                        relevant = {key: reason for key, reason in self._worker.health().blocked
+                            if key in (*keys, *group_routes)}
+                        transfer = getattr(self._repository, "quarantine_forward_observation", None)
+                        if (not relevant or set(relevant.values()) != {"REFERENCE_CANONICAL_MISMATCH"}
+                                or transfer is None or not transfer(group_routes, observation, assert_owned=self._worker.assert_owned)):
+                            self._retry_after = monotonic() + 5.0
+                            self._worker.report_health(self._worker.diagnostic_health(
+                                stage="observation_blocked", ready=False))
+                            return False
                         self._worker.report_health(self._worker.diagnostic_health(
-                            stage="observation_blocked", ready=False))
-                        return False
+                            stage="observation_quarantined", ready=False))
                     finally:
                         self._worker.source_envelope = None
                         self._worker.source_observed_at = None

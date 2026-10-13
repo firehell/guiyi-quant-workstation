@@ -17,6 +17,14 @@ from app.alerts.runtime import empty_alert_runtime_status
 from app.services.runtime_health import _evaluate_alert_coverage, _trading_week_finished, build_runtime_health
 
 
+@pytest.fixture(autouse=True)
+def isolate_runtime_health_from_installed_host(monkeypatch, tmp_path):
+    # Explicit tests may override these seams, without reading host service state.
+    monkeypatch.setattr("app.services.runtime_health.resolve_service_binding", lambda _service: None)
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("GUIYI_RUNTIME_COMMIT", raising=False)
+
+
 def test_alert_daily_stale_after_successful_canonical_day_and_weekly_unverified() -> None:
     now = datetime(2026, 9, 17, 12, tzinfo=UTC)
     items = {
@@ -207,6 +215,7 @@ def test_alert_health_activation_and_transport_fail_closed(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("app.services.runtime_health.resolve_service_binding", lambda _service: None)
     monkeypatch.setattr(
         "app.services.runtime_health.notification_transport_status_from_env",
         lambda: {
@@ -564,7 +573,7 @@ def test_alert_health_acknowledges_failure_without_erasing_failure_facts() -> No
         )
 
     alert = health["components"]["alert"]
-    assert health["status"] == "ok"
+    assert health["status"] == "degraded"
     assert alert["status"] == "degraded"
     assert alert["notification_state"] == "acknowledged"
     assert alert["last_notification_failure_at"] == failure_at.isoformat()
@@ -657,7 +666,7 @@ def test_notification_delivery_failure_does_not_change_passed_data_health(monkey
                 after_market_status_path=None,
             )
         assert malformed_notification["components"]["alert"]["status"] == "degraded"
-        assert malformed_notification["status"] == "ok"
+        assert malformed_notification["status"] == "degraded"
 
     status["notification_error_type"] = "notification_transport_failed"
     status["last_processing_failure_at"] = now.isoformat()
@@ -675,7 +684,7 @@ def test_notification_delivery_failure_does_not_change_passed_data_health(monkey
             after_market_status_path=None,
         )
     assert processing_failed["components"]["alert"]["status"] == "degraded"
-    assert processing_failed["status"] == "ok"
+    assert processing_failed["status"] == "degraded"
 
 
 def test_alert_health_new_failure_after_acknowledgement_is_failed_again() -> None:
@@ -1105,7 +1114,7 @@ def test_mixed_live_health_exempts_only_verified_closed_products(
 
 @pytest.mark.parametrize("market_failure", [None, "db", "redis", "live_market", "after_market"])
 @pytest.mark.parametrize("alert_status", ["ok", "degraded", "failed"])
-def test_overall_health_only_depends_on_market_path(monkeypatch, market_failure, alert_status):
+def test_overall_health_includes_alert_processing_and_delivery(monkeypatch, market_failure, alert_status):
     import app.services.runtime_health as health_module
 
     statuses = {name: {"status": "failed" if name == market_failure else "ok"}
@@ -1118,7 +1127,7 @@ def test_overall_health_only_depends_on_market_path(monkeypatch, market_failure,
              "coverage_state": "unverified", "processing_state": "failed"}
     monkeypatch.setattr(health_module, "_collect_alert_health", lambda *a, **kw: alert)
     payload = build_runtime_health(None, notification_transport_configured=False, weekly_audit_status_path=None)
-    assert payload["status"] == ("failed" if market_failure else "ok")
+    assert payload["status"] == ("failed" if market_failure or alert_status == "failed" else alert_status)
     assert payload["components"]["alert"] == alert
     assert payload["readonly"] is True
     assert not any(payload[key] for key in ("would_start_services", "would_enqueue_jobs", "would_send_notifications"))
@@ -1208,6 +1217,7 @@ def test_runtime_health_is_disabled_before_local_market_runtime_activation(
 ) -> None:
     """The API must remain fail-closed without the fixed local activation marker."""
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("app.services.runtime_health.resolve_service_binding", lambda _service: None)
     # An env var in the API process cannot stand in for the explicit local activation.
     monkeypatch.setenv("GUIYI_MARKET_RUNTIME_ENABLED", "1")
     TestingSessionLocal = _session_factory()
@@ -1250,6 +1260,7 @@ def test_runtime_health_uses_local_activation_marker_not_process_environment(
 
 def test_weekly_audit_marker_distinguishes_disabled_and_missed(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("app.services.runtime_health.resolve_service_binding", lambda _service: None)
     monkeypatch.setattr(
         "app.services.runtime_health.load_operational_products", lambda: ("jm",)
     )
@@ -2373,3 +2384,19 @@ def test_base_only_formal_install_preserves_default_off_health(monkeypatch):
     assert result["status"] == "ok"
     assert result["components"]["live_market"]["status"] == "disabled"
     assert result["components"]["after_market"]["status"] == "disabled"
+
+
+@pytest.mark.parametrize("stage,blocked,expected", [("scan", 0, "pending"), ("cycle", 0, "ok"), ("cycle", 1, "degraded"), ("observation_quarantined", 1, "degraded")])
+def test_reference_owner_health_distinguishes_work_from_durable_fault(stage, blocked, expected):
+    from types import SimpleNamespace
+    from app.services.runtime_health import _reference_owner_health
+    now = datetime(2026, 10, 13, 2, tzinfo=UTC)
+    binding = SimpleNamespace(generation=19)
+    identity = {"status": "matched", "loaded_pid": 123}
+    state = {"generation": 19, "pid": 123, "phase": "active", "at": now.isoformat(),
+        "ready": stage == "cycle" and not blocked, "proof": {"reference_runtime": {
+        "stage": stage, "blocked_count": blocked, "blocked_counts": {"REFERENCE_CANONICAL_MISMATCH": blocked}, "ready": not blocked}}}
+    result = _reference_owner_health(binding, identity, state, now)
+    assert result["status"] == expected
+    state["pid"] = 122
+    assert _reference_owner_health(binding, identity, state, now)["status"] == "degraded"

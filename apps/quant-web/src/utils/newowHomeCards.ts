@@ -62,6 +62,15 @@ export function homePeriodDisplay(fact?: HomePeriodFact) {
   return { label: fact?.status === 'warming' ? '预热中' : fact ? '不可用' : '加载中', icon: '—', tone: 'pending' }
 }
 
+export function homePeriodReason(fact?: HomePeriodFact): string | null {
+  const code = fact?.reason_code
+  if (!code) return null
+  if (code.includes('CONFLICT') || code.includes('MISMATCH') || code.includes('IDENTITY_INVALID')) return '数据或快照身份冲突，等待核对'
+  if (code === 'NEWOW_WEEKLY_STALE') return '周线发布时点待确认'
+  if (code.includes('CANCELLED')) return '读取已中断，可刷新重试'
+  return fact?.status === 'warming' ? '指标输入尚未完成预热' : '所需历史或来源事实暂不可用'
+}
+
 /** Day/week state alignment only. It does not infer a trend from price or scores. */
 export function homeDirectionDisplay(day?: HomePeriodFact, week?: HomePeriodFact) {
   const identified = (fact?: HomePeriodFact): fact is HomePeriodFact & { state: HomeState } => Boolean(fact?.status === 'ready' && fact.state && fact.physical_contract && fact.segment_id && fact.calculation_segment_id && fact.input_sha256 && fact.formula_versions?.length)
@@ -72,7 +81,7 @@ export function homeDirectionDisplay(day?: HomePeriodFact, week?: HomePeriodFact
 }
 
 /** trendMap is an independent source fact; alignment cannot stand in for it. */
-export function homeTrendDisplay() { return { label: '趋势来源未确认', tone: 'pending' } as const }
+export function homeTrendDisplay() { return { label: '独立趋势来源未确认', tone: 'pending' } as const }
 
 const identifiedHomeFact = (fact?: HomePeriodFact): fact is HomePeriodFact & { state: HomeState } => Boolean(
   fact?.status === 'ready' && fact.state && fact.physical_contract && fact.segment_id && fact.calculation_segment_id && fact.input_sha256 && fact.formula_versions?.length
@@ -143,36 +152,60 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
   let generation = 0
   let controller: AbortController | null = null
   let items: Record<string, CardDelivery> = {}
+  type Queue = { generation: number; signal: AbortSignal; products: string[]; workers: Set<Promise<void>> }
+  let queue: Queue | null = null
+  function addProducts(products: readonly string[]) {
+    if (!queue) return
+    for (const product of products) {
+      if (items[product]) continue
+      const card = cached?.(product)?.items.find(item => item.product === product)
+      items[product] = card ? { card, loading: false, stale: false, failed: false } : { card: null, loading: true, stale: false, failed: false }
+      if (!card) queue.products.push(product)
+    }
+    publish({ ...items })
+  }
+  function startWorkers(owner: Queue) {
+    while (owner.products.length && owner.workers.size < 2) {
+      const worker = (async () => {
+        while (owner.products.length && owner.generation === generation && !owner.signal.aborted) {
+          const product = owner.products.shift()!
+          try {
+            const response = normalizeHomeCards(await fetch([product], owner.signal), [product])
+            if (owner.generation !== generation || owner.signal.aborted) return
+            items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
+          } catch {
+            if (owner.generation !== generation || owner.signal.aborted) return
+            items[product] = { card: items[product]?.card ?? null, loading: false, stale: Boolean(items[product]?.card), failed: true }
+          }
+          publish({ ...items })
+        }
+      })().finally(() => owner.workers.delete(worker))
+      owner.workers.add(worker)
+    }
+  }
   return {
     async load(products: readonly string[]) {
       const current = ++generation
       controller?.abort()
       controller = new AbortController()
-      const signal = controller.signal
-      items = Object.fromEntries(products.map(product => {
-        const card = cached?.(product)?.items.find(item => item.product === product)
-        return [product, card ? { card, loading: false, stale: false, failed: false } : { card: items[product]?.card ?? null, loading: true, stale: Boolean(items[product]?.card), failed: false }]
-      }))
-      publish({ ...items })
-      const batches: string[][] = []
-      // Cold canonical reads can take tens of seconds per product. Publish each
-      // product as soon as it finishes instead of hiding twelve behind one read.
-      for (const product of products) if (items[product]?.loading) batches.push([product])
-      async function worker() {
-        while (batches.length && current === generation) {
-          const batch = batches.shift()!
-          try {
-            const response = normalizeHomeCards(await fetch(batch, signal), batch)
-            if (current !== generation) return
-            for (const card of response.items) items[card.product] = { card, loading: false, stale: false, failed: false }
-          } catch {
-            if (current !== generation) return
-            for (const product of batch) items[product] = { card: items[product]?.card ?? null, loading: false, stale: Boolean(items[product]?.card), failed: true }
-          }
-          publish({ ...items })
-        }
+      const previous = items
+      items = {}
+      queue = { generation: current, signal: controller.signal, products: [], workers: new Set() }
+      addProducts(products)
+      for (const product of products) {
+        if (items[product]?.loading && previous[product]?.card) items[product] = { ...items[product]!, card: previous[product]!.card, stale: true }
       }
-      await Promise.all([worker(), worker()])
+      publish({ ...items })
+      startWorkers(queue)
+      await Promise.all([...queue.workers])
+    },
+    admit(products: readonly string[]) {
+      if (!queue || queue.signal.aborted) return
+      const newlyAdmitted = products.filter(product => !items[product])
+      addProducts(products)
+      // A newly visible row takes the next free slot; active reads finish.
+      queue.products = [...newlyAdmitted.filter(product => items[product]?.loading), ...queue.products.filter(product => !newlyAdmitted.includes(product))]
+      startWorkers(queue)
     },
     async reloadProduct(product: string) {
       const current = generation, signal = controller?.signal

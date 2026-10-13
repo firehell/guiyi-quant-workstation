@@ -469,6 +469,62 @@ fusion; bounded queue fairness and restart idempotence SHALL be verified.
 - **THEN** its actual observed_at and versioned Bar state are persisted once
 - **AND** absence of an action does not create a trade or fabricate a flat state
 
+### Requirement: Known-conflict observation isolation preserves each original
+
+A proven active-revision Canonical mismatch MAY isolate its complete enabled product/frequency
+routing group, including fusion, without blocking unrelated products. Before acknowledging a durable
+observation, the worker SHALL atomically persist one immutable diagnostic receipt per group route,
+including the full original envelope, journal day/id, exact active revisions and activation generations,
+and links to the original mismatch evidence. Receipt identity SHALL reject altered content at the same
+journal day/id. `observed_at` remains the original confirmed time; `processed_at` is the actual transfer
+clock. Ownership SHALL be checked after flush and before commit and again before journal acknowledgement.
+Unknown commits, incomplete groups and unrelated input failures SHALL NOT grant transfer or acknowledgement.
+
+#### Scenario: A mismatched base route and dependent fusion are isolated together
+- **GIVEN** a completed original and a proven active Canonical mismatch in its routing group
+- **WHEN** all route receipts commit under the current owner fence
+- **THEN** the global journal may advance while the original conflict and captured data remain unchanged
+- **AND** health and the recording matrix report DATA_CONFLICT with no current strategy state for that group
+- **AND** restart finds the exact receipts rather than recomputing successful observations or inventing old processing times
+
+### Requirement: Explicit conflict recovery creates an independent forward revision
+
+Conflict recovery SHALL freeze an exact bounded group, old checkpoint/batch/receipt identities, original
+mismatch evidence, and published Canonical historical checkpoints with the same strategy identity.
+Historical reference trades SHALL remain unchanged and SHALL NOT be copied to the new flat forward state.
+The caller SHALL revalidate their manifests against current authoritative data and
+hold a stopped-writer fence through commit. Recovery SHALL use a future recording start, create independent
+flat forward revisions and activation receipts atomically, and append a DATA_CONFLICT boundary on the old
+revision. Existing captures, reconciliations, actions, trades and original processing times SHALL remain
+unchanged; old conflicting revisions remain invalid and cannot provide current positions. New revision
+pairing SHALL NOT carry an old open trade. Recovery SHALL NOT change a journal cursor, replay observations,
+create a fake Bar, query the provider or send notifications. Failed or unknown commits SHALL be reported
+explicitly; an exact persisted recovery receipt is required to prove idempotent completion.
+
+#### Scenario: Canonical source changes after a recovery plan was frozen
+- **GIVEN** a conflict recovery plan bound to exact source and target identities
+- **WHEN** the source proof, target preimage or stopped-writer fence changes
+- **THEN** recovery fails closed without committing a new active revision
+- **AND** preserved conflict evidence and existing forward records remain available for diagnosis
+
+### Requirement: Canonical forward scans distinguish completed Sessions from publication
+
+D1/W1 forward input SHALL use the existing MDS published endpoint to bound the incremental
+quality read. Session metadata describing a newly completed period is not proof of its Canonical
+publication. Before the existing 18:05 local publication schedule, an unpublished current-day tail
+MAY wait without creating a capture or treating it as a missing historical dataset. A missing earlier
+due period, missing physical dataset, invalid owner, quality interruption or missing map SHALL remain
+fail-closed. After the publication deadline, an absent due period SHALL report
+`CANONICAL_PUBLICATION_LAGGING`. Weekly due periods SHALL come from the existing completed-calendar-week
+resolver, not from a daily fallback. Newly published input SHALL still pass unchanged quality, owner,
+calculation identity and observation-gap validation.
+
+#### Scenario: A completed daily Session precedes the scheduled Canonical publication
+- **GIVEN** yesterday's Canonical endpoint and today's completed Session before 18:05
+- **WHEN** the forward worker scans before today's Canonical publication
+- **THEN** it waits without creating an observation or requesting the unpublished daily range
+- **AND** missing older periods or failed authoritative input checks still block the route
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

@@ -54,6 +54,8 @@ def test_installed_and_loaded_exact_binding(tmp_path, defect, expected):
     result = deployment_identity_health(root=root, commit="malformed" if defect == "invalid_commit" else commit,
         home=home, service_reader=reader)
     assert result["status"] == expected
+    if defect is None:
+        assert result["services"]["reference_worker"]["loaded_pid"] == 42
     assert "EnvironmentVariables" not in str(result)
     assert "arguments" not in str(result)
 
@@ -150,3 +152,31 @@ def test_damaged_registry_is_unknown_without_legacy_fallback(tmp_path):
     result = deployment_identity_health(root=tmp_path, commit="a" * 40, home=tmp_path,
                                        service_reader=lambda *args, **kwargs: None)
     assert result["status"] == "unknown"
+
+
+@pytest.mark.parametrize("generation, expected", [("2", "matched"), ("3", "unknown")])
+def test_registered_idle_log_rotation_preserves_exact_identity(tmp_path, monkeypatch, generation, expected):
+    from app.runtime_bindings import BindingRegistry, ServiceBinding, write_bindings, authorized_program_arguments
+    monkeypatch.setattr("app.services.deployment_identity.verify_release", lambda *args: None)
+    home, root = tmp_path / "home", tmp_path / "release"
+    root.mkdir()
+    directory = home / "Library/LaunchAgents"
+    directory.mkdir(parents=True)
+    contracts = {key: "c" * 64 for key in ("db", "live", "input", "formula", "reference", "launcher")}
+    binding = ServiceBinding("log-rotate", str(root), "v1.2.3", "a" * 40, 2, True, contracts)
+    write_bindings(BindingRegistry(1, {"log-rotate": binding}), home=home, expected_sha256=None)
+    args = authorized_program_arguments(binding, home)
+    env = {"GUIYI_PROJECT_ROOT": str(root), "GUIYI_RUNTIME_COMMIT": "a" * 40,
+           "GUIYI_RUNTIME_GENERATION": "2", "GUIYI_RUNTIME_TAG": "v1.2.3"}
+    payload = {"Label": binding.label, "WorkingDirectory": str(root),
+               "ProgramArguments": list(args), "EnvironmentVariables": env}
+    (directory / f"{binding.label}.plist").write_bytes(plistlib.dumps(payload))
+    loaded = {**env, "GUIYI_RUNTIME_GENERATION": generation}
+    output = (f"{binding.label} = {{\n state = not running\n working directory = {root}\n"
+              + " arguments = {\n" + "\n".join(args) + "\n }\n environment = {\n"
+              + "\n".join(f" {key} => {value}" for key, value in loaded.items()) + "\n }\n}")
+    result = deployment_identity_health(root=root, commit="a" * 40, home=home,
+                                       service_reader=lambda *args, **kwargs: output)
+    assert result["services"]["log-rotate"]["status"] == expected
+    if expected == "matched":
+        assert result["services"]["log-rotate"]["loaded_pid"] is None

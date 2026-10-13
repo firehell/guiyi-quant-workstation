@@ -155,12 +155,12 @@ def test_catalog_rejects_wrong_directory_and_row_count(tmp_path):
 def test_hash_and_parse_use_same_snapshot(tmp_path, monkeypatch):
     store = CanonicalMonthlyStore(tmp_path)
     old = store.publish(_request((_bar(1),)))
-    original = store._read_bytes
-    def read_then_change(fd, name):
-        payload = original(fd, name)
+    original = store._read_file_snapshot
+    def read_then_change(fd):
+        payload = original(fd)
         old.parquet_path.write_bytes(b"changed after reading")
         return payload
-    monkeypatch.setattr(store, "_read_bytes", read_then_change)
+    monkeypatch.setattr(store, "_read_file_snapshot", read_then_change)
     assert store.read_catalog_partition(_partition(old)) == (_bar(1),)
     with pytest.raises(StorageError):
         store.read_catalog_partition(_partition(old))
@@ -412,3 +412,48 @@ def test_provenance_rejects_unbounded_or_live_sources(tmp_path, provenance):
     from dataclasses import replace
     with pytest.raises(StorageError, match="PUBLICATION_PROVENANCE_INVALID"):
         CanonicalMonthlyStore(tmp_path).publish(replace(_request((_bar(1),)), publication_provenance=provenance))
+
+
+def test_immutable_decode_reuse_still_rechecks_file_and_catalog(tmp_path, monkeypatch):
+    from dataclasses import replace
+    store = CanonicalMonthlyStore(tmp_path)
+    result = store.publish(_request((_bar(1), _bar(2))))
+    partition = _partition(result)
+    first = store.read_catalog_partition(partition)
+    def unexpected_decode(*_args, **_kwargs):
+        raise AssertionError("verified immutable rows should be reused across readers")
+    monkeypatch.setattr(pq, "ParquetFile", unexpected_decode)
+    assert CanonicalMonthlyStore(tmp_path).read_catalog_partition(partition) == first
+    with pytest.raises(StorageError, match="PARTITION_ROW_COUNT_MISMATCH"):
+        store.read_catalog_partition(replace(partition, row_count=3))
+    result.parquet_path.write_bytes(b"corruption")
+    with pytest.raises(StorageError, match="PARTITION_CONTENT_HASH_MISMATCH"):
+        store.read_catalog_partition(partition)
+
+
+def test_verified_partition_reuses_validation_only_for_exact_catalog_identity(tmp_path, monkeypatch):
+    from dataclasses import replace
+    store = CanonicalMonthlyStore(tmp_path)
+    result = store.publish(_request((_bar(1), _bar(2))))
+    partition = _partition(result)
+    original = store._validate
+    calls = []
+    def validate(request):
+        calls.append(request)
+        return original(request)
+    monkeypatch.setattr(store, "_validate", validate)
+    assert store.read_catalog_partition(partition) == (_bar(1), _bar(2))
+    assert store.read_catalog_partition(partition) == (_bar(1), _bar(2))
+    assert len(calls) == 1
+    with pytest.raises(StorageError, match="PARTITION_ROW_COUNT_MISMATCH"):
+        store.read_catalog_partition(replace(partition, row_count=3))
+
+
+def test_publication_validation_cache_never_bypasses_another_boundary_authority(tmp_path):
+    store = CanonicalMonthlyStore(tmp_path)
+    result = store.publish(_request((_bar(1),)))
+    partition = _partition(result)
+    assert store.read_catalog_partition(partition) == (_bar(1),)
+    rejecting = CanonicalMonthlyStore(tmp_path, boundary_validator=lambda *_args: False)
+    with pytest.raises(StorageError, match="SESSION_BOUNDARY_INVALID"):
+        rejecting.read_catalog_partition(partition)

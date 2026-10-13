@@ -42,8 +42,8 @@ def test_home_summary_open_cost_is_eligible_build_price(product_cases):
 def test_batch_card_is_exact_projection_and_weekly_failure_is_isolated(monkeypatch, product_cases):
     service, _, _, clear = _service(product_cases)
     monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: service)
-    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
-    def failed(*args):
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_, **kwargs: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
+    def failed(*args, **kwargs):
         raise ValueError('NEWOW_WEEKLY_STALE')
     monkeypatch.setattr(market_newow, '_build_weekly_resolver', failed)
     app.dependency_overrides[get_db] = lambda: object()
@@ -214,8 +214,8 @@ def test_home_never_reads_reference_history(monkeypatch, product_cases):
         return original(request)
     monkeypatch.setattr(service, 'query', query)
     monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: service)
-    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
-    monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *_: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_, **kwargs: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
+    monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *_, **kwargs: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
     app.dependency_overrides[get_db] = lambda: object()
     try:
         with TestClient(app) as client:
@@ -268,3 +268,27 @@ def test_request_scoped_sharing_reuses_facts_and_auxiliary_inputs_without_changi
     independent, _, _, _ = _service(product_cases)
     for strategy, expected in zip(('trend', 'oscillation'), values, strict=True):
         assert independent.query(ProductServiceQuery('rb', strategy, '1d', as_of=clear.bar_end)).chart.value.home_summary == expected
+
+
+def test_home_reuses_snapshot_validation_service(monkeypatch, product_cases):
+    service, reader, _, clear = _service(product_cases)
+    service._reuse_read_inputs = True
+    def resolver(*args, **kwargs):
+        assert "home_services" in kwargs
+        kwargs["home_services"].append(service)
+        def resolve(*args):
+            service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end))
+            return DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')
+        return SimpleNamespace(resolve=resolve)
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', resolver)
+    monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *args, **kwargs: (_ for _ in ()).throw(ValueError('NEWOW_WEEKLY_STALE')))
+    monkeypatch.setattr(market_newow, '_build_product_service', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('must reuse verified service')))
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get('/api/v1/market/newow/home-cards?products=rb')
+        assert response.status_code == 200
+        assert response.json()['items'][0]['strategies']['trend']['1d']['state'] == 'CLEAR'
+        assert len(reader.loads) == 1
+    finally:
+        app.dependency_overrides.clear()

@@ -4,6 +4,26 @@
 下文保留的旧候选与旧版本运行检查点均按历史证据阅读，不作为当前状态或待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
+## 10/13 盘中可靠性补丁 v1.15.6：候选收尾，尚未发布
+
+修复 Reference 冲突隔离与独立新段、日周发布等待、Alert重复读取、日周coverage初始化、
+首页可见卡片优先与独立行情刷新、Reference健康诊断、自然盘后清理后的同日闭市启动。
+范围保持60品种、既有规则/收件人、苏冰推送关闭及auto_order=false；旧过期事件不补发。
+
+10/13自然盘后18:05:05至18:07:22第一次passed、60品种cleanup真实通过。
+SA10:12负成交额已由RQData源自行修正；正式Canonical及新一次源查询相等，严格质量规则不变。
+原盘中缺口、恢复预算、69次真实Live/Canonical冲突和全部历史交易保留。
+
+隔离Redis、真实隔离PostgreSQL、Web定向/type/build、版本一致性及11个OpenSpec检查已通过；
+高风险Source后缀及实际恢复caller正在独立审查，正式40路Source/新forward恢复尚未执行。
+同输入240条充分预热计算从约44秒降至29.3/28.5秒，策略结果完全一致；这是历史计算测量，
+不证明自然Live突发批次、真实发送延迟或收件人送达。
+
+当前正式版本仍v1.15.5/gen18。候选验证、生产恢复、补丁发布、gen19切换及自然夜盘验收分别记录，
+不能把候选构建或闭市健康称为RUNTIME_READY。
+证据：output/runtime-intraday-repair-20261013/；详见
+[修复与验证](docs/tasks/runtime-intraday-repair-20261013.md)、[补丁说明](docs/releases/v1.15.6.md)。
+
 ## 数据完整性修复完成；v1.15.5/gen18 已运行并独立读回
 
 10/12自然盘后passed，operational60七周期420组、27,145个预期端点独立读回通过。
