@@ -78,3 +78,8 @@ Mypy11个Alert/数据Runtime source + 9个API/Reference/identity source通过
 Ruff实际生产改动通过、秘密扫描0 findings、OpenSpec 11/11、diff check通过。
 
 独立高风险Review最终：suffix406项复验通过，MDS SHA3fa3a3bea81b；无Confirmed Issue，允许此范围集成。API类型标注/cast复核为纯类型变化。Reference/Web/CLOSED_CLEANED此前已独审通过。实际恢复caller独审仍单独待验，不以工程Review代替真实恢复。
+
+补丁release branch基于精确v1.15.5，工程commit64fdaa024只移植本轮60文件；
+全部改动生产代码前像与v1.15.5相同，STATUS按正式基线保留历史并加入本轮证据，不带develop无关研究功能。
+精确补丁树543项定向复验通过（含实际隔离Redis/PG），Web35项、type/build/topology、
+uv lock离线校验通过；真实恢复caller及发布/切换仍分别待验。
