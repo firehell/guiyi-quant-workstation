@@ -21,6 +21,18 @@ from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint
 
 
 class ConflictRevisionRecovery:
+    plan_version = "reference_conflict_recovery_v1"
+    boundary_key = "conflict_boundary_v1"
+    manifest_key = "conflict_recovery_v1"
+    new_health = "READY"
+    retirement_reason = "DATA_CONFLICT"
+
+    def _source(self, session, source_id, *, lock):
+        return NewowForwardBootstrap(self.factory)._source(session, source_id, lock=lock)
+
+    def _conflicts(self, session, targets):
+        return mismatch_evidence(session, targets)
+
     def __init__(self, factory, *, verify_source, assert_fenced):
         self.factory, self.verify_source, self.assert_fenced = factory, verify_source, assert_fenced
 
@@ -29,7 +41,7 @@ class ConflictRevisionRecovery:
             raise RepositoryConflict('CONFLICT_RECOVERY_SCOPE_INVALID')
         items, data = [], []
         for source_id in sorted(source_ids):
-            identity, checkpoint, schema, manifest, binding = NewowForwardBootstrap(self.factory)._source(session, source_id, lock=lock)
+            identity, checkpoint, schema, manifest, binding = self._source(session, source_id, lock=lock)
             if checkpoint.computed_through >= start:
                 raise RepositoryConflict('CONFLICT_RECOVERY_WARMUP_AFTER_START')
             proof = self.verify_source(identity, binding, manifest)
@@ -69,10 +81,10 @@ class ConflictRevisionRecovery:
             ReferenceStream.enabled.is_(True), ReferenceStream.recording_mode == 'forward_observation',
             ReferenceStream.product == product, ReferenceStream.frequency == frequency)))
         targets = {item[0].stream_id for item in data}
-        conflicts = mismatch_evidence(session, targets)
+        conflicts = self._conflicts(session, targets)
         if current != targets or not conflicts:
             raise RepositoryConflict('CONFLICT_RECOVERY_SCOPE_INVALID')
-        payload = {'version': 'reference_conflict_recovery_v1', 'items': items,
+        payload = {'version': self.plan_version, 'items': items,
             'conflicts': conflicts, 'recording_start': start.isoformat(), 'expires_at': expiry.isoformat()}
         return {**payload, 'plan_hash': _hash(payload)}, data
 
@@ -87,7 +99,8 @@ class ConflictRevisionRecovery:
 
     def apply(self, plan, *, expected_plan_hash, now):
         payload = {k: v for k, v in plan.items() if k != 'plan_hash'}
-        if expected_plan_hash != plan.get('plan_hash') or _hash(payload) != expected_plan_hash:
+        if (plan.get('version') != self.plan_version or expected_plan_hash != plan.get('plan_hash')
+                or _hash(payload) != expected_plan_hash):
             raise RepositoryConflict('PLAN_HASH_CONFLICT')
         current = _aware(now)
         start, expiry = map(lambda v: _aware(datetime.fromisoformat(v)), (plan['recording_start'], plan['expires_at']))
@@ -115,10 +128,10 @@ class ConflictRevisionRecovery:
                 repo = ReferenceRepository(lambda: _BorrowedSession(session))
                 results = {}
                 for identity, source, schema, manifest, stream, old, receipt in data:
-                    boundary = {'reason': 'DATA_CONFLICT', 'plan_hash': expected_plan_hash,
+                    boundary = {'reason': self.retirement_reason, 'plan_hash': expected_plan_hash,
                         'previous_revision_id': old.revision_id, 'recording_start': start.isoformat(),
                         'source': next(item['source'] for item in plan['items'] if item['target']['stream_id'] == stream.stream_id)}
-                    manifest = {**manifest, 'conflict_recovery_v1': boundary}
+                    manifest = {**manifest, self.manifest_key: boundary}
                     revision_id = repo.create_revision(stream.stream_id, stream.row_version, manifest_sha256(manifest))
                     checkpoint = replace(source, stream=identity,
                         reference_state=ReferenceState.flat(identity, recording_start=start))
@@ -128,9 +141,9 @@ class ConflictRevisionRecovery:
                     session.add(ReferenceBatch(batch_id=uuid4().hex, stream_id=stream.stream_id,
                         revision_id=old.revision_id, batch_key='conflict-boundary:' + expected_plan_hash,
                         payload_hash=_hash(boundary), kind='diagnostic', outcome='diagnostic', seq=None,
-                        expected_seq=old.last_seq, dependency_manifest={}, source_evidence={'conflict_boundary_v1': boundary},
-                        projected_action_pks=[], diagnostics=['DATA_CONFLICT'], processed_at=current))
-                    old.status, old.invalid_reason = 'invalid', 'DATA_CONFLICT'
+                        expected_seq=old.last_seq, dependency_manifest={}, source_evidence={self.boundary_key: boundary},
+                        projected_action_pks=[], diagnostics=[self.retirement_reason], processed_at=current))
+                    old.status, old.invalid_reason = 'invalid', self.retirement_reason
                     new = session.get(ReferenceRevision, (stream.stream_id, revision_id))
                     new.status = 'active'
                     receipt.disabled_at = current
@@ -138,7 +151,7 @@ class ConflictRevisionRecovery:
                     stream.activation_generation += 1
                     stream.row_version += 1
                     stream.recording_start, stream.activation_plan_hash = start, expected_plan_hash
-                    stream.health = 'READY'
+                    stream.health = self.new_health
                     session.add(ReferenceActivationReceipt(receipt_id=uuid4().hex, stream_id=stream.stream_id,
                         revision_id=revision_id, generation=stream.activation_generation, plan_hash=expected_plan_hash,
                         recording_start=start, activated_at=current, environment=receipt.environment, host=receipt.host,
