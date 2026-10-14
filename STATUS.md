@@ -11,7 +11,57 @@ Web 1112 passed/3 skipped、缓存 Chrome E2E 4 passed（fixture 挂载至缓存
 下文保留的旧候选与旧版本运行检查点均按历史证据阅读，不作为当前状态或待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## 10/14 盘中可靠性补丁 v1.15.6：部分恢复，尚未发布
+## 10/14 盘中可靠性修复 v1.15.7：已发布并切换，自然验收进行中
+
+截至10/15 00:28：正式绑定十服务均为v1.15.7/gen19，精确提交b84e723a86fde90286c1055b4d492ea158a4e078，
+运行树为.worktrees/release-v1.15.7。PR #448已合入develop、PR #449及tag/Release已发布。
+API/Python包版本及Web类型/build/topology通过；健康修复仅隔离禁用旧身份，不降低启用组冲突阻断。
+独立健康/原始冲突41项通过，故障调用器10项、停止续接3项及Calendar续接8项通过。
+
+SA2701 11:18缺口已由18:05自然盘后任务恢复，60品种passed；LH2701七周期70分区及四策略Historical COW已完成。
+A2701/PF2612分钟历史输入105分区、21次实际RQData请求及八路正式MDS完整读取通过。
+Day14的16,195条原始观察正常CAS到尾；既有自然Live恢复补齐45夜盘品种21:01前缀。
+本次停驻跨过开盘并造成22:00原始H1缺失，不能标为连续正常，也不将恢复投影冒充原始观察。
+Day15独立计划完成180条显式缺口activation、180条中断计算、45组真实23:00原始消费及595次正常CAS。
+720启用流READY、pending0；180夜盘H1算至23:00，其余60闭市H1至15:00；D1至10/14，W1至10/9。
+旧身份、交易、冲突和发送记录保持；苏冰推送仍关闭、60品种/规则/收件人及auto_order=false不变。
+
+旧十服务和PID已明确退出，定义原子安装并CAS到gen19，六持续服务实际fresh/active/ready读回通过。
+旧stop即时退出检查及首轮heartbeat即时检查失败的attempt保持原记录；已明确结果后用独立续接，不重跑旧attempt。
+四既有Calendar均已完成登记并验证idle；首份纯读到期计划零intent/零effect，独立Calendar002完整提交。
+旧23:50/23:58计划和失败attempt保持原内容；新计划未复用已完成或未知动作。
+23:52独立自然读回：新增44条1m源记录、55条completed（44条1m、11条5m），三消费者均到尾。
+completed确认延迟2.532至3.296秒；PB 23:50 5m自然Event在10.204秒内生成，旧raw/identity及Live前缀保留。
+00:00新增11条H1及对应15m/30m观察，44条Reference H1自然推进至00:00，720 READY、pending0。
+Alert时效仍未全部通过：AG5.618s、SC14.358s、AL25.707s、AO29.383s；AU30.836s、CU32.219s、SS35.834s已EXPIRED_NO_SEND。
+已定位同步HTTP发送阻塞后续顺序消费；现行canonical禁止queue且锁覆盖发送结束，修改发送合同及批量方式已提请owner选择。
+Newow AG自然发送平台接受（00:00:07.937至16.089），AL/AO为FAILED_OR_UNKNOWN且禁重试；这不是手机实际收到证据。
+AO2701 23:00 60m HTDY自然信号已有平台接受推送记录，用户手机送达尚未确认；FU旧发送未知不重试。
+苏冰D1/W1另有26条输入阻断：正式旧价格质量事实、对应W1质量中断及EC2611真实20周上市历史不足。
+13个W1纯计划中12个零下载目标；SM2611唯一额外D1缺10/13和10/14，精确一次源请求/一分区已passed并重做计划0目标0失败。
+日周口径是否保持严格完整重放或使用新版本质量缺口后预热，已提请owner决定；未截短历史、造价或放宽质量。
+发送诊断补丁已完成独审及127项定向验证：Runtime聚合attempt/accepted/failure用实际时钟，Newow失败仅记录白名单码及SHA关联，
+Reference安装受控日志handler，无效acceptance不得标为平台接受；尚未发布或切换，不消除现役同步HTTP阻塞。
+Event.notification_attempted_at仍是原有领取资格时间，不冒充已修正的HTTP实际起点。
+证据：output/runtime-intraday-closeout-20261014/，其中fault-v1157-day15-001及独立stop/calendar续接保留原始attempt。
+
+以下为本次恢复过程历史记录；其中旧版本、未完成状态和时限均按当时事实阅读，以本节上方最新读回为准。
+
+10/14续接：PR #447已合入main，annotated tag及GitHub Release v1.15.6已发布，精确提交
+d6f6c8c543dcc5e8543c4cea4ff2728f99bc6984；正式Runtime仍为v1.15.5/gen18，尚未promotion。
+今日18:05:06至18:07:05自然盘后维护passed60品种；SA2701 11:18官方Canonical缺口已恢复。
+LH2701七周期历史预热70分区、50,567预期Bar已提交并独立重做只读计划，剩余直接/派生目标及失败均为0。
+LH四策略Historical COW基线独立读回通过；旧版本和原始观察保留。
+55组220条H1路由已完成最终预热：51组以21:00为新段开始，TA/UR/V/Y四组新计划以22:00开始。
+原TA到期计划未提交，独立确认四条完整preimage不变且该plan无activation receipt，未重试旧计划。
+
+本次停驻跨过21:00夜盘开盘；21:22三个精确取消请求提交后进程恢复，并未恢复业务采集。
+实际只读验证确认Day15 metadata/rank1已齐，但Reference Day14 cursor=0-0阻断Feed日切换，
+订阅数为0，随后心跳过期；Live另有OBSERVATION_COMMIT_UNKNOWN。不得据进程active宣称实时正常。
+新晚间计划采用实际四服务drain、owner锁、Canonical维护lease和封存journal，明确不是闭市证据。
+AO/CU/ZN三组12条中断已提交并计算消费；旧日正常回放/CAS ACK及四服务恢复仍进行中。
+范围保持60品种、既有规则和收件人、苏冰推送关闭、auto_order=false；不补发过期信号或重试未知发送。
+本次证据：output/runtime-intraday-closeout-20261014/；以下10/13至10/14上午内容是历史检查点。
 
 Reference冲突隔离、新段恢复、日周发布等待、Alert共享权威读取与日周初始化、
 首页可见卡片优先及独立行情刷新、健康诊断、自然清理后闭市启动的工程修复已完成。
@@ -27,7 +77,7 @@ SA10:12负成交额由RQData源自行修正，严格质量规则不变；原实�
 结果相同；不证明自然突发批次、实际发送延迟或收件人送达。
 
 正式版本仍为v1.15.5/gen18，精确提交dc32c020d328ab81d4d65a959603f4ab66965f52。
-v1.15.6草稿PR #447未合入main，未创建正式tag或Release；当前恢复状态为PARTIAL。
+当时v1.15.6草稿PR #447未合入main、未创建正式tag或Release；该发布状态已由本节上方10/14续接记录取代。
 原20:55计划与失败attempt保持原记录，002已完成的40条Historical Source、10组新段及
 50条原始观察四路终止证据不重跑，原200 captures、69次冲突及旧交易保留。
 
