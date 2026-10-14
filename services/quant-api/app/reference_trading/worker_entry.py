@@ -275,6 +275,8 @@ def defer_historical_refresh(worker, refresh, *, should_stop, priority=None):
 
 
 def main() -> int:
+    from app.runtime_logging import install_runtime_diagnostics
+    install_runtime_diagnostics("reference-worker")
     stopped = False
 
     def stop(_signum, _frame):
