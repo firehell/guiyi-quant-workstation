@@ -703,7 +703,7 @@ class AlertRuntime:
                     session.commit()
                 continue
             self._update_runtime_status(
-                last_transport_attempt_at=_iso_timestamp(processing_now)
+                last_transport_attempt_at=_iso_timestamp(send_now)
             )
             try:
                 self.assert_owned()
@@ -712,7 +712,7 @@ class AlertRuntime:
                 acceptance = self._sender.send(message)
             except NotificationTransportError as exc:
                 self._record_notification_failure(
-                    at=processing_now,
+                    at=self._aware_now(),
                     error_type=(
                         NOTIFICATION_ACCEPTANCE_INVALID
                         if exc.diagnostic_code == "PUSHPLUS_ACCEPTANCE_INVALID"
@@ -723,14 +723,14 @@ class AlertRuntime:
                 continue
             except Exception:
                 self._record_notification_failure(
-                    at=processing_now,
+                    at=self._aware_now(),
                     error_type=NOTIFICATION_PREPARATION_FAILURE,
                 )
                 self._log_notification_failure(message, "UNKNOWN")
                 continue
             if not isinstance(acceptance, ProviderAcceptance):
                 self._record_notification_failure(
-                    at=processing_now,
+                    at=self._aware_now(),
                     error_type=NOTIFICATION_ACCEPTANCE_INVALID,
                 )
                 self._log_notification_failure(
@@ -739,7 +739,7 @@ class AlertRuntime:
                 )
                 continue
             self._update_runtime_status(
-                last_provider_accepted_at=_iso_timestamp(processing_now),
+                last_provider_accepted_at=_iso_timestamp(self._aware_now()),
                 consecutive_notification_failures=0,
             )
 
