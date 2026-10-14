@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 from hashlib import sha256
 from statistics import median
-from typing import Literal
+from typing import Literal, cast
 
 from app.market_data.domain import (
     BarFrequency,
@@ -25,13 +25,18 @@ from app.market_data.market_data_service import (
 )
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
-from app.market_data.research_metrics import Trend, calculate_research_metrics
+from app.market_data.research_metrics import ResearchMetrics, Trend, calculate_research_metrics
+from app.market_data.newow.snapshot_cache import SnapshotCache
 from app.market_data.source_quality import SourceQualityFact
 
 
 MarketHomeStatus = Literal["ready", "degraded"]
 MarketHomeFreshness = Literal["fresh", "stale", "unavailable"]
 METRIC_POLICY_VERSION = "physical_owner_quality_v4"
+
+# Results only: every caller first reads current owner, complete D1/W1 and
+# quality facts through MDS. TTL bounds retention, never proves authority.
+_METRIC_CACHE = SnapshotCache(max_entries=120, max_bytes=32 * 1024 * 1024)
 
 
 class MarketHomeOverviewError(RuntimeError):
@@ -167,6 +172,7 @@ class MarketHomeOverviewService:
                 self._market_data, symbol=symbol, contract=owner.contract,
                 target_as_of=target_as_of,
             )
+            checked_daily = daily
             daily = _through_target(daily, target_as_of)
             if gaps:
                 boundary = max(gap.bar_end for gap in gaps)
@@ -185,7 +191,23 @@ class MarketHomeOverviewService:
                 limit=80,
                 target_as_of=target_as_of,
             )
-            metrics = calculate_research_metrics(() if history_missing else daily, weekly)
+            metric_key = sha256(repr((
+                METRIC_POLICY_VERSION, symbol, target_as_of, owner,
+                dominants[symbol], self._taxonomy[symbol], checked_daily,
+                gaps, history_missing, weekly, weekly_reasons,
+            )).encode("utf-8")).hexdigest()
+
+            def calculate() -> ResearchMetrics:
+                cached = _METRIC_CACHE.get(metric_key, ("metrics",))
+                if cached is not None:
+                    return cast(ResearchMetrics, cached)
+                value = calculate_research_metrics(() if history_missing else daily, weekly)
+                _METRIC_CACHE.put(metric_key, ("metrics",), value)
+                return value
+
+            metrics = _METRIC_CACHE.calculations.execute(
+                metric_key, lambda _cancelled: calculate(),
+            )
             quality_reasons = weekly_reasons
             if history_missing:
                 quality_reasons += ("daily_history_unavailable",)

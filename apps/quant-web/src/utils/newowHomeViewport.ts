@@ -5,6 +5,7 @@ export function createHomeCardViewport(
 ) {
   let products: readonly string[] = []
   let admitted = new Set<string>()
+  const visible = new Set<string>()
   const targets = new Map<Element, string>()
   let generation = 0
   let disposed = false
@@ -19,6 +20,7 @@ export function createHomeCardViewport(
     let changed = false
     for (const entry of entries) {
       const symbol = targets.get(entry.target)
+      if (symbol) { if (entry.isIntersecting) visible.add(symbol); else visible.delete(symbol) }
       if (entry.isIntersecting && symbol && products.includes(symbol) && !admitted.has(symbol)) { admitted.add(symbol); changed = true }
     }
     if (!changed || pendingGeneration === generation || disposed) return
@@ -41,6 +43,7 @@ export function createHomeCardViewport(
         if (products.includes(product)) observer?.observe(target)
       }
     },
+    visibleProducts() { return observer ? products.filter(product => visible.has(product)) : products.filter(product => admitted.has(product)) },
     showMore() {
       for (const product of products.filter(product => !admitted.has(product)).slice(0, 8)) admitted.add(product)
       emit()

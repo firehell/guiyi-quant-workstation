@@ -3,7 +3,7 @@ import NewowPriceSources from './detail/newow/NewowPriceSources.vue'
 import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards } from '@/api/newowHomeCards'
+import { configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards, invalidateHomeCard } from '@/api/newowHomeCards'
 import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { createHomeCardViewport } from '@/utils/newowHomeViewport'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
@@ -61,21 +61,48 @@ const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscill
 const periods = ['1d', '1w'] as const
 const sortOptions = [{ code: 'default', label: '默认' }, { code: 'close', label: '价格' }, { code: 'change', label: '涨跌幅' }, { code: 'volume', label: '成交量' }, { code: 'oi', label: '持仓量' }] as const
 const productKey = computed(() => props.products.join(','))
-watch([productKey, () => props.authority, () => props.refreshSequence], (_value, previous) => {
-  // A remounted overview starts unresolved. Absence is not a new authority
-  // and must not erase valid session results before its snapshot arrives.
-  if (!props.authority) { viewport.setProducts([], true); return }
-  const forced = previous?.length === 3 && previous[2] !== props.refreshSequence
-  configureHomeCardAuthority(props.authority, forced)
-  if (forced || (previous?.length === 3 && (previous[0] !== productKey.value || previous[1] !== props.authority))) {
-    previousPerformanceDeliveries.value = performanceDeliveries.value
-    performanceDeliveries.value = {}
-    recoveredProducts.clear()
+function changedAuthorityProducts(before: string, after: string): string[] {
+  try {
+    const [oldDay, oldItems] = JSON.parse(before), [day, items] = JSON.parse(after)
+    if (oldDay !== day) return [...props.products]
+    const old = new Map<string, string>(oldItems.map((item: { symbol: string }) => [item.symbol, JSON.stringify(item)]))
+    return items.filter((item: { symbol: string }) => old.get(item.symbol) !== JSON.stringify(item)).map((item: { symbol: string }) => item.symbol)
+  } catch { return [...props.products] }
+}
+function reconcile(products: readonly string[] = viewport.visibleProducts(), force = false) {
+  for (const product of products) {
+    if (!force && deliveries.value[product]?.loading) continue
+    for (const choice of ['trend', 'oscillation'] as const) {
+      const key = `${product}:${choice}`
+      previousPerformanceDeliveries.value[key] = performanceDeliveries.value[key]!
+      delete performanceDeliveries.value[key]
+    }
+    invalidateHomeCard(product); void loader.reloadProduct(product)
   }
-  viewport.setProducts(productKey.value ? productKey.value.split(',') : [], true)
+}
+watch([productKey, () => props.authority, () => props.refreshSequence], (_value, previous) => {
+  if (!props.authority) return
+  const forced = previous?.length === 3 && previous[2] !== props.refreshSequence
+  configureHomeCardAuthority(props.authority, false)
+  if (!previous?.[1]) { viewport.setProducts([...props.products]); return }
+  if (previous[0] !== productKey.value) viewport.setProducts([...props.products])
+  const changed = forced ? [...admittedProducts.value] : previous[1] !== props.authority ? changedAuthorityProducts(previous[1] as string, props.authority).filter(product => admittedProducts.value.has(product)) : []
+  if (changed.length) { recoveredProducts.clear(); reconcile(changed, true) }
 }, { immediate: true })
+let reconcileTimer: ReturnType<typeof setInterval> | null = null
+function visibilityChanged() {
+  if (reconcileTimer) { clearInterval(reconcileTimer); reconcileTimer = null }
+  if (document.visibilityState === 'visible') {
+    reconcile()
+    reconcileTimer = setInterval(() => { reconcile() }, 5 * 60_000)
+  }
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', visibilityChanged)
+  if (document.visibilityState === 'visible') reconcileTimer = setInterval(() => { reconcile() }, 5 * 60_000)
+}
 watch(deliveries, () => { for (const symbol of expanded.value) ensurePerformance(symbol) })
-onBeforeUnmount(() => { viewport.dispose(); loader.dispose(); performanceController.abort() })
+onBeforeUnmount(() => { if (reconcileTimer) clearInterval(reconcileTimer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged); viewport.dispose(); loader.dispose(); performanceController.abort() })
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
 function periodDisplay(symbol: string, period: HomePeriod) { return admittedProducts.value.has(symbol) ? homePeriodDisplay(fact(symbol, period)) : { label: '待查看', icon: '—', tone: 'pending' } }
 function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
@@ -125,7 +152,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
       </div>
       <div class="list-notices" role="status">
         <span v-if="!admittedProducts.has(row.symbol)">滚动到此行后读取策略</span>
-        <span v-else-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}</span>
+        <span v-else-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}<template v-if="deliveries[row.symbol]?.stale && deliveries[row.symbol]?.savedAt"> · {{ formatBeijingInstant(deliveries[row.symbol]?.savedAt) }}</template></span>
         <span v-if="pending(row.symbol)">等待最新周期更新</span>
         <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ periodDisplay(row.symbol, period).label }}</span>
       </div>

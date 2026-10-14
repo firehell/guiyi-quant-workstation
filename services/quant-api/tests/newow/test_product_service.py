@@ -1978,3 +1978,79 @@ def test_cdv2_weekly_status_card_retains_shared_target_and_direct_channel_absorb
     assert prices['status_card']['absorb']['raw'] == format(layer.points[-1].lower, 'f')
     assert prices['status_card']['absorb']['branch'] == 'status_card_weekly_llv10_override'
     assert prices['status_card']['absorb']['support_cap_applied'] is False
+
+
+def test_separate_services_coalesce_only_after_independent_proof(monkeypatch, product_cases):
+    from concurrent.futures import ThreadPoolExecutor
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    cache = SnapshotCache()
+    first, reader_a, _, clear = _service(product_cases)
+    second, reader_b, _, _ = _service(product_cases)
+    first._cache = second._cache = cache
+    # Production supplies a shared early coordinator, which must not skip
+    # either HTTP lifecycle's checked load.
+    second._inflight = first._inflight
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)
+    entered, release, checked = Event(), Event(), Event()
+    calls = []
+    original = NewowProductService._calculate
+    def calculate(self, *args):
+        calls.append(True)
+        entered.set()
+        assert release.wait(5)
+        return original(self, *args)
+    load = reader_b.load
+    def verify(*args):
+        result = load(*args)
+        checked.set()
+        return result
+    monkeypatch.setattr(NewowProductService, "_calculate", calculate)
+    monkeypatch.setattr(reader_b, "load", verify)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a = pool.submit(first.query, request)
+        assert entered.wait(5)
+        b = pool.submit(second.query, request)
+        assert checked.wait(5)
+        release.set()
+        one, two = a.result(), b.result()
+    assert len(reader_a.loads) == len(reader_b.loads) == 1
+    assert len(calls) == 1
+    assert one.meta.snapshot_token == two.meta.snapshot_token
+    assert one.chart.value.home_summary == two.chart.value.home_summary
+    assert not cache.calculations._calls
+
+
+def test_concurrent_same_day_correction_does_not_join_old_proof(monkeypatch, product_cases):
+    from concurrent.futures import ThreadPoolExecutor
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    cache = SnapshotCache()
+    first, _, _, clear = _service(product_cases)
+    second, reader, _, _ = _service(product_cases)
+    first._cache = second._cache = cache
+    second._inflight = first._inflight
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)
+    changed = reader.bars[0]
+    reader.bars = (replace(changed, bar=replace(changed.bar, volume=changed.bar.volume + 1)),) + reader.bars[1:]
+    entered, both, release = Event(), Event(), Event()
+    calls = []
+    calculate = NewowProductService._calculate
+    def blocked(self, *args):
+        calls.append(True)
+        entered.set()
+        if len(calls) == 2:
+            both.set()
+        assert release.wait(5)
+        return calculate(self, *args)
+    monkeypatch.setattr(NewowProductService, "_calculate", blocked)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a = pool.submit(first.query, request)
+        assert entered.wait(5)
+        b = pool.submit(second.query, request)
+        try:
+            assert both.wait(5), "different current inputs must calculate independently"
+        finally:
+            release.set()
+        one, two = a.result(), b.result()
+    assert len(calls) == 2
+    assert one.meta.input_content_sha256 != two.meta.input_content_sha256
+    assert one.meta.snapshot_token != two.meta.snapshot_token

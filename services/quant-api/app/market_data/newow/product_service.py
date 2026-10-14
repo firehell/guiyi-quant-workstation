@@ -78,7 +78,7 @@ from .product_reader import (
     ProductReadSet,
     ResolvedPerformanceWindow,
 )
-from .inflight import InFlightCoordinator
+from .inflight import InFlightCoordinator, NewowComputationCancelled
 from .resource_gate import HeavyResourceGate
 from .snapshot_cache import SnapshotCache
 from .source_facts import (
@@ -787,7 +787,10 @@ class NewowProductService:
         as_of = utc_timestamp(request.as_of or self._now())
         if as_of > utc_timestamp(self._now()):
             raise NewowProductServiceError("NEWOW_INVALID_AS_OF")
-        key = (self._quality_policy, request, as_of)
+        # Early flights only share one pinned reader lifecycle. Separate HTTP
+        # services must each establish their own current authority proof before
+        # joining the process-local calculation flight below.
+        key = (self, self._quality_policy, request, as_of)
         return self._inflight.execute(
             key,
             lambda shared_cancelled: self._query(request, as_of, shared_cancelled),
@@ -998,6 +1001,38 @@ class NewowProductService:
                 request.snapshot_token, common_key, proof
             ):
                 raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
+        # Every consumer has already checked its current inputs above. Only
+        # calculation/admission is coalesced, across request-local services.
+        # The proof hash prevents a same-day correction sharing an old replay.
+        calculation_key = (
+            common_key, section_key, request.snapshot_token,
+            sha256(repr(sorted(proof.items())).encode()).hexdigest(),
+        )
+        try:
+            result = self._cache.calculations.execute(
+                calculation_key,
+                lambda shared_cancelled: self._verified_result(
+                    request, read, identity, fact_key, page_identity, resolved,
+                    shared_cancelled, as_of, reader, common_key, section_key,
+                    proof, window, navigable, prior_navigation,
+                ),
+                cancelled,
+            )
+        except NewowComputationCancelled:
+            self._check_cancelled(cancelled)
+            raise
+        self._check_cancelled(cancelled)
+        return replace(result, meta=replace(result.meta, read_at=utc_timestamp(self._now())))
+
+    def _verified_result(
+        self, request: ProductServiceQuery, read: ProductReadSet,
+        identity: ProductIdentity, fact_key: str, page_identity: str,
+        resolved: ResolvedPerformanceWindow | None,
+        cancelled: Callable[[], bool], as_of: datetime, reader: NewowProductReader,
+        common_key: str, section_key: tuple[object, ...], proof: dict[str, str],
+        window: ProductReadWindow, navigable: bool,
+        prior_navigation: _ChartNavigation | None,
+    ) -> NewowProductResult:
         cached = self._cache.get(common_key, section_key)
         if isinstance(cached, NewowProductResult):
             self._check_cancelled(cancelled)

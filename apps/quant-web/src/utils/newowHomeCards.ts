@@ -44,8 +44,11 @@ export interface HomePeriodFact {
   executable?: boolean
 }
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
-export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[] }
-export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean }
+export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[]; restored?: boolean }
+export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string }
+
+/** Fresh session aliases include the complete accepted overview authority. */
+export function homeCardSessionKey(products: readonly string[], authority: string) { return `home:${products.join(',')}:${authority}` }
 
 export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
 export const homeStateIcons = { BUILD: '▲', HOLD: '✓', CLEAR: '↘', FLAT: '○' } as const
@@ -115,7 +118,7 @@ export function homeCompositeDisplay(day?: HomePeriodFact, week?: HomePeriodFact
 }
 
 export function homeDeliveryNotice(delivery?: CardDelivery) {
-  if (delivery?.stale) return delivery.loading ? '策略刷新中，保留上次快照' : '策略刷新失败，保留上次快照'
+  if (delivery?.stale) return delivery.loading ? delivery.savedAt ? '本地策略快照，正在重新验证' : '策略刷新中，保留上次快照' : delivery.failed ? '策略刷新失败，保留上次快照' : '本地策略快照，等待重新验证'
   if (delivery?.failed) return '策略读取失败，可刷新重试'
   return delivery?.loading || !delivery ? '策略读取中' : null
 }
@@ -152,15 +155,17 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
   let generation = 0
   let controller: AbortController | null = null
   let items: Record<string, CardDelivery> = {}
+  const revisions = new Map<string, number>()
   type Queue = { generation: number; signal: AbortSignal; products: string[]; workers: Set<Promise<void>> }
   let queue: Queue | null = null
   function addProducts(products: readonly string[]) {
     if (!queue) return
     for (const product of products) {
       if (items[product]) continue
-      const card = cached?.(product)?.items.find(item => item.product === product)
-      items[product] = card ? { card, loading: false, stale: false, failed: false } : { card: null, loading: true, stale: false, failed: false }
-      if (!card) queue.products.push(product)
+      const snapshot = cached?.(product), card = snapshot?.items.find(item => item.product === product)
+      const validated = card && !snapshot?.restored
+      items[product] = card ? { card, loading: !validated, stale: !validated, failed: false, savedAt: snapshot?.requested_at } : { card: null, loading: true, stale: false, failed: false }
+      if (!card || !validated) queue.products.push(product)
     }
     publish({ ...items })
   }
@@ -169,12 +174,16 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
       const worker = (async () => {
         while (owner.products.length && owner.generation === generation && !owner.signal.aborted) {
           const product = owner.products.shift()!
+          const revision = (revisions.get(product) ?? 0) + 1
+          revisions.set(product, revision)
           try {
             const response = normalizeHomeCards(await fetch([product], owner.signal), [product])
             if (owner.generation !== generation || owner.signal.aborted) return
+            if (revisions.get(product) !== revision) continue
             items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
           } catch {
             if (owner.generation !== generation || owner.signal.aborted) return
+            if (revisions.get(product) !== revision) continue
             items[product] = { card: items[product]?.card ?? null, loading: false, stale: Boolean(items[product]?.card), failed: true }
           }
           publish({ ...items })
@@ -210,14 +219,16 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
     async reloadProduct(product: string) {
       const current = generation, signal = controller?.signal
       if (!signal || signal.aborted || !items[product]) return
+      const revision = (revisions.get(product) ?? 0) + 1
+      revisions.set(product, revision)
       items[product] = { card: items[product]!.card, loading: true, stale: Boolean(items[product]!.card), failed: false }
       publish({ ...items })
       try {
         const response = normalizeHomeCards(await fetch([product], signal), [product])
-        if (current !== generation || signal.aborted) return
+        if (current !== generation || signal.aborted || revisions.get(product) !== revision) return
         items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
       } catch {
-        if (current !== generation || signal.aborted) return
+        if (current !== generation || signal.aborted || revisions.get(product) !== revision) return
         items[product] = { card: items[product]!.card, loading: false, stale: Boolean(items[product]!.card), failed: true }
       }
       publish({ ...items })

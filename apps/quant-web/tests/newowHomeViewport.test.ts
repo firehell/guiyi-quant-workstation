@@ -82,3 +82,17 @@ test('newly visible rows receive the next slot before obsolete offscreen queue e
   assert.ok(calls.every(call => !call.signal.aborted))
   loader.dispose(); calls[1]!.resolve(response('cu')); calls[2]!.resolve(response('ag')); await pending
 })
+
+
+test('reconciliation tracks current visible rows rather than every previously admitted row', async () => {
+  let callback!: IntersectionObserverCallback
+  const viewport = createHomeCardViewport(() => {}, cb => { callback = cb; return { observe() {}, unobserve() {}, disconnect() {} } })
+  viewport.setProducts(['rb', 'cu'])
+  const rb = {} as Element, cu = {} as Element
+  viewport.observe('rb', rb); viewport.observe('cu', cu)
+  callback([{ target: rb, isIntersecting: true }, { target: cu, isIntersecting: true }] as IntersectionObserverEntry[], {} as IntersectionObserver)
+  assert.deepEqual(viewport.visibleProducts(), ['rb', 'cu'])
+  callback([{ target: rb, isIntersecting: false }] as IntersectionObserverEntry[], {} as IntersectionObserver)
+  assert.deepEqual(viewport.visibleProducts(), ['cu'])
+  viewport.dispose()
+})

@@ -51,6 +51,7 @@ app.add_middleware(RequestTimingMiddleware)
 # CORS：允许凭证、全部方法与请求头；来源由 resolve_cors_origins 白名单控制
 app.add_middleware(
     CORSMiddleware,
+    expose_headers=["ETag"],
     allow_origins=resolve_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],

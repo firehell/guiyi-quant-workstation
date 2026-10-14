@@ -1,4 +1,5 @@
 import request from './request'
+import { createConditionalHomeRead } from './homeConditionalRead'
 import type {
   DominantContractListResponse,
   MarketBarsPageRequest,
@@ -13,13 +14,14 @@ import { normalizeMarketBarsPageResponse } from './marketWire.ts'
 
 export { normalizeMarketBarsPageResponse } from './marketWire.ts'
 
-export function getMarketDominants() {
-  return request.get<never, DominantContractListResponse>('/market/dominants')
+export function normalizeHomeDirectory(value: unknown): DominantContractListResponse {
+  const body = value as DominantContractListResponse
+  if (!body || !Array.isArray(body.items) || body.items.some(item => !item || typeof item.product !== 'string' || typeof item.product_name !== 'string')) throw new Error('INVALID_HOME_DIRECTORY')
+  return body
 }
+export const getMarketDominants = createConditionalHomeRead('/market/dominants', normalizeHomeDirectory)
 
-export function getMarketHomeOverview() {
-  return request.get<never, unknown>('/market/research/home-overview').then(normalizeMarketHomeOverviewResponse)
-}
+export const getMarketHomeOverview = createConditionalHomeRead('/market/research/home-overview', normalizeMarketHomeOverviewResponse)
 
 export function getProductResearch(params: { symbol: string; seriesKind: SeriesKind; contract?: string }) {
   return request.get<never, ProductResearchResponse>('/market/research/product', {

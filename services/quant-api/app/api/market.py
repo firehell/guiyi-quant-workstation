@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
+from app.api.conditional import conditional_json
+from app.market_data.market_home_projection import market_home_response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -40,10 +43,17 @@ router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
 @router.get("/research/home-overview", response_model=MarketHomeOverviewResponse)
 def market_home_overview(
+    request: Request,
     session: Session = Depends(get_db),
-) -> MarketHomeOverviewResponse:
+) -> Response:
     try:
-        return build_market_home_projection(session).read()
+        projection = build_market_home_projection(session)
+        # The file projection's existing validation contract is unchanged.
+        # Conditional requests require a fresh checked MDS read: a date alone
+        # cannot prove that the client's retained facts remain current.
+        value = (market_home_response(projection.service.snapshot())
+                 if request.headers.get('if-none-match') else projection.read())
+        return conditional_json(request, value.model_dump(mode="json"))
     except MarketHomeOverviewError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
 
@@ -116,9 +126,9 @@ def canonical_market_bars_page(
 
 
 @router.get("/dominants", response_model=DominantContractListResponse)
-def market_dominants(session: Session = Depends(get_db)) -> DominantContractListResponse:
+def market_dominants(request: Request, session: Session = Depends(get_db)) -> Response:
     items = build_market_data_service(session).list_latest_dominants()
-    return DominantContractListResponse(
+    value = DominantContractListResponse(
         items=[
             DominantContractOut(
                 product=item.symbol,
@@ -132,6 +142,7 @@ def market_dominants(session: Session = Depends(get_db)) -> DominantContractList
         ]
     )
 
+    return conditional_json(request, value.model_dump(mode="json"))
 
 @router.get("/research/product", response_model=ProductResearchResponse)
 def product_research(

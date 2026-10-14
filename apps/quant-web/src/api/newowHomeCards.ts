@@ -1,5 +1,6 @@
 import request from './request'
-import { normalizeHomeCards, type HomePeriodFact, type HomeStrategy } from '../utils/newowHomeCards.ts'
+import { homeSnapshotCache } from './homeSnapshotCache'
+import { normalizeHomeCards, homeCardSessionKey, type HomePeriodFact, type HomeStrategy } from '../utils/newowHomeCards.ts'
 import { newowSessionResources, newowResourceIdentity, invalidateNewowProduct, createReadQueue } from '../utils/newowSessionResources.ts'
 import { NewowProductRequestError } from './newowProduct.ts'
 
@@ -7,27 +8,42 @@ let authority = ''
 const homeRead = createReadQueue(2)
 const performanceRead = createReadQueue(1)
 export function configureHomeCardAuthority(value: string, force = false) {
-  if (authority !== value || force) newowSessionResources.invalidate()
+  if (force) newowSessionResources.invalidate('home:')
   authority = value
 }
 
 export function peekNewowHomeCards(product: string) {
-  return newowSessionResources.peek<ReturnType<typeof normalizeHomeCards>>(`home:${product}:${authority}`)
+  const fresh = newowSessionResources.peek<ReturnType<typeof normalizeHomeCards>>(homeCardSessionKey([product], authority))
+  if (fresh) return fresh
+  const snapshot = homeSnapshotCache.peek<ReturnType<typeof normalizeHomeCards>>(`card:${product}`)
+  if (!snapshot) return undefined
+  try { return { ...normalizeHomeCards(snapshot.value, [product]), restored: true } } catch { void homeSnapshotCache.discard(`card:${product}`); return undefined }
 }
 
 export function getNewowHomeCards(products: string[], signal: AbortSignal) {
   const requestAuthority = authority
-  return newowSessionResources.load(`home:${products.join(',')}:${authority}`, async sharedSignal => {
+  return newowSessionResources.load(homeCardSessionKey(products, authority), async sharedSignal => {
     const value = await homeRead(() => {
       if (import.meta.env?.DEV) console.debug('Newow HTTP home-cards', products.join(','))
       return request.get<never, unknown>('/market/newow/home-cards', { params: { products: products.join(',') }, signal: sharedSignal, timeout: 180_000 })
     }, sharedSignal)
-    return normalizeHomeCards(value, products)
+    const response = normalizeHomeCards(value, products)
+    if (requestAuthority === authority && !sharedSignal.aborted) for (const card of response.items) {
+      const display = structuredClone(card)
+      for (const strategy of ['trend', 'oscillation'] as const) for (const period of ['1d', '1w'] as const) {
+        delete display.strategies[strategy][period].snapshot_token
+        delete display.strategies[strategy][period].page_performance
+      }
+      void homeSnapshotCache.put(`card:${card.product}`, { ...response, items: [display] })
+    }
+    return response
   }, newowResourceIdentity, signal).then(response => {
-    if (signal.aborted || requestAuthority !== authority) throw new DOMException('Aborted', 'AbortError')
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
     return response
   })
 }
+
+export function invalidateHomeCard(product: string) { newowSessionResources.invalidate(homeCardSessionKey([product], authority)) }
 
 export async function getNewowHomePerformance(product: string, strategy: HomeStrategy, fact: HomePeriodFact, signal: AbortSignal): Promise<NonNullable<HomePeriodFact['page_performance']>> {
   if (!fact.as_of || !fact.snapshot_token) throw new Error('NEWOW_SNAPSHOT_REQUIRED')

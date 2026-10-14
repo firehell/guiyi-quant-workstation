@@ -189,3 +189,54 @@ def _snapshot() -> MarketHomeOverviewSnapshot:
             ),
         ),
     )
+
+
+def test_conditional_overview_freshly_checks_inputs_and_preserves_failure(monkeypatch):
+    from types import SimpleNamespace
+    snapshot = [_snapshot()]
+    reads = []
+    def checked():
+        reads.append(True)
+        if isinstance(snapshot[0], Exception):
+            raise snapshot[0]
+        return snapshot[0]
+    projection = _FakeProjection(market_home_response(snapshot[0]))
+    projection.service = SimpleNamespace(snapshot=checked)
+    monkeypatch.setattr("app.api.market.build_market_home_projection", lambda _session: projection)
+    client = TestClient(app)
+    path = "/api/v1/market/research/home-overview"
+    first = client.get(path, headers={"Origin": "http://localhost:5173"})
+    assert first.status_code == 200 and "etag" in first.headers
+    assert first.headers["access-control-expose-headers"] == "ETag"
+    headers = {"If-None-Match": first.headers["etag"]}
+    same = client.get(path, headers=headers)
+    assert same.status_code == 304 and same.content == b"" and len(reads) == 1
+    from dataclasses import replace
+    item = replace(snapshot[0].items[0], close=Decimal("111"))
+    snapshot[0] = replace(snapshot[0], items=(item,))
+    corrected = client.get(path, headers=headers)
+    assert corrected.status_code == 200 and corrected.json()["items"][0]["close"] == "111"
+    assert corrected.headers["etag"] != first.headers["etag"]
+    snapshot[0] = MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR")
+    assert client.get(path, headers=headers).status_code == 409
+    assert len(reads) == 3 and projection.calls == 1
+
+
+def test_directory_conditional_request_rechecks_current_owner(monkeypatch):
+    from types import SimpleNamespace
+    from app.market_data.market_data_service import DominantContractSummary
+    values = [DominantContractSummary("jm", "焦煤", "black", "DCE", "JM2505", date(2025, 2, 11))]
+    calls = []
+    def read():
+        calls.append(True)
+        return tuple(values)
+    monkeypatch.setattr("app.api.market.build_market_data_service", lambda _session: SimpleNamespace(list_latest_dominants=read))
+    client = TestClient(app)
+    path = "/api/v1/market/dominants"
+    first = client.get(path)
+    headers = {"If-None-Match": first.headers["etag"]}
+    assert client.get(path, headers=headers).status_code == 304
+    from dataclasses import replace
+    values[0] = replace(values[0], actual_contract="JM2509")
+    assert client.get(path, headers=headers).status_code == 200
+    assert len(calls) == 3

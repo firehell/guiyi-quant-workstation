@@ -1,5 +1,17 @@
 # 测试与验证命令
 
+## 首页持久缓存与局部更新
+
+```sh
+pnpm -C apps/quant-web test
+pnpm -C apps/quant-web build
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-home-cache.spec.mjs
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_market_home_api.py services/quant-api/tests/test_market_home_projection_api.py services/quant-api/tests/data_foundation/test_market_home_overview.py services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/newow/test_product_service.py
+```
+
+覆盖 IndexedDB 重载、容量/时效/损坏、挂起存储、旧 token 禁用、失败保留、304、同日修正与并发校验。
+浏览器 fixture 只证明交互与缓存行为；真实性能必须另用独立只读候选 API 验证。
+
 ## JM 因果候选与本地 Paper
 
 合同见 [Paper 试点](docs/PAPER_PILOT.md)。仅用本次独立本地 PostgreSQL 测试实例，

@@ -14,6 +14,7 @@ interface RequestMetadata {
 
 type TimedAxiosRequestConfig = InternalAxiosRequestConfig & {
   metadata?: RequestMetadata
+  preserveResponse?: boolean
 }
 
 /** 解析 API 根地址：只接受 Vite 环境变量，否则使用同源默认值。 */
@@ -65,7 +66,7 @@ request.interceptors.response.use(
       console.info(formatApiLogSummary({ method, url, status: 'ok', durationMs: duration }))
     }
     // 业务层直接拿到 data，不再包一层 AxiosResponse
-    return response.data
+    return config.preserveResponse ? response : response.data
   },
   (error) => {
     const config = (error.config || {}) as TimedAxiosRequestConfig
@@ -87,3 +88,4 @@ request.interceptors.response.use(
 
 export default request
 export type { AxiosRequestConfig }
+export type ConditionalRequestConfig = AxiosRequestConfig & { preserveResponse: true }

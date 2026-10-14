@@ -102,7 +102,7 @@ async function loadPage(initialSector = '') {
     import { defineComponent, h } from '${vueUrl}'
     export const NButton = defineComponent({ setup(_props, { slots }) { return () => h('button', slots.default?.()) } })
   `)
-  const apiModule = moduleUrl('export async function getMarketDominants() {}\nexport async function getMarketHomeOverview() {}\nexport async function getCurrentAlertEvents() {}\nexport async function getRuntimeHealth() {}')
+  const apiModule = moduleUrl('export function normalizeHomeDirectory(value){return value};export async function getMarketDominants() {}\nexport async function getMarketHomeOverview() {}\nexport async function getCurrentAlertEvents() {}\nexport async function getRuntimeHealth() {}')
   const homeModule = moduleUrl(`
     import { ref } from '${vueUrl}'
     function resource(data = null) {
@@ -150,6 +150,8 @@ async function loadPage(initialSector = '') {
     .replace(/from ['"]@\/components\/market\/([^'"]+\.vue)['"]/g, (_match, file: string) => (
       `from '${file === 'MarketHomeHeader.vue' ? headerComponent : file === 'MarketHomeStrategyCards.vue' ? productComponent : plainComponent}'`
     ))
+    .replace(/from ['"]@\/api\/homeSnapshotCache['"]/g, `from '${moduleUrl("export const homeCacheNamespace='test';export const homeSnapshotCache=null")}'`)
+    .replace(/from ['"]@\/utils\/marketHomeTypes['"]/g, `from '${new URL('../src/utils/marketHomeTypes.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/api\/(?:market|alerts|runtime)['"]/g, `from '${apiModule}'`)
     .replace(/from ['"]@\/api\/newowMessages['"]/g, `from '${new URL('../src/api/newowMessages.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/composables\/useMarketHome['"]/g, `from '${homeModule}'`)

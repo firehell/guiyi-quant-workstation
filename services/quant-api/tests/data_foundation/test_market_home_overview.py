@@ -905,3 +905,87 @@ def test_weekly_integrity_failure_is_not_downgraded_to_missing_history(reason):
             market_data=market, products=("jm", "rb"), taxonomy=_taxonomy(),
             latest_complete_day=_TargetDay(TARGET),
         ).snapshot()
+
+
+@pytest.mark.parametrize("change", ["daily", "weekly", "quality", "contract", "version", "taxonomy"])
+def test_verified_metric_cache_requires_current_complete_inputs(monkeypatch, change):
+    from app.market_data import market_home_overview as module
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    monkeypatch.setattr(module, "_METRIC_CACHE", SnapshotCache())
+    market = _FakeMarketDataService(daily={"jm": _bars(30, end=TARGET)}, weekly={"jm": _bars(22, end=TARGET)}, dominants=(
+        DominantContractSummary("jm", "焦煤", "black", "DCE", "JM2505", TARGET),
+    ))
+    taxonomy = {"jm": ProductTaxonomyEntry(name="焦煤", sector="black")}
+    def service():
+        return module.MarketHomeOverviewService(market_data=market, products=("jm",), taxonomy=taxonomy, latest_complete_day=_TargetDay(TARGET))
+    calls = []
+    calculate = module.calculate_research_metrics
+    def counted(*args):
+        calls.append(args)
+        return calculate(*args)
+    monkeypatch.setattr(module, "calculate_research_metrics", counted)
+    first = service().snapshot()
+    assert service().snapshot() == first
+    assert len(calls) == 1 and len(market.requests) == 4
+    if change in {"daily", "weekly"}:
+        source = getattr(market, change)
+        last = source["jm"][-1]
+        source["jm"] = source["jm"][:-1] + (replace(last, volume=last.volume + 1),)
+    elif change == "quality":
+        query = module._query_through_target
+        monkeypatch.setattr(module, "_query_through_target", lambda *args, **kwargs: (query(*args, **kwargs)[0], ("weekly_price_unavailable",)))
+    elif change == "contract":
+        market.target_owners = {"jm": "JM2509"}
+    elif change == "version":
+        monkeypatch.setattr(module, "METRIC_POLICY_VERSION", "next-policy")
+    else:
+        taxonomy["jm"] = ProductTaxonomyEntry(name="新名称", sector="black")
+    service().snapshot()
+    assert len(calls) == 2
+    assert len(market.requests) == 6
+    market.failures[("jm", "1d")] = MarketDataError("QUALITY_FAILED")
+    with pytest.raises(module.MarketHomeOverviewError):
+        service().snapshot()
+    assert len(calls) == 2
+
+
+def test_verified_metric_calculation_coalesces_and_is_bounded(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from app.market_data import market_home_overview as module
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+    cache = SnapshotCache(max_entries=1)
+    monkeypatch.setattr(module, "_METRIC_CACHE", cache)
+    market = _FakeMarketDataService(daily={"jm": _bars(30, end=TARGET)}, weekly={"jm": _bars(22, end=TARGET)}, dominants=(
+        DominantContractSummary("jm", "焦煤", "black", "DCE", "JM2505", TARGET),
+    ))
+    service = module.MarketHomeOverviewService(market_data=market, products=("jm",), taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")}, latest_complete_day=_TargetDay(TARGET))
+    entered, release, checked = Event(), Event(), Event()
+    calculate = module.calculate_research_metrics
+    calls = []
+    def blocked(*args):
+        calls.append(args)
+        entered.set()
+        assert release.wait(5)
+        return calculate(*args)
+    original = market.query_physical_bars_as_of
+    def read(**kwargs):
+        value = original(**kwargs)
+        if len(market.requests) >= 4:
+            checked.set()
+        return value
+    monkeypatch.setattr(market, "query_physical_bars_as_of", read)
+    monkeypatch.setattr(module, "calculate_research_metrics", blocked)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(service.snapshot)
+        assert entered.wait(5)
+        second = pool.submit(service.snapshot)
+        assert checked.wait(5)
+        release.set()
+        assert first.result() == second.result()
+    assert len(calls) == 1 and len(market.requests) == 4
+    for contract in ("JM2509", "JM2601"):
+        market.target_owners = {"jm": contract}
+        service.snapshot()
+    assert len(cache._entries) == 1
+    assert cache._bytes <= cache._max_bytes

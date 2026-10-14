@@ -82,7 +82,7 @@ test('home supplemental facts keep daily ownership and ordinary page return', ()
 })
 
 const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
-const apiUrl = moduleUrl('export const performanceCalls=[];export const authorityCalls=[];export function configureHomeCardAuthority(...args){authorityCalls.push(args)};export function peekNewowHomeCards(){return undefined};export function getNewowHomePerformance(product,strategy,fact,signal){return new Promise((resolve,reject)=>performanceCalls.push({product,strategy,fact,signal,resolve,reject}))};export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
+const apiUrl = moduleUrl('export function invalidateHomeCard(){};export const performanceCalls=[];export const authorityCalls=[];export function configureHomeCardAuthority(...args){authorityCalls.push(args)};export function peekNewowHomeCards(){return undefined};export function getNewowHomePerformance(product,strategy,fact,signal){return new Promise((resolve,reject)=>performanceCalls.push({product,strategy,fact,signal,resolve,reject}))};export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
 const api = await import(apiUrl)
 async function loadList() {
   const iconSource = readFileSync(new URL('../src/components/market/MarketStateIcon.vue', import.meta.url), 'utf8')

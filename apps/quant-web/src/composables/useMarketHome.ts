@@ -1,4 +1,5 @@
 import { shallowRef } from 'vue'
+import type { HomeSnapshotCache } from '../utils/marketHomePersistence.ts'
 
 interface MarketHomeOptions<O, R, D> {
   fetchOverview: () => Promise<O>
@@ -7,6 +8,9 @@ interface MarketHomeOptions<O, R, D> {
   overviewCacheKey?: string
   overviewMaxAgeMs?: number
   now?: () => number
+  persistence?: HomeSnapshotCache
+  validateOverview?: (value: unknown) => O
+  validateDirectory?: (value: unknown) => D
 }
 
 type ResourceError = 'request-failed' | 'typed-unavailable'
@@ -37,20 +41,37 @@ let cachedHome: { key: string; overview: ResourceState<unknown>; directory: Reso
 
 export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
   const now = options.now ?? Date.now
-  const overview = createResource(options.fetchOverview, undefined, cachedState<O>('overview', options.overviewCacheKey), now)
-  const directory = createResource(options.fetchDirectory, undefined, cachedState<D>('directory', options.overviewCacheKey), now)
+  const overview = createResource(options.fetchOverview, undefined, cachedState<O>('overview', options.overviewCacheKey), now, value => options.persistence?.put('overview', value))
+  const directory = createResource(options.fetchDirectory, undefined, cachedState<D>('directory', options.overviewCacheKey), now, value => options.persistence?.put('directory', value))
+  const restored = shallowRef(false)
+  const restore = async () => {
+    if (restored.value || !options.persistence) return
+    await options.persistence.restore()
+    for (const [key, resource, validate] of [['overview', overview, options.validateOverview], ['directory', directory, options.validateDirectory]] as const) {
+      if (resource.data.value != null || !validate) continue
+      const snapshot = options.persistence.peek(key)
+      if (!snapshot) continue
+      try {
+        resource.data.value = validate(snapshot.value) as O & D
+        resource.updatedAt.value = snapshot.savedAt
+        resource.stale.value = true
+      } catch { await options.persistence.discard(key) }
+    }
+    restored.value = true
+  }
   const runtime = createResource(options.fetchRuntime, undefined, undefined, now)
   const overviewMaxAgeMs = options.overviewMaxAgeMs ?? 5 * 60_000
   let timer: ReturnType<typeof setInterval> | null = null
   let started = false
 
-  async function refreshOverview() { await overview.refresh() }
+  async function refreshOverview() { if (options.persistence) await restore(); await overview.refresh() }
   async function refreshOverviewIfExpired() {
     await refreshIfExpired(overview)
   }
   async function refreshIfExpired<T>(resource: Resource<T>) {
+    if (options.persistence) await restore()
     const acceptedAt = resource.updatedAt.value
-    if (!resource.unavailable.value && resource.data.value != null && acceptedAt != null && now() - acceptedAt <= overviewMaxAgeMs) return
+    if (!resource.stale.value && !resource.unavailable.value && resource.data.value != null && acceptedAt != null && now() - acceptedAt <= overviewMaxAgeMs) return
     await resource.refresh()
   }
   async function refreshDirectoryIfExpired() { await refreshIfExpired(directory) }
@@ -60,6 +81,7 @@ export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
     // Runtime has its own loading/error state; its health scan must not hold
     // completed market facts or the following strategy refresh behind it.
     void runtime.refresh()
+    if (options.persistence) await restore()
     await Promise.all([overview.refresh(), directory.refresh()])
   }
 
@@ -97,7 +119,7 @@ export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
     started = false
   }
 
-  return { overview, runtime, directory, refreshDirectoryIfExpired, refreshOverview, refreshOverviewIfExpired, invalidateOverview, refreshRuntime, refreshAll, start, dispose }
+  return { restored, restore, overview, runtime, directory, refreshDirectoryIfExpired, refreshOverview, refreshOverviewIfExpired, invalidateOverview, refreshRuntime, refreshAll, start, dispose }
 }
 
 function createResource<T>(
@@ -105,6 +127,7 @@ function createResource<T>(
   isTypedUnavailable?: (value: T) => boolean,
   existingState?: ResourceState<T>,
   now: () => number = Date.now,
+  save?: (value: T) => unknown,
 ): Resource<T> {
   const state = existingState ?? createResourceState<T>()
   async function refresh() {
@@ -120,6 +143,7 @@ function createResource<T>(
         return
       }
       state.data.value = value
+      void save?.(value)
       state.updatedAt.value = now()
       state.stale.value = false
       state.unavailable.value = false

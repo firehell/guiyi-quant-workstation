@@ -25,6 +25,7 @@ from app.reference_trading.presentation import PresentationUnavailable
 from app.reference_trading.query import QueryConflict
 
 from app.db.session import SessionLocal, get_db, engine
+from app.api.conditional import conditional_json
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import _load_status, public_after_market_status
 from app.market_data.composition import (
@@ -682,7 +683,17 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                 except Exception as exc:
                     strategies[strategy][frequency] = unavailable(exc, product, frequency)
         items.append({'product': product, 'strategies': strategies})
-    return JSONResponse(_json_value({'schema_version': 'newow_home_cards_v2', 'requested_at': now, 'items': items}))
+    payload = _json_value({'schema_version': 'newow_home_cards_v2', 'requested_at': now, 'items': items})
+    # Keep snapshot_token in the validator: expiry/eviction must send a new
+    # body, otherwise a 304 could leave lazy performance with a dead owner.
+    healthy = all(period.get('status') != 'unavailable'
+                  and isinstance(period.get('snapshot_token'), str)
+                  and _PRODUCT_CACHE.fact_key_for_token(period['snapshot_token']) is not None
+                  for item in items for strategy in item['strategies'].values()
+                  for period in strategy.values())
+    return conditional_json(request, payload,
+        volatile=frozenset({'requested_at', 'display_as_of', 'read_at'}),
+        allow_not_modified=healthy)
 
 
 @router.get('/home-card-performance')
