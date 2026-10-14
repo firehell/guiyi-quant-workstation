@@ -51,6 +51,19 @@ export function pagePerformanceSegmentAnnualized(mode: { readonly dates: readonl
   if (new Set(parts.map(part => part.segmentId)).size !== parts.length) return []
   return parts.map(part => ({ segmentId: part.segmentId, since: part.dates[0]!, through: part.dates.at(-1)!, annualized: pagePerformanceAnnualized(part) }))
 }
+
+/** newow_page_summary_annualized_v1: annualize the existing aggregate page
+ * curve, never stitch prices/trades or compound/sum individual segment annuals.
+ * The single-segment annualization contract above remains unchanged. */
+export function pagePerformanceSummaryAnnualized(mode: Pick<PagePerformanceMode, 'dates' | 'equity' | 'segment_ids'> | null | undefined): number | null {
+  if (!mode || mode.segment_ids.length !== mode.dates.length || mode.segment_ids.some(id => !id.trim())) return null
+  const completed = new Set<string>()
+  for (let i = 1; i < mode.segment_ids.length; i++) {
+    if (mode.segment_ids[i] !== mode.segment_ids[i - 1]) completed.add(mode.segment_ids[i - 1]!)
+    if (completed.has(mode.segment_ids[i]!)) return null
+  }
+  return pagePerformanceAnnualized({ dates: mode.dates, equity: mode.equity })
+}
 const sourceHash = '3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d'
 function obj(v: unknown): Record<string, unknown> { if (!v || typeof v !== 'object' || Array.isArray(v)) throw Error('page_performance object invalid'); return v as Record<string, unknown> }
 function exact(v: Record<string, unknown>, fields: string[]) { if (Object.keys(v).some(k => !fields.includes(k)) || fields.some(k => !Object.hasOwn(v, k))) throw Error('page_performance fields invalid') }

@@ -57,6 +57,24 @@ test('page records show latest three, expand and collapse, reset mode/window wit
  app.unmount()
 })
 
+test('multi-owner page header shows aggregate annualization and follows mode and loaded window', async () => {
+ const Panel=await component(),root=element('root')
+ const model={period:'day',trades:[],dates:['2024-01-01','2024-12-31','2025-01-01','2026-01-01'],segment_ids:['a','a','b','b'],equity:['0','10','10','32'],trading_days:['2024-01-01','2024-12-31','2025-01-01','2026-01-01'],summary:{cumReturn:'32',accuracy:0,maxDrawdown:'0',tradeCount:0}}
+ const value=ref({strategy:'trend',ordinary:model,ideal:{...model,equity:['0','10','10','100']},ordinary_interrupted_count:0,ideal_open_count:0})
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{value:value.value})}));app.mount(root);await nextTick()
+ const heading=()=>findNode(root,n=>n.props.class==='newow-reference__annualized')!
+ assert.match(nodeText(heading()),/页面参考年化 14\.9%.*2个合约段汇总/)
+ assert.match(nodeText(root),/各合约段年化/)
+ const toggle=findNode(root,n=>n.type==='button'&&nodeText(n)==='理论值')!
+ ;(toggle.props.onClick as Function)();await nextTick()
+ assert.match(nodeText(heading()),/41\.4%/)
+ value.value={...value.value,ideal:{...model,dates:['2025-01-01','2026-01-01'],trading_days:['2025-01-01','2026-01-01'],segment_ids:['b','b'],equity:['0','21']}};await nextTick()
+ assert.match(nodeText(heading()),/21\.0%/)
+ assert.doesNotMatch(nodeText(heading()),/合约段汇总/)
+ assert.deepEqual(model.equity,['0','10','10','32'])
+ app.unmount()
+})
+
 test('simple dual labels retain the reference price and Decimal display preserves precision',()=>{
  assert.equal(newowSimpleDualLabel('trend',false,'3100.123456'),'建仓 3100.12')
  assert.equal(newowSimpleDualLabel('oscillation',true,'3200'),'清仓 3200.00')

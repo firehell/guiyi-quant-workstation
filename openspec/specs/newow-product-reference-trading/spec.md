@@ -1416,6 +1416,15 @@ ideal SHALL 独立配对：趋势 entry 使用 B10 且最高 Close 包含退出 
 Web ordinary / ideal 切换 SHALL 同时切换摘要、曲线和独立估值记录。末根估值明确标记；
 ReferenceTrade 状态和诊断保留独立展示，缺少新投影时不得用旧收益冒充新模式。
 
+Web SHALL 展示 `newow_page_summary_annualized_v1` 页面参考年化，使用所选 ordinary/ideal
+已存在完整累计曲线首末值与上海自然日跨度：
+`100 * (((1 + last_equity / 100) / (1 + first_equity / 100)) ** (365 / calendar_days) - 1)`。
+多合约段 MAY 汇总显示此页面统计，MUST 标注页面参考及合约段数量；不得相加各段年化、
+生成跨段成交、补齐换月价格或把此值作为账户/因果研究年化。各段独立年化继续保留。
+模式/窗口改变 SHALL 使用对应曲线重新计算；维度或身份不完整、区段回流、样本不足、
+时间无有效跨度、首末参考净值非正或结果非有限时 MUST 明示不可计算。
+此显示统计不修改 `newow_page_performance_v3379_v2` 摘要、曲线、估值交易或 API 身份。
+
 #### Scenario: Window entry precedes the visible window
 
 - **GIVEN** 完整前缀在显示窗口前建仓，窗口内清仓
