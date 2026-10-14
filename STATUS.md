@@ -36,13 +36,16 @@ v1.15.6草稿PR #447未合入main，未创建正式tag或Release；当前恢复�
 
 008c到期未取消停驻。009b已提交MarketFeed、Live、Alert三个精确取消请求，约09:22三服务恢复active；
 后置校验因旧Completed identity两字段合同报错，不能据此重做已提交控制操作。
-Reference仍停驻。010只读后验因SQL时间类型解析失败停止，未改控制或数据；
-011只读后验在RESTORE9_NIGHT_PREFIX_CHANGED停止。逐字段核对确认a/ag/al/ao的原夜盘Bar字节未改，
-五个品种的RecoveryState因既有自然recovery从revision 1推进至2，旧冻结快照因此不再整体相等；
-最新45品种覆盖与预算的独立012只读结果待取得，不把08:50的40个absent当作当前状态。
-Root约09:25读回Day14 Source 120条、Completed 180条自然追加，Feed/Live心跳均60订阅、
-无输入或元数据错误；两者owner ready=false，Alert ready=true。这些是分层事实，不是整体健康验收。
-当前不声明全720路READY、RUNTIME_READY、自然预警时效或收件人送达。
+010、011的只读后验错误记录保留，未改控制或业务数据。独立013首轮实际只读后验exit 0，
+状态THREE_NORMAL_SERVICES_RESTORED_REFERENCE_PARKED：三个服务恢复及自然采集读回通过，
+Feed/Live均60订阅且心跳新鲜，Reference仍停驻。当前45品种检查确认仍缺40个夜盘前缀，
+night_prefix_verified=false、reference_business_ready=false；28路中断及156路PENDING_WARMUP仍待完成。
+a/ag/al/ao原夜盘五周期Bar字节与数值均未改；AU重构原state revision 1及原时间后的七key摘要
+与封存值匹配。既有自然recovery将RecoveryState从1推进至2属于元数据进展，不替代业务验收。
+约09:25的Source 120条、Completed 180条为当时自然追加检查点，不作为持续健康或固定尾部。
+013随后一次新鲜采样以HEARTBEAT_UNIVERSE_DRIFT失败，落盘文件不是成功receipt；原因未独立证明。
+10:30:25再次轻量读回Feed/Live订阅60/60、输入和元数据错误为空，但available=false；Alert available=true。
+整体仍为PARTIAL，不声明全720路READY、RUNTIME_READY、自然预警时效或收件人送达。
 
 证据：output/runtime-intraday-repair-20261013/；详见
 [修复与验证](docs/tasks/runtime-intraday-repair-20261013.md)、[补丁说明](docs/releases/v1.15.6.md)。
