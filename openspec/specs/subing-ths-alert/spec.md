@@ -616,6 +616,31 @@ Market window, or unknown commit SHALL block continuation rather than skip an in
 This journal is a transient input buffer, not a transport retry queue or historical
 replay source; the no retry/backfill contracts above remain in force.
 
+Alert SHALL reuse a single immutable Market window between rules for the same
+completed trigger, while checking current physical ownership and recovery revision
+before and after each evaluator. Shared Canonical decode reuse SHALL be bounded,
+content-hash verified on cache fill, and invalidated by file identity changes;
+Catalog-selected URI, quality, row count and coverage SHALL still be checked on
+every read. It SHALL NOT cache mutable legacy paths, exceptions or Live facts.
+Physical intraday replay SHALL initially read its complete Catalog-selected prefix
+through the exact cutoff in one bounded query. Subsequent increments MAY read only
+the interval after their previously validated evaluator cursor after freshly proving
+the physical dataset, immutable published tail, quality and Session endpoint. Only
+a verified published tail at or before the cursor MAY prove an empty Canonical suffix. The
+existing merged Canonical/Live lifecycle and endpoint validation SHALL still prove
+the complete required interval; an incremental suffix entirely in Live SHALL NOT
+be misclassified as a missing historical dataset. Derived EMA alignment reuse
+SHALL follow fresh source authority checks and bind the exact ordered physical
+close prefix and policy identity, without retaining unbounded market histories.
+
+On process startup Alert SHALL rebuild scoped D1/W1 coverage from the authoritative
+latest Canonical cutoff, with current formula evaluation and physical identity
+checks. This read-only priming SHALL create no Event or notification, SHALL preserve
+the source trading day and actual cutoff, and SHALL NOT promote prior-generation
+success or legitimate source-quality rejection into current successful coverage.
+Startup priming SHALL respect ownership and stop requests and publish heartbeat
+progress. Missing or invalid source facts SHALL remain explicit evaluation failure.
+
 Each new buffered Event SHALL preserve its actual `source_observed_at`, stable
 `source_observation_id`, and `processing_mode=handover_buffer`; `detected_at` SHALL be
 the actual processing time. First enablement SHALL establish an explicit empty-journal

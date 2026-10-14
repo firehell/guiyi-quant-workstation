@@ -46,6 +46,8 @@ from app.market_data.domain import (
     normalize_contract_for_symbol,
 )
 from app.market_data.market_read_service import MarketReadService, MarketReadWindow, MarketReadWindowError
+from app.market_data.market_data_service import MarketDataError
+from app.market_data.errors import InfrastructureError
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 
@@ -223,6 +225,7 @@ class AlertRuntime:
             self.process_message(*startup_message, emit_events=False)
         next_heartbeat = self._aware_now()
         try:
+            self._prime_canonical_coverage()
             while not self.stop_requested():
                 now = self._aware_now()
                 if now >= next_heartbeat:
@@ -244,6 +247,74 @@ class AlertRuntime:
                     self.mark_ready()
         finally:
             self.message_source.close()
+
+    def _prime_canonical_coverage(self) -> None:
+        """Rebuild this generation's D1/W1 evidence, never historical Events.
+
+        Canonical wake hints are transient and a restart resets evaluator memory.
+        Read the authoritative latest cutoff rather than guessing from wall time
+        or restoring an old generation's success against changed source facts.
+        """
+        now = self._aware_now()
+        next_heartbeat = now
+        with self._session_factory() as session:
+            rules = session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))).all()
+            service = AlertService(session, operational_products=tuple(sorted(self._operational_products)))
+            windows: dict[tuple[str, BarFrequency], MarketReadWindow] = {}
+            for rule in rules:
+                definition = get_alert_rule_definition(rule.rule_code)
+                for symbol in sorted(self._operational_products):
+                    for frequency in _CANONICAL_ALERT_FREQUENCIES:
+                        if frequency.value not in definition.input_frequencies or not service.rule_allows_event(
+                            rule, symbol=symbol, frequency=frequency.value
+                        ):
+                            continue
+                        self.assert_owned()
+                        if self.stop_requested():
+                            return
+                        current_time = self._aware_now()
+                        if self.heartbeat_store is not None and current_time >= next_heartbeat:
+                            self._write_heartbeat(current_time)
+                            next_heartbeat = current_time + _HEARTBEAT_INTERVAL
+                        day = now.date()
+                        try:
+                            market_read = self._market_read_factory(session)
+                            key = (symbol, frequency)
+                            if key not in windows:
+                                query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, frequency)
+                                latest = market_read.history_page(replace(query, limit=1))
+                                if not latest.bars:
+                                    raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+                                day = latest.bars[-1].trading_day
+                                if latest.bars[-1].bar_end > self._aware_now():
+                                    raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+                                windows[key] = market_read.latest_canonical_window(query, trading_day=day, limit=64)
+                            window = windows[key]
+                            day = window.trading_day
+                            market_read.assert_window_current(window)
+                            _validated_candidates(
+                                self._evaluators[rule.rule_code].evaluate_candidates(market_read, window),
+                                window=window, event_mode=definition.event_mode,
+                            )
+                            market_read.assert_window_current(window)
+                            self._record_rule_result(
+                                rule.rule_code, evaluated_bar_at=window.cutoff, at=self._aware_now(),
+                                event_created=False, error_type=None,
+                                coverage_identity=(symbol, frequency.value, window.contract, day),
+                            )
+                        except (AlertEvaluationError, MarketReadWindowError, MarketDataError, InfrastructureError) as exc:
+                            if session.in_transaction():
+                                session.rollback()
+                            self._record_rule_result(
+                                rule.rule_code, evaluated_bar_at=None, at=self._aware_now(),
+                                event_created=False, error_type=_rule_error_type(str(exc)),
+                                coverage_identity=(symbol, frequency.value, None, day),
+                                input_error_code=(str(exc) if 1 <= len(str(exc)) <= 96 and all(
+                                    char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789" for char in str(exc)
+                                ) else "ALERT_EVALUATION_FAILED"),
+                            )
+            if session.in_transaction():
+                session.rollback()
 
     def _validate_startup_composition(self) -> None:
         expected = tuple(
@@ -328,7 +399,7 @@ class AlertRuntime:
                     session,
                     operational_products=tuple(sorted(self._operational_products)),
                 )
-                market_read = self._market_read_factory(session)
+                shared_window: MarketReadWindow | None = None
                 for rule in rules:
                     rule_messages: list[AlertNotificationMessage] = []
                     try:
@@ -344,16 +415,19 @@ class AlertRuntime:
                             frequency=trigger.frequency.value,
                         ):
                             continue
-                        window = market_read.bars_until(
-                            SeriesPageQuery(
-                                SeriesKind.ACTUAL_DOMINANT,
-                                trigger.symbol,
-                                trigger.frequency,
-                            ),
-                            trading_day=trigger.bar.trading_day,
-                            end=trigger.bar.bar_end,
-                            limit=64,
-                        )
+                        market_read = self._market_read_factory(session)
+                        if shared_window is None:
+                            shared_window = market_read.bars_until(
+                                SeriesPageQuery(
+                                    SeriesKind.ACTUAL_DOMINANT,
+                                    trigger.symbol,
+                                    trigger.frequency,
+                                ),
+                                trading_day=trigger.bar.trading_day,
+                                end=trigger.bar.bar_end,
+                                limit=64,
+                            )
+                        window = shared_window
                         if not _window_matches_event(
                             window,
                             symbol=trigger.symbol,
@@ -466,7 +540,6 @@ class AlertRuntime:
                 for rule in rules:
                     try:
                         definition = get_alert_rule_definition(rule.rule_code)
-                        market_read = self._market_read_factory(session)
                     except Exception:
                         failed = True
                         _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
@@ -481,6 +554,7 @@ class AlertRuntime:
                                     rule, symbol=symbol, frequency=frequency.value
                                 ):
                                     continue
+                                market_read = self._market_read_factory(session)
                                 evaluator = self._evaluators.get(rule.rule_code)
                                 if evaluator is None:
                                     raise ValueError("ALERT_EVALUATOR_MISSING")
@@ -772,6 +846,7 @@ class AlertRuntime:
         event_created: bool,
         error_type: str | None,
         coverage_identity: tuple[str, str, str | None, date] | None = None,
+        input_error_code: str | None = None,
     ) -> None:
         status = self._current_runtime_status()
         rule_status = dict(cast(Mapping[str, object], status["rule_status"]))
@@ -808,6 +883,7 @@ class AlertRuntime:
                     else previous.get("last_success_at")
                 ),
                 "error_type": error_type,
+                "input_error_code": input_error_code,
                 "previous_unresolved": previous_unresolved,
             }
 

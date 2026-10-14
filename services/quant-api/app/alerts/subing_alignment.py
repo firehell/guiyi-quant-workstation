@@ -1,5 +1,7 @@
 """Immutable research facts about EMA21 positions at first signal detection."""
 
+from collections import OrderedDict
+from threading import Lock
 from datetime import datetime
 from decimal import Decimal
 import hashlib
@@ -53,51 +55,7 @@ def build_subing_alignment(
                 )
             ):
                 raise ValueError("INPUT_IDENTITY_INVALID")
-            state = initial_ema_state(21, seed_policy="sma_window", round_digits=6)
-            point = None
-            for bar in source.bars:
-                if not bar.close.is_finite() or bar.close <= 0:
-                    raise ValueError("INPUT_INVALID")
-                state, point = step_ema(
-                    state, float(bar.close), bar_end=bar.bar_end.isoformat()
-                )
-                if not point.valid:
-                    raise ValueError("INPUT_INVALID")
-            last = source.bars[-1]
-            period.update(
-                bar_end=last.bar_end.isoformat(),
-                close=str(last.close),
-                input_snapshot_hash=hashlib.sha256(
-                    json.dumps(
-                        [
-                            decision.contract,
-                            frequency,
-                            [
-                                (
-                                    b.bar_end.isoformat(),
-                                    b.trading_day.isoformat(),
-                                    str(b.close),
-                                )
-                                for b in source.bars
-                            ],
-                        ],
-                        separators=(",", ":"),
-                    ).encode()
-                ).hexdigest(),
-            )
-            if point is None or not point.ready or point.value is None:
-                period["reason"] = "WARMING_UP"
-            else:
-                ema = Decimal(str(point.value))
-                close = Decimal(str(round(float(last.close), 6)))
-                period.update(
-                    ema21=str(ema),
-                    direction="LONG"
-                    if close > ema
-                    else "SHORT"
-                    if close < ema
-                    else "FLAT",
-                )
+            period.update(_verified_period_facts(decision.contract, frequency, source.cutoff, source.bars))
         except Exception as exc:
             # Preserve the raw signal even when a peer cannot be proved; never substitute a different source.
             period["reason"] = (
@@ -121,3 +79,44 @@ def build_subing_alignment(
         status=status,
         periods=periods,
     )
+
+
+# Facts only: input authority is freshly verified by subing_direction_window.
+# Keys hash exactly the original policy's ordered physical close prefix.
+_PERIOD_CACHE: OrderedDict[tuple[str, str], tuple[tuple[str, object], ...]] = OrderedDict()
+_PERIOD_CACHE_LOCK = Lock()
+
+
+def _verified_period_facts(contract, frequency, cutoff, bars):
+    digest = hashlib.sha256(json.dumps(
+        [contract, frequency, [(b.bar_end.isoformat(), b.trading_day.isoformat(), str(b.close)) for b in bars]],
+        separators=(",", ":"),
+    ).encode()).hexdigest()
+    key = (POLICY_VERSION, digest)
+    with _PERIOD_CACHE_LOCK:
+        previous = _PERIOD_CACHE.get(key)
+        if previous is not None:
+            _PERIOD_CACHE.move_to_end(key)
+            return dict(previous)
+    state = initial_ema_state(21, seed_policy="sma_window", round_digits=6)
+    point = None
+    for bar in bars:
+        if not bar.close.is_finite() or bar.close <= 0:
+            raise ValueError("INPUT_INVALID")
+        state, point = step_ema(state, float(bar.close), bar_end=bar.bar_end.isoformat())
+        if not point.valid:
+            raise ValueError("INPUT_INVALID")
+    last = bars[-1]
+    facts = dict(bar_end=last.bar_end.isoformat(), close=str(last.close), input_snapshot_hash=digest)
+    if point is None or not point.ready or point.value is None:
+        facts["reason"] = "WARMING_UP"
+    else:
+        ema = Decimal(str(point.value))
+        close = Decimal(str(round(float(last.close), 6)))
+        facts.update(ema21=str(ema), direction="LONG" if close > ema else "SHORT" if close < ema else "FLAT")
+    with _PERIOD_CACHE_LOCK:
+        _PERIOD_CACHE[key] = tuple(facts.items())
+        _PERIOD_CACHE.move_to_end(key)
+        while len(_PERIOD_CACHE) > 384:
+            _PERIOD_CACHE.popitem(last=False)
+    return facts

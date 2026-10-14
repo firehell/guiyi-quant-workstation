@@ -1,8 +1,83 @@
 # 当前状态
 
-更新：2026-10-13。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
-下文保留的旧候选检查点明确按历史证据阅读，不作为当前待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
+更新：2026-10-14。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+下文保留的旧候选与旧版本运行检查点均按历史证据阅读，不作为当前状态或待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
+
+## 10/14 盘中可靠性补丁 v1.15.6：部分恢复，尚未发布
+
+Reference冲突隔离、新段恢复、日周发布等待、Alert共享权威读取与日周初始化、
+首页可见卡片优先及独立行情刷新、健康诊断、自然清理后闭市启动的工程修复已完成。
+新增原始观察与最终Canonical冲突的独立终止证据；未来新段预热分为PENDING_WARMUP和
+完整夜盘尾部验证后的final，不能把owner心跳或临时预热当作业务READY。
+范围保持60品种、既有规则/收件人、苏冰推送关闭、auto_order=false；过期事件不补发。
+
+10/13自然盘后18:05:05至18:07:22首次passed、60品种cleanup通过。
+SA10:12负成交额由RQData源自行修正，严格质量规则不变；原实时缺口和冲突事实保留。
+隔离Redis、真实隔离PostgreSQL、Web定向/type/build、类型/规范/秘密检查及独审通过。
+1613项联合回归通过、3项既有跳过；精确v1.15.5提取的候选543项通过。
+新增冲突与预热独审75项通过，root复验51项通过。历史240路计算29.3/28.5秒，
+结果相同；不证明自然突发批次、实际发送延迟或收件人送达。
+
+正式版本仍为v1.15.5/gen18，精确提交dc32c020d328ab81d4d65a959603f4ab66965f52。
+v1.15.6草稿PR #447未合入main，未创建正式tag或Release；当前恢复状态为PARTIAL。
+原20:55计划与失败attempt保持原记录，002已完成的40条Historical Source、10组新段及
+50条原始观察四路终止证据不重跑，原200 captures、69次冲突及旧交易保留。
+
+10/14续接已完成：003b提交39组终止证据及15条Historical COW基线，共54项；
+003c提交39组156路PENDING_WARMUP新段并恢复Reference，共40项，旧日ACK超时后安全重新停驻。
+003d两项控制续接使Reference正常ACK至Day13尾部、Feed正常初始化Day14的60个订阅，
+随后Reference以新token重新停驻。临时预热不是最终READY。
+
+004在四服务停驻后因journal identity JSON解析错误停止，未调用provider。
+独立004b在08:50时限到达后停止：a、ag、al、ao、AU共5个品种Live前缀已真实提交，
+其中AU由原子提交独立读回确认、没有旧attempt的本地committed receipt；其余40个未申请查询预算。
+006与005c均未apply，28路夜盘中断、156路最终预热及Runtime promotion仍未完成。
+
+008c到期未取消停驻。009b已提交MarketFeed、Live、Alert三个精确取消请求，约09:22三服务恢复active；
+后置校验因旧Completed identity两字段合同报错，不能据此重做已提交控制操作。
+010、011的只读后验错误记录保留，未改控制或业务数据。独立013首轮实际只读后验exit 0，
+状态THREE_NORMAL_SERVICES_RESTORED_REFERENCE_PARKED：三个服务恢复及自然采集读回通过，
+Feed/Live均60订阅且心跳新鲜，Reference仍停驻。当前45品种检查确认仍缺40个夜盘前缀，
+night_prefix_verified=false、reference_business_ready=false；28路中断及156路PENDING_WARMUP仍待完成。
+a/ag/al/ao原夜盘五周期Bar字节与数值均未改；AU重构原state revision 1及原时间后的七key摘要
+与封存值匹配。既有自然recovery将RecoveryState从1推进至2属于元数据进展，不替代业务验收。
+约09:25的Source 120条、Completed 180条为当时自然追加检查点，不作为持续健康或固定尾部。
+013随后一次新鲜采样以HEARTBEAT_UNIVERSE_DRIFT失败，落盘文件不是成功receipt；原因未独立证明。
+10:30:25再次轻量读回Feed/Live订阅60/60、输入和元数据错误为空，但available=false；Alert available=true。
+整体仍为PARTIAL，不声明全720路READY、RUNTIME_READY、自然预警时效或收件人送达。
+
+证据：output/runtime-intraday-repair-20261013/；详见
+[修复与验证](docs/tasks/runtime-intraday-repair-20261013.md)、[补丁说明](docs/releases/v1.15.6.md)。
+
+## 数据完整性修复完成；v1.15.5/gen18 已运行并独立读回
+
+10/12自然盘后passed，operational60七周期420组、27,145个预期端点独立读回通过。
+JD2612生命周期缺口已补齐并保护原当日Bar；Newow日线消费者180/180复查通过，原自然177/180记录不改写。
+10/13 Calendar/Session/rank1均齐；新主力SM2701七周期70分区/52,063 Bar修复并独立读回，剩余缺口0，12个现役profile输入完整。
+
+v1.15.4@b1c1b182eff58dee063dd7909339cf5dccf50722/gen17已完成受控恢复及独立运行读回。
+13,500条原Source保留，旧日Completed正常追至17,880条，Live/Alert/Reference三个旧游标均到真实尾部。
+45个夜盘品种过去完整前缀经45次真实RQData恢复、逐品种独立读回通过（1m6,990、5m1,398、15m466、30m233、60m118）；
+修复投影不冒充自然观察，不写Canonical或Source/Completed，不推进游标、不补发通知。
+原180条停机中断及ag/au/sc实际02:30追加12条均提交消费，旧receipt保持；当日60真实合约订阅与官方NEW_DAY登记独立验收通过。
+原stop-install未知attempt不改写，新受控续接已完成；原自然盘后状态、旧日志、原始时间和发送事实保留。
+
+永久修复包含Decimal幂等、durable消费及精确中断，以及重启恢复权威Session、持锁Reference验收和producer闭市订阅/NEW_DAY初始化。
+v1.15.5已通过PR #446合入main、annotated tag及GitHub Release发布，精确提交dc32c020d328ab81d4d65a959603f4ab66965f52；
+候选81项定向测试通过，正式发布树39项复验通过，Web类型/build/topology、Mypy/Ruff、secret及独立Review通过。
+精确闭市预检通过，六旧服务真实drain、十旧标签/PID退出；v1.15.5十个正式绑定已一次CAS切至gen18。
+六新服务bootstrap已真实提交；启动验收的旧状态及首健康轮后台线程启动顺序问题经真实Worker组合测试定位。
+原start及首续接unknown字节保留；新独立续接仅取消精确停驻请求、未重复bootstrap，实际committed且独立readback通过。
+正式六服务均同PID/gen18恢复，Live/Feed新鲜60品种心跳通过，Reference两线程存活且blocked0，四既有Calendar已注册idle。
+原Source/Completed/三个游标、60订阅、receipt、Scope及配置前像不变。切换工具28项、真实冷启动续接15项验证通过。
+新版本首根自然completed观察仍待10/13开盘发生，不能把修复/运行读回称为自然业务RUNTIME_READY。
+
+12个普通日线Alert输入拒绝（4 PRICE_UNAVAILABLE、8不支持的source-quality分类）保留，不制造正常价格或改变公式/Scope。
+owner此次只保证数据完整，不验收实际收件；不补发过期信号，不改账户执行。
+证据：output/after-market-normalization-20261012/；实施边界见docs/tasks/runtime-data-recovery-20261012.md，发布说明见docs/releases/v1.15.5.md。
+
+## 历史检查点（保留当时状态，以下不代表现役）
 
 ## v1.15.4 数据运行恢复补丁候选（尚未发布/切换）
 

@@ -10,7 +10,7 @@ from enum import Enum
 from fractions import Fraction
 from math import isfinite
 import re
-from typing import Literal
+from typing import Literal, cast
 from collections.abc import Callable, Mapping
 
 from anyio import from_thread
@@ -464,9 +464,16 @@ def _build_snapshot_inputs(
     cancelled: Callable[[], bool],
     now: Callable[[], datetime],
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
+    *, home_services: list[NewowProductService] | None = None,
 ):
     market_data = build_market_data_service(session)
-    coverage = build_database_coverage_source(session)
+    coverage = build_database_coverage_source(
+        session, reuse_session_windows=home_services is not None,
+    )
+    if home_services is not None:
+        # This MDS/coverage pair is confined to one bounded HTTP read; cached
+        # windows never cross transactions or reach a maintenance writer.
+        market_data.replay_coverage = coverage
     active = load_active_products()
     reader = NewowProductReader(
         market_data,
@@ -489,7 +496,7 @@ def _build_snapshot_inputs(
                 input_quality_policy=quality_policy,
             )
 
-        return NewowProductService(
+        service = NewowProductService(
             reader_factory,
             cache=_PRODUCT_CACHE,
             heavy_gate=_PRODUCT_GATE,
@@ -497,7 +504,11 @@ def _build_snapshot_inputs(
             cancelled=deadline_cancelled,
             now=now,
             quality_policy=quality_policy,
+            reuse_read_inputs=home_services is not None,
         )
+        if home_services is not None:
+            home_services.append(service)
+        return service
 
     return reader, service_factory
 
@@ -519,9 +530,10 @@ def _build_daily_resolver(
     cancelled: Callable[[], bool],
     now: Callable[[], datetime],
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
+    *, home_services: list[NewowProductService] | None = None,
 ) -> NewowDailySnapshotResolver:
     reader, service_factory = _build_snapshot_inputs(
-        session, cancelled, now, quality_policy,
+        session, cancelled, now, quality_policy, home_services=home_services,
     )
     return NewowDailySnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 
@@ -531,9 +543,10 @@ def _build_weekly_resolver(
     cancelled: Callable[[], bool],
     now: Callable[[], datetime],
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
+    *, home_services: list[NewowProductService] | None = None,
 ) -> NewowWeeklySnapshotResolver:
     reader, service_factory = _build_snapshot_inputs(
-        session, cancelled, now, quality_policy
+        session, cancelled, now, quality_policy, home_services=home_services
     )
     status = public_after_market_status(_load_status(
         PROJECT_ROOT / ".run" / "after-market-status.json"
@@ -630,18 +643,23 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
 
     items = []
     for product in names:
-        strategies = {strategy: {} for strategy in ('trend', 'oscillation')}
+        strategies: dict[str, dict[str, dict[str, object]]] = {
+            strategy: {} for strategy in ('trend', 'oscillation')
+        }
         for frequency in ('1d', '1w'):
             if cancelled():
                 raise HTTPException(409, detail={'code': 'NEWOW_REQUEST_CANCELLED'})
             try:
                 _enforce_product_frequency(request, product, frequency)
                 policy = _input_quality_policy(request, product, frequency)
-                resolver = (_build_daily_resolver if frequency == '1d' else _build_weekly_resolver)(session, cancelled, lambda: now, policy)
+                home_services: list[NewowProductService] = []
+                resolver = (_build_daily_resolver if frequency == '1d' else _build_weekly_resolver)(session, cancelled, lambda: now, policy, home_services=home_services)
                 snapshot = resolver.resolve(product, ProductStrategy.TREND, ProductFrequency(frequency))
                 # One pinned request lifecycle; never reuse unchecked inputs
                 # between HTTP requests or different authority generations.
-                service = _build_product_service(session, cancelled, policy, reuse_read_inputs=True)
+                # The resolver already validated this exact prefix. Reuse its
+                # request-local service, retaining its deadline and cancellation.
+                service = home_services[-1] if home_services else _build_product_service(session, cancelled, policy, reuse_read_inputs=True)
             except Exception as exc:
                 for strategy in strategies:
                     strategies[strategy][frequency] = unavailable(exc, product, frequency)
@@ -658,7 +676,7 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                             'freshness': snapshot.freshness, 'formula_versions': result.meta.identity.formula_versions,
                             'input_sha256': result.meta.input_content_sha256, 'snapshot_token': result.meta.snapshot_token,
                             'data_revision_identity': result.meta.data_revision_identity,
-                            'snapshot_context': {**_json_value(snapshot), 'strategy': strategy,
+                            'snapshot_context': {**cast(dict[str, object], _json_value(snapshot)), 'strategy': strategy,
                                 'schema_version': 'newow_daily_snapshot_v1' if frequency == '1d' else 'newow_weekly_snapshot_v1',
                                 'series_kind': 'actual_dominant'}}
                 except Exception as exc:

@@ -347,6 +347,13 @@ class ScheduledCanonicalReconciliation:
                 )
                 .limit(1)
             )
+            if stream is not None:
+                from app.reference_trading.original_conflict import original_conflict_evidence
+                routes = session.scalars(select(ReferenceStream.stream_id).where(
+                    ReferenceStream.product == stream.product, ReferenceStream.frequency == stream.frequency,
+                    ReferenceStream.recording_mode == "forward_observation", ReferenceStream.enabled.is_(True))).all()
+                if original_conflict_evidence(session, routes):
+                    raise ForwardInputUnavailable("ORIGINAL_OBSERVATION_CANONICAL_CONFLICT")
             if mismatch is not None:
                 raise ForwardInputUnavailable("REFERENCE_CANONICAL_MISMATCH")
             if stream is not None and stream.strategy_code == "newow_dual_fusion":
@@ -367,4 +374,4 @@ class ScheduledCanonicalReconciliation:
         try:
             self.assert_source_allowed(stream_id, session=session)
         except ForwardInputUnavailable as error:
-            raise RepositoryConflict("REFERENCE_CANONICAL_MISMATCH") from error
+            raise RepositoryConflict(str(error)) from error

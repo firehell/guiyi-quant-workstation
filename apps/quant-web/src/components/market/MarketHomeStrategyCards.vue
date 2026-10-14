@@ -4,7 +4,8 @@ import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards } from '@/api/newowHomeCards'
-import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { createHomeCardViewport } from '@/utils/newowHomeViewport'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
@@ -16,6 +17,14 @@ const props = defineProps<{ rows: Row[]; products: readonly string[]; authority:
 const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod]; sort: [sort: MarketHomeSort] }>()
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
 const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value }, peekNewowHomeCards)
+const admittedProducts = shallowRef(new Set<string>())
+const viewport = createHomeCardViewport((products, reset) => {
+  admittedProducts.value = new Set(products)
+  if (reset) void loader.load(products)
+  else loader.admit(products)
+})
+function observeRow(symbol: string, value: unknown) { viewport.observe(symbol, value as Element | null) }
+
 const performanceDeliveries = shallowRef<Record<string, { owner: string; loading: boolean; failed: boolean; value?: HomePeriodFact['page_performance'] }>>({})
 const previousPerformanceDeliveries = shallowRef<typeof performanceDeliveries.value>({})
 const recoveredProducts = new Set<string>()
@@ -51,11 +60,11 @@ function toggleSummary(symbol: string) { const next = new Set(expanded.value); i
 const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
 const periods = ['1d', '1w'] as const
 const sortOptions = [{ code: 'default', label: '默认' }, { code: 'close', label: '价格' }, { code: 'change', label: '涨跌幅' }, { code: 'volume', label: '成交量' }, { code: 'oi', label: '持仓量' }] as const
-const productKey = computed(() => [...props.products].sort().join(','))
+const productKey = computed(() => props.products.join(','))
 watch([productKey, () => props.authority, () => props.refreshSequence], (_value, previous) => {
   // A remounted overview starts unresolved. Absence is not a new authority
   // and must not erase valid session results before its snapshot arrives.
-  if (!props.authority) { void loader.load([]); return }
+  if (!props.authority) { viewport.setProducts([], true); return }
   const forced = previous?.length === 3 && previous[2] !== props.refreshSequence
   configureHomeCardAuthority(props.authority, forced)
   if (forced || (previous?.length === 3 && (previous[0] !== productKey.value || previous[1] !== props.authority))) {
@@ -63,11 +72,12 @@ watch([productKey, () => props.authority, () => props.refreshSequence], (_value,
     performanceDeliveries.value = {}
     recoveredProducts.clear()
   }
-  void loader.load(productKey.value ? productKey.value.split(',') : [])
+  viewport.setProducts(productKey.value ? productKey.value.split(',') : [], true)
 }, { immediate: true })
 watch(deliveries, () => { for (const symbol of expanded.value) ensurePerformance(symbol) })
-onBeforeUnmount(() => { loader.dispose(); performanceController.abort() })
+onBeforeUnmount(() => { viewport.dispose(); loader.dispose(); performanceController.abort() })
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
+function periodDisplay(symbol: string, period: HomePeriod) { return admittedProducts.value.has(symbol) ? homePeriodDisplay(fact(symbol, period)) : { label: '待查看', icon: '—', tone: 'pending' } }
 function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
 function composite(symbol: string) { return homeCompositeDisplay(fact(symbol, '1d'), fact(symbol, '1w')) }
 function space(symbol: string) { return homeCardSpace(fact(symbol, '1d')) }
@@ -104,19 +114,20 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
   <section class="strategy-list" aria-label="品种日周策略列表">
     <div class="strategy-list-columns" aria-hidden="true"><span>品种</span><span>价格</span><span>涨跌幅</span><span>目标价</span><span>日</span><span>周</span><span>趋势</span></div>
     <slot name="status" />
-    <article v-for="row in rows" :key="row.symbol" class="strategy-list-item">
+    <article v-for="row in rows" :key="row.symbol" :ref="value => observeRow(row.symbol, value)" class="strategy-list-item">
       <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded.has(row.symbol)" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
         <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><span v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title">{{ hint.label }}</span></span></small></span></div>
         <div class="list-price" :class="priceTone(row)"><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
         <div class="list-change"><span :class="priceTone(row)">{{ change(row) }}</span></div>
         <div class="list-reference"><strong :class="reference(row.symbol).label === '目标' ? 'target' : reference(row.symbol).label === '吸筹' ? 'absorb' : 'pending'" :title="`${reference(row.symbol).label} · 页面参考价格，非成交成本`">{{ reference(row.symbol).text }}</strong></div>
-        <div class="list-periods"><span v-for="period in periods" :key="period" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}${periodLabel(period)}线${homePeriodDisplay(fact(row.symbol, period)).label}`" :title="`${periodLabel(period)}线 · ${homePeriodDisplay(fact(row.symbol, period)).label}`"><MarketStateIcon :state="iconState(row.symbol, period)" /></span></div>
+        <div class="list-periods"><span v-for="period in periods" :key="period" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}${periodLabel(period)}线${periodDisplay(row.symbol, period).label}`" :title="`${periodLabel(period)}线 · ${periodDisplay(row.symbol, period).label}`"><MarketStateIcon :state="iconState(row.symbol, period)" /></span></div>
         <div class="list-direction" :title="homeTrendDisplay().label"><MarketStateIcon state="unavailable" size="micro" /><span class="sr-only">{{ homeTrendDisplay().label }}</span></div>
       </div>
       <div class="list-notices" role="status">
-        <span v-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}</span>
+        <span v-if="!admittedProducts.has(row.symbol)">滚动到此行后读取策略</span>
+        <span v-else-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}</span>
         <span v-if="pending(row.symbol)">等待最新周期更新</span>
-        <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ homePeriodDisplay(fact(row.symbol, period)).label }}</span>
+        <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ periodDisplay(row.symbol, period).label }}</span>
       </div>
       <section v-if="expanded.has(row.symbol)" :id="`home-summary-${row.symbol}`" class="list-composite" :aria-label="`${row.product_name}日周综合摘要`">
         <div class="composite-card" role="link" tabindex="0" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}策略详情`" @click="openSummary(row)" @keydown.enter.self.prevent="openSummary(row)" @keydown.space.self.prevent="openSummary(row)">
@@ -138,9 +149,10 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
         <details class="composite-evidence" @click.stop @keydown.stop><summary>详情与口径</summary><p>日周综合 · {{ direction(row.symbol).label }}</p><p v-if="composite(row.symbol).reason" class="composite-reason" role="status">{{ composite(row.symbol).reason }}</p><NewowPriceSources :rows="homePriceSources(fact(row.symbol, '1d'))" /></details>
       </section>
     </article>
+    <button v-if="admittedProducts.size < products.length" type="button" class="strategy-load-more" @click="viewport.showMore">读取更多策略摘要（{{ products.length - admittedProducts.size }} 个待查看）</button>
     <details class="list-details"><summary>详情与口径</summary><p v-if="liveStale && rows.some(row => row.liveQuote)">断线保留最新完成报价</p>
-      <div v-for="row in rows" :key="row.symbol"><strong>{{ row.product_name }} {{ row.symbol.toUpperCase() }}</strong><p>{{ row.liveQuote ? `最新完成行情 · ${formatBeijingInstant(row.liveQuote.barEnd)}` : `日线收盘报价 · ${row.data_as_of}` }} · {{ row.liveQuote?.physicalContract ?? row.actual_contract }}</p><p v-for="period in periods" :key="period">{{ periodLabel(period) }}线 · {{ homePeriodDisplay(fact(row.symbol, period)).label }} · {{ fact(row.symbol, period)?.physical_contract ?? '合约待确认' }} · 截至 {{ formatBeijingInstant(fact(row.symbol, period)?.bar_end) }}<br>来源 {{ fact(row.symbol, period)?.source_identity ?? '—' }} · 计算段 {{ fact(row.symbol, period)?.calculation_segment_id ?? '—' }}</p></div>
-      <p>页面参考价格 · 非成交成本</p>
+      <div v-for="row in rows" :key="row.symbol"><strong>{{ row.product_name }} {{ row.symbol.toUpperCase() }}</strong><p>{{ row.liveQuote ? `最新完成行情 · ${formatBeijingInstant(row.liveQuote.barEnd)}` : `日线收盘报价 · ${row.data_as_of}` }} · {{ row.liveQuote?.physicalContract ?? row.actual_contract }}</p><p v-for="period in periods" :key="period">{{ periodLabel(period) }}线 · {{ periodDisplay(row.symbol, period).label }}<template v-if="homePeriodReason(fact(row.symbol, period))">（{{ homePeriodReason(fact(row.symbol, period)) }}）</template> · {{ fact(row.symbol, period)?.physical_contract ?? '合约待确认' }} · 截至 {{ formatBeijingInstant(fact(row.symbol, period)?.bar_end) }}<br>来源 {{ fact(row.symbol, period)?.source_identity ?? '—' }} · 计算段 {{ fact(row.symbol, period)?.calculation_segment_id ?? '—' }}</p></div>
+      <p>页面参考价格 · 非成交成本。趋势列依赖独立 trendMap 来源，未确认不代表已验证的日周策略公式不可用。</p>
     </details>
   </section>
 </template>

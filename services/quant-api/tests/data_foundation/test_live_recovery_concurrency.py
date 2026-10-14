@@ -47,7 +47,7 @@ def _fixture(store, tmp_path, *, symbol="rb", minute=15, fetch=None):
     contract = f"{symbol.upper()}2505"
     window = SessionWindow(start, start + timedelta(minutes=75))
     cutoff = start + timedelta(minutes=minute, seconds=3)
-    guard = partial(recovery_guard, root=tmp_path / "guards")
+    guard = partial(recovery_guard, root=tmp_path / "guards", legacy_root=True)
     service = LiveMarketService(
         provider_factory=lambda: RQDataLiveProvider(FakeLiveClient()),
         dominant_source=FakeDominants({(symbol, day): contract}),

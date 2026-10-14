@@ -179,3 +179,38 @@ def test_all_60_slow_queue_converges_45_gaps_without_spending_stale_request_budg
         assert redis.published == []
     finally:
         worker._executor.shutdown(wait=True)
+
+@pytest.mark.parametrize("code", [
+    "RQDATA_TURNOVER_INVALID",
+    "LIVE_RECOVERY_SOURCE_INVALID",
+    "LIVE_RECOVERY_CONTRACT_INVALID",
+    "LIVE_RECOVERY_TRADING_DAY_INVALID",
+    "PROVIDER_UNAVAILABLE",
+])
+def test_known_provider_quality_failure_keeps_stable_redacted_diagnostic(code):
+    from app.market_data.errors import InfrastructureError
+    _, store, request, _ = _setup()
+
+    def fetch(_request):
+        raise InfrastructureError(code)
+
+    worker = LiveRecoveryWorker(store, lambda: fetch, clock=lambda: request.cutoff)
+    try:
+        worker._run((request,))
+        assert worker.outcomes == ((request.symbol, code),)
+    finally:
+        worker._executor.shutdown(wait=True)
+
+
+def test_unknown_provider_exception_does_not_expose_its_message():
+    _, store, request, _ = _setup()
+
+    def fetch(_request):
+        raise RuntimeError("private provider diagnostic")
+
+    worker = LiveRecoveryWorker(store, lambda: fetch, clock=lambda: request.cutoff)
+    try:
+        worker._run((request,))
+        assert worker.outcomes == ((request.symbol, "LIVE_RECOVERY_FAILED"),)
+    finally:
+        worker._executor.shutdown(wait=True)

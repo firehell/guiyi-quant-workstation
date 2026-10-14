@@ -1213,6 +1213,8 @@ class LiveMarketService:
                 "coverage_schema_version": 1,
                 "coverage": self._coverage_snapshot(now, phases),
                 "metadata_preparation_error": self._metadata_preparation_error,
+                **({'closed_cleaned': getattr(self, 'closed_cleaned_proof', None)}
+                   if getattr(self, 'closed_cleaned_proof', None) else {}),
                 "available": (self._available and self._provider_available and bar_feed_fresh
                               and self._metadata_preparation_error is None
                               and counts[MarketPhase.UNKNOWN.value] < len(self._products)),

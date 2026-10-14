@@ -56,7 +56,12 @@ export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
   async function refreshDirectoryIfExpired() { await refreshIfExpired(directory) }
   function invalidateOverview() { overview.invalidate() }
   async function refreshRuntime() { await runtime.refresh() }
-  async function refreshAll() { await Promise.all([overview.refresh(), runtime.refresh(), directory.refresh()]) }
+  async function refreshAll() {
+    // Runtime has its own loading/error state; its health scan must not hold
+    // completed market facts or the following strategy refresh behind it.
+    void runtime.refresh()
+    await Promise.all([overview.refresh(), directory.refresh()])
+  }
 
   function onVisibilityChange() {
     if (document.visibilityState === 'visible') {

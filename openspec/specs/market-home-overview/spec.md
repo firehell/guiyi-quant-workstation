@@ -280,7 +280,15 @@ overview authority，卡片仅为真实参与行情品种生成；目录不得�
 
 - **WHEN** 用户点击默认、价格、涨跌幅、成交量或持仓量排序按钮或板块筛选
 - **THEN** 保留既有本地排序、缺值末尾和稳定symbol规则；按钮支持键盘操作，刷新及返回恢复有效偏好
-- **AND** 首次进入按完整首页品种集合读取策略，即使恢复了板块偏好；板块、排序和趋势/震荡切换只更新本地视图，不取消加载或重取策略，旧响应不得覆盖新authority
+- **AND** 策略读取集合仅来自当前板块筛选后的行，并保留页面排序顺序；板块、排序或authority变化取消旧generation，旧响应不得覆盖新集合；趋势/震荡切换复用同一已接受双策略快照，不重新读取
+
+#### Scenario: A user scrolls to additional strategy rows
+
+- **WHEN** 首次进入首页或滚动到新的品种行
+- **THEN** 初始仅提交前8行，后续通过视口观察增量入队；离屏未读取的行标记待查看，不伪装为已确认或正在读取
+- **AND** 同一authority内增量入队不取消已开始请求、不重复已入队品种；新可见行取得下一空闲slot，保持至多两并发
+- **AND** 没有视口观察能力时仅提交前8行，由用户显式读取更多；不得自动启动全60品种重算
+- **AND** 运行健康独立读取，不阻塞报价显示、行情刷新完成或后续策略刷新；旧策略保留仍明确标注其事实截止和刷新失败
 
 #### Scenario: One strategy request fails during refresh
 
@@ -296,7 +304,7 @@ overview authority，卡片仅为真实参与行情品种生成；目录不得�
 
 ### Requirement: Home summaries and lazy reference performance have separate read contracts
 
-`/api/v1/market/newow/home-cards` SHALL 使用 `newow_home_cards_v2`，只读取日周策略摘要、参考价格、控盘、提示和快照上下文，不计算历史参考收益。同一请求内同权威输入的行情与策略无关指标可共享，但跨请求仍验证权威身份、质量与完整预热。
+`/api/v1/market/newow/home-cards` SHALL 使用 `newow_home_cards_v2`，只读取日周策略摘要、参考价格、控盘、提示和快照上下文，不计算历史参考收益。同一请求内同权威输入的行情与策略无关指标可共享，但跨请求仍验证权威身份、质量与完整预热。快照解析与摘要查询复用同一请求内已验证的service及其取消/截止条件；Calendar/Session批量验证结果保留于该请求，不逐日重查，不跨请求或事务缓存行情权威。
 
 `/api/v1/market/newow/home-card-performance` SHALL 为只读接口，要求品种、趋势或震荡策略、带时区截止时间及对应快照 token；返回 `newow_home_performance_v1` 的精简日线页面参考收益、交易数、统计区间和来源身份，不返回曲线或交易明细。快照冲突 MUST 显式拒绝，不能拼接当前摘要和旧收益。
 

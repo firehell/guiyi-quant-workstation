@@ -57,13 +57,13 @@ test('Home header choice enters selected view and symbol through the page handle
   }
 })
 
-test('restored sector filters displayed rows while strategy loader receives all products', async () => {
+test('restored sector limits strategy requests to displayed rows', async () => {
   const Page = await loadPage('agriculture'), root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Page)
   try {
     app.mount(root); await nextTick()
     const list = findNode(root, node => node.type === 'button' && node.text === 'OPEN_AG')!
-    assert.deepEqual(list.props.products, ['a', 'cu'])
+    assert.deepEqual(list.props.products, ['a'])
     assert.deepEqual((list.props.rows as { symbol: string }[]).map(row => row.symbol), ['a'])
   } finally { app.unmount() }
 })

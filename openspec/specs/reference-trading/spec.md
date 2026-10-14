@@ -34,6 +34,7 @@ SHALL expose it separately from the last completed Bar.
 - **AND** the interruption advances the internal resume boundary only to the last missing endpoint, while
   recording its actual recovery observation time separately; coverage excludes it from completed market Bars
 - **AND** the new receipt permits only that exact interruption capture, and later automatic gaps remain blocked
+- **AND** `RECOVERY_PENDING` returns to `READY` only in the transaction that commits and consumes that receipt-bound interruption under the current revision, generation and checkpoint token, with no remaining pending capture or current source conflict; rollback and unrelated health states never grant readiness
 - **AND** no journal cursor is skipped and no missing Bar or notification is manufactured
 
 #### Scenario: Completed journal consumption after Live cleanup
@@ -468,6 +469,143 @@ fusion; bounded queue fairness and restart idempotence SHALL be verified.
 - **WHEN** the corresponding enabled route processes it
 - **THEN** its actual observed_at and versioned Bar state are persisted once
 - **AND** absence of an action does not create a trade or fabricate a flat state
+
+### Requirement: Known-conflict observation isolation preserves each original
+
+A proven active-revision Canonical mismatch MAY isolate its complete enabled product/frequency
+routing group, including fusion, without blocking unrelated products. Before acknowledging a durable
+observation, the worker SHALL atomically persist one immutable diagnostic receipt per group route,
+including the full original envelope, journal day/id, exact active revisions and activation generations,
+and links to the original mismatch evidence. Receipt identity SHALL reject altered content at the same
+journal day/id. `observed_at` remains the original confirmed time; `processed_at` is the actual transfer
+clock. Ownership SHALL be checked after flush and before commit and again before journal acknowledgement.
+Unknown commits, incomplete groups and unrelated input failures SHALL NOT grant transfer or acknowledgement.
+
+#### Scenario: A mismatched base route and dependent fusion are isolated together
+- **GIVEN** a completed original and a proven active Canonical mismatch in its routing group
+- **WHEN** all route receipts commit under the current owner fence
+- **THEN** the global journal may advance while the original conflict and captured data remain unchanged
+- **AND** health and the recording matrix report DATA_CONFLICT with no current strategy state for that group
+- **AND** restart finds the exact receipts rather than recomputing successful observations or inventing old processing times
+
+### Requirement: Explicit conflict recovery creates an independent forward revision
+
+Conflict recovery SHALL freeze an exact bounded group, old checkpoint/batch/receipt identities, original
+mismatch evidence, and published Canonical historical checkpoints with the same strategy identity.
+Historical reference trades SHALL remain unchanged and SHALL NOT be copied to the new flat forward state.
+The caller SHALL revalidate their manifests against current authoritative data and
+hold a stopped-writer fence through commit. Recovery SHALL use a future recording start, create independent
+flat forward revisions and activation receipts atomically, and append a DATA_CONFLICT boundary on the old
+revision. Existing captures, reconciliations, actions, trades and original processing times SHALL remain
+unchanged; old conflicting revisions remain invalid and cannot provide current positions. New revision
+pairing SHALL NOT carry an old open trade. Recovery SHALL NOT change a journal cursor, replay observations,
+create a fake Bar, query the provider or send notifications. Failed or unknown commits SHALL be reported
+explicitly; an exact persisted recovery receipt is required to prove idempotent completion.
+
+#### Scenario: Canonical source changes after a recovery plan was frozen
+- **GIVEN** a conflict recovery plan bound to exact source and target identities
+- **WHEN** the source proof, target preimage or stopped-writer fence changes
+- **THEN** recovery fails closed without committing a new active revision
+- **AND** preserved conflict evidence and existing forward records remain available for diagnosis
+
+### Requirement: Sealed original observation conflict transfer v1
+
+`original_observation_conflict_v1` is independent of capture reconciliation. A bounded maintenance
+caller holding stopped producer and Reference writer fences MAY compare a sealed original completed
+60m envelope with fresh finalized MDS Canonical at its exact physical contract, owner/calculation
+segment, trading day and Bar end. The proof SHALL bind complete original bytes, verified physical
+partition content and quality hashes, source manifest, and nonempty finite Decimal field differences.
+Scale-only differences, missing facts, future endpoints and uncertain identity SHALL NOT establish
+`ORIGINAL_OBSERVATION_CANONICAL_CONFLICT`. No Capture or Reconciliation row is fabricated.
+
+The exact complete four-route enabled group and sealed interval SHALL be frozen before mutation.
+One immutable `diagnostic` receipt per original per route SHALL commit atomically with its exact
+revision/generation, full original, conflict anchor and interval manifest. An otherwise matched original
+within the explicitly retired interval MAY receive `ORIGINAL_OBSERVATION_TERMINAL_FOR_CONFLICT_BOUNDARY`;
+this records an explicit group retirement, never a claim that this original itself mismatched or was
+processed naturally. This includes matched predecessors of a later conflict in the same frozen interval.
+These receipts have no observed_at, strategy action, trade, notification or successful calculation.
+Missing even an entire four-route receipt set makes the interval incomplete. Active typed conflict
+receipts SHALL make health, the recording matrix and commit guards report DATA_CONFLICT and suppress
+current strategy state; unrelated diagnostic kinds SHALL NOT imply a conflict.
+
+`reference_original_observation_recovery_v1` MAY admit only this complete durable typed evidence through
+its independent recovery entry. Existing capture-mismatch recovery SHALL NOT treat it as reconciliation.
+The same physical source/future-start/atomic flat-revision and immutable-old-facts requirements apply.
+Every fresh source proof and sealed original proof SHALL be revalidated in the applying transaction.
+Old revisions retain their typed evidence and DATA_CONFLICT boundary; the new revision does not inherit
+those conflicts. Transfer and recovery SHALL NOT ACK, replay, create a provider, expand Scope or send.
+The normal consumer alone may ACK old envelopes after a proven future-start boundary. Unknown commits
+stop without retry; a persisted result requires explicit readback. Existing runtime/install CLOSED
+requirements are unaffected by this source-only maintenance protocol.
+
+#### Scenario: A matched predecessor is preserved when its sealed group is retired
+- **GIVEN** an exact four-route interval containing a matched original and a later numerically conflicting original
+- **WHEN** fresh Canonical proof and stopped-writer fences hold through the atomic transfer
+- **THEN** the conflicting original receives the typed conflict reason and the matched original references that anchor as an explicit terminal boundary
+- **AND** neither original becomes a Capture, Reconciliation, strategy calculation or notification
+- **AND** removal of any original's route receipts prevents recovery admission
+
+### Requirement: Independently verified conflict warm seeds and pending boundaries
+
+`original_conflict_warm_seed_v1` MAY reuse an immutable Historical checkpoint only after a fresh read
+of its exact original query proves equal stream/formula/quality/schema, input hash/count and computed
+endpoint. The only permitted manifest difference is `source_evidence_sha256`; fresh physical, Session,
+owner and quality evidence SHALL prove that metadata change independently. Other differences require
+Historical rebuild. The old checkpoint, manifest and records remain unchanged; a materialized seed has
+its own checkpoint/dependency hashes and explicitly links the original source binding.
+
+Warm-up SHALL actually step the existing strategy kernel over a complete ordered completed prefix,
+including explicit physical/calculation rollover boundaries. Coverage alone does not advance state.
+A fresh interval authority SHALL prove every expected Session endpoint from the old watermark through
+the cutoff, including the absence of an omitted tail. Canonical may be followed by independently verified
+Live recovery observations; those inputs remain Live, are not first-seen observations, and bind their
+actual repair plan/readback. All bars are strict-before the future recording start. Zero-step warm-up
+requires independent proof that the entire interval has no completed endpoint and preserves the old
+computed_through. Fusion binds all three verified base seeds to the same complete input chain and final
+endpoint. Pure warm-up SHALL emit no persisted Capture, strategy action, trade or notification and SHALL
+reset only the new reference state to flat.
+
+When a day barrier prevents obtaining the future start's full Live warm prefix, the explicitly separate
+`reference_original_observation_pending_warmup_v1` stage MAY retire the sealed old group and create a
+future-start flat revision with only its proven prefix. It SHALL persist PENDING_WARMUP in both its seed
+manifest and health; it SHALL NOT claim first-observation readiness. A worker heartbeat with ready=true
+does not supersede this business status. The old consumer may briefly resume solely to ACK preserved
+old originals normally, then SHALL return to a verified cooperative park while final warm-up is pending.
+This protocol does not modify any journal cursor or old-day barrier.
+
+`reference_original_observation_finalize_warmup_v1` SHALL admit only the exact four active pending
+revisions, activation receipts and seed hashes. Any capture, non-seed batch, action (under either origin
+or batch revision), trade, mark or unproven external claim change blocks finalization. A complete final
+warm seed creates another independent future-start flat revision atomically and preserves the pending
+revision with a WARMUP_COMPLETED boundary. Old conflict evidence is never copied into the pending revision
+to manufacture recovery eligibility. The maintenance caller SHALL prove protected claims and journals
+and hold the stopped-writer fence through both stages. Unknown outcomes retain the exact attempt and
+park state. Reference remains parked on incomplete final warm-up; the status label is not itself a stop
+mechanism for older runtime code. Installer and Runtime promotion CLOSED gates remain unchanged.
+
+#### Scenario: A pending warm-up has already observed a Bar
+- **GIVEN** an active PENDING_WARMUP revision with a new capture or calculation
+- **WHEN** final warm-up admission verifies the exact current revision
+- **THEN** finalization fails without replacing it or relabelling the capture as a conflict
+
+### Requirement: Canonical forward scans distinguish completed Sessions from publication
+
+D1/W1 forward input SHALL use the existing MDS published endpoint to bound the incremental
+quality read. Session metadata describing a newly completed period is not proof of its Canonical
+publication. Before the existing 18:05 local publication schedule, an unpublished current-day tail
+MAY wait without creating a capture or treating it as a missing historical dataset. A missing earlier
+due period, missing physical dataset, invalid owner, quality interruption or missing map SHALL remain
+fail-closed. After the publication deadline, an absent due period SHALL report
+`CANONICAL_PUBLICATION_LAGGING`. Weekly due periods SHALL come from the existing completed-calendar-week
+resolver, not from a daily fallback. Newly published input SHALL still pass unchanged quality, owner,
+calculation identity and observation-gap validation.
+
+#### Scenario: A completed daily Session precedes the scheduled Canonical publication
+- **GIVEN** yesterday's Canonical endpoint and today's completed Session before 18:05
+- **WHEN** the forward worker scans before today's Canonical publication
+- **THEN** it waits without creating an observation or requesting the unpublished daily range
+- **AND** missing older periods or failed authoritative input checks still block the route
 
 ## Requirement: Live observation handover preserves capture identity
 

@@ -524,6 +524,18 @@ class MarketDataService:
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
 
+    def session_windows_overlapping_window(
+        self, *, symbol: str, start: datetime, end: datetime,
+    ) -> tuple[tuple[date, tuple[SessionWindow, ...]], ...]:
+        """Retain the same authoritative Calendar/Session batch used for overlap."""
+        try:
+            assert_not_retired(symbol)
+            return self.catalog.session_windows_overlapping_window(symbol, start, end)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+
     def completed_trading_days(
         self,
         *,
@@ -1174,6 +1186,71 @@ class MarketDataService:
                 )
             normal.append(persisted)
         return tuple(normal), tuple(interruptions)
+
+    def read_alert_physical_prefix(
+        self, *, symbol: str, contract: str, frequency: BarFrequency,
+        trading_day: date, cutoff: datetime, after: datetime | None,
+    ) -> tuple[CanonicalBar, ...]:
+        """Read an intraday physical prefix once; Live merge must prove endpoints.
+
+        Catalog still selects every active partition and storage verifies its
+        bytes/quality. Unlike historical pages this prefix may end before today's
+        Live suffix; the caller must run validate_contract_replay_coverage after
+        merging. Initial seeding keeps the complete lifecycle prefix; an
+        increment reads only the suffix after its previously validated cursor.
+        """
+        try:
+            assert_not_retired(symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        if frequency not in INTRADAY_FREQUENCIES or cutoff.tzinfo is None:
+            raise MarketDataError("CONTRACT_REPLAY_CUTOFF_INVALID")
+        try:
+            fact = self.catalog.contract_fact(symbol, contract)
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if not fact.listed_date <= trading_day < fact.expired_date:
+            raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
+        start, end = self._trading_day_window(
+            symbol=symbol, since=fact.listed_date if after is None else trading_day,
+            through=trading_day,
+        )
+        if cutoff > end or after is not None and (after.tzinfo is None or after > cutoff):
+            raise MarketDataError("CONTRACT_REPLAY_CUTOFF_INVALID")
+        key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+        if after is not None:
+            # The evaluator already proved its prior prefix. Verify that its
+            # physical dataset still exists, and that the current published tail
+            # is a real, quality-checked Session endpoint before treating a
+            # Canonical-empty increment as Live-only.
+            try:
+                partitions = self.catalog.partitions_before(key, None)
+            except CatalogError as exc:
+                raise MarketDataError(exc.code) from exc
+            if not partitions:
+                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+            if any(partition.source_quality for partition in partitions):
+                raise MarketDataError("PRICE_UNAVAILABLE")
+            tail_bars = self._partition_bars(partitions[0])
+            if not tail_bars:
+                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+            tail = tail_bars[-1]
+            self._validate_physical_page_endpoints(
+                key, [tail], has_sentinel=True, upper=None, inclusive_upper=False,
+            )
+            if tail.bar_end <= after:
+                return ()
+            start = after
+        query = SeriesQuery(SeriesKind.CONTRACT, symbol, frequency,
+                            start, cutoff, contract=contract)
+        assert query.physical_key is not None
+        try:
+            bars, _ = self._read_physical(query.physical_key, query, require_window_coverage=False)
+            return tuple(bar for bar in bars if after is None or bar.bar_end > after)
+        except MarketDataError as exc:
+            if exc.code == "QUERY_WINDOW_EMPTY":
+                return ()
+            raise
 
     def validate_contract_replay_coverage(
         self,

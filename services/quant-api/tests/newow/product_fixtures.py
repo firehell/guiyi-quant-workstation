@@ -746,6 +746,10 @@ class _PagedMarketData:
             if any(window.start < end and start < window.end for window in windows)
         )
 
+    def session_windows_overlapping_window(self, *, symbol, start, end):
+        return tuple((day, self.session_windows(symbol=symbol, trading_day=day))
+                     for day in self.trading_days_overlapping_window(symbol, start, end))
+
     def actual_dominant_segments(self, symbol, since, through):
         self.owner_requests.append((symbol, since, through))
         self._fail("owner")
