@@ -171,3 +171,28 @@ def test_malformed_completed_live_endpoint_never_displays_ready():
         return {key: {'expected_through': None, 'expected_source':'completed_live',
                      'endpoint_status':'UNKNOWN','endpoint_reason':'LIVE_SOURCE_UNAVAILABLE'} for key in keys}
     assert ForwardReferenceHealth(factory,endpoint_reader=endpoints).read()['streams'][0]['status']=='SOURCE_UNAVAILABLE'
+
+
+@pytest.mark.parametrize('old_enabled', (False, True))
+def test_retired_conflict_does_not_poison_current_group(old_enabled):
+    from test_activation import NOW
+    from app.reference_trading.models import ReferenceStream, ReferenceCaptureReconciliation
+    factory, identity, revision, _ = _active()
+    result = ReferenceRepository(factory).capture_forward(_capture(identity, revision))
+    with factory.begin() as session:
+        old = session.get(ReferenceStream, identity.stream_id)
+        old.enabled = old_enabled
+        old.health = 'READY'
+        fields = {c.name: getattr(old, c.name) for c in ReferenceStream.__table__.columns
+                  if c.name not in {'stream_id', 'identity_hash', 'active_revision_id'}}
+        fields.update(enabled=True, latest_seq=0, health='READY')
+        session.add(ReferenceStream(stream_id='current-group', identity_hash='f'*64,
+                                   active_revision_id=None, **fields))
+        session.add(ReferenceCaptureReconciliation(reconciliation_id='old-conflict',
+            capture_batch_id=result, source_revision='old-source', status='mismatch',
+            captured_sha256='a'*64, canonical_sha256='b'*64, checked_at=NOW))
+    rows = {r['stream_id']: r for r in ForwardReferenceHealth(factory).read()['streams']}
+    assert rows[identity.stream_id]['status'] == 'DATA_CONFLICT'
+    assert rows[identity.stream_id]['reconciliation_mismatch_count'] == 1
+    assert rows['current-group']['status'] == ('DATA_CONFLICT' if old_enabled else 'READY')
+    assert rows['current-group']['reconciliation_mismatch_count'] == 0

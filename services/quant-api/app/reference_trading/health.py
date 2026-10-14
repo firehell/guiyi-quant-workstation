@@ -104,7 +104,8 @@ class ForwardReferenceHealth:
                 b.stream_id.in_(ids), b.kind == "capture", r.status == "mismatch",
             ).group_by(b.stream_id)).all())
             conflict_groups = {(stream.product.lower(), stream.frequency) for stream in streams
-                               if mismatches.get(stream.stream_id, 0) or pending.get(stream.stream_id, (0, None, 0, None))[2]}
+                               if stream.enabled and (mismatches.get(stream.stream_id, 0)
+                                  or pending.get(stream.stream_id, (0, None, 0, None))[2])}
             latest = select(b.stream_id, func.max(b.seq).label("seq")).join(s, active).where(
                 b.stream_id.in_(ids), b.kind == "calculation", b.seq <= s.latest_seq,
                 ~b.batch_key.like("forward:observation-gap:%"),
@@ -167,7 +168,7 @@ class ForwardReferenceHealth:
                     route = binding["stream_id"]
                     original_conflict_counts[route] = original_conflict_counts.get(route, 0) + 1
             conflict_groups.update((stream.product.lower(), stream.frequency) for stream in streams
-                                   if original_conflict_counts.get(stream.stream_id, 0))
+                                   if stream.enabled and original_conflict_counts.get(stream.stream_id, 0))
             items = []
             for stream in streams:
                 count, oldest, quarantine_count, quarantine_processed = pending.get(stream.stream_id, (0, None, 0, None))
@@ -178,7 +179,9 @@ class ForwardReferenceHealth:
                     "endpoint_status": "UNKNOWN", "endpoint_reason": "ENDPOINT_NOT_VERIFIED",
                 })
                 status = _recording_status(stream, endpoint, observed_end) if self._endpoint_reader else stream.health
-                conflicted = (stream.product.lower(), stream.frequency) in conflict_groups
+                conflicted = bool(mismatches.get(stream.stream_id, 0) or quarantine_count
+                    or original_conflict_counts.get(stream.stream_id, 0)
+                    or (stream.enabled and (stream.product.lower(), stream.frequency) in conflict_groups))
                 if stream.stream_id in pending_warmup_ids:
                     status = "PENDING_WARMUP"
                 if conflicted:
