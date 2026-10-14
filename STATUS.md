@@ -1,10 +1,10 @@
 # 当前状态
 
-更新：2026-10-13。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
+更新：2026-10-14。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选与旧版本运行检查点均按历史证据阅读，不作为当前状态或待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
 
-## 10/13 盘中可靠性补丁 v1.15.6：候选收尾，尚未发布
+## 10/14 盘中可靠性补丁 v1.15.6：部分恢复，尚未发布
 
 Reference冲突隔离、新段恢复、日周发布等待、Alert共享权威读取与日周初始化、
 首页可见卡片优先及独立行情刷新、健康诊断、自然清理后闭市启动的工程修复已完成。
@@ -19,13 +19,30 @@ SA10:12负成交额由RQData源自行修正，严格质量规则不变；原实�
 新增冲突与预热独审75项通过，root复验51项通过。历史240路计算29.3/28.5秒，
 结果相同；不证明自然突发批次、实际发送延迟或收件人送达。
 
-正式版本仍v1.15.5/gen18，草稿PR #447尚未合入main。
-原20:55计划未执行；独立001在无业务写入时阻断并恢复Feed，原attempt保留。
-独立002已提交50条原始观察四路终止证据、40条Historical Source及10组新forward段，
-并独立读回；Reference正常恢复后，剩余CF60m旧冲突阻塞旧日消费，Feed保持停驻。
-002已完成业务步骤不得重跑，原200 captures、69次冲突及旧交易不改写。
-全量只读诊断发现其余39组60m仍需独立终止与新段预热，含15条失效Historical基线需重建。
-Day14初始化、45个夜盘品种Live前缀恢复、完整最终预热、新发布与gen19切换尚未完成。
+正式版本仍为v1.15.5/gen18，精确提交dc32c020d328ab81d4d65a959603f4ab66965f52。
+v1.15.6草稿PR #447未合入main，未创建正式tag或Release；当前恢复状态为PARTIAL。
+原20:55计划与失败attempt保持原记录，002已完成的40条Historical Source、10组新段及
+50条原始观察四路终止证据不重跑，原200 captures、69次冲突及旧交易保留。
+
+10/14续接已完成：003b提交39组终止证据及15条Historical COW基线，共54项；
+003c提交39组156路PENDING_WARMUP新段并恢复Reference，共40项，旧日ACK超时后安全重新停驻。
+003d两项控制续接使Reference正常ACK至Day13尾部、Feed正常初始化Day14的60个订阅，
+随后Reference以新token重新停驻。临时预热不是最终READY。
+
+004在四服务停驻后因journal identity JSON解析错误停止，未调用provider。
+独立004b在08:50时限到达后停止：a、ag、al、ao、AU共5个品种Live前缀已真实提交，
+其中AU由原子提交独立读回确认、没有旧attempt的本地committed receipt；其余40个未申请查询预算。
+006与005c均未apply，28路夜盘中断、156路最终预热及Runtime promotion仍未完成。
+
+008c到期未取消停驻。009b已提交MarketFeed、Live、Alert三个精确取消请求，约09:22三服务恢复active；
+后置校验因旧Completed identity两字段合同报错，不能据此重做已提交控制操作。
+Reference仍停驻。010只读后验因SQL时间类型解析失败停止，未改控制或数据；
+011只读后验在RESTORE9_NIGHT_PREFIX_CHANGED停止。逐字段核对确认a/ag/al/ao的原夜盘Bar字节未改，
+五个品种的RecoveryState因既有自然recovery从revision 1推进至2，旧冻结快照因此不再整体相等；
+最新45品种覆盖与预算的独立012只读结果待取得，不把08:50的40个absent当作当前状态。
+Root约09:25读回Day14 Source 120条、Completed 180条自然追加，Feed/Live心跳均60订阅、
+无输入或元数据错误；两者owner ready=false，Alert ready=true。这些是分层事实，不是整体健康验收。
+当前不声明全720路READY、RUNTIME_READY、自然预警时效或收件人送达。
 
 证据：output/runtime-intraday-repair-20261013/；详见
 [修复与验证](docs/tasks/runtime-intraday-repair-20261013.md)、[补丁说明](docs/releases/v1.15.6.md)。
