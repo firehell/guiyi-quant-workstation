@@ -145,10 +145,23 @@ v1.15.6保持草稿PR #447，未main merge/tag/Release，未执行gen19 promotio
 独立逐字段核对确认a/ag/al/ao五周期原夜盘Bar JSON逐条字节一致，原价量未改；
 五个品种的夜盘预算仍保留原count=1及lastAt。旧Runtime的正常recovery会推进该状态，
 不能把可变recovery状态当作永久不变的Bar证据。AU没有旧本地receipt的事实仍保留。
-012将独立核对当前45品种覆盖、预算与AU原封存摘要，不把08:50的40个absent冒充当前状态。
+后续013独立核对当前45品种覆盖、预算与AU原封存摘要；不把08:50的40个absent冒充当前状态。
 Root约09:25独立读回Day14 Source 120条、Completed 180条自然追加；Feed/Live心跳均60订阅，
 无输入或元数据错误，owner ready=false；Alert ready=true。Reference仍park。
-三个取消已提交及三个服务active的事实已确认，011停止不是控制未恢复；012实际只读结果仍待取得。
+三个取消已提交及三个服务active的事实已确认，011停止不是控制未恢复。
+
+013首轮实际只读命令的session 94225、chunk 016863返回exit 0，状态为THREE_NORMAL_SERVICES_RESTORED_REFERENCE_PARKED，
+完整JSON未保存；以上为实际工具输出证据。没有控制变更或业务数据写入。三个服务恢复与自然采集读回通过，Feed/Live均60订阅且心跳新鲜，
+Reference仍park。当前45品种检查仍有40个夜盘前缀缺失，night_prefix_verified=false、
+reference_business_ready=false；28路中断未处理、156路仍为PENDING_WARMUP，006/005c未apply。
+a/ag/al/ao原夜盘五周期Bar的字节与数值均精确相等；AU以原state revision 1及原recoveredThrough
+重构七key摘要，与原封存SHA匹配，证明旧raw未改。五个品种RecoveryState 1→2为既有自然运行
+元数据推进，不能据此认定夜盘完整或Reference业务READY。
+随后第二次新鲜只读采样（session 3913）exit 2、RESTORE10_HEARTBEAT_UNIVERSE_DRIFT。
+其O_EXCL文件output/runtime-intraday-repair-20261013/runtime-v1156-day14/normal-control-readback-013.json
+是后次失败样本，不是成功receipt，SHA256为3fc518f9fb8d9c6378824683b7b49d86031e31c05bc3d320c6609f62b0f86c6f。
+10:30:25轻量心跳读回再次为Feed/Live订阅60/60、输入及元数据错误为空，两者available=false，
+Alert available=true。第二次失败原因尚未独立证明，不推断为Session转换。
 三服务active与订阅存在不证明缺失夜盘已补齐，也不证明全720路READY或自然业务RUNTIME_READY。
 余下修复验收范围为40个夜盘Live前缀、28路中断、156路最终预热、发布与Runtime promotion；
 需依据当前权威Session、实际数据和已有预算制定新的有界计划，不延长或重用过期attempt。
