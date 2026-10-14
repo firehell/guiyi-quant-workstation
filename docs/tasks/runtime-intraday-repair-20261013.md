@@ -110,4 +110,41 @@ provider=None无fresh heartbeat时仍拒绝生产数据写入；不伪造心跳�
 先PENDING_WARMUP允许旧日消费，完成Day14 Live尾部后独立新revision final；无交易/Marker/通知。
 独立Review75 passed含真实PG4，无Confirmed；root五文件回归51 passed，
 Ruff、五source Mypy、OpenSpec11/11、secret scan0、diff通过。
-生产39组caller、15基线重建、正常ACK与初始化后立即重新停驻、45夜盘前缀及final仍待实际验收。
+上述为当时检查点；后续实际结果见下方10/14恢复记录。
+
+## 10/14 09:30恢复状态：PARTIAL，尚未发布
+
+正式运行仍为v1.15.5/gen18（dc32c020d328ab81d4d65a959603f4ab66965f52）。
+v1.15.6保持草稿PR #447，未main merge/tag/Release，未执行gen19 promotion。
+以下为各独立attempt的实际结果，不把前序停止记录改写为成功，不复用已到期计划。
+
+- 003b：39组原始观察终止与15条Historical COW基线全部提交，共54项真实效果；
+  预热前受控停止，原intent、receipt和事实保留。
+- 003c：39组156路PENDING_WARMUP新段全部提交，加恢复Reference共40项效果。
+  旧日正常ACK超过120秒时限后安全重新停驻，没有重做已提交业务步骤。
+- 003d：两项控制续接完成。Reference正常ACK Day13至真实尾部，Feed按原合同初始化
+  Day14的60个订阅，Reference随后以新token重新停驻；无手工ACK。
+- 004：新增三个协作停驻完成，与已有Reference构成四停驻；journal校验将官方identity
+  JSON值误当Redis Stream ID而停止，未调用provider。
+- 004b：独立续接采用同四停驻和完整journal摘要严格相等。在08:50时限到达后停止，
+  a、ag、al、ao、AU五个Live前缀真实提交；AU原子提交由独立读回证明，旧本地committed receipt缺失
+  如实保留，不补造原receipt。其余40个品种预算仍absent，不能称45个全部恢复。
+- 006与005c未apply；28路夜盘中断及156路最终预热未完成，Reference保持停驻。
+- 008c到期前没有取消任何停驻。009b已提交MarketFeed、Live、Alert三个精确取消请求，
+  约09:22三个服务恢复active；后置校验因旧Completed identity两字段合同报错。
+  三个已提交控制操作不重试；010仅做独立只读核验，不取消停驻、不查询provider、不写业务数据。
+
+010只读后验在SQL AlertEvent.bar_end的原生aware datetime被ISO字符串解析器拒绝后停止，
+未修改控制或业务数据。独立011保留原010文件，在RESTORE9_NIGHT_PREFIX_CHANGED停止：
+五个品种的RecoveryState revision从1推进至2，recoveredThrough变为09:23:37。
+独立逐字段核对确认a/ag/al/ao五周期原夜盘Bar JSON逐条字节一致，原价量未改；
+五个品种的夜盘预算仍保留原count=1及lastAt。旧Runtime的正常recovery会推进该状态，
+不能把可变recovery状态当作永久不变的Bar证据。AU没有旧本地receipt的事实仍保留。
+012将独立核对当前45品种覆盖、预算与AU原封存摘要，不把08:50的40个absent冒充当前状态。
+Root约09:25独立读回Day14 Source 120条、Completed 180条自然追加；Feed/Live心跳均60订阅，
+无输入或元数据错误，owner ready=false；Alert ready=true。Reference仍park。
+三个取消已提交及三个服务active的事实已确认，011停止不是控制未恢复；012实际只读结果仍待取得。
+三服务active与订阅存在不证明缺失夜盘已补齐，也不证明全720路READY或自然业务RUNTIME_READY。
+余下修复验收范围为40个夜盘Live前缀、28路中断、156路最终预热、发布与Runtime promotion；
+需依据当前权威Session、实际数据和已有预算制定新的有界计划，不延长或重用过期attempt。
+Scope、公式、质量、固定30秒时效、既有收件人、苏冰推送关闭及auto_order=false保持不变。
