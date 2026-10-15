@@ -36,7 +36,9 @@ import { isNewowStrategySwitch, parseMarketDetailRoute, serializeMarketDetailIde
 
 const route = useRoute()
 const router = useRouter()
-const preferences = ref(loadMarketDetailPreferences())
+const seriesPreferenceMigrated = ref(false)
+const preferences = ref(loadMarketDetailPreferences(undefined, () => { seriesPreferenceMigrated.value = true }))
+if (seriesPreferenceMigrated.value) saveMarketDetailPreferences(preferences.value)
 const workspaceVisible = ref(true)
 async function resetDisplayPreferences() {
   workspaceVisible.value = false
@@ -102,7 +104,9 @@ const identityWarning = ref(
     : null,
 )
 const migrationNotice = ref<string | null>(
-  route.query.view === 'trend'
+  seriesPreferenceMigrated.value || route.query.series_kind === 'continuous'
+    ? '已切换为真实主力序列'
+    : route.query.view === 'trend'
     ? '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
     : null,
 )
@@ -129,8 +133,9 @@ async function activateRoute() {
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
   if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'subing'].includes(result.identity.view)) return
-  if (route.query.view === undefined || route.query.view === 'trend') {
-    if (route.query.view === 'trend') {
+  if (route.query.series_kind === 'continuous' || route.query.view === undefined || route.query.view === 'trend') {
+    if (route.query.series_kind === 'continuous') migrationNotice.value = '已切换为真实主力序列'
+    if (route.query.view === 'trend' && route.query.series_kind !== 'continuous') {
       migrationNotice.value = '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
     }
     const failure = await router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(result.identity) })
@@ -232,7 +237,7 @@ watch(() => {
   const i = explicitIdentity.value
   return i ? [i.view, i.symbol, i.strategy, i.seriesKind, i.contract, i.frequency].join(':') : 'invalid'
 }, () => { aiAsOf.value = null }, { flush: 'sync' })
-watch(identityKey, () => { aiOpen.value = false; void activateRoute() }, { immediate: true })
+watch([identityKey, () => route.query.series_kind === 'continuous'], () => { aiOpen.value = false; void activateRoute() }, { immediate: true })
 watch(isNewowView, (enabled) => { if (enabled) void newowCapabilities.load() }, { immediate: true })
 onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); controller.dispose() })
 </script>

@@ -145,9 +145,10 @@ test.describe('Range Detector chart overlay', () => {
     await expect(page.getByTestId('htdy-chart-legend')).toBeVisible()
   })
 
-  test('keeps the independent range layer on a valid series unsupported by the selected overlay', async ({ page }) => {
+  test('keeps the independent range layer after migrating a legacy series link', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=30m')
+    await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('actual_dominant')
     await enableRangeDetector(page)
 
     const kline = page.locator('.free-workspace')

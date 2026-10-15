@@ -9,6 +9,7 @@
 ## Market Web
 
 - Market 页面为 `/market` 与 `/market/chart`；独立历史研究入口为 `/research/new-subing`。
+- Web 隐藏主连入口，仅保留真实主力及已有指定合约。旧 `series_kind=continuous` 链接在请求前迁移为真实主力，保留品种、视图与合法周期，清除旧合约及记录定位，替换地址并提示；旧显示偏好只迁移序列。不匹配当前序列的统计不展示。底层 continuous API、行情与内部研究能力保留。
 - Market 首页分为市场与消息 Tab，以独立 bulk 只读资源展示 Runtime health、active completed D1/W1 generic overview、operational completed 1m 报价与 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
 - 首页采用白色全宽卡片列表、期货板块本地筛选与三态排序菜单；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率不能解释为做多。
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页；原研究观察折叠入口移除。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。

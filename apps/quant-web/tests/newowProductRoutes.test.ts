@@ -50,7 +50,6 @@ test('Newow accepts only its three strategies and independent completed periods'
 
   for (const query of [
     { symbol: 'rb', view: 'newow', strategy: 'private_screener', series_kind: 'actual_dominant', frequency: '1d' },
-    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'continuous', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'contract', contract: 'RB2610', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', contract: ['RB2610'], frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1m' },

@@ -33,6 +33,7 @@ test('every detail view uses the same frequency labels and exact supported choic
     const restore = { newow:{ strategy:'trend', frequency:'1d' }, free:{ seriesKind:'actual_dominant',frequency:'15m'},htdy:{ seriesKind:'actual_dominant',frequency:'15m'} }
     const app = createRenderer(nodeOperations()).createApp({ render: () => h(Nav, {identity,restore,seriesKinds:['actual_dominant','continuous'],newowFrequencies:['60m','1d','1w'],onSelect:(value:any)=>selected.push(value)}) })
     app.mount(root)
+    assert.equal(findNodes(root,n=>n.type==='button'&&nodeText(n)==='主连').length,0)
     const controls = findNode(root, n=>n.props['aria-label']==='周期')!
     assert.ok(controls, view)
     const labels = findNodes(controls,n=>n.type==='button').map(nodeText)

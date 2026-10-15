@@ -1,5 +1,16 @@
 # 测试与验证命令
 
+## Web 隐藏主连
+
+旧主连链接与偏好在请求前迁移到真实主力；页面无主连入口，底层 API 和数据能力保留。
+定向单元覆盖路由、偏好与统计身份，浏览器检查桌面/390px、同身份旧链接、返回和指定合约。
+验证串行，保持单元并发1、浏览器单worker；fixture不证明Runtime或策略收益。
+
+```sh
+NODE_OPTIONS=--max-old-space-size=512 node --test --test-concurrency=1 apps/quant-web/tests/marketDetailRoute.test.ts apps/quant-web/tests/marketDetailPreferences.test.ts apps/quant-web/tests/marketDetailViewNav.test.ts apps/quant-web/tests/marketDetailViewModel.test.ts apps/quant-web/tests/freeDetailViewModel.test.ts apps/quant-web/tests/newowProductRoutes.test.ts
+NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/hide-continuous.spec.mjs --workers=1 --output /private/tmp/guiyi-hide-continuous
+```
+
 ## 全站 UI 与收益展示统一
 
 覆盖清单与口径边界见[实施记录](docs/tasks/ui-unification.md)。验证严格串行，

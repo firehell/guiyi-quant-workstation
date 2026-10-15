@@ -35,7 +35,7 @@ test('normalizes invalid saved values and isolates HTDY from Free', () => {
   }))
   assert.equal(result.lastView, 'newow')
   assert.deepEqual(result.htdy, { seriesKind: 'actual_dominant', frequency: '15m', optionalEmaIndicators: ['ema_60'], showRangeDetector: false })
-  assert.deepEqual(result.free, { seriesKind: 'continuous', frequency: '5m', optionalEmaIndicators: ['ema_10'], showRangeDetector: true })
+  assert.deepEqual(result.free, { seriesKind: 'actual_dominant', frequency: '5m', optionalEmaIndicators: ['ema_10'], showRangeDetector: true })
 })
 
 test('saving never persists a contract or unsupported values', () => {
@@ -44,7 +44,7 @@ test('saving never persists a contract or unsupported values', () => {
   assert.deepEqual(JSON.parse(target.values.get('guiyi.market.detail.preferences.v2')!), {
     version: 2, lastView: 'newow', newow: { strategy: 'trend', frequency: '1d' },
     htdy: defaultMarketDetailPreferences().htdy,
-    free: { seriesKind: 'continuous', frequency: '1d', optionalEmaIndicators: ['ema_60'], showRangeDetector: true },
+    free: { seriesKind: 'actual_dominant', frequency: '1d', optionalEmaIndicators: ['ema_60'], showRangeDetector: true },
   })
 })
 
@@ -52,7 +52,7 @@ test('replacing Free preferences preserves HTDY and the current view', () => {
   const current = {
     ...defaultMarketDetailPreferences(),
     lastView: 'htdy' as const,
-    htdy: { seriesKind: 'continuous' as const, frequency: '30m' as const, optionalEmaIndicators: ['ema_60' as const], showRangeDetector: true },
+    htdy: { seriesKind: 'actual_dominant' as const, frequency: '30m' as const, optionalEmaIndicators: ['ema_60' as const], showRangeDetector: true },
   }
 
   assert.deepEqual(replaceFreeDetailPreferences(current, {
@@ -64,4 +64,22 @@ test('replacing Free preferences preserves HTDY and the current view', () => {
     htdy: current.htdy,
     free: { seriesKind: 'actual_dominant', frequency: '1w', optionalEmaIndicators: ['ema_10'], showRangeDetector: true },
   })
+})
+
+test('current continuous preferences migrate without losing period and indicators and notify once', () => {
+  const target = storage({'guiyi.market.detail.preferences.v2': JSON.stringify({...defaultMarketDetailPreferences(),
+    htdy:{seriesKind:'continuous',frequency:'30m',optionalEmaIndicators:['ema_60'],showRangeDetector:true},
+    free:{seriesKind:'continuous',frequency:'1w',optionalEmaIndicators:['ema_10'],showRangeDetector:false}})})
+  let notices=0
+  const result=loadMarketDetailPreferences(target,()=>{notices++})
+  assert.equal(result.htdy.seriesKind,'actual_dominant')
+  assert.equal(result.free.seriesKind,'actual_dominant')
+  assert.equal(result.htdy.frequency,'30m')
+  assert.deepEqual(result.htdy.optionalEmaIndicators,['ema_60'])
+  assert.equal(result.htdy.showRangeDetector,true)
+  assert.equal(result.free.frequency,'1w')
+  assert.equal(notices,1)
+  saveMarketDetailPreferences(result,target)
+  loadMarketDetailPreferences(target,()=>{notices++})
+  assert.equal(notices,1)
 })

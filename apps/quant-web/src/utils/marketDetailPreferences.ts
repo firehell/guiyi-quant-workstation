@@ -42,13 +42,19 @@ export function defaultMarketDetailPreferences(): MarketDetailPreferences {
   }
 }
 
-export function loadMarketDetailPreferences(storage: Pick<DetailPreferenceStorage, 'getItem'> | null = browserStorage()): MarketDetailPreferences {
+export function loadMarketDetailPreferences(storage: Pick<DetailPreferenceStorage, 'getItem'> | null = browserStorage(), onSeriesMigration?: () => void): MarketDetailPreferences {
+  function read(value: unknown, version: 1 | 2): MarketDetailPreferences {
+    const result = version === 2 ? normalizeCurrent(value) : migrateDetailV1(value)
+    if (isRecord(value) && value.version === version
+      && [value.htdy, value.free].some(item => isRecord(item) && item.seriesKind === 'continuous')) onSeriesMigration?.()
+    return result
+  }
   if (!storage) return defaultMarketDetailPreferences()
   try {
     const current = storage.getItem(MARKET_DETAIL_PREFERENCES_KEY)
-    if (current !== null) return normalizeCurrent(JSON.parse(current))
+    if (current !== null) return read(JSON.parse(current), 2)
     const legacyDetail = storage.getItem(LEGACY_DETAIL_KEY)
-    if (legacyDetail !== null) return migrateDetailV1(JSON.parse(legacyDetail))
+    if (legacyDetail !== null) return read(JSON.parse(legacyDetail), 1)
     const legacyChart = storage.getItem(LEGACY_CHART_KEY)
     return legacyChart === null ? defaultMarketDetailPreferences() : migrateChartV9(JSON.parse(legacyChart))
   } catch {
@@ -129,7 +135,7 @@ function defaultFlexiblePreferences(): FlexibleDetailPreferences {
 function normalizeFlexible(value: unknown): FlexibleDetailPreferences {
   if (!isRecord(value)) return defaultFlexiblePreferences()
   return {
-    seriesKind: value.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant',
+    seriesKind: 'actual_dominant',
     frequency: normalizeFrequency(value.frequency),
     optionalEmaIndicators: normalizeOptionalEmaIndicators(value.optionalEmaIndicators),
     showRangeDetector: value.showRangeDetector === true,

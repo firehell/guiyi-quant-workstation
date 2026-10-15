@@ -1,4 +1,4 @@
-import { MARKET_FREQUENCIES, type AlertEvent, type MarketFrequency, type SeriesKind } from '../types/market.ts'
+import { MARKET_FREQUENCIES, type AlertEvent, type MarketFrequency } from '../types/market.ts'
 import {
   MARKET_DETAIL_VIEWS,
   NEWOW_FREQUENCIES,
@@ -9,6 +9,7 @@ import {
   type MarketDetailRouteResult,
   type MarketDetailView,
   type MarketDetailViewRestore,
+  type DetailSeriesKind,
 } from '../types/marketDetail.ts'
 
 /** Only strategy-owned content changes; the product, series and period stay fixed. */
@@ -21,7 +22,7 @@ export function isNewowStrategySwitch(previous: MarketDetailIdentity | null, nex
 }
 import { isHtdyAlertEvent } from './alertRules.ts'
 
-const SERIES_KINDS = new Set<SeriesKind>(['continuous', 'actual_dominant', 'contract'])
+const SERIES_KINDS = new Set<DetailSeriesKind>(['actual_dominant', 'contract'])
 const FREQUENCIES = new Set<MarketFrequency>(MARKET_FREQUENCIES)
 const NEWOW_FREQUENCY_SET = new Set<MarketFrequency>(NEWOW_FREQUENCIES)
 const SUBING_FREQUENCY_SET = new Set<MarketFrequency>(['5m', '15m', '30m', '60m', '1d', '1w'])
@@ -32,6 +33,11 @@ const FIXED_IDENTITIES: Record<Extract<MarketDetailView, 'trend' | 'subing'>, Pi
 }
 
 export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDetailRouteResult {
+  if (query.series_kind === 'continuous') {
+    query = { ...query, series_kind: 'actual_dominant' }
+    delete query.contract
+    delete query.focus_bar_end
+  }
   const omittedView = query.view === undefined
   const viewValue = omittedView ? (query.overlay === 'htdy' ? 'htdy' : 'free') : scalar(query.view)
   const symbol = normalizeSymbol(query.symbol)
@@ -105,7 +111,7 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
     view: identity.view,
     symbol: identity.symbol,
     ...(identity.view === 'newow' ? { strategy: identity.strategy, ...(identity.newowMode ? { newow_mode: identity.newowMode } : {}) } : {}),
-    series_kind: identity.seriesKind,
+    series_kind: identity.seriesKind === 'contract' ? 'contract' : 'actual_dominant',
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,
     focus_bar_end: focusBarEnd,
@@ -141,13 +147,13 @@ export function resolveViewSwitchIdentity(
       return {
         view,
         symbol,
-        seriesKind: previous.seriesKind,
+        seriesKind: previous.seriesKind === 'contract' ? 'contract' : 'actual_dominant',
         frequency: previous.frequency,
         ...(previous.seriesKind === 'contract' ? { contract: previous.contract } : {}),
       }
     }
   }
-  return { view, symbol, ...restore[view] }
+  return { view, symbol, ...restore[view], seriesKind: 'actual_dominant' }
 }
 
 export function marketDetailEventIdentity(event: AlertEvent): MarketDetailIdentity {
@@ -166,7 +172,7 @@ export function marketDetailEventIdentity(event: AlertEvent): MarketDetailIdenti
 function valid(
   view: MarketDetailView,
   symbol: string,
-  seriesKind: SeriesKind,
+  seriesKind: DetailSeriesKind,
   frequency: MarketFrequency,
   contract: string | undefined,
   focus: unknown,
@@ -219,9 +225,9 @@ function isView(value: string): value is MarketDetailView {
   return (MARKET_DETAIL_VIEWS as readonly string[]).includes(value)
 }
 
-function parseSeriesKind(value: unknown): SeriesKind | null {
+function parseSeriesKind(value: unknown): DetailSeriesKind | null {
   const candidate = scalar(value)
-  return candidate && SERIES_KINDS.has(candidate as SeriesKind) ? candidate as SeriesKind : null
+  return candidate && SERIES_KINDS.has(candidate as DetailSeriesKind) ? candidate as DetailSeriesKind : null
 }
 
 function parseFrequency(value: unknown): MarketFrequency | null {
@@ -252,7 +258,7 @@ function hasFocus(query: Record<string, unknown>): boolean {
   return query.focus_bar_end !== undefined
 }
 
-function allowsFocus(view: MarketDetailView, seriesKind: SeriesKind, frequency: MarketFrequency): boolean {
+function allowsFocus(view: MarketDetailView, seriesKind: DetailSeriesKind, frequency: MarketFrequency): boolean {
   return (view === 'free' && seriesKind === 'actual_dominant' && frequency === '15m')
     || (view === 'htdy' && seriesKind === 'actual_dominant')
     || (view === 'subing' && seriesKind === 'actual_dominant' && SUBING_FREQUENCY_SET.has(frequency))

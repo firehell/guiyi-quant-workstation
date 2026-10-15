@@ -54,7 +54,7 @@ async function refresh() {
     alertFacts.refresh({ symbol: identity.symbol, frequency: identity.frequency }),
   ])
 }
-function updatePreferences() { emit('updatePreferences', { seriesKind: props.identity.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant', frequency: props.identity.frequency, optionalEmaIndicators: [...optionalEmaIndicators.value], showRangeDetector: showRangeDetector.value }) }
+function updatePreferences() { emit('updatePreferences', { seriesKind: 'actual_dominant', frequency: props.identity.frequency, optionalEmaIndicators: [...optionalEmaIndicators.value], showRangeDetector: showRangeDetector.value }) }
 function toggleEma(value: OptionalEmaIndicatorId) { optionalEmaIndicators.value = optionalEmaIndicators.value.includes(value) ? optionalEmaIndicators.value.filter((item) => item !== value) : [...optionalEmaIndicators.value, value] }
 function openHistory() { tabs.value?.openHistory() }
 defineExpose({ openHistory })
