@@ -125,7 +125,9 @@ def test_event_range_returns_typed_htdy_event() -> None:
     assert set(item) == {
         "id", "rule_code", "symbol", "contract", "trading_day", "frequency",
         "bar_end", "result_codes", "detected_at", "notification_attempted_at",
-        "formula_version", "subing_alignment",
+        "formula_version", "subing_alignment", "input_policy_version",
+        "notification_policy_version", "notification_status", "notification_claimed_at",
+        "notification_batch_id", "notification_finished_at",
     }
 
 
@@ -229,6 +231,12 @@ def test_event_range_returns_actual_subing_rule_fact() -> None:
         {
             "id": event_id,
             "formula_version": "subing_ths_15m_v3",
+            "input_policy_version": None,
+            "notification_policy_version": None,
+            "notification_status": None,
+            "notification_claimed_at": None,
+            "notification_batch_id": None,
+            "notification_finished_at": None,
             "subing_alignment": None,
             "rule_code": "subing_ths_alert_15m_v1",
             "symbol": "jm",

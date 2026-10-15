@@ -9,8 +9,10 @@ import json
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Protocol
+from zoneinfo import ZoneInfo
 
 from app.core.env import PROJECT_ROOT
+from app.alerts.registry import SUBING_QUALITY_REWARM_POLICY_V2
 from app.market_data.after_market import public_after_market_status
 from app.market_data.domain import (
     CanonicalBar,
@@ -25,10 +27,42 @@ from app.market_data.domain import (
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.market_data_service import DominantContractSegmentSummary, MarketDataError
 from app.market_data.live_market import LiveBarObservation, LiveRecoveryState
+from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
+from app.market_data.weekly_quality import (
+    WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
+    WeeklySourceInterruption,
+)
+
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class MarketPageReader(Protocol):
     def dominant_segment_for_day(self, symbol: str, trading_day: date) -> DominantContractSegmentSummary: ...
+
+    def completed_trading_days(
+        self, *, symbol: str, start: datetime, as_of: datetime, latest: date,
+        calendar_since: date | None = None,
+    ) -> tuple[date, ...]: ...
+
+    def completed_calendar_week(
+        self, *, symbol: str, week_monday: date, as_of: datetime,
+    ) -> tuple[date, datetime] | None: ...
+
+    def rank1_quality_endpoint_published(
+        self, *, symbol: str, frequency: BarFrequency, trading_day: date,
+    ) -> bool: ...
+
+    def session_windows(self, *, symbol: str, trading_day: date): ...
+
+    def query_contract_replay_quality_union(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+        since: date | None = None,
+    ): ...
+
+    def query_contract_weekly_replay_quality(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+        classification_version: str, since: date | None = None,
+    ): ...
 
     def validate_actual_dominant_alert_window(
         self,
@@ -159,6 +193,7 @@ class MarketReadWindow:
     bars: tuple[CanonicalBar, ...]
     bar_contracts: tuple[str, ...]
     recovery_state: LiveRecoveryState | None = None
+    input_policy_version: str | None = None
 
     @property
     def notification_eligible(self) -> bool:
@@ -385,6 +420,20 @@ class MarketReadService:
 
     def assert_window_current(self, window: MarketReadWindow) -> None:
         """Prove no recovery/physical-owner change since this Alert window was read."""
+        if window.input_policy_version == SUBING_QUALITY_REWARM_POLICY_V2:
+            try:
+                current_quality_window = self.latest_subing_quality_window(
+                    SeriesPageQuery(
+                        SeriesKind.ACTUAL_DOMINANT, window.symbol,
+                        BarFrequency(window.frequency),
+                    ),
+                    trading_day=window.trading_day,
+                )
+            except (MarketReadWindowError, MarketDataError, ValueError) as exc:
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
+            if current_quality_window != window:
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+            return
         if window.frequency in {BarFrequency.D1.value, BarFrequency.W1.value}:
             try:
                 page = self.history_page(SeriesPageQuery(
@@ -720,6 +769,178 @@ class MarketReadService:
             bars=page.bars[-limit:],
             bar_contracts=bar_contracts,
         )
+
+    def latest_subing_quality_window(
+        self,
+        identity: SeriesPageQuery,
+        *,
+        trading_day: date,
+    ) -> MarketReadWindow:
+        """Opt-in D1/W1 SuBing decision from a complete typed owner lifecycle.
+
+        Rank-1 mapping chooses only the decision contract. MarketDataService
+        proves its full physical listing lifecycle and every valid-or-broken
+        endpoint. A quality fact ends the calculation segment; no earlier Bar
+        can stand in for a missing decision endpoint.
+        """
+        if (
+            identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
+            or identity.frequency not in {BarFrequency.D1, BarFrequency.W1}
+            or identity.contract is not None
+            or type(trading_day) is not date
+        ):
+            raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        try:
+            owner = self._market_data.dominant_segment_for_day(identity.symbol, trading_day)
+            if (owner.symbol != identity.symbol
+                or not owner.start_trading_day <= trading_day <= owner.end_trading_day
+                or normalize_contract_for_symbol(identity.symbol, owner.contract) != owner.contract):
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+            sessions = self._market_data.session_windows(
+                symbol=identity.symbol, trading_day=trading_day,
+            )
+            if not sessions:
+                raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+            cutoff = max(item.end for item in sessions)
+            if identity.frequency is BarFrequency.W1:
+                monday = trading_day - timedelta(days=trading_day.weekday())
+                complete = self._market_data.completed_calendar_week(
+                    symbol=identity.symbol, week_monday=monday,
+                    as_of=cutoff + timedelta(microseconds=1),
+                )
+                if complete is None or complete[0] != trading_day:
+                    raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+            expected = self._market_data.expected_contract_replay_endpoints(
+                symbol=identity.symbol, contract=owner.contract,
+                frequency=identity.frequency, trading_day=trading_day,
+                cutoff=cutoff, after=None, since=None,
+            )
+            if identity.frequency is BarFrequency.D1:
+                bars, facts = self._market_data.query_contract_replay_quality_union(
+                    symbol=identity.symbol, contract=owner.contract,
+                    through=trading_day, cutoff=cutoff, since=None,
+                )
+                allowed_fact: tuple[type, ...] = (PriceUnavailableFact, NonpositiveCloseFact)
+            else:
+                bars, facts = self._market_data.query_contract_weekly_replay_quality(
+                    symbol=identity.symbol, contract=owner.contract,
+                    through=trading_day, cutoff=cutoff,
+                    classification_version=WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
+                    since=None,
+                )
+                allowed_fact = (WeeklySourceInterruption,)
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
+
+        if any(type(bar) is not CanonicalBar or bar.close <= 0 for bar in bars):
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+        if any(
+            type(fact) not in allowed_fact
+            or (identity.frequency is BarFrequency.W1 and (
+                fact.product != identity.symbol
+                or fact.physical_contract != owner.contract
+                or fact.classification_version != WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2
+            ))
+            for fact in facts
+        ):
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+        events = sorted(
+            [(bar.bar_end, bar.trading_day, bar) for bar in bars]
+            + [(fact.bar_end, fact.trading_day, fact) for fact in facts],
+            key=lambda row: row[0],
+        )
+        if (not events or len({(end, day) for end, day, _ in events}) != len(events)
+            or tuple((end, day) for end, day, _ in events) != expected
+            or events[-1][1] != trading_day):
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+        if not isinstance(events[-1][2], CanonicalBar):
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        last_break = max(
+            (index for index, (_, _, value) in enumerate(events)
+             if not isinstance(value, CanonicalBar)),
+            default=-1,
+        )
+        segment_bars = tuple(value for _, _, value in events[last_break + 1:])
+        if (not segment_bars or segment_bars[-1].bar_end != events[-1][0]
+            or any(bar.trading_day > trading_day for bar in segment_bars)):
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+        return MarketReadWindow(
+            symbol=identity.symbol,
+            series_kind=identity.series_kind.value,
+            frequency=identity.frequency.value,
+            trading_day=segment_bars[-1].trading_day,
+            contract=owner.contract,
+            cutoff=segment_bars[-1].bar_end,
+            bars=segment_bars,
+            bar_contracts=(owner.contract,) * len(segment_bars),
+            input_policy_version=SUBING_QUALITY_REWARM_POLICY_V2,
+        )
+
+    def latest_subing_quality_window_as_of(
+        self,
+        identity: SeriesPageQuery,
+        *,
+        as_of: datetime,
+    ) -> MarketReadWindow:
+        """Select the latest published completed D1/W1 endpoint, then prove its source.
+
+        Catalog publication may lag Calendar completion. Only an unpublished
+        tail may be skipped; a published quality or coverage failure is final.
+        """
+        if (
+            identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
+            or identity.frequency not in {BarFrequency.D1, BarFrequency.W1}
+            or identity.contract is not None
+            or as_of.tzinfo is None or as_of.utcoffset() is None
+        ):
+            raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        cutoff = as_of.astimezone(UTC)
+        try:
+            if identity.frequency is BarFrequency.D1:
+                start = cutoff - timedelta(days=62)
+                completed = self._market_data.completed_trading_days(
+                    symbol=identity.symbol, start=start, as_of=cutoff,
+                    latest=cutoff.astimezone(_SHANGHAI).date(),
+                    calendar_since=start.astimezone(_SHANGHAI).date(),
+                )
+                if not completed:
+                    raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+                trading_day = next(
+                    (day for day in reversed(completed)
+                     if self._market_data.rank1_quality_endpoint_published(
+                         symbol=identity.symbol, frequency=identity.frequency,
+                         trading_day=day,
+                     )),
+                    None,
+                )
+            else:
+                civil_day = cutoff.astimezone(_SHANGHAI).date()
+                monday = civil_day - timedelta(days=civil_day.weekday())
+                trading_day = None
+                for offset in range(10):
+                    complete = self._market_data.completed_calendar_week(
+                        symbol=identity.symbol,
+                        week_monday=monday - timedelta(weeks=offset), as_of=cutoff,
+                    )
+                    if complete is None:
+                        continue
+                    candidate_day, _week_cutoff = complete
+                    if self._market_data.rank1_quality_endpoint_published(
+                        symbol=identity.symbol, frequency=identity.frequency,
+                        trading_day=candidate_day,
+                    ):
+                        trading_day = candidate_day
+                        break
+                if trading_day is None:
+                    raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
+        if trading_day is None:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        window = self.latest_subing_quality_window(identity, trading_day=trading_day)
+        if window.cutoff > cutoff:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        return window
 
     def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
         """返回统一展示状态；Redis 任意失败降级为 historical-only。"""

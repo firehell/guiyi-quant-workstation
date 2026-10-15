@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, DecimalException
 import json
 import logging
+from threading import RLock
 from typing import Protocol, cast
 
 from sqlalchemy import select
@@ -20,9 +21,11 @@ from app.alerts.evaluators import (
     AlertEvaluator,
     AlertObservationCandidate,
 )
+from app.alerts.delivery_handoff import BoundedNotificationHandoff, FrozenHandoff
 from app.alerts.models import AlertRule
 from app.alerts.notification import (
     AlertNotificationMessage,
+    AlertNotificationDispatcher,
     AlertNotificationSender,
     NotificationTransportError,
     ProviderAcceptance,
@@ -107,6 +110,7 @@ class _PreparedEvent:
     event_created: bool
     message: AlertNotificationMessage | None
     notification_error_type: str | None
+    event_id: int | None = None
 
 
 def _persist_candidate_and_prepare_notification(
@@ -121,6 +125,7 @@ def _persist_candidate_and_prepare_notification(
     subing_alignment: dict[str, object] | None = None,
     source_observed_at: datetime | None = None,
     source_observation_id: str | None = None,
+    notification_generation: int | None = None,
 ) -> _PreparedEvent:
     definition = get_alert_rule_definition(rule.rule_code)
     if source_observed_at is not None and processing_now < source_observed_at:
@@ -135,11 +140,15 @@ def _persist_candidate_and_prepare_notification(
         bar_end=candidate.bar_end,
         result_codes=candidate.observation_types,
         detected_at=processing_now,
-        notification_attempted_at=(processing_now if definition.notification_enabled and not expired else None),
+        notification_attempted_at=(processing_now if definition.notification_enabled and not expired and notification_generation is None else None),
         source_observed_at=source_observed_at,
         source_observation_id=source_observation_id,
         processing_mode="handover_buffer" if source_observation_id else None,
-        notification_status="EXPIRED_NO_SEND" if expired else None,
+        notification_status=("EXPIRED_NO_SEND" if expired else "HANDOFF_PENDING" if definition.notification_enabled and notification_generation is not None else None),
+        input_policy_version=candidate.input_policy_version,
+        notification_policy_version="alert_memory_batch_v2" if definition.notification_enabled and notification_generation is not None else None,
+        notification_claimed_at=processing_now if definition.notification_enabled and notification_generation is not None else None,
+        notification_generation=notification_generation if definition.notification_enabled else None,
         subing_alignment=subing_alignment,
     )
     if definition.event_mode is AlertEventMode.FIRST_SEEN:
@@ -152,6 +161,8 @@ def _persist_candidate_and_prepare_notification(
         return _PreparedEvent(True, None, None)
     taxonomy_entry = taxonomy.get(symbol)
     if taxonomy_entry is None:
+        if notification_generation is not None:
+            service.terminalize_notification_preparation(created.id, at=processing_now)
         return _PreparedEvent(True, None, NOTIFICATION_PREPARATION_FAILURE)
     return _PreparedEvent(
         True,
@@ -167,6 +178,7 @@ def _persist_candidate_and_prepare_notification(
             source_observed_at=source_observed_at,
         ),
         None,
+        created.id,
     )
 
 
@@ -211,6 +223,9 @@ class AlertRuntime:
         self.heartbeat_store = heartbeat_store
         self.runtime_status_store = runtime_status_store
         self._runtime_status: dict[str, object] | None = None
+        self._status_lock = RLock()
+        self._handoff: BoundedNotificationHandoff | None = None
+        self._notification_generation: int | None = None
         self._coverage_progress: dict[tuple[str, str, str], dict[str, object]] = {}
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
@@ -220,13 +235,29 @@ class AlertRuntime:
             raise RuntimeError("ALERT_RUNTIME_TRANSPORT_UNAVAILABLE")
         self._current_runtime_status()
         self._validate_startup_composition()
-        self.message_source.subscribe(_LIVE_BAR_PATTERN, _MARKET_STATE_PATTERN)
-        for startup_message in self.message_source.drain_startup_messages():
-            self.process_message(*startup_message, emit_events=False)
-        next_heartbeat = self._aware_now()
         try:
+            generation = runtime_heartbeat_identity().get("runtime_generation")
+            if self._recovery_guard_enabled and not (type(generation) is int and generation > 0):
+                raise RuntimeError("ALERT_HANDOFF_GENERATION_REQUIRED")
+            if type(generation) is int and generation > 0:
+                if not isinstance(self._sender, AlertNotificationDispatcher):
+                    raise RuntimeError("ALERT_HANDOFF_SENDER_INVALID")
+                self.assert_owned()
+                self._notification_generation = generation
+                self._handoff = BoundedNotificationHandoff(
+                    session_factory=self._session_factory, sender=self._sender,
+                    assert_owned=self.assert_owned, clock=self._aware_now, generation=generation,
+                    on_result=self._handoff_result,
+                )
+                self._handoff.start()
+            self.message_source.subscribe(_LIVE_BAR_PATTERN, _MARKET_STATE_PATTERN)
+            for startup_message in self.message_source.drain_startup_messages():
+                self.process_message(*startup_message, emit_events=False)
+            next_heartbeat = self._aware_now()
             self._prime_canonical_coverage()
             while not self.stop_requested():
+                if self._handoff is not None:
+                    self._handoff.check_health()
                 now = self._aware_now()
                 if now >= next_heartbeat:
                     self._write_heartbeat(now)
@@ -246,7 +277,11 @@ class AlertRuntime:
                 if self._current_runtime_status().get("processing_error_type") is None:
                     self.mark_ready()
         finally:
-            self.message_source.close()
+            try:
+                if self._handoff is not None:
+                    self._handoff.close_and_drain()
+            finally:
+                self.message_source.close()
 
     def _prime_canonical_coverage(self) -> None:
         """Rebuild this generation's D1/W1 evidence, never historical Events.
@@ -260,7 +295,7 @@ class AlertRuntime:
         with self._session_factory() as session:
             rules = session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))).all()
             service = AlertService(session, operational_products=tuple(sorted(self._operational_products)))
-            windows: dict[tuple[str, BarFrequency], MarketReadWindow] = {}
+            windows: dict[tuple[str, str, BarFrequency], MarketReadWindow] = {}
             for rule in rules:
                 definition = get_alert_rule_definition(rule.rule_code)
                 for symbol in sorted(self._operational_products):
@@ -279,16 +314,19 @@ class AlertRuntime:
                         day = now.date()
                         try:
                             market_read = self._market_read_factory(session)
-                            key = (symbol, frequency)
+                            key = (rule.rule_code, symbol, frequency)
                             if key not in windows:
                                 query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, frequency)
-                                latest = market_read.history_page(replace(query, limit=1))
-                                if not latest.bars:
-                                    raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
-                                day = latest.bars[-1].trading_day
-                                if latest.bars[-1].bar_end > self._aware_now():
-                                    raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
-                                windows[key] = market_read.latest_canonical_window(query, trading_day=day, limit=64)
+                                if rule.rule_code == SUBING_THS_ALERT_RULE_CODE:
+                                    windows[key] = market_read.latest_subing_quality_window_as_of(query, as_of=self._aware_now())
+                                else:
+                                    latest = market_read.history_page(replace(query, limit=1))
+                                    if not latest.bars:
+                                        raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+                                    day = latest.bars[-1].trading_day
+                                    if latest.bars[-1].bar_end > self._aware_now():
+                                        raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+                                    windows[key] = market_read.latest_canonical_window(query, trading_day=day, limit=64)
                             window = windows[key]
                             day = window.trading_day
                             market_read.assert_window_current(window)
@@ -383,7 +421,7 @@ class AlertRuntime:
         if trigger.symbol not in self._operational_products:
             return None
         processing_now = self._aware_now()
-        messages: list[AlertNotificationMessage] = []
+        messages: list[AlertNotificationMessage | FrozenHandoff] = []
         event_count = 0
         failed = False
         recorded_rule_result = False
@@ -401,7 +439,7 @@ class AlertRuntime:
                 )
                 shared_window: MarketReadWindow | None = None
                 for rule in rules:
-                    rule_messages: list[AlertNotificationMessage] = []
+                    rule_messages: list[AlertNotificationMessage | FrozenHandoff] = []
                     try:
                         definition = get_alert_rule_definition(rule.rule_code)
                         evaluator = self._evaluators.get(rule.rule_code)
@@ -459,6 +497,7 @@ class AlertRuntime:
                                 processing_now=processing_now,
                                 source_observed_at=self._source_observed_at,
                                 source_observation_id=self._source_observation_id,
+                                notification_generation=self._notification_generation,
                                 subing_alignment=_alignment_for_candidate(rule, market_read, window, candidate, processing_now),
                             )
                             if prepared.event_created:
@@ -470,7 +509,7 @@ class AlertRuntime:
                                     error_type=prepared.notification_error_type,
                                 )
                             if prepared.message is not None:
-                                rule_messages.append(prepared.message)
+                                rule_messages.append(self._freeze_prepared(prepared))
                         self._record_rule_result(
                             rule.rule_code,
                             evaluated_bar_at=window.cutoff,
@@ -521,7 +560,7 @@ class AlertRuntime:
 
     def _process_canonical_updated(self, trigger: _CanonicalUpdatedTrigger) -> None:
         processing_now = self._aware_now()
-        messages: list[AlertNotificationMessage] = []
+        messages: list[AlertNotificationMessage | FrozenHandoff] = []
         event_count = 0
         failed = False
         recorded_rule_result = False
@@ -546,7 +585,7 @@ class AlertRuntime:
                         continue
                     for symbol in sorted(self._operational_products):
                         for frequency in _CANONICAL_ALERT_FREQUENCIES:
-                            item_messages: list[AlertNotificationMessage] = []
+                            item_messages: list[AlertNotificationMessage | FrozenHandoff] = []
                             try:
                                 if frequency.value not in definition.input_frequencies:
                                     continue
@@ -558,14 +597,11 @@ class AlertRuntime:
                                 evaluator = self._evaluators.get(rule.rule_code)
                                 if evaluator is None:
                                     raise ValueError("ALERT_EVALUATOR_MISSING")
-                                window = market_read.latest_canonical_window(
-                                    SeriesPageQuery(
-                                        SeriesKind.ACTUAL_DOMINANT,
-                                        symbol,
-                                        frequency,
-                                    ),
-                                    trading_day=trigger.trading_day,
-                                    limit=64,
+                                query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, frequency)
+                                window = (
+                                    market_read.latest_subing_quality_window(query, trading_day=trigger.trading_day)
+                                    if rule.rule_code == SUBING_THS_ALERT_RULE_CODE
+                                    else market_read.latest_canonical_window(query, trading_day=trigger.trading_day, limit=64)
                                 )
                                 if not _canonical_window_matches_trigger(
                                     window,
@@ -574,11 +610,13 @@ class AlertRuntime:
                                     trading_day=trigger.trading_day,
                                 ):
                                     continue
+                                market_read.assert_window_current(window)
                                 candidates = _validated_candidates(
                                     evaluator.evaluate_candidates(market_read, window),
                                     window=window,
                                     event_mode=definition.event_mode,
                                 )
+                                market_read.assert_window_current(window)
                                 rule_event_created = False
                                 for candidate in candidates:
                                     self.assert_owned()
@@ -590,6 +628,7 @@ class AlertRuntime:
                                         frequency=frequency.value,
                                         candidate=candidate,
                                         processing_now=processing_now,
+                                        notification_generation=self._notification_generation,
                                         subing_alignment=_alignment_for_candidate(rule, market_read, window, candidate, processing_now),
                                     )
                                     if prepared.event_created:
@@ -601,7 +640,7 @@ class AlertRuntime:
                                             error_type=prepared.notification_error_type,
                                         )
                                     if prepared.message is not None:
-                                        item_messages.append(prepared.message)
+                                        item_messages.append(self._freeze_prepared(prepared))
                                 if candidates and not rule_event_created:
                                     raise AlertEvaluationSkipped(
                                         "ALERT_EVALUATION_DUPLICATE"
@@ -678,13 +717,42 @@ class AlertRuntime:
                 processing_error_type=None,
             )
 
+    def _freeze_prepared(self, prepared: _PreparedEvent) -> AlertNotificationMessage | FrozenHandoff:
+        assert prepared.message is not None
+        if self._notification_generation is None:
+            return prepared.message
+        if prepared.event_id is None:
+            raise RuntimeError("ALERT_HANDOFF_EVENT_MISSING")
+        return FrozenHandoff(prepared.event_id, prepared.message, self._source_observation_id, self._notification_generation)
+
+    def _handoff_result(self, event_ids: tuple[int, ...], status: str, diagnostic_code: str | None) -> None:
+        now = self._aware_now()
+        if status == "ATTEMPTED_UNKNOWN":
+            self._update_runtime_status(last_transport_attempt_at=_iso_timestamp(now))
+        elif status == "PROVIDER_ACCEPTED":
+            self._update_runtime_status(last_provider_accepted_at=_iso_timestamp(now), consecutive_notification_failures=0)
+        elif status in {"FAILED_OR_UNKNOWN", "PREPARATION_FAILED_NO_SEND"}:
+            error_type = (NOTIFICATION_PREPARATION_FAILURE if status == "PREPARATION_FAILED_NO_SEND" or diagnostic_code == "UNKNOWN"
+                          else NOTIFICATION_ACCEPTANCE_INVALID if diagnostic_code == "PUSHPLUS_ACCEPTANCE_INVALID"
+                          else NOTIFICATION_TRANSPORT_FAILURE)
+            self._record_notification_failure(at=now, error_type=error_type)
+            for event_id in event_ids:
+                _LOGGER.warning("ALERT_NOTIFICATION_TRANSPORT_FAILED", extra={
+                    "diagnostic_code": diagnostic_code or "UNKNOWN", "diagnostic_fields": {"event_id": event_id},
+                })
+
     def _send_messages_once(
         self,
-        messages: list[AlertNotificationMessage],
+        messages: list[AlertNotificationMessage | FrozenHandoff],
         *,
         processing_now: datetime,
     ) -> None:
         for message in messages:
+            if isinstance(message, FrozenHandoff):
+                if self._handoff is None:
+                    raise RuntimeError("ALERT_HANDOFF_UNAVAILABLE")
+                self._handoff.submit(message)
+                continue
             send_now = self._aware_now()
             if self._source_observed_at is not None and send_now < self._source_observed_at:
                 raise ValueError("ALERT_SOURCE_TIME_INVALID")
@@ -827,15 +895,16 @@ class AlertRuntime:
         return now.astimezone(UTC)
 
     def _record_notification_failure(self, *, at: datetime, error_type: str) -> None:
-        status = self._current_runtime_status()
-        self._update_runtime_status(
-            last_notification_failure_at=_iso_timestamp(at),
-            notification_acknowledged_at=None,
-            notification_error_type=error_type,
-            consecutive_notification_failures=(
-                cast(int, status["consecutive_notification_failures"]) + 1
-            ),
-        )
+        with self._status_lock:
+            status = self._current_runtime_status()
+            self._update_runtime_status(
+                last_notification_failure_at=_iso_timestamp(at),
+                notification_acknowledged_at=None,
+                notification_error_type=error_type,
+                consecutive_notification_failures=(
+                    cast(int, status["consecutive_notification_failures"]) + 1
+                ),
+            )
 
     def _record_rule_result(
         self,
@@ -888,32 +957,33 @@ class AlertRuntime:
             }
 
     def _current_runtime_status(self) -> dict[str, object]:
-        if self._runtime_status is None:
-            self._runtime_status = (
-                empty_alert_runtime_status()
-                if self.runtime_status_store is None
-                else validate_alert_runtime_status(self.runtime_status_store.read())
-            )
-        return self._runtime_status
+        with self._status_lock:
+            if self._runtime_status is None:
+                self._runtime_status = (
+                    empty_alert_runtime_status()
+                    if self.runtime_status_store is None
+                    else validate_alert_runtime_status(self.runtime_status_store.read())
+                )
+            return dict(self._runtime_status)
 
     def _update_runtime_status(self, **changes: object) -> None:
-        if self.runtime_status_store is None:
-            self._runtime_status = validate_alert_runtime_status(
+        with self._status_lock:
+            if self.runtime_status_store is None:
+                self._runtime_status = validate_alert_runtime_status(
+                    {**self._current_runtime_status(), **changes}
+                )
+                return
+            atomic_update = getattr(self.runtime_status_store, "update", None)
+            if callable(atomic_update):
+                self._runtime_status = validate_alert_runtime_status(
+                    atomic_update(dict(changes))
+                )
+                return
+            normalized = validate_alert_runtime_status(
                 {**self._current_runtime_status(), **changes}
             )
-            return
-        atomic_update = getattr(self.runtime_status_store, "update", None)
-        if callable(atomic_update):
-            self._runtime_status = validate_alert_runtime_status(
-                atomic_update(dict(changes))
-            )
-            return
-        normalized = validate_alert_runtime_status(
-            {**self._current_runtime_status(), **changes}
-        )
-        self.runtime_status_store.write(normalized)
-        self._runtime_status = normalized
-
+            self.runtime_status_store.write(normalized)
+            self._runtime_status = normalized
 
 _STATUS_FIELDS = frozenset(
     {

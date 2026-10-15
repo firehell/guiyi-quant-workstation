@@ -47,6 +47,7 @@ from app.schemas.alerts import (
     CurrentAlertEventsResponse,
     ProductAlertRuleStateOut,
     ProductAlertStateResponse,
+    SubingAlignmentOut,
 )
 
 
@@ -361,7 +362,13 @@ def _event_out(event: AlertEvent, rule_code: str, alignment: dict | None = None)
             id=event.id,
             formula_version=(SUBING_FORMULA_VERSIONS.get(event.frequency)
                              if parsed_rule_code == SUBING_THS_ALERT_RULE_CODE else None),
-            subing_alignment=alignment,
+            subing_alignment=SubingAlignmentOut.model_validate(alignment) if alignment is not None else None,
+            input_policy_version=event.input_policy_version,
+            notification_policy_version=event.notification_policy_version,
+            notification_status=event.notification_status,
+            notification_claimed_at=_utc(event.notification_claimed_at) if event.notification_claimed_at is not None else None,
+            notification_batch_id=event.notification_batch_id,
+            notification_finished_at=_utc(event.notification_finished_at) if event.notification_finished_at is not None else None,
             rule_code=parsed_rule_code,
             symbol=event.symbol,
             contract=event.contract,

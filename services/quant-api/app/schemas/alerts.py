@@ -107,6 +107,12 @@ class AlertEventOut(BaseModel):
 
     id: int
     formula_version: str | None = None
+    input_policy_version: str | None = None
+    notification_policy_version: str | None = None
+    notification_status: str | None = None
+    notification_claimed_at: datetime | None = None
+    notification_batch_id: str | None = None
+    notification_finished_at: datetime | None = None
     subing_alignment: SubingAlignmentOut | None = None
     rule_code: AlertRuleCode
     symbol: str

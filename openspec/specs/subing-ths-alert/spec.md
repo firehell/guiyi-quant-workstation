@@ -114,7 +114,9 @@ completed-Bar 消息。恢复后的窗口 MUST 携带同一次读取的 recovery
 Event、不发送通知；只有之后新到达的 completed Bar 才可继续正常评估。中间 Bar 仅推进同合约状态，
 不改变公式或 Event identity。
 
-Live recovery 最终提交与 Alert 窗口读取至 Event commit/one-shot send MUST 使用同品种进程间互斥。
+Live recovery 最终提交与 Alert 窗口读取至 Event commit/通知资格 commit MUST 使用同品种进程间互斥。
+`alert_memory_batch_v2` 在资格提交后释放该锁；随后只发送已冻结的 Event 内容，不重新读取价格或解释。
+HTTP 不持有品种恢复锁，后续恢复不得改写已保存 Event。
 该锁 MUST 随进程退出释放，不以可在 Event commit 中途到期的租约替代。启用恢复前 MUST 证明 Live、
 Alert 的 exact Runtime root/version 与恢复开关一致；发布或 Runtime promotion 不隐含恢复启用授权。
 
@@ -208,11 +210,28 @@ Web 持久 Event 查询 SHALL 携带当前页面周期，并继续对 Rule、sym
 ### Requirement: Event persistence precedes one-shot transport
 
 系统 MUST 先 commit AlertEvent，随后才可调用该 Rule 固定 formatter、固定 audience 与 shared PushPlus
-transport；每个新 Event 最多一次 transport attempt，无 retry、queue、outbox、replay、backfill、fallback
-或逐收件人状态。formatter、taxonomy、transport 或 provider acceptance 失败 MUST 保留 Event。
+transport。`alert_memory_batch_v2` MUST 使用单发送线程、最多 512 个成员（含在途）的有界内存交接；
+仅同 Rule、固定 audience、frequency、bar_end、formatter/policy 版本与 generation 的成员允许合并，
+最多等待一秒且不得延长最早原始观察期限，正文最多 16,000 UTF-8 字节。超限拆成成员互斥的批次，单成员超限不发送。
+每个新 Event 最多领取一次 transport attempt，无 retry、持久发送 queue、outbox、replay、backfill、fallback
+或逐收件人状态。内存交接不是可恢复发送任务；源 observation 在 Event/资格提交并完成交接或持久终止后即可 ACK，
+不等待 HTTP。formatter、taxonomy、transport 或 provider acceptance 失败 MUST 保留 Event。
+
+`HANDOFF_PENDING` 只表示资格已提交；`notification_claimed_at` 保存该时刻。发送前逐成员以原始
+`source_observed_at`（无源 envelope 时为首次 `detected_at`）验证 `0 <= age <= 30s`，冻结精确成员与正文后，
+以一次原子提交写入 `ATTEMPTED_UNKNOWN`、`notification_attempted_at` 和包含成员及 payload 的 SHA-256 batch id。
+该时间仅证明尝试已领取，不能证明 HTTP 已开始。HTTP 前再次验证 owner/generation 与期限；领取后到期整批成为
+`CLAIM_EXPIRED_NO_SEND`，不得重组、补发或重试。结果原子提交为 `PROVIDER_ACCEPTED` 或 `FAILED_OR_UNKNOWN`，
+另存完成时间与有界 provider reference。结果提交未知即关闭 admission 并阻断进程，不再次请求。
+
+无尝试的终态为 `EXPIRED_NO_SEND`、`OVERFLOW_NO_SEND`、`PREPARATION_FAILED_NO_SEND`、
+`DRAIN_CANCELLED_NO_SEND`、`LOST_HANDOFF_NO_SEND`。启动只终止遗留 v2 pending，禁止从数据库重建发送；
+legacy rows 保留原语义。drain 原子关闭 admission，终止尚未领取成员并等待在途线程结束；终态提交未知或
+线程未结束时不得正常释放 owner。发送线程异常必须公开并停止新接收，Runtime 状态并发合并不得持锁跨 HTTP。
+旧 Event/Rule/Scope/受众不变，SuBing 通知仍按原 policy 关闭。
 provider accepted MUST NOT 表述为微信实际送达。
 transport 失败 SHALL 在既有有界 Runtime 日志中仅记录固定白名单诊断码，并用 `rule_code`、`symbol`、
-`contract`、`frequency`、`bar_end` 关联已保存 Event；不得记录 provider message/body、URL、token、通知正文、
+`contract`、`frequency`、`bar_end` 或 v2 的正整数 `event_id` 关联已保存 Event；不得记录 provider message/body、URL、token、通知正文、
 原始异常或 cause。SDK 明确返回拒绝码时可分类为 provider rejected，`900` 分类为 rate limited；SDK 的
 `-1` 或无法证明请求结果的异常必须保守分类为 request outcome unknown，无法安全分类时回落 `UNKNOWN`。
 诊断分类不得改变 schema v6 聚合状态、通用 `notification_transport_failed` 兼容语义或发送次数。
@@ -574,6 +593,23 @@ owner segment 身份 SHALL 绑定物理合约与权威 owner 起点；calculatio
 
 - **WHEN** 同一历史前缀之后追加 owner 终点、后续 owner 或有效 Bar
 - **THEN** 已完成 owner/calculation segment、信号和交易身份保持不变
+
+
+### Requirement: Formal D1/W1 quality break rewarm v2
+
+正式 SuBing D1/W1 SHALL 仅通过显式 `subing_quality_rewarm_v2` 输入策略读取当前物理合约完整生命周期的
+权威有效 Bar 与已证实质量端点互斥集合。D1 仅接受 `PRICE_UNAVAILABLE`、`NONPOSITIVE_CLOSE`；
+W1 仅接受 `weekly-d1-quality-v2` 已证实中断。未知缺口、owner/Session/端点冲突仍整体 fail closed，
+不得下载替代价格、造价、缩窗或跨物理合约继承状态。最新决策端点本身不可用时不得回退先前价格。
+
+每次质量 break 后清空 EMA/MACD/CROSS 状态，从下一有效 Bar 重新预热；1–33 根预热、34 根指标就绪但
+无法判断 CROSS、35 根起可判断。真实仅有 20 周历史的 EC 继续预热，不伪造可计算状态。
+固定 kernel/formula 不变，输入与状态口径以独立 `input_policy_version` 记录在新 Event；旧 Event 不改写。
+无质量中断的同物理合约生命周期必须与旧 kernel 完整重放一致，batch/incremental/restart/prefix 保持一致。
+启动从权威 Calendar/Session 的 completed D1/完整 W1 与 Catalog 发布事实确定 cutoff/owner；
+仅 Catalog 证明尚未发布的尾端可以等待并使用上一已发布 completed 端点，已发布端点若 typed replay 失败
+不得回退。不从可用旧价格猜最新日。
+分钟周期及 HTDY 保持既有输入合同；该版本不启用 SuBing 发送或扩大 Scope。
 
 
 ### Requirement: Six-period EMA21 alignment is a separate immutable study
