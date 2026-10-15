@@ -692,8 +692,52 @@ interrupted, malformed or conflicting evidence SHALL NOT fall back to retained s
 
 Actual Redis cleanup readback SHALL independently confirm zero same-day Bar keys
 and absent subscription snapshot. Binding and current status SHALL be rechecked
-before accepting idle proof. No provider, source append, acknowledgement, historical
-replay, synthetic Bar or same-day subscription recreation is permitted by this path.
+before accepting idle proof. No provider creation, source append, acknowledgement,
+historical replay, synthetic Bar or same-day subscription recreation is permitted by this path.
+
+A missing original-day subscription SHALL isolate a previously active provider
+before any normal poll, even if the first resumed poll is in a new Session. Safety
+retirement is separate from closed-idle acceptance: it MUST bind the original day,
+object/contract identity and actual source cursor at tail. It MUST NOT require or
+claim that a missing cleanup callback or CLOSED Session proof succeeded. Feed
+retirement MUST verify bounded client close, actual listener termination and an
+empty raw callback buffer without draining
+or discarding that buffer. Unknown close or late input MUST retain the provider and
+original input, fail closed across later Sessions and forbid old-day journal writes,
+including during shutdown. Durable Live MUST additionally prove empty source records
+and events and its actual source cursor at tail before retiring its in-memory adapter.
+After retirement, accepting `CLOSED_CLEANED` MUST recheck wall time, phases and all
+cleanup/journal fences; loss of runtime ownership MUST propagate rather than
+becoming an idle proof.
+
+A normal shutdown that drains a finite old-day callback buffer MUST first complete
+verified listener close outside the after-market mutex. It MUST then acquire the
+existing after-market recovery guard without waiting, recheck the exact original
+registered day and complete physical subscription identity, and hold that guard
+through drain/publication. Missing/busy guard, identity drift or unknown outcome
+MUST preserve provider/raw input and fail closed before taking the buffer; no
+listener join may occur while holding this guard. Unproven cleaned state with raw
+input MUST remain fenced across later Sessions; an empty buffer alone does not
+make the unproven cleanup ready. The same guard and exact original identity check
+MUST cover ordinary CLOSED/BREAK session-grace drains before any raw-buffer take
+or source publication, not only shutdown. An ordinary grace poll MAY return
+immediately after a callback-lock-protected raw count of zero, without taking the
+buffer or acquiring the maintenance guard. A later callback MUST remain untouched
+for the next poll and its phase-independent old-day cleanup check.
+
+Feed MUST inspect its original registered/local day for a missing subscription
+before every normal poll, independently of phase or whether a previous CLOSED
+poll occurred. Observed cleanup SHALL persist as an isolated old-day/provider
+identity across Session changes. Before any old-provider reuse or new-day handshake,
+that exact object MUST complete bounded verified close outside the mutex, then
+prove unchanged day/object/contract identity, actual source cursor at tail and zero
+raw messages under the callback lock while holding the after-market guard. Only
+that transition may forget the old provider. Late raw, pending input, busy/unknown
+fences or identity drift SHALL remain retained and fail closed. An empty retired
+old object permits a legitimate new-day handshake; it does not prove a missing
+cleanup callback or manufacture `CLOSED_CLEANED`. Durable Live SHALL similarly
+check its original selected day and unresolved records/events/cursor before any
+cross-day `select_day` that could clear them.
 
 #### Scenario: Restart after verified terminal cleanup
 

@@ -4,7 +4,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from collections import deque
-from dataclasses import replace
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
 from typing import Any
@@ -24,6 +25,15 @@ from app.market_data.observation_stream import (
 
 
 _DECIMAL_BAR_FIELDS = frozenset(('open', 'high', 'low', 'close', 'volume', 'turnover', 'open_interest'))
+
+
+@dataclass(frozen=True, slots=True)
+class _CleanupIsolation:
+    day: date
+    local_day: date | None
+    provider: Any
+    contracts: tuple[tuple[str, str], ...]
+    retired: bool = False
 
 
 def _closed_cleaned_idle_proof(service, source_stream, now, phases):
@@ -61,21 +71,24 @@ def _closed_cleaned_idle_proof(service, source_stream, now, phases):
             if not consumers or stream.kind == 'source' and 'live' not in consumers:
                 return None
             count += len(consumers)
-        return {**evidence, 'status': 'CLOSED_CLEANED', 'consumer_count': count,
-                'source_cursor': source_stream.cursor('live', day), 'pending_count': 0,
-                'natural_bar_verified': False}
     except Exception:
         return None
+    return {**evidence, 'status': 'CLOSED_CLEANED', 'consumer_count': count,
+            'source_cursor': source_stream.cursor('live', day), 'pending_count': 0,
+            'natural_bar_verified': False}
 
 
-def _accept_closed_cleaned(service, proof, now, phases):
+
+def _accept_closed_cleaned(service, proof, now, phases) -> date:
     service.closed_cleaned_proof = proof
-    service._trading_day = date.fromisoformat(proof['trading_day'])
+    day = date.fromisoformat(proof['trading_day'])
+    service._trading_day = day
     service._closed_cleaned_day = service._trading_day
     service._contracts = {}
     service._channels = set()
     service._available = service._provider_available = True
     service._publish_heartbeat(now, phases)
+    return day
 
 
 def _closed_cleanup_requires_proof(service, stream, phases):
@@ -141,38 +154,164 @@ class MarketFeedService(LiveMarketService):
     _provider: LiveProvider | None
     _channels: set[str]
 
-    def __init__(self, *, source_stream: ObservationStream, closed_cleanup_evidence=None, **kwargs: Any) -> None:
+    def __init__(self, *, source_stream: ObservationStream, closed_cleanup_evidence=None,
+                 shutdown_guard_factory=None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.source_stream = source_stream
+        self._shutdown_guard_factory = shutdown_guard_factory
         self._input_failure: str | None = None
         self._last_input_received_at: datetime | None = None
         self.closed_cleanup_evidence = closed_cleanup_evidence
         self.closed_cleaned_proof = None
         self._closed_restore_day = None
         self._closed_cleaned_day = None
+        self._closed_retirement_failed = False
+        self._cleanup_isolation: _CleanupIsolation | None = None
 
-    def _discard_provider(self) -> None:
-        """Never declare the feed parked until the sole reader actually retires."""
+    def _isolate_cleaned_day(self, day, provider, contracts) -> None:
+        if self._cleanup_isolation is None:
+            self._cleanup_isolation = _CleanupIsolation(
+                day, self._trading_day, provider, tuple(sorted(contracts.items())))
+
+    def _observe_old_day_cleanup(self) -> None:
+        """Phase-independent: the first poll can already belong to a new Session."""
+        if self._cleanup_isolation is not None:
+            return
+        day = self._trading_day or self.source_stream.registered_day('live')
+        if self._store.subscriptions(day) is None:
+            self._isolate_cleaned_day(day, self._provider, self._contracts)
+
+    def _fail_closed_retirement(self) -> None:
+        self._closed_retirement_failed = True
+        self._input_failure = 'LIVE_PROVIDER_CLOSE_UNKNOWN'
+
+    def _retire_closed_provider(self) -> bool:
+        """Resolve the retained old-day object; never consume its late raw input."""
+        isolation = self._cleanup_isolation
+        if isolation is None:
+            return False
+        if isolation.retired:
+            return self._provider is None
+        if hasattr(self, 'assert_owned'):
+            self.assert_owned()
+        provider = isolation.provider
+        ownership_lost = False
+        try:
+            if self._provider is not provider or self._pending:
+                raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+            # No socket exists in a cold/previously retired instance. All idle
+            # authority still comes from _closed_cleaned_idle_proof, never this fact.
+            if provider is not None:
+                close_verified = getattr(provider, 'close_verified', None)
+                if not callable(close_verified):
+                    raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+                close_verified()  # Bounded join outside the maintenance mutex.
+                if self._shutdown_guard_factory is None:
+                    raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+                with self._shutdown_guard_factory():
+                    if hasattr(self, 'assert_owned'):
+                        try:
+                            self.assert_owned()
+                        except Exception:
+                            ownership_lost = True
+                            raise
+                    if (self._cleanup_isolation is not isolation
+                            or set(dict(isolation.contracts)) != set(self._products)
+                            or self._provider is not provider
+                            or self._trading_day != isolation.local_day
+                            or tuple(sorted(self._contracts.items())) != isolation.contracts
+                            or self.source_stream.registered_day('live') != isolation.day
+                            or self._store.subscriptions(isolation.day) is not None
+                            or self.source_stream.cursor('live', isolation.day) != self.source_stream.tail(isolation.day)
+                            or self._pending):
+                        raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+                    count = provider.buffered_message_count()
+                    if type(count) is not int or count != 0:
+                        raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+                    # Sole cleanup retirement point: listener dead, locked count
+                    # zero, exact old object/day and cursor still proven.
+                    self._provider = None
+                    self._channels = set()
+            self._cleanup_isolation = replace(isolation, retired=True)
+            return True
+        except Exception:
+            self._fail_closed_retirement()
+            if ownership_lost:
+                raise
+            return False
+
+    @contextmanager
+    def _buffer_publication_guard(self, provider, day, contracts):
+        """One old-day fence shared by ordinary grace and shutdown drains."""
+        if self._shutdown_guard_factory is None:
+            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+        with self._shutdown_guard_factory():
+            if hasattr(self, 'assert_owned'):
+                self.assert_owned()
+            snapshot = self._store.subscriptions(day) if day is not None else None
+            if snapshot is None and day is not None:
+                self._isolate_cleaned_day(day, provider, contracts)
+            if (day is None or self._provider is not provider
+                    or self._trading_day != day or self._contracts != contracts
+                    or set(contracts) != set(self._products)
+                    or self.source_stream.registered_day('live') != day
+                    or snapshot != contracts):
+                raise ValueError('OBSERVATION_CLEANUP_UNPROVEN')
+            yield
+
+    def _drain_session_grace(self, now):
         provider = self._provider
         if provider is None:
             return
         try:
+            count = provider.buffered_message_count()
+            if type(count) is not int or count < 0:
+                raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+            if count == 0:
+                # No buffer take/publication exists to fence. In particular, a
+                # normal empty CLOSED poll must not contend with 18:05 maintenance.
+                # A callback after this locked count remains for the next poll.
+                return
+            with self._buffer_publication_guard(provider, self._trading_day, dict(self._contracts)):
+                super()._drain_session_grace(now)
+        except Exception:
+            if self._cleanup_isolation is None:
+                self._fail_closed_retirement()
+            raise
+
+    def _discard_provider(self) -> None:
+        """Never declare the feed parked until the sole reader actually retires."""
+        if self._closed_retirement_failed:
+            # Preserve the retained object and its original buffer even during
+            # run_forever's finally/drain. No old-day ingest is legal after cleanup.
+            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+        provider = self._provider
+        if provider is None:
+            return
+        day, contracts = self._trading_day, dict(self._contracts)
+        try:
+            if (day is None or set(contracts) != set(self._products)
+                    or self.source_stream.registered_day('live') != day
+                    or self._store.subscriptions(day) != contracts):
+                raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
             verifier = getattr(provider, 'close_verified', None)
             if verifier is None:
                 raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+            # Never hold the maintenance guard across client close/listener join.
             verifier()
-            # A callback may have accepted a final raw input during close. Once
-            # the listener is dead its remaining buffer is finite and must reach
-            # the journal before ownership can be handed off.
-            drain = getattr(provider, 'poll_buffered', None)
-            if drain is not None:
-                for contract, bar in drain():
-                    observed = getattr(provider, 'source_observed_at', lambda *_: None)(contract, bar)
-                    failure = self.ingest(contract, bar, now=observed or self._clock())
-                    if failure is not None:
-                        raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
-        except Exception:  # noqa: BLE001 - retain the provider and reject further mutations
-            self._input_failure = 'LIVE_PROVIDER_CLOSE_UNKNOWN'
+            with self._buffer_publication_guard(provider, day, contracts):
+                # Natural cleanup uses this same guard. Only after the listener
+                # is dead and exact original identity still exists may its finite
+                # buffer be taken and published. A busy/unknown fence takes nothing.
+                drain = getattr(provider, 'poll_buffered', None)
+                if drain is not None:
+                    for contract, bar in drain():
+                        observed = getattr(provider, 'source_observed_at', lambda *_: None)(contract, bar)
+                        failure = self.ingest(contract, bar, now=observed or self._clock())
+                        if failure is not None:
+                            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+        except Exception:  # retain provider/buffer; an unknown shutdown is never retried
+            self._fail_closed_retirement()
             raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN') from None
         self._provider = None
         self._channels = set()
@@ -199,6 +338,18 @@ class MarketFeedService(LiveMarketService):
     def poll(self, now):
         if self._input_failure is not None:
             return self._reject(self._input_failure)
+        try:
+            self._observe_old_day_cleanup()
+        except Exception:
+            self._fail_closed_retirement()
+            return self._reject(self._input_failure)
+        isolation = self._cleanup_isolation
+        if isolation is not None and not self._retire_closed_provider():
+            return _reject_closed_cleanup(self, now, self._phases(now))
+        # Only a real bounded join advances the observation clock. Cold starts
+        # keep their caller's exact timestamp and create no provider at all.
+        if isolation is not None and not isolation.retired and isolation.provider is not None:
+            now = max(now, self._clock())
         phases = self._phases(now)
         proof = _closed_cleaned_idle_proof(self, self.source_stream, now, phases)
         if proof is not None:
@@ -206,6 +357,13 @@ class MarketFeedService(LiveMarketService):
                 self.assert_owned()
             _accept_closed_cleaned(self, proof, now, phases)
             return None
+        if isolation is not None:
+            if not any(p.trading_day is not None and p.trading_day > isolation.day
+                       for p in phases.values()):
+                return _reject_closed_cleanup(self, now, phases)
+            # Retirement permits a genuine new-day handshake, not old-day reuse
+            # or a claim that the unavailable cleanup callback succeeded.
+            self._cleanup_isolation = None
         if _closed_cleanup_requires_proof(self, self.source_stream, phases):
             return _reject_closed_cleanup(self, now, phases)
         self.closed_cleaned_proof = None
@@ -394,6 +552,23 @@ class DurableLiveMarketService(LiveMarketService):
         self.closed_cleaned_proof = None
         self._closed_cleaned_day = None
 
+    def _retire_closed_provider(self) -> bool:
+        source = self.source_provider
+        if hasattr(self, 'assert_owned'):
+            self.assert_owned()
+        try:
+            day = source.day or self._trading_day or source.stream.registered_day(source.consumer)
+            if (self._provider is not source or source.records or source.events
+                    or source.stream.cursor(source.consumer, day) != source.stream.tail(day)):
+                raise ValueError('OBSERVATION_CLEANUP_UNPROVEN')
+            source.close()  # This adapter has no socket/listener or background input.
+        except Exception:
+            self._halted = 'OBSERVATION_CLEANUP_UNPROVEN'
+            return False
+        self._provider = None
+        self._channels = set()
+        return True
+
     def _restore_frozen_day(self, trading_day: date) -> str | None:
         failure = super()._restore_frozen_day(trading_day)
         if failure or self._durable_session_day == trading_day:
@@ -420,16 +595,43 @@ class DurableLiveMarketService(LiveMarketService):
     def poll(self, now: datetime) -> str | None:
         if self._halted:
             return self._reject(self._halted)
+        # Independent of phase: a resumed process may first run in the next
+        # Session. Never let select_day clear unresolved old-day memory/cursor.
+        source = self.source_provider
+        try:
+            registered = source.stream.registered_day(source.consumer)
+            original_day = source.day or self._trading_day or registered
+            if self._store.subscriptions(original_day) is None:
+                if (source.records or source.events or self._pending
+                        or source.stream.cursor(source.consumer, original_day) != source.stream.tail(original_day)
+                        or self._provider is not None and self._provider is not source):
+                    raise ValueError('OBSERVATION_CLEANUP_UNPROVEN')
+                if self._provider is source and not self._retire_closed_provider():
+                    raise ValueError('OBSERVATION_CLEANUP_UNPROVEN')
+        except Exception:
+            self._halted = 'OBSERVATION_CLEANUP_UNPROVEN'
+            return self._reject(self._halted)
         phases = self._phases(now)
         if not self.source_provider.records and not self.source_provider.events:
             proof = _closed_cleaned_idle_proof(self, self.source_provider.stream, now, phases)
             if proof is not None:
                 if hasattr(self, 'assert_owned'):
                     self.assert_owned()
-                _accept_closed_cleaned(self, proof, now, phases)
-                self.source_provider.select_day(self._trading_day)
+                day = _accept_closed_cleaned(self, proof, now, phases)
+                self.source_provider.select_day(day)
                 return None
         if _closed_cleanup_requires_proof(self, self.source_provider.stream, phases):
+            source = self.source_provider
+            try:
+                day = source.stream.registered_day(source.consumer)
+                unsettled = (source.records or source.events or self._pending
+                             or source.stream.cursor(source.consumer, day) != source.stream.tail(day))
+            except Exception:
+                unsettled = True
+            if unsettled:
+                # Never drain a retained old-day record after its cleanup, even
+                # if a later Session would otherwise release the CLOSED fence.
+                self._halted = 'OBSERVATION_CLEANUP_UNPROVEN'
             return _reject_closed_cleanup(self, now, phases)
         self.closed_cleaned_proof = None
         failure = self._prepare_metadata(now)
