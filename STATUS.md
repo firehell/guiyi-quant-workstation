@@ -1,6 +1,6 @@
 # 当前状态
 
-## 10/15 实时计算与推送 v2：工程及独审通过，尚未发布/切换
+## 10/15 实时计算与推送 v2：v1.15.8 release candidate，通过工程与独审
 
 owner 已选择质量缺口后重新预热，以及同规则/受众/周期/Bar 的有界内存通知交接。
 SuBing D1/W1 使用 `subing_quality_rewarm_v2`：完整物理合约生命周期、已证实质量断点后重热，
@@ -8,7 +8,8 @@ SuBing D1/W1 使用 `subing_quality_rewarm_v2`：完整物理合约生命周期�
 `alert_memory_batch_v2` 把HTTP移出实时计算与品种恢复锁；单线程、512含在途成员、16,000 UTF-8字节、
 原始观察30秒期限、同Bar合并、逐Event身份与原子领取/结果，未知发送禁重试，重启不重建发送。
 0052仅新增nullable事实列，旧行保留；实际发送资格、尝试领取、完成时间与provider接受分开记录。
-全部Confirmed Issue已修并通过独审，允许集成develop；生产migration、发布及Runtime切换尚未执行。
+全部Confirmed Issue已修并通过独审，PR #451已合入develop；精确release候选仅包含本次修复及上一发送诊断补丁。
+候选14组联合404 passed（含真实隔离PostgreSQL），Web类型/build/topology与uv lock通过；生产migration、发布及Runtime切换尚未执行。
 
 PK2612四分钟周期历史前缀已真实补齐：11次RQData请求、55分区发布；四路新只读计划0目标/0失败/0阻断，
 完整物理回放分别9000/3000/1600/1000根至今日15:00且kernel ready。旧Runtime缓存失败尚需新自然Bar刷新。
