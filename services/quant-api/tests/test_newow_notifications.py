@@ -66,6 +66,8 @@ class Transport:
         self.deliveries.append(delivery)
         if self.fail:
             raise TimeoutError('private provider detail')
+        from app.alerts.notification import ProviderAcceptance
+        return ProviderAcceptance('fixture-accepted')
 
 
 def test_default_off_never_loads_transport(factory):
@@ -81,6 +83,9 @@ def test_each_source_strategy_frequency(factory, strategy, frequency):
     assert NewowNotificationDispatcher(factory, transport=transport, topic_hash='hash', clock=lambda: NOW + timedelta(minutes=6)).tick()['attempted'] == 1
     assert transport.deliveries[0].audience == 'htdy_observers'
     assert '仅供研究观察' in transport.deliveries[0].content
+    with factory() as session:
+        claim = session.scalar(select(NewowNotificationDelivery).where(NewowNotificationDelivery.signal_id == 'stable-signal'))
+        assert claim.status == 'PROVIDER_ACCEPTED'
 
 
 @pytest.mark.parametrize('bad', [point('HOLD'), {'kind': 'hint', 'value': point()['value']},
@@ -110,6 +115,52 @@ def test_failure_not_retried_and_claim_before_call(factory):
     insert_batch(factory, batch_id='b2', revision='r2')
     assert dispatcher.tick()['attempted'] == 0
     assert len(transport.deliveries) == 1
+
+
+@pytest.mark.parametrize('diagnostic', ['PUSHPLUS_REQUEST_OUTCOME_UNKNOWN', 'PUSHPLUS_RATE_LIMITED', 'UNKNOWN'])
+def test_failure_diagnostic_is_bounded_and_correlates_durable_claim(factory, caplog, diagnostic):
+    import logging
+    from app.alerts.notification import NotificationTransportError
+    enabled(factory)
+    insert_batch(factory)
+
+    class FailedTransport(Transport):
+        def send(self, delivery):
+            self.deliveries.append(delivery)
+            if diagnostic == 'UNKNOWN':
+                raise TimeoutError('secret provider body and token')
+            raise NotificationTransportError(diagnostic_code=diagnostic)
+
+    transport = FailedTransport()
+    dispatcher = NewowNotificationDispatcher(factory, transport=transport, topic_hash='hash', clock=lambda: NOW + timedelta(minutes=6))
+    with caplog.at_level(logging.WARNING, logger='app.notifications.newow'):
+        dispatcher.tick()
+        dispatcher.tick()
+    records = [r for r in caplog.records if r.msg == 'NEWOW_NOTIFICATION_TRANSPORT_FAILED']
+    assert len(records) == len(transport.deliveries) == 1
+    assert records[0].diagnostic_code == diagnostic
+    with factory() as session:
+        claim = session.scalar(select(NewowNotificationDelivery).where(NewowNotificationDelivery.status == 'FAILED_OR_UNKNOWN'))
+        assert records[0].diagnostic_fields == {'delivery_id': claim.delivery_id, 'symbol': 'j', 'frequency': '1d'}
+    assert 'secret provider' not in caplog.text
+
+
+def test_invalid_acceptance_is_not_saved_as_provider_accepted(factory, caplog):
+    enabled(factory)
+    insert_batch(factory)
+    class InvalidTransport(Transport):
+        def send(self, delivery):
+            self.deliveries.append(delivery)
+            return None
+    transport = InvalidTransport()
+    dispatcher = NewowNotificationDispatcher(factory, transport=transport, topic_hash='hash', clock=lambda: NOW + timedelta(minutes=6))
+    dispatcher.tick()
+    dispatcher.tick()
+    assert len(transport.deliveries) == 1
+    with factory() as session:
+        claim = session.scalar(select(NewowNotificationDelivery).where(NewowNotificationDelivery.signal_id == 'stable-signal'))
+        assert claim.status == 'FAILED_OR_UNKNOWN'
+        assert claim.provider_reference is None
 
 
 def test_reduce_without_reference_trade_row(factory):

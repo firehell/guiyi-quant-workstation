@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.alerts.evaluators import SubingThsEvaluator
 from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
-from app.alerts.registry import SUBING_THS_RULE
+from app.alerts.registry import SUBING_THS_RULE, SUBING_QUALITY_REWARM_POLICY_V2
 from app.alerts.service import AlertEventCreate, AlertService
 from app.alerts.subing_alignment import build_subing_alignment
 from app.market_data.domain import CanonicalBar
@@ -50,6 +50,7 @@ def window(frequency="15m"):
         NOW,
         source,
         ("JM2701",) * len(source),
+        input_policy_version=(SUBING_QUALITY_REWARM_POLICY_V2 if frequency in {"1d", "1w"} else None),
     )
 
 

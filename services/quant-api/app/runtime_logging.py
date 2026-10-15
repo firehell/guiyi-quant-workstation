@@ -37,6 +37,12 @@ class _SafeFormatter(logging.Formatter):
         }
         fields = getattr(record, "diagnostic_fields", {})
         if isinstance(fields, dict):
+            event_id = fields.get("event_id")
+            if type(event_id) is int and 1 <= event_id <= 9223372036854775807:
+                payload["event_id"] = event_id
+            delivery_id = fields.get("delivery_id")
+            if isinstance(delivery_id, str) and re.fullmatch(r"[a-f0-9]{64}", delivery_id):
+                payload["delivery_id"] = delivery_id
             if code == "AFTER_MARKET_PROGRESS":
                 try:
                     progress = _progress_diagnostic(fields.get("progress"))
@@ -148,7 +154,7 @@ def runtime_diagnostic_handler(path: Path) -> logging.Handler:
 
 def install_runtime_diagnostics(service: str) -> logging.Handler:
     filename = {"market-feed": "market-feed.log", "live": "live-market.log", "alert": "alert-runtime.log",
-                "after-market": "after-market.log",
+                "after-market": "after-market.log", "reference-worker": "reference-worker.log",
                 "late-provider-recovery": "late-provider-recovery.log", "weekly-audit": "weekly-audit.log",
                 "weekly-audit-scheduled": "weekly-audit.log"}[service]
     root = Path(os.environ.get("GUIYI_LOG_DIR", str(Path.home() / "Library/Logs/GuiyiQuant")))

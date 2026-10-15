@@ -1710,3 +1710,29 @@ PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
 使用专用非生产Redis，覆盖CLOSED/BREAK空Stream的已有登记日恢复、冻结订阅缺失/合约冲突、cursor缺失不创建，以及未确认来源只刷新heartbeat、不生成completed或推进cursor。
 
 真实CLOSED空日合同：`services/quant-api/tests/data_foundation/test_durable_live_closed_session.py`，SQLite真实MarketPhaseResolver核验周末下一Session，未知/缺失/窗口错位/多品种日冲突不创建进度。发布前另只读核验现场operational集合的实际nextSession、登记日与冻结订阅，不以CLOSED带日的测试替代。
+
+## Alert 内存交接与日周质量重预热 v2
+
+`test_alert_delivery_handoff.py` 覆盖同 Bar 批次、512 含在途容量、原始观察期限、不可恢复交接、
+原子领取/结果、停止与未知提交；`test_alert_v2_integration.py` 覆盖 Runtime HTTP 受阻时继续 Event/ACK、
+0052 additive migration/旧行和拒绝有损降级。`test_subing_quality_rewarm.py` 覆盖完整物理预热、显式质量断点、
+重启一致性与未发布尾端等待；MDS 发布判定回归在 `test_market_read_service.py`。
+
+```bash
+PYTHONPATH=services/quant-api:services/quant-api/tests:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/test_alert_delivery_handoff.py \
+  services/quant-api/tests/test_alert_v2_integration.py \
+  services/quant-api/tests/test_alert_handoff_status_classification.py \
+  services/quant-api/tests/test_subing_quality_rewarm.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_alert_service.py \
+  services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_api.py \
+  services/quant-api/tests/test_market_read_service.py
+```
+
+真实 PostgreSQL 场景使用本任务新建、可销毁、无持久卷实例（固定 loopback 15475、数据库
+`guiyi_alert_isolated_test`），显式设置 `GUIYI_ALERT_ISOLATED_TEST_URL` 后运行交接及集成两文件。
+测试在随机 schema 建表并仅清理自身 schema；无该变量的 PostgreSQL skip 不算验证通过。
+不能指向生产 5432，不能以此测试触发真实通知、RQData、Canonical 或 Runtime 切换。

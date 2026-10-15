@@ -10,6 +10,31 @@ from app.alerts.registry import HTDY_ALERT_RULE_CODE
 from app.alerts.runtime import AlertRuntime
 
 
+def test_newow_delivery_identity_is_logged_only_as_stable_hash():
+    from app.runtime_logging import _SafeFormatter
+    record = logging.LogRecord('app.notifications.newow', logging.WARNING, '', 0, 'NEWOW_NOTIFICATION_TRANSPORT_FAILED', (), None)
+    record.diagnostic_fields = {'delivery_id': 'a' * 64, 'token': 'private-secret'}
+    assert json.loads(_SafeFormatter().format(record))['delivery_id'] == 'a' * 64
+    record.diagnostic_fields['delivery_id'] = 'private-secret'
+    assert 'delivery_id' not in json.loads(_SafeFormatter().format(record))
+    assert 'private-secret' not in _SafeFormatter().format(record)
+
+
+def test_reference_worker_installs_safe_diagnostic_handler(tmp_path, monkeypatch):
+    from app.runtime_logging import install_runtime_diagnostics
+    monkeypatch.setenv('GUIYI_LOG_DIR', str(tmp_path))
+    logger = logging.getLogger('app')
+    previous_level, previous_propagate = logger.level, logger.propagate
+    handler = install_runtime_diagnostics('reference-worker')
+    try:
+        assert handler.baseFilename == str(tmp_path / 'reference-worker.log')
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+        logger.setLevel(previous_level)
+        logger.propagate = previous_propagate
+
+
 @pytest.mark.parametrize("count", [30, 960, 8192])
 def test_publication_receipts_do_not_hide_bounded_progress(count):
     from app.runtime_logging import _SafeFormatter

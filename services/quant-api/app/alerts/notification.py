@@ -77,6 +77,12 @@ class NotificationDelivery:
 
 
 @dataclass(frozen=True, slots=True)
+class PreparedAlertNotificationBatch:
+    messages: tuple[AlertNotificationMessage, ...]
+    delivery: NotificationDelivery
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderAcceptance:
     reference: str | None = field(default=None, repr=False)
 
@@ -216,15 +222,34 @@ class AlertNotificationDispatcher:
     def __init__(self, transport: NotificationTransport) -> None:
         self._transport = transport
 
+    def prepare_batch(
+        self,
+        messages: tuple[AlertNotificationMessage, ...],
+        *,
+        event_ids: tuple[int, ...] | None = None,
+    ) -> PreparedAlertNotificationBatch:
+        if not messages or (event_ids is not None and len(event_ids) != len(messages)):
+            raise ValueError("ALERT_NOTIFICATION_BATCH_INVALID")
+        first = messages[0]
+        policy = _notification_policy(first.rule_code)
+        key = (first.rule_code, policy.audience, first.frequency, first.bar_end)
+        parts = []
+        for index, message in enumerate(messages):
+            current = _notification_policy(message.rule_code)
+            if (message.rule_code, current.audience, message.frequency, message.bar_end) != key:
+                raise ValueError("ALERT_NOTIFICATION_BATCH_KEY_INVALID")
+            prefix = "" if event_ids is None else f"Event {event_ids[index]}\n"
+            parts.append(prefix + current.formatter(message))
+        delivery = NotificationDelivery(policy.title, "\n\n".join(parts), policy.audience)
+        if len(delivery.content.encode("utf-8")) > 16000:
+            raise ValueError("ALERT_NOTIFICATION_BATCH_TOO_LARGE")
+        return PreparedAlertNotificationBatch(messages, delivery)
+
+    def send_prepared_batch(self, prepared: PreparedAlertNotificationBatch) -> ProviderAcceptance:
+        return self._transport.send(prepared.delivery)
+
     def send(self, message: AlertNotificationMessage) -> ProviderAcceptance:
-        policy = _notification_policy(message.rule_code)
-        return self._transport.send(
-            NotificationDelivery(
-                title=policy.title,
-                content=policy.formatter(message),
-                audience=policy.audience,
-            )
-        )
+        return self.send_prepared_batch(self.prepare_batch((message,)))
 
     def send_canary(self, audience: str) -> ProviderAcceptance:
         if audience not in ALERT_AUDIENCES:

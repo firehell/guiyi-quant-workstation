@@ -301,6 +301,7 @@ def test_transport_diagnostics_preserve_acceptance_and_correlate_each_failure(
             )
 
     sender = Sender()
+    transport_clock = [accepted_at]
     runtime = AlertRuntime(
         session_factory=lambda: None,  # type: ignore[arg-type]
         market_read_factory=lambda _session: None,  # type: ignore[arg-type]
@@ -308,6 +309,7 @@ def test_transport_diagnostics_preserve_acceptance_and_correlate_each_failure(
         sender=sender,
         operational_products=(),
         taxonomy={},
+        clock=lambda: transport_clock[0],
     )
     accepted = [
         AlertNotificationMessage(
@@ -337,6 +339,7 @@ def test_transport_diagnostics_preserve_acceptance_and_correlate_each_failure(
     ]
 
     runtime._send_messages_once(accepted, processing_now=accepted_at)
+    transport_clock[0] = failed_at
     runtime._send_messages_once(failed, processing_now=failed_at)
 
     status = runtime._current_runtime_status()
@@ -362,6 +365,31 @@ def test_transport_diagnostics_preserve_acceptance_and_correlate_each_failure(
         }
     rendered = "\n".join(record.getMessage() for record in caplog.records)
     assert sensitive_marker not in rendered
+
+
+def test_transport_status_uses_actual_attempt_and_completion_times() -> None:
+    detected = datetime(2026, 10, 15, 0, 0, tzinfo=UTC)
+    current = [detected + timedelta(seconds=3)]
+
+    class Sender:
+        def send(self, _message):
+            current[0] += timedelta(seconds=8)
+            return ProviderAcceptance("accepted-after-network")
+
+    runtime = AlertRuntime(
+        session_factory=lambda: None, market_read_factory=lambda _session: None,
+        evaluators={}, sender=Sender(), operational_products=(), taxonomy={},
+        clock=lambda: current[0],
+    )
+    message = AlertNotificationMessage(
+        rule_code=HTDY_ALERT_RULE_CODE, symbol="ag", product_name="silver",
+        contract="AG2612", frequency="60m", bar_end=detected,
+        detected_at=detected, result_codes=("buy",),
+    )
+    runtime._send_messages_once([message], processing_now=detected)
+    status = runtime._current_runtime_status()
+    assert status["last_transport_attempt_at"] == (detected + timedelta(seconds=3)).isoformat()
+    assert status["last_provider_accepted_at"] == (detected + timedelta(seconds=11)).isoformat()
 
 
 def test_invalid_sender_acceptance_is_logged_with_event_identity(
@@ -1241,6 +1269,10 @@ def test_canonical_event_commit_then_status_failure_blocks_sender(
             assert limit == 64
             return window
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     class Evaluator:
         @staticmethod
         def evaluate_candidates(_market_read, candidate_window):
@@ -1342,6 +1374,10 @@ def test_unscoped_canonical_update_does_not_clear_processing_failure() -> None:
         def latest_canonical_window(*_args, **_kwargs):
             raise AssertionError("unscoped canonical path must not read")
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     now = datetime(2026, 9, 11, 8, tzinfo=UTC)
     runtime = AlertRuntime(
         session_factory=Session,
@@ -1415,6 +1451,10 @@ def test_canonical_status_failure_discards_only_its_unapproved_message() -> None
                 (bar,),
                 (contract,),
             )
+
+        @staticmethod
+        def assert_window_current(_window):
+            return None
 
     class Evaluator:
         @staticmethod
@@ -1518,6 +1558,10 @@ def test_canonical_typed_evaluation_failure_preserves_history_and_can_recover(
             assert limit == 64
             return window
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     class Evaluator:
         calls = 0
 
@@ -1604,6 +1648,10 @@ def test_duplicate_canonical_update_neither_recommits_nor_resends(
             assert limit == 64
             return window
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     class Evaluator:
         @staticmethod
         def evaluate_candidates(_market_read, _window):
@@ -1685,6 +1733,10 @@ def test_duplicate_canonical_update_does_not_clear_prior_status_failure(
             assert trading_day == window.trading_day
             assert limit == 64
             return window
+
+        @staticmethod
+        def assert_window_current(_window):
+            return None
 
     class Evaluator:
         @staticmethod

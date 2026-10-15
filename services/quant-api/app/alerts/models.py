@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
     UniqueConstraint,
@@ -86,6 +87,14 @@ class AlertEvent(Base):
     notification_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Nullable versioned facts preserve all legacy rows and their semantics.
+    input_policy_version: Mapped[str | None] = mapped_column(String(64))
+    notification_policy_version: Mapped[str | None] = mapped_column(String(64))
+    notification_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notification_generation: Mapped[int | None] = mapped_column(Integer)
+    notification_batch_id: Mapped[str | None] = mapped_column(String(64))
+    notification_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notification_provider_reference: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

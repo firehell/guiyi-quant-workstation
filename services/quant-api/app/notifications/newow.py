@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
+import logging
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, JSON, String, UniqueConstraint, and_, select, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -11,13 +12,14 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.alerts.notification import NotificationDelivery
+from app.alerts.notification import NotificationDelivery, NotificationTransportError, ProviderAcceptance
 from app.alerts.notification_composition import _load_from_env, build_notification_transport_from_env
 from app.reference_trading.models import ReferenceActionRow, ReferenceBatch, ReferenceStream, ReferenceRevision
 from app.reference_trading.presentation import require_envelope
 
 STRATEGIES = ('newow_trend', 'newow_oscillation', 'newow_main_rise', 'newow_dual_fusion')
 FREQUENCIES = ('1w', '1d', '60m')
+_LOGGER = logging.getLogger(__name__)
 
 
 class NewowNotificationPolicy(Base):
@@ -199,9 +201,15 @@ class NewowNotificationDispatcher:
                     delivery = NotificationDelivery(title=delivery.title, content=content, audience=delivery.audience)
                     try:
                         acceptance = transport.send(delivery)
+                        if not isinstance(acceptance, ProviderAcceptance):
+                            raise NotificationTransportError(diagnostic_code='PUSHPLUS_ACCEPTANCE_INVALID')
                         status = 'PROVIDER_ACCEPTED'
-                    except Exception:
+                    except Exception as exc:
                         status = 'FAILED_OR_UNKNOWN'
+                        _LOGGER.warning('NEWOW_NOTIFICATION_TRANSPORT_FAILED', extra={
+                            'diagnostic_code': exc.diagnostic_code if isinstance(exc, NotificationTransportError) else 'UNKNOWN',
+                            'diagnostic_fields': {'delivery_id': identity, 'symbol': stream.product, 'frequency': stream.frequency},
+                        })
                     self.assert_owned()
                     row = session.get(NewowNotificationDelivery, identity)
                     row.status = status
