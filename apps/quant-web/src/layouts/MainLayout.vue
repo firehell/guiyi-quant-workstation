@@ -186,7 +186,7 @@ onUnmounted(() => {
           :reset="clearRouteError"
         />
         <RouterView v-else v-slot="{ Component }">
-          <Transition name="gy-page" mode="out-in">
+          <Transition name="gy-page" mode="out-in" @before-leave="element => element.setAttribute('inert', '')" @leave-cancelled="element => element.removeAttribute('inert')">
             <component :is="Component" :key="String(route.name)" />
           </Transition>
         </RouterView>
@@ -370,9 +370,9 @@ onUnmounted(() => {
   }
 }
 /* Market Home and every unified detail view own their full-width white canvas. */
-.content.content--market-detail { padding: 0; background: #fff; }
+.content.content--market-detail { padding: 0; background: var(--gy-bg-panel); }
 .content.content--market-home {
   padding: 0;
-  background: #fff;
+  background: var(--gy-bg-panel);
 }
 </style>

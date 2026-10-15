@@ -46,5 +46,5 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.remove(); chart = null; s
   </section>
 </template>
 <style scoped>
-.shared-auxiliary{background:#fff;border-top:1px solid #eee;padding:6px 0}.shared-auxiliary__canvas{height:255px;min-width:0}p{font-size:11px;color:#94611b;margin:5px 10px}
+.shared-auxiliary{background:var(--gy-bg-panel);border-top:1px solid #eee;padding:6px 0}.shared-auxiliary__canvas{height:255px;min-width:0}p{font-size:11px;color:#94611b;margin:5px 10px}
 </style>

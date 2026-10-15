@@ -48,3 +48,15 @@ export interface NewSubingPage {
   run_id: string
   sha256: string
 }
+
+export interface NewSubingEquityCurve {
+  run_id: string
+  sha256: string
+  items: Array<Record<string, unknown>>
+  total: number
+  sampled: boolean
+  sampling_version: string
+  since: string
+  through: string
+  status: string
+}

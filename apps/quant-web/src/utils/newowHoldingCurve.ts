@@ -35,7 +35,7 @@ export function holdingCurvePlot(curve: HoldingCurve | null | undefined, since: 
     position: Date.parse(point.bar_end),
     date: point.trading_day,
     segment: JSON.stringify([point.physical_contract, point.segment_id, point.calculation_segment_id]),
-  })), { headroom: 1.1, areaBaseline: 'zero' })
+  })), { headroom: 1.1, areaBaseline: 'zero', valueUnit:'percentage_points' })
   return {
     ...layout,
     message: layout.message ?? (layout.points.length ? null : '持有过程事实不完整，暂不绘制曲线。'),

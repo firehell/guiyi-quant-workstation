@@ -16,7 +16,6 @@ const props = withDefaults(defineProps<{
   restore: MarketDetailViewRestore
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
-  newowFrequencyInChart?: boolean
   newowFrequencies: readonly MarketFrequency[]
 }>(), {
   seriesKinds: () => ['actual_dominant', 'continuous', 'contract'],
@@ -45,7 +44,7 @@ const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'new
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
 const seriesLabels: Record<SeriesKind, string> = { actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' }
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
-const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInChart) || props.identity.view === 'subing' || showSeriesControls.value)
+const showFrequencyControls = computed(() => props.identity.view === 'newow' || props.identity.view === 'subing' || showSeriesControls.value)
 const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : props.identity.view === 'subing' ? ['5m', '15m', '30m', '60m', '1d', '1w'] as MarketFrequency[] : props.frequencies)
 const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind) => kind !== 'contract'))
 const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
@@ -107,9 +106,7 @@ function chooseSymbol(nextValue = symbol.value) {
 defineExpose({ selectSymbol: chooseSymbol })
 
 function periodLabel(value: MarketFrequency) {
-  if (props.identity.view === 'newow') return value
-  if (props.identity.view === 'subing') return value === '1d' ? '日线' : value === '1w' ? '周线' : value.replace('m', '分')
-  return value === '1d' ? '日K' : value === '1w' ? '周K' : value
+  return value === '1d' ? '日线' : value === '1w' ? '周线' : value.replace('m', '分钟')
 }
 </script>
 

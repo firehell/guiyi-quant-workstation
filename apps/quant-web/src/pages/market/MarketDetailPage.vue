@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
@@ -15,6 +15,7 @@ import NewowProductWorkspace from '@/components/market/detail/newow/NewowProduct
 import NewowAiAnalysisDialog from '@/components/market/detail/newow/NewowAiAnalysisDialog.vue'
 import type { AiCombo } from '@/api/newowAiAnalysis'
 import '@/styles/marketDetailUnified.css'
+import { resetNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowQuoteFreshness } from '@/utils/newowDetailPresentation'
 import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
 import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
@@ -24,6 +25,7 @@ import type { ProductOption } from '@/utils/productSearch'
 import { normalizeProductOptions } from '@/utils/productSearch'
 import {
   loadMarketDetailPreferences,
+  defaultMarketDetailPreferences,
   replaceFreeDetailPreferences,
   replaceHtdyDetailPreferences,
   replaceNewowDetailPreferences,
@@ -35,6 +37,15 @@ import { isNewowStrategySwitch, parseMarketDetailRoute, serializeMarketDetailIde
 const route = useRoute()
 const router = useRouter()
 const preferences = ref(loadMarketDetailPreferences())
+const workspaceVisible = ref(true)
+async function resetDisplayPreferences() {
+  workspaceVisible.value = false
+  await nextTick()
+  preferences.value = defaultMarketDetailPreferences()
+  saveMarketDetailPreferences(preferences.value)
+  resetNewowUiPreferences()
+  workspaceVisible.value = true
+}
 const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
@@ -268,16 +279,17 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
         :newow-frequencies="newowOpenFrequencies"
-        :newow-frequency-in-chart="isNewowView && !!newowCapabilities.capabilities.value && newowFrequencyOpen"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
         @ai-analysis="aiOpen = true"
       />
+      <button type="button" class="gy-reset-display" @click="resetDisplayPreferences">重置页面显示</button>
       <NewowAiAnalysisDialog v-if="isNewowView" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
         <section
           class="market-detail-page__workspace"
+          v-if="workspaceVisible"
           data-detail-section="workspace-slot"
           :data-active-view="routeResult.identity.view"
           :aria-busy="controller.state.value.loading"
@@ -303,17 +315,11 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @refresh-current="dailyQuote.refresh"
             @analysis-as-of="aiAsOf = $event"
             @select-identity="selectIdentity"
-          >
-            <template #chart-frequency>
-              <div class="newow-chart-frequency" role="group" aria-label="周期">
-                <button v-for="frequency in newowOpenFrequencies" :key="frequency" type="button" :aria-label="frequency" :aria-pressed="routeResult.identity.frequency === frequency" :class="{ 'is-active': routeResult.identity.frequency === frequency }" @click="selectIdentity({ ...routeResult.identity, frequency, focusBarEnd: undefined })">{{ frequency === '1d' ? '日K' : frequency === '1w' ? '周K' : frequency.replace('m', '分') }}</button>
-              </div>
-            </template>
-          </NewowProductWorkspace>
+          />
           <MarketDetailUnavailable
             v-else-if="routeResult.identity.view === 'newow'"
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
-            :message="newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
+            :message="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在确认当前发布阶段及周期能力。' : newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
             recovery-label="切换到已开放日线"
             :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowOpenFrequencies.length > 0"
             :can-return-market="true"
@@ -378,7 +384,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 <style scoped>
 .newow-chart-frequency { display:flex; gap:2px; padding:3px; border-radius:8px; background:#eeeeef; }
 .newow-chart-frequency button { border:0; border-radius:6px; padding:6px 12px; color:#777; background:transparent; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
-.newow-chart-frequency button.is-active { color:#333; background:#fff; box-shadow:0 1px 3px #00000012; }
+.newow-chart-frequency button.is-active { color:#333; background:var(--gy-bg-panel); box-shadow:0 1px 3px #00000012; }
 
 .market-detail-page {
   position: relative;

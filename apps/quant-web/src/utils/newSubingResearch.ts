@@ -20,13 +20,14 @@ export function metricText(summary: ResearchSummary | null, key: string, suffix 
   const value = summary[key]
   if (typeof value !== 'string' && typeof value !== 'number') return '未提供'
   const original = String(value)
-  const digits = key === 'account_return_pct' || key === 'max_drawdown_pct' ? 3
+  const digits = key === 'account_return_pct' || key === 'max_drawdown_pct' ? 2
     : key === 'final_equity' || key === 'initial_cash' || key === 'total_fees' ? 2 : null
   if (digits === null || !DECIMAL_TEXT.test(original)) return `${original}${suffix}`
   const numeric = Number(original)
   const safe = Number.isFinite(numeric) && Math.abs(numeric) <= Number.MAX_SAFE_INTEGER / (10 ** digits)
     && (numeric !== 0 || ZERO_TEXT.test(original))
   if (!safe) return `${original}${suffix}`
+  if (numeric !== 0 && Math.abs(numeric) < 10 ** -digits) return `${numeric < 0 ? '-' : ''}<${(10 ** -digits).toFixed(digits)}${suffix}`
   return `${new Intl.NumberFormat('en-US', { useGrouping: false, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(numeric)}${suffix}`
 }
 
@@ -45,11 +46,32 @@ export function selectionToken(runId: string, generation: number): string {
   return `${generation}:${runId}`
 }
 
-export function equityPoints(items: Array<Record<string, unknown>>): string {
-  const values = items.map(item => Number(item.equity))
-  if (values.length < 2 || values.some(value => !Number.isFinite(value))) return ''
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const span = max - min || 1
-  return values.map((value, index) => `${(index / (values.length - 1) * 100).toFixed(2)},${(100 - (value - min) / span * 100).toFixed(2)}`).join(' ')
+export function researchCurvePoints(items: Array<Record<string, unknown>>) {
+  return items.map((item, index) => ({
+    value: item.equity === null || item.equity === undefined ? null : Number(item.equity),
+    date: String(item.at ?? '').slice(0, 10),
+    position: Date.parse(String(item.at ?? '')),
+    segment: JSON.stringify([item.physical_contract, item.segment_id, item.status, item.interrupted]),
+    at: String(item.at ?? ''), index,
+  }))
+}
+
+export function appendResearchPage<T extends { items: Array<Record<string, unknown>>; run_id: string; sha256: string }>(previous: T, next: T): T {
+  if (previous.run_id !== next.run_id || previous.sha256 !== next.sha256) throw new Error('研究结果身份不一致')
+  return { ...next, items: [...previous.items, ...next.items] }
+}
+
+export function normalizeResearchVisit(raw: unknown) {
+  const saved = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const version: 'new_subing_v1' | 'new_subing_v2' = saved.version === 'new_subing_v1' ? 'new_subing_v1' : 'new_subing_v2'
+  return {
+    version,
+    capital: version === 'new_subing_v2' && saved.capital === '1000000' ? '1000000' : '100000',
+    product: (['AL', 'RB', 'TA'] as const).find(value => value === saved.product) ?? 'AL',
+    scenario: (['baseline', 'double_commission', 'double_slippage'] as const).find(value => value === saved.scenario) ?? 'baseline',
+    kind: (['decisions', 'trades', 'equity'] as const).find(value => value === saved.kind) ?? 'decisions',
+    action: typeof saved.action === 'string' ? saved.action : 'ALL',
+    query: typeof saved.query === 'string' ? saved.query : '',
+    scroll: typeof saved.scroll === 'number' && Number.isFinite(saved.scroll) ? Math.max(0, saved.scroll) : 0,
+  }
 }

@@ -6,6 +6,7 @@ export interface ReturnCurvePoint {
   position: number
 }
 export interface ReturnCurvePolicy {
+  valueUnit?: 'currency' | 'percent' | 'percentage_points'
   headroom: number
   singlePoint?: 'start' | 'end'
   areaBaseline: 'zero' | 'bottom'
@@ -102,7 +103,7 @@ export function returnCurveLayout<T extends ReturnCurvePoint>(source: readonly T
   return {
     points, segments, areas, zero: y(0), low, high, ticks, message: null,
     levels: Array.from({ length: 5 }, (_, index) => ({
-      y: index * 35, label: `${(high - (high - low) * index / 4).toFixed(1)}%`,
+      y: index * 35, label: `${(high - (high - low) * index / 4).toFixed(1)}${policy.valueUnit === 'currency' ? '元' : policy.valueUnit === 'percentage_points' ? 'pp' : '%'}`,
     })),
   }
 }
@@ -124,7 +125,7 @@ export function referenceReturnLayout<T extends CompletedTradePoint>(points: rea
     position: Date.parse(point.trade.exit_trading_day ?? ''),
     segment: JSON.stringify([point.trade.physical_contract, point.trade.segment_id, point.trade.calculation_segment_id]),
   })), {
-    headroom: 1.1, areaBaseline: 'zero', start: Date.parse(since), end: Date.parse(through),
+    headroom: 1.1, areaBaseline: 'zero', valueUnit:'percentage_points', start: Date.parse(since), end: Date.parse(through),
     extend: true, dateTicks: 'calendar-window',
   })
 }

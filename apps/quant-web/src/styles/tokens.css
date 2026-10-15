@@ -22,28 +22,28 @@
   --gy-orange-500: #f79009;
 
   /* Semantic surfaces */
-  --gy-bg-app: #f4f7fb;
+  --gy-bg-app: #ffffff;
   --gy-bg-canvas: #ffffff;
   --gy-bg-panel: #ffffff;
   --gy-bg-panel-strong: var(--gy-gray-50);
   --gy-bg-elevated: var(--gy-gray-100);
   --gy-bg-overlay: #ffffff;
   --gy-bg-header: rgba(255, 255, 255, 0.92);
-  --gy-bg-selected: rgba(29, 78, 216, 0.08);
+  --gy-bg-selected: rgba(255, 150, 1, 0.12);
   --gy-bg-hover: rgba(16, 24, 40, 0.04);
   --gy-border-subtle: rgba(16, 24, 40, 0.06);
-  --gy-border: #dbe3ee;
+  --gy-border: #ebedf0;
   --gy-border-strong: var(--gy-gray-300);
-  --gy-border-focus: rgba(29, 78, 216, 0.5);
-  --gy-text-primary: #0f1f38;
-  --gy-text-secondary: #33507e;
-  --gy-text-muted: #5b718f;
+  --gy-border-focus: #b54708;
+  --gy-text-primary: #20242b;
+  --gy-text-secondary: #475467;
+  --gy-text-muted: #667085;
   --gy-text-disabled: var(--gy-gray-400);
-  --gy-accent: #1d4ed8;
-  --gy-accent-hover: #1e40af;
-  --gy-accent-pressed: #1e3a8a;
-  --gy-accent-soft: rgba(29, 78, 216, 0.08);
-  --gy-text-on-accent: #ffffff;
+  --gy-accent: #ff9601;
+  --gy-accent-hover: #f79009;
+  --gy-accent-pressed: #e88400;
+  --gy-accent-soft: rgba(255, 150, 1, 0.12);
+  --gy-text-on-accent: #20242b;
   --gy-control-active-bg: var(--gy-accent);
   --gy-control-active-text: var(--gy-text-on-accent);
   --gy-control-active-border: var(--gy-accent-hover);
@@ -53,13 +53,13 @@
   --gy-control-disabled-text: var(--gy-gray-400);
 
   /* Brand shell (fixed deep navy chrome) */
-  --gy-shell-bg: #0b1d3a;
-  --gy-shell-item-hover: #16305c;
-  --gy-shell-text: #8ca8cf;
-  --gy-shell-text-active: #bfdbfe;
-  --gy-shell-text-muted: #5b7ba6;
-  --gy-shell-accent: #60a5fa;
-  --gy-shell-border: rgba(255, 255, 255, 0.08);
+  --gy-shell-bg: #ffffff;
+  --gy-shell-item-hover: #fff2e5;
+  --gy-shell-text: #475467;
+  --gy-shell-text-active: #20242b;
+  --gy-shell-text-muted: #667085;
+  --gy-shell-accent: #b54708;
+  --gy-shell-border: #ebedf0;
 
   /* Domain direction: China futures convention, always pair with text. */
   --gy-up: var(--gy-red-600);
@@ -151,7 +151,7 @@
   /* Elevation and motion */
   --gy-shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
   --gy-shadow-overlay: 0 18px 44px rgba(16, 24, 40, 0.16);
-  --gy-shadow-focus: 0 0 0 3px rgba(29, 78, 216, 0.15);
+  --gy-shadow-focus: 0 0 0 3px rgba(255, 150, 1, 0.2);
   --gy-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --gy-transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 

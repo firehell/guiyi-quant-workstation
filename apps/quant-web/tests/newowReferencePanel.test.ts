@@ -99,7 +99,7 @@ test('zero CLOSED stays unavailable while negative interruption and initial-posi
     since: '2026-01-01', through: '2026-08-15', cutoff: '2026-08-15T07:00:00Z',
   })
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.category, 'interrupted')
-  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.returnText, '-12.5%（中断浮动）')
+  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.returnText, '-12.50%（中断浮动）')
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.valuationText, '2026-04-30T07:00:00Z · 87.50')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.category, 'closed')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.initial, true)
@@ -108,7 +108,7 @@ test('zero CLOSED stays unavailable while negative interruption and initial-posi
   assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.category, 'interrupted')
   assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.initial, true)
   assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.lifecycle, 'ROLLOVER_INTERRUPTED')
-  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.returnText, '-20%（中断浮动；期初已有，不计入窗口统计）')
+  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.returnText, '-20.00%（中断浮动；期初已有，不计入窗口统计）')
 })
 
 test('table filtering keeps the exact server summary and performance window', () => {
@@ -224,13 +224,13 @@ test('curve axes use true extrema, unscaled labels and the full accepted statist
       response, chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
       selectedSignalId: null, locateMessage: null, loadingPage: false,
     }) }))
-    app.mount(root)
+    app.mount(root); await selectFactMode(root, '已完成参考交易')
     await nextTick()
     const ticks = findNodes(root, node => node.props.class === 'return-curve__value')
     assert.equal(ticks.length, 5)
-    assert.ok(ticks.every(node => node.type === 'span' && /-?\d+\.\d%/.test(nodeText(node))))
-    assert.equal(nodeText(ticks[0]!), result === '10' ? '11.0%' : result === '-10' ? '0.0%' : '1.0%')
-    assert.equal(nodeText(ticks.at(-1)!), result === '-10' ? '-11.0%' : '0.0%')
+    assert.ok(ticks.every(node => node.type === 'span' && /-?\d+\.\dpp/.test(nodeText(node))))
+    assert.equal(nodeText(ticks[0]!), result === '10' ? '11.0pp' : result === '-10' ? '0.0pp' : '1.0pp')
+    assert.equal(nodeText(ticks.at(-1)!), result === '-10' ? '-11.0pp' : '0.0pp')
     const dates = findNodes(root, node => node.props.class === 'return-curve__date')
     assert.equal(dates.length, 7)
     assert.ok(dates.every(node => /^\d{2}-\d{2}$/.test(nodeText(node))))
@@ -252,7 +252,7 @@ test('performance loading and tab responses do not replace recent record cards',
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
   const cards = () => findNodes(root, node => node.props['data-reference-category'] !== undefined).map(nodeText)
   const before = cards()
@@ -278,13 +278,13 @@ test('reference panel keeps the server summary and all passive reference records
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
 
   const summary = findNode(root, (node) => node.props['data-testid'] === 'newow-reference-summary')!
   assert.match(nodeText(summary), /胜率\s*—/)
   assert.doesNotMatch(nodeText(summary), /统计时间与来源|所选统计区间已按权威截止完成计算|收益为百分点（简单相加）/)
-  assert.deepEqual(findNodes(summary, node => node.type === 'dt').map(nodeText), ['累计收益', '胜率', '最大回撤', '交易次数'])
+  assert.deepEqual(findNodes(summary, node => node.type === 'dt').map(nodeText), ['已完成参考收益（百分点）', '已完成交易胜率', '参考权益比例回撤', '已完成交易数'])
   const returns = findNode(root, node => node.props['aria-label'] === '已完成参考交易累计收益曲线')!
   assert.ok(findNode(returns, node => node.props['data-testid'] === 'newow-reference-summary'))
   assert.doesNotMatch(nodeText(returns), /年化|未清仓浮动|中断结果|查看交易/)
@@ -292,7 +292,7 @@ test('reference panel keeps the server summary and all passive reference records
   const fullText = nodeText(root)
   assert.doesNotMatch(fullText, /累计百分点 · 已完成交易 · 零成本页面参考/)
   assert.doesNotMatch(fullText, /双策略融合参考|参考口径说明|筛选参考历史/)
-  for (const label of ['清仓', '未清仓', '换月中断', '期初已有', '回测操盘提醒', '买入', '卖出']) assert.match(fullText, new RegExp(label))
+  for (const label of ['清仓', '未清仓', '换月中断', '期初已有', '历史参考记录', '建仓参考', '清仓参考']) assert.match(fullText, new RegExp(label))
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
   const cards = findNodes(root, node => node.type === 'article' && !!node.props['data-reference-category'])
   assert.equal(cards.length, 4)
@@ -316,11 +316,11 @@ test('reference records present entry, exit, valuation and interruption as separ
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
   const fullText = nodeText(root)
-  assert.match(fullText, /买入/)
-  assert.match(fullText, /卖出/)
+  assert.match(fullText, /建仓参考/)
+  assert.match(fullText, /清仓参考/)
   assert.match(fullText, /参考估值/)
   assert.match(fullText, /中断浮动不计入已完成收益/)
   app.unmount()
@@ -336,7 +336,7 @@ test('range tabs include three years and clamp all to the initial server history
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
   for (const label of ['近1年', '近3年', '全部']) {
     const button = findNode(root, node => node.type === 'button' && nodeText(node) === label)!
@@ -361,7 +361,7 @@ test('recent complete window action submits the exact server boundary', async ()
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
   const button = findNode(root, node => node.type === 'button' && nodeText(node) === '使用最近完整统计区间')!
   assert.ok(button)
@@ -380,7 +380,7 @@ test('range tabs cannot load when the current identity has no response', async (
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
   assert.ok(findNode(root, node => node.type === 'button' && nodeText(node) === '近3年'))
 
@@ -403,7 +403,7 @@ test('waiting card requires current ready compatible FLAT evidence', async () =>
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
     ...inputs.value, error: null, selectedSignalId: null, locateMessage: null, loadingPage: false,
   }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
   const waiting = () => findNode(root, node => node.props['data-testid'] === 'newow-reference-waiting')
   assert.ok(waiting())
@@ -599,7 +599,7 @@ test('theoretical selection survives a same-window history page response', async
   }) })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   await nextTick()
   const ideal = () => findNode(root, node => node.type === 'button' && nodeText(node) === '理论值')!
   ;(ideal().props.onClick as () => void)()
@@ -623,7 +623,7 @@ test('curve selection outside recent records keeps original return under theoret
   const Host = defineComponent({ setup: () => () => h(Panel, { response, lifecycle: 'ready', crossSectionCompatible: false, chartResponse: null, recordsResponse: referenceResponse(), error: null, onReload: () => {} }) })
   const operations = nodeOperations()
   const app = createRenderer({ ...operations, createElement: (type: string) => Object.assign(element(type), { scrollIntoView() {} }) }).createApp(Host)
-  const root = element('root'); app.mount(root); await nextTick()
+  const root = element('root'); app.mount(root); await selectFactMode(root); await nextTick()
   const ideal = findNode(root, node => node.type === 'button' && nodeText(node) === '理论值')!
   ;(ideal.props.onClick as () => void)(); await nextTick()
   const point = findNode(root, node => node.type === 'circle' && node.props.role === 'button')!
@@ -632,5 +632,32 @@ test('curve selection outside recent records keeps original return under theoret
   assert.ok(card, 'complete curve fact is locatable without changing recent pagination')
   assert.match(nodeText(card), /5%/)
   assert.doesNotMatch(nodeText(card), /50%/)
+  app.unmount()
+})
+
+async function selectFactMode(root: TestNode, label = '含浮动参考') {
+  const control = findNode(root, node => node.type === 'button' && nodeText(node).trim() === label)
+  if (control) { (control.props.onClick as Function)(); await nextTick() }
+}
+
+test('selected completed and holding modes use their own totals and drawdowns', async () => {
+  const Panel = await loadComponent(), root = element('root'), response = referenceResponse()
+  const completed = trade('mode-closed', {status:'CLOSED',statistics_membership:'entry_in_window_v1',entry_trading_day:'2026-08-10',entry_bar_end:'2026-08-10T07:00:00Z',exit_bar_end:'2026-08-15T07:00:00Z',exit_trading_day:'2026-08-15',reference_return_pct:'5',exit_reference_price:'105'})
+  response.value.items = [completed]; response.value.curve_trades = [completed]; response.value.next_before = null
+  Object.assign(response.value.summary, {closed_count:1,win_count:1,win_rate_pct:'100',mean_return_pct:'5',sum_return_percentage_points:'5',open_count:0,interrupted_count:0,initial_count:0})
+  response.value.holding_curve = {model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points:['0','20','-15'].map((value,index)=>({bar_end:`2026-08-${13+index}T07:00:00Z`,trading_day:`2026-08-${13+index}`,physical_contract:'JM2601',segment_id:'segment-1',calculation_segment_id:'segment-1',closed_return_percentage_points:'0',floating_return_pct:value,marked_return_percentage_points:value,reference_trade_id:'mode-closed',status:'HOLDING'}))}
+  const app = createRenderer(nodeOperations()).createApp(Panel, {response,lifecycle:'ready',crossSectionCompatible:false,chartResponse:null,error:null})
+  app.mount(root)
+  assert.equal(findNode(root,n=>n.props['data-testid']==='newow-reference-summary'),undefined,'default mode shows page facts only')
+  await selectFactMode(root)
+  const summary = () => findNode(root,n=>n.props['data-testid']==='newow-reference-summary')!
+  assert.match(nodeText(summary()), /含浮动参考收益（百分点） -15\.00 百分点/)
+  assert.match(nodeText(summary()), /参考权益比例回撤 29.17%/)
+  assert.equal(findNode(summary(),n=>n.type==='dd' && n.props['data-direction']!==undefined)?.props['data-direction'],'down')
+  await selectFactMode(root, '已完成参考交易')
+  assert.equal(findNode(summary(),n=>n.type==='dd' && n.props['data-direction']!==undefined)?.props['data-direction'],'up')
+  assert.match(nodeText(summary()), /已完成参考收益（百分点） \+5\.00 百分点/)
+  assert.match(nodeText(summary()), /参考权益比例回撤 0.00%/)
+  assert.doesNotMatch(nodeText(summary()), /含浮动参考收益/)
   app.unmount()
 })

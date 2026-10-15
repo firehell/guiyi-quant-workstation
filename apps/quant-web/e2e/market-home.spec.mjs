@@ -135,7 +135,7 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
     }
     if (url.pathname === '/api/v1/reference-trading/newow/messages') return route.fulfill({ json: { items: [], truncated: false } })
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
-    const allowed = new Set(['/api/v1/market/dominants', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history'])
+    const allowed = new Set(['/api/v1/market/dominants', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history', '/api/market/messages'])
     if (route.request().method() !== 'GET' || !allowed.has(url.pathname)) {
       requests.unexpected.push(`${route.request().method()} ${url.pathname}`)
       return route.abort('blockedbyclient')
@@ -144,6 +144,14 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
     if (url.pathname === '/api/v1/market/dominants') return route.fulfill({ json: { items: lightHomeOverview().items.map(({ symbol, product_name, actual_contract, dominant_mapping_date }) => ({ product: symbol, product_name, actual_contract, dominant_mapping_date })) } })
     if (url.pathname.endsWith('/market/research/home-overview')) { const value = typeof currentOverview === 'function' ? currentOverview() : currentOverview; return value === null ? route.abort() : route.fulfill({ json: value }) }
     if (url.pathname === '/api/runtime/health') return route.fulfill({ json: typeof currentRuntime === 'function' ? currentRuntime() : currentRuntime })
+    if (url.pathname === '/api/market/messages') {
+      const legacyUrl = new URL(url)
+      if (url.searchParams.get('cursor')) legacyUrl.searchParams.set('before', url.searchParams.get('cursor'))
+      requests.push(`history:${url.searchParams.get('rule_code') ?? 'all'}:${url.searchParams.get('symbol') ?? 'all'}:${legacyUrl.searchParams.get('before') ?? 'first'}`)
+      const history = typeof currentHistory === 'function' ? currentHistory(legacyUrl) : currentHistory
+      if (history === null) return route.abort()
+      return route.fulfill({ json: { items: history.items.map(event => ({ source: 'alert', id: String(event.id), symbol: event.symbol, bar_end: event.bar_end, event })), next_cursor: history.next_before, available_count: history.items.length, coverage: 'complete', sources: { alert: { status: 'ready', truncated: false, limit: 5000 }, newow: { status: 'ready', truncated: false, limit: 500 } }, snapshot: { cutoff: new Date().toISOString(), alert_max_id: 100 } } })
+    }
     if (url.pathname === '/api/alerts/history') {
       requests.push(`history:${url.searchParams.get('rule_code') ?? 'all'}:${url.searchParams.get('symbol') ?? 'all'}:${url.searchParams.get('before') ?? 'first'}`)
       return route.fulfill({ json: typeof currentHistory === 'function' ? currentHistory(url) : currentHistory })
@@ -345,11 +353,11 @@ test('distinguishes empty message history from an unavailable request', async ({
   await mockMarketHomeApi(page, requests, events(), overview(), runtime(), () => current)
   await page.goto('/market')
   await page.getByRole('tab', { name: '消息' }).click()
-  await expect(page.getByText('暂无消息')).toBeVisible()
+  await expect(page.getByText('当前查询范围暂无匹配消息')).toBeVisible()
   current = null
   await page.getByRole('button', { name: '刷新消息' }).click()
-  await expect(page.getByText(/记录暂不可用/)).toBeVisible()
-  await expect(page.getByText('暂无消息')).toHaveCount(0)
+  await expect(page.getByRole('alert').filter({ hasText: '消息读取失败' })).toBeVisible()
+  await expect(page.getByText('当前查询范围暂无匹配消息')).toHaveCount(0)
 })
 
 test('quote badges and pending strategy icons never invent a target', async ({ page }) => {
@@ -706,3 +714,23 @@ for (const width of [1440, 390]) {
     await expect(row.locator('.list-change')).toHaveText('—')
   })
 }
+
+test('messages disclose partial source coverage and expose all supported frequency filters', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests)
+  await page.route('**/api/market/messages?**', route => route.fulfill({ json: {
+    items: [], next_cursor: null, available_count: 0, coverage: 'partial',
+    sources: { alert: { status: 'ready', truncated: false, limit: 5000 }, newow: { status: 'unavailable', truncated: false, limit: 500 } },
+    snapshot: { cutoff: '2026-10-15T08:00:00Z', alert_max_id: 1 },
+  } }))
+  await page.goto('/market')
+  await page.getByRole('tab', { name: '消息', exact: true }).click()
+  await expect(page.getByText('可读取范围内暂无匹配消息；部分来源失败或截断')).toBeVisible()
+  await expect(page.getByText(/牛哇参考：来源读取失败/)).toBeVisible()
+  for (const label of ['1分钟', '5分钟', '15分钟', '30分钟', '60分钟', '日线', '周线']) await expect(page.getByRole('button', { name: label, exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: '趋势策略', exact: true }).click()
+  await expect(page.getByRole('button', { name: '5分钟', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '60分钟', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(page.getByRole('button', { name: '5分钟', exact: true })).toBeEnabled()
+})

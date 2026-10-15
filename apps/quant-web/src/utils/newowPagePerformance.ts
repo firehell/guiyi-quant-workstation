@@ -1,9 +1,11 @@
+import { annualizedReference } from './performancePresentation.ts'
 import { returnCurveLayout } from './returnCurveLayout.ts'
 export interface PageEstimateTrade {
   readonly buyDate: string; readonly buyPrice: string; readonly sellDate: string; readonly sellPrice: string
   readonly pct: string; readonly forceClose: boolean; readonly buyBarIsLive?: boolean; readonly segment_id: string
 }
 export interface PagePerformanceMode {
+  readonly drawdown_kind?: 'maximum_trade_loss' | 'peak_difference' | 'mixed_segment'
   readonly period: string
   readonly summary: { readonly cumReturn: string; readonly accuracy: number; readonly maxDrawdown: string; readonly tradeCount: number }
   readonly dates: readonly string[]; readonly trading_days: readonly string[]; readonly segment_ids: readonly string[]
@@ -36,8 +38,7 @@ export function pagePerformanceAnnualized(mode: { readonly dates: readonly strin
   const span = (days.at(-1)! - days[0]!) / 86_400_000
   const start = 1 + values[0]! / 100, end = 1 + values.at(-1)! / 100
   if (span <= 0 || start <= 0 || end <= 0) return null
-  const annual = 100 * (Math.pow(end / start, 365 / span) - 1)
-  return Number.isFinite(annual) ? annual : null
+  return annualizedReference({start:values[0]!,end:values.at(-1)!,days:span})
 }
 /** Independent segment annuals; the page curve and its projection remain unchanged. */
 export function pagePerformanceSegmentAnnualized(mode: { readonly dates: readonly string[]; readonly equity: readonly string[]; readonly segment_ids: readonly string[] } | null | undefined) {
@@ -75,7 +76,8 @@ function list(v: unknown): unknown[] { if (!Array.isArray(v)) throw Error('page_
 function mode(v: unknown, cutoff?: string, ideal = false): PagePerformanceMode | null {
   if (v === null) return null
   const m = obj(v), s = obj(m.summary)
-  exact(m, ['period','summary','dates','trading_days','segment_ids','equity','trades'])
+  exact(m, ['period','summary','dates','trading_days','segment_ids','equity','trades', ...(Object.hasOwn(m,'drawdown_kind') ? ['drawdown_kind'] : [])])
+  if (m.drawdown_kind !== undefined && !['maximum_trade_loss','peak_difference','mixed_segment'].includes(m.drawdown_kind as string)) throw Error('page_performance drawdown kind invalid')
   exact(s, ['cumReturn','accuracy','maxDrawdown','tradeCount'])
   const dates = list(m.dates).map(text), days = list(m.trading_days).map(text), segments = list(m.segment_ids).map(text), equity = list(m.equity).map(decimal)
   if ([days, segments, equity].some(items => items.length !== dates.length)) throw Error('page_performance curve dimensions invalid')
@@ -106,7 +108,7 @@ function mode(v: unknown, cutoff?: string, ideal = false): PagePerformanceMode |
   })
   const accuracy = count(s.accuracy), tradeCount = count(s.tradeCount)
   if (accuracy > 100 || tradeCount !== trades.length) throw Error('page_performance summary invalid')
-  return {period: text(m.period), summary: {cumReturn: decimal(s.cumReturn), accuracy, maxDrawdown: decimal(s.maxDrawdown), tradeCount}, dates, trading_days: days, segment_ids: segments, equity, trades}
+  return {...(m.drawdown_kind === undefined ? {} : {drawdown_kind:m.drawdown_kind as PagePerformanceMode['drawdown_kind']}),period: text(m.period), summary: {cumReturn: decimal(s.cumReturn), accuracy, maxDrawdown: decimal(s.maxDrawdown), tradeCount}, dates, trading_days: days, segment_ids: segments, equity, trades}
 }
 export function normalizePagePerformance(v: unknown, strategy: PagePerformance['strategy'], cutoff?: string, period?: string): PagePerformance | null {
   if (v === undefined || v === null) return null
@@ -129,7 +131,7 @@ export function pagePerformanceLayout(mode: PagePerformanceMode | null) {
     date: mode.trading_days[index] ?? '',
     segment: mode.segment_ids[index] ?? '',
   })) ?? []
-  return returnCurveLayout(points, { headroom: 1, areaBaseline: 'bottom', singlePoint: 'start' })
+  return returnCurveLayout(points, { headroom: 1, areaBaseline: 'bottom', singlePoint: 'start', valueUnit:'percentage_points' })
 }
 export function pagePerformancePlot(mode: PagePerformanceMode | null) {
   return pagePerformanceLayout(mode).segments

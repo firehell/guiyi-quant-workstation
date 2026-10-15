@@ -221,3 +221,53 @@ def test_blocked_run_identity_includes_typed_gap(tmp_path):
     first_id = publish_result(tmp_path, first)["metadata"]["run_id"]
     second_id = publish_result(tmp_path, second)["metadata"]["run_id"]
     assert first_id != second_id
+
+
+def test_full_equity_curve_keeps_original_points_extrema_boundaries_and_hash(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from app.new_subing_research.store import equity_curve
+    payload = packet()
+    start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    payload['equity'] = [dict(at=(start + timedelta(minutes=i)).isoformat(), equity=str(i % 17),
+                              physical_contract='AL2501' if i < 1500 else 'AL2502') for i in range(3000)]
+    payload['equity'][125]['equity'] = '-999'
+    payload['equity'][2200]['equity'] = '999'
+    frozen = publish_result(tmp_path, payload)
+    run_id = frozen['metadata']['run_id']
+    curve = equity_curve(tmp_path, run_id, max_points=40)
+    assert curve['run_id'] == run_id and curve['sha256'] == page_result(tmp_path, run_id, 'equity')['sha256']
+    assert curve['total'] == 3000 and curve['sampled'] is True
+    assert len(curve['items']) <= 40
+    assert curve['items'][0] == payload['equity'][0] and curve['items'][-1] == payload['equity'][-1]
+    for index in [125, 1499, 1500, 2200]:
+        assert payload['equity'][index] in curve['items']
+    assert all(item in payload['equity'] for item in curve['items'])
+    with pytest.raises(ResultStoreError, match='RESULT_HASH_MISMATCH'):
+        equity_curve(tmp_path, run_id, expected_sha256='0' * 64)
+    assert read_result(tmp_path, run_id)['summary'] == frozen['summary']
+
+
+def test_equity_boundary_budget_fails_closed_and_empty_is_explicit(tmp_path):
+    from app.new_subing_research.store import equity_curve
+    payload = packet()
+    payload['equity'] = [dict(at=f'2025-01-01T00:{i:02d}:00+00:00', equity=str(i), physical_contract=str(i)) for i in range(10)]
+    frozen = publish_result(tmp_path, payload)
+    with pytest.raises(ResultStoreError, match='CURVE_BOUNDARY_BUDGET_EXCEEDED'):
+        equity_curve(tmp_path, frozen['metadata']['run_id'], max_points=4)
+    other = tmp_path / 'empty'
+    frozen = publish_result(other, packet())
+    assert equity_curve(other, frozen['metadata']['run_id'])['items'] == []
+
+
+@pytest.mark.parametrize('rows', [
+    [{'at': 'bad', 'equity': '1'}],
+    [{'at': '2025-01-01T00:00:00+00:00', 'equity': 'NaN'}],
+    [{'at': '2025-01-02T00:00:00+00:00', 'equity': '1'}, {'at': '2025-01-01T00:00:00+00:00', 'equity': '1'}],
+])
+def test_curve_refuses_invalid_time_values_or_order(tmp_path, rows):
+    from app.new_subing_research.store import equity_curve
+    payload = packet()
+    payload['equity'] = rows
+    frozen = publish_result(tmp_path, payload)
+    with pytest.raises(ResultStoreError, match='CURVE_FACTS_INVALID'):
+        equity_curve(tmp_path, frozen['metadata']['run_id'])

@@ -1,5 +1,17 @@
 # 当前状态
 
+## 10/15 全站 UI、交互与收益展示统一开发候选
+
+白底橙色紧凑样式、公共收益外壳及SVG、独立页面/已完成/含浮动模式、研究完整冻结权益接口和统一只读消息流已实现。
+页面公式、AI评分和历史研究结果未改写；`drawdown_kind`只补实际损失类型声明。消息不创建Event，不调用transport。
+研究曲线绑定run/hash、最多2000原始点并保留边界；分页独立。显示偏好、滚动恢复、异步身份、离场旧页交互和弹层已回归。
+Web unit 1136 passed/3 skipped，受影响后端113 passed，工程/消息38 passed；类型/build/topology、OpenSpec strict11项、
+Ruff、secret scan和diff通过。浏览器公共矩阵26项、消息首页7项通过；独立Review确认项已关闭。
+验证串行、Web unit并发1，避免全量测试、构建、浏览器叠加。31项映射和实际命令见`docs/tasks/ui-unification.md`及`TESTING.md`。
+权威行情API缺少tick_size，普通价格保留现有来源精度，未冒充完成按最小变动价位动态格式化。
+浏览器fixture证明交互，不代替真实策略收益或Runtime验收；本次未发布、未切换正式5173/8000、未补数据或发送真实通知。
+
+
 ## 10/15 晚间续修：v1.15.9 已发布，正式 Runtime 仍 v1.15.7
 
 PR #455、#457 已合入 develop；provider 清理后隔离、listener 验证退休、普通 grace/shutdown 发布与盘后维护互斥，

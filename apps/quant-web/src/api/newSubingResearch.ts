@@ -1,5 +1,5 @@
 import request from './request'
-import type { NewSubingMetadata, NewSubingPage, NewSubingProfiles, NewSubingRunDetail } from '@/types/newSubingResearch'
+import type { NewSubingEquityCurve, NewSubingMetadata, NewSubingPage, NewSubingProfiles, NewSubingRunDetail } from '@/types/newSubingResearch'
 
 const prefix = '/research/new-subing'
 export function getNewSubingProfiles() {
@@ -13,4 +13,8 @@ export function getNewSubingRun(runId: string) {
 }
 export function getNewSubingPage(runId: string, kind: 'decisions' | 'trades' | 'equity', cursor?: string | null) {
   return request.get<never, NewSubingPage>(`${prefix}/runs/${encodeURIComponent(runId)}/${kind}`, { params: { limit: 50, ...(cursor ? { cursor } : {}) } })
+}
+
+export function getNewSubingEquityCurve(runId: string, sha256: string) {
+  return request.get<never, NewSubingEquityCurve>(`${prefix}/runs/${encodeURIComponent(runId)}/equity-curve`, { params: { sha256, max_points: 2000 } })
 }

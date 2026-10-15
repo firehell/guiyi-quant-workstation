@@ -12,5 +12,15 @@ export async function compileCurveComponent(url: URL, fusionMock?: string): Prom
   for (const match of [...code.matchAll(/from ['"]((?:\.\.\/|\.\/)[^'"]+\.vue)['"]/g)]) {
     code = code.replace(match[0], `from '${await compileCurveComponent(new URL(match[1]!,url),fusionMock)}'`)
   }
+  for (const match of [...code.matchAll(/from ['"]((?:\.\.\/|\.\/)[^'"]+)['"]/g)]) {
+    const target = new URL(match[1]!.endsWith('.ts') ? match[1]! : `${match[1]}.ts`, url)
+    let href = target.href
+    const source = readFileSync(target,'utf8')
+    if (/import ['"][^'"]+\.css['"]/.test(source)) {
+      const module = ts.transpileModule(source.replace(/import ['"][^'"]+\.css['"];?/g,''),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/from ['"]vue['"]/g,`from '${import.meta.resolve('vue')}'`)
+      href = `data:text/javascript;base64,${Buffer.from(module).toString('base64')}`
+    }
+    code = code.replace(match[0], `from '${href}'`)
+  }
   return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 }

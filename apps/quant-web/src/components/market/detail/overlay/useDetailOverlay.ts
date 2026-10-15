@@ -55,7 +55,7 @@ export function useDetailOverlay(options: {
 
   function deactivate(restoreFocus: boolean) {
     const panel = options.panel.value
-    if (options.native && panel instanceof HTMLDialogElement && panel.open) {
+    if (options.native && typeof HTMLDialogElement !== 'undefined' && panel instanceof HTMLDialogElement && panel.open) {
       // HTMLDialogElement.close() queues its close event; it can arrive after a new showModal().
       pendingCloses++
       panel.close()
@@ -65,7 +65,7 @@ export function useDetailOverlay(options: {
     if (index >= 0) overlays.splice(index, 1)
     releaseScroll?.()
     releaseScroll = undefined
-    document.removeEventListener('keydown', onKeydown)
+    if (typeof document !== 'undefined') document.removeEventListener('keydown', onKeydown)
     active = false
     if (restoreFocus && wasTop && opener?.isConnected) opener.focus({ preventScroll: true })
     opener = null
@@ -99,7 +99,7 @@ export function useDetailOverlay(options: {
       if (identityChanged && open) options.close()
       return
     }
-    if (active) return
+    if (active || typeof document === 'undefined') return
     opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     await nextTick()
     if (current !== generation || !options.open() || !options.panel.value) return
@@ -108,7 +108,7 @@ export function useDetailOverlay(options: {
     overlays.push(owner)
     active = true
     document.addEventListener('keydown', onKeydown)
-    if (options.native && panel instanceof HTMLDialogElement) panel.showModal()
+    if (options.native && typeof HTMLDialogElement !== 'undefined' && panel instanceof HTMLDialogElement) panel.showModal()
     else (focusableElements(panel)[0] ?? panel).focus({ preventScroll: true })
   }, { immediate: true, flush: 'post' })
 

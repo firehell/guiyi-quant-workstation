@@ -40,7 +40,7 @@ test('page records show latest three, expand and collapse, reset mode/window wit
  const cards=()=>findNodes(root,n=>n.type==='article')
  assert.equal(cards().length,3);assert.match(nodeText(cards()[0]),/09-05.*3100.12.*3200.00/)
  assert.equal(findNodes(cards()[0],n=>n.type==='time')[0]?.props.datetime,'2026-09-05')
- const more=()=>findNode(root,n=>n.type==='button'&&nodeText(n).includes('查看全部'))!
+ const more=()=>findNode(root,n=>n.type==='button'&&nodeText(n).includes('加载更多'))!
  ;(more().props.onClick as Function)();await nextTick();assert.equal(cards().length,5)
  const collapse=findNode(root,n=>n.type==='button'&&nodeText(n)==='收起')!
  ;(collapse.props.onClick as Function)();await nextTick();assert.equal(cards().length,3)
@@ -59,13 +59,13 @@ test('multi-owner page header shows aggregate annualization and follows mode and
  const value=ref({strategy:'trend',ordinary:model,ideal:{...model,equity:['0','10','10','100']},ordinary_interrupted_count:0,ideal_open_count:0})
  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{value:value.value})}));app.mount(root);await nextTick()
  const heading=()=>findNode(root,n=>n.props.class==='newow-reference__annualized')!
- assert.match(nodeText(heading()),/页面参考年化 14\.9%.*2个合约段汇总/)
+ assert.match(nodeText(heading()),/页面参考年化 14\.87%.*2个合约段汇总/)
  assert.match(nodeText(root),/各合约段年化/)
  const toggle=findNode(root,n=>n.type==='button'&&nodeText(n)==='理论值')!
  ;(toggle.props.onClick as Function)();await nextTick()
- assert.match(nodeText(heading()),/41\.4%/)
+ assert.match(nodeText(heading()),/41\.35%/)
  value.value={...value.value,ideal:{...model,dates:['2025-01-01','2026-01-01'],trading_days:['2025-01-01','2026-01-01'],segment_ids:['b','b'],equity:['0','21']}};await nextTick()
- assert.match(nodeText(heading()),/21\.0%/)
+ assert.match(nodeText(heading()),/21\.00%/)
  assert.doesNotMatch(nodeText(heading()),/合约段汇总/)
  assert.deepEqual(model.equity,['0','10','10','32'])
  app.unmount()

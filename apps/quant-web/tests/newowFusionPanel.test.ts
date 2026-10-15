@@ -31,7 +31,7 @@ test('fusion generation conflict requests one parent recovery while busy and sta
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
     response: response.value, onSnapshotConflict: (token: string) => conflicts.push(token),
   }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   mock.calls[base].reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
   await nextTick(); await nextTick()
   assert.deepEqual(conflicts, ['pl-snapshot'])
@@ -54,7 +54,7 @@ test('fusion entry loads automatically and drops late results after identity cha
   const response = ref(input())
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: response.value }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   assert.equal(mock.calls.length, base + 1)
   assert.equal(mock.calls[base].request.identity.strategy, 'trend')
   assert.equal(mock.calls[base].request.snapshotToken, 'jm-snapshot')
@@ -91,7 +91,7 @@ test('dual tab preserves identity and main-rise is no longer a top-level tab', a
   let aiRequests = 0
   const identity = { view: 'newow', symbol: 'jm', strategy: 'oscillation', seriesKind: 'actual_dominant', frequency: '1w' }
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Nav, { identity, restore: { newow: { strategy: 'trend', frequency: '1d' } }, newowFrequencies: ['1d','1w'], onSelect: (v: unknown) => { selected = v }, onAiAnalysis: () => { aiRequests++ } }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   const dual = findNode(root, n => n.type === 'button' && nodeText(n).trim() === '双策略')!
   assert.ok(dual)
   assert.doesNotMatch(nodeText(root), /主升浪/)
@@ -132,12 +132,12 @@ test('fusion curve uses closed members, range does not replace recent records, t
   const root = element('root')
   const base = mock.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input() }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   const trade = (id: string, entry: string, exit: string | null, status = 'CLOSED', value: string | null = '2.5') => ({ reference_trade_id: id, entry_source: 'trend', exit_source: exit ? 'oscillation' : null, entry_trading_day: entry, exit_trading_day: exit, entry_bar_end: `${entry}T07:00:00Z`, exit_bar_end: exit ? `${exit}T07:00:00Z` : null, physical_contract: 'JM2701', entry_reference_price: '100', exit_reference_price: exit ? '102.5' : null, status, reference_return_pct: value, mark_change_pct: status === 'OPEN' ? '-4.5' : null, statistics_membership: 'entry_in_window_v1' })
   const data = { ...output('fixture', 'jm'), groups: [{ model: 'fusion', closed_count: 3, sum_return_percentage_points: '7.5', open_count: 1, interrupted_count: 1 }], items: [trade('open','2026-09-11',null,'OPEN',null), trade('recent','2026-09-08','2026-09-09'), trade('roll','2026-08-06','2026-08-18','ROLLOVER_INTERRUPTED',null), trade('within-year','2026-03-13','2026-04-03'),trade('old','2023-01-01','2023-01-10')] }
   mock.calls[base].resolve(data)
   await nextTick(); await nextTick()
-  assert.match(nodeText(root), /策略收益率走势.*回测操盘提醒/)
+  assert.match(nodeText(root), /参考统计.*历史参考记录/)
   assert.equal(findNodes(root, n => n.type === 'circle').length, 3)
   assert.ok(findNode(root,n => n.props.id === 'fusion-trade-open'))
   assert.ok(findNode(root,n => n.props.id === 'fusion-trade-roll'))
@@ -165,7 +165,7 @@ test('fusion curve uses closed members, range does not replace recent records, t
 test('fusion theory is independent and the ordinary record price remains visible', async () => {
   const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input('rb') }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   const trade = {reference_trade_id:'theory-trade',status:'CLOSED',statistics_membership:'entry_in_window_v1',entry_source:'trend',exit_source:'oscillation',physical_contract:'RB2610',entry_reference_price:'100',exit_reference_price:'105',reference_return_pct:'5',mark_change_pct:null,entry_trading_day:'2026-09-01',exit_trading_day:'2026-09-02',entry_bar_end:'2026-09-01T07:00:00Z',exit_bar_end:'2026-09-02T07:00:00Z'}
   mock.calls[base].resolve({...output('theory-test'),curve:[trade],items:[trade],groups:[{model:'fusion',closed_count:1,sum_return_percentage_points:'5',open_count:0,interrupted_count:0}],theoretical:{model_version:'newow_dual_fusion_hindsight_peak_high_v1',hindsight:true,executable:false,returns:[{reference_trade_id:'theory-trade',return_pct:'20',ideal_exit_price:'120'}],sum_return_percentage_points:'20'}})
   await nextTick();await nextTick()
@@ -174,7 +174,7 @@ test('fusion theory is independent and the ordinary record price remains visible
   ;(theory.props.onClick as Function)()
   await nextTick()
   assert.match(nodeText(root), /持有阶段最高价/)
-  assert.match(nodeText(root), /\+20%/)
+  assert.match(nodeText(root), /已完成参考收益（百分点） \+20\.00 百分点/)
   const record = findNode(root,n=>n.props.id==='fusion-trade-theory-trade')!
   assert.match(nodeText(record), /105/)
   assert.doesNotMatch(nodeText(record), /120/)
@@ -184,13 +184,18 @@ test('fusion theory is independent and the ordinary record price remains visible
 test('missing fusion theory allows returning to ordinary mode; holding readouts keep closed summary separate', async () => {
   const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('rb')})}))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   const trade = {reference_trade_id:'readout',status:'CLOSED',statistics_membership:'entry_in_window_v1',entry_source:'trend',exit_source:'oscillation',physical_contract:'RB2610',entry_reference_price:'100',exit_reference_price:'105',reference_return_pct:'5',mark_change_pct:null,entry_trading_day:'2026-09-01',exit_trading_day:'2026-09-02',entry_bar_end:'2026-09-01T07:00:00Z',exit_bar_end:'2026-09-02T07:00:00Z'}
   mock.calls[base].resolve({...output('holding-test'),curve:[trade],items:[trade],groups:[{model:'fusion',closed_count:1,sum_return_percentage_points:'5',open_count:0,interrupted_count:0}],theoretical:null,holding_curve:{model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points:[{bar_end:'2026-09-01T07:00:00Z',trading_day:'2026-09-01',physical_contract:'RB2610',segment_id:'a',calculation_segment_id:'a',entry_trading_day:'2026-09-01',closed_return_percentage_points:'0',floating_return_pct:'20',marked_return_percentage_points:'20',reference_trade_id:'readout',status:'HOLDING'}]}})
   await nextTick();await nextTick()
   const holding = findNode(root,n=>n.props['aria-label']==='逐 Bar 持有过程')!
   assert.match(nodeText(holding), /浮动 \+20%/)
-  assert.match(nodeText(root), /累计收益 \+5%/)
+  assert.match(nodeText(root), /含浮动参考收益（百分点） \+20\.00 百分点/)
+  await selectFactMode(root, '已完成参考交易')
+  assert.match(nodeText(root), /已完成参考收益（百分点） \+5\.00 百分点/)
+  assert.equal(findNode(root,n=>n.props['aria-label']==='逐 Bar 持有过程'), undefined)
+  await selectFactMode(root)
+  assert.match(nodeText(root), /含浮动参考收益（百分点） \+20\.00 百分点/)
   ;(findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='理论值')!.props.onClick as Function)()
   await nextTick()
   assert.match(nodeText(root), /理论值所需的完整持有区段暂不可用/)
@@ -208,7 +213,7 @@ test('fusion admission waits initially but preserves appended records across sam
   const response = ref(input('j')), readyToLoad = ref(false)
   const Host = await workspaceFusionHost(Panel, () => ({ dualMode: true, referenceResponse: response, identityKey: 'j:1d', comparison: { referenceSettled: readyToLoad } }))
   const app = createRenderer(nodeOperations()).createApp(Host)
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   assert.equal(mock.calls.length, base)
   assert.match(nodeText(root), /正在读取另一策略参考输入/)
   assert.equal(findNode(root, n => n.type === 'button' && n.props.class === 'fusion-refresh')?.props.disabled, true)
@@ -248,7 +253,7 @@ test('new fusion identity clears and aborts old input, waits for admission, and 
   const Panel = await component('newow/NewowFusionPanel'), root = element('root'), base = mock.calls.length
   const response = ref(input('j')), readyToLoad = ref(true)
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: response.value, readyToLoad: readyToLoad.value }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   readyToLoad.value = false
   response.value = input('hc')
   await nextTick()
@@ -275,7 +280,7 @@ test('minute fusion curve location labels only records outside the past year', a
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
   Object.defineProperty(globalThis, 'document', { configurable: true, value: { getElementById: () => null } })
   try {
-    app.mount(root)
+    app.mount(root); await selectFactMode(root)
     const trade = (id: string, entry: string, exit: string, exitDay?: string) => ({ reference_trade_id: id, status: 'CLOSED', statistics_membership: 'entry_in_window_v1', entry_source: 'trend', exit_source: 'oscillation', physical_contract: 'AG2612', entry_reference_price: '100', exit_reference_price: '105', reference_return_pct: '5', mark_change_pct: null, entry_bar_end: entry, exit_bar_end: exit, ...(exitDay ? { exit_trading_day: exitDay } : {}) })
     const rows = [
       trade('recent', '2026-09-24T06:50:00Z', '2026-09-24T06:55:00Z', '2026-09-24'),
@@ -304,12 +309,17 @@ test('missing authoritative exit trading day shows a reason and preserves the cl
   const Panel = await component('newow/NewowFusionPanel')
   const root = element('root'), base = mock.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input() }) }))
-  app.mount(root)
+  app.mount(root); await selectFactMode(root)
   const row = { reference_trade_id: 'missing-trading-day', status: 'CLOSED', statistics_membership: 'entry_in_window_v1', entry_source: 'trend', exit_source: 'oscillation', physical_contract: 'JM2701', entry_trading_day: '2026-09-01', entry_bar_end: '2026-08-31T13:05:00Z', exit_bar_end: '2026-09-01T13:05:00Z', entry_reference_price: '100', exit_reference_price: '105', reference_return_pct: '5', mark_change_pct: null }
   mock.calls[base].resolve({ ...output('missing-day', 'jm'), curve: [row], items: [row], groups: [{ model: 'fusion', closed_count: 1, sum_return_percentage_points: '5', open_count: 0, interrupted_count: 0 }] })
   await nextTick(); await nextTick()
   assert.match(nodeText(root), /曲线日期、数值或区段事实不完整/)
   assert.equal(findNodes(root, node => node.type === 'polyline').length, 0)
-  assert.match(nodeText(root), /累计收益 \+5%/)
+  assert.match(nodeText(root), /已完成参考收益（百分点） \+5\.00 百分点/)
   app.unmount()
 })
+
+async function selectFactMode(root: TestNode, label = '含浮动参考') {
+  const control = findNode(root, node => node.type === 'button' && nodeText(node).trim() === label)
+  if (control) { (control.props.onClick as Function)(); await nextTick() }
+}

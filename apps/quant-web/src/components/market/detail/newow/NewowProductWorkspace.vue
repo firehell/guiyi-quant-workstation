@@ -474,9 +474,9 @@ onBeforeUnmount(() => {
       <template #path><NewowDailyWeeklyPath :decision="experimentSharedChart ? experimentDecision : null" :loading="pathContext.loading" :error="experimentSharedChart ? pathContext.error : '同一合约段的震荡背景不可用'" /></template>
     </NewowExperimentPanel>
     <template v-else>
-    <NewowDecisionV2Panel v-if="chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise')" :response="chartResponse" :display-strategy="dualMode ? 'dual' : selectedStrategy" :main-rise-background="selectedStrategy === 'main_rise'" :background-label="selectedStrategy === 'main_rise' ? '趋势日周背景' : undefined" :current-state="selectedStrategy === 'main_rise' ? describeNewowState(summary.status.state, summary.status.historical) : undefined" :expected-owner="selectedStrategy === 'main_rise' ? mainRiseOwner : undefined" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
+    <NewowDecisionV2Panel v-if="chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise')" :response="chartResponse" :chart-sources="chartPriceSources(chartResponse, summary)" :display-strategy="dualMode ? 'dual' : selectedStrategy" :main-rise-background="selectedStrategy === 'main_rise'" :background-label="selectedStrategy === 'main_rise' ? '趋势日周背景' : undefined" :current-state="selectedStrategy === 'main_rise' ? describeNewowState(summary.status.state, summary.status.historical) : undefined" :expected-owner="selectedStrategy === 'main_rise' ? mainRiseOwner : undefined" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
     <div v-else-if="strategySwitching" class="newow-product-workspace__decision-loading" role="status">正在更新策略概览…</div>
-    <NewowPriceSources :rows="chartPriceSources(chartResponse, summary)" />
+    <NewowPriceSources v-if="!(chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise'))" label="目标／吸筹来源" :rows="chartPriceSources(chartResponse, summary)" />
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
     <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartReferenceCompatible ? [...(chartReferenceResponse?.value?.curve_trades ?? []), ...(chartReferenceResponse?.value?.items ?? [])] : []" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="[...(comparison.reference.value?.value?.curve_trades ?? []), ...(comparison.reference.value?.value?.items ?? [])]" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #reference-controls><slot name="chart-frequency" /></template>
@@ -639,38 +639,38 @@ onBeforeUnmount(() => {
   </section>
 </template>
 <style scoped>
-.newow-experiment-controls{display:flex;justify-content:flex-end;padding:2px 10px;font-size:12px;color:#667085}.newow-experiment-controls.is-active{color:#007aff}.newow-experiment-controls select{margin-left:8px;padding:4px;border:1px solid #e5e7eb;border-radius:6px;background:#fff}
+.newow-experiment-controls{display:flex;justify-content:flex-end;padding:2px 10px;font-size:12px;color:var(--gy-text-muted)}.newow-experiment-controls.is-active{color:var(--gy-accent)}.newow-experiment-controls select{margin-left:8px;padding:4px;border:1px solid #e5e7eb;border-radius:6px;background:var(--gy-bg-panel)}
 .newow-product-workspace { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; gap:3px; }
-.newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:#667085; }
-.newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:#fff; color:#667085; min-height:32px; padding:0 12px; cursor:pointer; }
+.newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:var(--gy-text-muted); }
+.newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:var(--gy-bg-panel); color:var(--gy-text-muted); min-height:32px; padding:0 12px; cursor:pointer; }
 .newow-product-workspace__comparison-controls button[aria-pressed="true"] { color:#c2410c; border-color:#ff6b2c; background:#fff4ee; }
 .newow-product-workspace__unavailable-chart { min-height:clamp(580px,70vh,920px); box-sizing:border-box; }
-.newow-summary { display:grid; gap:8px; padding:8px 12px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
-.newow-product-workspace__load-notice { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:#667085; font-size:12px; }
+.newow-summary { display:grid; gap:8px; padding:8px 12px; border:1px solid #e9edf2; border-radius:12px; background:var(--gy-bg-panel); box-shadow:0 8px 24px #15223808; }
+.newow-product-workspace__load-notice { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:var(--gy-text-muted); font-size:12px; }
 .newow-summary__main,.newow-summary__facts { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; }
-.newow-summary__scope { font-size:10px; font-weight:400; color:#667085; margin-left:6px; }
+.newow-summary__scope { font-size:10px; font-weight:400; color:var(--gy-text-muted); margin-left:6px; }
 .newow-summary__main > strong { font-size:14px; }
 .newow-status { font-size:16px; font-weight:650; }
-.newow-summary__identity { color:#667085; font-size:12px; }
-.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:4px 8px; line-height:1.5; border-radius:8px; background:#f8fafc; }
+.newow-summary__identity { color:var(--gy-text-muted); font-size:12px; }
+.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:var(--gy-text-muted); }.newow-summary__facts > span { min-width:0; padding:4px 8px; line-height:1.5; border-radius:8px; background:#f8fafc; }
 .newow-product-workspace__research { min-width:0; }
-.newow-product-workspace__decision-loading { min-height:66px; display:flex; align-items:center; color:#999; font-size:13px; }
-.newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:#fff; color:inherit; padding:4px 12px; }
+.newow-product-workspace__decision-loading { min-height:66px; display:flex; align-items:center; color:var(--gy-text-muted); font-size:13px; }
+.newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:var(--gy-bg-panel); color:inherit; padding:4px 12px; }
 .newow-status { display:flex; align-items:center; gap:8px; }
-.newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:#f3f4f6; }
+.newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:var(--gy-bg-elevated); }
 .newow-status[data-state="BUILD"] { color:#ff403a; }.newow-status[data-state="HOLD"] { color:#ff6b2c; }.newow-status[data-state="CLEAR"] { color:#22b95d; }.newow-status[data-state="FLAT"] { color:#365af5; }
 .newow-price small { font-size:11px; }.newow-summary__evidence { margin-left:auto; border:1px solid var(--gy-border) !important; border-radius:var(--gy-radius-md); min-height:36px; }
 .newow-product-workspace__auxiliary-controls { display:flex; align-items:center; min-width:0; border-top:1px solid #ebedf0; font-size:12px; }
 .newow-product-workspace__auxiliary-tabs { display:flex; flex:1 1 auto; min-width:0; align-items:center; overflow-x:auto; white-space:nowrap; }
 .newow-product-workspace__auxiliary-controls button { flex:none; min-height:36px; padding:0 10px; }
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { color:#ff6b2c; border-bottom:2px solid #ff6b2c; }
-.newow-product-workspace__indicator-help { flex:none; min-height:25px; margin:0 8px 0 12px; padding:2px 10px; border:1px solid #1677ff; border-radius:16px; background:#fff; color:#1677ff; font-size:12px; line-height:18px; cursor:pointer; }
+.newow-product-workspace__indicator-help { flex:none; min-height:25px; margin:0 8px 0 12px; padding:2px 10px; border:1px solid #1677ff; border-radius:16px; background:var(--gy-bg-panel); color:#1677ff; font-size:12px; line-height:18px; cursor:pointer; }
 .newow-product-workspace__auxiliary-legend-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:4px 10px 16px; font-size:12px; }
 .newow-product-workspace__auxiliary-legend-row > .newow-product-workspace__indicator-help { margin-left:auto; flex-shrink:0; }
 .newow-product-workspace__indicator-help:hover { background:#f2f7ff; }
 .newow-product-workspace__indicator-help:focus-visible { outline:2px solid #1677ff; outline-offset:2px; }
-.newow-mirror-legend { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; min-height:22px; overflow-x:auto; padding:0 10px; color:#667085; font-size:11px; line-height:16px; white-space:nowrap; background:#fff; }
-.newow-mirror-legend__title { color:#667085; }
+.newow-mirror-legend { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; min-height:22px; overflow-x:auto; padding:0 10px; color:var(--gy-text-muted); font-size:11px; line-height:16px; white-space:nowrap; background:var(--gy-bg-panel); }
+.newow-mirror-legend__title { color:var(--gy-text-muted); }
 .newow-mirror-legend__item { display:inline-flex; align-items:center; gap:4px; }
 .newow-mirror-legend__item i { display:inline-block; flex:0 0 8px; width:8px; height:8px; border-radius:2px; }
 .newow-mirror-legend__item b { font-size:10px; line-height:1; }
@@ -704,7 +704,7 @@ onBeforeUnmount(() => {
 .newow-niuwa-explanation__cycle small { color:#9899a2; font-size:11px; }
 .newow-niuwa-explanation__cycle p { display:flex; align-items:center; justify-content:center; gap:4px; margin-top:10px; white-space:nowrap; font-size:13px; }
 .newow-niuwa-explanation__cycle span { color:#777985; }
-.newow-niuwa-explanation__verse { margin-bottom:14px; padding:16px 12px; border-left:4px solid #ffcc00; border-radius:11px; background:linear-gradient(110deg,#243c60,#2b1f49); color:#fff; text-align:center; font-weight:700; }
+.newow-niuwa-explanation__verse { margin-bottom:14px; padding:16px 12px; border-left:4px solid #ffcc00; border-radius:11px; background:linear-gradient(110deg,#243c60,#2b1f49); color:var(--gy-bg-panel); text-align:center; font-weight:700; }
 .newow-niuwa-explanation__verse > strong { color:#ffcc00; font-size:13px; }
 .newow-niuwa-explanation__verse p { margin-top:10px; font-size:12.5px; line-height:1.8; }
 .newow-niuwa-explanation__verse em { color:#ff9500; font-style:normal; }.newow-niuwa-explanation__verse em.newow-niuwa-explanation__red { color:#ff403a; }.newow-niuwa-explanation__verse em.newow-niuwa-explanation__muted { color:#999ba2; }
@@ -715,7 +715,7 @@ onBeforeUnmount(() => {
 .newow-niuwa-explanation__control-rows > div { display:flex; gap:9px; align-items:start; }
 .newow-niuwa-explanation__control-rows strong { font-size:13px; }
 .newow-niuwa-explanation__note { margin-top:16px !important; color:#898c92; font-size:10.5px; text-align:center; }
-.newow-trend-reversal-legend { display:grid; gap:4px; padding:4px 10px; font-size:11px; color:#8a909b; background:#fff; }.newow-trend-reversal-legend > div { display:flex; align-items:center; gap:12px; min-height:16px; }.newow-trend-reversal-legend strong { color:#383d48; }.newow-trend-reversal-legend__keys { display:inline-flex; gap:12px; margin-left:auto; }.newow-trend-reversal-legend i { display:inline-block; width:8px; height:8px; border-radius:1px; }.newow-trend-reversal-legend__bias { background:linear-gradient(#ff403a 50%,#30b458 50%); }
+.newow-trend-reversal-legend { display:grid; gap:4px; padding:4px 10px; font-size:11px; color:#8a909b; background:var(--gy-bg-panel); }.newow-trend-reversal-legend > div { display:flex; align-items:center; gap:12px; min-height:16px; }.newow-trend-reversal-legend strong { color:#383d48; }.newow-trend-reversal-legend__keys { display:inline-flex; gap:12px; margin-left:auto; }.newow-trend-reversal-legend i { display:inline-block; width:8px; height:8px; border-radius:1px; }.newow-trend-reversal-legend__bias { background:linear-gradient(#ff403a 50%,#30b458 50%); }
 .newow-trend-reversal-explanation { font-size:12px; line-height:1.35; color:#56595d; }
 .newow-trend-reversal-explanation__intro { margin:0 0 14px; color:#888b91; text-align:center; font-size:12.5px; font-weight:600; line-height:1.35; }
 .newow-trend-reversal-explanation__list { display:grid; gap:10px; }
@@ -734,7 +734,7 @@ onBeforeUnmount(() => {
 .newow-trend-reversal-explanation__list--followup { gap:12px; }
 .newow-trend-reversal-explanation__disclaimer { margin:18px 0 0; color:#898c92; text-align:center; font-size:12px; }
 .newow-product-workspace__notice { color:#b45309; }
-.newow-product-workspace__reference-message { margin:0; padding:8px; color:#b45309; border:1px solid var(--gy-border); border-radius:7px; background:#fff; }
+.newow-product-workspace__reference-message { margin:0; padding:8px; color:#b45309; border:1px solid var(--gy-border); border-radius:7px; background:var(--gy-bg-panel); }
 .newow-window-state { display:grid; gap:6px; padding:12px; border:1px solid var(--gy-border); border-radius:7px; }
 .newow-window-state h3,.newow-window-state p { margin:0; }
 .newow-window-state h3 { font-size:14px; }
@@ -747,10 +747,10 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 .newow-test-menu { position:relative; color:#888; font-size:14px; }
 .newow-test-menu summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:4px; height:36px; padding:0 12px; border-radius:6px; background:#f0f0f5; font-weight:600; }
 .newow-test-menu summary::-webkit-details-marker { display:none; }
-.newow-test-menu summary:focus-visible { outline:2px solid #007aff; outline-offset:2px; }
-.newow-test-menu summary.is-active { background:#ff6b2c; color:#fff; }
-.newow-test-menu__popup { position:absolute; z-index:100; top:calc(100% + 4px); left:0; width:88px; padding:4px 0; border-radius:8px; background:#fff; box-shadow:0 4px 16px #00000026; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button { display:block; width:100%; min-height:32px; padding:0 14px; text-align:left; border-radius:0; background:#fff; color:#222; font-size:13px; font-weight:400; }
+.newow-test-menu summary:focus-visible { outline:2px solid var(--gy-accent); outline-offset:2px; }
+.newow-test-menu summary.is-active { background:#ff6b2c; color:var(--gy-bg-panel); }
+.newow-test-menu__popup { position:absolute; z-index:100; top:calc(100% + 4px); left:0; width:88px; padding:4px 0; border-radius:8px; background:var(--gy-bg-panel); box-shadow:0 4px 16px #00000026; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button { display:block; width:100%; min-height:32px; padding:0 14px; text-align:left; border-radius:0; background:var(--gy-bg-panel); color:#222; font-size:13px; font-weight:400; }
 .unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button:hover { background:#f5f5f7; }
 .unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button[aria-pressed=true] { color:#ff6b2c; }
 </style>

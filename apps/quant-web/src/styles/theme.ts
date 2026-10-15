@@ -1,38 +1,38 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
 /**
- * Naive UI 亮色主题覆盖（深蓝品牌壳 + 浅色工作区）。
+ * Naive UI 亮色主题覆盖（白底橙色主操作）。
  * Naive 在 JS 中推导 alpha 变体，因此此处须使用具体色值；与 tokens.css 保持一致。
  */
 const palette = {
-  app: '#F4F7FB',
+  app: '#FFFFFF',
   canvas: '#FFFFFF',
   panel: '#FFFFFF',
   panelStrong: '#F8FAFC',
   elevated: '#F2F4F7',
   overlay: '#FFFFFF',
   hover: 'rgba(16, 24, 40, 0.04)',
-  selected: 'rgba(29, 78, 216, 0.08)',
-  border: '#DBE3EE',
-  primaryText: '#0F1F38',
-  secondaryText: '#33507E',
-  mutedText: '#5B718F',
+  selected: 'rgba(255, 150, 1, 0.12)',
+  border: '#EBEDF0',
+  primaryText: '#20242B',
+  secondaryText: '#475467',
+  mutedText: '#667085',
   disabledText: '#98A2B3',
-  accent: '#1D4ED8',
-  accentHover: '#1E40AF',
-  accentPressed: '#1E3A8A',
-  onAccent: '#FFFFFF',
-  controlActive: '#1D4ED8',
-  controlActiveHover: '#1E40AF',
-  controlPressed: '#1E3A8A',
+  accent: '#FF9601',
+  accentHover: '#F79009',
+  accentPressed: '#E88400',
+  onAccent: '#20242B',
+  controlActive: '#FF9601',
+  controlActiveHover: '#F79009',
+  controlPressed: '#E88400',
   controlDisabled: '#F2F4F7',
   // Brand shell (sidebar + header chrome), aligned with --gy-shell-* tokens.
-  shell: '#0B1D3A',
-  shellItemHover: '#16305C',
-  shellText: '#8CA8CF',
-  shellTextActive: '#BFDBFE',
-  shellTextMuted: '#5B7BA6',
-  shellAccent: '#60A5FA',
+  shell: '#FFFFFF',
+  shellItemHover: '#FFF2E5',
+  shellText: '#475467',
+  shellTextActive: '#20242B',
+  shellTextMuted: '#667085',
+  shellAccent: '#B54708',
 } as const
 
 /** 导出给 NConfigProvider 的全局 theme-overrides */

@@ -1,4 +1,4 @@
-import { formatDecimalText } from './marketDisplay.ts'
+import { formatDecimalText, formatMarketPercent } from './marketDisplay.ts'
 
 /** Display-only: source prices and returns keep their original precision. */
 export const newowReferencePrice = (raw: string | null | undefined) =>
@@ -10,7 +10,13 @@ export function newowSimpleDualLabel(_origin: 'trend' | 'oscillation', above: bo
 
 export const newowReferencePercent = (raw: string | null | undefined) => {
   const text = formatDecimalText(raw, { maximumFractionDigits: 2, minimumFractionDigits: 2, signed: true })
-  return text === '—' ? text : `${text}%`
+  const bound = formatMarketPercent(raw, 'percentage_points', true)
+  return bound.startsWith('<') || bound.startsWith('>') ? bound : text === '—' ? text : `${text}%`
+}
+
+export function newowReferencePoints(raw: string | null | undefined): string {
+  const pct = newowReferencePercent(raw)
+  return pct === '—' ? pct : `${pct.slice(0,-1)} 百分点`
 }
 
 /** Main-chart coordinates remain numeric; only price-axis text uses fixed precision. */

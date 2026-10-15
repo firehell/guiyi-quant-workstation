@@ -312,3 +312,57 @@ def page_result(root: Path, run_id: str, kind: str, *, limit: int = 50, cursor: 
     if next_offset < len(packet[kind]):
         next_cursor = base64.urlsafe_b64encode(_json_bytes({"run_id": run_id, "sha256": sha, "kind": kind, "offset": next_offset})).decode("ascii").rstrip("=")
     return {"items": items, "next_cursor": next_cursor, "run_id": run_id, "sha256": sha}
+
+
+def equity_curve(root: Path, run_id: str, *, max_points: int = 2000,
+                 expected_sha256: str | None = None) -> dict[str, Any]:
+    """Full frozen-window projection; exact original points, no recomputation or interpolation."""
+    from datetime import datetime
+
+    if type(max_points) is not int or not 4 <= max_points <= 2000:
+        raise ResultStoreError('CURVE_LIMIT_INVALID')
+    packet, sha = _read_entry(root, run_id)
+    if expected_sha256 is not None and expected_sha256 != sha:
+        raise ResultStoreError('RESULT_HASH_MISMATCH')
+    rows = packet['equity']
+    values: list[Decimal | None] = []
+    previous_at = None
+    for row in rows:
+        try:
+            at = datetime.fromisoformat(row['at'])
+            if at.tzinfo is None or (previous_at is not None and at < previous_at):
+                raise ValueError()
+            value = None if row.get('equity') is None else Decimal(str(row['equity']))
+            if value is not None and not value.is_finite():
+                raise ValueError()
+        except (ValueError, TypeError, KeyError, InvalidOperation) as exc:
+            raise ResultStoreError('CURVE_FACTS_INVALID') from exc
+        previous_at = at
+        values.append(value)
+    selected = {0, len(rows) - 1} if rows else set()
+    valid = [i for i, value in enumerate(values) if value is not None]
+    if valid:
+        selected.update((min(valid, key=lambda i: values[i]), max(valid, key=lambda i: values[i])))
+    # Preserve both sides of every contract/segment change and every explicit gap.
+    def identity(row: dict[str, Any]) -> tuple:
+        return row.get('physical_contract'), row.get('segment_id'), row.get('status'), row.get('interrupted', False)
+    for i in range(1, len(rows)):
+        if identity(rows[i]) != identity(rows[i - 1]) or values[i] is None or values[i - 1] is None:
+            selected.update((i - 1, i))
+    if len(selected) > max_points:
+        raise ResultStoreError('CURVE_BOUNDARY_BUDGET_EXCEEDED')
+    if len(rows) <= max_points:
+        selected = set(range(len(rows)))
+    else:
+        # Fixed contiguous buckets preserve local highs/lows with deterministic ties.
+        buckets = (max_points - len(selected)) // 2
+        for bucket in range(buckets):
+            indices = [i for i in range(bucket * len(rows) // buckets, (bucket + 1) * len(rows) // buckets)
+                       if values[i] is not None]
+            if indices:
+                selected.update((min(indices, key=lambda i: values[i]), max(indices, key=lambda i: values[i])))
+    return {'run_id': run_id, 'sha256': sha, 'items': [rows[i] for i in sorted(selected)],
+            'total': len(rows), 'sampled': len(selected) < len(rows),
+            'sampling_version': 'exact_extrema_boundaries_v1',
+            'since': packet['metadata']['requested_since'], 'through': packet['metadata']['requested_through'],
+            'status': packet['metadata']['status']}

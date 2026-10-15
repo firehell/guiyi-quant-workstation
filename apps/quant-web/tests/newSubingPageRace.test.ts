@@ -9,6 +9,7 @@ const vueUrl = import.meta.resolve('vue')
 const apiUrl = `data:text/javascript;base64,${Buffer.from(`
 export const pending=[];
 const meta=(product,cash='100000')=>({run_id:(product+cash).repeat(64).slice(0,64),product,scenario:'baseline',status:'COMPLETED',strategy_code:'new_subing_v2',initial_cash:cash});
+export function getNewSubingEquityCurve(id){return Promise.resolve({run_id:id,sha256:id,items:[],total:0,sampled:false,status:'COMPLETED',since:'2026-01-01',through:'2026-10-01',sampling_version:'exact_extrema_boundaries_v1'})}
 export function getNewSubingProfiles(){return Promise.resolve({strategy_code:'new_subing_v1',profiles:[]})}
 export function getNewSubingRuns(){return Promise.resolve({runs:[meta('AL'),meta('RB'),meta('AL','1000000')]})}
 export function getNewSubingRun(id){return Promise.resolve({metadata:meta(id.startsWith('R')?'RB':'AL',id.includes('1000000')?'1000000':'100000'),summary:{status:'COMPLETED'},diagnostics:{}})}
@@ -17,7 +18,8 @@ export function getNewSubingPage(id,kind,cursor){
   return Promise.resolve({items:[{reason:id.startsWith('A')?'AL-FIRST':'RB-FIRST'}],next_cursor:'more-'+id,run_id:id,sha256:id});
 }
 `).toString('base64')}`
-const utilUrl = `data:text/javascript;base64,${Buffer.from(`export const selectionToken=(id,n)=>n+':'+id;export const decisionMatches=()=>true;export const equityPoints=()=>'';export const metricText=()=>'';export const runStateText=()=>'';export const matchingRun=(r,s,c,p,x)=>r.strategy_code===s&&r.initial_cash===c&&r.product===p&&r.scenario===x;export const matchingProfile=()=>false;`).toString('base64')}`
+
+const utilUrl = new URL('../src/utils/newSubingResearch.ts',import.meta.url).href
 const shellUrl = `data:text/javascript;base64,${Buffer.from('export default {}').toString('base64')}`
 const api = await import(apiUrl)
 
@@ -26,7 +28,8 @@ async function component() {
   const compiled = compileScript(parse(source).descriptor, { id: 'new-subing-race', inlineTemplate: false })
   const code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
     .replace(/from ['"]vue['"]/g, `from '${vueUrl}'`)
-    .replace(/from ['"]@\/components\/common\/PageShell.vue['"]/g, `from '${shellUrl}'`)
+    .replace(/from ['"]@\/components\/[^'"]+\.vue['"]/g, `from '${shellUrl}'`)
+    .replace(/from ['"]@\/utils\/returnCurveLayout['"]/g, `from '${new URL('../src/utils/returnCurveLayout.ts',import.meta.url).href}'`)
     .replace(/from ['"]@\/api\/newSubingResearch['"]/g, `from '${apiUrl}'`)
     .replace(/from ['"]@\/utils\/newSubingResearch['"]/g, `from '${utilUrl}'`)
   return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default
@@ -63,9 +66,9 @@ test('switching run during deferred pagination unlocks new run and discards old 
   api.pending[0].resolve({items:[{reason:'AL-LATE'}],next_cursor:null,run_id:'A'.repeat(64),sha256:'old'})
   await settle()
   assert.equal(state.pages.decisions.items[0].reason, 'RB-FIRST')
-  api.pending[1].resolve({items:[{reason:'RB-NEXT'}],next_cursor:null,run_id:'R'.repeat(64),sha256:'new'})
+  api.pending[1].resolve({items:[{reason:'RB-NEXT'}],next_cursor:null,run_id:api.pending[1].id,sha256:api.pending[1].id})
   await settle()
-  assert.equal(state.pages.decisions.items[0].reason, 'RB-NEXT')
+  assert.deepEqual(state.pages.decisions.items.map(row=>row.reason), ['RB-FIRST','RB-NEXT'])
   app.unmount()
 })
 
@@ -96,7 +99,9 @@ test('decision action selector offers core trace actions without BUILD', () => {
   const nodes = walk(descriptor.template!.ast)
   const selector = nodes.find(node => node.tag === 'select' && node.props?.some((prop: any) => prop.name === 'model' && prop.exp?.content === 'actionFilter'))
   assert.ok(selector, 'actionFilter select is present')
-  const options = selector.children.map((option: any) => option.children.map((child: any) => child.content).join(''))
+  const option = selector.children.find((node:any)=>node.tag === 'option')
+  const loop = option.props.find((prop:any)=>prop.name === 'for').exp.content
+  const options = JSON.parse(loop.match(/\[[^\]]+\]/)![0].replaceAll("'", '"'))
   assert.deepEqual(options, ['ALL', 'SETUP', 'ADD_SETUP', 'SETUP_INVALIDATED', 'OPEN', 'ADD', 'REDUCE', 'REDUCE_SKIPPED', 'CLEAR', 'CANCEL', 'REJECT', 'INTERRUPTED'])
   assert.ok(!options.includes('BUILD'))
 })

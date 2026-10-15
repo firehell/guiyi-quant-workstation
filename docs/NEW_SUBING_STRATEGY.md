@@ -44,6 +44,13 @@
 页面 `/research/new-subing`，只读展示规则来源、三个品种、setup/decisions、净仓/模型交易、权益、拒绝与证据状态。
 只读API前缀 `/api/v1/research/new-subing`：`/profiles`、`/runs`、`/runs/{run_id}`，
 `/runs/{run_id}/decisions`、`/trades`、`/equity`支持受限分页。GET不启动回测/下载。
+`/runs/{run_id}/equity-curve`只读完整冻结窗口，独立于明细分页；返回run_id、结果sha256、
+原始权益点、total、sampled、sampling_version及窗口/状态。可传sha256绑定预期结果，不匹配返回409。
+max_points默认2000、范围4—2000；超过预算时保留首末点、全局及连续桶内极值、物理合约/segment/status变化
+及空值中断两侧原始点，按原顺序返回，不插值，不修改冻结summary。必保边界超预算返回
+CURVE_BOUNDARY_BUDGET_EXCEEDED；时间无时区、倒序、非有限权益返回CURVE_FACTS_INVALID，不缩窗掩盖缺口。
+页面使用统一收益面板与真实时间轴，显示模型账户权益元值、账户收益和账户回撤；抽样仅用于绘图。
+明细“加载更多”追加已核验同run_id/hash记录，筛选明确仅覆盖已加载范围，不影响完整窗口摘要或曲线。
 显式配置任务结果根 `GUIYI_NEW_SUBING_RESULTS_ROOT`；只按index.json精确索引run-id及SHA，不glob，不接受任意路径。
 结果标识code SHA、formula/profile/risk/execution版本、input/facts hashes，source=historical_replay、auto_order=false。
 运行产物schema_version=1：metadata,summary,decisions,trades,equity,diagnostics；未知/中断不得写作零收益或通过。

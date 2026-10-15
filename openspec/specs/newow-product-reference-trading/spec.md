@@ -1511,6 +1511,35 @@ The channel SHALL require ten bars. Tests 1–3 SHALL use a 7% stop and test 4 a
 - **THEN** pending requests SHALL be cancelled and stale or mismatched experiment responses SHALL be rejected
 - **AND** base strategy state, reference history and experimental results SHALL NOT be displayed under each other's identity.
 
+### Requirement: Explicit page loss statistic presentation
+
+The page performance projection MAY expose optional mode-level `drawdown_kind` as
+`maximum_trade_loss`, `peak_difference`, or `mixed_segment`. It describes the actual
+source computation, not the selected UI preset. A no-op date filter retains the source
+kind; an effective date filter declares peak difference; mixed owner-segment kinds
+remain explicitly mixed. This metadata changes no curve, trade, return, win count or
+source arithmetic. Older frozen projections without the field remain readable and
+SHALL use a qualified generic theoretical loss label rather than infer an algorithm.
+
+#### Scenario: Selected date tab does not prove a loss algorithm
+- **WHEN** the same filtered projection is remounted or a requested window includes all input
+- **THEN** the display uses the result's declared loss kind rather than button memory
+- **AND** percentage-point loss is not labelled as normalized account drawdown
+
+### Requirement: Unified non-executable performance presentation
+
+Newow base, fusion and experiments SHALL share the ordinary performance shell and SVG
+renderer with other supported workstation reference and research surfaces. Newow defaults
+to page-reference performance; CLOSED and marked reference facts have explicit independent
+modes. Marked totals, direction colors, annualization and normalized reference drawdown
+SHALL use the selected marked curve; CLOSED win/trade counts SHALL remain labelled CLOSED.
+Unavailable marked facts SHALL disclose the reason and any CLOSED-only fallback.
+
+#### Scenario: Floating loss changes the displayed total direction
+- **GIVEN** positive CLOSED cumulative return and a larger negative floating reference return
+- **WHEN** marked reference mode is selected
+- **THEN** its displayed total and direction color both describe the negative marked value
+- **AND** switching to CLOSED restores the independent original CLOSED statistic
 
 ## Intraday pilot contracts (P0–P6 candidate)
 

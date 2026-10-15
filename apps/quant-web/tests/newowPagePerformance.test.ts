@@ -4,7 +4,7 @@ import test from 'node:test'
 import { createRenderer, defineComponent, h, nextTick } from 'vue'
 import { normalizePagePerformance, pagePerformancePlot } from '../src/utils/newowPagePerformance.ts'
 function payload() {
-  const mode = (pct:string,forceClose:boolean) => ({period:'day',summary:{cumReturn:pct,accuracy:100,maxDrawdown:'0',tradeCount:1},dates:['2026-01-01','2026-01-02','2026-01-03'],trading_days:['2026-01-01','2026-01-02','2026-01-03'],segment_ids:['owner','owner','owner'],equity:['0','1',pct],trades:[{buyDate:'2026-01-01',buyPrice:'100',sellDate:'2026-01-03',sellPrice:String(100+Number(pct)),pct,forceClose,segment_id:'owner'}]})
+  const mode = (pct:string,forceClose:boolean) => ({period:'day',drawdown_kind:forceClose?'peak_difference':'maximum_trade_loss',summary:{cumReturn:pct,accuracy:100,maxDrawdown:'0',tradeCount:1},dates:['2026-01-01','2026-01-02','2026-01-03'],trading_days:['2026-01-01','2026-01-02','2026-01-03'],segment_ids:['owner','owner','owner'],equity:['0','1',pct],trades:[{buyDate:'2026-01-01',buyPrice:'100',sellDate:'2026-01-03',sellPrice:String(100+Number(pct)),pct,forceClose,segment_id:'owner'}]})
   return {version:'newow_page_performance_v3379_v2',source_version:'3.3.79',source_sha256:'3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d',page_parity:true,executable:false,strategy:'trend',input_sha256:'a'.repeat(64),source_evidence_sha256:null,segment_count:1,ordinary_interrupted_count:0,ideal_open_count:0,ordinary:mode('2',true),ideal:mode('9',false)}
 }
 test('strict page projection rejects source identity and curve/trade contradictions',()=>{
@@ -27,7 +27,7 @@ test('ordinary/theoretical toggle changes independent curve summary and estimate
  const ordinary=findNode(root,n=>n.type==='polyline')!.props.points
  const button=findNode(root,n=>n.type==='button'&&nodeText(n)==='理论值')!
  ;(button.props.onClick as Function)();await nextTick()
- assert.match(nodeText(root),/日K/)
+ assert.match(nodeText(root),/日线/)
  assert.doesNotMatch(nodeText(root),/持仓参考中/)
  assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/9/)
  assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/单笔最大亏损/)
@@ -91,16 +91,18 @@ test('compact plot aligns grid and date axes while separate owners stay disconne
  assert.equal(findNodes(root,n=>n.type==='polygon').length,2)
  assert.equal(findNodes(root,n=>n.type==='polyline').length,2)
  assert.match(nodeText(root),/01-01/)
- assert.doesNotMatch(nodeText(root),/2026-01-01/)
+ assert.match(nodeText(root),/统计窗口 2026-01-01 → 2026-01-03/)
  assert.equal(findNodes(root,n=>n.type==='button' && nodeText(n)==='普通值').length,0)
  const analysis = findNode(root,n=>n.type==='button' && nodeText(n)==='收益分析 ›')!
  ;(analysis.props.onClick as Function)();await nextTick()
- assert.match(nodeText(findNode(root,n=>n.props.role==='dialog')!),/普通值/)
+ assert.match(nodeText(findNode(root,n=>n.type==='dialog')!),/普通值/)
  const theory = findNode(root,n=>n.type==='button' && nodeText(n)==='理论值')!
  ;(theory.props.onClick as Function)();await nextTick()
- assert.match(nodeText(findNode(root,n=>n.props.role==='dialog')!),/理论值/)
+ assert.equal(findNode(root,n=>n.type==='dialog'),undefined,'changing the displayed model closes its old dialog')
+ ;(analysis.props.onClick as Function)();await nextTick()
+ assert.match(nodeText(findNode(root,n=>n.type==='dialog')!),/理论值/)
  assert.equal(findNodes(root,n=>n.type==='polygon').length,1)
  const drawdown = findNode(root,n=>n.type==='dd' && n.props.class==='newow-reference__drawdown')!
- assert.equal(nodeText(drawdown),'0.00%')
+ assert.equal(nodeText(drawdown),'0.00 百分点')
  app.unmount()
 })

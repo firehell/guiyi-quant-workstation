@@ -6,11 +6,6 @@ export interface NewowMessage {
   bar_end: string; trading_day: string; observed_at: string; point: ReferencePoint
   page_parity: true; executable: false
 }
-export interface NewowMessagePage { items: NewowMessage[]; truncated: boolean }
-export async function getNewowMessages(params: { since: string; through: string; product?: string; strategy?: string; frequency?: string }, signal: AbortSignal): Promise<NewowMessagePage> {
-  const { default: request } = await import('./request.ts')
-  return request.get<never, NewowMessagePage>('/reference-trading/newow/messages', { params, signal })
-}
 export const newowMessageStrategies = [
   { value: 'trend', label: '趋势策略' }, { value: 'oscillation', label: '震荡策略' },
   { value: 'main_rise', label: '主升浪策略' }, { value: 'dual_fusion', label: '双策略' },

@@ -8,7 +8,7 @@ import type {
 } from '../types/newowProduct.ts'
 import { newowReferencePrice } from './newowPagePresentation.ts'
 import { newowErrorDisplay } from './newowDataDiagnostics.ts'
-import { formatBeijingInstant, formatDecimalText } from './marketDisplay.ts'
+import { formatBeijingInstant, formatDecimalText, formatPerformancePercent } from './marketDisplay.ts'
 
 export interface NewowProductSectionViewModel {
   readonly section: NewowProductSection
@@ -491,7 +491,7 @@ function assertNever(value: never): never {
 }
 
 function percentageText(value: string | null, suffix = ''): string {
-  return value === null ? '—' : `${formatDecimalString(value)}%${suffix}`
+  return value === null ? '—' : `${formatPerformancePercent(value)}${suffix}`
 }
 
 /** Format the server Decimal lexeme without converting it to a binary number. */

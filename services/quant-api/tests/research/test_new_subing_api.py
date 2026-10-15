@@ -123,3 +123,21 @@ def test_real_core_gap_traces_publish_read_and_api(tmp_path, monkeypatch, gap):
     equity = client.get(f'/api/v1/research/new-subing/runs/{run_id}/equity')
     assert equity.status_code == 200
     assert equity.json()['items'] == result['equity']
+
+
+def test_full_equity_endpoint_is_hash_bound_and_independent_of_pages(tmp_path, monkeypatch):
+    monkeypatch.setenv('GUIYI_NEW_SUBING_RESULTS_ROOT', str(tmp_path))
+    payload = packet()
+    payload['equity'] = [{'at': f'2025-01-01T{i // 60:02d}:{i % 60:02d}:00+00:00', 'equity': str(100000 + i), 'physical_contract': 'AL2501'} for i in range(120)]
+    frozen = publish_result(tmp_path, payload)
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    path = f"/api/v1/research/new-subing/runs/{frozen['metadata']['run_id']}"
+    page = client.get(path + '/equity').json()
+    curve = client.get(path + '/equity-curve', params={'sha256': page['sha256']})
+    assert curve.status_code == 200
+    assert len(page['items']) == 50 and len(curve.json()['items']) == 120
+    assert curve.json()['items'][-1] == payload['equity'][-1]
+    assert client.get(path + '/equity-curve', params={'sha256': '0' * 64}).status_code == 409
+    assert client.get(path + '/equity-curve', params={'max_points': 2001}).status_code == 422

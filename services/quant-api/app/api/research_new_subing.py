@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.new_subing_research.store import ResultStoreError, list_results, page_result, read_result
+from app.new_subing_research.store import ResultStoreError, equity_curve, list_results, page_result, read_result
 
 router = APIRouter(prefix="/api/v1/research/new-subing", tags=["new-subing-research"])
 _RUN = re.compile(r"[0-9a-f]{64}\Z")
@@ -99,3 +99,15 @@ def trades(run_id: str, limit: int = Query(50, ge=1, le=200), cursor: str | None
 @router.get("/runs/{run_id}/equity")
 def equity(run_id: str, limit: int = Query(50, ge=1, le=200), cursor: str | None = Query(None, max_length=512)) -> dict:
     return _page(run_id, "equity", limit, cursor)
+
+
+@router.get("/runs/{run_id}/equity-curve")
+def full_equity_curve(run_id: str, max_points: int = Query(2000, ge=4, le=2000),
+                      sha256: str | None = Query(None, pattern=r"^[0-9a-f]{64}$")) -> dict:
+    root = _root()
+    if root is None:
+        raise HTTPException(status_code=404, detail={"code": "RESULT_NOT_FOUND"})
+    try:
+        return equity_curve(root, run_id, max_points=max_points, expected_sha256=sha256)
+    except ResultStoreError as exc:
+        raise _fail(exc) from exc

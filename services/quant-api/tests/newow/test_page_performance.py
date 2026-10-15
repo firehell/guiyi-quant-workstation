@@ -27,7 +27,7 @@ def numeric(value):
         return {
             k: numeric(v)
             for k, v in value.items()
-            if k not in ("segment_ids", "trading_days", "segment_id")
+            if k not in ("segment_ids", "trading_days", "segment_id", "drawdown_kind")
         }
     if isinstance(value, list):
         return [numeric(v) for v in value]
@@ -356,3 +356,19 @@ def test_ended_owner_open_pairing_does_not_enter_window_interruption_counts():
     actual = compute_page_performance([old, current], "fusion", since="2026-01-01")
     assert actual["ordinary_interrupted_count"] == 0
     assert actual["ideal_open_count"] == 0
+
+
+def test_drawdown_type_describes_actual_filter_not_requested_preset():
+    from guiyi_quant.newow.page_performance import filter_page_by_date
+    case = ORACLE["fusion_witness"]
+    actions = tuple(PageAction(s["date"], s["type"], Decimal(str(s["price"]))) for s in case["signals"])
+    segment = PageSegment("owner", tuple(map(bar, case["bars"])), True, actions)
+    result = compute_page_performance([segment], "fusion")
+    ideal = result["ideal"]
+    assert ideal["drawdown_kind"] == "maximum_trade_loss"
+    assert result["ordinary"]["drawdown_kind"] == "peak_difference"
+    # A request covering the full source keeps its original statistic.
+    assert filter_page_by_date(ideal, "1900-01-01")["drawdown_kind"] == "maximum_trade_loss"
+    filtered = filter_page_by_date(ideal, ideal["trading_days"][1])
+    assert filtered["drawdown_kind"] == "peak_difference"
+    assert ideal["drawdown_kind"] == "maximum_trade_loss"

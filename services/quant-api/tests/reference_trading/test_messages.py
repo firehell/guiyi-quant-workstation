@@ -88,6 +88,8 @@ def test_feed_filters_preserves_hints_and_has_no_delivery_or_execution():
         row.health = "STALE_INVALID"
         session.commit()
     assert read_messages(factory, **args)["items"] == []
+    assert read_messages(factory, **args)["excluded_streams"] == 1
+    assert read_messages(factory, **args)["scope"] == "ready_forward_streams_only"
 
 
 def test_feed_never_uses_historical_or_seed_facts():

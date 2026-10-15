@@ -185,6 +185,7 @@ def _segment(
         exit_(len(bars) - 1, rows[-1][2], True)
     return {
         "period": period,
+        "drawdown_kind": "maximum_trade_loss" if ideal else "peak_difference",
         "summary": {
             "cumReturn": _number(cum, 2),
             "accuracy": floor(wins / len(trades) * 100 + 0.5) if trades else 0,
@@ -233,6 +234,7 @@ def filter_page_by_date(
         dd = max(dd, peak - float(value))
     result = {
         "period": data["period"],
+        "drawdown_kind": "peak_difference",
         "summary": {
             "cumReturn": _number(cum, 2),
             "accuracy": floor(
@@ -364,6 +366,7 @@ def compute_page_performance(
             "segment_ids": [],
             "trading_days": [],
         }
+        drawdown_kinds: set[str] = set()
         cum = dd = 0.0
         wins = interrupted = used = 0
         for i, segment in enumerate(segments):
@@ -396,6 +399,7 @@ def compute_page_performance(
                 raw_cum = float(result["summary"]["cumReturn"])
                 raw_wins = sum(float(t["pct"]) > 0 for t in result["trades"])
                 raw_dd = float(result["summary"]["maxDrawdown"])
+            drawdown_kinds.add(result["drawdown_kind"])
             aggregate["segment_ids"].extend(result["segment_ids"])
             aggregate["trading_days"].extend(result["trading_days"])
             aggregate["dates"].extend(result["dates"])
@@ -407,6 +411,7 @@ def compute_page_performance(
             wins += raw_wins
             dd = max(dd, raw_dd)
         trades = aggregate["trades"]
+        aggregate["drawdown_kind"] = next(iter(drawdown_kinds)) if len(drawdown_kinds) == 1 else "mixed_segment"
         aggregate["summary"] = {
             "cumReturn": _number(cum, 2),
             "accuracy": floor(wins / len(trades) * 100 + 0.5) if trades else 0,
