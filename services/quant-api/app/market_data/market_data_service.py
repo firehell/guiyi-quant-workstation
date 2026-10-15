@@ -610,6 +610,83 @@ class MarketDataService:
         cutoff = last_end.astimezone(UTC) + timedelta(microseconds=1)
         return (last_day, cutoff) if cutoff <= as_of.astimezone(UTC) else None
 
+    def rank1_quality_endpoint_published(
+        self, *, symbol: str, frequency: BarFrequency, trading_day: date,
+    ) -> bool:
+        """Whether Catalog has published the completed rank-1 D1/W1 endpoint.
+
+        This checks publication metadata only. Once published, the opt-in
+        replay must validate the entire physical lifecycle and typed gaps;
+        callers must never step back after that replay fails.
+        """
+        if frequency not in {BarFrequency.D1, BarFrequency.W1} or type(trading_day) is not date:
+            raise MarketDataError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        sessions = self.session_windows(symbol=symbol, trading_day=trading_day)
+        if not sessions:
+            raise MarketDataError("TRADING_SESSION_MISSING")
+        cutoff = max(window.end for window in sessions)
+        try:
+            mappings = self.catalog.main_map(symbol, trading_day, trading_day)
+            if len(mappings) > 1:
+                raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
+            if not mappings:
+                # A missing rank-1 row is permissible only beyond the entire
+                # published physical tail. Never hide an internal map hole.
+                physical = self.catalog.contract_partitions_before(
+                    symbol, BarFrequency.D1, cutoff + timedelta(microseconds=1),
+                )
+                if any(self._partition_covers_endpoint(row, cutoff) for row in physical):
+                    raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+                if frequency is BarFrequency.W1:
+                    weekly = self.catalog.contract_partitions_before(
+                        symbol, BarFrequency.W1, cutoff + timedelta(microseconds=1),
+                    )
+                    if any(self._partition_covers_endpoint(row, cutoff) for row in weekly):
+                        raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+                return False
+            contract = mappings[0].contract
+            if frequency is BarFrequency.W1:
+                weekly_key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.W1)
+                if any(self._partition_covers_endpoint(row, cutoff)
+                       for row in self.catalog.all_partitions(weekly_key)):
+                    return True
+                physical_weekly = self.catalog.contract_partitions_before(
+                    symbol, BarFrequency.W1, cutoff + timedelta(microseconds=1),
+                )
+                if any(self._partition_covers_endpoint(row, cutoff) for row in physical_weekly):
+                    raise MarketDataError("WEEKLY_SOURCE_BAR_CONFLICT")
+            daily_key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.D1)
+            daily_rows = self.catalog.all_partitions(daily_key)
+            daily_published = any(
+                self._partition_covers_endpoint(row, cutoff) for row in daily_rows
+            )
+            if not daily_published:
+                physical = self.catalog.contract_partitions_before(
+                    symbol, BarFrequency.D1, cutoff + timedelta(microseconds=1),
+                )
+                if any(self._partition_covers_endpoint(row, cutoff) for row in physical):
+                    raise MarketDataError("PHYSICAL_DATA_MISSING")
+                return False
+            if frequency is BarFrequency.D1:
+                return True
+            # A quality-broken completed week has no stored W1 Bar. D1
+            # publication plus a typed daily quality fact makes it a real
+            # weekly interruption to validate in the replay below.
+            monday = trading_day - timedelta(days=trading_day.weekday())
+            return any(
+                monday <= fact.trading_day <= trading_day
+                for row in daily_rows
+                for fact in row.source_quality
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+
+    @staticmethod
+    def _partition_covers_endpoint(row: CatalogPartition, endpoint: datetime) -> bool:
+        start = row.source_coverage_start or row.coverage_start
+        end = row.source_coverage_end or row.coverage_end
+        return start is not None and end is not None and start <= endpoint <= end
+
     def weekly_tail_unpublished(self, *, symbol: str, week_end: date) -> bool:
         """Prove the completed tail week has no rank1 facts at all.
 

@@ -1269,6 +1269,10 @@ def test_canonical_event_commit_then_status_failure_blocks_sender(
             assert limit == 64
             return window
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     class Evaluator:
         @staticmethod
         def evaluate_candidates(_market_read, candidate_window):
@@ -1370,6 +1374,10 @@ def test_unscoped_canonical_update_does_not_clear_processing_failure() -> None:
         def latest_canonical_window(*_args, **_kwargs):
             raise AssertionError("unscoped canonical path must not read")
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     now = datetime(2026, 9, 11, 8, tzinfo=UTC)
     runtime = AlertRuntime(
         session_factory=Session,
@@ -1443,6 +1451,10 @@ def test_canonical_status_failure_discards_only_its_unapproved_message() -> None
                 (bar,),
                 (contract,),
             )
+
+        @staticmethod
+        def assert_window_current(_window):
+            return None
 
     class Evaluator:
         @staticmethod
@@ -1546,6 +1558,10 @@ def test_canonical_typed_evaluation_failure_preserves_history_and_can_recover(
             assert limit == 64
             return window
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     class Evaluator:
         calls = 0
 
@@ -1632,6 +1648,10 @@ def test_duplicate_canonical_update_neither_recommits_nor_resends(
             assert limit == 64
             return window
 
+        @staticmethod
+        def assert_window_current(_window):
+            return None
+
     class Evaluator:
         @staticmethod
         def evaluate_candidates(_market_read, _window):
@@ -1713,6 +1733,10 @@ def test_duplicate_canonical_update_does_not_clear_prior_status_failure(
             assert trading_day == window.trading_day
             assert limit == 64
             return window
+
+        @staticmethod
+        def assert_window_current(_window):
+            return None
 
     class Evaluator:
         @staticmethod

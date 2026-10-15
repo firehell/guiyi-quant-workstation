@@ -71,6 +71,10 @@ class AlertEventCreate:
     source_observation_id: str | None = None
     processing_mode: str | None = None
     notification_status: str | None = None
+    input_policy_version: str | None = None
+    notification_policy_version: str | None = None
+    notification_claimed_at: datetime | None = None
+    notification_generation: int | None = None
 
 
 class AlertService:
@@ -79,6 +83,14 @@ class AlertService:
         self._operational_products = frozenset(
             normalize_symbol(item) for item in operational_products
         )
+
+    def terminalize_notification_preparation(self, event_id: int, *, at: datetime) -> None:
+        event = self._session.get(AlertEvent, event_id)
+        if event is None or event.notification_status != "HANDOFF_PENDING":
+            raise AlertConsistencyError()
+        event.notification_status = "PREPARATION_FAILED_NO_SEND"
+        event.notification_finished_at = at
+        self._session.commit()
 
     def product_rules(self, symbol: str) -> tuple[ProductAlertRuleState, ...]:
         normalized = self._require_operational_symbol(symbol)
@@ -173,7 +185,25 @@ class AlertService:
                 raise AlertConsistencyError()
         elif request.source_observation_id is not None or request.processing_mode is not None:
             raise AlertConsistencyError()
-        if request.notification_status not in (None, "EXPIRED_NO_SEND"):
+        if request.input_policy_version is not None:
+            from app.alerts.registry import SUBING_THS_ALERT_RULE_CODE, SUBING_QUALITY_REWARM_POLICY_V2
+            if (request.input_policy_version != SUBING_QUALITY_REWARM_POLICY_V2
+                    or rule.rule_code != SUBING_THS_ALERT_RULE_CODE or frequency not in {"1d", "1w"}):
+                raise AlertConsistencyError()
+        if request.notification_policy_version is not None:
+            if (request.notification_policy_version != "alert_memory_batch_v2"
+                    or type(request.notification_generation) is not int or request.notification_generation < 1
+                    or request.notification_claimed_at is None
+                    or request.notification_attempted_at is not None
+                    or request.notification_status not in {"HANDOFF_PENDING", "EXPIRED_NO_SEND"}):
+                raise AlertConsistencyError()
+            _require_aware(request.notification_claimed_at)
+            if request.notification_claimed_at != request.detected_at:
+                raise AlertConsistencyError()
+        elif (request.notification_claimed_at is not None or request.notification_generation is not None
+                or request.notification_status == "HANDOFF_PENDING"):
+            raise AlertConsistencyError()
+        if request.notification_status not in (None, "EXPIRED_NO_SEND", "HANDOFF_PENDING"):
             raise AlertConsistencyError()
         if request.notification_status == "EXPIRED_NO_SEND" and request.notification_attempted_at is not None:
             raise AlertConsistencyError()
@@ -222,6 +252,10 @@ class AlertService:
             source_observation_id=request.source_observation_id,
             processing_mode=request.processing_mode,
             notification_status=request.notification_status,
+            input_policy_version=request.input_policy_version,
+            notification_policy_version=request.notification_policy_version,
+            notification_claimed_at=request.notification_claimed_at,
+            notification_generation=request.notification_generation,
         )
         if request.subing_alignment is not None:
             from app.alerts.registry import SUBING_THS_ALERT_RULE_CODE

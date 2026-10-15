@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol
 
-from app.alerts.registry import HTDY_RULE, SUBING_THS_RULE, SUBING_FORMULA_VERSIONS
+from app.alerts.registry import (
+    HTDY_RULE, SUBING_THS_RULE, SUBING_FORMULA_VERSIONS,
+    SUBING_QUALITY_REWARM_POLICY_V2,
+)
 from app.market_data.domain import CanonicalBar, INTRADAY_FREQUENCIES
 from app.market_data.market_read_service import (
     CurrentContractReplayWindow,
@@ -46,6 +49,7 @@ class AlertObservationCandidate:
     trading_day: date
     contract: str
     observation_types: tuple[str, ...]
+    input_policy_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,13 +206,30 @@ class SubingThsEvaluator:
                     raise AlertEvaluationError("ALERT_EVALUATION_INPUT_INVALID")
                 raise AlertEvaluationSkipped("ALERT_EVALUATION_DUPLICATE")
         cursor = self._cursors.get(key)
-        after = cursor.last_bar_end if cursor is not None and cursor.contract == window.contract else None
-        try:
-            replay = market_read.current_contract_replay_window(window, after=after)
-        except MarketReadWindowError as exc:
-            raise AlertEvaluationError(_market_read_error_code(exc)) from None
+        quality_rewarm = (
+            window.frequency in {"1d", "1w"}
+            and window.input_policy_version == SUBING_QUALITY_REWARM_POLICY_V2
+        )
+        if quality_rewarm:
+            # The opt-in MarketReadService window is the complete current
+            # calculation segment. Rebuild from its first valid Bar each time;
+            # no cursor can carry MACD/EMA or previous CROSS across a break.
+            replay = CurrentContractReplayWindow(
+                symbol=window.symbol, frequency=window.frequency,
+                trading_day=window.trading_day, contract=window.contract,
+                cutoff=window.cutoff, after=None, bars=window.bars,
+            )
+        else:
+            after = cursor.last_bar_end if cursor is not None and cursor.contract == window.contract else None
+            try:
+                replay = market_read.current_contract_replay_window(window, after=after)
+            except MarketReadWindowError as exc:
+                raise AlertEvaluationError(_market_read_error_code(exc)) from None
         self._validate_replay(window, replay)
-        state = cursor.state if cursor is not None and cursor.contract == window.contract else self._kernel.initial_state()
+        state = (
+            cursor.state if not quality_rewarm and cursor is not None
+            and cursor.contract == window.contract else self._kernel.initial_state()
+        )
         final = None
         for bar in replay.bars:
             state, final = self._kernel.step(state, float(bar.close), bar_end=bar.bar_end.isoformat())
@@ -236,6 +257,7 @@ class SubingThsEvaluator:
                 trading_day=last.trading_day,
                 contract=window.contract,
                 observation_types=final.result_codes,
+                input_policy_version=(SUBING_QUALITY_REWARM_POLICY_V2 if quality_rewarm else None),
             ),
         )
 
@@ -248,6 +270,10 @@ class SubingThsEvaluator:
             or window.bars[-1].bar_end != window.cutoff
             or len(window.bar_contracts) != len(window.bars)
             or window.bar_contracts[-1] != window.contract
+            or (
+                window.frequency in {"1d", "1w"}
+                and window.input_policy_version != SUBING_QUALITY_REWARM_POLICY_V2
+            )
         ):
             raise AlertEvaluationError("ALERT_EVALUATION_INPUT_INVALID")
 
