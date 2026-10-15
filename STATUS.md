@@ -1,6 +1,6 @@
 # 当前状态
 
-## 10/15 实时计算与推送 v2：v1.15.8 已发布，Runtime 切换待闭市窗口
+## 10/15 实时计算与推送 v2：v1.15.8 已发布，盘后 Reference 冲突阻断切换
 
 owner 已选择质量缺口后重新预热，以及同规则/受众/周期/Bar 的有界内存通知交接。
 SuBing D1/W1 使用 `subing_quality_rewarm_v2`：完整物理合约生命周期、已证实质量断点后重热，
@@ -8,19 +8,34 @@ SuBing D1/W1 使用 `subing_quality_rewarm_v2`：完整物理合约生命周期�
 `alert_memory_batch_v2` 把HTTP移出实时计算与品种恢复锁；单线程、512含在途成员、16,000 UTF-8字节、
 原始观察30秒期限、同Bar合并、逐Event身份与原子领取/结果，未知发送禁重试，重启不重建发送。
 0052仅新增nullable事实列，旧行保留；实际发送资格、尝试领取、完成时间与provider接受分开记录。
-全部Confirmed Issue已修并通过独审，PR #451已合入develop；PR #452、annotated tag/GitHub Release v1.15.8已发布，
+上述两项实现的Confirmed Issue已修并通过独审，PR #451已合入develop；PR #452、annotated tag/GitHub Release v1.15.8已发布，
 精确提交6075075747f1c62086df329c0777c974e0b4d520，发布树.worktrees/release-v1.15.8。
 精确候选14组404 passed（含真实隔离PostgreSQL）、Web类型/build/topology及uv lock通过；未带入首页缓存改动。
-正式十服务仍v1.15.7/gen19，0052尚未执行；已冻结只读计划在drain入场前超时，未写drain/stop/绑定。
-实测完整前像44.8秒，重复验证与最坏等待保守预算约91分钟；保留18:05既有自然盘后任务，
-待其本日passed且现场重新证明后另建晚间计划，不复用旧计划或attempt，不新建后台任务。
+正式十服务仍v1.15.7/gen19、schema0051；0052和运行切换均未执行。
+下午计划在drain入场前超时；新晚间只读预检因Reference不READY拒绝，尚无plan/attempt，未drain/stop/改绑定。
+晚间18:30入场截止保持，不滚动延长；已发布不等于在线生效或RUNTIME_READY。
+18:33轻量读回Alert/Live/Feed心跳fresh；Alert仍保留processing_failed，owner就绪时间停在18:07；
+Live/Feed available=false且尚无CLOSED_CLEANED证明，不能仅凭60 CLOSED与subscription0报健康。
+
+今日18:05:06至18:07:45自然盘后主维护60品种passed、Live清理验证通过；后续消费审计18:20:27自然完成。
+审计D1原171/180 READY：A2701/PF2612/PK2612当日换rank1后只有当日一根、缺574根上市前缀。
+已按精确计划实际32次RQData请求/32分区补齐；正式v7独立读回177/200/200有效Bar、质量事实0、剩余目标0，
+原文件SHA与今日已有Bar全部保持；三合约D1三策略共9项main/chart/reference均READY，辅助WARMING不冒充READY。
+W1自然审计179/180 main/reference READY、failures0，未因辅助预热不足放宽口径。
+
+盘后Canonical发布后，18:25只读Reference为624 READY/96 DATA_CONFLICT、pending capture0；
+18:29动态盘点已见28个60m产品组/112条受影响流、52条真实mismatch，另1044条已消费capture待自然对账，范围仍在增长。
+差异涉及volume、turnover、close及open_interest等真实字段，保留原始观察与append-only对账；不改错为对、不补发。
+恢复须使用既有ConflictRevisionRecovery四路线组合同，验证新鲜完整MDS历史源并保留旧revision；不能当作发送交接的小修。
+相关历史源仍只到10/09或10/13，refresh状态237 blocked/3 pending，不能假设线程活着会自动修复。
+最小下一步：先核清并恢复盘后Reference冲突与其历史源，再重新核对允许运行切换的现场条件。
 
 PK2612四分钟周期历史前缀已真实补齐：11次RQData请求、55分区发布；四路新只读计划0目标/0失败/0阻断，
 完整物理回放分别9000/3000/1600/1000根至今日15:00且kernel ready。旧Runtime缓存失败尚需新自然Bar刷新。
 15:50闭市只读：300分钟路由27085/27085，missing/extra/duplicates0，三消费cursor均tail；Reference720READY/pending0。
 今日交易日226个AlertEvent全部有自然源，但53个EXPIRED_NO_SEND、检测最大76.48秒；旧同步发送迟算事实保留。
 AO2701 10/14 23:00 60m HTDY已获owner确认手机收到；不重发旧通知。苏冰推送关闭、Scope/受众及auto_order=false不变。
-证据：`output/runtime-quality-delivery-v2-20261015/evidence/` 与原PK精确维护attempt；自然新版本验收待切换后发生。
+证据：`output/runtime-quality-delivery-v2-20261015/evidence/`、同目录`d1-prefix/`及原PK精确维护attempt；自然新版本验收待切换后发生。
 
 ## 10/14 首页持久缓存与局部更新：工程完成，未发布
 
