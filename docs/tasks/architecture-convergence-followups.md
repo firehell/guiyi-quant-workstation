@@ -66,3 +66,13 @@
 
 完整Newow目录的探索性测试在720通过后因无关CupHandle Fraction计算耗时中断，不报告全目录通过。
 本批不更新视觉快照，不发布、不切换Runtime，不读取生产凭据、不执行真实恢复或数据写入。
+
+
+### 并行 develop 变更整合
+
+实现提交 `0132419fa` 合入当时最新 `origin/develop` 的闭市provider修复 `58e6aaeb1`，merge为 `45ebdd13e`。
+`live_market.py`/`market_feed.py` 自动合并后独立逐字核对：闭市缓冲/退役逻辑完整保留，只迁移身份函数import；
+`composition.py` 与并行修复父提交完全一致。
+`pytest services/quant-api/tests/data_foundation/test_closed_cleanup_provider.py services/quant-api/tests/data_foundation/test_composition.py services/quant-api/tests/data_foundation/test_live_market.py services/quant-api/tests/test_runtime*.py -q -p no:cacheprovider`：441 passed、1 skipped。
+此前命令误写不存在的 `test_market_feed.py` 未收集到测试，已修正路径后运行上述真实测试，不计首次命令为通过。
+全仓secret scan及 `git diff --check` 通过。以上测试不授权或证明生产Runtime已使用新代码。
