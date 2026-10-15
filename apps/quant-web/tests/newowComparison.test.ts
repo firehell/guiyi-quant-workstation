@@ -6,6 +6,20 @@ import { newowComparisonCompatible } from '../src/utils/newowComparison.ts'
 import { useNewowComparison } from '../src/composables/useNewowComparison.ts'
 import { NewowProductRequestError } from '../src/api/newowProduct.ts'
 function chart(strategy = 'trend') { const raw = buildNewowFixtureEnvelopeForTest('chart', strategy, '1d', false, null, { dualMarket: true }); return { meta: raw.meta, section: 'chart', ...raw.chart } }
+test('partner chart is immediate while partner returns wait for their visible region', async () => {
+  const visible = ref(false), requests = [], partner = chart('oscillation')
+  const comparison = useNewowComparison(ref(chart()), ref(true), async request => {
+    requests.push(request)
+    return request.section === 'chart' ? partner : { ...partner, section: 'reference' }
+  }, visible)
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  assert.equal(comparison.state.value, 'ready')
+  assert.deepEqual(requests.map(item => item.section), ['chart'])
+  visible.value = true
+  await Promise.resolve(); await Promise.resolve()
+  assert.deepEqual(requests.map(item => item.section), ['chart', 'reference'])
+  comparison.dispose()
+})
 test('comparison accepts independent tokens only with equal time, market and calculation segment facts', () => {
   const a = chart(), b = chart('oscillation')
   assert.equal(newowComparisonCompatible(a, b), true)

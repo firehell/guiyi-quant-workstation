@@ -91,13 +91,14 @@ test('gives every market detail route the same full-width layout canvas', () => 
   assert.doesNotMatch(source, /content--newow-detail|route\.query\.view === 'newow'/)
 })
 
-test('accepted Newow chart starts first-screen research once without viewport observation', () => {
+test('accepted Newow chart defers reference research until visible', () => {
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
 
   assert.match(workspace, /loadFirstScreenResearch/)
   assert.match(workspace, /loader\.loadReference\(\)/)
   assert.match(workspace, /sectionOpen\('explanation'\)/)
-  assert.doesNotMatch(workspace, /IntersectionObserver/)
+  assert.match(workspace, /IntersectionObserver/)
+  assert.match(workspace, /if \(referenceVisible\.value\) loadReferenceOnce\(\)/)
   assert.equal((workspace.match(/<NewowExplanationPanel/g) ?? []).length, 1)
   assert.doesNotMatch(workspace, /detailsOpen|newow-details/)
   assert.match(workspace, /<MarketDetailUnavailable v-if="chartResponse === null/)

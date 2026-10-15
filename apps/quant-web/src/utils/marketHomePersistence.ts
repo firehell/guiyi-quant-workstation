@@ -27,7 +27,7 @@ export function indexedHomeStorage(name: string, factory: IDBFactory | undefined
     }) },
   }
 }
-export function createHomeSnapshotCache(storage: HomeSnapshotStorage, options: { now?: () => number; maxProducts?: number; maxBytes?: number; maxAgeMs?: number; storageTimeoutMs?: number } = {}) {
+export function createHomeSnapshotCache(storage: HomeSnapshotStorage, options: { now?: () => number; maxProducts?: number; maxBytes?: number; maxAgeMs?: number; storageTimeoutMs?: number; acceptsKey?: (key: string) => boolean } = {}) {
   const now = options.now ?? Date.now, maxProducts = options.maxProducts ?? 60, maxBytes = options.maxBytes ?? 10 * 1024 * 1024, maxAge = options.maxAgeMs ?? 7 * 86400_000
   const deadline = async <T>(operation: Promise<T>): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -42,7 +42,7 @@ export function createHomeSnapshotCache(storage: HomeSnapshotStorage, options: {
   // Include the persisted envelope and conservatively budget the byte-count field.
   const size = (key: string, value: unknown, savedAt = now()) => new TextEncoder().encode(JSON.stringify({ key, value, savedAt, bytes: 99999999 })).byteLength
   const prune = () => {
-    for (const [key, value] of entries) if (value.savedAt > now() || now() - value.savedAt > maxAge) entries.delete(key)
+    for (const [key, value] of entries) if (value.savedAt > now() || now() - value.savedAt > (key === "directory" ? Math.min(maxAge, 86400_000) : maxAge)) entries.delete(key)
     const oldest = () => [...entries.values()].sort((a, b) => a.savedAt - b.savedAt)
     while ([...entries.keys()].filter(key => key.startsWith('card:')).length > maxProducts) entries.delete(oldest().find(value => value.key.startsWith('card:'))!.key)
     while ([...entries.values()].reduce((sum, value) => sum + value.bytes, 0) > maxBytes) entries.delete(oldest()[0]!.key)
@@ -55,7 +55,7 @@ export function createHomeSnapshotCache(storage: HomeSnapshotStorage, options: {
       try {
         for (const item of await deadline(storage.read())) {
           const value = item as HomeSnapshot
-          if (!value || typeof value.key !== 'string' || !/^(overview|directory|card:[a-z0-9]+)$/.test(value.key) || !Number.isFinite(value.savedAt) || value.value == null) continue
+          if (!value || typeof value.key !== 'string' || !(options.acceptsKey ?? (key => /^(overview|directory|card:[a-z0-9]+)$/.test(key)))(value.key) || !Number.isFinite(value.savedAt) || value.value == null) continue
           try { const bytes = size(value.key, value.value, value.savedAt); if (bytes <= maxBytes && !entries.has(value.key)) entries.set(value.key, { ...value, bytes }) } catch {}
         }
         prune(); void persist()
@@ -66,6 +66,7 @@ export function createHomeSnapshotCache(storage: HomeSnapshotStorage, options: {
   }
   return {
     restore,
+    async releaseMemory() { await writing; entries.clear(); restored = false; pending = null },
     peek<T>(key: string): HomeSnapshot<T> | undefined { prune(); const value = entries.get(key); return value ? structuredClone(value) as HomeSnapshot<T> : undefined },
     async put(key: string, value: unknown) { await restore(); const bytes = size(key, value); if (bytes > maxBytes) return; entries.set(key, { key, value: structuredClone(value), savedAt: now(), bytes }); prune(); await persist() },
     async discard(key: string) { entries.delete(key); await persist() },

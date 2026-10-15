@@ -41,7 +41,7 @@ def test_real_backend_capabilities_pass_the_actual_web_validator():
     ]
     cases = []
     for state in scenarios:
-        request = Request({"type": "http", "state": state})
+        request = Request({"type": "http", "state": state, "headers": []})
         result = newow_product_capabilities(request)
         payload = (json.loads(result.body) if isinstance(result, JSONResponse)
                    else result.model_dump(mode="json", exclude_none=True))

@@ -8,6 +8,7 @@ data_center HTTP、旧 Signal/Review/Strategy
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 import logging
 import os
 
@@ -49,6 +50,7 @@ def resolve_cors_origins() -> list[str]:
 app = FastAPI(title="归一量化 API", version=APP_VERSION)
 
 app.add_middleware(RequestTimingMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
 # CORS：允许凭证、全部方法与请求头；来源由 resolve_cors_origins 白名单控制
 app.add_middleware(
     CORSMiddleware,

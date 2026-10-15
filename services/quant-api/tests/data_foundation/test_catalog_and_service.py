@@ -942,6 +942,29 @@ def test_latest_dominants_uses_repository_display_name_instead_of_provider_code(
     assert items[0].sector == "black"
 
 
+def test_latest_directory_loads_only_latest_mapping_rows(session, tmp_path):
+    from sqlalchemy import event
+    from app.models.market_tables import MainContractMap
+
+    catalog = MarketCatalog(session, tmp_path)
+    first = date(2025, 1, 2)
+    catalog.upsert_main_contracts(tuple(
+        ("jm", first + timedelta(days=offset), "JM2505" if offset < 99 else "JM2509")
+        for offset in range(100)
+    ))
+    session.commit()
+    loaded = []
+    def capture(_session, instance):
+        if isinstance(instance, MainContractMap):
+            loaded.append(instance)
+    event.listen(session, "loaded_as_persistent", capture)
+    items = MarketDataService(catalog, CanonicalMonthlyStore(tmp_path)).list_latest_dominants()
+    assert [(item.symbol, item.actual_contract, item.dominant_mapping_date) for item in items] == [
+        ("jm", "JM2509", first + timedelta(days=99)),
+    ]
+    assert len(loaded) == 1
+
+
 def test_latest_dominant_segment_returns_current_contiguous_rank1_segment(
     session, tmp_path
 ) -> None:

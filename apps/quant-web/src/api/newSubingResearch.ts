@@ -1,4 +1,5 @@
 import request from './request'
+import { newowSessionResources } from '../utils/newowSessionResources.ts'
 import type { NewSubingEquityCurve, NewSubingMetadata, NewSubingPage, NewSubingProfiles, NewSubingRunDetail } from '@/types/newSubingResearch'
 
 const prefix = '/research/new-subing'
@@ -16,5 +17,5 @@ export function getNewSubingPage(runId: string, kind: 'decisions' | 'trades' | '
 }
 
 export function getNewSubingEquityCurve(runId: string, sha256: string) {
-  return request.get<never, NewSubingEquityCurve>(`${prefix}/runs/${encodeURIComponent(runId)}/equity-curve`, { params: { sha256, max_points: 2000 } })
+  return newowSessionResources.load(`research-equity:${runId}:${sha256}`, signal => request.get<never, NewSubingEquityCurve>(`${prefix}/runs/${encodeURIComponent(runId)}/equity-curve`, { signal, params: { sha256, max_points: 2000 } }), () => `${runId}:${sha256}`)
 }

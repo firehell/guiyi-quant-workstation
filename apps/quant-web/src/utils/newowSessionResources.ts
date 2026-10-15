@@ -3,7 +3,7 @@ export function createSessionResources(options: { maxEntries?: number; maxBytes?
   const maxEntries = options.maxEntries ?? 120, maxBytes = options.maxBytes ?? 32 * 1024 * 1024
   const ttl = options.ttl ?? 5 * 60_000, now = options.now ?? Date.now
   const entries = new Map<string, { value: unknown; expires: number; bytes: number; identity: string }>()
-  const pending = new Map<string, { controller: AbortController; promise: Promise<unknown> }>()
+  const pending = new Map<string, { controller: AbortController; promise: Promise<unknown>; consumers: number }>()
   let bytes = 0
   function remove(key: string) { const entry = entries.get(key); if (entry) bytes -= entry.bytes; entries.delete(key) }
   function prune() { for (const [key, entry] of entries) if (entry.expires <= now()) remove(key) }
@@ -32,17 +32,17 @@ export function createSessionResources(options: { maxEntries?: number; maxBytes?
     }
     return undefined
   }
-  async function load<T>(key: string, fetch: (signal: AbortSignal) => Promise<T>, identity: (value: T) => string, signal?: AbortSignal): Promise<T> {
+  async function load<T>(key: string, fetch: (signal: AbortSignal) => Promise<T>, identity: (value: T) => string, signal?: AbortSignal, revalidate = false): Promise<T> {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     let promise: Promise<T>
-    const cached = peek<T>(key)
+    const cached = revalidate ? undefined : peek<T>(key)
     if (cached !== undefined) return cached
     const existing = pending.get(key)
     if (existing) promise = existing.promise as Promise<T>
     else {
       if (pending.size >= maxEntries) throw new Error('NEWOW_RESOURCE_BUSY')
       const controller = new AbortController()
-      const item = { controller, promise: Promise.resolve() as Promise<unknown> }
+      const item = { controller, promise: Promise.resolve() as Promise<unknown>, consumers: 0 }
       promise = Promise.resolve().then(() => fetch(controller.signal)).then(value => {
         // Invalidation deletes the owner before aborting. Even a transport
         // ignoring cancellation cannot admit an obsolete result.
@@ -51,12 +51,19 @@ export function createSessionResources(options: { maxEntries?: number; maxBytes?
       }).finally(() => { if (pending.get(key) === item) pending.delete(key) })
       item.promise = promise; pending.set(key, item)
     }
-    // A view owns its subscription, not the shared HTTP request. Navigation
-    // detaches it; only authority/explicit refresh invalidates the owner.
-    if (!signal) return structuredClone(await promise)
+    const item = pending.get(key)!
+    item.consumers++
+    const detach = () => {
+      item.consumers--
+      if (item.consumers === 0 && pending.get(key) === item) {
+        pending.delete(key); item.controller.abort()
+      }
+    }
+    if (!signal) { try { return structuredClone(await promise) } finally { detach() } }
     return new Promise<T>((resolve, reject) => {
       const abort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')) }
-      const cleanup = () => signal.removeEventListener('abort', abort)
+      let attached = true
+      const cleanup = () => { if (attached) { attached = false; signal.removeEventListener('abort', abort); detach() } }
       signal.addEventListener('abort', abort, { once: true })
       promise.then(value => { cleanup(); if (!signal.aborted) resolve(structuredClone(value)) }, error => { cleanup(); reject(error) })
     })

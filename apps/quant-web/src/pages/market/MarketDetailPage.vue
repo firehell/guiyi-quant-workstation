@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
+import { useDetailPricePreview } from '@/composables/useDetailPricePreview'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -54,6 +56,7 @@ const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
+const detailPricePreview = useDetailPricePreview(computed(() => isNewowView.value ? explicitIdentity.value : null))
 const newowHistoricalAsOf = ref<string | null>(null)
 const aiOpen = ref(false)
 const aiAsOf = ref<string | null>(null)
@@ -312,25 +315,28 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             ref="newowWorkspace"
             :identity="routeResult.identity"
             :capabilities="newowCapabilities.capabilities.value"
+            :price-preview="detailPricePreview"
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
             @daily-snapshot-pending="newowDailyPending = $event"
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
-            @refresh-current="dailyQuote.refresh"
+            @refresh-current="dailyQuote.refresh(); newowCapabilities.load(true)"
             @analysis-as-of="aiAsOf = $event"
             @select-identity="selectIdentity"
           />
+          <template v-else-if="routeResult.identity.view === 'newow'">
+          <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview" />
           <MarketDetailUnavailable
-            v-else-if="routeResult.identity.view === 'newow'"
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
             :message="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在确认当前发布阶段及周期能力。' : newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
-            recovery-label="切换到已开放日线"
-            :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowOpenFrequencies.length > 0"
+            :recovery-label="newowCapabilities.state.value === 'unavailable' ? '重试能力配置' : '切换到已开放日线'"
+            :can-recover="newowCapabilities.state.value === 'unavailable' || (newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowOpenFrequencies.length > 0)"
             :can-return-market="true"
-            @recover="switchNewowToOpenFrequency"
+            @recover="newowCapabilities.state.value === 'unavailable' ? newowCapabilities.load(true) : switchNewowToOpenFrequency()"
             @return-market="goBack"
           />
+          </template>
           <FreeChartWorkspace
             v-else-if="routeResult.identity.view === 'free' && header"
             :identity="routeResult.identity"

@@ -43,9 +43,21 @@ export class NewowProductRequestError extends Error {
   }
 }
 
+let capabilitiesRead: ((signal?: AbortSignal) => Promise<NewowProductCapabilities>) | undefined
 export async function getNewowProductCapabilities(
   options: NewowProductRequestOptions = {},
 ): Promise<NewowProductCapabilities> {
+  if (options.request === undefined) {
+    if (options.refresh) newowSessionResources.invalidate('capabilities:')
+    return newowSessionResources.load('capabilities:current', async signal => {
+      const { createConditionalHomeRead } = await import('./homeConditionalRead.ts')
+      capabilitiesRead ??= createConditionalHomeRead('/market/newow/product-capabilities', value => {
+        if (!isProductCapabilities(value)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
+        return freezeProductCapabilities(value)
+      })
+      return capabilitiesRead(signal)
+    }, newowResourceIdentity, options.signal)
+  }
   const transport = options.request ?? defaultRequest
   let payload: unknown
   try {
@@ -241,6 +253,7 @@ interface ProductRequestConfig {
 type ProductTransport = (path: string, config: ProductRequestConfig) => Promise<unknown>
 
 export interface NewowProductRequestOptions {
+  readonly refresh?: boolean
   readonly timeout?: number
   readonly signal?: AbortSignal
   readonly request?: ProductTransport
@@ -250,7 +263,7 @@ export async function getNewowProductSection(
   request: NewowProductRequest,
   options: NewowProductRequestOptions = {},
 ): Promise<NewowProductSectionResponse> {
-  if (options.request === undefined) return newowSessionResources.load(`newow:${request.identity.product}:section:${JSON.stringify(buildNewowProductQuery(request))}`, signal => getNewowProductSection(request, { ...options, signal, request: defaultRequest }), newowResourceIdentity, options.signal)
+  if (options.request === undefined) return newowSessionResources.load(`newow:${request.identity.product}:section:${JSON.stringify(buildNewowProductQuery(request))}`, signal => getNewowProductSection(request, { ...options, signal, request: defaultRequest }), newowResourceIdentity, options.signal, true)
   const transport = options.request ?? defaultRequest
   let payload: unknown
   try {
@@ -281,6 +294,11 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     as_of: request.asOf,
   }
   if (request.section === 'chart') {
+    if (request.resolveCurrent) {
+      if (request.snapshotToken || request.chartBefore || request.chartOlderWindow || request.from || request.through) throw new NewowProductRequestError('NEWOW_INVALID_QUERY', 'invalid')
+      delete common.as_of
+      common.resolve_current = true
+    }
     addWindow(common, request.from, request.through)
     if (request.chartLimit !== undefined) common.chart_limit = request.chartLimit
     if (request.chartBefore !== undefined) common.chart_before = request.chartBefore

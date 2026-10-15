@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 import re
 from typing import Literal, cast
@@ -99,6 +100,7 @@ from app.schemas.market_newow import (
     NewowTrendDetailResponse,
 )
 from app.schemas.market_newow_product import (
+    CurrentSnapshotContextOut,
     DeferredFrequencyOut,
     DeferredSectionOut,
     NewowHistoricalSnapshotResponse,
@@ -150,6 +152,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "include_fusion",
         "fusion_before",
         "decision_v2",
+        "resolve_current",
     }
 )
 _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
@@ -356,7 +359,7 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
     # Formal v33 explicitly publishes a null historical cap; older preview
     # contracts continue omitting their absent optional fields.
     if not candidate:
-        return JSONResponse(content=capability.model_dump(mode="json"))
+        return conditional_json(request, capability.model_dump(mode="json"))
     return capability
 
 
@@ -813,6 +816,7 @@ def newow_strategy_detail(
     include_fusion: bool = Query(False),
     fusion_before: str | None = Query(None, min_length=1, max_length=2048),
     decision_v2: bool = Query(False),
+    resolve_current: bool = Query(False),
     session: Session = Depends(get_db),
 ) -> NewowProductResponse:
     unknown = set(request.query_params) - _PRODUCT_QUERY_FIELDS
@@ -823,6 +827,10 @@ def newow_strategy_detail(
     }
     if (
         unknown
+        or (resolve_current and (frequency not in {"1d", "1w"} or section != "chart" or as_of is not None
+            or any(value is not None for value in (from_, through, performance_since, performance_through,
+                chart_before, chart_older_window, component, history_before, snapshot_token, fusion_before))
+            or include_fusion or decision_v2))
         or duplicates
         or (as_of is not None and as_of.utcoffset() is None)
         or (as_of is not None and as_of.astimezone(UTC) > datetime.now(UTC))
@@ -840,6 +848,21 @@ def newow_strategy_detail(
                 return from_thread.run(request.is_disconnected)
             except RuntimeError:
                 return False
+
+        if resolve_current and frequency in {"1d", "1w"}:
+            now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
+            policy = _input_quality_policy(request, product, frequency)
+            resolver_factory = _build_daily_resolver if frequency == "1d" else _build_weekly_resolver
+            resolver = resolver_factory(session, cancelled, lambda: now, policy, home_services=[])
+            snapshot, chart = resolver.resolve_with_chart(
+                product, ProductStrategy(strategy), ProductFrequency(frequency), chart_limit=chart_limit,
+            )
+            context = asdict(snapshot)
+            context.pop("product")
+            context.pop("strategy")
+            context["frequency"] = snapshot.frequency.value
+            response = _product_response(chart)
+            return response.model_copy(update={"snapshot_context": CurrentSnapshotContextOut.model_validate(context)})
 
         if (getattr(request.state, "candidate_preview_as_of", None) is None
             and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES):

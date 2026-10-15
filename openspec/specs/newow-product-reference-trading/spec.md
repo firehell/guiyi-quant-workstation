@@ -665,6 +665,23 @@ W1 只在完整 ISO 周末应用由 D1 来源逐端点证明的 `weekly-d1-quali
 
 ### Requirement: Sectioned product delivery is computation-bounded
 
+首次日线/周线 `chart` MAY 使用 `resolve_current=true`，MUST 与显式 `as_of`、窗口、旧游标和
+snapshot token 互斥。服务端 SHALL 直接返回解析器已验证的同一主图及 `snapshot_context`，
+不丢弃主图后重读。后续 section SHALL 绑定返回的截止与快照证明。待更新或覆盖不足时，
+默认当前模式 SHALL 只保留明确截止时间的价格预览，不显示策略、信号、解释或收益；显式历史回看独立。
+
+#### Scenario: Price precedes verified strategy
+
+- **WHEN** 当前身份的正式主图尚未验证或最新周期待发布
+- **THEN** 客户端可从 `/bars/page` 或有界历史缓存展示带截止时间的价格，MUST 隐藏旧策略事实
+- **AND** 已验证主图一次性接替预览，当前辅助随后读取，解释、收益和双策略参考仅在可见或主动展开时读取
+
+详情价格缓存 SHALL 仅用于预览，内存常驻上限8MiB、磁盘32MiB、最长7天，来源/序列/合约/周期/窗口隔离；
+缓存命中和TTL不证明当前映射、质量或输入。静态目录显示缓存最长24小时，主力映射仍需新读取。
+能力配置 SHALL 会话共享5分钟并合并在途请求，支持ETag和刷新；304无已验证缓存体 MUST 失败。
+冻结权益仅按run/hash复用。前台只读传输上限2、后端重型计算上限1；离场取消等待任务及最后订阅，
+保留其他有效订阅。gzip只影响传输，不改变数值、窗口或后端缓存预算。
+
 新的 `GET /api/v1/market/newow/strategy-detail` MUST 使用单一路由和显式
 `section = chart | auxiliary | reference | explanation | comparator`；省略时仅为 `chart`，MUST NOT
 提供隐式 `all`。每次请求只读取和计算该 section 的必要依赖，不能先计算整包再删掉未请求字段。

@@ -35,6 +35,18 @@ const expected = {
   section: 'chart', asOf: AS_OF,
 } as const
 
+test('current bootstrap accepts a verified server cutoff, and rejects absent or conflicting context', () => {
+  const wire = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d')
+  const request = { identity: { product: 'rb', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant' }, section: 'chart', asOf: AS_OF, resolveCurrent: true } as const
+  const context = { frequency: '1d', as_of: NEWOW_AS_OF, requested_at: NEWOW_AS_OF, freshness: 'current', expected_trading_day: '2026-09-03', available_trading_day: '2026-09-03' }
+  const result = normalizeNewowProductResponse({ ...wire, snapshot_context: context }, request)
+  assert.equal(result.meta.as_of, NEWOW_AS_OF)
+  assert.equal(result.snapshotContext?.as_of, NEWOW_AS_OF)
+  assert.throws(() => normalizeNewowProductResponse(wire, request))
+  assert.throws(() => normalizeNewowProductResponse({ ...wire, snapshot_context: { ...context, as_of: AS_OF } }, request))
+  assert.throws(() => normalizeNewowProductResponse({ ...wire, snapshot_context: { ...context, frequency: '1w' } }, request))
+})
+
 for (const strategy of NEWOW_PRODUCT_STRATEGIES) {
   for (const frequency of NEWOW_PRODUCT_FREQUENCIES) {
     test(`browser explanation fixture uses shared trend context on ${strategy}/${frequency}`, () => {

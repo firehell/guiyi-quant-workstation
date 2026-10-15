@@ -51,6 +51,20 @@ def resolver(service, publication="unknown"):
     )
 
 
+def test_weekly_bootstrap_keeps_the_verified_chart_without_requery():
+    calls = []
+
+    class Service:
+        def query(self, query):
+            assert query.chart_limit == 120
+            calls.append(delivered(query))
+            return calls[-1]
+
+    snapshot, chart = resolver(Service()).resolve_with_chart("rb", "trend", "1w", chart_limit=120)
+    assert snapshot.as_of == NEW
+    assert calls == [chart]
+
+
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
 def test_all_strategies_use_the_same_verified_complete_week(strategy):
     class Service:

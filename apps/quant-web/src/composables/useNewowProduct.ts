@@ -88,7 +88,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   let fusionRecoverySerial = 0
   let generation = 0
   let disposed = false
-  let preservingCurrentChart = false
   const acceptedCurrentChartWindow = shallowRef(false)
   const acceptedHistoricalChartWindow = shallowRef(false)
   const acceptedAuxiliaryWindow = shallowRef<{ from: string; through: string } | null>(null)
@@ -113,7 +112,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function replaceIdentity(): void {
     cancelFusionRecovery()
     generation += 1
-    preservingCurrentChart = false
     resolverController?.abort()
     resolverController = null
     dailyController?.abort()
@@ -134,6 +132,11 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function loadCurrent(): void {
     const current = currentIdentity.value
     if (current === null) return
+    if (options.fetchSection === undefined) {
+      const common = requestCommon('chart')
+      if (common) void run({ ...common, section: 'chart', ...(['1d', '1w'].includes(current.frequency) ? { resolveCurrent: true } : {}) })
+      return
+    }
     // Injected section transports retain direct fixture mode unless the
     // matching resolver is injected. Production resolves D1 and W1 first.
     const resolveDaily = current.frequency === '1d'
@@ -153,8 +156,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       : (options.fetchDailySnapshot ?? ((identity: NewowProductIdentity, signal: AbortSignal) => getNewowDailySnapshot(identity, { signal })))
     void fetchSnapshot(current, controller.signal).then(snapshot => {
       if (disposed || controller.signal.aborted || dailyController !== controller || generation !== requestedGeneration || currentIdentity.value !== current) return
-      if (preservingCurrentChart) resetAll()
-      preservingCurrentChart = false
       if (snapshot.frequency === '1w') weeklySnapshot.value = snapshot
       else dailySnapshot.value = snapshot
       asOf.value = snapshot.as_of
@@ -162,11 +163,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }).catch(error => {
       if (disposed || controller.signal.aborted || dailyController !== controller || generation !== requestedGeneration) return
       dailyError.value = error instanceof NewowProductRequestError ? error.message : 'NEWOW_API_UNAVAILABLE'
-      if (!preservingCurrentChart) {
-        resources.chart.state.value = 'unavailable'
-        resources.chart.error.value = dailyError.value
-      }
-      preservingCurrentChart = false
+      resources.chart.state.value = 'unavailable'
+      resources.chart.error.value = dailyError.value
     }).finally(() => {
       if (dailyController === controller) { dailyController = null; dailyLoading.value = false }
     })
@@ -204,38 +202,30 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function returnToCurrent(): void {
-    resetCurrentGeneration(false)
+    resetCurrentGeneration()
   }
 
   function refreshCurrent(): void {
     if (currentIdentity.value) invalidateNewowProduct(currentIdentity.value.product)
-    resetCurrentGeneration(true)
+    resetCurrentGeneration()
   }
 
-  function resetCurrentGeneration(preserveChart: boolean): void {
+  function resetCurrentGeneration(): void {
     cancelFusionRecovery()
     resolverController?.abort()
     resolverController = null
     dailyController?.abort()
     dailyController = null
     generation += 1
-    preservingCurrentChart = preserveChart && (dailySnapshot.value !== null || weeklySnapshot.value !== null)
-      && resources.chart.data.value !== null
-      && historicalSnapshot.value === null
-    if (preservingCurrentChart) {
-      for (const controller of controllers.values()) controller.abort()
-      controllers.clear()
-    } else {
-      resetAll()
-      dailySnapshot.value = null
-      weeklySnapshot.value = null
-    }
+    resetAll()
+    dailySnapshot.value = null
+    weeklySnapshot.value = null
     dailyError.value = null
     dailyLoading.value = false
     historicalSnapshot.value = null
     historicalError.value = null
     historicalLoading.value = false
-    if (!preservingCurrentChart) asOf.value = currentIdentity.value === null ? null : validNow(now())
+    asOf.value = currentIdentity.value === null ? null : validNow(now())
     if (!disposed && currentIdentity.value !== null) loadCurrent()
   }
 
@@ -408,6 +398,22 @@ export function useNewowProduct(options: UseNewowProductOptions) {
         try {
           const response = await fetchSection(request, controller.signal)
           if (!isCurrent(section, requestGeneration, sectionGeneration, controller)) return
+          if (request.section === 'chart' && request.resolveCurrent) {
+            const context = response.snapshotContext
+            if (context) {
+              asOf.value = context.as_of
+              if (context.frequency === '1d') dailySnapshot.value = context
+              else weeklySnapshot.value = context
+              if (context.freshness === 'pending_update') {
+                resources.chart.state.value = 'stale'
+                resources.chart.error.value = '当前周期待更新，仅显示价格预览；可切换历史回看。'
+                return
+              }
+            } else if (request.identity.frequency === '1d' || request.identity.frequency === '1w') {
+              failConflict('chart', 'NEWOW_RESPONSE_INVALID')
+              return
+            }
+          }
           accept(section, response, request)
           return
         } catch (error) {

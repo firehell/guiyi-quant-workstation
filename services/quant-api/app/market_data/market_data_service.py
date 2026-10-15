@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from app.core.env import PROJECT_ROOT
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.errors import InfrastructureError
@@ -2245,17 +2245,18 @@ class MarketDataService:
         """返回每个品种最近一条主力映射（按 trade_date 降序取首条）。"""
         retired = load_retired_products()
         taxonomy = load_product_taxonomy()
+        # The directory needs one mapping per product, not every historical
+        # owner loaded into the ORM identity map. Keep max-date semantics in SQL.
+        dates = (select(MainContractMap.symbol, func.max(MainContractMap.trade_date).label("latest"))
+                 .where(MainContractMap.symbol.in_(tuple(taxonomy)))
+                 .group_by(MainContractMap.symbol).subquery())
         mappings = self.catalog.session.scalars(
-            select(MainContractMap).order_by(
-                MainContractMap.symbol,
-                MainContractMap.trade_date.desc(),
-            )
+            select(MainContractMap).join(dates,
+                (MainContractMap.symbol == dates.c.symbol)
+                & (MainContractMap.trade_date == dates.c.latest))
+            .order_by(MainContractMap.symbol)
         )
-        latest: dict[str, MainContractMap] = {}
-        for row in mappings:
-            if is_retired(row.symbol, retired=retired) or row.symbol not in taxonomy:
-                continue
-            latest.setdefault(row.symbol, row)
+        latest = {row.symbol: row for row in mappings if not is_retired(row.symbol, retired=retired)}
         instruments = {
             row.symbol: row for row in self.catalog.session.scalars(select(Instrument))
         }

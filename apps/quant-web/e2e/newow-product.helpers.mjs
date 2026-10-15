@@ -291,6 +291,12 @@ function validateFixtureScenario(strategy, frequency, options) {
 }
 
 function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF, dualMarket = false) {
+  if (url.searchParams.has('resolve_current')) {
+    if (section !== 'chart' || !['1d', '1w'].includes(frequency) || url.searchParams.get('resolve_current') !== 'true' || url.searchParams.has('as_of') || url.searchParams.has('snapshot_token')) return 'invalid current chart resolution'
+    const explicit = new URL(url)
+    explicit.searchParams.delete('resolve_current'); explicit.searchParams.set('as_of', expectedAsOf)
+    return validateProductQuery(explicit, section, strategy, frequency, expectedAsOf, dualMarket)
+  }
   const allowedBySection = {
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
@@ -477,6 +483,10 @@ function unexpected(route, state, message) {
 }
 
 function envelope(url, section, strategy, frequency, options) {
+  if (url.searchParams.get('resolve_current') === 'true') {
+    url = new URL(url)
+    url.searchParams.set('as_of', options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF)
+  }
   const wrappers = {
     chart: notRequested(), auxiliary: notRequested(), reference: notRequested(),
     explanation: notRequested(), comparator: notRequested(),
@@ -494,7 +504,13 @@ function envelope(url, section, strategy, frequency, options) {
   } else if (section === 'explanation') value = explanationValue(url.searchParams.get('as_of') || NEWOW_AS_OF)
   else value = comparatorValue(strategy, frequency, url.searchParams.get('as_of') || NEWOW_AS_OF)
   wrappers[section] = delivered(status, value)
-  return { meta: meta(url, strategy, frequency, section, options), section, ...wrappers }
+  const result = { meta: meta(url, strategy, frequency, section, options), section, ...wrappers }
+  if (url.searchParams.get('resolve_current') === 'true') result.snapshot_context = {
+    frequency, requested_at: NEWOW_AS_OF, as_of: result.meta.as_of, freshness: options.pendingCurrent ? 'pending_update' : 'current',
+    ...(frequency === '1d' ? { expected_trading_day: '2026-09-03', available_trading_day: options.pendingCurrent ? '2026-09-02' : '2026-09-03' }
+      : { expected_period_end: result.meta.as_of, available_period_end: result.meta.as_of, current_context: {} }),
+  }
+  return result
 }
 
 function meta(url, strategy, frequency, section, options) {

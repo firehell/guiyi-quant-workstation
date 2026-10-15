@@ -2,6 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createConditionalResource } from '../src/utils/homeConditionalResource.ts'
 
+test('conditional reads propagate cancellation and never retain an aborted body', async () => {
+  const controller = new AbortController()
+  const read = createConditionalResource((_etag, signal) => new Promise((_resolve, reject) => {
+    assert.equal(signal, controller.signal)
+    signal!.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+  }), String)
+  const result = read(controller.signal); controller.abort()
+  await assert.rejects(result, { name: 'AbortError' })
+})
+
 test('first validation is unconditional and subsequent 304 retains validated body without normalization', async () => {
   const etags: Array<string | undefined> = []
   let normalized = 0

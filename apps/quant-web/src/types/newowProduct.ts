@@ -683,6 +683,7 @@ export interface NewowProductSectionValueMap {
 
 export type NewowProductSectionResponse<S extends NewowProductSection = NewowProductSection> = {
   readonly [K in S]: {
+    readonly snapshotContext?: NewowDailySnapshot | NewowWeeklySnapshot
     readonly meta: NewowProductMeta
     readonly section: K
     readonly status: NewowFeatureStatus
@@ -697,7 +698,7 @@ interface NewowRequestCommon {
 }
 
 export type NewowProductRequest =
-  | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
+  | (NewowRequestCommon & { readonly section: 'chart'; readonly resolveCurrent?: boolean; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
   | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly fusionBefore?: string; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
   | (NewowRequestCommon & { readonly section: 'explanation'; readonly decisionV2?: boolean })

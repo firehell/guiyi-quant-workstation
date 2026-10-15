@@ -7,7 +7,7 @@ import { newowComparisonCompatible, newowComparisonWindow } from '../utils/newow
 
 type Chart = NewowProductSectionResponse<'chart'>
 type FetchChart = (request: NewowProductRequest, signal: AbortSignal) => Promise<NewowProductSectionResponse>
-export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: Readonly<Ref<boolean>>, fetch: FetchChart = (request, signal) => getNewowProductSection(request, { signal })) {
+export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: Readonly<Ref<boolean>>, fetch: FetchChart = (request, signal) => getNewowProductSection(request, { signal }), referenceEnabled: Readonly<Ref<boolean>> = shallowRef(true)) {
   const response = shallowRef<Chart | null>(null)
   const reference = shallowRef<NewowProductSectionResponse<'reference'> | null>(null)
   const referenceError = shallowRef<string | null>(null)
@@ -61,6 +61,14 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
         }
         response.value = result; state.value = 'ready'
         try {
+          if (!referenceEnabled.value) await new Promise<void>((resolve, reject) => {
+            const stop = watch(referenceEnabled, value => { if (value) { cleanup(); resolve() } }, { flush: 'sync' })
+            const abort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')) }
+            const cleanup = () => { stop(); active.signal.removeEventListener('abort', abort) }
+            active.signal.addEventListener('abort', abort, { once: true })
+            if (active.signal.aborted) abort()
+          })
+          if (!isCurrent()) return
           const records = await fetch({ identity: request.identity, section: 'reference', asOf: request.asOf,
             snapshotToken: result.meta.snapshot_token ?? undefined, historyLimit: 200 }, active.signal)
           if (!isCurrent()) return

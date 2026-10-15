@@ -942,7 +942,20 @@ class ComparatorDeliveryOut(_Out):
     value: ComparatorValueOut | None
 
 
+class CurrentSnapshotContextOut(_Out):
+    frequency: Literal["1d", "1w"]
+    requested_at: datetime
+    as_of: datetime
+    freshness: Literal["current", "pending_update"]
+    expected_trading_day: date | None = None
+    available_trading_day: date | None = None
+    expected_period_end: datetime | None = None
+    available_period_end: datetime | None = None
+    current_context: dict[str, str | None] | None = None
+
+
 class NewowProductResponse(_Out):
+    snapshot_context: CurrentSnapshotContextOut | None = None
     meta: ProductMetaOut
     section: Literal["chart", "auxiliary", "reference", "explanation", "comparator"]
     chart: ChartDeliveryOut

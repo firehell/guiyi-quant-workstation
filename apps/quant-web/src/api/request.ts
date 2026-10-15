@@ -1,3 +1,4 @@
+import { createReadAdmission } from '../utils/readAdmission.ts'
 import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import {
   formatApiLogSummary,
@@ -10,6 +11,7 @@ import { candidatePreview } from '../utils/candidatePreview.ts'
 
 interface RequestMetadata {
   startTime: number
+  release?: () => void
 }
 
 type TimedAxiosRequestConfig = InternalAxiosRequestConfig & {
@@ -40,8 +42,9 @@ const request: AxiosInstance = axios.create({
 
 purgeLegacyWebCredentials()
 
+const admitRead = createReadAdmission(2)
 request.interceptors.request.use(
-  (config) => {
+  async (config) => {
     const timedConfig = config as TimedAxiosRequestConfig
     const url = timedConfig.url || ''
     if (candidatePreview.enabled && ((timedConfig.method || 'get').toLowerCase() !== 'get'
@@ -51,6 +54,7 @@ request.interceptors.request.use(
     // /api/*（非 /api/v1/*）走同源相对路径，避免重复拼接 baseURL
     timedConfig.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
     timedConfig.metadata = { startTime: Date.now() }
+    if ((timedConfig.method ?? 'get').toLowerCase() === 'get') timedConfig.metadata.release = await admitRead(timedConfig.signal as AbortSignal | undefined)
     return timedConfig
   },
   (error) => Promise.reject(error),
@@ -59,6 +63,7 @@ request.interceptors.request.use(
 request.interceptors.response.use(
   (response) => {
     const config = response.config as TimedAxiosRequestConfig
+    config.metadata?.release?.()
     const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
     const { method, url } = describeRequest(config)
     // Production 不输出每次 API 成功日志；开发环境仅安全摘要
@@ -70,6 +75,7 @@ request.interceptors.response.use(
   },
   (error) => {
     const config = (error.config || {}) as TimedAxiosRequestConfig
+    config.metadata?.release?.()
     const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
     const { method, url } = describeRequest(config)
     const safe = toSafeErrorInfo(error, 'request failed')

@@ -2,7 +2,7 @@
 import { deriveBasisDecision } from '@/utils/newowBasisDecision'
 import { previewInstant } from '@/utils/candidatePreviewInstant'
 import { historicalAnalysisAsOf } from '@/api/newowAiAnalysis'
-import { ref, computed, watch, onBeforeUnmount, useId } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onMounted, useId } from 'vue'
 import { sharedDecisionForOwner, type NewowDisplayOwner } from '@/utils/newowSharedPresentation'
 import NewowPriceSources from './NewowPriceSources.vue'
 import { type PriceSourceRow, decisionPriceSources } from '@/utils/newowPriceSources'
@@ -21,15 +21,22 @@ const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.as
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
 const collapsed = ref(true), evidenceExpanded = ref(false)
+const surface = ref<HTMLElement | null>(null), visible = ref(typeof IntersectionObserver === 'undefined')
+let observer: IntersectionObserver | null = null
+onMounted(() => {
+  if (typeof IntersectionObserver === 'undefined') { visible.value = true; return }
+  observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { visible.value = true; observer?.disconnect() } }, { rootMargin: '100px' })
+  if (surface.value) observer.observe(surface.value)
+})
 const bodyId = useId(), evidenceId = useId()
 watch([result, loading, error], () => emit('path-context', { decision: result.value, loading: loading.value, error: error.value }), { flush: 'sync' })
 function toggleCard() { collapsed.value = !collapsed.value }
 let generation = 0, controller: AbortController | null = null
-watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value, props.expectedOwner?.physicalContract, props.expectedOwner?.segmentId, props.expectedOwner?.calculationSegmentId, props.expectedOwner?.frequency].join('|'), () => {
+watch(() => [visible.value, props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value, props.expectedOwner?.physicalContract, props.expectedOwner?.segmentId, props.expectedOwner?.calculationSegmentId, props.expectedOwner?.frequency].join('|'), () => {
   generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; evidenceExpanded.value = false; collapsed.value = true
-  void load()
+  if (visible.value) void load()
 }, { immediate: true })
-onBeforeUnmount(() => { generation++; controller?.abort(); emit('path-context', {decision:null,loading:false,error:''}) })
+onBeforeUnmount(() => { observer?.disconnect(); generation++; controller?.abort(); emit('path-context', {decision:null,loading:false,error:''}) })
 async function load() {
   const token = ++generation
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
@@ -66,7 +73,7 @@ const chipColor = (axis: string, period: string) => {
 </script>
 
 <template>
-  <section data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
+  <section ref="surface" data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
         <strong>综合决策</strong>
