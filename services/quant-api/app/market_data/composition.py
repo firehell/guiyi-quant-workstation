@@ -361,6 +361,8 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
         common_kwargs.update(store=FeedLiveStore(cast(RedisClient, redis)), recovery_fetch_factory=None,
                              recovery_sessions=None, recovery_guard_factory=None)
         common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
+        from app.market_data.live_recovery_guard import after_market_recovery_guard
+        common_kwargs['shutdown_guard_factory'] = lambda: after_market_recovery_guard(wait=False)
         return MarketFeedService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
                                  source_stream=ObservationStream(redis, kind='source'), **common_kwargs)
     if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1':
