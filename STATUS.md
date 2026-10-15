@@ -7,6 +7,8 @@
 研究曲线绑定run/hash、最多2000原始点并保留边界；分页独立。显示偏好、滚动恢复、异步身份、离场旧页交互和弹层已回归。
 Web unit 1136 passed/3 skipped，受影响后端113 passed，工程/消息38 passed；类型/build/topology、OpenSpec strict11项、
 Ruff、secret scan和diff通过。浏览器公共矩阵26项、消息首页7项通过；独立Review确认项已关闭。
+真实预览发现严格响应模型遗漏新元数据，已补兼容字段，adapter/product API/homecards追加80项通过；
+开发8002的JM日线reference读回200/READY、914点，5175页面可见真实页面参考收益。
 验证串行、Web unit并发1，避免全量测试、构建、浏览器叠加。31项映射和实际命令见`docs/tasks/ui-unification.md`及`TESTING.md`。
 权威行情API缺少tick_size，普通价格保留现有来源精度，未冒充完成按最小变动价位动态格式化。
 浏览器fixture证明交互，不代替真实策略收益或Runtime验收；本次未发布、未切换正式5173/8000、未补数据或发送真实通知。

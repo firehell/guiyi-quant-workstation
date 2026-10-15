@@ -72,6 +72,8 @@ Newow93天/500条、Alert366天/5000条上限不扩大；非READY流、截断及
 - 浏览器使用fixture，苏冰历史重算在该fixture下验证失败态与已保存观察切换；不将其描述为真实历史重算验收。
 - 末次Web unit日志：`/private/tmp/ui-unification-web-final2.log`；浏览器：`/private/tmp/ui-unification-final-browser.log`、`/private/tmp/ui-unification-messages5.log`；后端：`/private/tmp/ui-unification-backend2.log`。
 
+真实JM日线只读预览发现并修复严格响应模型遗漏drawdown_kind：adapter先2 failed，修复后adapter/product API/homecards等80 passed；新旧wire字段均回归，独立Review通过。实际8002/reference回读200/READY，普通收益914点，页面可见年化31.82%、累计184.43百分点。此为页面参考展示验收，不代表收益可执行。
+
 OpenSpec strict全11项通过；工程合同/仓库卫生与消息API38项通过；Ruff、secret scan（0 findings）、diff检查通过。
 
 资源规则：测试、构建、浏览器串行；Web test默认并发1。中断后确认旧进程退出，

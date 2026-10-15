@@ -21,7 +21,11 @@ def test_typed_page_payload_and_terminal_does_not_mutate_reference(product_cases
         performance_since=query.performance_since, performance_through=query.performance_through,
         as_of=fake.as_of))
     value = result.reference.value
-    PagePerformanceOut.model_validate(value.page_performance)
+    wire = PagePerformanceOut.model_validate(value.page_performance)
+    assert wire.ordinary.drawdown_kind == value.page_performance['ordinary']['drawdown_kind']
+    assert wire.ideal.drawdown_kind == value.page_performance['ideal']['drawdown_kind']
+    legacy = {**value.page_performance, 'ordinary': {k: v for k, v in value.page_performance['ordinary'].items() if k != 'drawdown_kind'}}
+    assert 'drawdown_kind' not in PagePerformanceOut.model_validate(legacy).model_dump()['ordinary']
     before = value.projection
     # The independent page estimate can contain terminal valuation; strategy
     # projection and OPEN/CLOSED facts remain exactly the original object.

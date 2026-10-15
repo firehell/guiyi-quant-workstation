@@ -342,6 +342,7 @@ class PagePerformanceTradeOut(_PageOut):
 
 class PagePerformanceResultOut(_PageOut):
     period: ProductFrequencyValue
+    drawdown_kind: Literal["maximum_trade_loss", "peak_difference", "mixed_segment"] | None = Field(default=None, exclude_if=lambda value: value is None)
     summary: PagePerformanceSummaryOut
     dates: list[str]
     equity: list[str]
