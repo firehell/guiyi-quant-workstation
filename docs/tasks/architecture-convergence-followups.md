@@ -27,7 +27,7 @@
 3. [x] 公共Runtime身份与配置/文件工具抽取、消费者迁移、指纹依赖覆盖，安全边界与恢复回归。
 4. [x] 新苏冰公共计算与输入校验提取，冻结基线对比、V1/V2与prefix/哈希回归。
 5. [x] 前后端能力合同收敛，跨语言响应验证与历史profile回归、Web类型/build。
-6. [ ] 独立高风险Review、整合验证、文档更新、commit/push与develop集成，清理本任务工作区。
+6. [x] 独立高风险Review、整合验证、文档更新、commit/push与develop集成，清理本任务工作区。
 
 ## 验收重点
 
@@ -76,3 +76,19 @@
 `pytest services/quant-api/tests/data_foundation/test_closed_cleanup_provider.py services/quant-api/tests/data_foundation/test_composition.py services/quant-api/tests/data_foundation/test_live_market.py services/quant-api/tests/test_runtime*.py -q -p no:cacheprovider`：441 passed、1 skipped。
 此前命令误写不存在的 `test_market_feed.py` 未收集到测试，已修正路径后运行上述真实测试，不计首次命令为通过。
 全仓secret scan及 `git diff --check` 通过。以上测试不授权或证明生产Runtime已使用新代码。
+
+
+### 浏览器差异验收与最终交付
+
+`PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-product.spec.mjs e2e/newow-chart-panes.spec.mjs`：19 passed、28 failed。
+以 `git archive 986a62f22` 独立源副本、相同依赖和5198端口运行完全相同命令：19 passed、28 failed；
+47项结果逐项一致，28个失败测试身份完全相同。旧断言包括默认辅助指标、页面布局/文案、分页与曲线交互，
+不因本次重构更新快照或放宽断言；该扩展浏览器套件未通过，不声明完整E2E通过。
+候选日志 `/private/tmp/guiyi-followups-browser.log`、基线日志 `/private/tmp/guiyi-followups-browser-baseline.log`，
+候选失败现场保留于 `/private/tmp/guiyi-followups-browser-candidate-results/`；基线源与现场保留于
+`/private/tmp/guiyi-followups-browser-baseline/`，均为本地临时证据，长期复现须使用上述Git基线与测试入口。
+
+又合入并行修正 `c280d9cc5`，整合提交 `22727e405`；与该develop父提交相比，Live/Feed代码差异仍只有公共身份import。
+最终同组闭市/Live/组装/Runtime回归再次441 passed、1 skipped；文档canonical/hygiene复验29 passed。
+实现、自审、独立Review与相关测试完成，允许集成develop；正式发布、Runtime切换与自然验收不属于本次交付。
+本任务分支按普通流程合入develop并推送，随后归档本任务managed worktree，保留其他工作区与用户output。

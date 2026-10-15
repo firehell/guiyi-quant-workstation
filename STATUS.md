@@ -50,7 +50,8 @@ Web 1112 passed/3 skipped、缓存 Chrome E2E 4 passed（fixture 挂载至缓存
 新苏冰V1/V2公共计算及前后端32版本能力合同收敛。保留公式、执行事实、入口质量政策、历史scope与错误合同；
 公共依赖进入对应Runtime输入与恢复执行指纹。
 整合1625 passed/78 skipped，工具368 passed/2 skipped，独立真实PostgreSQL24 passed；Web1129 passed/3 skipped，
-类型/build/topology、34项工程检查及独立Review通过。跳过项不计通过，扩展浏览器基线差异另见实施记录。
+类型/build/topology、34项工程检查及独立Review通过。跳过项不计通过；扩展浏览器候选与未修改基线均19 passed/28 failed，
+47项结果逐项一致，既有失败保留，不声明完整E2E通过。
 交付限定develop，未发布、未切换Runtime、未执行生产数据或通知操作。见
 [实施记录](docs/tasks/architecture-convergence-followups.md)与[验证入口](TESTING.md#后续三批工程收敛)。
 
