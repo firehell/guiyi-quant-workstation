@@ -27,7 +27,7 @@
 5. [x] 验证：移除本批被抽取实现的源码正则约束，保留架构边界；以可观察行为覆盖生命周期。
 6. [x] Runtime：统一服务集合，运行 bindings/handover/bootstrap/恢复/回收适用回归及独立 Review。
 7. [x] HTTP：共享一次探测，离线模拟成功、HTTP失败、连接失败与部分响应，检查两个入口与 shell 语法。
-8. [ ] 文档与集成：核对最新 STATUS，补稳定测试入口，运行完整 Web unit/type/build、工程检查、secret scan、
+8. [x] 文档与集成：核对最新 STATUS，补稳定测试入口，运行完整 Web unit/type/build、工程检查、secret scan、
    定向浏览器及独立 Review，修正后提交、推送并集成 develop。
 
 ## Review 重点
@@ -56,5 +56,7 @@
 - 独立 Review 无 Confirmed Issue 或新增阻断项；另行复跑弹层10项Chrome、曲线桌面/390px两项、
   异步23项及Runtime/工具128项（1 skipped），确认收益事实算法不变。
 - Fusion关闭曲线仅使用已有权威退出交易日；缺字段时显示原因并保留摘要/记录。
-  FusionTrade当前不提供segment身份，关闭曲线保持以physical contract断段；holding/page保留完整区段。
+  关闭曲线保留响应中已有的合约及segment/calculation_segment身份断线；缺少区段身份时按物理合约断线，holding/page保留完整区段。
 - 本批交付至develop；没有执行发布、Runtime切换、通知或生产数据操作。
+
+集成记录：实现 `ca7ffc359`，合入最新状态文档后的候选 `b38de4fdb` 已于2026-10-15推送至 `origin/develop`。
