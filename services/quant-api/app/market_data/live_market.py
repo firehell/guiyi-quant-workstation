@@ -563,6 +563,11 @@ class RQDataLiveProvider:
         self._retired_listener = listener
         self._listener = None
 
+    def buffered_message_count(self) -> int:
+        """Read the raw callback count without parsing, moving or acknowledging it."""
+        with self._message_lock:
+            return len(self._messages)
+
     def source_observed_at(self, contract: str, bar: CanonicalBar) -> datetime | None:
         return self._received.get((contract, bar))
 

@@ -1711,6 +1711,27 @@ PYTHONPATH=services/quant-api:packages/quant-core python -m pytest \
 
 真实CLOSED空日合同：`services/quant-api/tests/data_foundation/test_durable_live_closed_session.py`，SQLite真实MarketPhaseResolver核验周末下一Session，未知/缺失/窗口错位/多品种日冲突不创建进度。发布前另只读核验现场operational集合的实际nextSession、登记日与冻结订阅，不以CLOSED带日的测试替代。
 
+### 自然盘后 cleanup 与 provider 收尾
+
+先配置一次性、非 6379 的 `GUIYI_TEST_REDIS_PORT`；DB11 会被 fixture 清空，同一端口须串行使用。
+新 `test_closed_cleanup_provider.py` 使用内存 provider、真实受控线程与临时文件锁，验证旧日隔离、
+跨 Session 晚到原始消息保留、无缓冲正常换日，以及普通 grace/shutdown 与 cleanup 互斥；不连接真实 provider。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_closed_cleanup_provider.py \
+  services/quant-api/tests/data_foundation/test_closed_cleaned_idle.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_observation_stream.py \
+  services/quant-api/tests/data_foundation/test_feed_closed_start.py \
+  services/quant-api/tests/data_foundation/test_durable_live_closed_session.py \
+  services/quant-api/tests/data_foundation/test_durable_live_rest.py \
+  services/quant-api/tests/data_foundation/test_observation_session_restart.py
+```
+
+隔离通过只证明工程收尾与原子性边界，不证明新 Runtime 已切换或自然盘后验收。
+
 ## Alert 内存交接与日周质量重预热 v2
 
 `test_alert_delivery_handoff.py` 覆盖同 Bar 批次、512 含在途容量、原始观察期限、不可恢复交接、
