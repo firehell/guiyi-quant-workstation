@@ -1,16 +1,12 @@
+import { compileCurveComponent } from './helpers/compileCurveComponent.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { newowSimpleDualLabel, newowReferencePrice, newowReferencePercent } from '../src/utils/newowPagePresentation.ts'
-import {readFileSync} from 'node:fs'
-import {fileURLToPath,pathToFileURL} from 'node:url'
-import {resolve} from 'node:path'
-import {compileScript,parse} from '@vue/compiler-sfc'
-import ts from 'typescript'
 import {createRenderer,defineComponent,h,nextTick,ref} from 'vue'
-const mockUrl=`data:text/javascript;base64,${Buffer.from(`export const calls=[];export function getNewowExperiment(request,signal){return new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))}`).toString('base64')}`
-const mock=await import(mockUrl)
-const chartUrl=`data:text/javascript;base64,${Buffer.from(`export const CandlestickSeries={},LineSeries={};export function createSeriesMarkers(){return {setMarkers(){}}};export function createChart(){return {addSeries(){return {setData(){},createPriceLine(){return {}},removePriceLine(){}}},removeSeries(){},timeScale(){return {fitContent(){}}},applyOptions(){},remove(){}}}`).toString('base64')}`
-async function component(){const source=readFileSync(new URL('../src/components/market/detail/newow/NewowPagePerformancePanel.vue',import.meta.url),'utf8');const compiled=compileScript(parse(source).descriptor,{id:'experiment',inlineTemplate:true});const root=fileURLToPath(new URL('../src/',import.meta.url));const code=ts.transpileModule(compiled.content,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/from ['"]vue['"]/g,`from '${import.meta.resolve('vue')}'`).replace(/from ['"]lightweight-charts['"]/g,`from '${chartUrl}'`).replace(/from ['"]@\/api\/newowExperiments['"]/g,`from '${mockUrl}'`).replace(/from ['"]@\/([^'"]+)['"]/g,(_m,s)=>`from '${pathToFileURL(resolve(root,s+'.ts')).href}'`);return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default}
+async function component() {
+ return (await import(await compileCurveComponent(new URL('../src/components/market/detail/newow/NewowPagePerformancePanel.vue',import.meta.url)))).default
+}
+
 interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string }
 function element(type: string): TestNode { return { type, props: {}, parent: null, children: [], text: '', addEventListener(){}, get options(){return this.children.filter(x=>x.type==='option')}, multiple:false } as TestNode }
 function findNode(node: TestNode, match: (candidate: TestNode) => boolean): TestNode | undefined {

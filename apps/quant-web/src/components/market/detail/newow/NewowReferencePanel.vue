@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ReturnCurveSvg from '../../../charts/ReturnCurveSvg.vue'
+import { referenceReturnLayout } from '@/utils/returnCurveLayout'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import NewowPagePerformancePanel from './NewowPagePerformancePanel.vue'
 import { holdingCurvePlot } from '@/utils/newowHoldingCurve'
@@ -79,30 +81,9 @@ const annualized = computed(() => {
 const selectedTradeId = ref<string | null>(null)
 const recordElements = new Map<string, HTMLElement>()
 const curvePoints = computed(() => {
-  const points = curve.value?.points ?? []
-  const minimum = Math.min(0, ...points.map(p => p.value))
-  const maximum = Math.max(0, ...points.map(p => p.value))
-  // Public-page axis headroom follows each actual extremum, never inventing a loss below zero.
-  const low = minimum < 0 ? minimum * 1.1 : 0
-  const high = maximum > 0 ? maximum * 1.1 : low === 0 ? 1 : 0
-  const y = (value: number) => 140 - (value - low) / (high - low) * 140
-  const start = Date.parse(displayValue.value?.coverage_intervals[0]?.since ?? model.value?.performanceWindow.since ?? '')
   const through = model.value?.performanceWindow.through ?? ''
-  const availableThrough = model.value?.actualAvailableThrough ?? ''
-  const end = Date.parse(through < availableThrough ? through : availableThrough)
-  const duration = end - start
-  const x = (day: string) => (duration > 0 ? (Date.parse(day) - start) / duration : 1) * 712
-  const tickCount = duration > 0 ? Math.min(7, Math.floor(duration / 86_400_000) + 1) : 1
-  const ticks = Number.isFinite(start) && Number.isFinite(end) ? Array.from({ length: tickCount }, (_, index) => {
-    const ratio = tickCount === 1 ? 1 : index / (tickCount - 1)
-    const day = new Date(start + duration * ratio).toISOString().slice(0, 10)
-    return { x: ratio * 712, day, label: day.slice(5), anchor: index === 0 && tickCount > 1 ? 'start' : index === tickCount - 1 ? 'end' : 'middle' }
-  }) : []
-  const levels = Array.from({ length: 5 }, (_, index) => {
-    const value = high - (high - low) * index / 4
-    return { y: y(value), label: `${Math.abs(value) < 0.05 ? '0.0' : value.toFixed(1)}%` }
-  })
-  return { levels, points: points.map(p => ({ ...p, x: x(p.trade.exit_trading_day!), y: y(p.value) })), ticks, zero: y(0), low, high }
+  const available = model.value?.actualAvailableThrough ?? ''
+  return referenceReturnLayout(curve.value.points, displayValue.value?.coverage_intervals[0]?.since ?? model.value?.performanceWindow.since ?? '', through < available ? through : available)
 })
 async function selectCurveTrade(trade: NewowReferenceTrade): Promise<void> {
   selectedTradeId.value = trade.reference_trade_id
@@ -207,14 +188,7 @@ const analysisOpen = ref(false)
 const holdingIndex = ref<number | null>(null)
 const holdingPlot = computed(() => holdingCurvePlot(props.response?.value?.holding_curve, props.response?.value?.performance_since ?? '', props.response?.value?.performance_through ?? ''))
 const holdingReadout = computed(() => holdingIndex.value === null ? null : holdingPlot.value.points[holdingIndex.value] ?? null)
-const holdingTicks = computed(() => {
-  const points = holdingPlot.value.points
-  if (!points.length) return []
-  return Array.from({ length: Math.min(7, points.length) }, (_, i) => {
-    const p = points[Math.round(i * (points.length - 1) / (Math.min(7, points.length) - 1 || 1))]!
-    return { x: p.x, day: p.trading_day, label: p.trading_day.slice(5), anchor: i === 0 ? 'start' : i === Math.min(7, points.length) - 1 ? 'end' : 'middle' }
-  })
-})
+
 watch(holdingPlot, () => { holdingIndex.value = null })
 function inspectHolding(event: MouseEvent) {
   const bounds = (event.currentTarget as SVGElement).getBoundingClientRect()
@@ -251,37 +225,13 @@ function inspectHolding(event: MouseEvent) {
     <template v-if="model">
 
       <section v-if="curveMode === 'holding' && acceptedPreset !== 'ideal' && !holdingPlot.message" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
-          <div class="newow-reference__plot"><div class="newow-reference__plot-area">
-            <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @mouseleave="holdingIndex = null" @click="inspectHolding">
-              <defs><linearGradient id="newow-holding-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.14" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
-              <polygon v-for="(segment,i) in holdingPlot.segments" :key="`area-${i}`" :points="`${segment.trim().split(' ')[0]?.split(',')[0]},${holdingPlot.zero} ${segment} ${segment.trim().split(' ').at(-1)?.split(',')[0]},${holdingPlot.zero}`" fill="url(#newow-holding-area)" />
-              <line v-if="holdingReadout" :x1="holdingReadout.x" :x2="holdingReadout.x" y1="0" y2="140" stroke="#bbb" stroke-dasharray="3 3" />
-              <line v-for="level in holdingPlot.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
-              <line x1="0" x2="712" :y1="holdingPlot.zero" :y2="holdingPlot.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
-              <polyline v-for="(segment,i) in holdingPlot.segments" :key="i" :points="segment" fill="none" stroke="#ff403a" stroke-width="1.8" />
-              <circle v-if="holdingReadout" :cx="holdingReadout.x" :cy="holdingReadout.y" r="3" fill="#ff9500" />
-            </svg>
-            <span v-for="level in holdingPlot.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
-          <span v-for="tick in holdingTicks" :key="tick.x" class="newow-reference__date-tick" :data-anchor="tick.anchor" :title="tick.day" :style="{ left: `${tick.x / 712 * 100}%` }">{{ tick.label }}</span></div></div>
+          <ReturnCurveSvg :plot="holdingPlot" label="逐 Bar 浮动参考曲线，点击查看读数" role="group" zero-line area @mousemove="inspectHolding" @click="inspectHolding" @mouseleave="holdingIndex = null"><line v-if="holdingReadout" :x1="holdingReadout.x" :x2="holdingReadout.x" y1="0" y2="140" stroke="var(--return-curve-cursor, #bbb)" stroke-dasharray="3 3" /><circle v-if="holdingReadout" :cx="holdingReadout.x" :cy="holdingReadout.y" r="3" fill="#ff9500" /></ReturnCurveSvg>
           <div v-if="holdingReadout" class="newow-reference__tooltip" aria-live="polite">{{ formatBeijingInstant(holdingReadout.bar_end) }} · {{ referencePercentDisplay(holdingReadout.marked_return_percentage_points).text }}</div>
       </section>
 <section class="newow-reference__curve newow-reference__completed" aria-label="已完成参考交易累计收益曲线">
         <p v-if="(curveMode === 'closed' || acceptedPreset === 'ideal' || !!holdingPlot.message) && curve?.message" role="status">{{ curve.message }}</p>
         <template v-if="!curve.message && (curveMode === 'closed' || acceptedPreset === 'ideal' || !!holdingPlot.message)">
-          <div class="newow-reference__plot">
-            <div class="newow-reference__plot-area">
-              <svg @click="locateCurvePoint" viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="按清仓顺序累计的参考收益，每个点可定位交易记录">
-                <defs><linearGradient id="newow-reference-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.16" /><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01" /></linearGradient></defs>
-                <line v-for="level in curvePoints.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
-                <polygon :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero} 712,${curvePoints.zero}`" fill="url(#newow-reference-area)" />
-                <line x1="0" x2="712" :y1="curvePoints.zero" :y2="curvePoints.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
-                <polyline :points="`0,${curvePoints.zero} ` + curvePoints.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${curvePoints.points.at(-1)?.y ?? curvePoints.zero}`" fill="none" stroke="#ff403a" stroke-width="1.8" />
-                <circle v-for="point in referenceCurveAnchors(curvePoints.points)" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" class="newow-reference__trade-point" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click.stop="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle>
-              </svg>
-            <span v-for="level in curvePoints.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
-            <span v-for="tick in curvePoints.ticks" :key="tick.x" class="newow-reference__date-tick" :title="tick.day" :data-anchor="tick.anchor" :style="{ left: `${tick.x / 712 * 100}%` }">{{ tick.label }}</span>
-            </div>
-          </div>
+          <ReturnCurveSvg :plot="curvePoints" label="按清仓顺序累计的参考收益，每个点可定位交易记录" role="group" area zero-line style="--return-curve-opacity:.16" @click="locateCurvePoint"><circle v-for="point in referenceCurveAnchors(curvePoints.points)" :key="point.trade.reference_trade_id" :cx="point.x" :cy="point.y" :r="selectedTradeId === point.trade.reference_trade_id ? 4 : 2" class="newow-reference__trade-point" :fill="point.value >= 0 ? '#ff403a' : '#22b95d'" stroke="white" role="button" tabindex="0" :aria-label="`${point.trade.exit_trading_day}，累计 ${formatMarketDecimal(point.cumulative)} 百分点，定位参考交易`" @click.stop="selectCurveTrade(point.trade)" @keydown.enter.prevent="selectCurveTrade(point.trade)" @keydown.space.prevent="selectCurveTrade(point.trade)"><title>{{ point.trade.exit_trading_day }} · {{ point.trade.physical_contract }} · 单笔 {{ referencePercentDisplay(point.trade.reference_return_pct).text }} · 累计 {{ formatMarketDecimal(point.cumulative) }} 百分点</title></circle></ReturnCurveSvg>
         </template>
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
         <div v-if="response?.value?.history_coverage === 'PARTIAL'" role="status">

@@ -65,14 +65,6 @@
 .newow-reference__curve { border:0; padding:8px 0; border-radius:0; }
 .newow-reference__curve header { gap:10px; font-size:14px; }
 .newow-reference__loading-curve { min-height:292px; }
-.newow-reference__plot { position:relative; height:180px; margin-top:0; }
-.newow-reference__plot-area { position:absolute; top:20px; bottom:20px; left:44px; right:30px; }
-.newow-reference__plot-area svg { width:100%; height:100%; min-height:0; margin:0; }
-.newow-reference__value-tick,.newow-reference__date-tick { position:absolute; color:#999; font:10px/12px Arial,sans-serif; white-space:nowrap; pointer-events:none; }
-.newow-reference__value-tick { right:calc(100% + 4px); transform:translateY(-50%); }
-.newow-reference__date-tick { top:calc(100% + 5px); transform:translateX(-50%); }
-.newow-reference__date-tick[data-anchor="start"] { transform:none; }
-.newow-reference__date-tick[data-anchor="end"] { transform:translateX(-100%); }
 .newow-reference__summary { padding:0; border:0; background:transparent; }
 .newow-reference__summary .newow-reference__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:12px 0; margin:2px 0 14px; border:1px solid #ebedf0; border-radius:10px; background:#fff; }
 .newow-reference__summary .newow-reference__metrics > div { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:0 8px; border-radius:0; background:transparent; border:0; }
@@ -100,7 +92,6 @@
 .newow-holding-readout button { min-width:32px; min-height:32px; border:1px solid #e5e5ea; border-radius:6px; background:#fff; cursor:pointer; }
 .newow-reference__analysis-link { margin-left:auto; min-height:20px !important; padding:0 !important; border:0 !important; background:transparent !important; color:#999 !important; font-size:11px; cursor:pointer; }
 .newow-reference__window { margin:2px 0 0; }
-.newow-reference__plot { height:180px; }
 .newow-reference__curve { position:relative; padding:0; }
 .newow-reference__metrics dd { font-weight:700; }
 .newow-reference__trade-point { opacity:0; }

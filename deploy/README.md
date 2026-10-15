@@ -32,6 +32,9 @@ Newow 的 snapshot token、重型门禁与在途去重都由该进程持有；�
 PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.sh
 ```
 
+隧道检查入口依赖同目录的 `http-probe.sh`；单独分发到 ECS 时须同时复制两个文件，见
+[FRP 验收与分发说明](frp/README.md#验收)。
+
 未认证公网检查预期 HTTP 401；提供 Basic Auth 后，页面/API 预期 200，
 `/api/v1/market/ws` WebSocket Upgrade 预期 101。
 

@@ -29,6 +29,16 @@ Web 1112 passed/3 skipped、缓存 Chrome E2E 4 passed（fixture 挂载至缓存
 旧首页 E2E 选择器失配已在未修改 develop 基线复核，不报告全仓测试通过。真实权威读取仍需约4秒，不能宣称无缓存首载秒开。
 未发布、未切换 Runtime、未写业务数据。验证入口见 [首页缓存验证](TESTING.md#首页持久缓存与局部更新)。
 
+## 10/15 第一批工程收敛：工程验证与独立 Review 通过
+
+完成 HTDY/SuBing 身份绑定异步事实、三个弹层公共行为、三个收益面板公共绘图、基础样式变量、
+相关行为测试、Runtime 服务集合及单次 HTTP 探测收敛，并修正本页过时下一步。
+Web 1128 passed/3 skipped、后端与工程232 passed/1 skipped，类型/build/topology与独立Review通过。
+本批新增Chrome14项通过；扩展详情测试另36 passed、2个苏冰既有失败，已在未修改develop基线复现，
+实际截图SHA完全相同，未更新快照或放宽断言，不声明完整E2E通过。
+交付限定develop；本批没有发布、Runtime切换或业务写入。设计与实际命令见
+[实施记录](docs/tasks/architecture-convergence-batch1.md)，稳定验证入口见[TESTING](TESTING.md#第一批工程收敛)。
+
 更新：2026-10-14。本页只保存当前交付状态、证据入口和未完成事项。历史检查点从 Git 和对应任务证据查找，
 下文保留的旧候选与旧版本运行检查点均按历史证据阅读，不作为当前状态或待办。执行授权见 [AGENTS.md](AGENTS.md)，版本维护见
 [开发流程](docs/DEVELOPMENT.md#文档与版本的唯一入口)，产品边界见 [PROJECT_SOURCE.md](PROJECT_SOURCE.md)。
@@ -819,5 +829,6 @@ P0–P8 工程和隔离验收已经集成；**P9 生产闭环未完成**。Newow
 
 ## 唯一下一步
 
-按本页最新已部署v1.14.7完成下一根自然completed Bar、其余日/周路由及Live→Canonical核对的只读验收；
-不手工触发任务、不制造Bar、不盲目重试，也不扩大现役运行范围。
+按本页顶部最新发布、Runtime 身份及未完成事项推进；本节不另存版本号或复制阶段待办，
+避免历史检查点覆盖当前结论。自然 completed Bar、发送及 Live→Canonical 验收分别保留真实证据，
+不制造 Bar、不盲目重试，也不扩大现役运行范围。

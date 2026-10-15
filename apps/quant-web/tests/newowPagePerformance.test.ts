@@ -1,10 +1,6 @@
+import { compileCurveComponent } from './helpers/compileCurveComponent.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { compileScript, parse } from '@vue/compiler-sfc'
-import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick } from 'vue'
 import { normalizePagePerformance, pagePerformancePlot } from '../src/utils/newowPagePerformance.ts'
 function payload() {
@@ -20,11 +16,7 @@ test('strict page projection rejects source identity and curve/trade contradicti
   const split={...parsed.ordinary!,segment_ids:['one','two','two']};assert.equal(pagePerformancePlot(split).length,2)
 })
 async function panel(){
- const url=new URL('../src/components/market/detail/newow/NewowPagePerformancePanel.vue',import.meta.url)
- const compiled=compileScript(parse(readFileSync(url,'utf8')).descriptor,{id:'page-test',inlineTemplate:true})
- const root=fileURLToPath(new URL('../src/',import.meta.url))
- const code=ts.transpileModule(compiled.content,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/from ['"]vue['"]/g,`from '${import.meta.resolve('vue')}'`).replace(/from ['"]@\/([^'"]+)['"]/g,(_match,specifier:string)=>`from '${pathToFileURL(resolve(root,`${specifier}.ts`)).href}'`)
- return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default
+ return (await import(await compileCurveComponent(new URL('../src/components/market/detail/newow/NewowPagePerformancePanel.vue',import.meta.url)))).default
 }
 test('ordinary/theoretical toggle changes independent curve summary and estimate records together',async()=>{
  const Panel=await panel(),root=element('root')
@@ -81,7 +73,7 @@ test('projection rejects cross-owner chronology, forged trades and invalid termi
 test('full-history page curve accepts 200000 points and preserves owner breaks', () => {
  const parsed = normalizePagePerformance(payload(), 'trend')!
  const size = 200000
- const full = {...parsed.ordinary!, equity: Array.from({length:size}, (_,i) => String(i % 7 - 3)), segment_ids: Array.from({length:size}, (_,i) => i < size / 2 ? 'first' : 'second')}
+ const full = {...parsed.ordinary!, trading_days: Array.from({length:size}, () => '2026-01-01'), equity: Array.from({length:size}, (_,i) => String(i % 7 - 3)), segment_ids: Array.from({length:size}, (_,i) => i < size / 2 ? 'first' : 'second')}
  const parts = pagePerformancePlot(full)
  assert.equal(parts.length, 2)
  assert.equal(parts.map(part => part.trim().split(' ').length).reduce((a,b) => a+b, 0), size)
@@ -96,7 +88,7 @@ test('compact plot aligns grid and date axes while separate owners stay disconne
  const app = createRenderer(nodeOperations()).createApp(Panel, {value:split,since:'2026-01-01',through:'2026-01-03'})
  app.mount(root)
  assert.equal(findNodes(root,n=>n.type==='line').length,5)
- assert.equal(findNodes(root,n=>n.type==='path').length,2)
+ assert.equal(findNodes(root,n=>n.type==='polygon').length,2)
  assert.equal(findNodes(root,n=>n.type==='polyline').length,2)
  assert.match(nodeText(root),/01-01/)
  assert.doesNotMatch(nodeText(root),/2026-01-01/)
@@ -107,7 +99,7 @@ test('compact plot aligns grid and date axes while separate owners stay disconne
  const theory = findNode(root,n=>n.type==='button' && nodeText(n)==='理论值')!
  ;(theory.props.onClick as Function)();await nextTick()
  assert.match(nodeText(findNode(root,n=>n.props.role==='dialog')!),/理论值/)
- assert.equal(findNodes(root,n=>n.type==='path').length,1)
+ assert.equal(findNodes(root,n=>n.type==='polygon').length,1)
  const drawdown = findNode(root,n=>n.type==='dd' && n.props.class==='newow-reference__drawdown')!
  assert.equal(nodeText(drawdown),'0.00%')
  app.unmount()

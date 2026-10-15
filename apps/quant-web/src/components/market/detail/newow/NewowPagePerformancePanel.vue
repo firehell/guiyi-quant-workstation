@@ -1,15 +1,15 @@
 <script setup lang="ts">
+import ReturnCurveSvg from '../../../charts/ReturnCurveSvg.vue'
 import { newowReferencePrice, newowReferencePercent } from '@/utils/newowPagePresentation'
-import { computed, ref, watch, useId } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { PagePerformance } from '@/utils/newowPagePerformance'
-import { pagePerformanceSegmentAnnualized, pagePerformancePlot, pagePerformanceSummaryAnnualized } from '@/utils/newowPagePerformance'
+import { pagePerformanceSegmentAnnualized, pagePerformanceLayout, pagePerformanceSummaryAnnualized } from '@/utils/newowPagePerformance'
 import { newowReferenceWindow } from '@/utils/newowReferenceWindows'
 const props = defineProps<{ value: PagePerformance | null | undefined; since?: string; through?: string; floor?: string; loading?: boolean }>()
 const emit = defineEmits<{ reload: [window: {performanceSince: string; performanceThrough: string}] }>()
 const selection = ref<'ordinary' | 'ideal'>('ordinary')
 const count = ref(3)
 const analysisOpen = ref(false)
-const gradientId = `page-return-${useId()}`
 const windowSelection = ref('all')
 const active = computed(() => props.value?.[selection.value] ?? null)
 const segmentAnnuals = computed(() => pagePerformanceSegmentAnnualized(active.value))
@@ -25,27 +25,7 @@ const idealExplanation = computed(() => ({
   oscillation: '回看滚动区间高点，可含建仓前高点',
   fusion: '回看最高价，不含清仓当根',
 }[props.value?.strategy ?? 'trend']))
-const segments = computed(() => pagePerformancePlot(active.value))
-const chartTicks = computed(() => {
-  const values = active.value?.equity.map(Number) ?? []
-  let low = 0, high = 0
-  for (const value of values) { low = Math.min(low, value); high = Math.max(high, value) }
-  if (high === low) high = low + 1
-  const span = high - low
-  return Array.from({length:5}, (_,i) => ({position:i * 25, label:`${(high - span * i / 4).toFixed(1)}%`}))
-})
-const dateTicks = computed(() => {
-  const dates = active.value?.trading_days ?? []
-  const total = Math.min(7,dates.length)
-  return Array.from({length:total}, (_,i) => {
-    const index = Math.round(i * (dates.length - 1) / Math.max(1,total - 1))
-    return {position:i * 100 / Math.max(1,total - 1), label:dates[index]?.slice(5), anchor:i === 0 ? 'start' : i === total - 1 ? 'end' : ''}
-  })
-})
-const areaPaths = computed(() => segments.value.map(points => {
-  const pairs = points.trim().split(' ')
-  return `M ${pairs[0]?.split(',')[0]},140 L ${pairs.join(' L ')} L ${pairs.at(-1)?.split(',')[0]},140 Z`
-}))
+const plot = computed(() => pagePerformanceLayout(active.value))
 const shortDate = (date: string) => date.slice(5,10)
 const drawdown = computed(() => active.value ? `${newowReferencePrice(active.value.summary.maxDrawdown)}%` : '—')
 const records = computed(() => [...(active.value?.trades ?? [])].reverse().slice(0, count.value))
@@ -68,19 +48,8 @@ function preset(kind: 'three_months' | 'one_year' | 'three_years' | 'ytd' | 'all
     <template v-else>
 
       <section class="newow-reference__curve" aria-label="页面估值收益曲线">
-        <p v-if="segments.length === 0" role="status">当前区间无页面收益曲线。</p>
-        <div v-else class="newow-reference__plot">
-          <div class="newow-reference__plot-area">
-            <span v-for="tick in chartTicks" :key="tick.position" class="newow-reference__value-tick" :style="{top:`${tick.position}%`}">{{ tick.label }}</span>
-            <span v-for="tick in dateTicks" :key="tick.position" class="newow-reference__date-tick" :data-anchor="tick.anchor" :style="{left:`${tick.position}%`}">{{ tick.label }}</span>
-            <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="img" :aria-label="`${selection === 'ideal' ? '理论' : '普通'}页面收益曲线，区段中断处断线`">
-              <defs><linearGradient :id="gradientId" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.14"/><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01"/></linearGradient></defs>
-              <line v-for="tick in chartTicks" :key="tick.position" x1="0" x2="712" :y1="tick.position * 1.4" :y2="tick.position * 1.4" stroke="#f0f1f3" stroke-width="1" />
-              <path v-for="(path,index) in areaPaths" :key="`area-${index}`" :d="path" :fill="`url(#${gradientId})`" />
-              <polyline v-for="(part,index) in segments" :key="index" :points="part" fill="none" stroke="#ff403a" stroke-width="1.5" vector-effect="non-scaling-stroke" />
-            </svg>
-          </div>
-        </div>
+        <p v-if="plot.segments.length === 0" role="status">当前区间无页面收益曲线。</p>
+        <ReturnCurveSvg v-else :plot="plot" :label="`${selection === 'ideal' ? '理论' : '普通'}页面收益曲线，区段中断处断线`" area style="--return-curve-width:1.5;--return-curve-grid:#f0f1f3" />
       </section>
       <details v-if="segmentAnnuals.length > 1" class="page-performance__segment-annuals"><summary>各合约段年化 · 不跨段计算</summary><p v-for="(segment,index) in segmentAnnuals" :key="segment.segmentId" :title="segment.segmentId">合约段 {{ index + 1 }} · {{ shortDate(segment.since) }} → {{ shortDate(segment.through) }} · 年化 {{ segment.annualized === null ? '--' : `${segment.annualized.toFixed(1)}%` }}</p></details>
       <section class="newow-reference__summary">

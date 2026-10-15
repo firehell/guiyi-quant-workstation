@@ -1,3 +1,4 @@
+import { returnCurveLayout } from './returnCurveLayout.ts'
 export interface PageEstimateTrade {
   readonly buyDate: string; readonly buyPrice: string; readonly sellDate: string; readonly sellPrice: string
   readonly pct: string; readonly forceClose: boolean; readonly buyBarIsLive?: boolean; readonly segment_id: string
@@ -120,16 +121,16 @@ export function normalizePagePerformance(v: unknown, strategy: PagePerformance['
   return {version: p.version, source_version: p.source_version, source_sha256: sourceHash, page_parity: true, executable: false, strategy, input_sha256: inputHash, source_evidence_sha256: evidenceHash, segment_count: segmentCount, ordinary_interrupted_count: count(p.ordinary_interrupted_count), ideal_open_count: count(p.ideal_open_count), ordinary, ideal}
 }
 
+/** Page-parity geometry uses bar index spacing and authoritative trading-day labels. */
+export function pagePerformanceLayout(mode: PagePerformanceMode | null) {
+  const points = mode?.equity.map((value, index) => ({
+    value: Number(value),
+    position: index,
+    date: mode.trading_days[index] ?? '',
+    segment: mode.segment_ids[index] ?? '',
+  })) ?? []
+  return returnCurveLayout(points, { headroom: 1, areaBaseline: 'bottom', singlePoint: 'start' })
+}
 export function pagePerformancePlot(mode: PagePerformanceMode | null) {
-  if (!mode || mode.equity.length === 0) return []
-  const values = mode.equity.map(Number)
-  let low = 0, high = 0
-  for (const value of values) { low = Math.min(low, value); high = Math.max(high, value) }
-  const span = high - low || 1
-  const parts: string[] = []
-  values.forEach((v, i) => {
-    if (i === 0 || mode.segment_ids[i] !== mode.segment_ids[i - 1]) parts.push('')
-    parts[parts.length - 1] += `${i / Math.max(1, values.length - 1) * 712},${140 - (v-low)/span*140} `
-  })
-  return parts
+  return pagePerformanceLayout(mode).segments
 }

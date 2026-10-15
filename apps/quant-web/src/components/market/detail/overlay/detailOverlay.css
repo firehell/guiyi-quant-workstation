@@ -1,0 +1,10 @@
+.gy-detail-dialog {
+  box-sizing: border-box;
+  margin: auto;
+  max-height: calc(100dvh - var(--gy-overlay-viewport-gap));
+  padding: 0;
+  box-shadow: var(--gy-overlay-shadow);
+}
+.gy-detail-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.gy-detail-dialog::backdrop { background: var(--gy-overlay-backdrop); }
+.gy-detail-dialog button:focus-visible { outline: var(--gy-overlay-focus-width) solid var(--gy-border-focus); outline-offset: 2px; }

@@ -114,20 +114,8 @@ test('market facts disclose status before expansion and close on identity change
   assert.match(template, /aria-haspopup="dialog"/)
 })
 
-test('market facts dialog supports accessible close paths and identity-bounded focus restoration', () => {
-  const { source, template } = parsedComponent('MarketFactsDialog')
-  assert.match(source, /identityKey: string/)
-  assert.match(source, /dialog\.value\.showModal\(\)/)
-  assert.match(source, /@cancel\.prevent="close"/)
-  assert.match(source, /@click="backdrop"/)
-  assert.match(source, /event\.key !== 'Tab'/)
-  assert.match(template, /aria-labelledby="market-facts-dialog-title"/)
-  assert.match(template, /aria-label="关闭行情数据详情"/)
-})
-
-test('history uses one source and mobile drawer restores focus', () => {
+test('history uses one source and exposes the mobile drawer', () => {
   const tabs = parsedComponent('MarketDetailSectionTabs')
-  const drawer = parsedComponent('MarketDetailDrawer')
 
   assert.equal((tabs.source.match(/history:\s*readonly MarketDetailHistoryItem\[\]/g) ?? []).length, 1)
   assert.doesNotMatch(tabs.source, /首次识别 \{\{ item\.occurredAt \}\}/)
@@ -137,12 +125,6 @@ test('history uses one source and mobile drawer restores focus', () => {
   assert.match(tabs.source, /scrollIntoView/)
   assert.match(tabs.template, /暂无历史记录/)
   assert.match(tabs.template, /<MarketDetailDrawer/)
-  assert.match(drawer.source, /previousFocus/)
-  assert.match(drawer.source, /event\.key === 'Escape'/)
-  assert.match(drawer.source, /event\.key !== 'Tab'/)
-  assert.match(drawer.source, /onMounted\(\(\) => syncOpen\(props\.open\)\)/)
-  assert.match(drawer.template, /role="dialog"/)
-  assert.match(drawer.template, /aria-modal="true"/)
 })
 
 test('the shared K-line stage uses the registered clean-room action icons', () => {

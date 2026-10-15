@@ -13,8 +13,8 @@ import subprocess
 import tempfile
 from typing import Any
 
-SERVICES = frozenset({"api", "web", "live", "market-feed", "alert", "reference-worker",
-                      "after-market", "weekly-audit", "late-provider-recovery", "log-rotate"})
+from app.runtime_contracts import SERVICES
+
 CONTRACTS = frozenset({"db", "live", "input", "formula", "reference", "launcher"})
 
 
@@ -258,7 +258,7 @@ def contract_fingerprints(root: Path) -> dict[str, str]:
                   "services/quant-api/app/market_data/observation_stream.py", "data/universe/"),
         "formula": ("packages/quant-core/", "services/quant-api/app/strategies/"),
         "reference": ("services/quant-api/app/reference_trading/",),
-        "launcher": ("scripts/ops/macos/run-local-service.sh", "scripts/ops/macos/runtime-service-dispatch.sh", "services/quant-api/app/runtime_bindings.py", "services/quant-api/app/runtime_entry", "services/quant-api/app/runtime_handover.py", "services/quant-api/app/runtime_deployment.py", "services/quant-api/app/runtime_bootstrap.py", "services/quant-api/app/runtime_scheduled.py")}
+        "launcher": ("scripts/ops/macos/run-local-service.sh", "scripts/ops/macos/runtime-service-dispatch.sh", "services/quant-api/app/runtime_bindings.py", "services/quant-api/app/runtime_contracts.py", "services/quant-api/app/runtime_entry", "services/quant-api/app/runtime_handover.py", "services/quant-api/app/runtime_deployment.py", "services/quant-api/app/runtime_bootstrap.py", "services/quant-api/app/runtime_scheduled.py")}
     result = {}
     for name, paths in prefixes.items():
         selected = {key: value for key, value in files.items() if key.startswith(paths)}

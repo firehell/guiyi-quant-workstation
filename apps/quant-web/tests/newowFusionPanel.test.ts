@@ -1,40 +1,15 @@
+import { compileCurveComponent } from './helpers/compileCurveComponent.ts'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
-import ts from 'typescript'
+import { compileTemplate, parse } from '@vue/compiler-sfc'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 import { NewowProductRequestError } from '../src/api/newowProduct.ts'
 
-const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
 const mockUrl = `data:text/javascript;base64,${Buffer.from(`export const calls=[]; export function getNewowFusion(request, options) { return new Promise((resolve, reject) => calls.push({request, options, resolve, reject})); }`).toString('base64')}`
 const mock = await import(mockUrl)
 async function component(name: string) {
-  const source = readFileSync(new URL(`../src/components/market/detail/${name}.vue`, import.meta.url), 'utf8')
-  const { descriptor } = parse(source)
-  const compiled = compileScript(descriptor, { id: 'dual-test', inlineTemplate: true })
-  let code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-    .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
-    .replace(/from ['"]@\/api\/newowFusion['"]/g, `from '${mockUrl}'`)
-    .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
-      for (const suffix of ['', '.ts']) {
-        const path = resolve(sourceRoot, `${specifier}${suffix}`)
-        if (existsSync(path)) return `from '${pathToFileURL(path).href}'`
-      }
-      throw new Error(specifier)
-    })
-  if (code.includes('./NewowPagePerformancePanel.vue')) {
-    const childSource = readFileSync(new URL('../src/components/market/detail/newow/NewowPagePerformancePanel.vue', import.meta.url), 'utf8')
-    const child = compileScript(parse(childSource).descriptor, {id: 'page-performance-test', inlineTemplate:true})
-    const childCode = ts.transpileModule(child.content, {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText
-      .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
-      .replace(/from ['"]@\/([^'"]+)['"]/g, (_match,specifier:string)=>`from '${pathToFileURL(resolve(sourceRoot, `${specifier}.ts`)).href}'`)
-    const childUrl = `data:text/javascript;base64,${Buffer.from(childCode).toString('base64')}`
-    code = code.replace(/from ['"]\.\/NewowPagePerformancePanel\.vue['"]/g, `from '${childUrl}'`)
-  }
-  return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default
+ return (await import(await compileCurveComponent(new URL(`../src/components/market/detail/${name}.vue`,import.meta.url),mockUrl))).default
 }
 async function workspaceFusionHost(Panel: unknown, setup: () => unknown) {
   const source = readFileSync(new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url), 'utf8')
@@ -158,7 +133,7 @@ test('fusion curve uses closed members, range does not replace recent records, t
   const base = mock.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input() }) }))
   app.mount(root)
-  const trade = (id: string, entry: string, exit: string | null, status = 'CLOSED', value: string | null = '2.5') => ({ reference_trade_id: id, entry_source: 'trend', exit_source: exit ? 'oscillation' : null, entry_bar_end: `${entry}T07:00:00Z`, exit_bar_end: exit ? `${exit}T07:00:00Z` : null, physical_contract: 'JM2701', entry_reference_price: '100', exit_reference_price: exit ? '102.5' : null, status, reference_return_pct: value, mark_change_pct: status === 'OPEN' ? '-4.5' : null, statistics_membership: 'entry_in_window_v1' })
+  const trade = (id: string, entry: string, exit: string | null, status = 'CLOSED', value: string | null = '2.5') => ({ reference_trade_id: id, entry_source: 'trend', exit_source: exit ? 'oscillation' : null, entry_trading_day: entry, exit_trading_day: exit, entry_bar_end: `${entry}T07:00:00Z`, exit_bar_end: exit ? `${exit}T07:00:00Z` : null, physical_contract: 'JM2701', entry_reference_price: '100', exit_reference_price: exit ? '102.5' : null, status, reference_return_pct: value, mark_change_pct: status === 'OPEN' ? '-4.5' : null, statistics_membership: 'entry_in_window_v1' })
   const data = { ...output('fixture', 'jm'), groups: [{ model: 'fusion', closed_count: 3, sum_return_percentage_points: '7.5', open_count: 1, interrupted_count: 1 }], items: [trade('open','2026-09-11',null,'OPEN',null), trade('recent','2026-09-08','2026-09-09'), trade('roll','2026-08-06','2026-08-18','ROLLOVER_INTERRUPTED',null), trade('within-year','2026-03-13','2026-04-03'),trade('old','2023-01-01','2023-01-10')] }
   mock.calls[base].resolve(data)
   await nextTick(); await nextTick()
@@ -305,7 +280,7 @@ test('minute fusion curve location labels only records outside the past year', a
     const rows = [
       trade('recent', '2026-09-24T06:50:00Z', '2026-09-24T06:55:00Z', '2026-09-24'),
       trade('old', '2025-09-22T06:50:00Z', '2025-09-23T06:55:00Z', '2025-09-23'),
-      trade('beijing-boundary', '2025-09-23T16:50:00Z', '2025-09-23T17:00:00Z'),
+      trade('beijing-boundary', '2025-09-23T16:50:00Z', '2025-09-23T17:00:00Z', '2025-09-24'),
     ]
     mock.calls[base].resolve({ ...output('minute-location', 'ag'), curve: rows, items: rows, groups: [{ model: 'fusion', closed_count: 3, sum_return_percentage_points: '15', open_count: 0, interrupted_count: 0 }] })
     await nextTick(); await nextTick()
@@ -323,4 +298,18 @@ test('minute fusion curve location labels only records outside the past year', a
     if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument)
     else Reflect.deleteProperty(globalThis, 'document')
   }
+})
+
+test('missing authoritative exit trading day shows a reason and preserves the closed summary', async () => {
+  const Panel = await component('newow/NewowFusionPanel')
+  const root = element('root'), base = mock.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, { response: input() }) }))
+  app.mount(root)
+  const row = { reference_trade_id: 'missing-trading-day', status: 'CLOSED', statistics_membership: 'entry_in_window_v1', entry_source: 'trend', exit_source: 'oscillation', physical_contract: 'JM2701', entry_trading_day: '2026-09-01', entry_bar_end: '2026-08-31T13:05:00Z', exit_bar_end: '2026-09-01T13:05:00Z', entry_reference_price: '100', exit_reference_price: '105', reference_return_pct: '5', mark_change_pct: null }
+  mock.calls[base].resolve({ ...output('missing-day', 'jm'), curve: [row], items: [row], groups: [{ model: 'fusion', closed_count: 1, sum_return_percentage_points: '5', open_count: 0, interrupted_count: 0 }] })
+  await nextTick(); await nextTick()
+  assert.match(nodeText(root), /曲线日期、数值或区段事实不完整/)
+  assert.equal(findNodes(root, node => node.type === 'polyline').length, 0)
+  assert.match(nodeText(root), /累计收益 \+5%/)
+  app.unmount()
 })

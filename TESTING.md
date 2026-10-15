@@ -1,5 +1,23 @@
 # 测试与验证命令
 
+## 第一批工程收敛
+
+异步事实的身份隔离、弹层行为与收益图布局使用以下稳定入口；范围与设计见
+[实施记录](docs/tasks/architecture-convergence-batch1.md)。浏览器使用隔离 Vite 与显式 fixture，
+不访问生产 API，不证明行情、收益或 Runtime 自然验收。
+
+```sh
+node --test apps/quant-web/tests/useIdentityBoundResource.test.ts apps/quant-web/tests/useHtdyAlertFacts.test.ts apps/quant-web/tests/useSubingAlertFacts.test.ts
+pnpm -C apps/quant-web test
+pnpm -C apps/quant-web build
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/overlay-lifecycle.spec.mjs e2e/alert-facts.spec.mjs e2e/return-curve-layout.spec.mjs
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_bindings.py services/quant-api/tests/test_runtime_handover.py services/quant-api/tests/test_tunnel_http_probe.py
+```
+
+下文含冻结公开源、特定日期及 `/private/tmp/` 路径的验证段落属于历史证据复现，
+不属于无前置条件的日常回归入口。缺少原输入、manifest 或哈希校验时停止；
+不替换输入或据历史通过记录推断当前版本通过。当前日常回归按功能段落中的仓库内测试路径运行。
+
 ## 首页持久缓存与局部更新
 
 ```sh

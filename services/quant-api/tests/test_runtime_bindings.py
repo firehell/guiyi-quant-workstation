@@ -58,6 +58,7 @@ def test_present_invalid_registry_never_falls_back(tmp_path, defect):
 @pytest.mark.parametrize("change_path, expected, blocked", [
     ("apps/web/main.ts", ["api", "web"], False),
     ("services/quant-api/app/routers/ordinary.py", ["api", "web"], False),
+    ("services/quant-api/app/runtime_contracts.py", ["alert", "api", "live", "web"], True),
     ("unknown-dependency.txt", ["alert", "api", "live", "web"], False),
     ("packages/quant-core/formula.py", ["alert", "api", "web"], True),
     ("scripts/ops/macos/run-local-service.sh", ["alert", "api", "live", "web"], True),
@@ -78,7 +79,7 @@ def test_readonly_plan_freezes_impact_and_contracts(tmp_path, change_path, expec
     paths = ["services/quant-api/app/db/a.py", "services/quant-api/app/market_data/live_market.py",
              "services/quant-api/app/market_data/rqdata_adapter.py", "packages/quant-core/formula.py",
              "services/quant-api/app/reference_trading/worker.py", "scripts/ops/macos/run-local-service.sh",
-             "apps/web/main.ts", "services/quant-api/app/market_data/market_feed.py",
+             "apps/web/main.ts", "services/quant-api/app/runtime_contracts.py", "services/quant-api/app/market_data/market_feed.py",
              "services/quant-api/app/market_data/observation_stream.py", "services/quant-api/app/routers/ordinary.py"]
     for name in paths:
         path = root / name
@@ -124,3 +125,14 @@ def test_candidate_label_stays_bound_and_cross_service_label_is_rejected(tmp_pat
         replace(legacy, launchd_label="com.guiyi.quant-alert-candidate-" + "d" * 32)
     with pytest.raises(RuntimeBindingError):
         replace(legacy, launchd_label="arbitrary")
+
+
+def test_runtime_consumers_share_exact_service_contract():
+    from app import runtime_bindings, runtime_handover
+
+    assert runtime_bindings.SERVICES is runtime_handover.SERVICES
+    assert runtime_bindings.ALL is runtime_bindings.SERVICES
+    assert runtime_bindings.SERVICES == frozenset({
+        'api', 'web', 'live', 'market-feed', 'alert', 'reference-worker',
+        'after-market', 'weekly-audit', 'late-provider-recovery', 'log-rotate',
+    })

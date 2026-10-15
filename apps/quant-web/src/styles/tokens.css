@@ -155,6 +155,22 @@
   --gy-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --gy-transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* Shared overlay behavior; Newow page-parity skin keeps its public visual values. */
+  --gy-overlay-viewport-gap: 48px;
+  --gy-overlay-shadow: 0 24px 70px #0003;
+  --gy-overlay-backdrop: #17202c66;
+  --gy-overlay-drawer-backdrop: rgba(15, 31, 56, 0.34);
+  --gy-overlay-focus-width: 2px;
+  --gy-overlay-touch-target: 44px;
+  --gy-newow-overlay-bg: #fff;
+  --gy-newow-overlay-border: #ebedf0;
+  --gy-newow-overlay-text: #20242b;
+  --gy-newow-overlay-control-bg: #f3f4f6;
+  --gy-newow-overlay-control-text: #667085;
+  --gy-newow-overlay-action: #007aff;
+  --gy-newow-ai-overlay-shadow: 0 8px 32px #0003;
+  --gy-newow-ai-overlay-backdrop: #0008;
+
   /* Component contracts */
   --gy-sidebar-width: 220px;
   --gy-sidebar-collapsed-width: 64px;

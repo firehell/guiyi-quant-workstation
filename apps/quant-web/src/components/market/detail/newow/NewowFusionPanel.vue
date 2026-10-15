@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ReturnCurveSvg from '../../../charts/ReturnCurveSvg.vue'
+import { referenceReturnLayout } from '@/utils/returnCurveLayout'
 import NewowPagePerformancePanel from './NewowPagePerformancePanel.vue'
 import { holdingCurvePlot, holdingCurveWindow, fusionTheoreticalCurve } from '@/utils/newowHoldingCurve'
 import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue'
@@ -88,18 +90,7 @@ const annualized = computed(() => {
   const value = (Math.pow(1 + Number(total.value) / 100, 365 / days) - 1) * 100
   return Number.isFinite(value) ? `${value.toFixed(1)}%` : '—'
 })
-const plot = computed(() => {
-  const points = curve.value.points
-  const low = Math.min(0, ...points.map(p => p.value)) * 1.1
-  const high = Math.max(0, ...points.map(p => p.value)) * 1.1 || (low < 0 ? 0 : 1)
-  const y = (v: number) => 140 - (v - low) / (high - low) * 140
-  const start = Date.parse(window.value?.performanceSince ?? '')
-  const end = Date.parse(window.value?.performanceThrough ?? '')
-  const duration = end - start
-  return { zero: y(0), points: points.map(p => ({ ...p, x: duration > 0 ? (Date.parse(p.trade.exit_bar_end!) + 8 * 3600000 - start) / (duration + 86400000) * 712 : 712, y: y(p.value) })),
-    levels: Array.from({ length: 5 }, (_, i) => ({ y: i * 35, label: `${(high - (high - low) * i / 4).toFixed(1)}%` })),
-    ticks: Number.isFinite(start) ? Array.from({ length: 7 }, (_, i) => ({ x: i / 6 * 712, day: new Date(start + duration * i / 6).toISOString().slice(5, 10) })) : [] }
-})
+const plot = computed(() => referenceReturnLayout(curve.value.points, window.value?.performanceSince ?? '', window.value?.performanceThrough ?? ''))
 const recordSince = computed(() => anchor.value ? newowReferenceWindow(anchor.value, 'one_year').performanceSince : '')
 const isInitialRecord = (row: { entry_bar_end: string; entry_trading_day?: string; statistics_membership: string }) => row.statistics_membership === 'initial_before_window' || (row.entry_trading_day ?? new Date(Date.parse(row.entry_bar_end) + 8 * 3600000).toISOString().slice(0, 10)) < recordSince.value
 const selected = ref<string | null>(null)
@@ -185,31 +176,12 @@ function inspectHolding(event: MouseEvent) {
       <p v-if="preset === 'ideal'" class="newow-reference__state">融合理论值 · 回看持有阶段最高价（High）；仅计已完成配对，零费用、零滑点，不代表可执行收益。操盘记录仍显示普通参考价。</p>
       <section v-if="curveMode === 'holding' && preset !== 'ideal' && !holdingPlot.message" class="newow-reference__curve" aria-label="逐 Bar 持有过程">
           <p class="newow-reference__state">逐 Bar 页面参考 = 已完成累计 + 当根持有浮动；中断处断线，不计入已完成收益。</p>
-          <div class="newow-reference__plot"><div class="newow-reference__plot-area">
-            <svg viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="逐 Bar 浮动参考曲线，点击查看读数" @mousemove="inspectHolding" @click="inspectHolding">
-              <line v-for="level in holdingPlot.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5" />
-              <line x1="0" x2="712" :y1="holdingPlot.zero" :y2="holdingPlot.zero" stroke="#d0d5dd" stroke-dasharray="4 4" />
-              <polyline v-for="(segment,i) in holdingPlot.segments" :key="i" :points="segment" fill="none" stroke="#ff403a" stroke-width="1.8" />
-              <circle v-if="holdingReadout" :cx="holdingReadout.x" :cy="holdingReadout.y" r="3" fill="#ff9500" />
-            </svg>
-            <span v-for="level in holdingPlot.levels" :key="level.y" class="newow-reference__value-tick" :style="{ top: `${level.y / 140 * 100}%` }">{{ level.label }}</span>
-          <span class="newow-reference__date-tick" data-anchor="start" style="left:0">{{ holdingPlot.points[0]?.trading_day }}</span><span class="newow-reference__date-tick" data-anchor="end" style="left:100%">{{ holdingPlot.points.at(-1)?.trading_day }}</span></div></div>
+          <ReturnCurveSvg :plot="holdingPlot" label="逐 Bar 浮动参考曲线，点击查看读数" role="group" zero-line @mousemove="inspectHolding" @click="inspectHolding"><circle v-if="holdingReadout" :cx="holdingReadout.x" :cy="holdingReadout.y" r="3" fill="#ff9500" /></ReturnCurveSvg>
           <div class="newow-holding-readout" aria-live="polite"><button type="button" aria-label="上一根持有读数" @click="holdingIndex = Math.max(0, (holdingIndex ?? holdingPlot.points.length - 1) - 1)">‹</button><span v-if="holdingReadout">{{ formatBeijingInstant(holdingReadout.bar_end) }} · {{ holdingReadout.physical_contract }} · 已完成 {{ formatMarketDecimal(holdingReadout.closed_return_percentage_points) }} · 浮动 {{ referencePercentDisplay(holdingReadout.floating_return_pct).text }} · 合计 {{ referencePercentDisplay(holdingReadout.marked_return_percentage_points).text }}</span><button type="button" aria-label="下一根持有读数" @click="holdingIndex = Math.min(holdingPlot.points.length - 1, (holdingIndex ?? holdingPlot.points.length - 1) + 1)">›</button></div>
       </section>
 <section v-if="curveMode === 'closed' || preset === 'ideal' || !result.holding_curve" class="newow-reference__curve" aria-label="融合已完成参考交易累计收益曲线">
         <p v-if="curve.message" role="status">{{ curve.message }}{{ result.records_truncated ? '记录已截断，完整统计仍见三组对比。' : '' }}</p>
-        <div v-else class="newow-reference__plot"><div class="newow-reference__plot-area">
-          <svg @click="locateCurvePoint" viewBox="0 0 712 140" preserveAspectRatio="none" role="group" aria-label="融合参考收益按清仓顺序累计">
-            <defs><linearGradient id="fusion-reference-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff403a" stop-opacity="0.16"/><stop offset="100%" stop-color="#ff403a" stop-opacity="0.01"/></linearGradient></defs>
-            <line v-for="level in plot.levels" :key="level.y" x1="0" x2="712" :y1="level.y" :y2="level.y" stroke="#f2f3f5"/>
-            <polygon :points="`0,${plot.zero} ` + plot.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${plot.points.at(-1)?.y ?? plot.zero} 712,${plot.zero}`" fill="url(#fusion-reference-area)"/>
-            <line x1="0" x2="712" :y1="plot.zero" :y2="plot.zero" stroke="#d0d5dd" stroke-dasharray="4 4"/>
-            <polyline :points="`0,${plot.zero} ` + plot.points.map(p => `${p.x},${p.y}`).join(' ') + ` 712,${plot.points.at(-1)?.y ?? plot.zero}`" fill="none" stroke="#ff403a" stroke-width="1.8"/>
-            <circle v-for="p in referenceCurveAnchors(plot.points)" :key="p.trade.reference_trade_id" :cx="p.x" :cy="p.y" r="2" fill="#ff403a" tabindex="0" role="button" :aria-label="`${time(p.trade.exit_bar_end!)}，累计${display(p.cumulative)}百分点`" @click.stop="locate(p.trade.reference_trade_id)" @keydown.enter.prevent="locate(p.trade.reference_trade_id)" @keydown.space.prevent="locate(p.trade.reference_trade_id)"><title>{{ time(p.trade.exit_bar_end!) }} · {{ p.trade.physical_contract }} · 累计{{ display(p.cumulative) }}百分点</title></circle>
-          </svg>
-          <span v-for="level in plot.levels" :key="level.y" class="newow-reference__value-tick" :style="{top:`${level.y / 140 * 100}%`}">{{ level.label }}</span>
-          <span v-for="tick in plot.ticks" :key="tick.x" class="newow-reference__date-tick" :data-anchor="tick.x === 0 ? 'start' : tick.x === 712 ? 'end' : 'middle'" :style="{left:`${tick.x / 712 * 100}%`}">{{ tick.day }}</span>
-        </div></div>
+        <ReturnCurveSvg v-else :plot="plot" label="按清仓顺序累计的参考收益，每个点可定位交易记录" role="group" area zero-line style="--return-curve-opacity:.16" @click="locateCurvePoint"><circle v-for="p in referenceCurveAnchors(plot.points)" :key="p.trade.reference_trade_id" :cx="p.x" :cy="p.y" r="2" fill="#ff403a" tabindex="0" role="button" :aria-label="`${time(p.trade.exit_bar_end!)}，累计${display(p.cumulative)}百分点`" @click.stop="locate(p.trade.reference_trade_id)" @keydown.enter.prevent="locate(p.trade.reference_trade_id)" @keydown.space.prevent="locate(p.trade.reference_trade_id)"><title>{{ time(p.trade.exit_bar_end!) }} · {{ p.trade.physical_contract }} · 累计{{ display(p.cumulative) }}百分点</title></circle></ReturnCurveSvg>
       </section>
         <section class="newow-reference__summary"><dl class="newow-reference__metrics"><div><dt>累计收益</dt><dd :data-direction="referencePercentDisplay(total).direction">{{ referencePercentDisplay(total).text }}</dd></div><div><dt>胜率</dt><dd>{{ winRate }}</dd></div><div><dt>{{ preset === 'ideal' ? '理论曲线回撤' : '最大回撤' }}</dt><dd class="newow-reference__drawdown">{{ drawdown === null ? '—' : `${drawdown}%` }}</dd></div><div><dt>交易次数</dt><dd>{{ preset === 'all' ? result.groups.find(g => g.model === 'fusion')?.closed_count : closed.length }}</dd></div></dl></section>
       <header class="newow-reference__records-heading"><h3>回测操盘提醒</h3><span>近一年 · 历史参考推演，仅供参考，不作为实时买卖提示</span></header>

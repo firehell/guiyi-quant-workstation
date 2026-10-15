@@ -1,11 +1,7 @@
+import { compileCurveComponent } from './helpers/compileCurveComponent.ts'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import test from 'node:test'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { compileScript, parse } from '@vue/compiler-sfc'
-import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 
 import type {
@@ -34,7 +30,6 @@ const resolveLocate = (viewModels as unknown as {
   ) => { kind: string; signalId: string | null; barEnd: string | null; displayWindow?: { from: string; through: string } }
 }).resolveNewowReferenceLocate
 const componentUrl = new URL('../src/components/market/detail/newow/NewowReferencePanel.vue', import.meta.url)
-const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
 
 interface ReferenceModel {
   readonly summary: {
@@ -231,12 +226,12 @@ test('curve axes use true extrema, unscaled labels and the full accepted statist
     }) }))
     app.mount(root)
     await nextTick()
-    const ticks = findNodes(root, node => node.props.class === 'newow-reference__value-tick')
+    const ticks = findNodes(root, node => node.props.class === 'return-curve__value')
     assert.equal(ticks.length, 5)
     assert.ok(ticks.every(node => node.type === 'span' && /-?\d+\.\d%/.test(nodeText(node))))
     assert.equal(nodeText(ticks[0]!), result === '10' ? '11.0%' : result === '-10' ? '0.0%' : '1.0%')
     assert.equal(nodeText(ticks.at(-1)!), result === '-10' ? '-11.0%' : '0.0%')
-    const dates = findNodes(root, node => node.props.class === 'newow-reference__date-tick')
+    const dates = findNodes(root, node => node.props.class === 'return-curve__date')
     assert.equal(dates.length, 7)
     assert.ok(dates.every(node => /^\d{2}-\d{2}$/.test(nodeText(node))))
     assert.equal(nodeText(dates[0]!), '09-24')
@@ -567,27 +562,7 @@ async function loadComponent() {
 }
 
 async function compileComponentModule(url: URL): Promise<string> {
-  const source = readFileSync(url, 'utf8')
-  const { descriptor, errors } = parse(source, { filename: url.pathname })
-  assert.deepEqual(errors, [])
-  const compiled = compileScript(descriptor, { id: 'newow-reference-panel', inlineTemplate: true })
-  const childUrl = url === componentUrl ? await compileComponentModule(new URL('../src/components/market/detail/newow/NewowFusionPanel.vue', import.meta.url)) : null
-  let transpiled = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-    .replace(/from ['"]\.\/NewowFusionPanel\.vue['"]/g, `from '${childUrl}'`)
-    .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
-    .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
-      for (const suffix of ['', '.ts', '.vue']) {
-        const path = resolve(sourceRoot, `${specifier}${suffix}`)
-        if (existsSync(path)) return `from '${pathToFileURL(path).href}'`
-      }
-      throw new Error(`cannot resolve source import: ${specifier}`)
-    })
-  for (const match of [...transpiled.matchAll(/from ['"](\.\/[^'"]+\.vue)['"]/g)]) {
-    const module = await compileComponentModule(new URL(match[1]!, url))
-    transpiled = transpiled.replace(match[0], `from '${module}'`)
-  }
-  const moduleUrl = `data:text/javascript;base64,${Buffer.from(transpiled).toString('base64')}`
-  return moduleUrl
+  return compileCurveComponent(url)
 }
 
 interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string }
