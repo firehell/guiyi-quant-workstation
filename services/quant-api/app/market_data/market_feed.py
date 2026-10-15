@@ -79,14 +79,16 @@ def _closed_cleaned_idle_proof(service, source_stream, now, phases):
 
 
 
-def _accept_closed_cleaned(service, proof, now, phases):
+def _accept_closed_cleaned(service, proof, now, phases) -> date:
     service.closed_cleaned_proof = proof
-    service._trading_day = date.fromisoformat(proof['trading_day'])
+    day = date.fromisoformat(proof['trading_day'])
+    service._trading_day = day
     service._closed_cleaned_day = service._trading_day
     service._contracts = {}
     service._channels = set()
     service._available = service._provider_available = True
     service._publish_heartbeat(now, phases)
+    return day
 
 
 def _closed_cleanup_requires_proof(service, stream, phases):
@@ -200,7 +202,10 @@ class MarketFeedService(LiveMarketService):
             # No socket exists in a cold/previously retired instance. All idle
             # authority still comes from _closed_cleaned_idle_proof, never this fact.
             if provider is not None:
-                provider.close_verified()  # Bounded join outside the maintenance mutex.
+                close_verified = getattr(provider, 'close_verified', None)
+                if not callable(close_verified):
+                    raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+                close_verified()  # Bounded join outside the maintenance mutex.
                 if self._shutdown_guard_factory is None:
                     raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
                 with self._shutdown_guard_factory():
@@ -612,8 +617,8 @@ class DurableLiveMarketService(LiveMarketService):
             if proof is not None:
                 if hasattr(self, 'assert_owned'):
                     self.assert_owned()
-                _accept_closed_cleaned(self, proof, now, phases)
-                self.source_provider.select_day(self._trading_day)
+                day = _accept_closed_cleaned(self, proof, now, phases)
+                self.source_provider.select_day(day)
                 return None
         if _closed_cleanup_requires_proof(self, self.source_provider.stream, phases):
             source = self.source_provider
