@@ -1,5 +1,20 @@
 # 当前状态
 
+## 10/15 provider 收尾补丁：v1.15.9 候选已验证，尚未切换 Runtime
+
+v1.15.9 以已发布 v1.15.8 为基线，仅加入 PR #455 的 provider 收尾修复，不包含后续首页与架构改动。
+旧交易日 snapshot 清理后先隔离旧 provider；关闭 listener 在维护锁外完成，确认身份与缓冲为空后才退休。
+普通 grace/shutdown 的取缓冲到发布受同一盘后维护锁保护；空缓冲不因正常维护占锁触发 sticky halt。
+跨 Session 的未处理 records/events/cursor 保留；安全退休不冒充 CLOSED_CLEANED 证明。
+精确候选 provider 八模块182 passed、Alert/质量/接口九模块284 passed（含真实隔离 PostgreSQL）、
+Ruff、secret scan、diff 检查及 Python 包/源码版本一致性通过；provider 已经独立 Review。
+正式十服务仍 v1.15.7/gen19、schema0051；本节不证明已发布、已运行或自然信号验收。
+
+19:34 原 Reference 停驻请求已取消，同 PID70861 恢复计算轮次；两个失败对账 attempt 均确认零新增对账行。
+19:36 只读有效范围为634条当前代次可对账记录、79条旧代次记录；旧记录保留，不能全称当前自然积压。
+当前40个完整四策略产品组有真实冲突，尚待正式历史源核验及原生新 revision 恢复；不补发旧通知。
+证据：`output/runtime-closed-recovery-20261015/`。发布、切换及自然业务结论分别补充现场读回。
+
 ## 10/15 实时计算与推送 v2：v1.15.8 release candidate，通过工程与独审
 
 owner 已选择质量缺口后重新预热，以及同规则/受众/周期/Bar 的有界内存通知交接。
