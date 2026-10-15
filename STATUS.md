@@ -6,7 +6,7 @@
 当前身份验证前隐藏策略/收益，辅助随后读取，解释和收益按可见区域加载；双策略和实验切回均覆盖。
 价格常驻8MiB/磁盘32MiB/7天，能力共享5分钟及ETag，前台只读2并发、离场取消；后端缓存预算不变。
 目录SQL只加载每品种最新映射，不把历史全表装配进ORM；gzip不改变数值。
-Web1146 passed/3 skipped，受影响后端356 passed，浏览器控制8项及真实开发2项通过；类型/build/topology、
+Web1146 passed/3 skipped，受影响后端356 passed，浏览器控制8项及真实开发3项通过；类型/build/topology、
 OpenSpec strict11项、Ruff、secret scan零发现与diff通过，独立Review确认项已关闭。
 真实JM/RB20次新浏览器存储价格P95约877ms，缓存恢复约10–34ms；已有开发API，未声称服务冷启动P95。
 仅develop开发交付与5175/8002独立预览，未发布或切正式Runtime；既有研究文件保留。

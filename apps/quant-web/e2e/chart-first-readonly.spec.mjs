@@ -12,9 +12,12 @@ test('real JM/RB chart, cache revisit and switch waterfall', async ({ page }) =>
   })
   const errors = [], waterfall = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('response', async response => {
-    if (!response.url().includes('/api/v1/market/')) return
-    waterfall.push({ path: new URL(response.url()).pathname, query: new URL(response.url()).search, status: response.status(), timing: response.request().timing() })
+  page.on('requestfinished', async request => {
+    if (!request.url().includes('/api/v1/market/')) return
+    try {
+      const response = await request.response()
+      waterfall.push({ path: new URL(request.url()).pathname, query: new URL(request.url()).search, status: response?.status(), timing: request.timing(), sizes: await request.sizes() })
+    } catch { /* Navigation may close a response after its completed facts were displayed. */ }
   })
   for (const [symbol, frequency, strategy] of [['jm','1d','oscillation'], ['rb','1d','oscillation'], ['jm','1d','oscillation'], ['jm','60m','oscillation'], ['jm','1d','trend']]) {
     const started = Date.now()
@@ -48,4 +51,22 @@ test('JM/RB price-entry sample with fresh browser storage', async ({ browser }) 
   const p95 = samples.map(item => item.priceMs).sort((a, b) => a-b)[18]
   console.log(JSON.stringify({ storageColdSamples: samples, p95, note: 'Fresh browser storage; existing development API, not a server cold-start benchmark' }))
   expect(p95).toBeLessThanOrEqual(2000)
+})
+
+test('real manual refresh preserves price preview and revalidates once', async ({ page }) => {
+  const requests = []
+  page.on('requestfinished', async request => {
+    if (!request.url().includes('/api/v1/market/')) return
+    try { requests.push({ path: new URL(request.url()).pathname, query: new URL(request.url()).search, timing: request.timing(), sizes: await request.sizes() }) } catch {}
+  })
+  await page.goto('/market/chart?view=newow&symbol=jm&strategy=oscillation&series_kind=actual_dominant&frequency=1d')
+  await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible({ timeout: 20000 })
+  requests.length = 0
+  const started = Date.now()
+  await page.getByRole('button', { name: '刷新当前数据', exact: true }).click()
+  await expect(page.getByRole('region', { name: '价格预览', exact: true })).toContainText('策略确认后显示')
+  await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible({ timeout: 20000 })
+  const charts = requests.filter(item => item.query.includes('resolve_current=true'))
+  expect(charts).toHaveLength(1)
+  console.log(JSON.stringify({ manualRefreshChartMs: Date.now()-started, waterfall: requests, heap: await page.evaluate(() => performance.memory?.usedJSHeapSize ?? null) }))
 })

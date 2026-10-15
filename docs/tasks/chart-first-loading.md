@@ -35,6 +35,8 @@ REAL_DEVELOP=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5175 PLAYWRIGHT_SKIP_WEBSERV
 catalog/service、market home API、capability与仓库卫生。Ruff通过。
 最终完整Web1146 passed/3 skipped；浏览器控制场景8 passed，含手动刷新只发一次bootstrap、能力接口离线、实验切回正式策略。
 类型/build/topology、Ruff、OpenSpec strict11项、secret scan零发现、diff检查通过。
+真实开发验收三个场景均通过：五步瀑布、20次新存储P95、手动刷新。手动刷新只发一次bootstrap；
+价格/主图传输body约22,266/44,508字节，能力条件请求body为0字节。瀑布使用完成请求的timing及sizes记录，未重复读取响应大JSON。
 独立静态Review的双策略参考懒加载、能力取消和实验切回收益IO三项已修复并关闭，无剩余确认问题。
 
 ## 性能证据与边界
@@ -51,6 +53,7 @@ catalog/service、market home API、capability与仓库卫生。Ruff通过。
 | JM缓存返回 | 125（挂载后30） | 1447 | 34.2MiB |
 | JM切60m | 237 | 1933 | 46.4MiB |
 | JM切趋势日线 | 115（挂载后34） | 3412 | 31.4MiB |
+| JM手动刷新 | 保留价格预览 | 1402 | 42.1MiB |
 
 主图在部分解释竞争样本仍需约3.4秒，价格已可操作，不声称所有策略重任务低延迟。
 
