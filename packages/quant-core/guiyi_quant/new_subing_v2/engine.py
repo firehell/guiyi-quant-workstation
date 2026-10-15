@@ -6,10 +6,10 @@ from bisect import bisect_right
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from hashlib import sha256
-import re
 from typing import Mapping, Sequence, cast
 
 from guiyi_quant.paper import FeeSchedule
+from guiyi_quant.new_subing_common import validate_inputs as _validate_inputs
 
 from . import ExecutionBar, ExecutionFacts, PreparedResearch, Profile, StrategyBar
 from .account import LayerAccount
@@ -81,61 +81,6 @@ def _empty_result(profile: Profile, reason: str) -> dict[str, object]:
                                               'remaining_average_price': None,
                                               'realized_gross_pnl': '0', 'close_fees': '0'},
                             'case_parity': 'PENDING', 'oos_status': 'NOT_PROVEN'}}
-
-
-def _validate_inputs(bars_by_frequency: Mapping[str, Sequence[StrategyBar]],
-                     execution_bars: Sequence[ExecutionBar], scenario: str,
-                     since: date, through: date) -> None:
-    if scenario not in ('baseline', 'double_commission', 'double_slippage'):
-        raise ValueError('unsupported scenario')
-    if type(since) is not date or type(through) is not date or since > through:
-        raise ValueError('invalid requested window')
-    if not isinstance(bars_by_frequency, Mapping) or not isinstance(execution_bars, Sequence):
-        raise ValueError('invalid research inputs')
-    if not {'1m', '5m', '15m', '1d'}.issubset(bars_by_frequency):
-        raise ValueError('1m, 5m, 15m and 1d histories required')
-    products: set[str] = set()
-    for frequency, bars in bars_by_frequency.items():
-        if frequency not in ('1m', '5m', '15m', '1d', '1w') or not isinstance(bars, Sequence):
-            raise ValueError('invalid frequency history')
-        keys: set[tuple[str, datetime]] = set()
-        previous: tuple[datetime, str] | None = None
-        confirmations: dict[str, datetime] = {}
-        for bar in bars:
-            if type(bar) is not StrategyBar or bar.frequency != frequency:
-                raise ValueError('bar frequency mismatch')
-            if re.fullmatch(r'[A-Za-z]{1,3}\d{3,4}(?:\.[A-Za-z]+)?', bar.physical_contract) is None:
-                raise ValueError('physical monthly contract required')
-            products.add(bar.product.upper())
-            key = (bar.physical_contract, bar.bar_end)
-            if key in keys or (previous and (bar.bar_end, bar.physical_contract) < previous):
-                raise ValueError('duplicate or unordered history')
-            keys.add(key)
-            previous = (bar.bar_end, bar.physical_contract)
-            if bar.physical_contract in confirmations and bar.confirmed_at < confirmations[bar.physical_contract]:
-                raise ValueError('out-of-order confirmation within physical history')
-            confirmations[bar.physical_contract] = bar.confirmed_at
-    if len(products) > 1:
-        raise ValueError('one product per research account')
-    one_minute = {(b.physical_contract, b.bar_end): b for b in bars_by_frequency['1m']}
-    previous_time: datetime | None = None
-    previous_confirmed: datetime | None = None
-    seen: set[datetime] = set()
-    for execution in execution_bars:
-        if type(execution) is not ExecutionBar or execution.bar.product.upper() not in products:
-            raise ValueError('execution product mismatch')
-        bar = execution.bar
-        if one_minute.get((bar.physical_contract, bar.bar_end)) != bar:
-            raise ValueError('execution bar differs from 1m history')
-        if not bar.observation_eligible or not since <= bar.trading_day <= through:
-            raise ValueError('execution must be eligible owner within requested window')
-        if previous_time and bar.bar_end <= previous_time or bar.bar_end in seen:
-            raise ValueError('execution bars must be strictly ordered')
-        if previous_confirmed and bar.confirmed_at < previous_confirmed:
-            raise ValueError('execution confirmation must be ordered')
-        previous_time = bar.bar_end
-        previous_confirmed = bar.confirmed_at
-        seen.add(bar.bar_end)
 
 
 def validate_histories(bars_by_frequency: Mapping[str, Sequence[StrategyBar]]) -> None:

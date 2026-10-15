@@ -54,11 +54,11 @@ def recovery_host(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: home))
     monkeypatch.setattr(module, 'read_bindings', lambda: None)
     monkeypatch.setattr(module, 'verify_release', lambda *_args: None)
-    monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service',
+    monkeypatch.setattr('app.runtime_identity.read_launchd_service',
         lambda label, **_kw: label if loaded[label] else None)
-    monkeypatch.setattr('app.market_data.captured_recovery_runtime._verify_loaded_service',
+    monkeypatch.setattr('app.runtime_identity.verify_loaded_service',
         lambda label, **_kw: {'pid': str(pids[label]) if pids[label] is not None else None})
-    monkeypatch.setattr('app.market_data.closeout_binding._arguments',
+    monkeypatch.setattr('app.runtime_identity.launchd_arguments',
         lambda label: tuple(__import__('plistlib').loads((plists / (label + '.plist')).read_bytes())['ProgramArguments']))
     keys = []
     class Redis:

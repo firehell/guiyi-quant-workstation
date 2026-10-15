@@ -112,7 +112,7 @@ def main() -> None:
     from app.db.url import normalize_database_url
     from app.db.readonly import readonly_transaction
     from app.market_data.catalog import MarketCatalog
-    from scripts.newow_weekly_recovery import load_private_execution_settings
+    from app.private_settings import load_private_execution_settings
     settings,_=load_private_execution_settings(args.project_env)
     engine=create_engine(normalize_database_url(settings['DATABASE_URL']),connect_args={'connect_timeout':5})
     try:

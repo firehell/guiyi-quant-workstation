@@ -11,7 +11,7 @@ from typing import Any
 
 from app.market_data.aggregation import aggregate_from_1m, bucket_window_for_bar
 from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
-from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
+from app.runtime_identity import runtime_heartbeat_identity
 from app.market_data.live_market import (
     LiveMarketService, LiveProvider, RedisLiveStore, _bar_from_payload, _bar_payload, _compact_json,
     _epoch_millis, live_bar_channel,

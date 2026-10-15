@@ -117,7 +117,7 @@ def main() -> int:
     from app.market_data.market_data_service import MarketDataService
     from app.market_data.storage import CanonicalMonthlyStore
     from app.new_subing_research.store import publish_result
-    from scripts.newow_weekly_recovery import load_private_readonly_settings
+    from app.private_settings import load_private_readonly_settings
 
     settings,_=load_private_readonly_settings(args.project_env)
     canonical=Path(settings['GUIYI_CANONICAL_DATA_ROOT'])

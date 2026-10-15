@@ -95,7 +95,7 @@ class RetentionBackend:
             raise RetentionError("CLEANUP_PROBE_UNAVAILABLE") from None
 
     def references_by_root(self, roots: tuple[Path, ...]) -> dict[str, list[str]]:
-        from app.market_data.closeout_binding import _arguments, _environments, _snapshot
+        from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments, file_snapshot as _snapshot
         result: dict[str, list[str]] = {str(root): [] for root in roots}
         registry = read_bindings(home=self.home)
         if registry is not None:
@@ -137,7 +137,7 @@ class RetentionBackend:
             if parts[2].startswith("com.guiyi.quant-"):
                 labels.add(parts[2])
         valid_label = re.compile(r"com\.guiyi\.quant-(?:" + "|".join(re.escape(item) for item in SERVICES) + r")(?:-candidate-[0-9a-f]{32})?")
-        from app.market_data.captured_recovery_runtime import _read_launchd_service
+        from app.runtime_identity import read_launchd_service as _read_launchd_service
         for label in labels:
             if not valid_label.fullmatch(label):
                 raise RetentionError("CLEANUP_LOADED_LABEL_UNSUPPORTED")

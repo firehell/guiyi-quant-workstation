@@ -72,11 +72,15 @@ class FaultRecoveryHost:
     deployment_guard = staticmethod(deployment_lock)
 
     def bytes(self, path, *, limit=None):
-        from app.market_data.closeout_binding import _snapshot
+        from app.runtime_identity import file_snapshot as _snapshot
 
         path = Path(path)
         if limit is None:
-            return _snapshot(path)[0]
+            # Retain the historical after-market status limit at the policy caller.
+            from app.market_data.after_market_limits import MAX_STATUS_BYTES
+
+            size_limit = MAX_STATUS_BYTES if path.name == "after-market-status.json" else 1024 * 1024
+            return _snapshot(path, limit=size_limit)[0]
         require(
             path.is_absolute() and path.parent.resolve() == path.parent,
             "FAULT_RECOVERY_FILE_UNSAFE",
@@ -127,11 +131,8 @@ class FaultRecoveryHost:
         return self.home / "Library/LaunchAgents" / f"{binding.label}.plist"
 
     def loaded(self, binding, *, idle=False, allow_idle=False):
-        from app.market_data.captured_recovery_runtime import (
-            _read_launchd_service,
-            _verify_loaded_service,
-        )
-        from app.market_data.closeout_binding import _arguments, _environments
+        from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
+        from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments
 
         output = _read_launchd_service(binding.label, root=Path(binding.root))
         if output is None:
@@ -798,7 +799,7 @@ class FaultRecoveryHost:
             self.verify_plist(binding, plistlib.loads(self.bytes(self.path(binding))))
 
     def definition_absent(self, binding):
-        from app.market_data.captured_recovery_runtime import _read_launchd_service
+        from app.runtime_identity import read_launchd_service as _read_launchd_service
 
         return _read_launchd_service(binding.label, root=Path(binding.root)) is None
 
@@ -810,7 +811,7 @@ class FaultRecoveryHost:
 
     def verify_calendar(self, binding):
         from app.runtime_scheduled import ScheduledBackend
-        from app.market_data.captured_recovery_runtime import _read_launchd_service
+        from app.runtime_identity import read_launchd_service as _read_launchd_service
 
         require(
             _read_launchd_service(binding.label, root=Path(binding.root)) is not None

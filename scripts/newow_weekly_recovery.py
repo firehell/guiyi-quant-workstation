@@ -17,6 +17,8 @@ import sys
 from typing import Any, Callable, Literal, Mapping, TypeVar, cast
 from zoneinfo import ZoneInfo
 
+from app import private_settings
+
 from app.market_data.historical_data_manager import (
     BarFetchRequest,
     ContractWarmupRequest,
@@ -41,6 +43,8 @@ _SOURCE_FIELDS = (
 )
 _EXECUTION_CODE_PATHS = (
     "scripts/newow_weekly_recovery.py",
+    "services/quant-api/app/private_settings.py",
+    "services/quant-api/app/runtime_identity.py",
     "scripts/newow_weekly_recovery_campaign.py",
     "scripts/newow_weekly_source_verify.py",
     "scripts/newow_recovery_partial_exception.py",
@@ -62,6 +66,9 @@ _D1_EXECUTION_CODE_PATHS = tuple(
             "services/quant-api/app/db/url.py",
             "services/quant-api/app/market_data/newow/readiness.py",
             "services/quant-api/app/market_data/newow/readiness_composition.py",
+            "services/quant-api/app/market_data/newow/composition.py",
+            "services/quant-api/app/market_data/newow/capability_contracts.py",
+            "services/quant-api/app/market_data/newow/capability_contracts.json",
             "services/quant-api/app/market_data/newow/product_reader.py",
             "services/quant-api/app/market_data/newow/product_service.py",
             "services/quant-api/app/market_data/newow/product_release.py",
@@ -228,75 +235,36 @@ def _validated_continuation_policy(
     return expected
 
 
-def _read_private_settings_content(path: Path) -> bytes:
+def _read_private_settings_content(path: Path):
+    """Compatibility adapter retaining the recovery error contract."""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        try:
-            info = os.fstat(fd)
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or info.st_uid != os.getuid()
-                or info.st_nlink != 1
-                or info.st_mode & 0o077
-                or info.st_size > 1024 * 1024
-            ):
-                raise OSError
-            content = os.read(fd, 1024 * 1024 + 1)
-            if len(content) != info.st_size:
-                raise OSError
-        finally:
-            os.close(fd)
-        return content
-    except (OSError, UnicodeError) as exc:
-        raise RecoveryError("PROJECT_ENV_UNSAFE") from exc
+        return private_settings.read_private_settings_content(path)
+    except private_settings.PrivateSettingsError as exc:
+        raise RecoveryError(exc.code) from exc
 
 
-def _private_dependency_settings(
-    path: Path,
-) -> tuple[dict[str, str], dict[str, str]]:
-    content = _read_private_settings_content(path)
+def _private_dependency_settings(path: Path):
+    """Compatibility adapter retaining the recovery error contract."""
     try:
-        from app.market_data.closeout_binding import runtime_dependency_settings
-
-        settings = runtime_dependency_settings(content)
-        canonical = Path(settings["GUIYI_CANONICAL_DATA_ROOT"])
-        if (
-            "DATABASE_URL" not in settings
-            or not canonical.is_absolute()
-            or canonical != canonical.resolve()
-            or ".." in canonical.parts
-        ):
-            raise ValueError
-    except (OSError, KeyError, UnicodeError, ValueError) as exc:
-        raise RecoveryError("PROJECT_ENV_UNSAFE") from exc
-    identity = {
-        "config_sha256": hashlib.sha256(content).hexdigest(),
-        "canonical_root_sha256": hashlib.sha256(
-            str(canonical).encode("utf-8")
-        ).hexdigest(),
-    }
-    return settings, identity
+        return private_settings.private_dependency_settings(path)
+    except private_settings.PrivateSettingsError as exc:
+        raise RecoveryError(exc.code) from exc
 
 
-def load_private_readonly_settings(
-    path: Path,
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Load only DB/Canonical dependencies; never require provider credentials."""
-    return _private_dependency_settings(path)
-
-
-def load_private_execution_settings(
-    path: Path,
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Load writer dependencies and require the existing provider configuration."""
-    settings, identity = _private_dependency_settings(path)
+def load_private_readonly_settings(path: Path):
+    """Compatibility adapter retaining the recovery error contract."""
     try:
-        from app.market_data.rqdata_adapter import runtime_provider_settings
+        return private_settings.load_private_readonly_settings(path)
+    except private_settings.PrivateSettingsError as exc:
+        raise RecoveryError(exc.code) from exc
 
-        runtime_provider_settings(settings, required=True)
-    except (KeyError, ValueError) as exc:
-        raise RecoveryError("PROJECT_ENV_UNSAFE") from exc
-    return settings, identity
+
+def load_private_execution_settings(path: Path):
+    """Compatibility adapter retaining the recovery error contract."""
+    try:
+        return private_settings.load_private_execution_settings(path)
+    except private_settings.PrivateSettingsError as exc:
+        raise RecoveryError(exc.code) from exc
 
 
 class AttemptJournal:

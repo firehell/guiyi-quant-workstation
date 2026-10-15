@@ -70,7 +70,7 @@ def test_launchctl_permission_failure_cannot_authorize_idle(monkeypatch):
     from app.runtime_scheduled import ScheduledBackend
     def unreadable(*_args, **_kwargs):
         raise ValueError('IDENTITY_UNAVAILABLE')
-    monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', unreadable)
+    monkeypatch.setattr('app.runtime_identity.read_launchd_service', unreadable)
     with pytest.raises(ValueError, match='IDENTITY_UNAVAILABLE'):
         ScheduledBackend().idle(SimpleNamespace(label='com.guiyi.quant-weekly-audit', root='/tmp'))
 

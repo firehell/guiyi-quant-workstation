@@ -154,7 +154,7 @@ def main() -> int:
     if not output.is_relative_to(root / "outputs"):
         raise ValueError("P0_OUTPUT_OUTSIDE_CANDIDATE")
     # Existing loader reads secrets internally; none are emitted or serialized.
-    from scripts.newow_weekly_recovery import load_private_readonly_settings
+    from app.private_settings import load_private_readonly_settings
     from sqlalchemy import create_engine, text
     from sqlalchemy.orm import Session, sessionmaker
     from app.db.session import normalize_database_url

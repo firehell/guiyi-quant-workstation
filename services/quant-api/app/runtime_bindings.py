@@ -254,11 +254,13 @@ def contract_fingerprints(root: Path) -> dict[str, str]:
     prefixes = {"db": ("services/quant-api/alembic/", "services/quant-api/app/db/", "services/quant-api/app/models/"),
         "live": ("services/quant-api/app/market_data/live",),
         "input": ("services/quant-api/app/market_data/rqdata_adapter",
+                  "services/quant-api/app/market_data/newow/capability_contracts",
+                  "services/quant-api/app/market_data/newow/product_release.py",
                   "services/quant-api/app/market_data/market_feed.py",
-                  "services/quant-api/app/market_data/observation_stream.py", "data/universe/"),
+                  "services/quant-api/app/market_data/observation_stream.py", "services/quant-api/app/runtime_identity.py", "services/quant-api/app/private_settings.py", "data/universe/"),
         "formula": ("packages/quant-core/", "services/quant-api/app/strategies/"),
         "reference": ("services/quant-api/app/reference_trading/",),
-        "launcher": ("scripts/ops/macos/run-local-service.sh", "scripts/ops/macos/runtime-service-dispatch.sh", "services/quant-api/app/runtime_bindings.py", "services/quant-api/app/runtime_contracts.py", "services/quant-api/app/runtime_entry", "services/quant-api/app/runtime_handover.py", "services/quant-api/app/runtime_deployment.py", "services/quant-api/app/runtime_bootstrap.py", "services/quant-api/app/runtime_scheduled.py")}
+        "launcher": ("services/quant-api/app/runtime_identity.py", "services/quant-api/app/private_settings.py", "scripts/ops/macos/run-local-service.sh", "scripts/ops/macos/runtime-service-dispatch.sh", "services/quant-api/app/runtime_bindings.py", "services/quant-api/app/runtime_contracts.py", "services/quant-api/app/runtime_entry", "services/quant-api/app/runtime_handover.py", "services/quant-api/app/runtime_deployment.py", "services/quant-api/app/runtime_bootstrap.py", "services/quant-api/app/runtime_scheduled.py")}
     result = {}
     for name, paths in prefixes.items():
         selected = {key: value for key, value in files.items() if key.startswith(paths)}

@@ -295,7 +295,7 @@ def run_weekly_audit_service(
 ) -> dict[str, object]:
     from datetime import datetime
     from app.core.env import PROJECT_ROOT
-    from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
+    from app.runtime_identity import runtime_heartbeat_identity
     from app.market_data.operational_universe import load_operational_products
     from app.market_data.session_clock import SHANGHAI
     from app.market_data.weekly_audit import run_scheduled_weekly_audit, run_weekly_audit

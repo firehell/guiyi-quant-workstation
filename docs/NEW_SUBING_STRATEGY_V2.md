@@ -60,7 +60,9 @@ MA21简单平均、BOLL21总体标准差×2、MACD12/26/9六位、ATR14及三倍
 
 ## 接口与验收
 
-纯新包 `guiyi_quant.new_subing_v2` 复用V1 StrategyBar/ExecutionBar/FeeSchedule与指标，V1内核不改。
+`guiyi_quant.new_subing_v2` 复用既有 StrategyBar/ExecutionBar/FeeSchedule 类型；V1/V2 共用
+`guiyi_quant.new_subing_common` 的 `new_subing_common_v1` 快照、背离扫描与输入校验。
+Profile、setup、执行引擎和账户状态分别维护；提取不改变公式、参数、结果或执行事实哈希。
 `Profile(initial_cash=Decimal('100000'|'1000000'))`、`profile_payload(profile)`、`prepare_research(bars_by_frequency, profile)`、
 `run_research(bars_by_frequency,execution_bars,profile=None,scenario='baseline',since,through,prepared=None)`。
 准备结果仅缓存不可变、逐prefix计算的指标；绑定输入与公式，拒绝不匹配，不保存账户状态或未来决定。

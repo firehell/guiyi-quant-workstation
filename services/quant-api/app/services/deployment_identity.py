@@ -7,8 +7,8 @@ import plistlib
 import re
 from typing import Any
 
-from app.market_data.captured_recovery_runtime import _read_launchd_service, _verify_loaded_service
-from app.market_data.closeout_binding import _arguments, _environments, _snapshot
+from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
+from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments, file_snapshot as _snapshot
 from app.runtime_bindings import RuntimeBindingError, authorized_program_arguments, bindings_sha256, read_bindings, verify_release
 
 SERVICE_LABELS = {

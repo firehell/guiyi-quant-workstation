@@ -2,23 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 from datetime import UTC, datetime
 
 from guiyi_quant.newow.product_contracts import ProductFrequency
 from guiyi_quant.newow.product_identity import InputQualityPolicy
 
+from .capability_contracts import capability_response, capability_intraday_scope
 
-INTRADAY_BATCH_PREVIEW_SYMBOLS = frozenset({"rb", "hc", "ss", "i", "j", "jm", "sf", "sm"})
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v33"] = "newow_product_capabilities_v33"
+CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v34"] = "newow_product_capabilities_v34"
+_CURRENT_CAPABILITY = capability_response(CAPABILITY_SCHEMA_VERSION)
+_CANDIDATE_CAPABILITY = capability_response(CANDIDATE_CAPABILITY_SCHEMA_VERSION)
+
+
+INTRADAY_BATCH_PREVIEW_SYMBOLS = capability_intraday_scope("newow_product_capabilities_v26")
 
 # P7 candidate eligibility only; each non-batch preview selects one product.
-INTRADAY_SINGLE_PREVIEW_SYMBOLS = frozenset({
-    "fu", "ma", "ur", "ta", "sh", "v", "sa", "au", "ag", "ni", "sf", "sm",
-    "cj", "jd", "ap", "c", "lh", "m", "rm", "pk", "sr", "cf", "oi", "p", "lc", "fg", "ao", "cu", "ps", "y", "si", "a", "b", "bz", "eb", "ec", "eg", "l", "pd", "pf", "pg", "pl", "pr", "pt", "px", "rs", "sc", "ru", "bu", "pb", "sn", "al", "zn", "pp",
-})
+INTRADAY_SINGLE_PREVIEW_SYMBOLS = capability_intraday_scope("newow_product_capabilities_v27")
 
 # Released read-only historical scope; no forward stream activation.
-OPEN_INTRADAY_PRODUCTS = tuple(sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss pp".split()))
+OPEN_INTRADAY_PRODUCTS = tuple(_CURRENT_CAPABILITY["intraday_products"])
 INTRADAY_HISTORY_AS_OF = datetime(2026, 9, 24, 7, 0, 0, 1, tzinfo=UTC)
 INTRADAY_HISTORY_SCHEMA = "newow_intraday_pilot_20260927"
 INTRADAY_HISTORY_FREQUENCIES = (ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY, ProductFrequency.HOURLY)
@@ -36,48 +40,24 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v33"] = (
-    "newow_product_capabilities_v33"
-)
-RELEASE_STAGE: Literal["daily_weekly_intraday_current"] = "daily_weekly_intraday_current"
-OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY, ProductFrequency.FIVE_MINUTE, ProductFrequency.QUARTER_HOURLY, ProductFrequency.HALF_HOURLY)
+RELEASE_STAGE: Literal["daily_weekly_intraday_current"] = cast(Literal["daily_weekly_intraday_current"], _CURRENT_CAPABILITY["release_stage"])
+OPEN_FREQUENCIES = tuple(ProductFrequency(value) for value in _CURRENT_CAPABILITY["latest_completed_frequencies"])
 # Only these short-minute products retain the immutable v31 historical input boundary.
 FROZEN_INTRADAY_FREQUENCIES = ()
-MAIN_RISE_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY)
+MAIN_RISE_FREQUENCIES = tuple(ProductFrequency(value) for value in _CURRENT_CAPABILITY["strategy_frequencies"]["main_rise"])
 LATEST_COMPLETED_FREQUENCIES = OPEN_FREQUENCIES
-OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
-    "chart",
-    "auxiliary",
-    "reference",
-    "comparator",
-)
+OPEN_SECTIONS: tuple[ProductSectionName, ...] = tuple(_CURRENT_CAPABILITY["open_sections"])
 DEFERRED_FREQUENCIES: tuple[tuple[ProductFrequency, str], ...] = ()
-DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
-    ("explanation", "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"),
-)
+DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = tuple((item["section"], item["reason_code"]) for item in _CURRENT_CAPABILITY["deferred_sections"])
 
-CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v34"] = (
-    "newow_product_capabilities_v34"
-)
-CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
-CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
-OPEN_WEEKLY_PRODUCTS = (
-    "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
-    "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
-    "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps", "pt", "px", "rb",
-    "rm", "rs", "ru", "sa", "sc", "sf", "sh", "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
-)
+CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = cast(Literal["daily_weekly_candidate"], _CANDIDATE_CAPABILITY["release_stage"])
+CANDIDATE_OPEN_FREQUENCIES = tuple(ProductFrequency(value) for value in _CANDIDATE_CAPABILITY["open_frequencies"])
+OPEN_WEEKLY_PRODUCTS = tuple(_CURRENT_CAPABILITY["weekly_products"])
 REMAINING_WEEKLY_V2_PRODUCTS: tuple[str, ...] = ()
 FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "cj", "eb", "eg", "j", "oi", "pf", "pg", "pk", "pl", "pr", "px", "rs", "sf", "sh", "si", "sm", "sr")
 # v9 is an immutable candidate wire contract. Keep its original ordering even as
 # products graduate into later formal capability versions.
-CANDIDATE_WEEKLY_PRODUCTS = (
-    "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
-    "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
-    "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
-    "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
-    "cj", "oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm", "sr",
-)
+CANDIDATE_WEEKLY_PRODUCTS = tuple(_CANDIDATE_CAPABILITY["weekly_products"])
 if (
     len(OPEN_WEEKLY_PRODUCTS) != 60
     or len(REMAINING_WEEKLY_V2_PRODUCTS) != 0
@@ -91,17 +71,13 @@ if (
     raise RuntimeError("NEWOW_WEEKLY_PRODUCT_SCOPE_INVALID")
 CANDIDATE_DEFERRED_FREQUENCIES: tuple[tuple[ProductFrequency, str], ...] = ()
 AU_PERIOD_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v5"
-AU_PERIOD_PREVIEW_STAGE = "au_daily_weekly_hourly_candidate"
-AU_PERIOD_PREVIEW_FREQUENCIES = (
-    ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY,
-)
+AU_PERIOD_PREVIEW_STAGE = capability_response(AU_PERIOD_PREVIEW_SCHEMA_VERSION)["release_stage"]
+AU_PERIOD_PREVIEW_FREQUENCIES = tuple(ProductFrequency(value) for value in capability_response(AU_PERIOD_PREVIEW_SCHEMA_VERSION)["open_frequencies"])
 HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v7"
-HOURLY_PRODUCT_PREVIEW_STAGE = "ap_hourly_candidate"
+HOURLY_PRODUCT_PREVIEW_STAGE = capability_response(HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION)["release_stage"]
 PD_PT_HOURLY_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v6"
-PD_PT_HOURLY_PREVIEW_STAGE = "pd_pt_hourly_candidate"
-HOURLY_PRODUCT_PREVIEW_FREQUENCIES = (
-    ProductFrequency.DAILY, ProductFrequency.HOURLY,
-)
+PD_PT_HOURLY_PREVIEW_STAGE = capability_response(PD_PT_HOURLY_PREVIEW_SCHEMA_VERSION)["release_stage"]
+HOURLY_PRODUCT_PREVIEW_FREQUENCIES = tuple(ProductFrequency(value) for value in capability_response(HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION)["open_frequencies"])
 HOURLY_PRODUCT_PREVIEW_DEFERRED = (
     (ProductFrequency.WEEKLY, "NEWOW_WEEKLY_RELEASE_PENDING"),
 )

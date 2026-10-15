@@ -121,7 +121,7 @@ def main() -> None:
     engine = None
     try:
         if args.project_env is not None:
-            from scripts.newow_weekly_recovery import load_private_readonly_settings
+            from app.private_settings import load_private_readonly_settings
             from sqlalchemy import create_engine
             from sqlalchemy.orm import sessionmaker
             from app.db.url import normalize_database_url

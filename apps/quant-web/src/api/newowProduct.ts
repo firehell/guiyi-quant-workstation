@@ -1,3 +1,4 @@
+import { capabilityContract } from '../generated/newowCapabilityContracts.ts'
 import { newowSessionResources, newowResourceIdentity } from '../utils/newowSessionResources.ts'
 import type {
   NewowHistoricalSnapshot,
@@ -28,64 +29,6 @@ const UNAVAILABLE_CODES = new Set([
   'NEWOW_FREQUENCY_NOT_OPEN', 'NEWOW_SECTION_NOT_OPEN',
   'NEWOW_WEEKLY_UNKNOWN', 'NEWOW_WEEKLY_FAILED', 'NEWOW_WEEKLY_STALE',
 ])
-const WEEKLY_PRODUCTS_V8 = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V10 = 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V11 = 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V12 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V13 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V14 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V15 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V16 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V17 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V18 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V19 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V20 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V21 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V22 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V9 = [...WEEKLY_PRODUCTS_V10, ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' ')]
-
-// Frozen wire versions share validation, never product scope or release identity.
-// Keep legacy/candidate profiles readable during version-bound preview and rollback.
-interface CapabilityProfile {
-  readonly stage: NewowProductCapabilities['release_stage']
-  readonly frequencies: NewowProductCapabilities['open_frequencies']
-  readonly weeklyProducts?: readonly string[]
-}
-const CAPABILITY_PROFILES = new Map<string, CapabilityProfile>([
-  ['newow_product_capabilities_v3', { stage: 'daily', frequencies: ['1d'] }],
-  ['newow_product_capabilities_v4', { stage: 'daily_weekly_candidate', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V8 }],
-  ['newow_product_capabilities_v5', { stage: 'au_daily_weekly_hourly_candidate', frequencies: ['1d', '1w', '60m'] }],
-  ['newow_product_capabilities_v6', { stage: 'pd_pt_hourly_candidate', frequencies: ['1d', '60m'] }],
-  ['newow_product_capabilities_v7', { stage: 'ap_hourly_candidate', frequencies: ['1d', '60m'] }],
-  ['newow_product_capabilities_v8', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V8 }],
-  ['newow_product_capabilities_v9', { stage: 'daily_weekly_candidate', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V9 }],
-  ['newow_product_capabilities_v34', { stage: 'daily_weekly_candidate', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V9 }],
-  ['newow_product_capabilities_v10', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V10 }],
-  ['newow_product_capabilities_v11', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V11 }],
-  ['newow_product_capabilities_v12', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V12 }],
-  ['newow_product_capabilities_v13', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V13 }],
-  ['newow_product_capabilities_v14', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V14 }],
-  ['newow_product_capabilities_v15', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V15 }],
-  ['newow_product_capabilities_v16', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V16 }],
-  ['newow_product_capabilities_v17', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V17 }],
-  ['newow_product_capabilities_v18', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V18 }],
-  ['newow_product_capabilities_v19', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V19 }],
-  ['newow_product_capabilities_v20', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V20 }],
-  ['newow_product_capabilities_v21', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V21 }],
-  ['newow_product_capabilities_v25', { stage: 'rb_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
-  ['newow_product_capabilities_v27', { stage: 'single_product_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
-  ['newow_product_capabilities_v26', { stage: 'black_steel_intraday_candidate', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'] }],
-  ['newow_product_capabilities_v24', { stage: 'black_steel_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
-  ['newow_product_capabilities_v23', { stage: 'rb_intraday_candidate', frequencies: ['1m', '15m', '30m', '60m', '1d', '1w'] }],
-  ['newow_product_capabilities_v28', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
-  ['newow_product_capabilities_v29', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
-  ['newow_product_capabilities_v30', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
-  ['newow_product_capabilities_v33', { stage: 'daily_weekly_intraday_current', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
-  ['newow_product_capabilities_v32', { stage: 'daily_weekly_hourly_current', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
-  ['newow_product_capabilities_v31', { stage: 'daily_weekly_intraday_history', frequencies: ['5m', '15m', '30m', '60m', '1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
-  ['newow_product_capabilities_v22', { stage: 'daily_weekly', frequencies: ['1d', '1w'], weeklyProducts: WEEKLY_PRODUCTS_V22 }],
-])
-
 export class NewowProductRequestError extends Error {
   readonly code: string
   readonly classification: NewowProductErrorClassification
@@ -122,77 +65,31 @@ export async function getNewowProductCapabilities(
 
 function isProductCapabilities(value: unknown): value is NewowProductCapabilities {
   if (!isRecord(value) || typeof value.schema_version !== 'string') return false
-  const profile = CAPABILITY_PROFILES.get(value.schema_version)
-  if (!profile || value.release_stage !== profile.stage
-    || !sameLiteralArray(value.open_frequencies, profile.frequencies)) return false
-  const expectedKeys = [
-    'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
-    'release_stage', 'schema_version', ...(profile.weeklyProducts ? ['weekly_products'] : []),
-    ...(['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31', 'newow_product_capabilities_v32', 'newow_product_capabilities_v33'].includes(value.schema_version) ? ['intraday_products', 'intraday_as_of'] : []),
-    ...(['newow_product_capabilities_v32', 'newow_product_capabilities_v33'].includes(value.schema_version) ? ['latest_completed_frequencies', 'strategy_frequencies'] : []),
-    ...(['newow_product_capabilities_v24', 'newow_product_capabilities_v26', 'newow_product_capabilities_v27'].includes(value.schema_version) ? ['intraday_products'] : []),
-  ]
-  if (Object.keys(value).sort().join(',') !== expectedKeys.sort().join(',')) return false
-  if (!sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])) return false
-  if (profile.weeklyProducts && !sameLiteralArray(value.weekly_products, profile.weeklyProducts)) return false
-  if (['newow_product_capabilities_v24', 'newow_product_capabilities_v26', 'newow_product_capabilities_v27'].includes(value.schema_version)) {
+  const contract = capabilityContract(value.schema_version)
+  if (!contract) return false
+  const keys = [...Object.keys(contract.response), ...(contract.intradayScope ? ['intraday_products'] : [])]
+  if (!sameCapabilityValue(Object.keys(value).sort(), keys.sort())) return false
+  if (!Object.entries(contract.response).every(([key, expected]) => sameCapabilityValue(value[key], expected))) return false
+  const scope = contract.intradayScope
+  if (scope) {
     const products = value.intraday_products
-    const single = value.schema_version === 'newow_product_capabilities_v27'
-    const allowed = single
-      ? ['fu', 'ma', 'ur', 'ta', 'sh', 'v', 'sa', 'au', 'ag', 'ni', 'sf', 'sm', 'cj', 'jd', 'ap', 'c', 'lh', 'm', 'rm', 'pk', 'sr', 'cf', 'oi', 'p', 'lc', 'fg', 'ao', 'cu', 'ps', 'y', 'si', 'a', 'b', 'bz', 'eb', 'ec', 'eg', 'l', 'pd', 'pf', 'pg', 'pl', 'pr', 'pt', 'px', 'rs', 'sc', 'ru', 'bu', 'pb', 'sn', 'al', 'zn', 'pp']
-      : ['hc', 'i', 'j', 'jm', 'rb', 'sf', 'sm', 'ss']
-    if (!Array.isArray(products) || products.length === 0 || (single && products.length !== 1)
-      || !products.every(item => typeof item === 'string' && allowed.includes(item))
-      || !sameLiteralArray(products, [...new Set(products)].sort())) return false
+    if (!Array.isArray(products) || products.length === 0 || (scope.single && products.length !== 1)
+      || !products.every(product => typeof product === 'string' && scope.allowed.includes(product))
+      || !sameCapabilityValue(products, [...new Set(products)].sort())) return false
   }
-  if (value.schema_version === 'newow_product_capabilities_v28'
-    && (!sameLiteralArray(value.intraday_products, 'rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi'.split(' ').sort())
-      || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z')) return false
-  if (value.schema_version === 'newow_product_capabilities_v29'
-    && (!sameLiteralArray(value.intraday_products, 'rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px'.split(' ').sort())
-      || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z')) return false
-  if (value.schema_version === 'newow_product_capabilities_v30'
-    && (!sameLiteralArray(value.intraday_products, 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pr ps pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn'.split(' '))
-      || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z')) return false
-  if (value.schema_version === 'newow_product_capabilities_v31'
-    && (!sameLiteralArray(value.intraday_products, [...WEEKLY_PRODUCTS_V22].sort())
-      || value.intraday_as_of !== '2026-09-24T07:00:00.000001Z')) return false
-  if (value.schema_version === 'newow_product_capabilities_v32' || value.schema_version === 'newow_product_capabilities_v33') {
-    const currentMinutes = value.schema_version === 'newow_product_capabilities_v33'
-    const strategies = value.strategy_frequencies
-    if (!sameLiteralArray(value.intraday_products, [...WEEKLY_PRODUCTS_V22].sort())
-      || value.intraday_as_of !== (currentMinutes ? null : '2026-09-24T07:00:00.000001Z')
-      || !sameLiteralArray(value.latest_completed_frequencies, currentMinutes ? ['1d', '1w', '60m', '5m', '15m', '30m'] : ['1d', '1w', '60m'])
-      || !isRecord(strategies) || Object.keys(strategies).sort().join(',') !== 'dual,main_rise,oscillation,trend'
-      || !sameLiteralArray(strategies.main_rise, ['1d', '1w', '60m'])
-      || !['trend', 'oscillation', 'dual'].every(strategy => sameLiteralArray(strategies[strategy], profile.frequencies))) return false
-  }
-  const openFrequencies: readonly string[] = profile.frequencies
-  const deferred = value.schema_version === 'newow_product_capabilities_v34' ? [] : (['1w', '60m'] as const).filter(frequency => !openFrequencies.includes(frequency))
-  const deferredFrequencies = value.deferred_frequencies
-  return Array.isArray(deferredFrequencies) && deferredFrequencies.length === deferred.length
-    && deferred.every((frequency, index) => isDeferred(deferredFrequencies[index], frequency,
-      frequency === '1w' ? 'NEWOW_WEEKLY_RELEASE_PENDING' : 'NEWOW_HOURLY_RELEASE_PENDING'))
-    && Array.isArray(value.deferred_sections) && value.deferred_sections.length === 1
-    && isDeferred(value.deferred_sections[0], 'explanation', 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')
+  return true
 }
 
-function sameLiteralArray(value: unknown, expected: readonly string[]): boolean {
-  return Array.isArray(value)
-    && value.length === expected.length
-    && value.every((item, index) => item === expected[index])
-}
-
-function isDeferred(value: unknown, identity: string, reason: string): boolean {
-  if (!isRecord(value)) return false
-  const keys = Object.keys(value).sort().join(',')
-  if (keys === 'frequency,reason_code') {
-    return value.frequency === identity && value.reason_code === reason
+function sameCapabilityValue(value: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected)) {
+    return Array.isArray(value) && value.length === expected.length
+      && expected.every((item, index) => sameCapabilityValue(value[index], item))
   }
-  if (keys === 'reason_code,section') {
-    return value.section === identity && value.reason_code === reason
+  if (isRecord(expected)) {
+    return isRecord(value) && sameCapabilityValue(Object.keys(value).sort(), Object.keys(expected).sort())
+      && Object.entries(expected).every(([key, item]) => sameCapabilityValue(value[key], item))
   }
-  return false
+  return value === expected
 }
 
 function freezeProductCapabilities(

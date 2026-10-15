@@ -26,7 +26,7 @@ from app.market_data.newow.after_market_consumer_audit import catalog_revision
 from app.market_data import rqdata_adapter
 from app.market_data.rqdata_adapter import WEEKLY_AGGREGATION_VERSION, _aggregate_daily_rows
 from app.market_data.storage import CANONICAL_SCHEMA, CanonicalMonthlyStore, PublishRequest
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 
 _TARGETS = (("CJ2305", 2022, 5, 20), ("CJ2309", 2022, 9, 30))
 _FIELDS = ("open", "high", "low", "close", "volume", "turnover", "open_interest")

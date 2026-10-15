@@ -25,7 +25,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.db.url import normalize_database_url
-from app.market_data.closeout_binding import runtime_dependency_settings
+from app.private_settings import runtime_dependency_settings
 from app.market_data.rqdata_adapter import RQDATA_PROVIDER_SETTINGS, runtime_provider_settings
 
 

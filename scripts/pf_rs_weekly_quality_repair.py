@@ -33,7 +33,7 @@ from app.market_data.weekly_quality import (
     weekly_daily_revision_sha256,
 )
 from app.models import MarketPartition
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 
 CUTOFF = datetime.fromisoformat("2026-09-18T07:00:00.000001+00:00")
 TARGETS = {

@@ -9,10 +9,11 @@ from pathlib import Path
 import plistlib
 import re
 import stat
-import subprocess
+import subprocess  # noqa: F401 - historical isolated runner seam
 from typing import NoReturn
 
 from app.core.env import PROJECT_ROOT
+from app import runtime_identity
 from app.runtime_bindings import authorized_program_arguments, read_bindings, resolve_service_binding, verify_release
 
 
@@ -28,75 +29,30 @@ def _reject(suffix: str) -> NoReturn:
     raise CapturedRecoveryRuntimeError(f"CAPTURED_RECOVERY_RUNTIME_{suffix}") from None
 
 
-def runtime_heartbeat_identity() -> dict[str, object]:
-    """Code-root identity plus the launcher's whitelisted commit declaration."""
-    commit = os.environ.get("GUIYI_RUNTIME_COMMIT", "")
-    identity: dict[str, object] = {
-        "runtime_root": str(PROJECT_ROOT),
-        "runtime_commit": commit if re.fullmatch(r"[0-9a-f]{40}", commit) else None,
-    }
-    generation = os.environ.get("GUIYI_RUNTIME_GENERATION", "")
-    tag = os.environ.get("GUIYI_RUNTIME_TAG", "")
-    if re.fullmatch(r"[1-9][0-9]*", generation) and re.fullmatch(r"v\d+\.\d+\.\d+", tag):
-        identity.update(runtime_generation=int(generation), runtime_tag=tag)
-    return identity
+runtime_heartbeat_identity = runtime_identity.runtime_heartbeat_identity
 
 
 def _read_command(arguments: list[str], *, root: Path) -> str:
-    result = _command_result(arguments, root=root)
-    if result.returncode != 0:
-        _reject("IDENTITY_UNAVAILABLE")
-    return result.stdout.strip()
+    try:
+        return runtime_identity.read_command(arguments, root=root)
+    except runtime_identity.RuntimeIdentityError as exc:
+        _reject(exc.code)
 
 
 def _command_result(
     arguments: list[str], *, root: Path, capture_stderr: bool = False
 ) -> subprocess.CompletedProcess[str]:
     try:
-        result = subprocess.run(
-            arguments, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE if capture_stderr else subprocess.DEVNULL,
-            text=True, timeout=5, check=False,
-            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1",
-                 "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_OPTIONAL_LOCKS": "0"},
-        )
-    except (OSError, subprocess.SubprocessError, UnicodeError):
-        _reject("IDENTITY_UNAVAILABLE")
-    if not isinstance(result.stdout, str) or (
-        capture_stderr and not isinstance(result.stderr, str)
-    ):
-        _reject("IDENTITY_UNAVAILABLE")
-    return result
+        return runtime_identity.command_result(arguments, root=root, capture_stderr=capture_stderr)
+    except runtime_identity.RuntimeIdentityError as exc:
+        _reject(exc.code)
 
 
 def _read_launchd_service(label: str, *, root: Path) -> str | None:
-    """Return one loaded definition, or None only for an explicit label absence."""
-    if re.fullmatch(
-        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker|market-feed)(?:-candidate-[0-9a-f]{32})?",
-        label,
-    ) is None:
-        _reject("IDENTITY_UNAVAILABLE")
-    domain = f"gui/{os.getuid()}"
-    _read_command(["/bin/launchctl", "print", domain], root=root)
-    result = _command_result(
-        ["/bin/launchctl", "print", f"{domain}/{label}"],
-        root=root,
-        capture_stderr=True,
-    )
-    if result.returncode == 0:
-        return result.stdout.strip()
-    unavailable = result.stdout + result.stderr
-    explicit_absence = (
-        f'Could not find service "{label}" in domain for user gui: {os.getuid()}'
-    )
-    if result.returncode == 113 and unavailable in {
-        explicit_absence,
-        f"{explicit_absence}\n",
-        f"Bad request.\n{explicit_absence}",
-        f"Bad request.\n{explicit_absence}\n",
-    }:
-        return None
-    _reject("IDENTITY_UNAVAILABLE")
+    try:
+        return runtime_identity.read_launchd_service(label, root=root)
+    except runtime_identity.RuntimeIdentityError as exc:
+        _reject(exc.code)
 
 
 def _verify_markers(root: Path, *, require_alert_enabled: bool = True) -> None:
@@ -128,53 +84,15 @@ def _verify_markers(root: Path, *, require_alert_enabled: bool = True) -> None:
 
 def _verify_loaded_service(
     output: str, *, root: Path, commit: str, allow_idle: bool = False, require_idle: bool = False,
-    require_guard: bool = False,
-    working_directory: Path | None = None,
+    require_guard: bool = False, working_directory: Path | None = None,
 ) -> dict[str, str]:
-    # Never retain or report unrelated launchd environment keys or raw output.
-    patterns = {
-        "state": r"state = (.*)", "pid": r"pid = (.*)",
-        "directory": r"working directory = (.*)",
-        "root": r"GUIYI_PROJECT_ROOT => (.*)",
-        "commit": r"GUIYI_RUNTIME_COMMIT => (.*)",
-        "guard": r"GUIYI_LIVE_RECOVERY_ENABLED => (.*)",
-    }
-    fields: dict[str, str] = {}
-    scopes: list[tuple[str, str]] = []
-    for line in output.splitlines():
-        line = line.strip()
-        if line.endswith((" = {", " => {")):
-            name, operator, _brace = line.rsplit(" ", 2)
-            if not scopes and operator != "=":
-                _reject("SERVICE_IDENTITY_INVALID")
-            scopes.append((name, operator))
-            continue
-        if line == "}":
-            if not scopes:
-                _reject("SERVICE_IDENTITY_INVALID")
-            scopes.pop()
-            continue
-        for key, pattern in patterns.items():
-            # Only the service's direct `environment = {` block is authoritative.
-            in_environment = len(scopes) == 2 and scopes[-1] == ("environment", "=")
-            if (key in {"root", "commit", "guard"} and not in_environment
-                    or key not in {"root", "commit", "guard"} and len(scopes) != 1):
-                continue
-            match = re.fullmatch(pattern, line)
-            if match is not None:
-                if key in fields:
-                    _reject("SERVICE_IDENTITY_INVALID")
-                fields[key] = match.group(1)
-    state = fields.get("state")
-    allowed_states = {"running", "waiting", "not running"} if allow_idle else {"running"}
-    if (scopes or state not in allowed_states
-            or require_idle and (state != "not running" or "pid" in fields)
-            or require_guard and fields.get("guard") != "1"
-            or state == "running" and re.fullmatch(r"[1-9][0-9]{0,9}", fields.get("pid", "")) is None
-            or fields.get("directory") != str(working_directory or root) or fields.get("root") != str(root)
-            or fields.get("commit") != commit):
-        _reject("SERVICE_IDENTITY_INVALID")
-    return fields
+    try:
+        return runtime_identity.verify_loaded_service(
+            output, root=root, commit=commit, allow_idle=allow_idle, require_idle=require_idle,
+            require_guard=require_guard, working_directory=working_directory,
+        )
+    except runtime_identity.RuntimeIdentityError as exc:
+        _reject(exc.code)
 
 
 def _verify_after_market_plist(
@@ -288,7 +206,7 @@ def verify_captured_recovery_runtime(
             label = binding.label
             output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"], root=service_root)
             _verify_loaded_service(output, root=service_root, commit=binding.commit, allow_idle=service == "after-market")
-            from app.market_data.closeout_binding import _arguments, _environments
+            from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments
             if _arguments(output) != authorized_program_arguments(binding, Path.home()):
                 _reject("SERVICE_IDENTITY_INVALID")
             declarations = [item for item in _environments(output)

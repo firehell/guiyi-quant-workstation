@@ -133,7 +133,7 @@ def main() -> int:
     from app.market_data.market_data_service import MarketDataService
     from app.market_data.storage import CanonicalMonthlyStore
     from app.new_subing_research.store import publish_result
-    from scripts.newow_weekly_recovery import load_private_readonly_settings
+    from app.private_settings import load_private_readonly_settings
 
     revision = subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
     changed = subprocess.run(['git', '-c', 'core.fsmonitor=false', 'status', '--porcelain', '--',

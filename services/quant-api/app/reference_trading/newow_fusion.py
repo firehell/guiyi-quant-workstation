@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.checkpoint import checkpoint_watermark
+
 from dataclasses import dataclass
 
 from guiyi_quant.newow.fusion_reference import (
@@ -48,8 +50,6 @@ def fusion_input_policy(stream):
 
 
 def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=None):
-    from app.reference_trading.service import _checkpoint_watermark
-
     if (
         not isinstance(checkpoint.strategy_state, FusionReferenceReplayState)
         or checkpoint.reference_state is None
@@ -67,7 +67,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=N
         return (
             AdapterCheckpoint(
                 checkpoint.strategy_state,
-                _checkpoint_watermark(checkpoint, item, transition.state),
+                checkpoint_watermark(checkpoint, item, transition.state),
                 item.fingerprint,
                 item.physical_contract,
                 item.owner_segment_id,
@@ -231,7 +231,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=N
     return (
         AdapterCheckpoint(
             checkpoint.strategy_state,
-            _checkpoint_watermark(checkpoint, item, transition.state),
+            checkpoint_watermark(checkpoint, item, transition.state),
             item.fingerprint,
             item.physical_contract,
             item.owner_segment_id,

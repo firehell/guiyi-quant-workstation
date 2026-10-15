@@ -821,8 +821,9 @@ class ReferenceRepository:
     @staticmethod
     def _finish_bounded_recovery_health(session, stream, revision, capture):
         """Clear only the exact one-shot interruption consumed in this transaction."""
-        from app.reference_trading.bounded_recovery import _consumed_bound_receipt
-        from app.reference_trading.scheduled_reconciliation import ScheduledCanonicalReconciliation
+        from app.reference_trading.transaction_guards import (
+            assert_source_allowed, consumed_bound_receipt,
+        )
 
         evidence = capture.source_evidence.get("forward_capture_v1", {})
         if (stream.active_revision_id != revision.revision_id or revision.status != "active"
@@ -837,7 +838,7 @@ class ReferenceRepository:
         ))
         if (receipt is None or receipt.budget.get("bounded_recovery_capture_sha256") != capture.payload_hash
                 or evidence.get("generation") != receipt.generation
-                or not _consumed_bound_receipt(session, receipt, revision)):
+                or not consumed_bound_receipt(session, receipt, revision)):
             return
         pending = session.scalar(select(ReferenceBatch.batch_id).where(
             ReferenceBatch.stream_id == stream.stream_id,
@@ -846,8 +847,7 @@ class ReferenceRepository:
         ).limit(1))
         if pending is not None:
             return
-        guard = ScheduledCanonicalReconciliation(lambda: session, None, read_guard=None)
-        guard.assert_source_allowed(stream.stream_id, session=session)
+        assert_source_allowed(session, stream.stream_id)
         stream.health = "READY"
 
     def read_batch(

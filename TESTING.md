@@ -1,5 +1,22 @@
 # 测试与验证命令
 
+## 后续三批工程收敛
+
+Reference 事务、Newow 组装、Runtime 公共工具、新苏冰共享计算与能力合同的范围见
+[实施记录](docs/tasks/architecture-convergence-followups.md)。能力合同 JSON 是唯一版本资料，
+修改后运行生成器，build 会拒绝过期的 TypeScript 产物。
+
+```sh
+node tools/generate_newow_capabilities.mjs
+node tools/generate_newow_capabilities.mjs --check
+node --test apps/quant-web/tests/newowCapabilityContract.test.ts apps/quant-web/tests/newowProductTypes.test.ts
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/engineering/test_newow_capability_contract.py tests/unit/new_subing tests/unit/new_subing_v2 services/quant-api/tests/newow/test_composition.py services/quant-api/tests/reference_trading/test_checkpoint.py services/quant-api/tests/test_runtime_shared_tools.py
+```
+
+`test_transaction_guards_postgresql.py` 与既有 repository/conflict PostgreSQL 测试使用
+`GUIYI_ISOLATED_MIGRATION_DATABASE_URL` 指定独立测试实例，不配置时跳过，不算事务验收。
+共享计算 golden 冻结自修改前基线，不应因重构更新；公式或执行语义变化须独立版本化。
+
 ## 第一批工程收敛
 
 异步事实的身份隔离、弹层行为与收益图布局使用以下稳定入口；范围与设计见

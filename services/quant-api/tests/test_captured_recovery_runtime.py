@@ -185,10 +185,10 @@ def test_subprocess_failures_are_sanitized(runtime, monkeypatch, error):
 
 
 def test_launchd_reader_accepts_only_explicit_label_absence(runtime, monkeypatch):
-    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(runtime.module.runtime_identity, "read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
-        runtime.module,
-        "_command_result",
+        runtime.module.runtime_identity,
+        "command_result",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=113,
             stdout="",
@@ -210,10 +210,10 @@ def test_launchd_reader_accepts_only_explicit_label_absence(runtime, monkeypatch
 def test_launchd_reader_accepts_benign_bad_request_before_exact_label_absence(
     runtime, monkeypatch
 ):
-    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(runtime.module.runtime_identity, "read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
-        runtime.module,
-        "_command_result",
+        runtime.module.runtime_identity,
+        "command_result",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=113,
             stdout="",
@@ -250,10 +250,10 @@ def test_launchd_reader_accepts_benign_bad_request_before_exact_label_absence(
 def test_launchd_reader_accepts_one_normal_trailing_newline(
     runtime, monkeypatch, stderr
 ):
-    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(runtime.module.runtime_identity, "read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
-        runtime.module,
-        "_command_result",
+        runtime.module.runtime_identity,
+        "command_result",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=113, stdout="", stderr=stderr
         ),
@@ -306,10 +306,10 @@ def test_launchd_reader_accepts_one_normal_trailing_newline(
 def test_launchd_reader_rejects_inexact_exit_113_absence_shape(
     runtime, monkeypatch, stderr
 ):
-    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(runtime.module.runtime_identity, "read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
-        runtime.module,
-        "_command_result",
+        runtime.module.runtime_identity,
+        "command_result",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=113, stdout="", stderr=stderr
         ),
@@ -332,7 +332,7 @@ def test_launchd_reader_stops_before_label_query_when_domain_is_unreadable(
         calls.append((arguments, kwargs))
         return SimpleNamespace(returncode=77, stdout="", stderr="domain unavailable")
 
-    monkeypatch.setattr(runtime.module, "_command_result", unreadable)
+    monkeypatch.setattr(runtime.module.runtime_identity, "command_result", unreadable)
 
     with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
         runtime.module._read_launchd_service(
@@ -346,10 +346,10 @@ def test_launchd_reader_stops_before_label_query_when_domain_is_unreadable(
 
 
 def test_launchd_reader_rejects_exact_absence_with_unexpected_exit(runtime, monkeypatch):
-    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(runtime.module.runtime_identity, "read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
-        runtime.module,
-        "_command_result",
+        runtime.module.runtime_identity,
+        "command_result",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=77,
             stdout="",
@@ -381,10 +381,10 @@ def test_launchd_reader_rejects_exact_absence_with_unexpected_exit(runtime, monk
 def test_launchd_reader_rejects_prefixed_absence_for_a_different_identity(
     runtime, monkeypatch, absence
 ):
-    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(runtime.module.runtime_identity, "read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
-        runtime.module,
-        "_command_result",
+        runtime.module.runtime_identity,
+        "command_result",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=113,
             stdout="",
@@ -422,10 +422,10 @@ def test_launchd_reader_rejects_prefixed_absence_for_a_different_identity(
     ],
 )
 def test_launchd_reader_never_treats_errors_as_absence(runtime, monkeypatch, stderr):
-    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(runtime.module.runtime_identity, "read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
-        runtime.module,
-        "_command_result",
+        runtime.module.runtime_identity,
+        "command_result",
         lambda *args, **kwargs: SimpleNamespace(returncode=77, stdout="", stderr=stderr),
     )
 

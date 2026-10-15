@@ -32,7 +32,7 @@ from app.market_data.subing_d1_quality_candidates import (
 )
 from app.market_data.subing_d1_quality_plan import validate_apply_binding
 from app.models import MarketDataset, MarketPartition
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 
 
 def main() -> int:

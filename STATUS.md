@@ -44,6 +44,16 @@ Web 1112 passed/3 skipped、缓存 Chrome E2E 4 passed（fixture 挂载至缓存
 旧首页 E2E 选择器失配已在未修改 develop 基线复核，不报告全仓测试通过。真实权威读取仍需约4秒，不能宣称无缓存首载秒开。
 未发布、未切换 Runtime、未写业务数据。验证入口见 [首页缓存验证](TESTING.md#首页持久缓存与局部更新)。
 
+## 10/15 后续三批工程收敛：工程验证与独立 Review 通过
+
+完成 Reference 事务/checkpoint 解耦、Newow reader/service 组装与展示转换收敛、公共 Runtime 身份/配置/文件工具、
+新苏冰V1/V2公共计算及前后端32版本能力合同收敛。保留公式、执行事实、入口质量政策、历史scope与错误合同；
+公共依赖进入对应Runtime输入与恢复执行指纹。
+整合1625 passed/78 skipped，工具368 passed/2 skipped，独立真实PostgreSQL24 passed；Web1129 passed/3 skipped，
+类型/build/topology、34项工程检查及独立Review通过。跳过项不计通过，扩展浏览器基线差异另见实施记录。
+交付限定develop，未发布、未切换Runtime、未执行生产数据或通知操作。见
+[实施记录](docs/tasks/architecture-convergence-followups.md)与[验证入口](TESTING.md#后续三批工程收敛)。
+
 ## 10/15 第一批工程收敛：工程验证与独立 Review 通过
 
 完成 HTDY/SuBing 身份绑定异步事实、三个弹层公共行为、三个收益面板公共绘图、基础样式变量、

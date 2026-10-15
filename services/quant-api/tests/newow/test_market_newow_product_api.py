@@ -252,7 +252,7 @@ def test_daily_snapshot_uses_formal_quality_policy(product, monkeypatch):
                 ),
             )
 
-    def inputs(_session, _cancelled, _now, quality_policy=InputQualityPolicy.V1):
+    def inputs(_session, _cancelled, _now, quality_policy=InputQualityPolicy.V1, *, home_services=None):
         selected.append(quality_policy)
         return Reader(), lambda _cancelled: Service()
 
@@ -823,7 +823,7 @@ def test_older_chart_window_round_trip_and_invalid_binding(monkeypatch, product_
 
 def test_historical_resolver_reuses_shared_resource_controls(monkeypatch):
     monkeypatch.setattr(market_newow, "build_market_data_service", lambda _session: object())
-    monkeypatch.setattr(market_newow, "build_database_coverage_source", lambda _session: object())
+    monkeypatch.setattr(market_newow, "build_database_coverage_source", lambda _session, *, reuse_session_windows=False: object())
     monkeypatch.setattr(market_newow, "load_active_products", lambda: ("rb",))
     now = datetime(2026, 9, 8, 8, tzinfo=UTC)
     resolver = market_newow._build_historical_resolver(

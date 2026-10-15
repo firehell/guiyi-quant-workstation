@@ -14,8 +14,7 @@ from app.market_data.historical_data_manager import (
 )
 from app.market_data.operational_universe import load_active_products
 from guiyi_quant.newow.product_contracts import ProductFrequency
-from .product_reader import NewowProductReader
-from .product_service import NewowProductService
+from .composition import NewowComposition
 from .readiness import AuditBudget, NewowReadinessAudit, ReadinessRequest
 from .product_release import candidate_input_quality_policy
 
@@ -53,18 +52,10 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
         raise ValueError("NEWOW_READINESS_QUALITY_POLICY_MIXED")
     quality_policy = next(iter(policies))
 
-    def reader_factory(context, cancelled):
-        return NewowProductReader(
-            market,
-            coverage=coverage,
-            active_products=products,
-            context_frequencies=context,
-            now=lambda: request.as_of,
-            cancelled=lambda: (
-                budget.expired() or (cancelled is not None and cancelled())
-            ),
-            input_quality_policy=quality_policy,
-        )
+    composition = NewowComposition(
+        market, coverage, products, quality_policy,
+        now=lambda: request.as_of, budget_cancelled=budget.expired,
+    )
 
     planner = ContractWarmupPlanner(
         catalog=market.catalog,
@@ -77,15 +68,12 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
         return asdict(planner.plan(intent))
 
     audit = NewowReadinessAudit(
-        reader=reader_factory((), None),
+        reader=composition.reader(),
         plan=plan,
         budget=budget,
-        service=NewowProductService(
-            reader_factory,
-            now=lambda: request.as_of,
+        service=composition.service(
             cancelled=budget.expired,
             reuse_read_inputs=True,
-            quality_policy=quality_policy,
         ),
     )
     report = audit.run(request)

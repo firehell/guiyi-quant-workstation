@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+from app.reference_trading.transaction_guards import assert_source_allowed
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -326,49 +327,7 @@ class ScheduledCanonicalReconciliation:
     def assert_source_allowed(self, stream_id, *, session=None):
         from contextlib import nullcontext
         with (self._factory() if session is None else nullcontext(session)) as session:
-            stream = session.execute(select(ReferenceStream).where(
-                ReferenceStream.stream_id == stream_id,
-            ).with_for_update()).scalar_one_or_none()
-            mismatch = session.scalar(
-                select(ReferenceCaptureReconciliation.reconciliation_id)
-                .join(
-                    ReferenceBatch,
-                    ReferenceBatch.batch_id
-                    == ReferenceCaptureReconciliation.capture_batch_id,
-                )
-                .join(
-                    ReferenceStream,
-                    ReferenceStream.stream_id == ReferenceBatch.stream_id,
-                )
-                .where(
-                    ReferenceBatch.stream_id == stream_id,
-                    ReferenceBatch.revision_id == ReferenceStream.active_revision_id,
-                    ReferenceCaptureReconciliation.status == "mismatch",
-                )
-                .limit(1)
-            )
-            if stream is not None:
-                from app.reference_trading.original_conflict import original_conflict_evidence
-                routes = session.scalars(select(ReferenceStream.stream_id).where(
-                    ReferenceStream.product == stream.product, ReferenceStream.frequency == stream.frequency,
-                    ReferenceStream.recording_mode == "forward_observation", ReferenceStream.enabled.is_(True))).all()
-                if original_conflict_evidence(session, routes):
-                    raise ForwardInputUnavailable("ORIGINAL_OBSERVATION_CANONICAL_CONFLICT")
-            if mismatch is not None:
-                raise ForwardInputUnavailable("REFERENCE_CANONICAL_MISMATCH")
-            if stream is not None and stream.strategy_code == "newow_dual_fusion":
-                for code in ("newow_trend", "newow_oscillation"):
-                    ids = session.scalars(
-                        select(ReferenceStream.stream_id).where(
-                            ReferenceStream.strategy_code == code,
-                            ReferenceStream.product == stream.product,
-                            ReferenceStream.frequency == stream.frequency,
-                            ReferenceStream.recording_mode == "forward_observation",
-                            ReferenceStream.enabled.is_(True),
-                        )
-                    ).all()
-                    for base_id in sorted(ids):
-                        self.assert_source_allowed(base_id, session=session)
+            assert_source_allowed(session, stream_id)
 
     def commit_guard(self, session, stream_id):
         try:
