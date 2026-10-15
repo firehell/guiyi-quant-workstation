@@ -13,6 +13,14 @@ DAY = date(2026, 10, 15)
 NOW = datetime(2026, 10, 15, 10, tzinfo=UTC)
 
 
+@pytest.fixture(autouse=True)
+def isolate_runtime_guard_bindings(monkeypatch):
+    """Temporary real flock tests must never resolve the workstation registry."""
+    import app.runtime_bindings as bindings
+    monkeypatch.setattr(bindings, 'read_bindings', lambda **kwargs: None)
+    monkeypatch.delenv('GUIYI_RUNTIME_HANDOVER_ENABLED', raising=False)
+
+
 class Redis:
     def scan_iter(self, *, match):
         return (['live:observations:registered:source:live'] if ':source:' in match
