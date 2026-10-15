@@ -1,5 +1,24 @@
 # 当前状态
 
+## 10/15 晚间续修：v1.15.9 已发布，正式 Runtime 仍 v1.15.7
+
+PR #455、#457 已合入 develop；provider 清理后隔离、listener 验证退休、普通 grace/shutdown 发布与盘后维护互斥，
+以及空缓冲维护忙锁处理已完成。PR #456、annotated tag/GitHub Release v1.15.9 已发布，
+精确提交 `92f5fd654c88327570b038fea431b6d0b86d47d8`，发布树 `.worktrees/release-v1.15.9` 为干净 detached tag。
+以 v1.15.8 为基线只纳入本补丁，未包含后续首页、架构及研究改动。候选 provider 八模块182 passed，
+Alert/质量/接口九模块284 passed（含真实隔离 PostgreSQL），定向 Mypy、Ruff、secret、版本/包一致性及 Web build/topology通过；独审通过。
+正式十服务仍 v1.15.7/gen19/schema0051；新冷切换调用器70项独验通过，但20:15入场已过，零plan/attempt，未迁移/切换。
+20:20现场核对六个常驻服务均为原PID/绑定，四个定时任务idle；Feed/Live闭市就绪仍受旧版缺陷影响，不声明整体READY。
+
+两次早期对账尝试均核实零新增对账；同token恢复后，新独立原生当前代次对账完成16+531条，逐receipt/hash独立回读通过。
+当前代次剩余0，79条旧代次逐字保留；这些旧记录不属于当前自然调度积压，不能全称待修故障。
+完整对账发现45个60m四策略组真实冲突，旧价格/成交量等差异和所有原始观察/发送事实保留。
+AP四条历史源已按正式advance零提交REBUILD_REQUIRED→同输入COW rebuild，完整4098根到10/15 15:00，独立回读通过。
+其他产品仍需完整新鲜历史源和原生ConflictRevisionRecovery；不能把历史源完成当forward已恢复。
+盘中长持Catalog维护锁会阻塞前台，后续须遵守原生全品种休息/时段余量及输入前缀要求；Day15 seed不能跳过Day16首根H1。
+当前仍为PARTIAL：已发布不等于已运行，首根新版本自然Bar/Event和送达验收尚未发生，不补发旧Event。
+证据：`output/runtime-closed-recovery-20261015/`；过期且未执行的冷切换准备：`output/runtime-v1159-cold-preparation-20261015/`。
+
 ## 10/15 实时计算与推送 v2：v1.15.8 已发布，盘后 Reference 冲突阻断切换
 
 owner 已选择质量缺口后重新预热，以及同规则/受众/周期/Bar 的有界内存通知交接。
