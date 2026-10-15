@@ -44,6 +44,15 @@ Web 1112 passed/3 skipped、缓存 Chrome E2E 4 passed（fixture 挂载至缓存
 旧首页 E2E 选择器失配已在未修改 develop 基线复核，不报告全仓测试通过。真实权威读取仍需约4秒，不能宣称无缓存首载秒开。
 未发布、未切换 Runtime、未写业务数据。验证入口见 [首页缓存验证](TESTING.md#首页持久缓存与局部更新)。
 
+## 10/15 既有 E2E 失配修复：工程验证与独立 Review 通过
+
+首页/详情/Newow/苏冰夹具、真实入口、请求预算、同合约副图数据与视觉基线已对齐；保留精确原始事实与失败隔离断言。
+同时修复消息读取失败误报空态，以及卡片漏接既有缺价质量提示两项真实UI问题；不修改行情、策略公式或Runtime合同。
+完整fixture E2E 194 passed/7 skipped/0 failed；3项隔离预览另跑通过，4项真实后端只读验收未运行。
+Web unit1129 passed/3 skipped，类型/build/topology、OpenSpec11项、工程34项、secret scan与独立Review通过。
+只交付develop，未发布、未切换Runtime、未执行生产数据或通知操作。见
+[修复与验收记录](docs/tasks/e2e-contract-alignment.md)、[稳定验证入口](TESTING.md#既有-e2e-夹具与页面合同回归)。
+
 ## 10/15 后续三批工程收敛：工程验证与独立 Review 通过
 
 完成 Reference 事务/checkpoint 解耦、Newow reader/service 组装与展示转换收敛、公共 Runtime 身份/配置/文件工具、

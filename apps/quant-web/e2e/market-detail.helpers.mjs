@@ -70,6 +70,10 @@ export async function mockMarketDetail(page, options = {}) {
   const runtimeRequests = []
   const newowRequests = []
   const delays = options.researchDelayMs || {}
+  // Explicit unavailable history fixture: never fall through to the local API proxy.
+  await page.route('**/api/v1/reference-trading/**', route => route.fulfill({
+    status: 503, json: { detail: 'Explicit fixture: persisted reference unavailable' },
+  }))
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
     requests.push(url)

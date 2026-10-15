@@ -39,6 +39,20 @@ function degradedStaleOverview() {
   value.sectors = [{ ...value.sectors[0] }, { ...value.sectors[1], participant_count: 0 }]
   return value
 }
+function overviewWithDailyGap(reasonCodes) {
+  const value = overview()
+  value.items[0].reason_codes = reasonCodes
+  value.items[0].daily_trend = 'unavailable'
+  value.items[0].price_change_1d = null
+  value.items[0].volume_ratio20 = null
+  value.summary.price_up_count = 0
+  value.summary.price_unavailable_count = 1
+  value.summary.daily_up_count = 0
+  value.summary.daily_unavailable_count = 1
+  value.summary.aligned_up_count = 0
+  value.sectors[0].median_price_change_1d = null
+  return value
+}
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function dailyCapabilities() {
   return {
@@ -77,6 +91,11 @@ function actualHomeScrollTop() {
     .find((element) => element && element.scrollHeight > element.clientHeight + 1)
   return scrolling?.scrollTop ?? 0
 }
+async function chooseHomeSort(page, name) {
+  const menu = page.locator('.strategy-sort')
+  if (await menu.getAttribute('open') === null) await menu.locator('summary').click()
+  await menu.getByRole('button', { name, exact: true }).click()
+}
 async function emitHomeLive(page, payload) {
   await page.evaluate((value) => {
     const socket = window.__marketDetailSockets.find((item) => new URL(item.url, location.href).pathname === '/api/v1/market/research/home-live/ws')
@@ -104,6 +123,17 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
       requests.push(url.pathname)
       return route.fulfill({ json: dailyCapabilities() })
     }
+    if (url.pathname === '/api/v1/market/newow/home-cards') {
+      const products = (url.searchParams.get('products') ?? '').split(',').filter(Boolean)
+      return route.fulfill({ json: {
+        schema_version: 'newow_home_cards_v2', requested_at: '2026-09-02T03:00:00Z',
+        items: products.map(product => ({ product, strategies: {
+          trend: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } },
+          oscillation: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } },
+        } })),
+      } })
+    }
+    if (url.pathname === '/api/v1/reference-trading/newow/messages') return route.fulfill({ json: { items: [], truncated: false } })
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
     const allowed = new Set(['/api/v1/market/dominants', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history'])
     if (route.request().method() !== 'GET' || !allowed.has(url.pathname)) {
@@ -134,11 +164,16 @@ test('top navigation exposes market, messages, and one keyboard product search',
   await expect(page.getByRole('option', { name: /焦煤.*JM/ })).toBeVisible()
   await search.press('Enter')
   await expect(page).toHaveURL(/view=newow.*symbol=jm.*strategy=trend.*frequency=1d/)
-  await expect(page.getByLabel('返回市场', { exact: true })).toBeVisible()
+  await expect(page.locator('.market-dashboard-page')).toHaveCount(0)
+  const detail = page.locator('.market-detail-page')
+  await expect(detail).toBeVisible()
+  await expect(detail.getByRole('tab', { name: '市场' })).toBeVisible()
+  const detailSearch = detail.getByRole('combobox', { name: '搜索60品种' })
+  await expect(detailSearch).toHaveAttribute('placeholder', /焦煤 JM/)
   await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
-  await search.click()
+  await detailSearch.click()
   await expect(page.getByRole('option', { name: /焦煤.*JM/ })).toBeVisible()
-  await search.press('Escape')
+  await detailSearch.press('Escape')
   await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
 })
 
@@ -149,15 +184,17 @@ test('messages use bounded server history filters and immutable event navigation
   await page.getByRole('tab', { name: '消息' }).click()
   await expect(page.getByText('火天大有', { exact: true }).last()).toBeVisible()
   await expect(page.getByText('苏冰预警', { exact: true }).last()).toBeVisible()
-  await page.getByRole('button', { name: '苏冰', exact: true }).click()
+  await page.getByRole('button', { name: '苏冰预警', exact: true }).click()
   await expect.poll(() => requests.filter((value) => String(value).startsWith('history:subing_ths_alert_15m_v1')).length).toBe(1)
+  await page.getByRole('button', { name: '筛选' }).click()
   await page.locator('.market-message-filters select').selectOption('jm')
   await expect.poll(() => requests.filter((value) => String(value).startsWith('history:subing_ths_alert_15m_v1:jm')).length).toBe(1)
   await page.getByRole('button', { name: /焦煤.*空头预警/ }).click()
   await expect(page).toHaveURL(/view=subing.*symbol=jm.*focus_bar_end=2026-09-02T02:45:00Z/)
   await page.goBack()
   await expect(page.getByRole('tab', { name: '消息' })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByRole('button', { name: '苏冰', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '苏冰预警', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: '筛选' }).click()
   await expect(page.locator('.market-message-filters select')).toHaveValue('jm')
   await expect(page.getByLabel('开始交易日')).toHaveValue(/\d{4}-\d{2}-\d{2}/)
 })
@@ -201,18 +238,18 @@ test('one operational socket overlays same-contract 1m price and keeps stale val
   const requests = []
   await mockMarketHomeApi(page, requests)
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
   expect(await page.evaluate(() => window.__marketDetailSockets.filter((item) => new URL(item.url, location.href).pathname === '/api/v1/market/research/home-live/ws').length)).toBe(1)
   await emitHomeLive(page, { type: 'snapshot', schema_version: 1, observed_at: '2026-09-02T02:31:01Z', scope: 'operational', items: [liveItem()] })
   await expect(page.getByText(/分钟行情已连接 · 10:31/)).toBeVisible()
-  const row = page.locator('tbody tr[data-symbol="ag"]')
-  await expect(row.locator('.close-price')).toContainText('112.5')
-  await expect(row.locator('.close-price')).toContainText('1m · 10:31')
-  await expect(row.locator('.change-badge')).toHaveText('+12.50%')
+  const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
+  await expect(row.locator('.list-price')).toContainText('112.5')
+  await expect(row.locator('.list-change')).toHaveText('+12.50%')
+  await expect(page.locator('.list-details')).toContainText('最新完成行情 · 2026-09-02 10:31')
   await emitHomeLive(page, { type: 'quote', schema_version: 1, observed_at: '2026-09-02T02:32:01Z', item: liveItem({ bar_end: '2026-09-02T02:30:00Z', price: '99' }) })
-  await expect(row.locator('.close-price')).toContainText('112.5')
+  await expect(row.locator('.list-price')).toContainText('112.5')
   await page.evaluate(() => window.__marketDetailSockets.find((item) => new URL(item.url, location.href).pathname === '/api/v1/market/research/home-live/ws').onclose?.())
-  await expect(row.locator('.close-price')).toContainText('断线保留')
+  await expect(row.locator('.list-price')).toContainText('112.5')
   await expect(page.getByText(/断线保留最新快照 · 10:31/)).toBeVisible()
 })
 
@@ -224,27 +261,27 @@ test('authority reset invalidates the overview identity before applying a new co
   const requests = []
   await mockMarketHomeApi(page, requests, events(), currentOverview)
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
   await emitHomeLive(page, { type: 'snapshot', schema_version: 1, observed_at: '2026-09-02T02:31:01Z', scope: 'operational', items: [liveItem()] })
   await emitHomeLive(page, { type: 'quote', schema_version: 1, observed_at: '2026-09-02T02:32:01Z', item: liveItem({ bar_end: '2026-09-02T02:32:00Z', price: '113' }) })
   await emitHomeLive(page, { type: 'quote', schema_version: 1, observed_at: '2026-09-02T02:33:01Z', item: liveItem({ bar_end: '2026-09-02T02:33:00Z', price: '114' }) })
-  await expect(page.locator('tbody tr[data-symbol="ag"] .close-price')).toContainText('114')
+  await expect(page.locator('.strategy-list-item').filter({ hasText: '白银' }).locator('.list-price')).toContainText('114')
   expect(requests.filter((value) => value.endsWith?.('/home-overview'))).toHaveLength(1)
   await emitHomeLive(page, { type: 'reset', schema_version: 1, observed_at: '2026-09-03T02:31:01Z', reason: 'AUTHORITY_CHANGED', items: [liveItem({ physical_contract: 'AG2701', trading_day: '2026-09-03', price: '120', previous_close: null, price_change: null })] })
   await expect.poll(() => requests.filter((value) => value.endsWith?.('/home-overview')).length).toBe(2)
-  const row = page.locator('tbody tr[data-symbol="ag"]')
-  await expect(row.locator('.close-price')).toContainText('120')
-  await expect(row.locator('.close-price')).toContainText('AG2701')
-  await expect(row.locator('.change-badge')).toHaveText('—')
+  const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
+  await expect(row.locator('.list-price')).toContainText('120')
+  await expect(page.locator('.list-details')).toContainText('AG2701')
+  await expect(row.locator('.list-change')).toHaveText('—')
 })
 
-function expectHomeReads(requests, overviewCount = 1, runtimeCount = overviewCount) {
+function expectHomeReads(requests, overviewCount = 1, runtimeCount = overviewCount, capabilityCount = overviewCount) {
   expect(requests.unexpected).toEqual([])
   expect(requests.pageErrors).toEqual([])
   expect(requests.filter(path => path.endsWith('/home-overview'))).toHaveLength(overviewCount)
   expect(requests.filter(path => path === '/api/runtime/health')).toHaveLength(runtimeCount)
   expect(requests.filter(path => path === '/api/alerts/current-events')).toHaveLength(0)
-  expect(requests.filter(path => path === '/api/v1/market/newow/product-capabilities')).toHaveLength(Math.max(1, overviewCount))
+  expect(requests.filter(path => path === '/api/v1/market/newow/product-capabilities')).toHaveLength(capabilityCount)
 }
 
 for (const width of [1440, 390]) {
@@ -263,7 +300,7 @@ for (const width of [1440, 390]) {
     }
     await mockMarketHomeApi(page, requests, events(), overview(), health)
     await page.goto('/market')
-    await expect(page.locator('tbody tr')).toHaveCount(2)
+    await expect(page.locator('.strategy-list-item')).toHaveCount(2)
     await expect(page.getByText(/盘后维护.*读取校验.*7 次操作/)).toHaveCount(0)
     await expect(page.getByText(/盘后维护.*contract\/JM2609.*1m.*2026-09.*累计 64.2 秒/)).toHaveCount(0)
     await expect(page.getByText(/盘后维护.*已提交发布 2 次操作/)).toHaveCount(0)
@@ -280,7 +317,7 @@ test('white full-width market uses only overview and Runtime reads without a res
   const requests = []
   await mockMarketHomeApi(page, requests, events(), overview(), runtime('ready'))
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
   await expect(page.locator('.market-dashboard-page')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
   await expect(page.locator('.n-layout-sider, .n-layout-header, .toolbar')).toHaveCount(0)
   await expect(page.getByRole('combobox', { name: '搜索60品种' })).toBeVisible()
@@ -294,7 +331,7 @@ test('mixed immutable Events are isolated to the messages tab', async ({ page })
   const requests = []
   await mockMarketHomeApi(page, requests, events(), overview(), runtime('ready'), historyPage(mixedEvents().items))
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
   await expect(page.getByText(/空头预警/)).toHaveCount(0)
   expectHomeReads(requests)
   await page.getByRole('tab', { name: '消息' }).click()
@@ -308,66 +345,52 @@ test('distinguishes empty message history from an unavailable request', async ({
   await mockMarketHomeApi(page, requests, events(), overview(), runtime(), () => current)
   await page.goto('/market')
   await page.getByRole('tab', { name: '消息' }).click()
-  await expect(page.getByText('所选日期与筛选下暂无正式 Event。')).toBeVisible()
+  await expect(page.getByText('暂无消息')).toBeVisible()
   current = null
-  await page.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(page.getByText(/消息暂不可用/)).toBeVisible()
-  await expect(page.getByText('所选日期与筛选下暂无正式 Event。')).toHaveCount(0)
+  await page.getByRole('button', { name: '刷新消息' }).click()
+  await expect(page.getByText(/记录暂不可用/)).toBeVisible()
+  await expect(page.getByText('暂无消息')).toHaveCount(0)
 })
 
-test('renders the five states and soft percentage badges without inventing targets', async ({ page }) => {
+test('quote badges and pending strategy icons never invent a target', async ({ page }) => {
   const requests = []
   const value = allTableStatesOverview()
-  value.items[0].oi_change_1d = '0.0218'
   await mockMarketHomeApi(page, requests, events(), value, runtime('ready'))
   await page.goto('/market')
-  for (const state of ['up', 'down', 'neutral', 'mixed', 'aligned', 'unavailable']) {
-    await expect(page.getByTestId(`market-state-icon-${state}-table`).first()).toHaveCSS('width', '28px')
-    await expect(page.getByTestId(`market-state-icon-${state}-legend`).first()).toHaveCSS('width', '28px')
-  }
-  await expect(page.getByTestId('market-state-icon-neutral-table').first()).toHaveCSS('background-color', 'rgb(54, 90, 245)')
-  await expect(page.getByTestId('market-state-icon-up-micro').first()).toHaveCSS('border-radius', '50%')
-  await expect(page.getByRole('columnheader', { name: /目标参考价/ })).toHaveCount(0)
-  await expect(page.locator('td.target-unavailable')).toHaveCount(0)
-  await expect(page.getByText('+2.18%', { exact: true })).toBeVisible()
-  const badge = page.locator('tbody tr').first().locator('.change-badge')
-  await expect(badge).toHaveCSS('border-radius', '7px')
-  await expect(badge).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  const alignmentCell = page.locator('tbody tr').first().locator('td').nth(7)
-  await expect(alignmentCell).toHaveCSS('text-align', 'center')
-  await expect(alignmentCell).toHaveCSS('vertical-align', 'middle')
-  const alignmentGroup = alignmentCell.locator('.alignment')
-  await expect(alignmentGroup).toHaveCSS('position', 'relative')
-  await expect(alignmentGroup).toHaveCSS('width', '40px')
-  const alignmentBadge = alignmentGroup.getByTestId('market-state-icon-up-micro')
-  await expect(alignmentBadge).toHaveCSS('position', 'absolute')
-  await expect(alignmentBadge).toHaveCSS('width', '20px')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(5)
+  await expect(page.locator('.list-change').first()).toHaveText('+1.00%')
+  await expect(page.locator('.list-change').nth(1)).toHaveText('-1.00%')
+  await expect(page.locator('.list-change').first().locator('span')).toHaveCSS('background-color', 'rgb(255, 235, 233)')
+  await expect(page.locator('.list-reference')).toHaveCount(5)
+  await expect(page.locator('.list-reference').first()).toHaveText('--')
+  await expect(page.getByText('预估目标价')).toHaveCount(0)
+  await expect(page.getByTestId('market-state-icon-unavailable-micro').first()).toBeVisible()
   expectHomeReads(requests)
-  await expect(page.locator('.table-wrap')).toHaveScreenshot('market-home-five-table-states.png', { animations: 'disabled', maxDiffPixels: 400 })
 })
 
-test('column headers sort 60 products in both directions then restore stable source order without requests', async ({ page }) => {
+test('sort menu orders 60 products in both directions then restores source order without overview requests', async ({ page }) => {
   const requests = []
   const value = lightHomeOverview()
   await mockMarketHomeApi(page, requests, events(), value)
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(60)
-  const symbols = () => page.locator('tbody tr').evaluateAll(rows => rows.map(row => row.dataset.symbol))
-  for (const [label, field] of [['最新收盘', 'close'], ['涨跌幅', 'price_change_1d'], ['日量比', 'volume_ratio20'], ['日增仓率', 'oi_change_1d']]) {
-    const header = page.getByRole('columnheader', { name: new RegExp(label) })
-    const button = header.getByRole('button')
-    await button.click()
-    await expect(header).toHaveAttribute('aria-sort', 'descending')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
+  const symbols = () => page.locator('.strategy-list-item .product-name small > span:first-child').allTextContents().then(names => names.map(name => name.toLowerCase()))
+  await page.locator('.strategy-sort summary').click()
+  for (const [label, field] of [['价格', 'close'], ['涨跌幅', 'price_change_1d'], ['成交量', 'volume_ratio20'], ['持仓量', 'oi_change_1d']]) {
+    const button = page.locator('.strategy-sort').getByRole('button', { name: new RegExp(`^${label}(?: [↓↑])?$`) })
     const sorted = direction => [...value.items].sort((a, b) => {
       if (a[field] === null || b[field] === null) return a[field] === b[field] ? a.symbol.localeCompare(b.symbol) : a[field] === null ? 1 : -1
       return (Number(a[field]) - Number(b[field])) * direction || a.symbol.localeCompare(b.symbol)
     }).map(row => row.symbol)
+    await button.click()
+    await expect(button).toHaveAttribute('aria-pressed', 'true')
+    await expect(button).toContainText('↓')
     expect(await symbols()).toEqual(sorted(-1))
     await button.press('Space')
-    await expect(header).toHaveAttribute('aria-sort', 'ascending')
+    await expect(button).toContainText('↑')
     expect(await symbols()).toEqual(sorted(1))
     await button.press('Enter')
-    await expect(header).toHaveAttribute('aria-sort', 'none')
+    await expect(page.locator('.strategy-sort button').filter({ hasText: /^默认$/ })).toHaveAttribute('aria-pressed', 'true')
     expect(await symbols()).toEqual(value.items.map(row => row.symbol))
     await expect(page).toHaveURL(/\/market$/)
   }
@@ -381,8 +404,8 @@ test('keeps 60 target-day D1 participants visible when RS2609 price change is un
   await mockMarketHomeApi(page, requests, events(), value, runtime('ready'))
   await page.goto('/market')
 
-  await expect(page.locator('tbody tr')).toHaveCount(60)
-  await expect(page.locator('tbody tr[data-symbol="rs"] .change-badge')).toHaveText('—')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
+  await expect(page.locator('.strategy-list-item').filter({ hasText: rs.product_name }).locator('.list-change')).toHaveText('—')
   const search = page.getByRole('combobox', { name: '搜索60品种' })
   await search.fill('rs')
   await expect(page.getByRole('option', { name: new RegExp(`${rs.product_name}.*RS`) })).toBeVisible()
@@ -397,12 +420,13 @@ test('sector counts use authority and filtering toggles locally with keyboard ro
   const precious = page.getByRole('button', { name: /贵金属\s*4/ })
   await precious.click()
   await expect(precious).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('tbody tr')).toHaveCount(4)
-  await page.getByRole('columnheader', { name: /最新收盘/ }).getByRole('button').click()
+  await expect(page.locator('.strategy-list-item')).toHaveCount(4)
+  await chooseHomeSort(page, '价格')
   await precious.click()
-  await expect(page.locator('tbody tr')).toHaveCount(60)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
   expectHomeReads(requests)
-  await page.locator('tbody tr[data-symbol="ag"]').press('Enter')
+  await page.getByRole('button', { name: '白银展开策略摘要' }).press('Enter')
+  await page.getByRole('link', { name: '白银趋势策略详情' }).press('Enter')
   await expect(page).toHaveURL(/view=newow.*symbol=ag.*strategy=trend.*series_kind=actual_dominant.*frequency=1d/)
 })
 
@@ -411,30 +435,33 @@ test('sort and sector survive refresh and browser back while absent sector recov
   await mockMarketHomeApi(page, requests, events(), lightHomeOverview())
   await page.goto('/market')
   await page.getByRole('button', { name: /贵金属\s*4/ }).click()
-  await page.getByRole('columnheader', { name: /最新收盘/ }).getByRole('button').click()
+  await chooseHomeSort(page, '价格')
   await page.reload()
-  await expect(page.locator('tbody tr')).toHaveCount(4)
-  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'descending')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(4)
+  await expect(page.locator('.strategy-sort button').filter({ hasText: /价格 ↓/ })).toHaveAttribute('aria-pressed', 'true')
   expectHomeReads(requests, 2)
   const detailDirectoryReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/market/dominants' && response.ok())
   const detailStrategySettled = page.waitForEvent('requestfailed', request => new URL(request.url()).pathname === '/api/v1/market/newow/strategy-detail')
-  await page.locator('tbody tr[data-symbol="ag"]').click()
+  await page.getByRole('button', { name: '白银展开策略摘要' }).click()
+  await page.getByRole('link', { name: '白银趋势策略详情' }).click()
   await expect(page).toHaveURL(/view=newow.*symbol=ag/)
   await expect(page.locator('.market-dashboard-page')).toHaveCount(0)
   await Promise.all([detailDirectoryReady, detailStrategySettled])
   await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
+  const returnRequestStart = requests.all.length
   requests.length = 0
   await page.goBack()
-  await expect(page.locator('tbody tr')).toHaveCount(4)
-  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'descending')
-  expectHomeReads(requests, 0, 1)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(4)
+  await expect(page.locator('.strategy-sort button').filter({ hasText: /价格 ↓/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => requests.all.slice(returnRequestStart).filter(({ method, url }) => method === 'GET' && url.pathname === '/api/v1/market/newow/product-capabilities').length).toBe(1)
+  expectHomeReads(requests, 0, 1, 1)
   await page.evaluate(() => {
     const key = 'guiyi.market-home.preferences.v1'
     const value = JSON.parse(localStorage.getItem(key))
     localStorage.setItem(key, JSON.stringify({ ...value, sector: 'removed-sector' }))
   })
   await page.reload()
-  await expect(page.locator('tbody tr')).toHaveCount(60)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
   await expect(page.getByRole('button', { name: /全部\s*60/ }).first()).toHaveAttribute('aria-pressed', 'true')
   expect(requests.unexpected).toEqual([])
 })
@@ -443,8 +470,8 @@ test('restores the actual 60-row layout scroll position immediately after browse
   const requests = []
   await mockMarketHomeApi(page, requests, events(), lightHomeOverview())
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(60)
-  const last = page.locator('tbody tr').last()
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
+  const last = page.locator('.strategy-list-item').last()
   await last.scrollIntoViewIfNeeded()
   const before = await page.evaluate(() => {
     const content = document.querySelector('.content--market-home')
@@ -452,18 +479,21 @@ test('restores the actual 60-row layout scroll position immediately after browse
     return Math.max(content?.scrollTop ?? 0, nested?.scrollTop ?? 0, document.scrollingElement?.scrollTop ?? 0)
   })
   expect(before).toBeGreaterThan(500)
-  await last.click()
+  await last.getByRole('button', { name: /展开策略摘要/ }).click()
+  await last.getByRole('link', { name: /策略详情/ }).click()
   await expect(page).toHaveURL(/\/market\/chart/)
+  const returnRequestStart = requests.all.length
   requests.length = 0
   await page.goBack()
-  await expect(page.locator('tbody tr')).toHaveCount(60)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
   await expect.poll(() => page.evaluate(() => {
     const content = document.querySelector('.content--market-home')
     const nested = content?.querySelector('.n-layout-scroll-container')
     return Math.max(content?.scrollTop ?? 0, nested?.scrollTop ?? 0, document.scrollingElement?.scrollTop ?? 0)
   })).toBeGreaterThan(before - 10)
   await expect.poll(() => requests.filter(path => path === '/api/runtime/health').length).toBe(1)
-  expectHomeReads(requests, 0, 1)
+  await expect.poll(() => requests.all.slice(returnRequestStart).filter(({ method, url }) => method === 'GET' && url.pathname === '/api/v1/market/newow/product-capabilities').length).toBe(1)
+  expectHomeReads(requests, 0, 1, 1)
 })
 
 test('invalid and blocked preferences fall back safely without hiding available rows', async ({ page }) => {
@@ -471,8 +501,8 @@ test('invalid and blocked preferences fall back safely without hiding available 
   await mockMarketHomeApi(page, requests, events(), overview())
   await page.addInitScript(() => { try { localStorage.setItem('guiyi.market-home.preferences.v1', '{invalid') } catch {} })
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(2)
-  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'none')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
+  await expect(page.locator('.strategy-sort button').filter({ hasText: /^默认$/ })).toHaveAttribute('aria-pressed', 'true')
   await page.addInitScript(() => {
     const getItem = Storage.prototype.getItem
     const setItem = Storage.prototype.setItem
@@ -486,9 +516,9 @@ test('invalid and blocked preferences fall back safely without hiding available 
     }
   })
   await page.reload()
-  await expect(page.locator('tbody tr')).toHaveCount(2)
-  await page.getByRole('columnheader', { name: /最新收盘/ }).getByRole('button').click()
-  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'descending')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
+  await chooseHomeSort(page, '价格')
+  await expect(page.locator('.strategy-sort button').filter({ hasText: /价格 ↓/ })).toHaveAttribute('aria-pressed', 'true')
   expectHomeReads(requests, 2)
 })
 
@@ -496,7 +526,7 @@ test('header product search opens the safe default Newow route', async ({ page }
   const requests = []
   await mockMarketHomeApi(page, requests, events(), overview())
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
   const search = page.getByRole('combobox', { name: '搜索60品种' })
   await search.fill('白银')
   await page.getByRole('option', { name: /白银.*AG/ }).click()
@@ -515,12 +545,12 @@ test('cached and server stale overview facts stay gray and expose their own fail
   const requests = []
   await mockMarketHomeApi(page, requests, events(), () => ++attempts === 1 ? degradedStaleOverview() : null)
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(1)
-  await expect(page.locator('tbody .market-state-icon--up')).toHaveCount(0)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(1)
+  await expect(page.locator('.strategy-list-item .market-state-icon--up')).toHaveCount(0)
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByText(/刷新失败.*上一份成功快照/)).toBeVisible()
-  await expect(page.locator('tbody tr')).toHaveCount(1)
-  await expect(page.locator('tbody .market-state-icon--up')).toHaveCount(0)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(1)
+  await expect(page.locator('.strategy-list-item .market-state-icon--up')).toHaveCount(0)
 })
 
 test('initial unavailable snapshot invents no counts and no target or product rows', async ({ page }) => {
@@ -528,7 +558,7 @@ test('initial unavailable snapshot invents no counts and no target or product ro
   await mockMarketHomeApi(page, requests, events(), null)
   await page.goto('/market')
   await expect(page.getByText(/没有可展示的上一份成功快照/)).toBeVisible()
-  await expect(page.locator('tbody tr')).toHaveCount(0)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(0)
   await expect(page.getByText(/可用\s*—\s*\/\s*—/)).toHaveCount(0)
   await page.getByRole('combobox', { name: '搜索60品种' }).focus()
   await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
@@ -537,21 +567,21 @@ test('initial unavailable snapshot invents no counts and no target or product ro
 })
 
 for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080], [2560, 1440]]) {
-  test(`60-product white home fills ${width}px without overflow and keeps header visible while scrolling`, async ({ page }) => {
+  test(`60-product white home fills ${width}px without overflow and supports row focus while scrolling`, async ({ page }) => {
     await page.setViewportSize({ width, height })
     const requests = []
     await mockMarketHomeApi(page, requests, events(), lightHomeOverview())
     await page.goto('/market')
-    await expect(page.locator('tbody tr')).toHaveCount(60)
+    await expect(page.locator('.strategy-list-item')).toHaveCount(60)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    const table = await page.locator('table').boundingBox()
-    expect(table.width).toBeGreaterThan(width * .92)
+    const list = await page.locator('.strategy-list').boundingBox()
+    expect(list.width).toBeGreaterThan(width * .92)
     await expect(page).toHaveScreenshot(`market-home-${width}.png`, { animations: 'disabled', maxDiffPixels: 500 })
-    await page.locator('tbody tr').last().scrollIntoViewIfNeeded()
-    await expect(page.locator('tbody tr').last()).toBeInViewport()
-    await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toBeInViewport()
-    await page.locator('tbody tr').last().focus()
-    await expect(page.locator('tbody tr').last()).toHaveCSS('outline-style', 'solid')
+    await page.locator('.strategy-list-item').last().scrollIntoViewIfNeeded()
+    await expect(page.locator('.strategy-list-item').last()).toBeInViewport()
+    await expect(page.getByRole('tab', { name: '市场' })).toBeVisible()
+    await page.locator('.strategy-list-item').last().getByRole('button', { name: /展开策略摘要/ }).focus()
+    await expect(page.locator('.strategy-list-item').last().getByRole('button', { name: /展开策略摘要/ })).toHaveCSS('outline-style', 'solid')
     expectHomeReads(requests)
   })
 }
@@ -561,8 +591,9 @@ test('390px compatibility retains readable market and messages without horizonta
   const requests = []
   await mockMarketHomeApi(page, requests, { status: 'unavailable', trading_day: null, items: [] })
   await page.goto('/market')
-  const list = page.getByLabel('移动端品种列表')
-  await expect(list).toContainText('1d 涨跌幅')
+  const list = page.getByRole('region', { name: '品种日周策略列表' })
+  await expect(list).toContainText('涨跌幅')
+  await expect(list.locator('.strategy-list-item')).toHaveCount(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await expect(list).toHaveScreenshot('market-home-390-list.png', { animations: 'disabled', maxDiffPixels: 400 })
   await expect(page).toHaveScreenshot('market-home-390.png', { fullPage: true, animations: 'disabled', maxDiffPixels: 400 })
@@ -570,7 +601,8 @@ test('390px compatibility retains readable market and messages without horizonta
   await expect(page.getByLabel('历史消息')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.getByRole('tab', { name: '市场' }).click()
-  await list.getByRole('button').first().click()
+  await list.getByRole('button', { name: '白银展开策略摘要' }).click()
+  await list.getByRole('link', { name: '白银趋势策略详情' }).click()
   await expect(page).toHaveURL(/view=newow.*symbol=ag/)
 })
 
@@ -601,6 +633,7 @@ for (const state of ['loading', 'failed', 'empty']) {
       await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
       await search.press('Escape')
       await page.getByRole('tab', { name: '消息' }).click()
+      await page.getByRole('button', { name: '筛选' }).click()
       await page.locator('.market-message-filters select').selectOption('au')
       await expect.poll(() => requests.includes('history:all:au:first')).toBe(true)
       await page.locator('.market-message-filters select').selectOption('jm')
@@ -619,7 +652,7 @@ test('directory failure and recovery stay independent from quote rows and retain
   let fail = true
   await page.route('**/market/dominants', route => fail ? route.abort() : route.fallback())
   await page.goto('/market')
-  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
   const search = page.getByRole('combobox', { name: '搜索60品种' })
   await search.fill('黄金')
   await expect(page.getByText('目录加载失败，无法安全切换品种。', { exact: true })).toBeVisible()
@@ -632,31 +665,44 @@ test('directory failure and recovery stay independent from quote rows and retain
   await search.focus()
   await expect(page.getByText('目录刷新失败，已保留上次选项。')).toBeVisible()
   await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
-  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.strategy-list-item')).toHaveCount(2)
 })
 
 for (const width of [1440, 390]) {
-  test(`source price gap keeps recovered quote with disclosure at width ${width}`, async ({ page }) => {
+  test(`source price gap keeps recovered quote and unavailable change at width ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
-    const value = overview()
-    value.items[0].reason_codes = ['daily_price_interrupted', 'daily_rewarming']
-    value.items[0].daily_trend = 'unavailable'
-    value.items[0].price_change_1d = null
-    value.items[0].volume_ratio20 = null
-    value.summary.price_up_count = 0
-    value.summary.price_unavailable_count = 1
-    value.summary.daily_up_count = 0
-    value.summary.daily_unavailable_count = 1
-    value.summary.aligned_up_count = 0
-    value.sectors[0].median_price_change_1d = null
+    const value = overviewWithDailyGap(['daily_price_interrupted', 'daily_rewarming'])
     await mockMarketHomeApi(page, [], events(), value)
     await page.goto('/market')
-    const container = page.locator(width === 390 ? '.mobile-list' : '.table-wrap')
-    await expect(container).toContainText('历史日线有缺价；日趋势重新预热中')
-    await expect(container).toContainText('白银')
-    await expect(container).toContainText('100')
-    await expect(page.locator('.market-home-coverage')).toContainText('日线报价可用 2 / 2')
-    await page.locator('.market-home-coverage summary').click()
-    await expect(page.locator('.market-home-coverage')).toContainText('不代表牛哇策略或全部历史指标已就绪')
+    const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
+    await expect(row).toBeVisible()
+    const quality = row.locator('.list-quality-note')
+    await expect(quality).toHaveText('历史日线有缺价；日趋势重新预热中')
+    await expect(quality).toBeVisible()
+    expect((await quality.boundingBox()).height).toBeGreaterThan(15)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await expect(row.locator('.list-price')).toContainText('100')
+    await expect(row.locator('.list-change')).toHaveText('—')
+    await expect(page.locator('.market-home-snapshot')).toContainText('数据为上一完整交易日收盘价')
+    await page.screenshot({ path: `/private/tmp/guiyi-home-quality-${width}.png` })
+    await page.locator('.market-home-snapshot summary').click()
+    await expect(page.locator('.market-home-snapshot')).toContainText('日线报价可用 2 / 2')
+    await expect(page.locator('.market-home-snapshot')).toContainText('报价可用不代表策略就绪')
+  })
+
+  test(`unknown daily history gap preserves quote without describing rewarming at width ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    const value = overviewWithDailyGap(['daily_history_unavailable'])
+    await mockMarketHomeApi(page, [], events(), value)
+    await page.goto('/market')
+    const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
+    const quality = row.locator('.list-quality-note')
+    await expect(quality).toHaveText('日线历史不完整；日线指标不可用')
+    await expect(quality).toBeVisible()
+    expect((await quality.boundingBox()).height).toBeGreaterThan(15)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await expect(row).not.toContainText('重新预热中')
+    await expect(row.locator('.list-price')).toContainText('100')
+    await expect(row.locator('.list-change')).toHaveText('—')
   })
 }

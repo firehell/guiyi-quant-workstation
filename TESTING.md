@@ -1,5 +1,19 @@
 # 测试与验证命令
 
+## 既有 E2E 夹具与页面合同回归
+
+浏览器夹具维护、视觉更新依据及实际验收见[记录](docs/tasks/e2e-contract-alignment.md)。
+正常回归不带 `--update-snapshots` 或 `--ignore-snapshots`；保持原像素容差，以当前可见入口操作。
+端口必须空闲且不得复用其他工作区服务；测试输出单独指定，避免并行运行互相清理现场。
+
+```sh
+PLAYWRIGHT_PORT=5196 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs --output /private/tmp/guiyi-e2e-contract-results
+PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs --output /private/tmp/guiyi-e2e-preview-results
+```
+
+第二条固定使用5182隔离预览端口。真实后端只读验收仍需显式 `REAL_BACKEND=1` 及其现场条件，
+fixture通过与默认跳过都不证明生产、发布或Runtime状态。
+
 ## 后续三批工程收敛
 
 Reference 事务、Newow 组装、Runtime 公共工具、新苏冰共享计算与能力合同的范围见

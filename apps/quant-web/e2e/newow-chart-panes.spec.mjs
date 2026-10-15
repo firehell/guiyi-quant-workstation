@@ -8,7 +8,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
     const fixture = await installNewowProductFixtures(page)
     await page.goto(newowRoute(strategy, frequency))
     const stage = page.getByTestId('newow-product-chart-stage')
-    await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
+    await expect(stage).toHaveAttribute('data-auxiliary-component', 'zhaoyao_mirror')
     await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
     // Three native panes and one shared timeline have three cells; separator rows are excluded.
     await expect(stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })).toHaveCount(4)
@@ -23,8 +23,8 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
       const controls = await stage.locator('.newow-product-chart-stage__auxiliary-toolbar').boundingBox()
       return Math.abs(native.y - controls.y)
     }).toBeLessThanOrEqual(4)
-    expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd'])
-    for (const [label, component] of [['照妖镜', 'zhaoyao_mirror'], ['涨跌动能', 'up_down_energy'], ['主力控盘', 'main_force_control'], ['MACD', 'macd']]) {
+    expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['zhaoyao_mirror'])
+    for (const [label, component] of [['主力照妖镜', 'zhaoyao_mirror'], ['涨跌动能', 'up_down_energy'], ['主力控盘', 'main_force_control'], ['趋势转折', 'trend_reversal']]) {
       const button = page.getByRole('button', { name: label, exact: true })
       await button.click()
       await expect(stage).toHaveAttribute('data-auxiliary-component', component)

@@ -13,17 +13,21 @@ test('historical reference uses the unified API base exactly once', async ({ pag
   expect(referencePaths).toEqual(['/api/v1/market/jm/subing/reference'])
 })
 
-test('30m research loads its own reference without querying 15m events', async ({ page }) => {
+test('30m research and persisted observation read their own period without querying 15m events', async ({ page }) => {
   const frequencies = []
   page.on('request', request => {
     if (new URL(request.url()).pathname.endsWith('/subing/reference')) frequencies.push(new URL(request.url()).searchParams.get('frequency'))
   })
   const facts = await mockSubingReference(page, { response: () => ({ ...subingReferenceFixture(), frequency: '30m', formula_version: 'subing_ths_30m_v1' }) })
   await page.goto('/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=30m')
-  await expect(page.getByText('历史研究，本周期未启用预警；正式 S↑ / S↓ 仅在 15分周期。')).toBeVisible()
+  await expect(page.getByRole('region', { name: '历史参考交易' })).toContainText('30m · 双向反手 · 非可执行')
   await expect(page.getByRole('heading', { name: '乐观参考交易' })).toBeVisible()
   expect(frequencies).toEqual(['30m'])
-  expect(facts.alertRequests).toHaveLength(0)
+  expect(facts.alertRequests.filter(request => new URL(request.url).pathname === '/api/alerts/events').map(request => new URL(request.url).searchParams.get('frequency'))).toEqual(['30m'])
+  expect(facts.alertRequests.filter(request => new URL(request.url).pathname === '/api/alerts/products/jm')).toHaveLength(1)
+  expect(facts.alertRequests.every(request => request.method === 'GET')).toBe(true)
+  // The fixture returns a 15m Event to the 30m request; it must not acquire a 30m marker.
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
   await expect(page.getByRole('button', { name: '预警记录' })).toHaveCount(0)
 })
 

@@ -10,7 +10,7 @@
 
 - Market 页面为 `/market` 与 `/market/chart`；独立历史研究入口为 `/research/new-subing`。
 - Market 首页分为市场与消息 Tab，以独立 bulk 只读资源展示 Runtime health、active completed D1/W1 generic overview、operational completed 1m 报价与 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
-- 首页采用白色全宽桌面布局、期货板块本地筛选与表头三态排序；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率不能解释为做多。
+- 首页采用白色全宽卡片列表、期货板块本地筛选与三态排序菜单；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率不能解释为做多。
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页；原研究观察折叠入口移除。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。

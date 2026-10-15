@@ -46,6 +46,7 @@ export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
 
 export function buildNewowFixtureEnvelopeForTest(section = 'reference', strategy = 'trend', frequency = '1d', cursor = false, locateFrom = null, options = {}) {
   const url = fixtureValidationUrl(section, strategy, frequency, cursor, locateFrom)
+  if (section === 'auxiliary' && options.component) url.searchParams.set('component', options.component)
   const payload = envelope(url, section, strategy, frequency, options)
   validateFixtureEnvelope(payload, section, strategy, frequency, url, options)
   return payload
@@ -318,7 +319,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   }
   const partnerRecords = dualMarket && section === 'reference' && strategy === 'oscillation' && optionalShape === 'history_limit,snapshot_token' && url.searchParams.get('history_limit') === '200'
   if (!partnerRecords && !allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
-  if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
+  if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'trend_reversal', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
   if (url.searchParams.has('history_limit') && !['50', '200'].includes(url.searchParams.get('history_limit'))) return `invalid reference limit ${url.search}`
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
@@ -729,7 +730,11 @@ function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') 
     const laterWitness = { ...witness, witness_id: 'fixture-cup-2', candidate_id: 'fixture-cup-2', pivot_price: '108.0000', score: 68 }
     return { ...base, formula_version: 'newow_cup_handle_v1', segments: frequency === '1d' ? [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: ['2026-09-03T07:00:00.000Z'], status: ready(), data: [witness, laterWitness] }] : [] }
   }
-  const barEnds = ['2026-09-02T07:00:00.000Z', '2026-09-03T07:00:00.000Z']
+  const barEnds = [productBar(frequency, 62).bar_end, productBar(frequency, 63).bar_end]
+  if (component === 'trend_reversal') {
+    const formula_version = 'newow_trend_reversal_core_1_0_0_futures_segment_v1'
+    return { ...base, formula_version, segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { wr1: [2.5, 3], wr2: [0, 1], bias: [4, 2], rebound: [0, 0], adjust: [4, 2], ma120: [100, 101], hhv: [110, 111], llv: [90, 91], enough: false, bar_count: 2, formula_version } }] }
+  }
   if (component === 'main_force_control') return { ...base, formula_version: 'newow_main_force_control_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { kongpan: [10, 12], status: ['HOLD', 'BUILD'], current_status: 'BUILD', formula_version: 'newow_main_force_control_page_v1' } }] }
   if (component === 'up_down_energy') return { ...base, formula_version: 'newow_up_down_energy_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { var4: [1, 2], ma10: [1, 1.5], band_entry: [0, 1], rebound_entry: [0, 0], oversold_entry: [0, 0], var3: [1, 2], ma120: [1, 1], formula_version: 'newow_up_down_energy_page_v1' } }] }
   return { ...base, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1', repainting: true, formal_signal_eligible: false, segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { entry: [0, 1], wash: [1, 0], distribution: [0, 0], markup: [1, 2], exit: [0, 0], inducement: [0, 0], peaks: [1, 2], caution: [0, 1], repainting: true, formal_signal_eligible: false, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1' } }] }

@@ -523,6 +523,7 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
   await expect(workspace).toBeVisible()
   const chart = page.getByTestId('kline-shell')
   await chart.scrollIntoViewIfNeeded()
+  for (const label of ['5分', '15分', '30分', '60分', '日线', '周线']) await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
   await expect(page).toHaveScreenshot('market-detail-subing-1440x900.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
   })
@@ -545,7 +546,7 @@ test('SuBing history opens the matching immutable AlertEvent detail while chart 
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
   await page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history button').first().click()
-  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 2026-09-03 10:45 北京时间 · JM2601')
+  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 未记录 · 2026-09-03 10:45 北京时间 · JM2601')
 })
 
 test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {

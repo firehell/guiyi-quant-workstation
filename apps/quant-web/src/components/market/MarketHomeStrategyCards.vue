@@ -8,6 +8,7 @@ import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, ho
 import { createHomeCardViewport } from '@/utils/newowHomeViewport'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
+import { marketHomeQualityNotice } from '@/utils/marketHomePresentation'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
 import type { MarketHomeLiveDisplayRow } from '@/utils/marketHomeLiveView'
 import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
@@ -150,6 +151,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
         <div class="list-periods"><span v-for="period in periods" :key="period" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}${periodLabel(period)}线${periodDisplay(row.symbol, period).label}`" :title="`${periodLabel(period)}线 · ${periodDisplay(row.symbol, period).label}`"><MarketStateIcon :state="iconState(row.symbol, period)" /></span></div>
         <div class="list-direction" :title="homeTrendDisplay().label"><MarketStateIcon state="unavailable" size="micro" /><span class="sr-only">{{ homeTrendDisplay().label }}</span></div>
       </div>
+      <p v-if="marketHomeQualityNotice(row.reason_codes)" class="list-quality-note" role="status">{{ marketHomeQualityNotice(row.reason_codes) }}</p>
       <div class="list-notices" role="status">
         <span v-if="!admittedProducts.has(row.symbol)">滚动到此行后读取策略</span>
         <span v-else-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}<template v-if="deliveries[row.symbol]?.stale && deliveries[row.symbol]?.savedAt"> · {{ formatBeijingInstant(deliveries[row.symbol]?.savedAt) }}</template></span>
@@ -196,6 +198,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 .list-price{text-align:right;white-space:nowrap}.list-price strong{font-size:15px;font-weight:600}.list-change{text-align:center;white-space:nowrap}.list-change>span{display:inline-block;border-radius:4px;padding:3px 7px;font-size:12px;font-weight:600;line-height:1.1}.list-change>.up{background:#ffebe9}.list-change>.down{background:#eaf8ec}
 .up{color:#ff403a}.down{color:#2dc653}.pending{color:#a1a1a6}.list-reference{text-align:center}.list-reference strong{display:inline-block;border-radius:4px;padding:3px 5px;font-size:11px;font-weight:650;white-space:nowrap;line-height:1.1}.target{color:#ff9500;background:#fff3e6}.absorb{color:#1681ff;background:#eaf1ff}
 .list-periods{display:contents}.list-periods>span{display:flex;align-items:center;justify-content:center;border:0;padding:0;background:none;cursor:pointer}.list-direction{display:flex;justify-content:center}.list-direction :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px}
+.list-quality-note{margin:0;padding:0 12px 6px;color:var(--gy-text-secondary);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 .list-notices{position:absolute;left:12px;top:49px;max-width:calc(100% - 440px);display:flex;gap:5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:9px;color:#b88134;line-height:10px}.list-notices>span{overflow:hidden;text-overflow:ellipsis}
 .list-details{font-size:11px;color:#8e8e93;padding:10px 12px;line-height:1.6;overflow-wrap:anywhere}.list-details summary{cursor:pointer}.list-details p{margin:4px 0}.list-details>div{padding:8px 0;border-bottom:1px solid #f5f5f5}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}button:focus-visible,summary:focus-visible{outline:2px solid #ff6535;outline-offset:3px}
