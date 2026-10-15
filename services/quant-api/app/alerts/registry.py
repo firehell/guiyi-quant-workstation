@@ -20,6 +20,7 @@ HTDY_ALERT_RULE_CODE: Final[Literal["htdy_original_15m"]] = "htdy_original_15m"
 SUBING_THS_ALERT_RULE_CODE: Final[Literal["subing_ths_alert_15m_v1"]] = (
     "subing_ths_alert_15m_v1"
 )
+SUBING_QUALITY_REWARM_POLICY_V2: Final = "subing_quality_rewarm_v2"
 
 
 @dataclass(frozen=True, slots=True)

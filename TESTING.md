@@ -1793,3 +1793,29 @@ V2追加 `tests/unit/new_subing_v2` 与 `services/quant-api/tests/research/test_
 `scripts/research/new_subing_v2.py --project-env /private/project.env --facts-dir /exact/v1-facts --reference-root /exact/v1-results --out /new/v2-results`
 核对V1已索引结果的输入和执行事实哈希；同一逐prefix指标准备复用于两本金、三成本和七个独立账户窗口。
 10万元为主账户，100万元是单独诊断，不合并本金/收益。新attempt只写任务结果，不下载provider或改Canonical。
+
+## Alert 内存交接与日周质量重预热 v2
+
+`test_alert_delivery_handoff.py` 覆盖同 Bar 批次、512 含在途容量、原始观察期限、不可恢复交接、
+原子领取/结果、停止与未知提交；`test_alert_v2_integration.py` 覆盖 Runtime HTTP 受阻时继续 Event/ACK、
+0052 additive migration/旧行和拒绝有损降级。`test_subing_quality_rewarm.py` 覆盖完整物理预热、显式质量断点、
+重启一致性与未发布尾端等待；MDS 发布判定回归在 `test_market_read_service.py`。
+
+```bash
+PYTHONPATH=services/quant-api:services/quant-api/tests:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/test_alert_delivery_handoff.py \
+  services/quant-api/tests/test_alert_v2_integration.py \
+  services/quant-api/tests/test_alert_handoff_status_classification.py \
+  services/quant-api/tests/test_subing_quality_rewarm.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_alert_service.py \
+  services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_api.py \
+  services/quant-api/tests/test_market_read_service.py
+```
+
+真实 PostgreSQL 场景使用本任务新建、可销毁、无持久卷实例（固定 loopback 15475、数据库
+`guiyi_alert_isolated_test`），显式设置 `GUIYI_ALERT_ISOLATED_TEST_URL` 后运行交接及集成两文件。
+测试在随机 schema 建表并仅清理自身 schema；无该变量的 PostgreSQL skip 不算验证通过。
+不能指向生产 5432，不能以此测试触发真实通知、RQData、Canonical 或 Runtime 切换。

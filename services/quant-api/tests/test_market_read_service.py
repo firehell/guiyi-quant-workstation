@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import (
+    BarFrequency,
     CanonicalBar,
     DatasetKey,
     MarketSeriesPageResult,
@@ -388,6 +389,74 @@ def _add_replay_metadata(session: Session, days: tuple[date, ...]) -> None:
         ]
     )
     session.commit()
+
+
+def test_quality_endpoint_publication_defers_only_unpublished_tail(tmp_path) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _add_replay_metadata(session, (DAY_1, DAY_2))
+        session.add_all(
+            MainContractMap(symbol="rb", trade_date=day, rank=1, contract_code="RB2610")
+            for day in (DAY_1, DAY_2)
+        )
+        catalog = MarketCatalog(session, tmp_path)
+        store = CanonicalMonthlyStore(tmp_path)
+        prior = _bar(datetime(2026, 8, 30, 2, tzinfo=UTC), DAY_1)
+        catalog.register_partition(store.publish(PublishRequest(
+            DatasetKey("contract", "rb", "RB2610", "1d"), 2026, 8,
+            (prior,), (prior.bar_end,),
+        )))
+        session.commit()
+        market = MarketDataService(catalog, store)
+        assert market.rank1_quality_endpoint_published(
+            symbol="rb", frequency=BarFrequency.D1, trading_day=DAY_1,
+        )
+        assert not market.rank1_quality_endpoint_published(
+            symbol="rb", frequency=BarFrequency.D1, trading_day=DAY_2,
+        )
+        session.add(Contract(
+            contract_code="RB2605", instrument_symbol="rb", exchange_code="SHFE",
+            listed_date=DAY_1, expired_date=date(2027, 1, 1),
+        ))
+        other = _bar(datetime(2026, 8, 31, 2, tzinfo=UTC), DAY_2)
+        catalog.register_partition(store.publish(PublishRequest(
+            DatasetKey("contract", "rb", "RB2605", "1d"), 2026, 8,
+            (other,), (other.bar_end,),
+        )))
+        session.commit()
+        with pytest.raises(MarketDataError, match="PHYSICAL_DATA_MISSING"):
+            market.rank1_quality_endpoint_published(
+                symbol="rb", frequency=BarFrequency.D1, trading_day=DAY_2,
+            )
+        session.query(MainContractMap).filter_by(symbol="rb", trade_date=DAY_1).delete()
+        session.commit()
+        with pytest.raises(MarketDataError, match="MAIN_CONTRACT_MAP_MISSING"):
+            market.rank1_quality_endpoint_published(
+                symbol="rb", frequency=BarFrequency.D1, trading_day=DAY_1,
+            )
+
+
+def test_published_weekly_endpoint_never_falls_back_when_daily_source_is_missing(tmp_path) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _add_replay_metadata(session, (DAY_2,))
+        session.add(MainContractMap(
+            symbol="rb", trade_date=DAY_2, rank=1, contract_code="RB2610",
+        ))
+        catalog = MarketCatalog(session, tmp_path)
+        store = CanonicalMonthlyStore(tmp_path)
+        weekly = _bar(datetime(2026, 8, 31, 2, tzinfo=UTC), DAY_2)
+        catalog.register_partition(store.publish(PublishRequest(
+            DatasetKey("contract", "rb", "RB2610", "1w"), 2026, 8,
+            (weekly,), (weekly.bar_end,),
+        )))
+        session.commit()
+        market = MarketDataService(catalog, store)
+        assert market.rank1_quality_endpoint_published(
+            symbol="rb", frequency=BarFrequency.W1, trading_day=DAY_2,
+        )
 
 
 @pytest.mark.parametrize(
