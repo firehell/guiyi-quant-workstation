@@ -24,6 +24,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, DatasetKey, DatasetKind
+from app.read_timings import phase, timed
 from app.market_data.approved_ohlc_correction import approved_policy_for_partition
 from app.market_data.source_quality import (
     NonpositiveCloseFact,
@@ -280,6 +281,7 @@ class CanonicalMonthlyStore:
             os.close(fd)
 
     @staticmethod
+    @timed("file_read")
     def _read_file_snapshot(fd: int) -> bytes:
         fd = os.dup(fd)
         with os.fdopen(fd, "rb") as stream:
@@ -292,15 +294,7 @@ class CanonicalMonthlyStore:
 
         Missing metadata means unknown legacy provenance; it is never synthesized.
         """
-        fingerprint = self.verified_partition_fingerprint(partition)
-        directory = self._month_directory(partition.dataset, partition.year, partition.month)
-        fd = self._directory_fd(directory, create=False)
-        try:
-            payload = self._read_bytes(fd, partition.file_path.name)
-        finally:
-            os.close(fd)
-        if hashlib.sha256(payload).hexdigest() != fingerprint:
-            raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
+        payload, _fingerprint = self._verified_partition_payload(partition)
         metadata = pq.ParquetFile(pa.BufferReader(payload)).schema_arrow.metadata or {}
         raw = metadata.get(b"guiyi.historical_provenance")
         if raw is None:
@@ -312,6 +306,10 @@ class CanonicalMonthlyStore:
 
     def verified_partition_fingerprint(self, partition: CatalogPartitionLike) -> str:
         """Verify immutable Canonical bytes and Catalog quality without decoding Bars."""
+        return self._verified_partition_payload(partition)[1]
+
+    def _verified_partition_payload(self, partition: CatalogPartitionLike) -> tuple[bytes, str]:
+        """One verified snapshot per invocation; never memoize authority checks."""
         directory = self._month_directory(partition.dataset, partition.year, partition.month)
         path = partition.file_path
         if path.parent != directory or not re.fullmatch(r"part(?:\.[0-9a-f]{64})?\.parquet", path.name):
@@ -327,10 +325,11 @@ class CanonicalMonthlyStore:
                 payload = self._read_bytes(fd, path.name)
             finally:
                 os.close(fd)
-            digest = hashlib.sha256(payload).hexdigest()
+            with phase("integrity"):
+                digest = hashlib.sha256(payload).hexdigest()
             if path.name != "part.parquet" and path.name != f"part.{digest}.parquet":
                 raise StorageError("PARTITION_CONTENT_HASH_MISMATCH")
-            return digest
+            return payload, digest
         except OSError as exc:
             raise StorageError("PARTITION_UNREADABLE") from exc
 
@@ -363,19 +362,21 @@ class CanonicalMonthlyStore:
             if path.name != "part.parquet":
                 if path.name != f"part.{hashlib.sha256(payload).hexdigest()}.parquet":
                     raise StorageError("PARTITION_CONTENT_HASH_MISMATCH")
-            table = pq.ParquetFile(pa.BufferReader(payload)).read()
+            with phase("parquet"):
+                table = pq.ParquetFile(pa.BufferReader(payload)).read()
             if not table.schema.equals(CANONICAL_SCHEMA, check_metadata=False):
                 raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
             # Arrow's timezone-aware scalar conversion repeatedly resolves the
             # same timezone module for every row.  The schema above already
             # proves UTC; decode the identical microsecond values as naive and
             # attach UTC once per Python value instead.
-            bar_ends = table.column("bar_end").cast(pa.timestamp("us")).to_pylist()
-            records = table.drop(["bar_end"]).to_pylist()
-            values = tuple(
-                CanonicalBar(bar_end=bar_end.replace(tzinfo=UTC), **record)
-                for bar_end, record in zip(bar_ends, records, strict=True)
-            )
+            with phase("assemble"):
+                bar_ends = table.column("bar_end").cast(pa.timestamp("us")).to_pylist()
+                records = table.drop(["bar_end"]).to_pylist()
+                values = tuple(
+                    CanonicalBar(bar_end=bar_end.replace(tzinfo=UTC), **record)
+                    for bar_end, record in zip(bar_ends, records, strict=True)
+                )
             if cache_key is not None and len(values) <= _DECODE_CACHE_BARS:
                 with _DECODE_CACHE_LOCK:
                     _DECODE_CACHE[cache_key] = values

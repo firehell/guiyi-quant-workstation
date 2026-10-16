@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.market_data.newow.read_timings import timed
+from app.read_timings import timed
 
 from dataclasses import fields, is_dataclass
 from datetime import UTC, date, datetime

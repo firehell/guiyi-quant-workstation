@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.market_data.newow.read_timings import timed
+from app.read_timings import timed
 
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace

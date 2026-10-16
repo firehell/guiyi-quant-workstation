@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.market_data.newow.read_timings import timed
+from app.read_timings import timed
 
 from guiyi_quant.newow.product_contracts import LEGACY_PRODUCT_FREQUENCIES, INTRADAY_PRODUCT_FREQUENCIES
 

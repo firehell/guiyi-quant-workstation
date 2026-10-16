@@ -9,7 +9,7 @@ import logging
 import time
 from contextlib import nullcontext
 
-from app.market_data.newow.read_timings import detail_timings
+from app.read_timings import detail_timings
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request

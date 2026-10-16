@@ -78,6 +78,28 @@ def _bar(day: int, close: int, *, month: int = 1, hour: int = 7) -> CanonicalBar
     )
 
 
+def test_overlap_reuses_exchange_fact_within_one_catalog_query(session, tmp_path, monkeypatch):
+    session.add_all([
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 1), is_trading_day=False),
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 2), is_trading_day=True),
+    ])
+    session.commit()
+    catalog = MarketCatalog(session, tmp_path)
+    original = catalog.exchange_for_symbol
+    calls = []
+
+    def exchange(symbol):
+        calls.append(symbol)
+        return original(symbol)
+
+    monkeypatch.setattr(catalog, "exchange_for_symbol", exchange)
+    result = catalog.session_windows_overlapping_window(
+        "jm", datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 7, tzinfo=UTC),
+    )
+    assert result[0][0] == date(2025, 1, 2)
+    assert calls == ["jm"]
+
+
 def _publish(
     catalog: MarketCatalog,
     store: CanonicalMonthlyStore,

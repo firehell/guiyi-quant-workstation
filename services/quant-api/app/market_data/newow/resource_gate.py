@@ -8,7 +8,7 @@ from contextlib import AbstractContextManager
 from threading import Condition
 from time import monotonic
 
-from .read_timings import timed
+from app.read_timings import timed
 
 
 class NewowResourceBusy(RuntimeError):

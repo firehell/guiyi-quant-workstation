@@ -13,18 +13,21 @@ from typing import Callable, ParamSpec, TypeVar
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
-_NAMES = frozenset({"queue", "read", "verify", "cache", "compute", "replay", "projection"})
+_NAMES = frozenset({"queue", "read", "verify", "cache", "compute", "replay", "projection",
+                    "catalog", "mapping", "session", "file_read", "integrity", "parquet", "assemble"})
 
 
 class DetailTimings:
     def __init__(self) -> None:
         self.values: dict[str, float] = {}
+        self.counts: dict[str, int] = {}
         self._lock = Lock()
         self.projected_at: float | None = None
 
     def add(self, name: str, milliseconds: float) -> None:
         with self._lock:
             self.values[name] = self.values.get(name, 0) + milliseconds
+            self.counts[name] = self.counts.get(name, 0) + 1
 
     def header(self, total_ms: float) -> str:
         with self._lock:
@@ -33,7 +36,7 @@ class DetailTimings:
                 # FastAPI response-model encoding and response construction
                 # after the final projection; excludes network/gzip delivery.
                 entries.append(("response_encode", (perf_counter() - self.projected_at) * 1000))
-        return ", ".join(f"{name};dur={duration:.2f}" for name, duration in
+        return ", ".join(f'{name};dur={duration:.2f};desc="{self.counts.get(name, 1)} calls"' for name, duration in
                          [("total", total_ms), *entries])
 
 

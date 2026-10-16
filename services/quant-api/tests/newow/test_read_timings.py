@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.middleware.request_timing import RequestTimingMiddleware
-from app.market_data.newow.read_timings import detail_timings, phase, timed
+from app.read_timings import detail_timings, phase, timed
 
 
 def test_phase_timings_are_request_local_and_clear_after_failure():

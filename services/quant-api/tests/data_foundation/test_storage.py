@@ -55,6 +55,21 @@ def _partition(result):
     return CatalogPartition(result.dataset, result.year, result.month, result.coverage_start, result.coverage_end, result.parquet_path, result.row_count)
 
 
+def test_provenance_uses_one_verified_file_snapshot(tmp_path, monkeypatch):
+    store = CanonicalMonthlyStore(tmp_path)
+    published = store.publish(_request((_bar(1), _bar(2))))
+    reads = []
+    original = store._read_file_snapshot
+
+    def read(fd):
+        reads.append(fd)
+        return original(fd)
+
+    monkeypatch.setattr(CanonicalMonthlyStore, "_read_file_snapshot", staticmethod(read))
+    assert store.read_publication_provenance(_partition(published)) is None
+    assert len(reads) == 1
+
+
 def test_publication_preserves_previous_bytes_and_catalog_pointer(tmp_path):
     import hashlib
     store = CanonicalMonthlyStore(tmp_path)
