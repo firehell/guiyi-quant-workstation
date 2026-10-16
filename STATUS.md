@@ -1,5 +1,11 @@
 # 当前状态
 
+## 10/16 v1.15.10 发布候选与切换阻断
+
+已汇总已验收develop、版本准备和已发布main，完成完整Web1133 passed/3 skipped、发布相关后端185 passed、build/type/topology、OpenSpec11及secret零发现。
+现役仍为v1.15.7/gen19/schema0051。当前Reference720启用中508 READY、212 DATA_CONFLICT、pending0；完整就绪Gate失败。
+未drain、未迁移、未切换；发布与Runtime独立记录。见[发布汇总](docs/tasks/release-all-v1.15.10.md)。
+
 ## 10/16 八批看盘优化工程验收
 
 八批代码已推送并集成develop（源码982395b59），独立Review通过：MDS同请求去重/细分计时、底层取消与有界只读缓存、刷新合并、一次JSON编码、
