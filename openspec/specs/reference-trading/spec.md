@@ -619,6 +619,12 @@ The reader SHALL retain the Newow 93-day date-span and 500-message cap. Alert sc
 366-calendar-day maximum window and bounded 5000-event scan cap. Search applies inside these source scan
 bounds. Each response MUST disclose source availability, truncation, limits and available count separately
 from loaded count; an incomplete empty result MUST NOT claim no matching history exists.
+The response SHALL include `dataset_hash`, the same full bounded source projection digest bound to the cursor,
+and ready-source `scanned_count` (Alert additionally `scan_batches`). These are read diagnostics, not new facts.
+On page reentry Web MAY immediately preview its bounded cached snapshot but SHALL revalidate a fresh first page.
+Only an identical full `dataset_hash` may retain already loaded older pages and their original snapshot/cursor;
+changed facts replace the first page. Failed revalidation SHALL label the retained snapshot as stale/failed.
+Pagination SHALL reject changed snapshot or dataset identities before merging rows.
 
 A stateless cursor SHALL bind the exact normalized query, source cutoff, Alert ID high-water mark, active
 Newow revision identity and projected source dataset digest. New Alert insertions MUST NOT enter an existing

@@ -62,14 +62,14 @@ for (const first of ['more', 'refresh']) test(`refresh isolates pending paginati
   if (first === 'more') { more(page([1])); await old; refresh(page([4])); await next } else { refresh(page([4])); await next; more(page([1])); await old }
   assert.deepEqual(messages.page.value?.items.map(item => item.id), ['4']); assert.equal(messages.loadingMore.value, false)
 })
-test('reentry restores successful full pages; manual refresh bypasses cache', async () => {
+test('reentry shows cached facts while revalidating a fresh first page', async () => {
   let calls = 0
   const fetcher = async (_query: UnifiedMessageQuery, _signal: AbortSignal, cursor?: string) => { calls++; return cursor ? page([2]) : page([1], 'two') }
   const first = useUnifiedMessages(fetcher, 'cache-test'); await first.load(query); await first.loadMore(); first.dispose()
   const restoredQuery = Object.fromEntries(Object.entries(query).reverse()) as unknown as UnifiedMessageQuery
   const second = useUnifiedMessages(fetcher, 'cache-test'); await second.load(restoredQuery)
-  assert.equal(calls, 2); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1', '2'])
-  await second.load(query, true); assert.equal(calls, 3); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1'])
+  assert.equal(calls, 3); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1'])
+  await second.load(query, true); assert.equal(calls, 4); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1'])
 })
 test('stale snapshots preserve visible facts and disable further pagination', async () => {
   let calls = 0
@@ -95,4 +95,37 @@ test('dispose synchronously releases all loading state and ignores pending respo
   assert.equal(messages.loadingMore.value, false)
   resolve(page([1])); await pending
   assert.equal(messages.page.value, null)
+})
+
+test('cached messages remain labeled as refreshing and a failed proof retains only the old snapshot', async () => {
+  const first = useUnifiedMessages(async () => page([1]), 'proof-cache')
+  await first.load(query); first.dispose()
+  let reject!: (error: Error) => void
+  const next = useUnifiedMessages(() => new Promise((_resolve, failed) => { reject = failed }), 'proof-cache')
+  const pending = next.load(query)
+  assert.equal(next.loading.value, true)
+  assert.deepEqual(next.page.value?.items.map(item => item.id), ['1'])
+  reject(Error('offline')); await pending
+  assert.equal(next.error.value, 'failed')
+  assert.deepEqual(next.page.value?.items.map(item => item.id), ['1'])
+})
+
+test('a fresh full dataset hash preserves accepted older pages and their cursor', async () => {
+  let calls = 0
+  const fetcher = async (_q: UnifiedMessageQuery, _s: AbortSignal, cursor?: string) => {
+    calls++
+    return { ...page(cursor ? [2] : [1], cursor ? 'third' : 'second'), dataset_hash: 'a'.repeat(64) }
+  }
+  const first = useUnifiedMessages(fetcher, 'digest-cache'); await first.load(query); await first.loadMore(); first.dispose()
+  const restored = useUnifiedMessages(fetcher, 'digest-cache'); await restored.load(query)
+  assert.equal(calls, 3)
+  assert.deepEqual(restored.page.value?.items.map(item => item.id), ['1','2'])
+  assert.equal(restored.page.value?.next_cursor, 'third')
+})
+
+test('pagination refuses a changed dataset or snapshot without mixing records', async () => {
+  const messages = useUnifiedMessages(async (_q, _s, cursor) => ({...page(cursor ? [2] : [1], cursor ? null : 'next'), dataset_hash: (cursor ? 'b' : 'a').repeat(64)}))
+  await messages.load(query); await messages.loadMore()
+  assert.equal(messages.error.value, 'stale')
+  assert.deepEqual(messages.page.value?.items.map(item => item.id), ['1'])
 })

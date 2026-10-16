@@ -26,14 +26,20 @@ export function useUnifiedMessages(fetcher: Fetcher = getMarketMessages, cacheKe
     const request = controller
     if (key !== queryKey) { page.value = null; retentionCapped.value = false }
     query = { ...next }; queryKey = key
-    const cached = cacheKey ? cache.get(`${cacheKey}:${key}`) : null
+    const entry = cacheKey ? cache.get(`${cacheKey}:${key}`) : null
+    const cached = !force && entry && Date.now() - entry.at < 300_000 ? entry : null
     if (cached) { page.value = cached.page; retentionCapped.value = cached.capped }
     loading.value = false; loadingMore.value = false; error.value = null
-    if (cached && !force && Date.now() - cached.at < 300_000) return
     loading.value = true
     try {
       const result = await fetcher(next, request.signal)
-      if (current === generation) { accept(result); remember() }
+      if (current === generation) {
+        // A fresh full-source digest proves unchanged cached pages, not merely the first 50 rows.
+        if (cached?.page.dataset_hash && cached.page.dataset_hash === result.dataset_hash) {
+          page.value = cached.page; retentionCapped.value = cached.capped
+        } else accept(result)
+        remember()
+      }
     } catch (reason) { if (current === generation && !request.signal.aborted) error.value = isStale(reason) ? 'stale' : 'failed' }
     finally { if (current === generation) loading.value = false }
   }
@@ -45,6 +51,7 @@ export function useUnifiedMessages(fetcher: Fetcher = getMarketMessages, cacheKe
     try {
       const next = await fetcher(query, request.signal, page.value.next_cursor)
       if (current !== generation) return
+      if (next.dataset_hash !== page.value!.dataset_hash || next.snapshot.cutoff !== page.value!.snapshot.cutoff || next.snapshot.alert_max_id !== page.value!.snapshot.alert_max_id) throw { response: { status: 409 } }
       const known = new Set(page.value!.items.map(row => `${row.source}:${row.id}`))
       accept({ ...next, items: [...page.value!.items, ...next.items.filter(row => !known.has(`${row.source}:${row.id}`))] }); remember()
     } catch (reason) { if (current === generation && !request.signal.aborted) error.value = isStale(reason) ? 'stale' : 'failed' }

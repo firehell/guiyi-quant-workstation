@@ -112,6 +112,7 @@ def market_messages(
                     snapshot["alert_max_id"] = highwater
                 before = None
                 loaded = []
+                scan_batches = 0
                 while True:
                     page = read_alert_history(
                         session,
@@ -120,13 +121,14 @@ def market_messages(
                             end_day,
                             identity["symbol"],
                             rule_code,
-                            100,
+                            min(500, ALERT_CAP - len(loaded)),
                             before,
                             frequency=frequency,
                             max_event_id=highwater,
                         ),
                     )
-                    loaded.extend(_event_outs(session, page.items))
+                    scan_batches += 1
+                    loaded.extend(page.items)
                     before = page.next_before
                     if not before or len(loaded) >= ALERT_CAP:
                         break
@@ -138,12 +140,14 @@ def market_messages(
                         "symbol": item.symbol,
                         "event": item.model_dump(mode="json"),
                     }
-                    for item in loaded
+                    for item in _event_outs(session, tuple(loaded))
                 )
                 sources["alert"] = {
                     "status": "ready",
                     "truncated": bool(before),
                     "limit": ALERT_CAP,
+                    "scanned_count": len(loaded),
+                    "scan_batches": scan_batches,
                     "window_days": 366,
                 }
         except Exception:  # noqa: BLE001 - failure must not expose database facts
@@ -181,6 +185,7 @@ def market_messages(
                 "status": "ready",
                 "truncated": page["truncated"],
                 "limit": 500,
+                "scanned_count": len(page["items"]),
                 "window_days": 93,
                 "excluded_streams": page.get("excluded_streams", 0),
                 "scope": "ready_forward_streams_only",

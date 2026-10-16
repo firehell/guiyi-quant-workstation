@@ -96,7 +96,7 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
         )
         session.add(rule)
         session.flush()
-        for index in range(55):
+        for index in range(155):
             session.add(
                 AlertEvent(
                     rule_id=rule.id,
@@ -112,11 +112,24 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
                 )
             )
         session.commit()
+    reads = []
+    conversions = []
+    original_reader, original_outs = api.read_alert_history, api._event_outs
+    def counted_reader(session, query):
+        reads.append(query.limit)
+        return original_reader(session, query)
+    def counted_outs(session, events):
+        conversions.append(len(events))
+        return original_outs(session, events)
+    monkeypatch.setattr(api, "read_alert_history", counted_reader)
+    monkeypatch.setattr(api, "_event_outs", counted_outs)
     params = {"start_day": "2026-10-01", "end_day": "2026-10-15"}
     with TestClient(app) as client:
         first = client.get("/api/market/messages", params=params)
         assert first.status_code == 200
         assert len(first.json()["items"]) == 50
+        assert reads == [500]
+        assert conversions == [155]
         with factory() as session:
             session.add(
                 AlertEvent(
@@ -125,7 +138,7 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
                     contract="JM2612",
                     trading_day=date(2026, 10, 11),
                     frequency="15m",
-                    bar_end=datetime(2026, 10, 11, tzinfo=UTC) + timedelta(minutes=100),
+                    bar_end=datetime(2026, 10, 11, tzinfo=UTC) + timedelta(minutes=200),
                     detected_at=datetime(2026, 10, 11, tzinfo=UTC),
                     result_codes=["buy"],
                 )
@@ -137,9 +150,13 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
         )
         assert second.status_code == 200
         all_rows = first.json()["items"] + second.json()["items"]
-        assert len(all_rows) == 56
-        assert len({(row["source"], row["id"]) for row in all_rows}) == 56
-        assert "56" not in [row["id"] for row in all_rows if row["source"] == "alert"]
+        while second.json()["next_cursor"]:
+            second = client.get("/api/market/messages", params={**params, "cursor": second.json()["next_cursor"]})
+            assert second.status_code == 200
+            all_rows.extend(second.json()["items"])
+        assert len(all_rows) == 156
+        assert len({(row["source"], row["id"]) for row in all_rows}) == 156
+        assert "156" not in [row["id"] for row in all_rows if row["source"] == "alert"]
         assert all_rows[-1]["source"] == "newow"  # timezone is parsed, not lexical
         monkeypatch.setattr(
             api,

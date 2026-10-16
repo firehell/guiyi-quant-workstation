@@ -108,6 +108,7 @@ function liveItem(overrides = {}) {
 }
 
 async function mockMarketHomeApi(page, requests, currentEvents = events(), currentOverview = overview(), currentRuntime = runtime(), currentHistory = historyPage()) {
+  const snapshotCutoff = new Date().toISOString()
   requests.pageErrors = []
   page.on('pageerror', error => requests.pageErrors.push(error.message))
   await page.route(url => url.pathname.startsWith('/api/'), route => route.abort('blockedbyclient'))
@@ -150,7 +151,7 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
       requests.push(`history:${url.searchParams.get('rule_code') ?? 'all'}:${url.searchParams.get('symbol') ?? 'all'}:${legacyUrl.searchParams.get('before') ?? 'first'}`)
       const history = typeof currentHistory === 'function' ? currentHistory(legacyUrl) : currentHistory
       if (history === null) return route.abort()
-      return route.fulfill({ json: { items: history.items.map(event => ({ source: 'alert', id: String(event.id), symbol: event.symbol, bar_end: event.bar_end, event })), next_cursor: history.next_before, available_count: history.items.length, coverage: 'complete', sources: { alert: { status: 'ready', truncated: false, limit: 5000 }, newow: { status: 'ready', truncated: false, limit: 500 } }, snapshot: { cutoff: new Date().toISOString(), alert_max_id: 100 } } })
+      return route.fulfill({ json: { dataset_hash: 'fixture-unchanged-source', items: history.items.map(event => ({ source: 'alert', id: String(event.id), symbol: event.symbol, bar_end: event.bar_end, event })), next_cursor: history.next_before, available_count: history.items.length, coverage: 'complete', sources: { alert: { status: 'ready', truncated: false, limit: 5000 }, newow: { status: 'ready', truncated: false, limit: 500 } }, snapshot: { cutoff: snapshotCutoff, alert_max_id: 100 } } })
     }
     if (url.pathname === '/api/alerts/history') {
       requests.push(`history:${url.searchParams.get('rule_code') ?? 'all'}:${url.searchParams.get('symbol') ?? 'all'}:${url.searchParams.get('before') ?? 'first'}`)
@@ -234,7 +235,7 @@ test('messages restore two loaded pages, the next cursor, and the real home scro
   await page.goBack()
   await expect(messageButtons).toHaveCount(48)
   await expect.poll(() => page.evaluate(actualHomeScrollTop)).toBeGreaterThan(before - 10)
-  expect(requests.filter((value) => String(value).startsWith('history:')).length).toBe(historyReads)
+  await expect.poll(() => requests.filter((value) => String(value).startsWith('history:')).length).toBe(historyReads + 1)
   const more = page.getByRole('button', { name: '加载更多' })
   await expect(more).toBeEnabled()
   await more.click()

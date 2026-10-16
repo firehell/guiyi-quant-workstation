@@ -93,6 +93,7 @@ def paginate_messages(
         )
     return {
         "items": rows[offset : offset + limit],
+        "dataset_hash": digest,
         "next_cursor": next_cursor,
         "available_count": len(rows),
         "sources": sources,
