@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { type DominantContractItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
+import { type MarketProductDirectoryItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
 import {
+  type DetailSeriesKind,
   type MarketDetailIdentity,
   type MarketDetailView,
   type MarketDetailViewRestore,
@@ -11,15 +12,14 @@ import {
 import { resolveViewSwitchIdentity } from '@/utils/marketDetailRoute'
 
 const props = withDefaults(defineProps<{
-  products?: readonly DominantContractItem[]
+  products?: readonly MarketProductDirectoryItem[]
   identity: MarketDetailIdentity
   restore: MarketDetailViewRestore
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
-  newowFrequencyInChart?: boolean
   newowFrequencies: readonly MarketFrequency[]
 }>(), {
-  seriesKinds: () => ['actual_dominant', 'continuous', 'contract'],
+  seriesKinds: () => ['actual_dominant', 'contract'],
   frequencies: () => MARKET_FREQUENCIES,
   products: () => [],
 })
@@ -43,11 +43,11 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
 const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'newow'
   ? props.identity.newowMode === 'dual' ? 'dual' : props.identity.strategy ?? 'trend'
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
-const seriesLabels: Record<SeriesKind, string> = { actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' }
+const seriesLabels: Record<DetailSeriesKind, string> = { actual_dominant: '真实主力', contract: '指定合约' }
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
-const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInChart) || props.identity.view === 'subing' || showSeriesControls.value)
+const showFrequencyControls = computed(() => props.identity.view === 'newow' || props.identity.view === 'subing' || showSeriesControls.value)
 const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : props.identity.view === 'subing' ? ['5m', '15m', '30m', '60m', '1d', '1w'] as MarketFrequency[] : props.frequencies)
-const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind) => kind !== 'contract'))
+const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind): kind is 'actual_dominant' => kind === 'actual_dominant'))
 const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
 const symbol = ref(props.identity.symbol)
 const contract = ref(props.identity.contract ?? '')
@@ -74,7 +74,7 @@ function chooseView(view: AnalysisChoice) {
   emit('select', resolveViewSwitchIdentity(view, props.identity.symbol, props.identity, props.restore))
 }
 
-function chooseSeries(seriesKind: SeriesKind) {
+function chooseSeries(seriesKind: DetailSeriesKind) {
   if (seriesKind === 'contract' && !contract.value.trim()) return
   emit('select', {
     ...props.identity,
@@ -107,9 +107,7 @@ function chooseSymbol(nextValue = symbol.value) {
 defineExpose({ selectSymbol: chooseSymbol })
 
 function periodLabel(value: MarketFrequency) {
-  if (props.identity.view === 'newow') return value
-  if (props.identity.view === 'subing') return value === '1d' ? '日线' : value === '1w' ? '周线' : value.replace('m', '分')
-  return value === '1d' ? '日K' : value === '1w' ? '周K' : value
+  return value === '1d' ? '日线' : value === '1w' ? '周线' : value.replace('m', '分钟')
 }
 </script>
 

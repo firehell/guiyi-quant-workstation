@@ -78,6 +78,28 @@ def _bar(day: int, close: int, *, month: int = 1, hour: int = 7) -> CanonicalBar
     )
 
 
+def test_overlap_reuses_exchange_fact_within_one_catalog_query(session, tmp_path, monkeypatch):
+    session.add_all([
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 1), is_trading_day=False),
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 2), is_trading_day=True),
+    ])
+    session.commit()
+    catalog = MarketCatalog(session, tmp_path)
+    original = catalog.exchange_for_symbol
+    calls = []
+
+    def exchange(symbol):
+        calls.append(symbol)
+        return original(symbol)
+
+    monkeypatch.setattr(catalog, "exchange_for_symbol", exchange)
+    result = catalog.session_windows_overlapping_window(
+        "jm", datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 7, tzinfo=UTC),
+    )
+    assert result[0][0] == date(2025, 1, 2)
+    assert calls == ["jm"]
+
+
 def _publish(
     catalog: MarketCatalog,
     store: CanonicalMonthlyStore,
@@ -940,6 +962,50 @@ def test_latest_dominants_uses_repository_display_name_instead_of_provider_code(
     assert items[0].symbol == "jm"
     assert items[0].product_name == "焦煤"
     assert items[0].sector == "black"
+
+
+def test_product_directory_reads_taxonomy_and_active_instrument_without_mapping(
+    session, tmp_path, monkeypatch
+) -> None:
+    from app.market_data.product_taxonomy import ProductTaxonomyEntry
+    from app.market_data.market_data_service import MarketDataError
+
+    monkeypatch.setattr(
+        "app.market_data.market_data_service.load_product_taxonomy",
+        lambda: {"jm": ProductTaxonomyEntry("焦煤", "black")},
+    )
+    catalog = MarketCatalog(session, tmp_path)
+    service = MarketDataService(catalog, CanonicalMonthlyStore(tmp_path))
+    assert [(item.product, item.product_name, item.exchange, item.sector)
+            for item in service.list_product_directory()] == [("jm", "焦煤", "DCE", "black")]
+    instrument = session.query(Instrument).filter_by(symbol="jm").one()
+    instrument.is_active = False
+    session.flush()
+    with pytest.raises(MarketDataError, match="PRODUCT_DIRECTORY_INCOMPLETE"):
+        service.list_product_directory()
+
+
+def test_latest_directory_loads_only_latest_mapping_rows(session, tmp_path):
+    from sqlalchemy import event
+    from app.models.market_tables import MainContractMap
+
+    catalog = MarketCatalog(session, tmp_path)
+    first = date(2025, 1, 2)
+    catalog.upsert_main_contracts(tuple(
+        ("jm", first + timedelta(days=offset), "JM2505" if offset < 99 else "JM2509")
+        for offset in range(100)
+    ))
+    session.commit()
+    loaded = []
+    def capture(_session, instance):
+        if isinstance(instance, MainContractMap):
+            loaded.append(instance)
+    event.listen(session, "loaded_as_persistent", capture)
+    items = MarketDataService(catalog, CanonicalMonthlyStore(tmp_path)).list_latest_dominants()
+    assert [(item.symbol, item.actual_contract, item.dominant_mapping_date) for item in items] == [
+        ("jm", "JM2509", first + timedelta(days=99)),
+    ]
+    assert len(loaded) == 1
 
 
 def test_latest_dominant_segment_returns_current_contiguous_rank1_segment(

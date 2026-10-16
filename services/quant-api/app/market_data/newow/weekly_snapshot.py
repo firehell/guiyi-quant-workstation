@@ -15,7 +15,7 @@ from app.market_data.market_data_service import MarketDataError
 
 from .product_reader import NewowProductReadCancelled, NewowProductReader
 from .product_release import CANDIDATE_WEEKLY_PRODUCTS
-from .product_service import NewowProductService, ProductSection, ProductServiceQuery
+from .product_service import NewowProductResult, NewowProductService, ProductSection, ProductServiceQuery
 
 
 PublicationState = Literal["pending_update", "failed", "stale", "unknown"]
@@ -97,6 +97,12 @@ class NewowWeeklySnapshotResolver:
     def resolve(
         self, product: str, strategy: ProductStrategy, frequency: ProductFrequency,
     ) -> WeeklySnapshot:
+        return self.resolve_with_chart(product, strategy, frequency)[0]
+
+    def resolve_with_chart(
+        self, product: str, strategy: ProductStrategy, frequency: ProductFrequency,
+        *, chart_limit: int = 500,
+    ) -> tuple[WeeklySnapshot, NewowProductResult]:
         if ProductFrequency(frequency) is not ProductFrequency.WEEKLY:
             raise WeeklySnapshotError("NEWOW_FREQUENCY_NOT_OPEN")
         requested_at = self._now()
@@ -122,7 +128,7 @@ class NewowWeeklySnapshotResolver:
             try:
                 result = service.query(ProductServiceQuery(
                     product, strategy, frequency, section=ProductSection.CHART,
-                    as_of=cutoff,
+                    as_of=cutoff, chart_limit=chart_limit,
                 ))
             except MarketDataError as exc:
                 if index != 0 or exc.code != "MAIN_CONTRACT_MAP_MISSING":
@@ -148,5 +154,5 @@ class NewowWeeklySnapshotResolver:
                 product, ProductStrategy(strategy), ProductFrequency(frequency),
                 requested_at, expected, cutoff, cutoff,
                 "pending_update" if pending else "current", context,
-            )
+            ), result
         raise WeeklySnapshotError("NEWOW_WEEKLY_UNKNOWN")

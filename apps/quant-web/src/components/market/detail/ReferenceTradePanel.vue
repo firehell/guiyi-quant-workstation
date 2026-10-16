@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PerformancePanel from '../../performance/PerformancePanel.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useReferenceTrading } from '@/composables/useReferenceTrading'
 import type { ReferenceMode } from '@/types/referenceTrading'
@@ -34,9 +35,9 @@ onBeforeUnmount(reference.dispose)
 </script>
 
 <template>
-  <section class="reference-trade-panel" aria-label="统一参考交易">
+  <PerformancePanel class="reference-trade-panel" :kind="mode === 'historical_replay' ? '已保存历史参考' : '盘中观察参考'" :since="since" :through="throughDate" description="零费用、零滑点 · 策略参考事实，不代表账户成交">
     <header>
-      <h2>参考交易</h2>
+
       <nav aria-label="参考记录模式">
         <button v-if="historicalAvailable" type="button" :aria-pressed="mode === 'historical_replay'" @click="mode = 'historical_replay'">历史参考</button>
         <button type="button" :aria-pressed="mode === 'forward_observation'" @click="mode = 'forward_observation'">盘中观察参考</button>
@@ -75,9 +76,10 @@ onBeforeUnmount(reference.dispose)
         </tr></tbody>
       </table></div>
       <p v-if="!reference.page.value.items.length">所选窗口暂无已观察的参考交易。</p>
-      <button v-if="reference.page.value.next_cursor" type="button" :disabled="reference.loading.value" @click="reference.loadMore()">加载更多</button>
+      <p v-if="reference.capped.value" role="status">已达到本页显示容量，尚未读取完整历史；请缩小日期窗口。</p>
+      <button v-if="reference.page.value.next_cursor && !reference.capped.value" type="button" :disabled="reference.loading.value" @click="reference.loadMore()">加载更多</button>
     </template>
-  </section>
+  </PerformancePanel>
 </template>
 
 <style scoped>

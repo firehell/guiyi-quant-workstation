@@ -392,3 +392,17 @@ test('price proof preserves guards and visibly distinguishes a frozen background
  assert.equal(findNode(root,n=>n.type==='details'&&n.props.class==='price-sources')?.props.open,undefined)
  app.unmount()
 })
+
+test('one source disclosure contains both main chart and decision price evidence', async () => {
+ const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root')
+ const chartSources=[{label:'主图当前周期通道 · 目标',available:false,reason:'主图窗口缺少来源',source:null}]
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input(),chartSources})}))
+ app.mount(root)
+ mock.calls.at(-1).resolve(output()); await nextTick();await nextTick()
+ const disclosures=findNodes(root,n=>n.type==='details'&&n.props.class==='price-sources')
+ assert.equal(disclosures.length,1)
+ assert.match(nodeText(disclosures[0]),/主图当前周期通道 · 目标/)
+ assert.match(nodeText(disclosures[0]),/跨周期共享选择 · 目标/)
+ assert.match(nodeText(disclosures[0]),/状态卡价格 · 吸筹/)
+ app.unmount()
+})

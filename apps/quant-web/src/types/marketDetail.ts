@@ -8,9 +8,10 @@ export const NEWOW_STRATEGIES = ['trend', 'oscillation', 'main_rise'] as const
 export type NewowStrategy = (typeof NEWOW_STRATEGIES)[number]
 export const NEWOW_FREQUENCIES = ['1w', '1d', '60m', '30m', '15m', '5m'] as const
 export type NewowFrequency = (typeof NEWOW_FREQUENCIES)[number]
+export type DetailSeriesKind = Exclude<SeriesKind, 'continuous'>
 
 export interface FlexibleViewRestore {
-  seriesKind: Extract<SeriesKind, 'actual_dominant' | 'continuous'>
+  seriesKind: 'actual_dominant'
   frequency: MarketFrequency
 }
 
@@ -30,7 +31,7 @@ export interface MarketDetailIdentity {
   strategy?: NewowStrategy
   /** Presentation mode; fusion is not a fourth strategy kernel. */
   newowMode?: 'dual'
-  seriesKind: SeriesKind
+  seriesKind: DetailSeriesKind
   contract?: string
   frequency: MarketFrequency
   focusBarEnd?: string

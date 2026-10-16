@@ -15,7 +15,7 @@ from app.market_data.domain import DatasetKey
 from app.market_data.newow.readiness import ReadinessRequest
 from app.market_data.newow import readiness_composition
 from scripts.oi_weekly_local_rebuild import prepare, CUTOFF
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 from guiyi_quant.newow.product_contracts import ProductFrequency
 
 parser = argparse.ArgumentParser(allow_abbrev=False)

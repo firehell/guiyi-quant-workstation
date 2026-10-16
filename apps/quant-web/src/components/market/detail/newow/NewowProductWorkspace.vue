@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { newowComparisonCompatible } from '@/utils/newowComparison'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
+import type { DetailPricePreview as PricePreviewState } from '@/composables/useDetailPricePreview'
+import { newowComparisonCompatible, newowComparisonWindow } from '@/utils/newowComparison'
 import { newowDualDominance } from '@/utils/newowDualChartDisplay'
 import { isNewowStrategySwitch } from '@/utils/marketDetailRoute'
 import { candidatePreviewNow } from '@/utils/candidatePreview'
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowUiStateLabel } from '@/utils/newowUiState'
 import { useNewowComparison } from '@/composables/useNewowComparison'
-import { useNewowRecentReference } from '@/composables/useNewowRecentReference'
+import { useNewowReferenceParts } from '@/composables/useNewowReferenceParts'
 import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
@@ -28,8 +30,7 @@ import { NEWOW_UP_DOWN_ENERGY_STYLE } from './newowUpDownEnergyPrimitive'
 import { NEWOW_MAIN_FORCE_STYLE } from './newowMainForceControlPrimitive'
 import { NEWOW_TREND_REVERSAL_STYLE } from './newowTrendReversalPrimitive'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
-import NewowReferencePanel from './NewowReferencePanel.vue'
-import NewowFusionPanel from './NewowFusionPanel.vue'
+import NewowReferencePartsPanel from './NewowReferencePartsPanel.vue'
 import NewowFormulaHelp from './NewowFormulaHelp.vue'
 import NewowDetailDialog from './NewowDetailDialog.vue'
 import NewowCupFactsPanel from './NewowCupFactsPanel.vue'
@@ -41,8 +42,8 @@ import NewowExperimentPanel from './NewowExperimentPanel.vue'
 import { newowMenuIdentity } from '@/utils/newowStrategyMenu'
 import {EXPERIMENT_OPTIONS,type ExperimentKind} from '@/utils/newowExperiments'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
-const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities }>()
-const emit = defineEmits<{ 'select-identity': [identity: MarketDetailIdentity]; 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': []; 'analysis-as-of': [asOf: string | null] }>()
+const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities; pricePreview: PricePreviewState }>()
+const emit = defineEmits<{ 'select-identity': [identity: MarketDetailIdentity]; 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'daily-chart': [chart: NewowProductSectionResponse<'chart'> | null]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': []; 'analysis-as-of': [asOf: string | null] }>()
 const experimentKind=ref<ExperimentKind|null>(null)
 const experimentContext = ref<(NewowDisplayOwner & { latestState: import('@/utils/newowExperiments').ExperimentSegment['latest_state'] | null }) | null>(null)
 const identity = computed(() => experimentKind.value ? { ...props.identity, strategy: 'oscillation' as const, newowMode: undefined } : props.identity)
@@ -75,18 +76,8 @@ watch(identity, (next, previous) => {
   strategySwitching.value = previous.strategy !== next.strategy && isNewowStrategySwitch(previous, next)
 }, { flush: 'sync' })
 const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31', 'newow_product_capabilities_v32'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency) && !props.capabilities.latest_completed_frequencies?.some(frequency => frequency === identity.value.frequency))
+const pricePreview = props.pricePreview
 const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : candidatePreviewNow() })
-let fusionRecoveryAttempted = false
-async function recoverFusionSnapshotConflict(token: string): Promise<void> {
-  if (fusionRecoveryAttempted || !dualMode.value || referenceResponse.value?.meta.snapshot_token !== token) return
-  fusionRecoveryAttempted = true
-  const requestedIdentityKey = identityKey.value
-  const restored = await loader.recoverFusionSnapshotConflict(token)
-  if (restored && requestedIdentityKey === identityKey.value) {
-    loadFirstScreenResearch()
-    void loadAuxiliaryForChart()
-  }
-}
 const comparisonSelected = ref(false)
 const comparisonEnabled = computed(() => !experimentKind.value && (dualMode.value || comparisonSelected.value) && !loader.fusionRecoveryActive.value)
 const comparisonSelection = shallowRef<{ strategy: 'trend' | 'oscillation'; signalId: string } | null>(null)
@@ -119,7 +110,41 @@ const experimentDisplayOwner = computed(() => {
 })
 const experimentDecision = computed(() => sharedDecisionForOwner(pathContext.value.decision, experimentDisplayOwner.value, 'oscillation') ? pathContext.value.decision : null)
 const mainRiseOwner = computed<NewowDisplayOwner | null>(() => { const bar = chartResponse.value?.value?.bars.at(-1); return bar && chartResponse.value ? {asOf:chartResponse.value.meta.as_of,physicalContract:bar.physical_contract,segmentId:bar.segment_id} : null })
-const comparison = useNewowComparison(chartResponse, comparisonEnabled)
+const referenceVisible = ref(false)
+const comparison = useNewowComparison(chartResponse, comparisonEnabled, undefined, referenceVisible)
+const referenceParts = useNewowReferenceParts(chartResponse, referenceVisible, dualMode)
+const chartStatsPrimary = useNewowReferenceParts(chartResponse, ref(false), ref(false))
+const chartStatsPartner = useNewowReferenceParts(comparison.response, ref(false), ref(false))
+const primaryReferenceComplete = computed(() => chartStatsPrimary.complete.value || referenceParts.complete.value)
+const chartReferenceStatsComplete = computed(() => primaryReferenceComplete.value && chartStatsPartner.complete.value)
+const chartReferenceStatsLoading = ref(false)
+const chartReferenceStatsError = ref<string | null>(null)
+let chartStatsRequest = 0
+watch([chartResponse, comparison.response], () => {
+  chartStatsRequest++
+  chartReferenceStatsLoading.value = false
+  chartReferenceStatsError.value = null
+}, { flush: 'sync' })
+async function loadChartReferenceStats() {
+  const primary = chartResponse.value, partner = comparison.response.value
+  if (!primary || !partner || !newowComparisonCompatible(primary, partner) || chartReferenceStatsLoading.value) return
+  const displayWindow = newowComparisonWindow(primary)
+  if (!displayWindow) return
+  const referenceWindow = { performanceSince: displayWindow.from, performanceThrough: displayWindow.through }
+  const request = ++chartStatsRequest
+  chartReferenceStatsLoading.value = true
+  chartReferenceStatsError.value = null
+  try {
+    const [primaryComplete, partnerComplete] = await Promise.all([
+      primaryReferenceComplete.value ? Promise.resolve(true) : chartStatsPrimary.loadCompleteClosed(referenceWindow),
+      chartStatsPartner.complete.value ? Promise.resolve(true) : chartStatsPartner.loadCompleteClosed(referenceWindow),
+    ])
+    if (request !== chartStatsRequest || chartResponse.value !== primary || comparison.response.value !== partner) return
+    if (!primaryComplete || !partnerComplete) chartReferenceStatsError.value = '完整参考记录未能核对，当前仅显示已知单笔。'
+  } finally {
+    if (request === chartStatsRequest) chartReferenceStatsLoading.value = false
+  }
+}
 const patternSelection = shallowRef<PatternChoice|null>(null)
 function selectPattern(choice:PatternChoice){patternSelection.value=choice;closeDialog()}
 watch(chartResponse,()=>{patternSelection.value=null})
@@ -141,14 +166,6 @@ const selectedAction = computed(() => {
   return chartModel.value?.actions.find(action => action.id === selectedSignalId.value) ?? null
 })
 const selectedActionDescription = computed(() => selectedAction.value === null ? null : describeNewowProductAction(selectedAction.value))
-const referenceResponse = computed(() => (
-  loader.sections.reference.data.value?.section === 'reference'
-    ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
-    : null
-))
-const chartReferenceResponse = computed(() => loader.chartReference.value as NewowProductSectionResponse<'reference'> | null)
-const recentRecords = useNewowRecentReference(computed(() => dualMode.value ? null : chartReferenceResponse.value))
-const chartReferenceCompatible = computed(() => chartResponse.value?.meta.snapshot_token != null && chartReferenceResponse.value?.meta.snapshot_token === chartResponse.value.meta.snapshot_token)
 const explanationResponse = computed(() => (
   loader.sections.explanation.data.value?.section === 'explanation'
     ? loader.sections.explanation.data.value as NewowProductSectionResponse<'explanation'>
@@ -199,7 +216,7 @@ const auxiliaryChartWindow = computed(() => chartResponse.value?.value === null 
 
 const summary = computed(() => projectNewowDetail(chartResponse.value, loader.sections.chart.state.value,
   explanationResponse.value, loader.sections.explanation.state.value, loader.explanationChartCompatible.value,
-  chartReferenceResponse.value, chartReferenceResponse.value?.status.status ?? 'not_requested', chartReferenceCompatible.value,
+  null, 'not_requested', false,
   loader.currentChartWindow.value, loader.historicalChartWindow.value))
 const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(currentAuxiliaryResponse.value?.value, chartResponse.value?.value?.bars.at(-1)))
 const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
@@ -293,11 +310,26 @@ async function toggleAuxiliary(component: NewowAuxiliaryComponent) {
   selectedAuxiliary.value = component
   await loadAuxiliaryForChart(component)
 }
-function loadReferenceOnce() { if (sectionOpen('reference') && loader.sections.reference.state.value === 'not_requested') void loader.loadReference() }
+function loadReferenceOnce() { if (chartResponse.value && sectionOpen('reference') && referenceParts.overview.value === null && !referenceParts.loading.value && referenceParts.error.value === null) void referenceParts.load() }
 function loadFirstScreenResearch(): void {
-  if (sectionOpen('explanation') && loader.sections.explanation.state.value === 'not_requested') void loader.loadExplanation()
-  loadReferenceOnce()
+  if (referenceVisible.value) loadReferenceOnce()
 }
+let referenceObserver: IntersectionObserver | null = null
+onMounted(() => {
+  if (typeof IntersectionObserver === 'undefined') { referenceVisible.value = true; loadReferenceOnce(); return }
+  referenceObserver = new IntersectionObserver(entries => {
+    referenceVisible.value = entries.some(entry => entry.target === referenceRegion.value && entry.isIntersecting)
+    if (referenceVisible.value) loadReferenceOnce()
+  }, { rootMargin: '100px' })
+  if (referenceRegion.value) referenceObserver.observe(referenceRegion.value)
+})
+watch(referenceRegion, (node, previous) => {
+  if (previous) referenceObserver?.unobserve(previous)
+  referenceVisible.value = false
+  if (!node) return
+  if (typeof IntersectionObserver === 'undefined') { referenceVisible.value = true; loadReferenceOnce() }
+  else referenceObserver?.observe(node)
+}, { flush: 'post' })
 async function openHistory(): Promise<void> {
   loadReferenceOnce()
   await nextTick()
@@ -314,14 +346,14 @@ async function locateReferenceTrade(trade: NewowReferenceTrade, endpoint: 'entry
   }
   const context = { identity: identityKey.value, snapshot }
   locateMessage.value = `正在定位${endpoint === 'entry' ? '建仓' : '清仓'}…`
-  let target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value, endpoint)
+  let target = resolveNewowReferenceLocate(trade, chartResponse.value, referenceParts.chartCompatible.value, endpoint)
   if (target.kind === 'request_display_window') {
     await loader.loadChart(target.displayWindow)
     if (request !== locateRequest.value || context.identity !== identityKey.value || context.snapshot !== locateSnapshotProof()) {
       if (request === locateRequest.value) locateMessage.value = '图表身份或快照已刷新，未使用旧定位结果。'
       return
     }
-    target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value, endpoint)
+    target = resolveNewowReferenceLocate(trade, chartResponse.value, referenceParts.chartCompatible.value, endpoint)
   }
   if (target.kind !== 'loaded') {
     locateMessage.value = `无法按精确信号 ${target.signalId ?? '—'} / ${target.barEnd ?? '—'} 定位；没有跳转到邻近日期。`
@@ -362,12 +394,11 @@ async function returnToReferenceTrade(): Promise<void> {
   record.scrollIntoView({ behavior: 'smooth', block: 'center' })
   record.focus({ preventScroll: true })
 }
-function refreshCurrent(): void { fusionRecoveryAttempted = false; loader.refreshCurrent(); emit('refresh-current') }
+function refreshCurrent(): void { pricePreview.refresh(); loader.refreshCurrent(); emit('refresh-current') }
 
 
 watch(selectedAuxiliary, value => rememberNewowUiPreferences(identityKey.value, { auxiliary: value }))
 watch(identityKey, async (_key, previous) => {
-  fusionRecoveryAttempted = false
   if (previous) rememberNewowUiPreferences(previous, { auxiliary: selectedAuxiliary.value, scrollTop: scrollOwner()?.scrollTop ?? 0 })
   restoredScroll = strategySwitching.value
   comparisonSelection.value = null; ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
@@ -380,6 +411,9 @@ watch(loader.historicalSnapshot, async () => {
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(chartResponse, value => emit('analysis-as-of', value?.meta.as_of ?? null), { immediate: true, flush: 'sync' })
+watch([chartResponse, loader.currentChartWindow], ([value, current]) => {
+  emit('daily-chart', current && value?.meta.identity.strategy === props.identity.strategy ? value : null)
+}, { immediate: true, flush: 'sync' })
 watch(loader.dailySnapshot, snapshot => {
   if (snapshot === null && strategySwitching.value) return
   emit('daily-snapshot-pending', snapshot?.freshness === 'pending_update')
@@ -444,6 +478,7 @@ watch(chartResponse, async value => {
 }, { flush: 'post' })
 onBeforeUnmount(() => {
   rememberNewowUiPreferences(identityKey.value, { auxiliary: selectedAuxiliary.value, scrollTop: scrollOwner()?.scrollTop ?? 0 })
+  referenceObserver?.disconnect()
   comparison.dispose(); loader.dispose()
 })
 </script>
@@ -459,7 +494,8 @@ onBeforeUnmount(() => {
         </div>
       </details>
     </Teleport>
-    <NewowExperimentPanel @analyze-channel="openDialog('comparator')" @context="experimentContext=$event" v-if="experimentKind" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null">
+    <DetailPricePreview v-if="chartResponse === null" :identity="identity" :preview="pricePreview" />
+    <NewowExperimentPanel @analyze-channel="openDialog('comparator')" @context="experimentContext=$event" v-if="experimentKind && chartResponse" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null">
       <template #frequency><slot name="chart-frequency" /></template>
       <template #overview>
         <NewowDecisionV2Panel v-if="experimentSharedChart" :response="experimentSharedChart" display-strategy="oscillation" background-label="震荡背景" :expected-owner="experimentDisplayOwner" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
@@ -473,12 +509,15 @@ onBeforeUnmount(() => {
       </template>
       <template #path><NewowDailyWeeklyPath :decision="experimentSharedChart ? experimentDecision : null" :loading="pathContext.loading" :error="experimentSharedChart ? pathContext.error : '同一合约段的震荡背景不可用'" /></template>
     </NewowExperimentPanel>
-    <template v-else>
-    <NewowDecisionV2Panel v-if="chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise')" :response="chartResponse" :display-strategy="dualMode ? 'dual' : selectedStrategy" :main-rise-background="selectedStrategy === 'main_rise'" :background-label="selectedStrategy === 'main_rise' ? '趋势日周背景' : undefined" :current-state="selectedStrategy === 'main_rise' ? describeNewowState(summary.status.state, summary.status.historical) : undefined" :expected-owner="selectedStrategy === 'main_rise' ? mainRiseOwner : undefined" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
+    <template v-else-if="!experimentKind">
+    <div class="newow-product-workspace__comparison-controls">
+      <button type="button" :disabled="loader.sections.chart.state.value === 'loading'" @click="refreshCurrent">刷新当前数据</button>
+    </div>
+    <NewowDecisionV2Panel v-if="chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise')" :response="chartResponse" :chart-sources="chartPriceSources(chartResponse, summary)" :display-strategy="dualMode ? 'dual' : selectedStrategy" :main-rise-background="selectedStrategy === 'main_rise'" :background-label="selectedStrategy === 'main_rise' ? '趋势日周背景' : undefined" :current-state="selectedStrategy === 'main_rise' ? describeNewowState(summary.status.state, summary.status.historical) : undefined" :expected-owner="selectedStrategy === 'main_rise' ? mainRiseOwner : undefined" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
     <div v-else-if="strategySwitching" class="newow-product-workspace__decision-loading" role="status">正在更新策略概览…</div>
-    <NewowPriceSources :rows="chartPriceSources(chartResponse, summary)" />
-    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
-    <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartReferenceCompatible ? [...(chartReferenceResponse?.value?.curve_trades ?? []), ...(chartReferenceResponse?.value?.items ?? [])] : []" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="[...(comparison.reference.value?.value?.curve_trades ?? []), ...(comparison.reference.value?.value?.items ?? [])]" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
+    <NewowPriceSources v-if="!(chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise'))" label="目标／吸筹来源" :rows="chartPriceSources(chartResponse, summary)" />
+    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="refreshCurrent" />
+    <div v-if="chartResponse !== null" ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartStatsPrimary.complete.value ? chartStatsPrimary.trades.value : referenceParts.chartCompatible.value ? referenceParts.trades.value : []" :reference-trades-complete="comparisonEnabled && comparison.response.value ? chartReferenceStatsComplete : primaryReferenceComplete" :reference-stats-loading="chartReferenceStatsLoading" :reference-stats-error="chartReferenceStatsError" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="chartStatsPartner.complete.value ? chartStatsPartner.trades.value : []" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @load-reference-stats="loadChartReferenceStats" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #reference-controls><slot name="chart-frequency" /></template>
     <template #main-controls><div class="newow-product-workspace__comparison-controls"><button v-if="selectedStrategy === 'main_rise'" @click="openDialog('magic11')">11周期 · 解读</button><button v-if="!dualMode" type="button" :disabled="selectedStrategy === 'main_rise'" :title="selectedStrategy === 'main_rise' ? '双策略对照由趋势与震荡组成，请切换到其中一个策略' : '读取相同时间与物理合约的另一策略，不合并收益'" :aria-pressed="comparisonEnabled && selectedStrategy !== 'main_rise'" @click="comparisonSelected = !comparisonSelected">双策略对照</button><span v-if="comparisonEnabled && selectedStrategy !== 'main_rise' && comparison.state.value !== 'ready'" role="status">{{ newowUiStateLabel(comparison.state.value) }} · {{ dualMode ? '下方统计为独立融合参考模型' : '参考统计仍属于 ' + newowDisplayLabel(selectedStrategy) }}</span><span v-if="comparison.referenceError.value" role="status">{{ comparison.referenceError.value }}</span><span v-if="comparison.error.value" role="status">{{ comparison.error.value }} <button @click="comparison.reload">重试对照</button></span></div></template>
     <template #auxiliary-controls>
@@ -527,11 +566,9 @@ onBeforeUnmount(() => {
       <span v-else-if="loader.dailySnapshot.value?.freshness === 'pending_update'">{{ loader.dailySnapshot.value.expected_trading_day }} 日线待更新，当前显示截至 {{ loader.dailySnapshot.value.available_trading_day }} 的完整日线</span>
       <span v-else-if="loader.weeklySnapshot.value?.freshness === 'pending_update'">{{ loader.weeklySnapshot.value.expected_period_end }} 周线待发布，当前显示截至 {{ loader.weeklySnapshot.value.available_period_end }} 的完整周线</span>
     </div>
-    <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
+    <section ref="referenceRegion" v-show="chartResponse !== null" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
-      <NewowFusionPanel v-if="dualMode && referenceResponse?.value" :key="identityKey" :response="referenceResponse" :ready-to-load="comparison.referenceSettled.value" @snapshot-conflict="recoverFusionSnapshotConflict" />
-      <p v-else-if="dualMode" role="status">{{ loader.sections.reference.state.value === 'loading' ? '正在读取双策略参考输入…' : '双策略参考输入暂不可用' }} <button v-if="loader.sections.reference.state.value !== 'loading'" @click="loader.loadReference()">重试</button></p>
-      <NewowReferencePanel v-else :key="identityKey" :updating-strategy="strategySwitching" :records-response="recentRecords.response.value" :records-loading="recentRecords.loading.value" :records-error="recentRecords.error.value" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="recentRecords.loadMore" @locate="locateReferenceTrade" />
+      <NewowReferencePartsPanel :key="identityKey" :state="referenceParts" :chart="chartResponse" :fusion="dualMode" :selected-signal-id="selectedSignalId" @locate="locateReferenceTrade" />
     </section>
     <NewowDailyWeeklyPath :key="identityKey" :decision="pathContext.decision" :loading="pathContext.loading" :error="pathContext.error" />
     </template>
@@ -639,38 +676,38 @@ onBeforeUnmount(() => {
   </section>
 </template>
 <style scoped>
-.newow-experiment-controls{display:flex;justify-content:flex-end;padding:2px 10px;font-size:12px;color:#667085}.newow-experiment-controls.is-active{color:#007aff}.newow-experiment-controls select{margin-left:8px;padding:4px;border:1px solid #e5e7eb;border-radius:6px;background:#fff}
+.newow-experiment-controls{display:flex;justify-content:flex-end;padding:2px 10px;font-size:12px;color:var(--gy-text-muted)}.newow-experiment-controls.is-active{color:var(--gy-accent)}.newow-experiment-controls select{margin-left:8px;padding:4px;border:1px solid #e5e7eb;border-radius:6px;background:var(--gy-bg-panel)}
 .newow-product-workspace { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; gap:3px; }
-.newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:#667085; }
-.newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:#fff; color:#667085; min-height:32px; padding:0 12px; cursor:pointer; }
+.newow-product-workspace__comparison-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 8px; font-size:11px; color:var(--gy-text-muted); }
+.newow-product-workspace__comparison-controls button { border:1px solid #ebedf0; border-radius:7px; background:var(--gy-bg-panel); color:var(--gy-text-muted); min-height:32px; padding:0 12px; cursor:pointer; }
 .newow-product-workspace__comparison-controls button[aria-pressed="true"] { color:#c2410c; border-color:#ff6b2c; background:#fff4ee; }
 .newow-product-workspace__unavailable-chart { min-height:clamp(580px,70vh,920px); box-sizing:border-box; }
-.newow-summary { display:grid; gap:8px; padding:8px 12px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
-.newow-product-workspace__load-notice { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:#667085; font-size:12px; }
+.newow-summary { display:grid; gap:8px; padding:8px 12px; border:1px solid #e9edf2; border-radius:12px; background:var(--gy-bg-panel); box-shadow:0 8px 24px #15223808; }
+.newow-product-workspace__load-notice { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:var(--gy-text-muted); font-size:12px; }
 .newow-summary__main,.newow-summary__facts { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; }
-.newow-summary__scope { font-size:10px; font-weight:400; color:#667085; margin-left:6px; }
+.newow-summary__scope { font-size:10px; font-weight:400; color:var(--gy-text-muted); margin-left:6px; }
 .newow-summary__main > strong { font-size:14px; }
 .newow-status { font-size:16px; font-weight:650; }
-.newow-summary__identity { color:#667085; font-size:12px; }
-.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:4px 8px; line-height:1.5; border-radius:8px; background:#f8fafc; }
+.newow-summary__identity { color:var(--gy-text-muted); font-size:12px; }
+.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:var(--gy-text-muted); }.newow-summary__facts > span { min-width:0; padding:4px 8px; line-height:1.5; border-radius:8px; background:#f8fafc; }
 .newow-product-workspace__research { min-width:0; }
-.newow-product-workspace__decision-loading { min-height:66px; display:flex; align-items:center; color:#999; font-size:13px; }
-.newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:#fff; color:inherit; padding:4px 12px; }
+.newow-product-workspace__decision-loading { min-height:66px; display:flex; align-items:center; color:var(--gy-text-muted); font-size:13px; }
+.newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:var(--gy-bg-panel); color:inherit; padding:4px 12px; }
 .newow-status { display:flex; align-items:center; gap:8px; }
-.newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:#f3f4f6; }
+.newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:var(--gy-bg-elevated); }
 .newow-status[data-state="BUILD"] { color:#ff403a; }.newow-status[data-state="HOLD"] { color:#ff6b2c; }.newow-status[data-state="CLEAR"] { color:#22b95d; }.newow-status[data-state="FLAT"] { color:#365af5; }
 .newow-price small { font-size:11px; }.newow-summary__evidence { margin-left:auto; border:1px solid var(--gy-border) !important; border-radius:var(--gy-radius-md); min-height:36px; }
 .newow-product-workspace__auxiliary-controls { display:flex; align-items:center; min-width:0; border-top:1px solid #ebedf0; font-size:12px; }
 .newow-product-workspace__auxiliary-tabs { display:flex; flex:1 1 auto; min-width:0; align-items:center; overflow-x:auto; white-space:nowrap; }
 .newow-product-workspace__auxiliary-controls button { flex:none; min-height:36px; padding:0 10px; }
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { color:#ff6b2c; border-bottom:2px solid #ff6b2c; }
-.newow-product-workspace__indicator-help { flex:none; min-height:25px; margin:0 8px 0 12px; padding:2px 10px; border:1px solid #1677ff; border-radius:16px; background:#fff; color:#1677ff; font-size:12px; line-height:18px; cursor:pointer; }
+.newow-product-workspace__indicator-help { flex:none; min-height:25px; margin:0 8px 0 12px; padding:2px 10px; border:1px solid #1677ff; border-radius:16px; background:var(--gy-bg-panel); color:#1677ff; font-size:12px; line-height:18px; cursor:pointer; }
 .newow-product-workspace__auxiliary-legend-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:4px 10px 16px; font-size:12px; }
 .newow-product-workspace__auxiliary-legend-row > .newow-product-workspace__indicator-help { margin-left:auto; flex-shrink:0; }
 .newow-product-workspace__indicator-help:hover { background:#f2f7ff; }
 .newow-product-workspace__indicator-help:focus-visible { outline:2px solid #1677ff; outline-offset:2px; }
-.newow-mirror-legend { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; min-height:22px; overflow-x:auto; padding:0 10px; color:#667085; font-size:11px; line-height:16px; white-space:nowrap; background:#fff; }
-.newow-mirror-legend__title { color:#667085; }
+.newow-mirror-legend { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; min-height:22px; overflow-x:auto; padding:0 10px; color:var(--gy-text-muted); font-size:11px; line-height:16px; white-space:nowrap; background:var(--gy-bg-panel); }
+.newow-mirror-legend__title { color:var(--gy-text-muted); }
 .newow-mirror-legend__item { display:inline-flex; align-items:center; gap:4px; }
 .newow-mirror-legend__item i { display:inline-block; flex:0 0 8px; width:8px; height:8px; border-radius:2px; }
 .newow-mirror-legend__item b { font-size:10px; line-height:1; }
@@ -704,7 +741,7 @@ onBeforeUnmount(() => {
 .newow-niuwa-explanation__cycle small { color:#9899a2; font-size:11px; }
 .newow-niuwa-explanation__cycle p { display:flex; align-items:center; justify-content:center; gap:4px; margin-top:10px; white-space:nowrap; font-size:13px; }
 .newow-niuwa-explanation__cycle span { color:#777985; }
-.newow-niuwa-explanation__verse { margin-bottom:14px; padding:16px 12px; border-left:4px solid #ffcc00; border-radius:11px; background:linear-gradient(110deg,#243c60,#2b1f49); color:#fff; text-align:center; font-weight:700; }
+.newow-niuwa-explanation__verse { margin-bottom:14px; padding:16px 12px; border-left:4px solid #ffcc00; border-radius:11px; background:linear-gradient(110deg,#243c60,#2b1f49); color:var(--gy-bg-panel); text-align:center; font-weight:700; }
 .newow-niuwa-explanation__verse > strong { color:#ffcc00; font-size:13px; }
 .newow-niuwa-explanation__verse p { margin-top:10px; font-size:12.5px; line-height:1.8; }
 .newow-niuwa-explanation__verse em { color:#ff9500; font-style:normal; }.newow-niuwa-explanation__verse em.newow-niuwa-explanation__red { color:#ff403a; }.newow-niuwa-explanation__verse em.newow-niuwa-explanation__muted { color:#999ba2; }
@@ -715,7 +752,7 @@ onBeforeUnmount(() => {
 .newow-niuwa-explanation__control-rows > div { display:flex; gap:9px; align-items:start; }
 .newow-niuwa-explanation__control-rows strong { font-size:13px; }
 .newow-niuwa-explanation__note { margin-top:16px !important; color:#898c92; font-size:10.5px; text-align:center; }
-.newow-trend-reversal-legend { display:grid; gap:4px; padding:4px 10px; font-size:11px; color:#8a909b; background:#fff; }.newow-trend-reversal-legend > div { display:flex; align-items:center; gap:12px; min-height:16px; }.newow-trend-reversal-legend strong { color:#383d48; }.newow-trend-reversal-legend__keys { display:inline-flex; gap:12px; margin-left:auto; }.newow-trend-reversal-legend i { display:inline-block; width:8px; height:8px; border-radius:1px; }.newow-trend-reversal-legend__bias { background:linear-gradient(#ff403a 50%,#30b458 50%); }
+.newow-trend-reversal-legend { display:grid; gap:4px; padding:4px 10px; font-size:11px; color:#8a909b; background:var(--gy-bg-panel); }.newow-trend-reversal-legend > div { display:flex; align-items:center; gap:12px; min-height:16px; }.newow-trend-reversal-legend strong { color:#383d48; }.newow-trend-reversal-legend__keys { display:inline-flex; gap:12px; margin-left:auto; }.newow-trend-reversal-legend i { display:inline-block; width:8px; height:8px; border-radius:1px; }.newow-trend-reversal-legend__bias { background:linear-gradient(#ff403a 50%,#30b458 50%); }
 .newow-trend-reversal-explanation { font-size:12px; line-height:1.35; color:#56595d; }
 .newow-trend-reversal-explanation__intro { margin:0 0 14px; color:#888b91; text-align:center; font-size:12.5px; font-weight:600; line-height:1.35; }
 .newow-trend-reversal-explanation__list { display:grid; gap:10px; }
@@ -734,7 +771,7 @@ onBeforeUnmount(() => {
 .newow-trend-reversal-explanation__list--followup { gap:12px; }
 .newow-trend-reversal-explanation__disclaimer { margin:18px 0 0; color:#898c92; text-align:center; font-size:12px; }
 .newow-product-workspace__notice { color:#b45309; }
-.newow-product-workspace__reference-message { margin:0; padding:8px; color:#b45309; border:1px solid var(--gy-border); border-radius:7px; background:#fff; }
+.newow-product-workspace__reference-message { margin:0; padding:8px; color:#b45309; border:1px solid var(--gy-border); border-radius:7px; background:var(--gy-bg-panel); }
 .newow-window-state { display:grid; gap:6px; padding:12px; border:1px solid var(--gy-border); border-radius:7px; }
 .newow-window-state h3,.newow-window-state p { margin:0; }
 .newow-window-state h3 { font-size:14px; }
@@ -747,10 +784,10 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 .newow-test-menu { position:relative; color:#888; font-size:14px; }
 .newow-test-menu summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:4px; height:36px; padding:0 12px; border-radius:6px; background:#f0f0f5; font-weight:600; }
 .newow-test-menu summary::-webkit-details-marker { display:none; }
-.newow-test-menu summary:focus-visible { outline:2px solid #007aff; outline-offset:2px; }
-.newow-test-menu summary.is-active { background:#ff6b2c; color:#fff; }
-.newow-test-menu__popup { position:absolute; z-index:100; top:calc(100% + 4px); left:0; width:88px; padding:4px 0; border-radius:8px; background:#fff; box-shadow:0 4px 16px #00000026; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button { display:block; width:100%; min-height:32px; padding:0 14px; text-align:left; border-radius:0; background:#fff; color:#222; font-size:13px; font-weight:400; }
+.newow-test-menu summary:focus-visible { outline:2px solid var(--gy-accent); outline-offset:2px; }
+.newow-test-menu summary.is-active { background:#ff6b2c; color:var(--gy-bg-panel); }
+.newow-test-menu__popup { position:absolute; z-index:100; top:calc(100% + 4px); left:0; width:88px; padding:4px 0; border-radius:8px; background:var(--gy-bg-panel); box-shadow:0 4px 16px #00000026; }
+.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button { display:block; width:100%; min-height:32px; padding:0 14px; text-align:left; border-radius:0; background:var(--gy-bg-panel); color:#222; font-size:13px; font-weight:400; }
 .unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button:hover { background:#f5f5f7; }
 .unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button[aria-pressed=true] { color:#ff6b2c; }
 </style>

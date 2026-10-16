@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from app.read_timings import timed
+
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -159,6 +161,7 @@ class MarketCatalog:
                 connection.close()
             raise
 
+    @timed("catalog")
     def dataset_row(
         self, key: DatasetKey, *, create: bool = False
     ) -> MarketDataset | None:
@@ -182,6 +185,7 @@ class MarketCatalog:
             self.session.flush()
         return row
 
+    @timed("catalog")
     def contract_fact(self, symbol: str, contract: str) -> ContractFact:
         """解析唯一具体合约身份与 ``[listed_date, expired_date)`` 生命周期。"""
         normalized_symbol = symbol.strip().lower()
@@ -244,6 +248,7 @@ class MarketCatalog:
                 setattr(row, field, value)
         self.session.flush()
 
+    @timed("catalog")
     def partitions(
         self,
         key: DatasetKey,
@@ -269,6 +274,7 @@ class MarketCatalog:
         )
         return tuple(self._partition(key, row) for row in rows)
 
+    @timed("catalog")
     def all_partitions(self, key: DatasetKey) -> tuple[CatalogPartition, ...]:
         """返回某数据集的全部月分区（维护/审计用，不做时间过滤）。"""
         dataset = self.dataset_row(key)
@@ -281,6 +287,7 @@ class MarketCatalog:
         )
         return tuple(self._partition(key, row) for row in rows)
 
+    @timed("catalog")
     def product_partitions(self, symbol: str) -> tuple[CatalogPartition, ...]:
         """One metadata-only inventory for bounded maintenance; never reads files."""
         rows = self.session.execute(
@@ -297,6 +304,7 @@ class MarketCatalog:
             for dataset, partition in rows
         )
 
+    @timed("catalog")
     def partitions_before(
         self,
         key: DatasetKey,
@@ -314,6 +322,7 @@ class MarketCatalog:
         )
         return tuple(self._partition(key, row) for row in rows)
 
+    @timed("catalog")
     def contract_partitions_before(
         self,
         symbol: str,
@@ -375,6 +384,7 @@ class MarketCatalog:
                 row.rule = "volume_open_interest"
         self.session.flush()
 
+    @timed("mapping")
     def main_map(self, symbol: str, start: date, end: date) -> tuple[MainMapFact, ...]:
         """查询日期闭区间内的主力映射，按交易日升序。"""
         rows = self.session.scalars(
@@ -391,6 +401,7 @@ class MarketCatalog:
             MainMapFact(row.symbol, row.trade_date, row.contract_code) for row in rows
         )
 
+    @timed("mapping")
     def main_map_before(
         self,
         symbol: str,
@@ -410,6 +421,7 @@ class MarketCatalog:
             MainMapFact(row.symbol, row.trade_date, row.contract_code) for row in rows
         )
 
+    @timed("catalog")
     def exchange_for_symbol(self, symbol: str) -> str:
         """解析品种所属交易所代码；无活跃 ``Instrument`` 时 ``INSTRUMENT_EXCHANGE_MISSING``。"""
         exchange = self.session.scalar(
@@ -422,9 +434,13 @@ class MarketCatalog:
             raise CatalogError("INSTRUMENT_EXCHANGE_MISSING")
         return exchange
 
+    @timed("session")
     def trading_days(self, symbol: str, start: date, end: date) -> tuple[date, ...]:
         """经品种反查交易所后，返回区间内 ``is_trading_day=True`` 的日期列表。"""
         exchange = self.exchange_for_symbol(symbol)
+        return self._exchange_trading_days(exchange, start, end)
+
+    def _exchange_trading_days(self, exchange: str, start: date, end: date) -> tuple[date, ...]:
         return tuple(
             self.session.scalars(
                 select(TradingCalendar.trade_date)
@@ -438,6 +454,7 @@ class MarketCatalog:
             )
         )
 
+    @timed("session")
     def calendar_days(
         self,
         symbol: str,
@@ -457,6 +474,7 @@ class MarketCatalog:
         )
         return tuple(rows.tuples().all())
 
+    @timed("session")
     def trading_days_overlapping_window(
         self,
         symbol: str,
@@ -473,6 +491,7 @@ class MarketCatalog:
             for day, _ in self.session_windows_overlapping_window(symbol, start, end)
         )
 
+    @timed("session")
     def session_windows_overlapping_window(
         self,
         symbol: str,
@@ -486,7 +505,7 @@ class MarketCatalog:
         exchange = self.exchange_for_symbol(symbol)
         start_day = start.astimezone(SHANGHAI).date()
         end_day = end.astimezone(SHANGHAI).date()
-        candidates = list(self.trading_days(symbol, start_day, end_day))
+        candidates = list(self._exchange_trading_days(exchange, start_day, end_day))
         next_day = self.session.scalar(
             select(TradingCalendar.trade_date)
             .where(

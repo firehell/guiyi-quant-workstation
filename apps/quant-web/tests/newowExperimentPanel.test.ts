@@ -98,7 +98,7 @@ test('experiment presentation keeps model and contract identity while toggling c
  const callout=findNode(root,n=>n.props['data-action-id']==='current')!;assert.ok(callout);assert.match(nodeText(callout),/建仓 100.13/)
  assert.equal(findNode(root,n=>n.props['data-action-id']==='old'),undefined)
  const click=async(label:string)=>{const button=findNode(root,n=>n.type==='button'&&nodeText(n).trim()===label)!;assert.ok(button,label);(button.props.onClick as ()=>void)();await flush()}
- await click('查看全部 5 笔页面记录');assert.equal(cards().length,5)
+ await click('加载更多参考记录');assert.equal(cards().length,5)
  await click('收起');assert.equal(cards().length,3)
  await click('理论值');assert.equal(cards().length,3);assert.match(nodeText(cards()[0]!),/200.13/)
  assert.equal(mock.calls.length,base+1,'theoretical toggle does not reload or mix results')

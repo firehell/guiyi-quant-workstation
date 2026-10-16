@@ -63,7 +63,7 @@ test('rejects explicit fixed-view identity conflicts without correcting the URL'
     view: 'trend', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m',
   }).kind, 'invalid')
   assert.deepEqual(parseMarketDetailRoute({
-    view: 'subing', symbol: 'jm', series_kind: 'continuous', frequency: '15m',
+    view: 'subing', symbol: 'jm', series_kind: 'contract', frequency: '15m',
   }).kind, 'invalid')
 })
 
@@ -72,7 +72,7 @@ test('validates flexible identities and requires a contract only for contract se
     view: 'htdy', symbol: 'jm', series_kind: 'continuous', frequency: '60m',
   }), {
     kind: 'valid',
-    identity: { view: 'htdy', symbol: 'jm', seriesKind: 'continuous', frequency: '60m' },
+    identity: { view: 'htdy', symbol: 'jm', seriesKind: 'actual_dominant', frequency: '60m' },
   })
   assert.deepEqual(parseMarketDetailRoute({
     view: 'free', symbol: 'jm', series_kind: 'contract', frequency: '1d', contract: 'JM2601',
@@ -94,7 +94,6 @@ test('fails closed for unknown values and malformed route fields', () => {
     { view: 'free', symbol: 'jm', series_kind: 'actual_dominant', frequency: '2h' },
     { view: 'htdy', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', focus_bar_end: '2026-02-30T02:45:00Z' },
     { view: 'trend', symbol: 'jm', focus_bar_end: 'not-an-instant' },
-    { view: 'free', symbol: 'jm', series_kind: 'continuous', frequency: '15m', focus_bar_end: '2026-09-02T02:45:00Z' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 })
 
@@ -111,7 +110,7 @@ test('serializes only concrete contract and allowed focus fields', () => {
 test('switching views restores only active unified view state', () => {
   const restore = {
     newow: { strategy: 'main_rise' as const, frequency: '1w' as const },
-    htdy: { seriesKind: 'continuous' as const, frequency: '60m' as const },
+    htdy: { seriesKind: 'actual_dominant' as const, frequency: '60m' as const },
     free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
   }
   assert.deepEqual(resolveViewSwitchIdentity('newow', 'rb', null, restore), {
@@ -124,7 +123,7 @@ test('switching views restores only active unified view state', () => {
 
 test('reselecting a flexible view preserves its same-symbol contract identity', () => {
   const restore = {
-    htdy: { seriesKind: 'continuous' as const, frequency: '60m' as const },
+    htdy: { seriesKind: 'actual_dominant' as const, frequency: '60m' as const },
     free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
   }
   for (const view of ['free', 'htdy'] as const) {
@@ -138,7 +137,7 @@ test('reselecting a flexible view preserves its same-symbol contract identity', 
 
 test('switching a flexible contract view to another symbol uses safe restore without old contract', () => {
   const restore = {
-    htdy: { seriesKind: 'continuous' as const, frequency: '60m' as const },
+    htdy: { seriesKind: 'actual_dominant' as const, frequency: '60m' as const },
     free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
   }
   assert.deepEqual(resolveViewSwitchIdentity('free', 'rb', {
@@ -215,4 +214,19 @@ test('dual presentation roundtrips without inventing a fourth strategy kernel', 
     { view: 'free', newow_mode: 'dual', frequency: '1d', series_kind: 'actual_dominant' },
   ]) assert.equal(parseMarketDetailRoute({ symbol: 'jm', ...query }).kind, 'invalid')
   assert.equal(parseMarketDetailRoute({ view: 'newow', symbol: 'jm', strategy: 'main_rise' }).kind, 'valid')
+})
+
+test('legacy continuous links resolve to actual dominant before any consumer identity is built', () => {
+  for (const view of ['free', 'htdy', 'subing', 'newow']) {
+    const result = parseMarketDetailRoute({view, symbol:'jm', series_kind:'continuous', frequency:'15m', contract:'JM2601', focus_bar_end:'2026-09-02T02:45:00Z'})
+    assert.equal(result.kind, 'valid', view)
+    if (result.kind !== 'valid') continue
+    assert.equal(result.identity.seriesKind, 'actual_dominant')
+    assert.equal(result.identity.frequency, '15m')
+    assert.equal(result.identity.contract, undefined)
+    assert.equal(result.identity.focusBarEnd, undefined)
+    assert.equal(serializeMarketDetailIdentity(result.identity).series_kind, 'actual_dominant')
+  }
+  assert.equal(parseMarketDetailRoute({view:'free',symbol:'jm',series_kind:['continuous'],frequency:'15m'}).kind,'invalid')
+  assert.equal(parseMarketDetailRoute({view:'free',symbol:'jm',series_kind:'continuous',frequency:'2h'}).kind,'invalid')
 })

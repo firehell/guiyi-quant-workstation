@@ -46,6 +46,16 @@ export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
 
 export function buildNewowFixtureEnvelopeForTest(section = 'reference', strategy = 'trend', frequency = '1d', cursor = false, locateFrom = null, options = {}) {
   const url = fixtureValidationUrl(section, strategy, frequency, cursor, locateFrom)
+  if (section === 'auxiliary' && options.component) url.searchParams.set('component', options.component)
+  const payload = envelope(url, section, strategy, frequency, options)
+  validateFixtureEnvelope(payload, section, strategy, frequency, url, options)
+  return payload
+}
+
+export function buildNewowSplitFixtureEnvelopeForTest(url, options = {}) {
+  const section = url.searchParams.get('section') || 'reference'
+  const strategy = url.searchParams.get('strategy') || 'trend'
+  const frequency = url.searchParams.get('frequency') || '1d'
   const payload = envelope(url, section, strategy, frequency, options)
   validateFixtureEnvelope(payload, section, strategy, frequency, url, options)
   return payload
@@ -220,8 +230,8 @@ export async function installNewowProductFixtures(page, options = {}) {
       return route.fulfill({ json: payload })
     }
 
-    if (url.pathname === '/api/v1/market/dominants') {
-      return route.fulfill({ json: { items: [{ product: 'rb', product_name: '螺纹钢', sector: '黑色', exchange: 'SHFE', actual_contract: CONTRACT, dominant_mapping_date: '2026-09-03' }] } })
+    if (url.pathname === '/api/v1/market/product-directory') {
+      return route.fulfill({ json: { items: [{ product: 'rb', product_name: '螺纹钢', sector: '黑色', exchange: 'SHFE' }] } })
     }
     if (url.pathname === '/api/v1/market/research/product') return route.fulfill({ json: researchProduct() })
     if (url.pathname === '/api/v1/market/state') return route.fulfill({ json: marketState(url) })
@@ -290,10 +300,16 @@ function validateFixtureScenario(strategy, frequency, options) {
 }
 
 function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF, dualMarket = false) {
+  if (url.searchParams.has('resolve_current')) {
+    if (section !== 'chart' || !['1d', '1w'].includes(frequency) || url.searchParams.get('resolve_current') !== 'true' || url.searchParams.has('as_of') || url.searchParams.has('snapshot_token')) return 'invalid current chart resolution'
+    const explicit = new URL(url)
+    explicit.searchParams.delete('resolve_current'); explicit.searchParams.set('as_of', expectedAsOf)
+    return validateProductQuery(explicit, section, strategy, frequency, expectedAsOf, dualMarket)
+  }
   const allowedBySection = {
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
-    reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token', 'include_fusion'],
+    reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token', 'include_fusion', 'reference_part', 'reference_mode'],
     explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token', 'decision_v2'],
     comparator: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
   }
@@ -306,9 +322,12 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   if (url.searchParams.get('as_of') !== expectedAsOf) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
-  if (url.searchParams.has('include_fusion') && (section !== 'reference' || strategy !== 'trend' || url.searchParams.get('include_fusion') !== 'true' || url.searchParams.has('history_limit') || !url.searchParams.has('snapshot_token') || !url.searchParams.has('performance_since') || !url.searchParams.has('performance_through'))) return `invalid fusion query ${url.search}`
+  const part = url.searchParams.get('reference_part'), mode = url.searchParams.get('reference_mode')
+  if (part && (section !== 'reference' || !['overview', 'curve', 'history', 'panel'].includes(part) || !['page_ordinary', 'page_ideal', 'closed', 'holding', 'theoretical', 'fusion_page_ordinary', 'fusion_page_ideal', 'fusion_closed', 'fusion_holding', 'fusion_theoretical'].includes(mode))) return `invalid split reference ${url.search}`
+  if (url.searchParams.has('include_fusion') && (section !== 'reference' || strategy !== 'trend' || url.searchParams.get('include_fusion') !== 'true' || !mode?.startsWith('fusion_'))) return `invalid fusion query ${url.search}`
+  if (part && mode.startsWith('fusion_') !== url.searchParams.has('include_fusion')) return `fusion mode flag conflict ${url.search}`
   if (url.searchParams.has('decision_v2') && (section !== 'explanation' || url.searchParams.get('decision_v2') !== 'true')) return `invalid decision V2 query ${url.search}`
-  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion'].includes(key)).sort().join(',')
+  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion', 'reference_part', 'reference_mode'].includes(key)).sort().join(',')
   const allowedShapes = {
     chart: ['', 'chart_limit', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
     auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
@@ -318,11 +337,12 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   }
   const partnerRecords = dualMarket && section === 'reference' && strategy === 'oscillation' && optionalShape === 'history_limit,snapshot_token' && url.searchParams.get('history_limit') === '200'
   if (!partnerRecords && !allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
-  if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
+  if (part && (part !== 'history' && (url.searchParams.has('history_limit') || url.searchParams.has('history_before')) || !url.searchParams.has('snapshot_token'))) return `invalid split part shape ${url.search}`
+  if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'trend_reversal', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
   if (url.searchParams.has('history_limit') && !['50', '200'].includes(url.searchParams.get('history_limit'))) return `invalid reference limit ${url.search}`
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
-  if (url.searchParams.has('history_before') && url.searchParams.get('history_before') !== 'reference-page-2') return `invalid reference cursor ${url.search}`
+  if (url.searchParams.has('history_before') && !part && url.searchParams.get('history_before') !== 'reference-page-2') return `invalid reference cursor ${url.search}`
   if (url.searchParams.has('snapshot_token') && url.searchParams.get('snapshot_token') !== `snapshot:${strategy}:${frequency}:fixture-revision-1`) return `invalid snapshot token ${url.search}`
   if (url.searchParams.has('performance_since') && !['2026-01-01', '2026-06-03'].includes(url.searchParams.get('performance_since'))) return `invalid performance start ${url.search}`
   if (url.searchParams.has('performance_through') && url.searchParams.get('performance_through') !== '2026-09-03') return `invalid performance end ${url.search}`
@@ -369,6 +389,12 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
     if (JSON.stringify(payload.chart.value.actions.map(actionRelation)) !== JSON.stringify(expected.map(actionRelation))) throw new Error('fixture chart Action relation drift')
   }
   if (section === 'reference' && payload.reference.value !== null) {
+    if (url?.searchParams.has('reference_part')) {
+      const value = payload.reference.value
+      if (value.reference_part !== url.searchParams.get('reference_part') || value.reference_mode !== url.searchParams.get('reference_mode')) throw new Error('split fixture mode drift')
+      if (['overview', 'panel'].includes(value.reference_part) && value.recent_items.length > 3 || ['curve', 'panel'].includes(value.reference_part) && value.curve.points.length > 2000 || value.reference_part === 'history' && value.items.length > 50) throw new Error('split fixture budget drift')
+      return
+    }
     validateReferenceWire(payload.reference.value, companions.charts ?? [])
     let expected = options.initialClear === true && strategy === 'main_rise' && frequency === '1d'
       ? []
@@ -476,6 +502,10 @@ function unexpected(route, state, message) {
 }
 
 function envelope(url, section, strategy, frequency, options) {
+  if (url.searchParams.get('resolve_current') === 'true') {
+    url = new URL(url)
+    url.searchParams.set('as_of', options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF)
+  }
   const wrappers = {
     chart: notRequested(), auxiliary: notRequested(), reference: notRequested(),
     explanation: notRequested(), comparator: notRequested(),
@@ -483,7 +513,10 @@ function envelope(url, section, strategy, frequency, options) {
   let status = ready()
   let value
   if (section === 'chart') value = chartValue(url, strategy, frequency, options)
-  else if (section === 'reference') value = referenceValue(url, strategy, frequency, options)
+  else if (section === 'reference') {
+    value = referenceValue(url, strategy, frequency, options)
+    if (url.searchParams.has('reference_part')) value = splitReferenceValue(value, url, strategy)
+  }
   else if (section === 'auxiliary') {
     const component = url.searchParams.get('component') || 'main_force_control'
     if (options.auxiliaryState?.[component]) {
@@ -493,7 +526,18 @@ function envelope(url, section, strategy, frequency, options) {
   } else if (section === 'explanation') value = explanationValue(url.searchParams.get('as_of') || NEWOW_AS_OF)
   else value = comparatorValue(strategy, frequency, url.searchParams.get('as_of') || NEWOW_AS_OF)
   wrappers[section] = delivered(status, value)
-  return { meta: meta(url, strategy, frequency, section, options), section, ...wrappers }
+  const result = { meta: meta(url, strategy, frequency, section, options), section, ...wrappers }
+  if (url.searchParams.get('resolve_current') === 'true') result.snapshot_context = {
+    frequency, requested_at: NEWOW_AS_OF, as_of: result.meta.as_of, freshness: options.pendingCurrent ? 'pending_update' : 'current',
+    ...(frequency === '1d' ? {
+      expected_trading_day: options.pendingCurrent
+        ? new Date(Date.parse(`${value.bars.at(-1).trading_day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+        : value.bars.at(-1).trading_day,
+      available_trading_day: value.bars.at(-1).trading_day,
+    }
+      : { expected_period_end: result.meta.as_of, available_period_end: result.meta.as_of, current_context: {} }),
+  }
+  return result
 }
 
 function meta(url, strategy, frequency, section, options) {
@@ -674,6 +718,57 @@ function referenceValue(url, strategy, frequency, options) {
   }
 }
 
+function splitReferenceValue(value, url, strategy) {
+  const part = url.searchParams.get('reference_part')
+  const mode = url.searchParams.get('reference_mode')
+  const localMode = mode.replace(/^fusion_/, '')
+  const common = Object.fromEntries(['performance_since', 'performance_through', 'actual_available_through', 'reference_cutoff', 'reference_input_sha256', 'history_coverage', 'executable', 'auto_order', 'allowed_uses'].map(key => [key, value[key]]))
+  const recordFloor = ['5m', '15m', '30m', '60m'].includes(url.searchParams.get('frequency'))
+    ? new Date(Date.parse(`${value.performance_through}T00:00:00Z`) - 364 * 86400000).toISOString().slice(0, 10)
+    : value.performance_since
+  common.record_since = localMode.startsWith('page_') || ['1d', '1w'].includes(url.searchParams.get('frequency'))
+    ? value.performance_since
+    : mode.startsWith('fusion_') ? recordFloor : recordFloor > value.performance_since ? recordFloor : value.performance_since
+  common.records_window_limited = common.record_since > value.performance_since
+  common.result_hash = HASH.reference
+  common.reference_part = part
+  common.reference_mode = mode
+  const closed = value.items.filter(row => row.status === 'CLOSED')
+  const pageRows = closed.map(row => ({ buyDate: row.entry_bar_end, buyPrice: row.entry_reference_price,
+    sellDate: row.exit_bar_end, sellPrice: row.exit_reference_price, pct: row.reference_return_pct,
+    forceClose: false, segment_id: row.segment_id }))
+  const rows = localMode.startsWith('page_') ? pageRows : value.items
+  const overview = { ...common, summary: value.summary,
+    unavailable_days: value.unavailable_days, coverage_intervals: value.coverage_intervals,
+    recent_items: rows.slice(0, 3), page_summaries: { ordinary: { cumReturn: value.summary.sum_return_percentage_points ?? '0', accuracy: value.summary.closed_count ? 100 : 0, maxDrawdown: '0', tradeCount: pageRows.length }, ideal: { cumReturn: value.summary.sum_return_percentage_points ?? '0', accuracy: value.summary.closed_count ? 100 : 0, maxDrawdown: '0', tradeCount: pageRows.length } },
+    ...(mode.startsWith('fusion_') ? { fusion_groups: ['trend', 'oscillation', 'fusion'].map(model => ({ model, closed_count: value.summary.closed_count, sum_return_percentage_points: value.summary.sum_return_percentage_points, open_count: value.summary.open_count, interrupted_count: value.summary.interrupted_count })) } : {}) }
+  if (part === 'overview') return overview
+  if (part === 'history') return { ...common, items: rows.length > 2 ? rows.slice(0, 2) : rows.slice(0, 50),
+    next_before: rows.length > 2 ? 'reference-page-2' : value.next_before }
+  const pagePoints = closed.length ? [
+    { position: 0, bar_end: closed[0].entry_bar_end, trading_day: closed[0].entry_trading_day, segment_id: closed[0].segment_id, value: '0' },
+    { position: 1, bar_end: closed[0].exit_bar_end, trading_day: closed[0].exit_trading_day, segment_id: closed[0].segment_id, value: closed[0].reference_return_pct },
+  ] : []
+  let cumulativeClosed = 0
+  const closedPoints = closed.toSorted((a, b) => a.exit_bar_end.localeCompare(b.exit_bar_end)).map((row, position) => {
+    cumulativeClosed += Number(row.reference_return_pct)
+    return { position, bar_end: row.exit_bar_end, trading_day: row.exit_trading_day,
+      physical_contract: row.physical_contract, segment_id: row.segment_id, reference_trade_id: row.reference_trade_id,
+      return_pct: row.reference_return_pct, value: cumulativeClosed.toFixed(4), trade: row }
+  })
+  const holdingPoints = closed.length ? [
+    { position: 0, bar_end: closed[0].entry_bar_end, trading_day: closed[0].entry_trading_day, segment_id: closed[0].segment_id, physical_contract: closed[0].physical_contract, value: '0' },
+    { position: 1, bar_end: closed[0].exit_bar_end, trading_day: closed[0].exit_trading_day, segment_id: closed[0].segment_id, physical_contract: closed[0].physical_contract, value: closed[0].reference_return_pct },
+  ] : []
+  const points = localMode.startsWith('page_') ? pagePoints : localMode === 'holding' ? holdingPoints : closedPoints
+  return { ...(part === 'panel' ? overview : common), curve: { mode, points, total_points: points.length, sampled: false,
+    model_version: localMode.startsWith('page_') ? 'newow_page_performance_v3379_v2' : 'newow_marker_reference_zero_cost_v4',
+    annualized_pct: closed.length ? '5.10' : null,
+    metrics: { return_percentage_points: value.summary.sum_return_percentage_points, win_rate_pct: value.summary.win_rate_pct,
+      closed_count: value.summary.closed_count, drawdown: closed.length ? '0' : null,
+      drawdown_kind: localMode === 'page_ordinary' ? 'peak_difference' : localMode === 'page_ideal' ? 'maximum_trade_loss' : 'equity_ratio' } } }
+}
+
 function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, entrySignalId, entrySequence, entryPrice, exitSignalId, exitPrice, markOwner, markPrice, membership = 'entry_in_window_v1') {
   return {
     reference_trade_id: tradeId, product: 'rb', strategy_code: strategy, frequency, physical_contract: entry.physical_contract, segment_id: entry.segment_id, calculation_segment_id: entry.calculation_segment_id,
@@ -729,7 +824,11 @@ function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') 
     const laterWitness = { ...witness, witness_id: 'fixture-cup-2', candidate_id: 'fixture-cup-2', pivot_price: '108.0000', score: 68 }
     return { ...base, formula_version: 'newow_cup_handle_v1', segments: frequency === '1d' ? [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: ['2026-09-03T07:00:00.000Z'], status: ready(), data: [witness, laterWitness] }] : [] }
   }
-  const barEnds = ['2026-09-02T07:00:00.000Z', '2026-09-03T07:00:00.000Z']
+  const barEnds = [productBar(frequency, 62).bar_end, productBar(frequency, 63).bar_end]
+  if (component === 'trend_reversal') {
+    const formula_version = 'newow_trend_reversal_core_1_0_0_futures_segment_v1'
+    return { ...base, formula_version, segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { wr1: [2.5, 3], wr2: [0, 1], bias: [4, 2], rebound: [0, 0], adjust: [4, 2], ma120: [100, 101], hhv: [110, 111], llv: [90, 91], enough: false, bar_count: 2, formula_version } }] }
+  }
   if (component === 'main_force_control') return { ...base, formula_version: 'newow_main_force_control_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { kongpan: [10, 12], status: ['HOLD', 'BUILD'], current_status: 'BUILD', formula_version: 'newow_main_force_control_page_v1' } }] }
   if (component === 'up_down_energy') return { ...base, formula_version: 'newow_up_down_energy_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { var4: [1, 2], ma10: [1, 1.5], band_entry: [0, 1], rebound_entry: [0, 0], oversold_entry: [0, 0], var3: [1, 2], ma120: [1, 1], formula_version: 'newow_up_down_energy_page_v1' } }] }
   return { ...base, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1', repainting: true, formal_signal_eligible: false, segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { entry: [0, 1], wash: [1, 0], distribution: [0, 0], markup: [1, 2], exit: [0, 0], inducement: [0, 0], peaks: [1, 2], caution: [0, 1], repainting: true, formal_signal_eligible: false, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1' } }] }

@@ -2,20 +2,35 @@
 
 更新时间：2026-09-27
 
-归一量化是本地、单用户的国内期货研究工作站。稳定产品边界允许可信行情、Market Web、Newow 只读策略与参考交易、通用指标、HTDY/苏冰研究观察、Alert 与人工判断；当前不提供自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有图表、参考交易和通知都是研究观察，`auto_order=false`。具体代码、Release 与 Runtime 是否已经具备这些能力，仍以代码、测试和 `STATUS.md` 为准。
+归一量化是本地、单用户的国内期货研究工作站。稳定产品边界允许可信行情、Market Web、Newow 只读策略与参考交易、通用指标、HTDY/苏冰研究观察、Alert 与人工判断，以及独立 CLI 的 JM 本地 Paper 试点；当前不提供自动交易、实盘下单、Broker 账户管理、SaaS、多用户权限或 AI 自动晋升。所有图表、参考交易和通知都是研究观察，`auto_order=false`。Paper 模型订单、成交和账本不接入现有页面事实；合同见 [Paper 试点](docs/PAPER_PILOT.md)。具体代码、Release 与 Runtime 是否已经具备这些能力，仍以代码、测试和 `STATUS.md` 为准。
 
 长期允许按人工 Gate 分阶段评估 `研究观察 → Paper → Shadow → Broker Read-only → 订单草稿 → 人工确认 → 半自动 → 受控自动`；这不是当前能力或晋升授权。AI 可自动研究，不能自动晋升、修改 active 策略或决定真实账户持仓。苏冰课程 Knowledge Foundation 属于独立 AutoTrade 项目，不在本仓库维护课程开发计划、代码、私有数据或 Runtime 依赖。
 
 ## Market Web
 
-- 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
+- Market 页面为 `/market` 与 `/market/chart`；独立历史研究入口为 `/research/new-subing`。
+- Web 隐藏主连入口，仅保留真实主力及已有指定合约。旧 `series_kind=continuous` 链接在请求前迁移为真实主力，保留品种、视图与合法周期，清除旧合约及记录定位，替换地址并提示；旧显示偏好只迁移序列。不匹配当前序列的统计不展示。底层 continuous API、行情与内部研究能力保留。
 - Market 首页分为市场与消息 Tab，以独立 bulk 只读资源展示 Runtime health、active completed D1/W1 generic overview、operational completed 1m 报价与 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
-- 首页采用白色全宽桌面布局、期货板块本地筛选与表头三态排序；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率不能解释为做多。
+- 首页采用白色全宽卡片列表、期货板块本地筛选与三态排序菜单；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率不能解释为做多。
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页；原研究观察折叠入口移除。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
 - Web 不显示模糊的“全历史策略效果”、账户收益、模拟或真实持仓、订单、成交或已退役策略事件。Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，不属于这些账户/执行事实。
+
+## 新苏冰策略独立研究
+
+修正版 `new_subing_v2` 使用独立[阶段/分层合同](docs/NEW_SUBING_STRATEGY_V2.md)，保留V1规则与结果。
+10万元主结果及100万元诊断具有不同Profile；只读页面按版本与本金筛选，不能合并收益或从研究自行晋升。
+
+`new_subing_v1` 是固定参数顺势波段研究版，规则与来源只由
+[新苏冰合同](docs/NEW_SUBING_STRATEGY.md)定义。它采用 MA21、日线方向、5m/15m确认、
+三项共振及统一净仓模型，首轮 AL/RB/TA 各自以10万元进行双向整数手历史研究。
+CLI 经唯一 MarketDataService 读取冻结 Canonical；独立的有界 RQData collector 只采集成本与限价
+证据，不修复或写行情。只读 Web/API 消费哈希绑定的研究结果，不启动回测或外部请求。
+模型成交与账户收益独立于旧苏冰 Event、乐观参考、JM Paper 账本和真实账户。
+缺口、未成交、换月中断、原案例未核验及 OOS 未证明均显式展示；不恢复旧研究或执行入口，
+不启用 Runtime、通知、Shadow、Broker 或自动交易。发布与运行状态仍只看 `STATUS.md`。
 
 ## Newow 与参考交易
 
@@ -106,7 +121,8 @@ RQData -> staging + hard validation -> Canonical Parquet
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 - 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的交办范围内；数据补全或历史候选闭环无需逐批人工批准，由执行者冻结并校验 exact plan hash。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 仅 `data` 与 `runtime`。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*` 与独立只读 `/api/v1/research/new-subing/*`。
+统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 仅 `data` 与 `runtime`；新苏冰离线研究使用上文专用脚本，不恢复退役研究产品。
 
 ## Retired surface
 

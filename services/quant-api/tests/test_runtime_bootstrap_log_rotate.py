@@ -54,7 +54,7 @@ def host(tmp_path, monkeypatch):
     backend = BootstrapBackend()
     backend.candidate_root = REPO
     monkeypatch.setattr(backend, '_launchctl', lambda *_args, **_kwargs: SimpleNamespace(stdout=b'disabled services = {\n}', returncode=0))
-    monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', lambda *_args, **_kwargs: output)
+    monkeypatch.setattr('app.runtime_identity.read_launchd_service', lambda *_args, **_kwargs: output)
     return backend, path, script, output
 
 
@@ -76,7 +76,7 @@ def test_legacy_log_rotate_drift_blocks(tmp_path, monkeypatch, change):
         script.write_bytes(b'#!/bin/bash\nexit 0\n')
     elif change == 'running':
         output = output.replace('state = not running', 'state = running\n    pid = 1234')
-        monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', lambda *_args, **_kwargs: output)
+        monkeypatch.setattr('app.runtime_identity.read_launchd_service', lambda *_args, **_kwargs: output)
     else:
         payload = plistlib.loads(path.read_bytes())
         if change == 'argv':
@@ -121,9 +121,9 @@ def test_loaded_legacy_identity_must_match_and_be_observable(tmp_path, monkeypat
     if change == 'unknown':
         def unreadable(*_args, **_kwargs):
             raise ValueError('do not expose host output')
-        monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', unreadable)
+        monkeypatch.setattr('app.runtime_identity.read_launchd_service', unreadable)
     else:
-        monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', lambda *_args, **_kwargs: output)
+        monkeypatch.setattr('app.runtime_identity.read_launchd_service', lambda *_args, **_kwargs: output)
     with pytest.raises(BootstrapError, match='^BOOTSTRAP_LOG_ROTATE_IDENTITY_UNPROVEN$'):
         backend.installed()
 
@@ -164,7 +164,7 @@ def test_stop_rotation_requires_strict_loaded_idle_readback(tmp_path, monkeypatc
     calls = []
     monkeypatch.setattr(backend, '_launchctl', lambda *args, **_kwargs: calls.append(args))
     monkeypatch.setattr(backend, '_pid', lambda _label: None)
-    monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', lambda *_args, **_kwargs: 'unknown')
+    monkeypatch.setattr('app.runtime_identity.read_launchd_service', lambda *_args, **_kwargs: 'unknown')
     with pytest.raises(BootstrapError, match='^BOOTSTRAP_LOG_ROTATE_IDENTITY_UNPROVEN$'):
         backend.stop_legacy({'installed': {'log-rotate': old}})
     assert [call[0] for call in calls] == ['disable']

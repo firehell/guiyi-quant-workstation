@@ -39,7 +39,7 @@ from app.alerts.registry import (
     get_alert_rule_definition,
 )
 from app.alerts.service import AlertEventCreate, AlertService
-from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
+from app.runtime_identity import runtime_heartbeat_identity
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,

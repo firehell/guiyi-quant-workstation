@@ -62,7 +62,7 @@ def frozen_host(tmp_path, monkeypatch, service='live'):
     observed = [output(101), output(202)]
     def loaded(*_args, **_kwargs):
         return observed.pop(0) if observed else None
-    monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', loaded)
+    monkeypatch.setattr('app.runtime_identity.read_launchd_service', loaded)
     monkeypatch.setattr(backend, '_launchctl', lambda *args, **_kwargs: calls.append(args) or SimpleNamespace(returncode=0,stdout=b''))
     monkeypatch.setattr(backend, 'prove_no_inflight_sends', lambda: proofs.append('idle'))
     monkeypatch.setattr(backend, '_process_alive', lambda _pid: False)
@@ -124,6 +124,6 @@ def test_readonly_pid_probe_failure_is_not_exited(monkeypatch):
 @pytest.mark.parametrize('body', ['state = running', 'state = not running\n pid = 101', 'state = running\n pid = 101\n pid = 202', 'state = mystery'])
 def test_pid_requires_exact_unambiguous_service_shape(monkeypatch, body):
     output = f'gui/{os.getuid()}/com.guiyi.quant-live = {{\n{body}\n}}'
-    monkeypatch.setattr('app.market_data.captured_recovery_runtime._read_launchd_service', lambda *_args, **_kwargs: output)
+    monkeypatch.setattr('app.runtime_identity.read_launchd_service', lambda *_args, **_kwargs: output)
     with pytest.raises(BootstrapError, match='^BOOTSTRAP_PROCESS_STATE_UNPROVEN$'):
         BootstrapBackend()._pid('com.guiyi.quant-live')

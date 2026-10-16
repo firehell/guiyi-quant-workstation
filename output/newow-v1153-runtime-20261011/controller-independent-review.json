@@ -1,0 +1,34 @@
+{
+  "status": "REVIEW_COMPLETE",
+  "controller_sha256": "8c7e40e0e1655ba0bd52c9ca8c48368bdbc678d99b0b6dde6c94b12e76cc4089",
+  "old_commit": "386031757f37f5f4d373b68c47d50c5dc3215b07",
+  "candidate_commit": "c28438d3d7ad6d6c66272027996f4a25e2facdfe",
+  "test_command": "PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q output/newow-v1153-runtime-20261011/test_generation13_controller.py",
+  "test_result": "48 passed in 1.53s",
+  "confirmed_issues_remaining": [],
+  "resolved": [
+    "candidate business halt uses cooperative drain and parked/owner/control/thread proofs",
+    "scheduled halt owner lock covers idle read and bootout",
+    "secondary recovery read failure records UNPROVEN and persists outcome_unknown",
+    "old readiness is a real same-round all-ready snapshot after heavy preflight and immediately before freeze return",
+    "active history cursor is bounded to committed720 namespace; empty protected routes required; exact raw history archived under full drained locks"
+  ],
+  "reviewed_boundaries": [
+    "full gen12 success and prior journal/control chain frozen",
+    "all10 owner locks and notification/maintenance/history locks before old stop and binding CAS",
+    "all old PIDs exit before single genuine-contract generation13 CAS",
+    "no Scope migration/state reset/notification policy changes/retry",
+    "candidate source import identity and release/controller/helper/review pinning",
+    "heavy identity/HTTP preflight distinct from new 30-second sample deadline",
+    "owner+heartbeat age<=30s and exact identity, current ready snapshot, Reference zero blocks and both threads alive",
+    "active preflight rejects every nonempty pending/blocked/inflight route",
+    "real drained history including current cursor remains byte-exact before startup; immutable archive hash after startup"
+  ],
+  "runtime_plan_independent_recompute": "PASS_FULL_OBJECT_EQUAL",
+  "production_mutation_performed": false,
+  "plan_hash": "7cf56b08ddbc9ebf485fbb4e993305cfdd35931af33fa0e4176ed09e5f9f0937",
+  "primary_plan": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/newow-v1153-runtime-20261011/runtime-plan.json",
+  "independent_plan": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/newow-v1153-runtime-20261011/reviewer-runtime-plan.json",
+  "apply_conclusion": "ALLOW_AUTHORIZED_SINGLE_APPLY_WITH_IN_LOCK_REFREEZE",
+  "natural_business_acceptance": "PENDING"
+}

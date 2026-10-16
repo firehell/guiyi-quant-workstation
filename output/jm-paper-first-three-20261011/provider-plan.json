@@ -1,0 +1,40 @@
+{
+  "source": "rqdata",
+  "purpose": "JM first three steps historical execution facts only",
+  "ranges": {
+    "JM2601": [
+      "2025-10-11",
+      "2025-12-04"
+    ],
+    "JM2605": [
+      "2025-12-05",
+      "2026-04-16"
+    ],
+    "JM2609": [
+      "2026-04-17",
+      "2026-08-18"
+    ],
+    "JM2701": [
+      "2026-08-19",
+      "2026-10-09"
+    ]
+  },
+  "parameters_fields": [
+    "commission_type",
+    "open_commission",
+    "close_commission",
+    "close_commission_today",
+    "long_margin_ratio",
+    "trade_unit",
+    "price_unit"
+  ],
+  "daily_fields": [
+    "limit_up",
+    "limit_down",
+    "settlement",
+    "prev_settlement"
+  ],
+  "max_calls": 9,
+  "canonical_write": false,
+  "automatic_retry": false
+}

@@ -83,14 +83,12 @@ export async function mockWorkspace(page, researchResponse, options = {}) {
   const marketRequests = options.marketRequests || []
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
-    if (url.pathname.endsWith('/dominants')) {
+    if (url.pathname.endsWith('/product-directory')) {
       return route.fulfill({ json: { items: [{
         product: workspaceSymbol,
         product_name: '白银',
         sector: 'precious',
         exchange: 'SHFE',
-        actual_contract: workspaceContract,
-        dominant_mapping_date: '2026-01-12',
       }] } })
     }
     if (url.pathname.endsWith('/research/product')) return route.fulfill(researchResponse)

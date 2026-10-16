@@ -16,16 +16,17 @@ from typing import Protocol
 from app.core.env import PROJECT_ROOT
 from app.runtime_bindings import authorized_program_arguments, resolve_service_binding, verify_release
 from app.market_data.after_market_closeout import verify_runtime_release_identity
-from app.market_data.captured_recovery_runtime import (
-    _read_launchd_service,
-    _verify_after_market_plist,
-    _verify_loaded_service,
+from app.market_data.captured_recovery_runtime import _verify_after_market_plist
+from app.runtime_identity import (
+    read_launchd_service as _read_launchd_service,
+    verify_loaded_service as _verify_loaded_service,
+    file_snapshot as _snapshot,
+    launchd_arguments as _arguments,
+    launchd_environments as _environments,
 )
+from app.market_data.after_market_limits import MAX_STATUS_BYTES
 from app.market_data.closeout_binding import (
     RuntimeDataBinding,
-    _arguments,
-    _environments,
-    _snapshot,
 )
 
 
@@ -122,7 +123,7 @@ def _verify_status_sha256(root: Path, expected: str | None) -> str:
     if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
         raise ValueError
     try:
-        content, _identity = _snapshot(root / ".run/after-market-status.json")
+        content, _identity = _snapshot(root / ".run/after-market-status.json", limit=MAX_STATUS_BYTES)
     except (OSError, ValueError):
         raise ValueError from None
     if hashlib.sha256(content).hexdigest() != expected:

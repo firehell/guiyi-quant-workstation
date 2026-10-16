@@ -35,6 +35,7 @@ class AlertHistoryQuery:
     before: str | None
     frequency: str | None = None
     alignment_status: str | None = None
+    max_event_id: int | None = None
 
     @property
     def identity(self) -> dict[str, object]:
@@ -45,6 +46,8 @@ class AlertHistoryQuery:
             "rule_code": self.rule_code,
             "limit": self.limit,
         }
+        if self.max_event_id is not None:
+            identity["max_event_id"] = self.max_event_id
         if self.frequency is not None:
             identity["frequency"] = self.frequency
         if self.alignment_status is not None:
@@ -67,6 +70,8 @@ def read_alert_history(session: Session, query: AlertHistoryQuery) -> AlertHisto
         AlertEvent.trading_day >= query.start_day,
         AlertEvent.trading_day <= query.end_day,
     ]
+    if query.max_event_id is not None:
+        filters.append(AlertEvent.id <= query.max_event_id)
     if query.symbol is not None:
         filters.append(AlertEvent.symbol == query.symbol)
     if query.rule_code is not None:

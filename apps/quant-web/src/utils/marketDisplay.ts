@@ -72,6 +72,13 @@ export function formatMarketPercent(
   return text === '—' ? text : `${text}%`
 }
 
+/** Performance summaries use two decimals while retaining nonzero bounds. */
+export function formatPerformancePercent(value: string | null | undefined, signed = false): string {
+  const bounded = formatMarketPercent(value, 'percentage_points', signed)
+  if (bounded === '—' || bounded.startsWith('<') || bounded.startsWith('>')) return bounded
+  return `${formatDecimalText(value, { maximumFractionDigits: 2, minimumFractionDigits: 2, signed })}%`
+}
+
 function parseDecimal(value: string | null | undefined): ParsedDecimal | null {
   const raw = value?.trim()
   if (!raw || raw.length > 10_000) return null

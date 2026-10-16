@@ -25,7 +25,7 @@ from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
 from app.market_data.catalog import MaintenanceLease, MarketCatalog
-from app.market_data.closeout_binding import runtime_dependency_settings
+from app.private_settings import runtime_dependency_settings
 from app.market_data.operational_universe import load_operational_products
 from app.models import Contract, Instrument, MainContractMap, TradingCalendar, TradingSession
 

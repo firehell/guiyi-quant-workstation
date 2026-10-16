@@ -8,16 +8,19 @@ data_center HTTP、旧 Signal/Review/Strategy
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 import logging
 import os
 
 from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_newow import router as market_newow_router
+from app.api.market_messages import router as market_messages_router
 from app.api.market_subing_reference import router as market_subing_reference_router
 from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
 from app.api.reference_trading import router as reference_trading_router
+from app.api.research_new_subing import router as research_new_subing_router
 from app.middleware.request_timing import RequestTimingMiddleware
 from app.version import APP_VERSION
 
@@ -47,9 +50,11 @@ def resolve_cors_origins() -> list[str]:
 app = FastAPI(title="归一量化 API", version=APP_VERSION)
 
 app.add_middleware(RequestTimingMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
 # CORS：允许凭证、全部方法与请求头；来源由 resolve_cors_origins 白名单控制
 app.add_middleware(
     CORSMiddleware,
+    expose_headers=["ETag", "Server-Timing"],
     allow_origins=resolve_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
@@ -59,11 +64,13 @@ app.add_middleware(
 # Market + Alert + Runtime 运维面
 app.include_router(market_router)
 app.include_router(market_newow_router)
+app.include_router(market_messages_router)
 app.include_router(market_subing_reference_router)
 app.include_router(market_live_router)
 app.include_router(alerts_router)
 app.include_router(runtime_router)
 app.include_router(reference_trading_router)
+app.include_router(research_new_subing_router)
 
 
 @app.get("/health")

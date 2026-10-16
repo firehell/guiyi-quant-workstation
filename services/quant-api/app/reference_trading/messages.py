@@ -1,6 +1,6 @@
 """Read-only message projection of committed forward Newow display facts."""
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import select
 
@@ -26,6 +26,7 @@ def read_messages(
     strategy: str | None = None,
     frequency: str | None = None,
     limit: int = 500,
+    observed_before: datetime | None = None,
 ):
     if (
         since > through
@@ -64,6 +65,8 @@ def read_messages(
             <= through.isoformat(),
         )
     )
+    if observed_before is not None:
+        statement = statement.where(ReferenceBatch.observed_at <= observed_before)
     if product:
         statement = statement.where(ReferenceStream.product == product.lower())
     if strategy:
@@ -72,9 +75,43 @@ def read_messages(
         )
     if frequency:
         statement = statement.where(ReferenceStream.frequency == frequency)
+    scope_statement = (
+        select(
+            ReferenceStream.stream_id,
+            ReferenceStream.active_revision_id,
+            ReferenceStream.health,
+            ReferenceRevision.status,
+        )
+        .select_from(ReferenceStream)
+        .outerjoin(
+            ReferenceRevision,
+            (ReferenceRevision.stream_id == ReferenceStream.stream_id)
+            & (ReferenceRevision.revision_id == ReferenceStream.active_revision_id),
+        )
+        .where(
+            ReferenceStream.recording_mode == "forward_observation",
+            ReferenceStream.strategy_code.in_([f"newow_{s}" for s in STRATEGIES]),
+            ReferenceStream.frequency.in_(FREQUENCIES),
+        )
+    )
+    if product:
+        scope_statement = scope_statement.where(
+            ReferenceStream.product == product.lower()
+        )
+    if strategy:
+        scope_statement = scope_statement.where(
+            ReferenceStream.strategy_code == f"newow_{strategy}"
+        )
+    if frequency:
+        scope_statement = scope_statement.where(ReferenceStream.frequency == frequency)
     items = []
     point_count = 0
     with factory() as session, readonly_transaction(session, timeout_seconds=20):
+        scope = session.execute(scope_statement.limit(10001)).all()
+        if len(scope) > 10000:
+            raise QueryConflict("QUERY_BUDGET_EXCEEDED")
+        revisions = sorted(tuple(row) for row in scope)
+        excluded_streams = sum(row[2] != "READY" or row[3] != "active" for row in scope)
         rows = session.execute(
             statement.order_by(
                 ReferenceBatch.observed_at.desc(), ReferenceBatch.batch_id
@@ -129,6 +166,9 @@ def read_messages(
         "items": items[:limit],
         "truncated": len(items) > limit,
         "limit": limit,
+        "revision_snapshot": sorted(revisions),
+        "excluded_streams": excluded_streams,
+        "scope": "ready_forward_streams_only",
         "recording_mode": "forward_observation",
         "page_parity": True,
         "executable": False,

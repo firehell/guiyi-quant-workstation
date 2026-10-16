@@ -1,3 +1,4 @@
+import { createReadAdmission, type ReadPriority } from '../utils/readAdmission.ts'
 import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import {
   formatApiLogSummary,
@@ -8,12 +9,18 @@ import { normalizeApiBaseURL } from '@/utils/network'
 import { purgeLegacyWebCredentials } from '@/utils/settings'
 import { candidatePreview } from '../utils/candidatePreview.ts'
 
+declare module 'axios' {
+  interface AxiosRequestConfig { readPriority?: ReadPriority }
+}
+
 interface RequestMetadata {
   startTime: number
+  release?: () => void
 }
 
 type TimedAxiosRequestConfig = InternalAxiosRequestConfig & {
   metadata?: RequestMetadata
+  preserveResponse?: boolean
 }
 
 /** 解析 API 根地址：只接受 Vite 环境变量，否则使用同源默认值。 */
@@ -39,8 +46,9 @@ const request: AxiosInstance = axios.create({
 
 purgeLegacyWebCredentials()
 
+const admitRead = createReadAdmission(2)
 request.interceptors.request.use(
-  (config) => {
+  async (config) => {
     const timedConfig = config as TimedAxiosRequestConfig
     const url = timedConfig.url || ''
     if (candidatePreview.enabled && ((timedConfig.method || 'get').toLowerCase() !== 'get'
@@ -50,6 +58,9 @@ request.interceptors.request.use(
     // /api/*（非 /api/v1/*）走同源相对路径，避免重复拼接 baseURL
     timedConfig.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
     timedConfig.metadata = { startTime: Date.now() }
+    if ((timedConfig.method ?? 'get').toLowerCase() === 'get') {
+      timedConfig.metadata.release = await admitRead(timedConfig.signal as AbortSignal | undefined, timedConfig.readPriority)
+    }
     return timedConfig
   },
   (error) => Promise.reject(error),
@@ -58,6 +69,7 @@ request.interceptors.request.use(
 request.interceptors.response.use(
   (response) => {
     const config = response.config as TimedAxiosRequestConfig
+    config.metadata?.release?.()
     const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
     const { method, url } = describeRequest(config)
     // Production 不输出每次 API 成功日志；开发环境仅安全摘要
@@ -65,10 +77,11 @@ request.interceptors.response.use(
       console.info(formatApiLogSummary({ method, url, status: 'ok', durationMs: duration }))
     }
     // 业务层直接拿到 data，不再包一层 AxiosResponse
-    return response.data
+    return config.preserveResponse ? response : response.data
   },
   (error) => {
     const config = (error.config || {}) as TimedAxiosRequestConfig
+    config.metadata?.release?.()
     const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
     const { method, url } = describeRequest(config)
     const safe = toSafeErrorInfo(error, 'request failed')
@@ -87,3 +100,4 @@ request.interceptors.response.use(
 
 export default request
 export type { AxiosRequestConfig }
+export type ConditionalRequestConfig = AxiosRequestConfig & { preserveResponse: true }

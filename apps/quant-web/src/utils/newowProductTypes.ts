@@ -1,3 +1,4 @@
+import { previewInstant } from './candidatePreviewInstant.ts'
 import { normalizePagePerformance } from './newowPagePerformance.ts'
 import {
   NEWOW_PRODUCT_FREQUENCIES,
@@ -82,8 +83,27 @@ export function normalizeNewowProductResponse(
   payload: unknown,
   expectedRequest: NewowProductRequest | FlatExpected,
 ): NewowProductSectionResponse {
-  const expected = normalizeExpected(expectedRequest)
-  const top = exactRecord(payload, 'Newow product response', ['meta', 'section', 'chart', 'auxiliary', 'reference', 'explanation', 'comparator'])
+  let expected = normalizeExpected(expectedRequest)
+  const input = record(payload, 'Newow product response')
+  const top = exactRecord(payload, 'Newow product response', ['meta', 'section', 'chart', 'auxiliary', 'reference', 'explanation', 'comparator', ...('snapshot_context' in input ? ['snapshot_context'] : [])])
+  let snapshotContext: NewowProductSectionResponse['snapshotContext']
+  if ('identity' in expectedRequest && expectedRequest.section === 'chart' && expectedRequest.resolveCurrent && ['1d', '1w'].includes(expected.frequency)) {
+    const context = record(top.snapshot_context, 'snapshot_context')
+    requireExact(context.frequency, expected.frequency, 'snapshot_context.frequency')
+    const asOf = instant(context.as_of, 'snapshot_context.as_of')
+    instant(context.requested_at, 'snapshot_context.requested_at')
+    literal(context.freshness, ['current', 'pending_update'], 'snapshot_context.freshness')
+    if (context.frequency === '1d') {
+      day(context.expected_trading_day, 'expected_trading_day')
+      day(context.available_trading_day, 'available_trading_day')
+    } else {
+      instant(context.expected_period_end, 'expected_period_end')
+      instant(context.available_period_end, 'available_period_end')
+      record(context.current_context, 'current_context')
+    }
+    snapshotContext = { ...context, product: expected.product, strategy: expected.strategy, series_kind: 'actual_dominant', schema_version: context.frequency === '1d' ? 'newow_daily_snapshot_v1' : 'newow_weekly_snapshot_v1' } as unknown as NonNullable<typeof snapshotContext>
+    expected = { ...expected, asOf }
+  } else if (top.snapshot_context != null) throw new Error('unexpected current snapshot context')
   const section = literal(top.section, SECTIONS, 'section')
   if (section !== expected.section) throw new Error('section disagrees with the requested section')
   const meta = normalizeMeta(top.meta, expected)
@@ -105,7 +125,7 @@ export function normalizeNewowProductResponse(
   if (requestedStatus.status === 'ready' && requestedValue === null) throw new Error('ready requested section must have a value')
 
   const value = requestedValue === null ? null : normalizeSectionValue(section, requestedValue, meta, expected)
-  return deepFreeze({ meta, section, status: requestedStatus, value } as NewowProductSectionResponse)
+  return deepFreeze({ meta, section, status: requestedStatus, value, ...(snapshotContext ? { snapshotContext } : {}) } as NewowProductSectionResponse)
 }
 
 export function chartCoordinate(value: string): number {
@@ -155,7 +175,7 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const normalizedIdentity = normalizeWireIdentity(value.identity, 'meta.identity', expected)
   requireExact(expected.seriesKind, 'actual_dominant', 'expected.seriesKind')
   const asOf = instant(value.as_of, 'meta.as_of')
-  if (Date.parse(asOf) !== Date.parse(instant(expected.asOf, 'expected.asOf'))) throw new Error('meta.as_of disagrees with the fixed generation as_of')
+  if (previewInstant(asOf) !== previewInstant(instant(expected.asOf, 'expected.asOf'))) throw new Error('meta.as_of disagrees with the fixed generation as_of')
   const readAt = instant(value.read_at, 'meta.read_at')
   const inputHash = sha256(value.input_content_sha256, 'meta.input_content_sha256')
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')

@@ -18,7 +18,7 @@ from app.market_data.operational_universe import load_active_products, load_oper
 from app.reference_trading.newow_bootstrap import NewowForwardBootstrap, _hash, validate_product_scope
 from app.reference_trading.repository import RepositoryConflict
 from app.reference_trading.recording_scope import FREQUENCIES, strategies_for
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 
 
 def _instant(value):

@@ -38,5 +38,5 @@ function select(pattern:NewowPublicPattern){const value=choice(pattern);if(value
  </section>
 </template>
 <style scoped>
-.public-patterns p{font-size:12px;color:#667085;line-height:1.6}.public-patterns__note{background:#f5f7fa;padding:8px;border-radius:6px}label{display:flex;gap:8px;align-items:center;font-size:13px}select{max-width:100%;min-width:0;padding:8px;border:1px solid #ddd;border-radius:6px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{padding:10px 6px;border-bottom:1px solid #ebedf0;text-align:left;font-size:13px}button{padding:6px 12px;border:0;border-radius:6px;background:#007aff;color:white;cursor:pointer}.high{color:#34c759;font-weight:700}.medium{color:#ff9500}.low{color:#007aff}
+.public-patterns p{font-size:12px;color:var(--gy-text-muted);line-height:1.6}.public-patterns__note{background:#f5f7fa;padding:8px;border-radius:6px}label{display:flex;gap:8px;align-items:center;font-size:13px}select{max-width:100%;min-width:0;padding:8px;border:1px solid #ddd;border-radius:6px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{padding:10px 6px;border-bottom:1px solid #ebedf0;text-align:left;font-size:13px}button{padding:6px 12px;border:0;border-radius:6px;background:var(--gy-accent);color:white;cursor:pointer}.high{color:#34c759;font-weight:700}.medium{color:#ff9500}.low{color:var(--gy-accent)}
 </style>

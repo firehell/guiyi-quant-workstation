@@ -23,6 +23,16 @@ export interface DominantContractItem {
 
 export interface DominantContractListResponse { items: DominantContractItem[] }
 
+/** Static catalog metadata only. Current owner and quote facts come from verified reads. */
+export interface MarketProductDirectoryItem {
+  product: string
+  product_name: string
+  exchange: string
+  sector: string
+}
+
+export interface MarketProductDirectoryResponse { items: MarketProductDirectoryItem[] }
+
 export type MarketHomeTrend = 'up' | 'down' | 'neutral' | 'unavailable'
 
 export interface MarketHomeOverviewItem {

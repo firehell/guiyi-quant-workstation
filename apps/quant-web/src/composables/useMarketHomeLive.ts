@@ -45,6 +45,11 @@ export function useMarketHomeLive(dependencies: Dependencies = {}) {
 
   function open(current: number) {
     if (disposed || current !== generation) return
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      stale.value = items.value.size > 0
+      connection.value = stale.value ? 'stale' : 'idle'
+      return
+    }
     connection.value = items.value.size ? 'stale' : 'connecting'
     const next = createWebSocket(websocketUrl())
     socket = next

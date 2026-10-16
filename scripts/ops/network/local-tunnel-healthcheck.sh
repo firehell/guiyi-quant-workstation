@@ -30,21 +30,8 @@ check_listen() {
   return 1
 }
 
-check_http() {
-  local name="$1"
-  local url="$2"
-  local status time_total
-  status="$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)"
-  status="${status:-000}"
-  time_total="$(curl -sS -m 5 -o /dev/null -w '%{time_total}' "$url" 2>/dev/null || true)"
-  time_total="${time_total:-0}"
-  printf '  %-18s %s  %.3fs  %s\n' "$name" "$status" "$time_total" "$url"
-  case "$status" in
-    200|204|301|302|401) return 0 ;;
-    000) warn "$name 不可达 (Empty reply / connection refused)"; return 1 ;;
-    *) warn "$name 异常状态: $status"; return 1 ;;
-  esac
-}
+# shellcheck source=http-probe.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/http-probe.sh"
 
 main() {
   info "Mac mini 本地服务与 FRPC 诊断"

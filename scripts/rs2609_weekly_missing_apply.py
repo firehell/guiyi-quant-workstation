@@ -27,7 +27,7 @@ from app.market_data.rqdata_adapter import WEEKLY_AGGREGATION_VERSION
 from app.market_data.weekly_quality import WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2
 from app.models import MarketPartition
 from scripts import rs2609_weekly_missing_plan as planner
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 
 EXPECTED_PACKET_SHA256 = "3d4a57ed87bc68904a2724be847214fceab798deaf0de8bdb4403823fcf29a26"
 EXPECTED_MONTHS = ((2025, 9), (2025, 12), (2026, 1))

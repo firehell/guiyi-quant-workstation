@@ -1,29 +1,48 @@
 import { expect, test } from '@playwright/test'
-import { installNewowProductFixtures, newowRoute } from './newow-product.helpers.mjs'
+import { buildNewowSplitFixtureEnvelopeForTest, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
+
 for (const width of [1440, 390]) {
-  test(`closed curve waits for pages and links records without changing totals at ${width}`, async ({ page }) => {
-    await installNewowProductFixtures(page)
+  test(`closed split curve locates an older trade while history pages at ${width}`, async ({ page }) => {
+    const fixture = await installNewowProductFixtures(page, { recordsHistory: true, onProductRequest: async ({ route, url, section }) => {
+      if (section !== 'reference' || url.searchParams.get('reference_mode') !== 'closed') return
+      const payload = buildNewowSplitFixtureEnvelopeForTest(url, { recordsHistory: true })
+      const value = payload.reference.value
+      if (value.reference_part === 'history') {
+        value.next_before = url.searchParams.has('history_before') ? null : 'reference-page-2'
+      }
+      if (value.reference_part === 'panel') {
+        const closed = value.curve.points.toSorted((a, b) => a.bar_end.localeCompare(b.bar_end))
+        value.curve.points = closed.map((point, position) => ({ ...point, position, value: position ? '10.2040' : '5.1020' }))
+      }
+      await route.fulfill({ json: payload })
+      return 'handled'
+    } })
     await page.setViewportSize({ width, height: 900 })
     await page.goto(newowRoute())
-    const curve = page.getByLabel('已完成参考交易累计收益曲线', { exact: true })
-    await expect(curve).toContainText('尚未完整加载')
-    await expect(curve.locator('circle')).toHaveCount(0)
-    await page.getByRole('button', { name: '加载更多参考历史', exact: true }).click()
-    await expect(curve.locator('circle')).toHaveCount(1)
-    const points = await curve.locator('polyline').getAttribute('points')
-    await curve.locator('circle').press('Enter')
-    const selected = page.locator('.newow-reference__card[data-curve-selected="true"]')
-    await expect(selected).toContainText('已清仓收益')
-    await selected.getByRole('button', { name: '查看曲线', exact: true }).click()
-    await expect(curve).toContainText('5.102')
-    await page.getByLabel('筛选参考历史').selectOption('open')
-    await expect(curve.locator('polyline')).toHaveAttribute('points', points)
-    await expect(page.locator('.newow-reference__cards [data-reference-category="closed"]')).toHaveCount(0)
-    await curve.locator('circle').press('Enter')
-    await expect(selected).toBeVisible()
-    await expect(curve).toContainText('未清仓浮动')
-    await expect(curve).toContainText('中断结果')
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await page.screenshot({ path: `/private/tmp/newow-reference-curve-${width}.png`, fullPage: false })
+    const region = page.getByRole('region', { name: 'Newow 参考与解释', exact: true })
+    await region.scrollIntoViewIfNeeded()
+    await region.getByRole('button', { name: '已完成参考交易' }).click()
+    const curve = region.getByLabel('参考收益曲线，点击查看读数或定位交易记录', { exact: true })
+    await expect(curve).toBeVisible()
+    await expect(region.getByTestId('newow-reference-summary')).toContainText('+10.2%')
+    const points = await curve.locator('polyline').evaluateAll(nodes => nodes.map(node => node.getAttribute('points')))
+    await expect(region.locator('article[data-reference-category]')).toHaveCount(3)
+    expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'history')).toHaveLength(0)
+    await region.getByRole('button', { name: '查看完整历史记录' }).click()
+    await expect(region.locator('article[data-reference-category]')).toHaveCount(2)
+    await region.getByRole('button', { name: '加载更多历史参考记录' }).click()
+    await expect(region.locator('article[data-reference-category]')).toHaveCount(4)
+    expect(await curve.locator('polyline').evaluateAll(nodes => nodes.map(node => node.getAttribute('points')))).toEqual(points)
+    await curve.focus()
+    await curve.press('Home')
+    await curve.press('Enter')
+    await expect(region.locator('#reference-trade-trend-1d-initial')).toBeVisible()
+    await expect(region.locator('#reference-trade-trend-1d-initial')).toContainText('RB2601')
+    await expect(region.locator('article[data-reference-category="interrupted"]')).toContainText('物理合约区段结束')
+    await expect(region.locator('article[data-reference-category="open"] .newow-reference__record-return')).toHaveAttribute('data-direction', 'down')
+    await expect(region.locator('article[data-reference-category="closed"] .newow-reference__record-return').first()).toHaveAttribute('data-direction', 'up')
+    expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'history')).toHaveLength(2)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+    assertNoUnexpectedRequests(fixture)
   })
 }

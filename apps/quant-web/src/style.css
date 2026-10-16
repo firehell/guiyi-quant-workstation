@@ -236,3 +236,31 @@ button:disabled,
     --gy-content-padding: 12px;
   }
 }
+
+/* Shared ordinary controls. Chart canvases, SVG marks and directional colors stay domain-owned. */
+:where(main, .gy-panel, .panel) { min-width: 0; }
+:where(main) :where(button:not(.n-button), input:not(.n-input__input-el), select, textarea) {
+  max-width: 100%;
+  border-radius: var(--gy-radius-sm);
+  font-size: var(--gy-font-size-base);
+}
+:where(main) :where(button:not(.n-button)) { cursor: pointer; }
+:where(main) :where(button[aria-pressed="true"], button[aria-selected="true"]) {
+  background: var(--gy-accent-soft);
+  border-color: var(--gy-accent);
+  color: var(--gy-text-primary);
+}
+:where(main) :where(h2) { font-size: var(--gy-font-size-lg); line-height: 1.5; }
+:where(main) :where(h3) { font-size: var(--gy-font-size-md); line-height: 1.5; }
+:where(main) :where(details) { min-width: 0; overflow-wrap: anywhere; }
+:where(main) :where(summary) { cursor: pointer; color: var(--gy-text-secondary); line-height: 1.7; }
+:where(main) :where(table) { font-variant-numeric: tabular-nums; }
+.gy-reset-display { align-self: flex-end; margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--gy-border); background: var(--gy-bg-panel); color: var(--gy-text-secondary); }
+.gy-reset-display:hover { border-color: var(--gy-accent); background: var(--gy-accent-soft); }
+@media (max-width: 640px) {
+  :root { --gy-content-padding: 12px; --gy-panel-padding: 12px; }
+  :where(main) { max-width: 100%; }
+  :where(main) :where(button, input, select) { min-height: 44px; }
+  :where(main) :where([class$="__table"], [class$="__snapshot"], .gy-scroll-x) { max-width: 100%; min-width: 0; overflow-x: auto; }
+  :where(main) :where(table) { width: max-content; min-width: 100%; }
+}

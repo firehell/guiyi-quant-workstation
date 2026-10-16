@@ -2,10 +2,10 @@
 import { deriveBasisDecision } from '@/utils/newowBasisDecision'
 import { previewInstant } from '@/utils/candidatePreviewInstant'
 import { historicalAnalysisAsOf } from '@/api/newowAiAnalysis'
-import { ref, computed, watch, onBeforeUnmount, useId } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onMounted, useId } from 'vue'
 import { sharedDecisionForOwner, type NewowDisplayOwner } from '@/utils/newowSharedPresentation'
 import NewowPriceSources from './NewowPriceSources.vue'
-import { decisionPriceSources } from '@/utils/newowPriceSources'
+import { type PriceSourceRow, decisionPriceSources } from '@/utils/newowPriceSources'
 import NewowStatusCard from './NewowStatusCard.vue'
 import NewowDailyWeeklyPath from './NewowDailyWeeklyPath.vue'
 import { NewowProductRequestError, getNewowProductSection } from '@/api/newowProduct'
@@ -14,22 +14,29 @@ import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true })
+const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true })
 const emit = defineEmits<{ 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
 const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.asOf : props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
 const collapsed = ref(true), evidenceExpanded = ref(false)
+const surface = ref<HTMLElement | null>(null), visible = ref(typeof IntersectionObserver === 'undefined')
+let observer: IntersectionObserver | null = null
+onMounted(() => {
+  if (typeof IntersectionObserver === 'undefined') { visible.value = true; return }
+  observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { visible.value = true; observer?.disconnect() } }, { rootMargin: '100px' })
+  if (surface.value) observer.observe(surface.value)
+})
 const bodyId = useId(), evidenceId = useId()
 watch([result, loading, error], () => emit('path-context', { decision: result.value, loading: loading.value, error: error.value }), { flush: 'sync' })
 function toggleCard() { collapsed.value = !collapsed.value }
 let generation = 0, controller: AbortController | null = null
-watch(() => [props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value, props.expectedOwner?.physicalContract, props.expectedOwner?.segmentId, props.expectedOwner?.calculationSegmentId, props.expectedOwner?.frequency].join('|'), () => {
+watch(() => [visible.value, props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value, props.expectedOwner?.physicalContract, props.expectedOwner?.segmentId, props.expectedOwner?.calculationSegmentId, props.expectedOwner?.frequency].join('|'), () => {
   generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; evidenceExpanded.value = false; collapsed.value = true
-  void load()
+  if (visible.value) void load()
 }, { immediate: true })
-onBeforeUnmount(() => { generation++; controller?.abort(); emit('path-context', {decision:null,loading:false,error:''}) })
+onBeforeUnmount(() => { observer?.disconnect(); generation++; controller?.abort(); emit('path-context', {decision:null,loading:false,error:''}) })
 async function load() {
   const token = ++generation
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
@@ -66,7 +73,7 @@ const chipColor = (axis: string, period: string) => {
 </script>
 
 <template>
-  <section data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
+  <section ref="surface" data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
         <strong>综合决策</strong>
@@ -136,29 +143,29 @@ const chipColor = (axis: string, period: string) => {
     <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
   <div data-testid="status-card-surface"><NewowStatusCard :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
-  <NewowPriceSources :rows="decisionPriceSources(prices)" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
+  <NewowPriceSources :rows="[...(chartSources ?? []), ...decisionPriceSources(prices)]" label="目标／吸筹来源" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
   <NewowDailyWeeklyPath v-if="showPath !== false" :decision="result" :loading="loading" :error="error" />
 </template>
 
 <style scoped>
-.decision-v2 { margin:8px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:#1c1c1e; }
+.decision-v2 { margin:8px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:var(--gy-text-primary); }
 .decision-v2__header { display:flex; align-items:center; gap:6px; padding:9px 14px; }
-button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid #007aff; outline-offset:2px; } button:disabled { cursor:wait; opacity:.5; }
+button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid var(--gy-accent); outline-offset:2px; } button:disabled { cursor:wait; opacity:.5; }
 .decision-v2__toggle { display:flex; align-items:center; gap:7px; flex:1; min-width:0; border:0; padding:0; background:transparent; color:inherit; text-align:left; flex-wrap:wrap; }
-.decision-v2__toggle>strong { font-size:14px; white-space:nowrap; } .decision-v2__toggle small { font-size:10px; color:#8e8e93; font-weight:400; }
+.decision-v2__toggle>strong { font-size:14px; white-space:nowrap; } .decision-v2__toggle small { font-size:10px; color:var(--gy-text-muted); font-weight:400; }
 .decision-v2__score-wrap { display:flex; align-items:center; gap:7px; flex:1; min-width:90px; max-width:420px; color:var(--certainty-color); font-size:13px; white-space:nowrap; }
 .decision-v2__score-track { flex:1; height:6px; border-radius:3px; overflow:hidden; background:#f0f0f2; }
 .decision-v2__score-track i { display:block; height:100%; border-radius:3px; background:var(--certainty-color); transition:width .3s; }
-.decision-v2__badge { color:#fff; background:var(--certainty-color); font-size:11px; font-weight:600; padding:3px 7px; border-radius:4px; white-space:nowrap; }
+.decision-v2__badge { color:var(--gy-bg-panel); background:var(--certainty-color); font-size:11px; font-weight:600; padding:3px 7px; border-radius:4px; white-space:nowrap; }
 .decision-v2__tag { background:#f0f0f2; padding:2px 5px; font-size:10px; font-weight:700; border-radius:4px; white-space:nowrap; }
 .decision-v2__tag--mismatch { background:#ff6b3520; color:#c2410c; }
-.decision-v2__basis { color:#8e8e93; font-size:10px; } .decision-v2__arrow { margin-left:auto; color:#8e8e93; font-size:11px; transition:transform .2s; } .decision-v2__arrow.collapsed { transform:rotate(-90deg); }
-.decision-v2__refresh { background:transparent; color:#8e8e93; border:0; font-size:18px; padding:0 3px; flex-shrink:0; }
+.decision-v2__basis { color:var(--gy-text-muted); font-size:10px; } .decision-v2__arrow { margin-left:auto; color:var(--gy-text-muted); font-size:11px; transition:transform .2s; } .decision-v2__arrow.collapsed { transform:rotate(-90deg); }
+.decision-v2__refresh { background:transparent; color:var(--gy-text-muted); border:0; font-size:18px; padding:0 3px; flex-shrink:0; }
 .decision-v2__body { display:flex; flex-direction:column; gap:7px; padding:0 14px 8px; }
-p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
-.decision-v2__message { padding:4px 14px; } .decision-v2__message button { border:0; background:transparent; color:#007aff; }
-.decision-v2__first-action { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border:1px solid #e5e5ea; border-radius:8px; background:#f7f7f9; color:#8e8e93; }
-.decision-v2__first-action>b { color:white; padding:3px 6px; border-radius:5px; background:#8e8e93; font-size:10px; white-space:nowrap; }
+p { margin:0; font-size:12px; line-height:1.55; color:var(--gy-text-muted); }
+.decision-v2__message { padding:4px 14px; } .decision-v2__message button { border:0; background:transparent; color:var(--gy-accent); }
+.decision-v2__first-action { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border:1px solid var(--gy-border); border-radius:8px; background:#f7f7f9; color:var(--gy-text-muted); }
+.decision-v2__first-action>b { color:white; padding:3px 6px; border-radius:5px; background:var(--gy-text-muted); font-size:10px; white-space:nowrap; }
 .decision-v2__first-action strong { font-size:13px; } .decision-v2__first-action p { color:inherit; font-size:12px; margin-top:2px; }
 .decision-v2__first-action[data-level=ok] { background:#34c75918; border-color:#34c75955; color:#1d7a43; } .decision-v2__first-action[data-level=ok]>b { background:#1d7a43; }
 .decision-v2__first-action[data-level=warn] { background:#ff950018; border-color:#ff950055; color:#b26a00; } .decision-v2__first-action[data-level=warn]>b { background:#b26a00; }
@@ -166,24 +173,24 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 .decision-v2__mismatch { border:1px solid #ff6b3555; border-left:3px solid var(--mismatch-color); background:#fff7f2; border-radius:6px; padding:8px 10px; }
 .decision-v2__mismatch>div { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; font-size:12px; } .decision-v2__mismatch strong,.decision-v2__mismatch p b { color:var(--mismatch-color); } .decision-v2__mismatch p { margin-top:3px; font-size:11px; }
 .decision-v2__scores { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); background:#f7f7f9; border-radius:6px; padding:10px 0; }
-.decision-v2__score { text-align:center; border-right:1px solid #e5e5ea; } .decision-v2__score:last-child { border-right:0; } .decision-v2__score b { display:block; font-size:20px; line-height:1.3; } .decision-v2__score small { color:#8e8e93; font-size:11px; }
+.decision-v2__score { text-align:center; border-right:1px solid var(--gy-border); } .decision-v2__score:last-child { border-right:0; } .decision-v2__score b { display:block; font-size:20px; line-height:1.3; } .decision-v2__score small { color:var(--gy-text-muted); font-size:11px; }
 .decision-v2__resonance { display:flex; align-items:flex-start; gap:8px; border-left:3px solid var(--resonance-color); border-radius:6px; padding:8px 10px; background:#f7f7f9; }
 .decision-v2__resonance strong { color:var(--resonance-color); white-space:nowrap; font-size:13px; } .decision-v2__dots { color:var(--resonance-color); font-size:10px; letter-spacing:1px; white-space:nowrap; } .decision-v2__resonance p { flex:1; min-width:0; font-size:11px; }
-.decision-v2__detail-toggle { border:0; background:transparent; color:#8e8e93; font-size:11px; padding:5px 0; }
+.decision-v2__detail-toggle { border:0; background:transparent; color:var(--gy-text-muted); font-size:11px; padding:5px 0; }
 .decision-v2__evidence { display:flex; flex-direction:column; gap:7px; }
-.decision-v2__volatility { display:flex; align-items:center; gap:10px; background:#f7f7f9; padding:8px 10px; border-radius:6px; font-size:12px; color:#8e8e93; }
+.decision-v2__volatility { display:flex; align-items:center; gap:10px; background:#f7f7f9; padding:8px 10px; border-radius:6px; font-size:12px; color:var(--gy-text-muted); }
 .decision-v2__vol-track { flex:1; height:5px; border-radius:3px; position:relative; background:linear-gradient(90deg,#34c7594d 0 33.33%,#ff95004d 33.33% 66.66%,#ff3b3047 66.66% 100%); }
-.decision-v2__vol-track i { position:absolute; top:50%; width:9px; height:9px; border-radius:50%; border:2px solid #fff; transform:translate(-50%,-50%); }
+.decision-v2__vol-track i { position:absolute; top:50%; width:9px; height:9px; border-radius:50%; border:2px solid var(--gy-bg-panel); transform:translate(-50%,-50%); }
 .decision-v2__vol-tag { padding:1px 7px; border-radius:8px; font-size:10px; font-weight:700; background:#ececee; } .decision-v2__vol-tag[data-level=low] { background:#34c75924; color:#1d7a43; } .decision-v2__vol-tag[data-level=mid] { background:#ff950024; color:#b26a00; } .decision-v2__vol-tag[data-level=high] { background:#ff3b301f; color:#c0392b; }
 .decision-v2__states { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .decision-v2__column { background:#f7f7f9; border-radius:6px; padding:8px 10px; }
-.decision-v2__column header { display:flex; justify-content:space-between; align-items:center; gap:7px; color:#8e8e93; font-size:12px; margin-bottom:6px; }
-.decision-v2__column article { display:inline-flex; align-items:center; flex-wrap:wrap; gap:4px; background:#fff; border-radius:4px; padding:3px 5px; margin:0 5px 4px 0; font-size:11px; } .decision-v2__column article span { color:#8e8e93; font-size:10px; }
-.decision-v2__direction { display:flex; align-items:baseline; gap:10px; background:#f7f7f9; border-left:3px solid #8e8e93; border-radius:6px; padding:7px 10px; color:#8e8e93; font-size:12px; }
+.decision-v2__column header { display:flex; justify-content:space-between; align-items:center; gap:7px; color:var(--gy-text-muted); font-size:12px; margin-bottom:6px; }
+.decision-v2__column article { display:inline-flex; align-items:center; flex-wrap:wrap; gap:4px; background:var(--gy-bg-panel); border-radius:4px; padding:3px 5px; margin:0 5px 4px 0; font-size:11px; } .decision-v2__column article span { color:var(--gy-text-muted); font-size:10px; }
+.decision-v2__direction { display:flex; align-items:baseline; gap:10px; background:#f7f7f9; border-left:3px solid var(--gy-text-muted); border-radius:6px; padding:7px 10px; color:var(--gy-text-muted); font-size:12px; }
 .decision-v2__conclusion { background:#8e8e9314; border:1px solid #8e8e9340; border-radius:10px; padding:11px 13px; }
 .decision-v2__conclusion--high { background:#ff3b300f; border-color:#ff3b3040; }
-.decision-v2__conclusion header { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .decision-v2__conclusion strong { color:var(--certainty-color); font-size:21px; font-weight:600; } .decision-v2__exposure { color:#8e8e93; font-size:12px; margin-left:auto; } .decision-v2__conclusion p { margin-top:6px; }
+.decision-v2__conclusion header { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .decision-v2__conclusion strong { color:var(--certainty-color); font-size:21px; font-weight:600; } .decision-v2__exposure { color:var(--gy-text-muted); font-size:12px; margin-left:auto; } .decision-v2__conclusion p { margin-top:6px; }
 .decision-v2__scope { font-size:10px; color:#aeaeb2; padding:0 14px 8px; } .decision-v2__compliance { font-size:10px; color:#aeaeb2; }
-.decision-v2__proof { font-size:12px; color:#8e8e93; } summary { cursor:pointer; padding:4px 0; } .decision-v2__proof p { margin:5px 0; } .decision-v2__proof small { font-size:10px; overflow-wrap:anywhere; }
+.decision-v2__proof { font-size:12px; color:var(--gy-text-muted); } summary { cursor:pointer; padding:4px 0; } .decision-v2__proof p { margin:5px 0; } .decision-v2__proof small { font-size:10px; overflow-wrap:anywhere; }
 .decision-v2__scroll { overflow:auto; } table { width:100%; border-collapse:collapse; font-size:11px; white-space:nowrap; } td,th { padding:7px; text-align:left; border-bottom:1px solid #eef0f4; }
 .decision-v2__missing { color:#94611b; }
 @media(max-width:600px) { .decision-v2__score-wrap { min-width:80px; } .decision-v2__basis { flex-basis:100%; } .decision-v2__states { grid-template-columns:1fr; } .decision-v2__resonance { flex-wrap:wrap; } .decision-v2__resonance p { flex-basis:100%; } .decision-v2__conclusion strong { font-size:17px; } .decision-v2__exposure { margin-left:0; flex-basis:100%; } .decision-v2__score small { font-size:10px; } .decision-v2__first-action { padding:8px; } }
@@ -198,7 +205,7 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 .decision-v2__arrow { margin-left:2px; }
 .decision-v2__headline { text-align:center; color:#24262d; font-size:16px; padding:4px 0 8px; }
 .decision-v2__interpretation { color:#24262d; font-size:12px; }
-.decision-v2__fact-line { display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:#8e8e93; font-size:12px; }
+.decision-v2__fact-line { display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:var(--gy-text-muted); font-size:12px; }
 .decision-v2__first-action { border-left-width:4px; padding:8px 10px; }
 .decision-v2__first-action strong { font-size:12px; }
 .decision-v2__first-action p { font-size:11px; }
@@ -210,7 +217,7 @@ p { margin:0; font-size:12px; line-height:1.55; color:#8e8e93; }
 </style>
 
 <style scoped>
-.decision-v2__period-choice { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px;color:#8e8e93 }
+.decision-v2__period-choice { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px;color:var(--gy-text-muted) }
 .decision-v2__period-choice button { border:1px solid #ddd;border-radius:5px;background:white;color:inherit;padding:5px 9px;cursor:pointer }
 .decision-v2__period-choice button[aria-pressed=true] { border-color:#ff9500;color:#ff9500;background:#ff950010 }
 </style>

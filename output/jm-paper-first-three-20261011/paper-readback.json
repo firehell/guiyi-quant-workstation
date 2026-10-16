@@ -1,0 +1,63 @@
+{
+  "mode": "HISTORICAL_REPLAY",
+  "cash": "49424.70200",
+  "equity": "49364.702000000000000000",
+  "trading_day": "2026-10-09",
+  "day_start_equity": "46933.06400",
+  "daily_halt": false,
+  "rollover_halt": false,
+  "position_qty": 1,
+  "position_contract": "JM2701",
+  "order_count": 56,
+  "fill_count": 55,
+  "unresolved_orders": 1,
+  "retrospective_execution_facts": true,
+  "live_or_oos_evidence": false,
+  "account_id": "jm-dual-5m-20260928",
+  "sequence": 1551,
+  "command_count": 1551,
+  "event_count": 1551,
+  "hash_chain_and_reducer_verified": true,
+  "new_process_readback": true,
+  "daily": {
+    "2026-09-28": {
+      "day_start_equity": "50000",
+      "last_equity": "49432.80800",
+      "daily_halt": false,
+      "position_qty": 0
+    },
+    "2026-09-29": {
+      "day_start_equity": "49432.80800",
+      "last_equity": "48223.01600",
+      "daily_halt": true,
+      "position_qty": 0
+    },
+    "2026-09-30": {
+      "day_start_equity": "48223.01600",
+      "last_equity": "47874.14300",
+      "daily_halt": false,
+      "position_qty": 0
+    },
+    "2026-10-08": {
+      "day_start_equity": "47874.14300",
+      "last_equity": "46933.06400",
+      "daily_halt": false,
+      "position_qty": 0
+    },
+    "2026-10-09": {
+      "day_start_equity": "46933.06400",
+      "last_equity": "49364.702000000000000000",
+      "daily_halt": false,
+      "position_qty": 1
+    }
+  },
+  "daily_halt_events": [
+    {
+      "trading_day": "2026-09-29",
+      "at": "2026-09-29T02:37:00+00:00",
+      "equity": "48441.656000000000000000",
+      "threshold": "48444.1518400"
+    }
+  ],
+  "note": "Historical replay only; final open position retained, no broker/daemon/Shadow."
+}

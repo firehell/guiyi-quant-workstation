@@ -1,8 +1,11 @@
+import { annualizedReference } from './performancePresentation.ts'
+import { returnCurveLayout } from './returnCurveLayout.ts'
 export interface PageEstimateTrade {
   readonly buyDate: string; readonly buyPrice: string; readonly sellDate: string; readonly sellPrice: string
   readonly pct: string; readonly forceClose: boolean; readonly buyBarIsLive?: boolean; readonly segment_id: string
 }
 export interface PagePerformanceMode {
+  readonly drawdown_kind?: 'maximum_trade_loss' | 'peak_difference' | 'mixed_segment'
   readonly period: string
   readonly summary: { readonly cumReturn: string; readonly accuracy: number; readonly maxDrawdown: string; readonly tradeCount: number }
   readonly dates: readonly string[]; readonly trading_days: readonly string[]; readonly segment_ids: readonly string[]
@@ -35,8 +38,7 @@ export function pagePerformanceAnnualized(mode: { readonly dates: readonly strin
   const span = (days.at(-1)! - days[0]!) / 86_400_000
   const start = 1 + values[0]! / 100, end = 1 + values.at(-1)! / 100
   if (span <= 0 || start <= 0 || end <= 0) return null
-  const annual = 100 * (Math.pow(end / start, 365 / span) - 1)
-  return Number.isFinite(annual) ? annual : null
+  return annualizedReference({start:values[0]!,end:values.at(-1)!,days:span})
 }
 /** Independent segment annuals; the page curve and its projection remain unchanged. */
 export function pagePerformanceSegmentAnnualized(mode: { readonly dates: readonly string[]; readonly equity: readonly string[]; readonly segment_ids: readonly string[] } | null | undefined) {
@@ -51,6 +53,19 @@ export function pagePerformanceSegmentAnnualized(mode: { readonly dates: readonl
   if (new Set(parts.map(part => part.segmentId)).size !== parts.length) return []
   return parts.map(part => ({ segmentId: part.segmentId, since: part.dates[0]!, through: part.dates.at(-1)!, annualized: pagePerformanceAnnualized(part) }))
 }
+
+/** newow_page_summary_annualized_v1: annualize the existing aggregate page
+ * curve, never stitch prices/trades or compound/sum individual segment annuals.
+ * The single-segment annualization contract above remains unchanged. */
+export function pagePerformanceSummaryAnnualized(mode: Pick<PagePerformanceMode, 'dates' | 'equity' | 'segment_ids'> | null | undefined): number | null {
+  if (!mode || mode.segment_ids.length !== mode.dates.length || mode.segment_ids.some(id => !id.trim())) return null
+  const completed = new Set<string>()
+  for (let i = 1; i < mode.segment_ids.length; i++) {
+    if (mode.segment_ids[i] !== mode.segment_ids[i - 1]) completed.add(mode.segment_ids[i - 1]!)
+    if (completed.has(mode.segment_ids[i]!)) return null
+  }
+  return pagePerformanceAnnualized({ dates: mode.dates, equity: mode.equity })
+}
 const sourceHash = '3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d'
 function obj(v: unknown): Record<string, unknown> { if (!v || typeof v !== 'object' || Array.isArray(v)) throw Error('page_performance object invalid'); return v as Record<string, unknown> }
 function exact(v: Record<string, unknown>, fields: string[]) { if (Object.keys(v).some(k => !fields.includes(k)) || fields.some(k => !Object.hasOwn(v, k))) throw Error('page_performance fields invalid') }
@@ -61,7 +76,8 @@ function list(v: unknown): unknown[] { if (!Array.isArray(v)) throw Error('page_
 function mode(v: unknown, cutoff?: string, ideal = false): PagePerformanceMode | null {
   if (v === null) return null
   const m = obj(v), s = obj(m.summary)
-  exact(m, ['period','summary','dates','trading_days','segment_ids','equity','trades'])
+  exact(m, ['period','summary','dates','trading_days','segment_ids','equity','trades', ...(Object.hasOwn(m,'drawdown_kind') ? ['drawdown_kind'] : [])])
+  if (m.drawdown_kind !== undefined && !['maximum_trade_loss','peak_difference','mixed_segment'].includes(m.drawdown_kind as string)) throw Error('page_performance drawdown kind invalid')
   exact(s, ['cumReturn','accuracy','maxDrawdown','tradeCount'])
   const dates = list(m.dates).map(text), days = list(m.trading_days).map(text), segments = list(m.segment_ids).map(text), equity = list(m.equity).map(decimal)
   if ([days, segments, equity].some(items => items.length !== dates.length)) throw Error('page_performance curve dimensions invalid')
@@ -92,7 +108,7 @@ function mode(v: unknown, cutoff?: string, ideal = false): PagePerformanceMode |
   })
   const accuracy = count(s.accuracy), tradeCount = count(s.tradeCount)
   if (accuracy > 100 || tradeCount !== trades.length) throw Error('page_performance summary invalid')
-  return {period: text(m.period), summary: {cumReturn: decimal(s.cumReturn), accuracy, maxDrawdown: decimal(s.maxDrawdown), tradeCount}, dates, trading_days: days, segment_ids: segments, equity, trades}
+  return {...(m.drawdown_kind === undefined ? {} : {drawdown_kind:m.drawdown_kind as PagePerformanceMode['drawdown_kind']}),period: text(m.period), summary: {cumReturn: decimal(s.cumReturn), accuracy, maxDrawdown: decimal(s.maxDrawdown), tradeCount}, dates, trading_days: days, segment_ids: segments, equity, trades}
 }
 export function normalizePagePerformance(v: unknown, strategy: PagePerformance['strategy'], cutoff?: string, period?: string): PagePerformance | null {
   if (v === undefined || v === null) return null
@@ -107,16 +123,16 @@ export function normalizePagePerformance(v: unknown, strategy: PagePerformance['
   return {version: p.version, source_version: p.source_version, source_sha256: sourceHash, page_parity: true, executable: false, strategy, input_sha256: inputHash, source_evidence_sha256: evidenceHash, segment_count: segmentCount, ordinary_interrupted_count: count(p.ordinary_interrupted_count), ideal_open_count: count(p.ideal_open_count), ordinary, ideal}
 }
 
+/** Page-parity geometry uses bar index spacing and authoritative trading-day labels. */
+export function pagePerformanceLayout(mode: PagePerformanceMode | null) {
+  const points = mode?.equity.map((value, index) => ({
+    value: Number(value),
+    position: index,
+    date: mode.trading_days[index] ?? '',
+    segment: mode.segment_ids[index] ?? '',
+  })) ?? []
+  return returnCurveLayout(points, { headroom: 1, areaBaseline: 'bottom', singlePoint: 'start', valueUnit:'percentage_points' })
+}
 export function pagePerformancePlot(mode: PagePerformanceMode | null) {
-  if (!mode || mode.equity.length === 0) return []
-  const values = mode.equity.map(Number)
-  let low = 0, high = 0
-  for (const value of values) { low = Math.min(low, value); high = Math.max(high, value) }
-  const span = high - low || 1
-  const parts: string[] = []
-  values.forEach((v, i) => {
-    if (i === 0 || mode.segment_ids[i] !== mode.segment_ids[i - 1]) parts.push('')
-    parts[parts.length - 1] += `${i / Math.max(1, values.length - 1) * 712},${140 - (v-low)/span*140} `
-  })
-  return parts
+  return pagePerformanceLayout(mode).segments
 }

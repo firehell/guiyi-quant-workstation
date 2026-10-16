@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[2]
 
-PUBLIC_WEB_ROUTES = {"/market", "/market/chart"}
+PUBLIC_WEB_ROUTES = {"/market", "/market/chart", "/research/new-subing"}
 PUBLIC_OVERLAYS = {"none", "htdy"}
 MARKET_TABLES = {
     "exchanges",
@@ -153,6 +153,7 @@ ACTIVE_MARKET_ROUTE_OWNERS = {
     ("GET", "/api/v1/market/{symbol}/subing/reference", "app.api.market_subing_reference:subing_reference"),
     ("GET", "/api/v1/market/bars/page", "app.api.market:canonical_market_bars_page"),
     ("GET", "/api/v1/market/dominants", "app.api.market:market_dominants"),
+    ("GET", "/api/v1/market/product-directory", "app.api.market:market_product_directory"),
     (
         "GET",
         "/api/v1/market/newow/product-capabilities",

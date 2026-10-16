@@ -80,6 +80,18 @@ curl -i http://127.0.0.1:8000/api/health
 
 腾讯云 ECS：
 
+`tunnel-healthcheck.sh` 会从自身目录加载 `http-probe.sh`。若 ECS 未检出完整仓库，
+必须把这两个文件放在同一目录，不能只复制入口脚本。例如在 Mac 的仓库根目录分发至
+ECS 已创建的目标目录后，在 ECS 运行入口（下列主机和目录需替换为实际值）：
+
+```bash
+scp scripts/ops/network/{tunnel-healthcheck.sh,http-probe.sh} ecs-host:/existing-directory/
+# ECS 的目标目录中：
+bash ./tunnel-healthcheck.sh
+```
+
+完整仓库中的运行方式：
+
 ```bash
 ./scripts/ops/network/tunnel-healthcheck.sh
 ```

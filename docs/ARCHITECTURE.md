@@ -102,7 +102,7 @@ flowchart LR
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
 - Market WebSocket 先订阅再读快照；快照、state 更新和单连接定时恢复读取在同一有界后台入口执行，每次在 worker 内新建、使用并关闭 Session 与同步 Redis。每进程最多四项读取，满额立即失败，无无界队列；调用取消后仍待实际 worker 结束才释放额度。内部 Bar Pub/Sub 携带物理合约，详情连接只转发与当前交易日/owner 一致的 Bar，并在 owner 变化后先 reset；定时恢复保留 `realtime/post_close` 来源，盘后延迟完成 Bar 不冒充 tick 实时。Pub/Sub 与发送继续在事件循环执行。
 - `chart.vue` 只挂载 `MarketDetailPage`。无 `view` 旧链接按 overlay 明确迁移到 HTDY 或 Free，保留合法品种、序列、合约、周期与定位；参数缺省使用 actual_dominant/15m，非法组合拒绝并提供恢复入口。首页普通进入仍为 Newow 趋势日线，Event 经统一身份构造器精确定位。固定 D1 `view=trend` 兼容产品继续存在，旧页面及返回入口不再保留；工程与用户视觉验收状态见 `STATUS.md`。
-- Newow P1–P6 active 代码路径在图中以实线表示：`MarketDataService` 后的 completed `1w/1d/60m` reader 取得物理 owner 区段和同合约 warm-up，typed adapter 输出主状态、`BUILD/CLEAR` Action 与 `quantity_effect=none` Hint；MACD display adapter 只把同一 owner Bar 送入通用 MACD kernel，并保留参数/hash/点级状态。sectioned product service 负责统计截止、来源事实、snapshot/cursor 验证、有限进程内复用和有界重型执行，`GET /api/v1/market/newow/strategy-detail` 只做 typed 序列化；无 DB 的 `product-capabilities` 在 reader/service 前收窄当前发布面，Web 同样据此显示 staged combinations。三周期代码存在不等于当前全部开放；频率、品种、section 和输入质量政策以 `product_release` 的版本化常量及 capability 响应为准，本文不复制逐批扩展名单。Release 不代表 Runtime promotion、OOS、原站完整 parity 或真实工作站验收。
+- Newow P1–P6 active 代码路径在图中以实线表示：`MarketDataService` 后的 completed `1w/1d/60m` reader 取得物理 owner 区段和同合约 warm-up，typed adapter 输出主状态、`BUILD/CLEAR` Action 与 `quantity_effect=none` Hint；MACD display adapter 只把同一 owner Bar 送入通用 MACD kernel，并保留参数/hash/点级状态。sectioned product service 负责统计截止、来源事实、snapshot/cursor 验证、有限进程内复用和有界重型执行，`GET /api/v1/market/newow/strategy-detail` 只做 typed 序列化；无 DB 的 `product-capabilities` 在 reader/service 前收窄当前发布面，Web 同样据此显示 staged combinations。三周期代码存在不等于当前全部开放；频率、品种、section 和输入质量政策以 `product_release` 的版本化合同 `capability_contracts.json`、派生常量及 capability 响应为准，本文不复制逐批扩展名单。Release 不代表 Runtime promotion、OOS、原站完整 parity 或真实工作站验收。
 - Newow 快照共用 reader、section service 与 MarketDataService，但保留不同政策：日线默认在最近 20 个权威已完成交易日内选择经验证的可读截点；周线同时依据发布状态决定当前/待更新/失败；显式历史快照提供人工恢复入口。所有面板绑定同一 as_of 与 snapshot token，展示实际数据日期和待更新状态；身份、映射、数据损坏或未知错误不得伪装成普通缺数而自动跳过。
 - Newow readiness CLI 经共享 reader/owner validator/MDS 枚举与逐合约读取依赖；纯 `ContractWarmupPlanner` 与维护器共用精确候选 scope/count/hash。matrix 复用实际 section service；只读事务使用 `app.db.readonly.readonly_transaction`，不组合 provider、metadata writer、maintenance apply 或 Redis。
 - `au-calendar-correction` 只组合已捕获来源文件、共享 Session 规范化与 Catalog 事务；默认只读规划，显式 apply 仅更正一个已确认 Calendar 字段并独立读回。不依赖维护执行器、provider、Canonical writer 或 Runtime；固定身份与失败边界见 `DATA_CENTER.md`。
@@ -135,6 +135,28 @@ flowchart LR
 显式 activation、reconciliation、worker entry 和恢复入口具有独立用途；HTTP 路由存在不证明生产
 bootstrap 或 worker 已启用。当前生产状态与未完成验收见 `STATUS.md`。
 
+Reference 的事务来源与恢复 receipt 校验由 `transaction_guards` 提供，仍在 repository 原事务和锁内执行；
+checkpoint/watermark 使用纯工具。Newow reader/service 由 `newow.composition` 组装，
+HTTP、snapshot 与 readiness 显式保留各自质量、缓存和预算政策；HTTP 展示转换位于 `api.newow_presentation`。
+
+Runtime 的 launchd、文件快照及心跳身份读取位于 `app.runtime_identity`；安全配置读取位于
+`app.private_settings`，专项恢复入口只组合政策并适配既有错误。共享依赖纳入 Runtime 与有界恢复执行指纹。
+
+## 新苏冰固定参数历史研究
+
+V2纯新包 `guiyi_quant.new_subing_v2` 复用不可变输入类型与行情适配器，独立维护阶段、分层账户与身份；
+快照、背离扫描和输入校验共用显式版本 `new_subing_common_v1`，Profile 与执行引擎分别维护；
+逐prefix指标准备不缓存账户状态。新脚本只读重测并验证V1输入/执行事实哈希，既有结果库与页面区分版本和两档本金。
+V2合同见 [NEW_SUBING_STRATEGY_V2.md](NEW_SUBING_STRATEGY_V2.md)；V1公式与结果保持原样。
+
+`MarketDataService -> app.market_data.new_subing_research -> guiyi_quant.new_subing / new_subing_v2`
+提供同物理合约 lifecycle 指标前缀、completed 多周期决策与后续1m双向整数手研究模型。
+成本、限价与多空保证金来自独立冻结的 RQData facts，缺事实不回退。
+离线 CLI 写任务结果；`app.new_subing_research.store` 的精确 SHA index 是结果读取入口，
+只读 `/api/v1/research/new-subing/*` 与 `/research/new-subing` 不导入 provider 或运行研究。
+本链没有生产数据库、Paper账本、Alert Rule、Live订阅或订单传输依赖；旧苏冰算法和 JM Paper
+保持既有身份。V1业务与时序定义见 [基线合同](NEW_SUBING_STRATEGY.md)，V2见上文独立合同。
+
 ## Preserved seams
 
 Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`、Live/Historical isolation、Newow ReferenceTrade、Alert Application Domain 与 Runtime authorization 保持分离。Market Home projection 与 Newow ReferenceTrade 都不改变行情 authority；ReferenceTrade 是新只读产品身份，不恢复已退役 Historical Projection、账户或策略 Event。Alembic migrations 是 schema lineage，不是已退役域的 active application dependency。
@@ -166,3 +188,11 @@ Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`�
 one-shot 身份不变。稳定 service-bindings 按服务固定发布根/commit/tag/代次；稳定 dispatcher 不再要求业务服务同根。
 候选只读预热、旧版收尾、OS 独占锁、新代次核对、进度现场读回组成单机交接 seam，避免引入消息平台或第二正式 API。
 部署与首次迁移见 `deploy/README.md`。旧一根模式仅在 registry 不存在时兼容，corrupt registry 不回退。
+
+## 本地 Paper 试点依赖
+
+JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原动作，使用版本化
+因果目标适配；`guiyi_quant.paper` 负责纯 Decimal 风控、模型撮合和事件重放，
+`app.paper.ledger` 在专用本地 PostgreSQL 保存不可变命令与事件。
+本域不接 Alert、Redis、普通 API 启动、Broker 或后台 Runtime；不改变 ReferenceTrade。
+领域合同与恢复边界见 [PAPER_PILOT.md](PAPER_PILOT.md)。

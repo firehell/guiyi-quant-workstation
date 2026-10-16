@@ -11,6 +11,8 @@ from guiyi_quant.newow.research_backtest import (
     BacktestCosts,
     BacktestExecutionConstraint,
     BacktestIntent,
+    BacktestOffsetFees,
+    BacktestFeeOffset,
     NewowResearchBar,
     ResearchStrategy,
     backtest_newow_strategy,
@@ -97,6 +99,150 @@ def _constraint(
         captured_at=datetime(2025, 12, 31, tzinfo=UTC),
         source_identity=source or f"limits-{bar.source_identity}",
     )
+
+
+def test_dual_fusion_same_bar_exit_and_reentry_keeps_one_next_bar_target() -> None:
+    from guiyi_quant.newow.research_backtest import fuse_causal_intents
+
+    bars = tuple(_bar(index, value="100") for index in range(4))
+    trend = (
+        BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),
+        BacktestIntent(BacktestAction.CLEAR, bars[1].bar_end, TREND_FORMULA),
+    )
+    oscillation = (
+        BacktestIntent(BacktestAction.BUILD, bars[1].bar_end, OSCILLATION_FORMULA_VERSION),
+        BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, OSCILLATION_FORMULA_VERSION),
+    )
+
+    result = fuse_causal_intents(bars, trend, oscillation)
+
+    assert [(item.action, item.signal_bar_end) for item in result] == [
+        (BacktestAction.BUILD, bars[0].bar_end),
+        (BacktestAction.CLEAR, bars[2].bar_end),
+    ]
+
+
+def test_dual_fusion_accepts_physical_prefix_and_resets_at_roll() -> None:
+    from guiyi_quant.newow.research_backtest import fuse_causal_intents
+
+    prefix = replace(_bar(0, value="100"), observation_eligible=False,
+                     series_kind="contract")
+    first = _bar(1, value="100")
+    next_contract = replace(
+        _bar(2, value="100"), physical_contract="RB2701", segment_id="rb-2701"
+    )
+    bars = (prefix, first, next_contract)
+    trend = (
+        BacktestIntent(BacktestAction.BUILD, prefix.bar_end, TREND_FORMULA),
+        BacktestIntent(BacktestAction.BUILD, next_contract.bar_end, TREND_FORMULA),
+    )
+    oscillation = (
+        BacktestIntent(BacktestAction.CLEAR, first.bar_end, OSCILLATION_FORMULA_VERSION),
+    )
+
+    assert [(intent.action, intent.signal_bar_end) for intent in
+            fuse_causal_intents(bars, trend, oscillation)] == [
+        (BacktestAction.CLEAR, first.bar_end),
+        (BacktestAction.BUILD, next_contract.bar_end),
+    ]
+
+
+def test_dual_fusion_builder_uses_source_actions_and_next_open_execution() -> None:
+    bars = tuple(
+        _bar(index, value=str(value), frequency="60m")
+        for index, value in enumerate((100, 80, 120, 80, 90))
+    )
+
+    intents, versions = build_strategy_intents(bars, ResearchStrategy.DUAL_FUSION)
+    result = run_causal_long_only_backtest(
+        bars, intents, strategy=ResearchStrategy.DUAL_FUSION,
+        signal_formula_versions=versions,
+    )
+
+    assert result.strategy is ResearchStrategy.DUAL_FUSION
+    assert len(result.trades) == 1
+    assert result.trades[0].entry.signal_bar_end == bars[2].bar_end
+    assert result.trades[0].entry.fill_bar_end == bars[3].bar_end
+    assert result.trades[0].exit.signal_bar_end == bars[3].bar_end
+    assert result.trades[0].exit.fill_bar_end == bars[4].bar_end
+
+
+@pytest.mark.parametrize(
+    ("exit_trading_day", "expected_fee", "expected_offset"),
+    [
+        (date(2026, 1, 1), Decimal("10"), BacktestFeeOffset.CLOSE_TODAY),
+        (date(2026, 1, 2), Decimal("2"), BacktestFeeOffset.CLOSE_YESTERDAY),
+    ],
+)
+def test_sourced_offset_fees_choose_close_today_or_yesterday(
+    exit_trading_day: date,
+    expected_fee: Decimal,
+    expected_offset: BacktestFeeOffset,
+) -> None:
+    bars = tuple(
+        replace(_bar(index, value="100"), trading_day=date(2026, 1, 1))
+        for index in range(4)
+    )
+    bars = (*bars[:3], replace(bars[3], trading_day=exit_trading_day))
+    snapshot = replace(
+        _cost_snapshot(),
+        costs=BacktestCosts(
+            contract_multiplier=Decimal("10"),
+            commission_per_contract=Decimal("999"),
+            price_tick=Decimal("1"),
+        ),
+        offset_fees=BacktestOffsetFees(
+            open_rate=Decimal("0"), open_per_contract=Decimal("1"),
+            close_today_rate=Decimal("0"),
+            close_today_per_contract=Decimal("10"),
+            close_yesterday_rate=Decimal("0"),
+            close_yesterday_per_contract=Decimal("2"),
+        ),
+    )
+    result = run_causal_long_only_backtest(
+        bars,
+        (
+            BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),
+            BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, TREND_FORMULA),
+        ),
+        cost_snapshots=(snapshot,),
+        execution_constraints=tuple(_constraint(bar) for bar in bars),
+        require_execution_facts=True,
+        require_offset_fees=True,
+        strategy=ResearchStrategy.TREND,
+        signal_formula_versions=(TREND_FORMULA,),
+    )
+    assert [fill.fee for fill in result.fills] == [Decimal("1"), expected_fee]
+    assert [fill.fee_offset for fill in result.fills] == [
+        BacktestFeeOffset.OPEN, expected_offset,
+    ]
+    assert result.trades[0].net_pnl_per_contract == -(Decimal("1") + expected_fee)
+
+
+def test_sourced_offset_fee_mode_rejects_missing_schedule() -> None:
+    bars = tuple(_bar(index, value="100") for index in range(2))
+    with pytest.raises(ValueError, match="EXECUTION_FACTS_MISSING"):
+        run_causal_long_only_backtest(
+            bars,
+            (BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),),
+            cost_snapshots=(_cost_snapshot(),),
+            execution_constraints=tuple(_constraint(bar) for bar in bars),
+            require_execution_facts=True,
+            require_offset_fees=True,
+            strategy=ResearchStrategy.TREND,
+            signal_formula_versions=(TREND_FORMULA,),
+        )
+
+
+def test_offset_fee_schedule_rejects_unknown_offset() -> None:
+    fees = BacktestOffsetFees(
+        open_rate=Decimal("0"), open_per_contract=Decimal("1"),
+        close_today_rate=Decimal("0"), close_today_per_contract=Decimal("2"),
+        close_yesterday_rate=Decimal("0"),
+        close_yesterday_per_contract=Decimal("3"),
+    )
+    with pytest.raises(ValueError, match="NEWOW_BACKTEST_FEE_OFFSET_INVALID"):
+        fees.fee("OTHER", Decimal("100"), Decimal("60"))  # type: ignore[arg-type]
 
 
 def test_research_bar_accepts_only_formal_completed_actual_dominant_periods() -> None:

@@ -1,0 +1,30 @@
+{
+  "status": "READ_ONLY_DIAGNOSIS_COMPLETE",
+  "unknown_journal_sha256": "d1ba321fdb835df9a3fe3da52db8c23f2db1cf14db3e70992b0a3eca0db71baa",
+  "failure_code": "HEALTHY_CYCLE_TIMEOUT",
+  "http_startup_ready": true,
+  "http_startup_seconds": 2.2231548340059817,
+  "identity_verified": true,
+  "reference_actual_ready_evidence": "2026-10-11T15:19:32.629822+00:00",
+  "started_at": "2026-10-11T15:19:07.672994+00:00",
+  "reference_first_ready_recorded_within30s": true,
+  "diagnosis": "30s initial strict same-round all-six current ready acquisition did not pass; no proof Reference cold first-ready exceeded 30s",
+  "all10_registry_plists_exact": true,
+  "all6_new_loaded_pids_exact": true,
+  "all6_old_generation14_pids_exited": true,
+  "prior_journals_and_archives_byte_equal_count": 26,
+  "scope_full_proof_equals_plan": true,
+  "scope_sha256": "9349c651d5a2839b4735302f1600a720dbfa5b0b6fe38cadb1168f01b44c8ccb",
+  "history_protected_preimage_equals_plan": true,
+  "history_routes_empty": true,
+  "history_differing_fields_from_drained_archive": [
+    "cursor"
+  ],
+  "history_archive_hash_still_valid": true,
+  "parked_verified": true,
+  "halt_failed": [],
+  "existing120s_contract": "deploy/README candidate temporary label pure-read/calculate warmup; not itself actual group startup budget",
+  "budget_change_review_constraint": "may lengthen initial current all-ready acquisition only; retain age<=30s exact current all-six/heartbeats/no typed failure and final 30s gate; prove rest interval sufficient",
+  "production_mutation_performed": false,
+  "attempt_retry_allowed": false
+}

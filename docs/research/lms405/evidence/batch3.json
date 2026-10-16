@@ -1,0 +1,77 @@
+{
+  "identity": "lms405-evidence-batch3",
+  "access_date": "2026-10-11",
+  "new_detail_count": 9,
+  "source_count": 58,
+  "new_sources": [
+    "E50",
+    "E51",
+    "E52",
+    "E53",
+    "E54",
+    "E55",
+    "E56",
+    "E57",
+    "E58"
+  ],
+  "set": "development",
+  "blind_validation": false,
+  "full_lifecycle_cases": 0,
+  "author_bar_samples": 0,
+  "search_terms": [
+    "FG2701",
+    "JM2701",
+    "keybar",
+    "tbar",
+    "ibar",
+    "BBB"
+  ],
+  "direct_reference_followed": [
+    "E53→E54"
+  ],
+  "coverage_dates": [
+    "2025-02-05",
+    "2026-09-23"
+  ],
+  "search_saturated": false,
+  "skips": [
+    "重复转发",
+    "股指1.0案例不借用于商品4.0.5",
+    "宣传书籍不提取交易规则",
+    "摘要未打开不计详情"
+  ],
+  "limitations": [
+    "E53评论部分防火墙隐藏",
+    "多篇编辑后原文无法确认历史可知性",
+    "价格区域部分用完才公开",
+    "FG2609原数据缺口未修复",
+    "E58两图已查看，只有节点文字，无BBB公式或K线OHLC"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "status": "PARTIAL",
+      "blocker": "没有完整时间和数量的进入保护恢复退出链"
+    },
+    {
+      "step": 2,
+      "status": "PARTIAL",
+      "blocker": "六组本地周期可读；作者逐Bar样本缺失"
+    },
+    {
+      "step": 3,
+      "status": "UNKNOWN_FORMULA",
+      "blocker": "关键K和BBB精确条件未识别"
+    },
+    {
+      "step": 4,
+      "status": "UNKNOWN_FORMULA",
+      "blocker": "概念与反例已整理；分类阈值未识别"
+    },
+    {
+      "step": 5,
+      "status": "UNKNOWN_FORMULA",
+      "blocker": "单例前高锚点可辨；区间生成更新失效未识别"
+    }
+  ]
+}

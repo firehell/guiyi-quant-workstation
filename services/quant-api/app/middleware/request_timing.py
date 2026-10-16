@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import nullcontext
+
+from app.read_timings import detail_timings
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -20,7 +23,13 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         started = time.perf_counter()
-        response = await call_next(request)
+        enabled = request.url.path.rstrip("/").endswith((
+            "/market/newow/strategy-detail", "/market/research/home-overview", "/market/product-directory",
+        ))
+        with detail_timings() if enabled else nullcontext() as metrics:
+            response = await call_next(request)
+        if metrics is not None:
+            response.headers["Server-Timing"] = metrics.header((time.perf_counter() - started) * 1000)
         total_ms = (time.perf_counter() - started) * 1000
         response_bytes = int(response.headers.get("content-length", "0") or 0)
         message = (

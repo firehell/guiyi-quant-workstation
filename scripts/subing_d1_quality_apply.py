@@ -29,7 +29,7 @@ from app.market_data.subing_d1_quality_apply import (  # noqa: E402
     apply_frozen_candidates,
     preflight_frozen_candidates,
 )
-from scripts.newow_weekly_recovery import load_private_readonly_settings  # noqa: E402
+from app.private_settings import load_private_readonly_settings  # noqa: E402
 
 
 AUTHORIZED_PLAN_SHA256 = "5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.checkpoint import checkpoint_watermark
+
 from collections.abc import Callable
 from contextlib import ExitStack, nullcontext
 from copy import deepcopy
@@ -143,22 +145,6 @@ def _seed_checkpoint(stream: StreamIdentity) -> tuple[AdapterCheckpoint[object],
     ), schema
 
 
-def _checkpoint_watermark(
-    checkpoint: AdapterCheckpoint[object], item: HistoricalInputBar,
-    reference_state: ReferenceState,
-):
-    candidates = tuple(
-        value for value in (
-            checkpoint.computed_through,
-            item.bar_end,
-            reference_state.computed_through,
-            None if reference_state.last_event_key is None else reference_state.last_event_key[0],
-        )
-        if value is not None
-    )
-    return max(candidates)
-
-
 def _subing_step(
     stream: StreamIdentity,
     checkpoint: AdapterCheckpoint[object],
@@ -185,7 +171,7 @@ def _subing_step(
         return (
             AdapterCheckpoint(
                 strategy_state,
-                _checkpoint_watermark(checkpoint, item, transition.state),
+                checkpoint_watermark(checkpoint, item, transition.state),
                 item.fingerprint,
                 item.physical_contract,
                 item.owner_segment_id,
@@ -302,7 +288,7 @@ def _subing_step(
     return (
         AdapterCheckpoint(
             next_state,
-            _checkpoint_watermark(checkpoint, item, transition.state),
+            checkpoint_watermark(checkpoint, item, transition.state),
             item.fingerprint,
             item.physical_contract,
             item.owner_segment_id,
@@ -343,7 +329,7 @@ def _newow_step(
         return (
             AdapterCheckpoint(
                 checkpoint.strategy_state,
-                _checkpoint_watermark(checkpoint, item, transition.state),
+                checkpoint_watermark(checkpoint, item, transition.state),
                 item.fingerprint,
                 item.physical_contract,
                 item.owner_segment_id,
@@ -528,7 +514,7 @@ def _newow_step(
     return (
         AdapterCheckpoint(
             next_state,
-            _checkpoint_watermark(checkpoint, item, transition.state),
+            checkpoint_watermark(checkpoint, item, transition.state),
             item.fingerprint,
             item.physical_contract,
             item.owner_segment_id,
@@ -539,6 +525,19 @@ def _newow_step(
         tuple(SourceAction(action, observed_at) for action in actions),
         transition,
     )
+
+
+def _strategy_step_adapter(strategy_code: str):
+    """Select one of the three supported drivers, without a registration layer."""
+    code = strategy_code.replace("-", "_")
+    if code == "newow_dual_fusion":
+        from app.reference_trading.newow_fusion import advance_fusion_step
+        return advance_fusion_step, "newow_dual_fusion_reference_v1"
+    if code == "subing_reference":
+        return _subing_step, "subing_replay_v1"
+    if code.startswith("newow_"):
+        return _newow_step, "newow_product_replay_v1"
+    raise ValueError("REFERENCE_STRATEGY_DRIVER_UNSUPPORTED")
 
 
 def _advance_batch(
@@ -552,6 +551,7 @@ def _advance_batch(
     tuple[ReferenceTransition, ...],
     str,
 ]:
+    step, schema = _strategy_step_adapter(stream.strategy_code)
     current = checkpoint
     sources: list[SourceAction] = []
     transitions: list[ReferenceTransition] = []
@@ -570,18 +570,7 @@ def _advance_batch(
                     trading_day=boundary.trading_day,
                     formula_versions=stream.formula_versions,
                 ))
-        if stream.strategy_code.replace("-", "_") == "newow_dual_fusion":
-            from app.reference_trading.newow_fusion import advance_fusion_step
-            current, found_sources, transition = advance_fusion_step(stream,current,item,presentation)
-            schema = "newow_dual_fusion_reference_v1"
-        elif stream.strategy_code.replace("-", "_") == "subing_reference":
-            current, found_sources, transition = _subing_step(stream, current, item, presentation)
-            schema = "subing_replay_v1"
-        elif stream.strategy_code.replace("-", "_").startswith("newow_"):
-            current, found_sources, transition = _newow_step(stream, current, item, presentation)
-            schema = "newow_product_replay_v1"
-        else:
-            raise ValueError("REFERENCE_STRATEGY_DRIVER_UNSUPPORTED")
+        current, found_sources, transition = step(stream, current, item, presentation)
         sources.extend(found_sources)
         transitions.append(transition)
     return current, tuple(sources), tuple(transitions), schema

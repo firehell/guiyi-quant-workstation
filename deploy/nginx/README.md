@@ -47,6 +47,9 @@ sudo systemctl reload nginx
 sudo tail -30 /var/log/nginx/error.log
 ```
 
+ECS 未检出完整仓库时，`tunnel-healthcheck.sh` 与 `http-probe.sh` 须同目录分发，
+见 [FRP 验收与分发说明](../frp/README.md#验收)。
+
 FRPC 配置模板：[`deploy/frp/frpc.toml.example`](../frp/frpc.toml.example)
 
 ## 公网安全验收

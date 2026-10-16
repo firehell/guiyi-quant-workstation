@@ -5,6 +5,21 @@ import { normalizeSubingReference, subingCallouts } from '../src/utils/subingRef
 import { useSubingReference } from '../src/composables/useSubingReference.ts'
 import { formatMarketDecimal } from '../src/utils/marketDisplay.ts'
 
+test('SuBing reference cancels old and disposed HTTP reads', async () => {
+  const signals: AbortSignal[] = []
+  const reference = useSubingReference((_symbol, _query, signal) => {
+    signals.push(signal!)
+    return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(Error('aborted')), { once: true }))
+  })
+  const first = reference.refresh('jm')
+  const second = reference.refresh('rb')
+  assert.equal(signals[0].aborted, true)
+  reference.dispose()
+  assert.equal(signals[1].aborted, true)
+  assert.equal(reference.loading.value, false)
+  await Promise.all([first, second])
+})
+
 export const referenceFixture = (symbol = 'jm') => ({ symbol, frequency: '15m', series_kind: 'actual_dominant', formula_version: 'subing_ths_15m_v3', reference_model_version: 'subing_reference_reverse_close_v1', as_of: '2026-09-08T16:00:00+08:00', performance_since: '2026-08-12', performance_through: '2026-09-08', reference_cutoff: '2026-09-08T15:00:00+08:00', input_snapshot_hash: 'a'.repeat(64), executable: false, auto_order: false, source: 'historical_replay', research_status: 'ready', summary: { closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0, open_count: 0, interrupted_count: 0, rollover_interrupted_count: 0, data_interrupted_count: 0, initial_count: 0, win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: '0' }, signals: [], indicators: [], items: [], next_before: null })
 
 test('reference normalizer rejects wrong authority and unsafe financial values', () => {

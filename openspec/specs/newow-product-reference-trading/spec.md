@@ -665,6 +665,23 @@ W1 只在完整 ISO 周末应用由 D1 来源逐端点证明的 `weekly-d1-quali
 
 ### Requirement: Sectioned product delivery is computation-bounded
 
+首次日线/周线 `chart` MAY 使用 `resolve_current=true`，MUST 与显式 `as_of`、窗口、旧游标和
+snapshot token 互斥。服务端 SHALL 直接返回解析器已验证的同一主图及 `snapshot_context`，
+不丢弃主图后重读。后续 section SHALL 绑定返回的截止与快照证明。待更新或覆盖不足时，
+默认当前模式 SHALL 只保留明确截止时间的价格预览，不显示策略、信号、解释或收益；显式历史回看独立。
+
+#### Scenario: Price precedes verified strategy
+
+- **WHEN** 当前身份的正式主图尚未验证或最新周期待发布
+- **THEN** 客户端可从 `/bars/page` 或有界历史缓存展示带截止时间的价格，MUST 隐藏旧策略事实
+- **AND** 已验证主图一次性接替预览，当前辅助随后读取，解释、收益和双策略参考仅在可见或主动展开时读取
+
+详情价格缓存 SHALL 仅用于预览，内存常驻上限8MiB、磁盘32MiB、最长7天，来源/序列/合约/周期/窗口隔离；
+缓存命中和TTL不证明当前映射、质量或输入。静态目录显示缓存最长24小时，主力映射仍需新读取。
+能力配置 SHALL 会话共享5分钟并合并在途请求，支持ETag和刷新；304无已验证缓存体 MUST 失败。
+冻结权益仅按run/hash复用。前台只读传输上限2、后端重型计算上限1；离场取消等待任务及最后订阅，
+保留其他有效订阅。gzip只影响传输，不改变数值、窗口或后端缓存预算。
+
 新的 `GET /api/v1/market/newow/strategy-detail` MUST 使用单一路由和显式
 `section = chart | auxiliary | reference | explanation | comparator`；省略时仅为 `chart`，MUST NOT
 提供隐式 `all`。每次请求只读取和计算该 section 的必要依赖，不能先计算整包再删掉未请求字段。
@@ -910,7 +927,9 @@ summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit �
 失效 token 或缓存关闭时仍不得宣称已建立 snapshot。
 
 失败、不完整读取和未验证结果不得缓存。关闭缓存时结果、身份和错误语义 MUST 不变。reference/comparator
-共享同一个重型预算：运行并发 1、FIFO 等待队列最多 2、等待 5 秒超时；第三个等待者或超时返回429。
+共享同一个重型预算：运行并发 1、等待队列最多 2、等待 5 秒超时；第三个等待者或超时返回429。
+等待中的当前主图优先于所选辅助、可见收益/解释及历史追加，同级 FIFO；不抢占运行任务，
+不扩大既有持久化参考读取的独立额度。取消或超时的等待任务不得取得执行额度。
 排队取消必须移除 waiter 并释放名额，运行阶段在安全边界释放 permit，不新增常驻 worker。取消 MUST
 传至分页和安全计算边界；共享计算以相同 entry key+section result key 去重且只有最后消费者取消才停止。对不可抢占原语不得承诺
 浏览器 abort 即瞬时停止，也不得跨线程共享不安全数据库 Session。
@@ -1416,6 +1435,15 @@ ideal SHALL 独立配对：趋势 entry 使用 B10 且最高 Close 包含退出 
 Web ordinary / ideal 切换 SHALL 同时切换摘要、曲线和独立估值记录。末根估值明确标记；
 ReferenceTrade 状态和诊断保留独立展示，缺少新投影时不得用旧收益冒充新模式。
 
+Web SHALL 展示 `newow_page_summary_annualized_v1` 页面参考年化，使用所选 ordinary/ideal
+已存在完整累计曲线首末值与上海自然日跨度：
+`100 * (((1 + last_equity / 100) / (1 + first_equity / 100)) ** (365 / calendar_days) - 1)`。
+多合约段 MAY 汇总显示此页面统计，MUST 标注页面参考及合约段数量；不得相加各段年化、
+生成跨段成交、补齐换月价格或把此值作为账户/因果研究年化。各段独立年化继续保留。
+模式/窗口改变 SHALL 使用对应曲线重新计算；维度或身份不完整、区段回流、样本不足、
+时间无有效跨度、首末参考净值非正或结果非有限时 MUST 明示不可计算。
+此显示统计不修改 `newow_page_performance_v3379_v2` 摘要、曲线、估值交易或 API 身份。
+
 #### Scenario: Window entry precedes the visible window
 
 - **GIVEN** 完整前缀在显示窗口前建仓，窗口内清仓
@@ -1501,6 +1529,83 @@ The channel SHALL require ten bars. Tests 1–3 SHALL use a 7% stop and test 4 a
 - **WHEN** symbol, period, formal strategy or experiment selection changes
 - **THEN** pending requests SHALL be cancelled and stale or mismatched experiment responses SHALL be rejected
 - **AND** base strategy state, reference history and experimental results SHALL NOT be displayed under each other's identity.
+
+### Requirement: Explicit page loss statistic presentation
+
+The page performance projection MAY expose optional mode-level `drawdown_kind` as
+`maximum_trade_loss`, `peak_difference`, or `mixed_segment`. It describes the actual
+source computation, not the selected UI preset. A no-op date filter retains the source
+kind; an effective date filter declares peak difference; mixed owner-segment kinds
+remain explicitly mixed. This metadata changes no curve, trade, return, win count or
+source arithmetic. Older frozen projections without the field remain readable and
+SHALL use a qualified generic theoretical loss label rather than infer an algorithm.
+
+#### Scenario: Selected date tab does not prove a loss algorithm
+- **WHEN** the same filtered projection is remounted or a requested window includes all input
+- **THEN** the display uses the result's declared loss kind rather than button memory
+- **AND** percentage-point loss is not labelled as normalized account drawdown
+
+### Requirement: Unified non-executable performance presentation
+
+Newow base, fusion and experiments SHALL share the ordinary performance shell and SVG
+renderer with other supported workstation reference and research surfaces. Newow defaults
+to page-reference performance; CLOSED and marked reference facts have explicit independent
+modes. Marked totals, direction colors, annualization and normalized reference drawdown
+SHALL use the selected marked curve; CLOSED win/trade counts SHALL remain labelled CLOSED.
+Unavailable marked facts SHALL disclose the reason and any CLOSED-only fallback.
+
+#### Scenario: Floating loss changes the displayed total direction
+- **GIVEN** positive CLOSED cumulative return and a larger negative floating reference return
+- **WHEN** marked reference mode is selected
+- **THEN** its displayed total and direction color both describe the negative marked value
+- **AND** switching to CLOSED restores the independent original CLOSED statistic
+
+### Requirement: Verified multi-product display reuse
+
+Current Web requests SHALL establish their MDS authority proof before reusing any
+strategy computation. Pure replay reuse SHALL bind every kernel input, lifecycle
+and interruption fact, formula/profile and quality policy; it SHALL NOT reuse a
+request token, cutoff or window projection as a current authority. Replay artifacts
+SHALL share the existing bounded process cache budget. Shared computation SHALL
+remain active while any attached reader is still interested.
+
+#### Scenario: Same completed inputs at a later request cutoff
+- **WHEN** a fresh authority read establishes unchanged completed kernel inputs at a new cutoff
+- **THEN** the service MAY reuse pure replay but SHALL issue the independently verified request envelope
+- **AND** revised prices, source hashes, quality policy or physical segments SHALL invalidate that reuse
+
+### Requirement: Selected reference response parts
+
+The API SHALL expose reference `overview`, `curve` and `history` independently for
+an explicit reference mode and one accepted snapshot/window/result identity.
+The Web SHALL use `panel` to receive overview and only the selected curve from one
+verified result in one request. Mode/window changes SHALL request only that selected
+mode, including its at-most-three preview records; no other mode curves are computed.
+History remains independently requested. A panel SHALL have the same result hash and
+field values as the corresponding overview and curve responses; history cursors and
+full history records are forbidden on a panel request.
+Overview SHALL show at most three recent records; history SHALL use cursors of
+50 records and SHALL NOT repeat full curves or summaries. Source record limits
+SHALL be explicit and SHALL NOT imply full history coverage. Existing internal
+full-result consumers retain their original calculation contract.
+
+Strategy-detail SHALL expose bounded request-local phase durations through Server-Timing:
+queue, authority read, identity verification, cache access/admission, computation,
+replay and projection, plus total and response-model encoding/construction when available.
+Nested phase durations are not additive. The encoding/construction interval excludes
+network delivery and compression. Diagnostics SHALL NOT retain or expose query values,
+market payloads, credentials or internal paths, and SHALL NOT change response facts.
+
+#### Scenario: Rendering a sampled curve
+- **WHEN** a selected reference curve exceeds 2000 original points
+- **THEN** the service SHALL retain endpoints, extrema and interruption/owner boundaries without interpolation
+- **AND** summary, annualization and drawdown SHALL use the complete result rather than sampled points
+- **AND** an unrepresentable boundary set SHALL return an explicit unavailable condition
+
+#### Scenario: Mode switch and hidden page identity change
+- **WHEN** the selected mode, window or chart identity changes, including while the reference region is hidden
+- **THEN** the Web SHALL cancel obsolete subscriptions and clear incompatible reference results
+- **AND** it SHALL reject pages or curves from a different result identity
 
 
 ## Intraday pilot contracts (P0–P6 candidate)

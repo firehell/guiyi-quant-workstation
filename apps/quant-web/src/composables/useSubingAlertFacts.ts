@@ -1,11 +1,12 @@
-import { ref } from 'vue'
-import type { ProductAlertStateResponse, ProductAlertRuleState } from '../api/alerts.ts'
+import type { ProductAlertStateResponse } from '../api/alerts.ts'
 import type { RuntimeHealthResponse } from '../api/runtime.ts'
-import { normalizeRuntimeAlertProjection, type RuntimeAlertProjection } from '../utils/runtimeHealthTypes.ts'
-import { ALERT_RULE_CODES, findAlertRuleByCode } from '../utils/alertRules.ts'
+import { normalizeRuntimeAlertProjection } from '../utils/runtimeHealthTypes.ts'
+import { ALERT_RULE_CODES } from '../utils/alertRules.ts'
 import { SUBING_FREQUENCIES, type MarketFrequency } from '../types/market.ts'
+import { validatedAlertScope, type AlertFactsIdentity } from '../utils/alertScopeFacts.ts'
+import { useIdentityBoundResource } from './useIdentityBoundResource.ts'
 
-export interface SubingAlertFactsIdentity { symbol: string; frequency: MarketFrequency }
+export type SubingAlertFactsIdentity = AlertFactsIdentity
 export interface SubingRuleScopeFact {
   ruleCode: typeof ALERT_RULE_CODES.SUBING_THS
   displayName: string
@@ -16,63 +17,41 @@ export interface SubingRuleScopeFact {
 }
 
 export function useSubingAlertFacts(dependencies: {
-  fetchRuntime: () => Promise<RuntimeHealthResponse>
-  fetchProductAlerts: (symbol: string) => Promise<ProductAlertStateResponse>
+  fetchRuntime: (signal?: AbortSignal) => Promise<RuntimeHealthResponse>
+  fetchProductAlerts: (symbol: string, signal?: AbortSignal) => Promise<ProductAlertStateResponse>
 }) {
-  const rule = ref<SubingRuleScopeFact | null>(null)
-  const ruleUnavailable = ref(false)
-  const runtime = ref<RuntimeAlertProjection | null>(null)
-  const runtimeUnavailable = ref(false)
-  let generation = 0
-  let activeIdentityKey: string | null = null
-
+  const runtimeResource = useIdentityBoundResource({
+    key: () => 'runtime',
+    load: (_identity: SubingAlertFactsIdentity, signal) => dependencies.fetchRuntime(signal),
+    project: (response: RuntimeHealthResponse) => normalizeRuntimeAlertProjection(response.components.alert),
+  })
+  const ruleResource = useIdentityBoundResource({
+    key: (identity: SubingAlertFactsIdentity) => `${identity.symbol}:${identity.frequency}`,
+    load: (identity: SubingAlertFactsIdentity, signal) => dependencies.fetchProductAlerts(identity.symbol, signal),
+    project: ruleScopeFact,
+  })
   async function refresh(identity: SubingAlertFactsIdentity) {
-    const requestGeneration = ++generation
     const snapshot = { symbol: identity.symbol.toLowerCase(), frequency: identity.frequency }
-    const nextIdentityKey = `${snapshot.symbol}:${snapshot.frequency}`
-    if (activeIdentityKey !== nextIdentityKey) {
-      activeIdentityKey = nextIdentityKey
-      rule.value = null
-      ruleUnavailable.value = true
-    }
-    const [runtimeResult, rulesResult] = await Promise.allSettled([
-      dependencies.fetchRuntime(), dependencies.fetchProductAlerts(snapshot.symbol),
-    ])
-    if (requestGeneration !== generation) return
-    if (runtimeResult.status === 'fulfilled') {
-      try {
-        runtime.value = normalizeRuntimeAlertProjection(runtimeResult.value.components.alert)
-        runtimeUnavailable.value = false
-      } catch { runtime.value = null; runtimeUnavailable.value = true }
-    } else { runtime.value = null; runtimeUnavailable.value = true }
-    if (rulesResult.status === 'fulfilled') {
-      try { rule.value = ruleScopeText(rulesResult.value, snapshot); ruleUnavailable.value = false }
-      catch { rule.value = null; ruleUnavailable.value = true }
-    } else { rule.value = null; ruleUnavailable.value = true }
+    await Promise.all([runtimeResource.refresh(snapshot), ruleResource.refresh(snapshot)])
   }
-
-  function dispose() { generation += 1; activeIdentityKey = null }
-  return { rule, ruleUnavailable, runtime, runtimeUnavailable, refresh, dispose }
+  function dispose() { runtimeResource.dispose(); ruleResource.dispose() }
+  return {
+    rule: ruleResource.value, ruleUnavailable: ruleResource.unavailable,
+    runtime: runtimeResource.value, runtimeUnavailable: runtimeResource.unavailable,
+    refresh, dispose,
+  }
 }
 
-function ruleScopeText(response: ProductAlertStateResponse, identity: SubingAlertFactsIdentity): SubingRuleScopeFact {
-  if (response.symbol.toLowerCase() !== identity.symbol || !(SUBING_FREQUENCIES as readonly string[]).includes(identity.frequency)) throw new Error('product identity mismatch')
-  const current = findAlertRuleByCode(response.rules, ALERT_RULE_CODES.SUBING_THS)
-  if (!current || !isSubingRule(current)) throw new Error('subing rule mismatch')
-  if (current.enabled_frequencies.some((frequency) => !(SUBING_FREQUENCIES as readonly string[]).includes(frequency)) || (current.enabled_for_product !== (current.enabled_frequencies.length > 0))) throw new Error('subing scope mismatch')
+function ruleScopeFact(response: ProductAlertStateResponse, identity: SubingAlertFactsIdentity): SubingRuleScopeFact {
+  const rule = validatedAlertScope(response, identity, {
+    ruleCode: ALERT_RULE_CODES.SUBING_THS, displayName: '苏冰预警', frequencies: SUBING_FREQUENCIES,
+  })
   return {
     ruleCode: ALERT_RULE_CODES.SUBING_THS,
-    displayName: current.display_name,
-    symbol: identity.symbol.toLowerCase(),
+    displayName: rule.display_name,
+    symbol: identity.symbol,
     frequency: identity.frequency,
-    enabled: current.enabled_frequencies.includes(identity.frequency),
-    enabledFrequencies: current.enabled_frequencies,
+    enabled: rule.enabled_frequencies.includes(identity.frequency),
+    enabledFrequencies: [...rule.enabled_frequencies],
   }
-}
-
-function isSubingRule(rule: ProductAlertRuleState): boolean {
-  return rule.display_name === '苏冰预警'
-    && rule.kind === 'indicator_observation'
-    && rule.input_frequencies.length > 0
-    && rule.input_frequencies.every(frequency => (SUBING_FREQUENCIES as readonly string[]).includes(frequency))
 }

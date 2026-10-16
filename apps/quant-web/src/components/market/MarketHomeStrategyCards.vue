@@ -3,11 +3,12 @@ import NewowPriceSources from './detail/newow/NewowPriceSources.vue'
 import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards } from '@/api/newowHomeCards'
+import { configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards, invalidateHomeCard } from '@/api/newowHomeCards'
 import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { createHomeCardViewport } from '@/utils/newowHomeViewport'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
+import { marketHomeQualityNotice } from '@/utils/marketHomePresentation'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
 import type { MarketHomeLiveDisplayRow } from '@/utils/marketHomeLiveView'
 import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
@@ -61,21 +62,48 @@ const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscill
 const periods = ['1d', '1w'] as const
 const sortOptions = [{ code: 'default', label: '默认' }, { code: 'close', label: '价格' }, { code: 'change', label: '涨跌幅' }, { code: 'volume', label: '成交量' }, { code: 'oi', label: '持仓量' }] as const
 const productKey = computed(() => props.products.join(','))
-watch([productKey, () => props.authority, () => props.refreshSequence], (_value, previous) => {
-  // A remounted overview starts unresolved. Absence is not a new authority
-  // and must not erase valid session results before its snapshot arrives.
-  if (!props.authority) { viewport.setProducts([], true); return }
-  const forced = previous?.length === 3 && previous[2] !== props.refreshSequence
-  configureHomeCardAuthority(props.authority, forced)
-  if (forced || (previous?.length === 3 && (previous[0] !== productKey.value || previous[1] !== props.authority))) {
-    previousPerformanceDeliveries.value = performanceDeliveries.value
-    performanceDeliveries.value = {}
-    recoveredProducts.clear()
+function changedAuthorityProducts(before: string, after: string): string[] {
+  try {
+    const [oldDay, oldItems] = JSON.parse(before), [day, items] = JSON.parse(after)
+    if (oldDay !== day) return [...props.products]
+    const old = new Map<string, string>(oldItems.map((item: { symbol: string }) => [item.symbol, JSON.stringify(item)]))
+    return items.filter((item: { symbol: string }) => old.get(item.symbol) !== JSON.stringify(item)).map((item: { symbol: string }) => item.symbol)
+  } catch { return [...props.products] }
+}
+function reconcile(products: readonly string[] = viewport.visibleProducts(), force = false) {
+  for (const product of products) {
+    if (!force && deliveries.value[product]?.loading) continue
+    for (const choice of ['trend', 'oscillation'] as const) {
+      const key = `${product}:${choice}`
+      previousPerformanceDeliveries.value[key] = performanceDeliveries.value[key]!
+      delete performanceDeliveries.value[key]
+    }
+    invalidateHomeCard(product); void loader.reloadProduct(product)
   }
-  viewport.setProducts(productKey.value ? productKey.value.split(',') : [], true)
+}
+watch([productKey, () => props.authority, () => props.refreshSequence], (_value, previous) => {
+  if (!props.authority) return
+  const forced = previous?.length === 3 && previous[2] !== props.refreshSequence
+  configureHomeCardAuthority(props.authority, false)
+  if (!previous?.[1]) { viewport.setProducts([...props.products]); return }
+  if (previous[0] !== productKey.value) viewport.setProducts([...props.products])
+  const changed = forced ? [...admittedProducts.value] : previous[1] !== props.authority ? changedAuthorityProducts(previous[1] as string, props.authority).filter(product => admittedProducts.value.has(product)) : []
+  if (changed.length) { recoveredProducts.clear(); reconcile(changed, true) }
 }, { immediate: true })
+let reconcileTimer: ReturnType<typeof setInterval> | null = null
+function visibilityChanged() {
+  if (reconcileTimer) { clearInterval(reconcileTimer); reconcileTimer = null }
+  if (document.visibilityState === 'visible') {
+    reconcile()
+    reconcileTimer = setInterval(() => { reconcile() }, 5 * 60_000)
+  }
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', visibilityChanged)
+  if (document.visibilityState === 'visible') reconcileTimer = setInterval(() => { reconcile() }, 5 * 60_000)
+}
 watch(deliveries, () => { for (const symbol of expanded.value) ensurePerformance(symbol) })
-onBeforeUnmount(() => { viewport.dispose(); loader.dispose(); performanceController.abort() })
+onBeforeUnmount(() => { if (reconcileTimer) clearInterval(reconcileTimer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged); viewport.dispose(); loader.dispose(); performanceController.abort() })
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
 function periodDisplay(symbol: string, period: HomePeriod) { return admittedProducts.value.has(symbol) ? homePeriodDisplay(fact(symbol, period)) : { label: '待查看', icon: '—', tone: 'pending' } }
 function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
@@ -123,9 +151,10 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
         <div class="list-periods"><span v-for="period in periods" :key="period" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}${periodLabel(period)}线${periodDisplay(row.symbol, period).label}`" :title="`${periodLabel(period)}线 · ${periodDisplay(row.symbol, period).label}`"><MarketStateIcon :state="iconState(row.symbol, period)" /></span></div>
         <div class="list-direction" :title="homeTrendDisplay().label"><MarketStateIcon state="unavailable" size="micro" /><span class="sr-only">{{ homeTrendDisplay().label }}</span></div>
       </div>
+      <p v-if="marketHomeQualityNotice(row.reason_codes)" class="list-quality-note" role="status">{{ marketHomeQualityNotice(row.reason_codes) }}</p>
       <div class="list-notices" role="status">
         <span v-if="!admittedProducts.has(row.symbol)">滚动到此行后读取策略</span>
-        <span v-else-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}</span>
+        <span v-else-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}<template v-if="deliveries[row.symbol]?.stale && deliveries[row.symbol]?.savedAt"> · {{ formatBeijingInstant(deliveries[row.symbol]?.savedAt) }}</template></span>
         <span v-if="pending(row.symbol)">等待最新周期更新</span>
         <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ periodDisplay(row.symbol, period).label }}</span>
       </div>
@@ -158,24 +187,25 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 </template>
 
 <style scoped>
-.strategy-list-toolbar{display:flex;align-items:center;justify-content:space-between;min-height:32px;padding:0 12px;background:#fafafa;color:#8e8e93;font-size:12px}
-.strategy-switch{display:flex;gap:14px}.strategy-switch button{border:0;background:none;padding:6px 0;color:#8e8e93;font-size:12px;cursor:pointer}.strategy-switch button[aria-pressed=true]{color:#ff6535}
-.strategy-sort{position:relative;font-size:12px}.strategy-sort summary{cursor:pointer}.strategy-sort>div{position:absolute;right:0;top:100%;z-index:5;display:flex;gap:6px;padding:8px;background:white;border:1px solid #eee;box-shadow:0 4px 15px #0001;white-space:nowrap}.strategy-sort button{border:0;background:none;color:#8e8e93;cursor:pointer}.strategy-sort button[aria-pressed=true]{color:#ff6535}
+.strategy-list-toolbar{display:flex;align-items:center;justify-content:space-between;min-height:32px;padding:0 12px;background:#fafafa;color:var(--gy-text-muted);font-size:12px}
+.strategy-switch{display:flex;gap:14px}.strategy-switch button{border:0;background:none;padding:6px 0;color:var(--gy-text-muted);font-size:12px;cursor:pointer}.strategy-switch button[aria-pressed=true]{color:#ff6535}
+.strategy-sort{position:relative;font-size:12px}.strategy-sort summary{cursor:pointer}.strategy-sort>div{position:absolute;right:0;top:100%;z-index:5;display:flex;gap:6px;padding:8px;background:white;border:1px solid #eee;box-shadow:0 4px 15px #0001;white-space:nowrap}.strategy-sort button{border:0;background:none;color:var(--gy-text-muted);cursor:pointer}.strategy-sort button[aria-pressed=true]{color:#ff6535}
 .strategy-list{--gy-market-icon-up:#ef493b;--gy-market-icon-aligned:#f6a51a;--gy-market-icon-down:#30c759;--gy-market-icon-neutral:#315cf5;--gy-market-icon-unavailable:#c5c5c9;--gy-market-pill-up-soft:#ffebe9;--gy-market-pill-down-soft:#eaf8ec;background:white;color:#252525}
 .strategy-list-columns,.strategy-list-row{display:grid;grid-template-columns:minmax(100px,1fr) 80px 64px 64px 32px 32px 28px;column-gap:2px;align-items:center;padding:0 12px}
-.strategy-list-columns{height:38px;background:#fafafa;font-size:12px;color:#8e8e93}.strategy-list-columns>span{text-align:center}.strategy-list-columns>span:first-child{text-align:left}.strategy-list-columns>span:nth-child(2){text-align:right}
+.strategy-list-columns{height:38px;background:#fafafa;font-size:12px;color:var(--gy-text-muted)}.strategy-list-columns>span{text-align:center}.strategy-list-columns>span:first-child{text-align:left}.strategy-list-columns>span:nth-child(2){text-align:right}
 .strategy-list-item{position:relative;border-bottom:1px solid #f6f6f6}.strategy-list-row{height:60px;font-size:13px;font-variant-numeric:tabular-nums}
-.product-cell{display:flex;align-items:flex-end;min-width:0;gap:3px}.product-cell>.product-name{flex:1}.list-composite{padding:12px;background:#fafafa;border-top:1px solid #f2f2f2;font-size:12px;line-height:1.6;color:#68686d}.composite-heading{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.composite-heading strong{color:#252525;font-size:14px}.list-composite p{margin:5px 0}.composite-target{color:#ff9500}.composite-absorb{color:#1681ff}.composite-target span,.composite-absorb span,.composite-disclaimer{color:#8e8e93}.product-name{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;text-align:left;background:none;border:0;color:#252525;cursor:pointer;padding:0}.product-name strong{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.product-name small{display:flex;align-items:center;gap:3px;width:100%;font-size:11px;color:#8e8e93;font-weight:400}.row-hints{margin-left:auto;display:flex;gap:3px}.row-hint{background:#15803d;color:white;border-radius:3px;padding:1px 3px;font-size:10px;line-height:1;white-space:nowrap;opacity:.9}.flat{color:#8e8e93}.list-change>.flat{background:#f2f2f7}
+.product-cell{display:flex;align-items:flex-end;min-width:0;gap:3px}.product-cell>.product-name{flex:1}.list-composite{padding:12px;background:#fafafa;border-top:1px solid #f2f2f2;font-size:12px;line-height:1.6;color:#68686d}.composite-heading{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.composite-heading strong{color:#252525;font-size:14px}.list-composite p{margin:5px 0}.composite-target{color:#ff9500}.composite-absorb{color:#1681ff}.composite-target span,.composite-absorb span,.composite-disclaimer{color:var(--gy-text-muted)}.product-name{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;text-align:left;background:none;border:0;color:#252525;cursor:pointer;padding:0}.product-name strong{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.product-name small{display:flex;align-items:center;gap:3px;width:100%;font-size:11px;color:var(--gy-text-muted);font-weight:400}.row-hints{margin-left:auto;display:flex;gap:3px}.row-hint{background:#15803d;color:white;border-radius:3px;padding:1px 3px;font-size:10px;line-height:1;white-space:nowrap;opacity:.9}.flat{color:var(--gy-text-muted)}.list-change>.flat{background:var(--gy-bg-elevated)}
 .list-price{text-align:right;white-space:nowrap}.list-price strong{font-size:15px;font-weight:600}.list-change{text-align:center;white-space:nowrap}.list-change>span{display:inline-block;border-radius:4px;padding:3px 7px;font-size:12px;font-weight:600;line-height:1.1}.list-change>.up{background:#ffebe9}.list-change>.down{background:#eaf8ec}
 .up{color:#ff403a}.down{color:#2dc653}.pending{color:#a1a1a6}.list-reference{text-align:center}.list-reference strong{display:inline-block;border-radius:4px;padding:3px 5px;font-size:11px;font-weight:650;white-space:nowrap;line-height:1.1}.target{color:#ff9500;background:#fff3e6}.absorb{color:#1681ff;background:#eaf1ff}
 .list-periods{display:contents}.list-periods>span{display:flex;align-items:center;justify-content:center;border:0;padding:0;background:none;cursor:pointer}.list-direction{display:flex;justify-content:center}.list-direction :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px}
+.list-quality-note{margin:0;padding:0 12px 6px;color:var(--gy-text-secondary);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 .list-notices{position:absolute;left:12px;top:49px;max-width:calc(100% - 440px);display:flex;gap:5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:9px;color:#b88134;line-height:10px}.list-notices>span{overflow:hidden;text-overflow:ellipsis}
-.list-details{font-size:11px;color:#8e8e93;padding:10px 12px;line-height:1.6;overflow-wrap:anywhere}.list-details summary{cursor:pointer}.list-details p{margin:4px 0}.list-details>div{padding:8px 0;border-bottom:1px solid #f5f5f5}
+.list-details{font-size:11px;color:var(--gy-text-muted);padding:10px 12px;line-height:1.6;overflow-wrap:anywhere}.list-details summary{cursor:pointer}.list-details p{margin:4px 0}.list-details>div{padding:8px 0;border-bottom:1px solid #f5f5f5}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}button:focus-visible,summary:focus-visible{outline:2px solid #ff6535;outline-offset:3px}
 @media(max-width:600px){.strategy-list-columns,.strategy-list-row{grid-template-columns:minmax(68px,1fr) 62px 54px 52px 28px 28px 28px;column-gap:3px;padding:0 10px}.strategy-list-row{height:60px}.product-name strong{font-size:13px}.list-price strong{font-size:13px}.list-change>span{font-size:10px;padding:3px}.list-reference strong{font-size:10px;padding:3px}.list-periods :deep(.market-state-icon){width:24px;height:24px;flex-basis:24px}.list-direction :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px}.list-notices{left:10px;max-width:calc(100% - 268px);font-size:8px}.strategy-list-columns{font-size:10px}}
 .strategy-list-row{cursor:pointer}.strategy-list-row{transition:background .15s}.strategy-list-row:hover,.strategy-list-row[aria-expanded=true]{background:#f8f8fa}.strategy-list-row:active{background:#f8f8f8}.strategy-list-row:focus-visible,.composite-card:focus-visible{outline:2px solid #ff6535;outline-offset:-2px}
-.list-composite{padding:0 12px 12px;background:white;border:0}.composite-card{border:1px solid #e6e6eb;border-radius:12px;padding:10px 14px;cursor:pointer}.composite-card:hover{border-color:#d0d0d8}.composite-heading{justify-content:space-between}.composite-heading strong{font-size:13px;font-weight:500}.composite-heading strong>span{font-size:16px;font-weight:650}.composite-signal{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600;line-height:1.5}.composite-signal.flat{color:#1681ff;background:#eaf1ff}.composite-signal.build{color:#ef493b;background:#ffebe9}.composite-signal.hold{color:#ff9500;background:#fff3e6}.composite-signal.clear{color:#30c759;background:#eaf8ec}.composite-signal.pending{background:#f2f2f4}.composite-context{color:#8e8e93;font-size:10px;line-height:1.5}.composite-stages{position:relative;display:flex;justify-content:space-around;margin:8px 0 6px}.composite-stages:before{content:'';position:absolute;left:1%;right:1%;top:11px;height:2px;background:#e9e9ed}.composite-stage{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;color:#c5c5c9;font-size:10px;line-height:1.4}.composite-stage.is-active{color:#252525;font-weight:600}.stage-idle{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#eee;color:#bbb}.composite-stage.is-active :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px;box-shadow:0 0 0 3px #eaf1ff}.composite-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f2f2f4;padding-top:6px;color:#8e8e93;font-size:10px}.composite-tags{display:flex;flex-wrap:wrap;gap:6px}.composite-tags>span{border-radius:10px;padding:1px 6px;background:#f4f5f7;font-size:10px}.composite-disclaimer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:10px;line-height:1.5}.composite-disclaimer>span{color:#1681ff}.composite-reason{color:#b88134;font-size:11px}
+.list-composite{padding:0 12px 12px;background:white;border:0}.composite-card{border:1px solid #e6e6eb;border-radius:12px;padding:10px 14px;cursor:pointer}.composite-card:hover{border-color:#d0d0d8}.composite-heading{justify-content:space-between}.composite-heading strong{font-size:13px;font-weight:500}.composite-heading strong>span{font-size:16px;font-weight:650}.composite-signal{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600;line-height:1.5}.composite-signal.flat{color:#1681ff;background:#eaf1ff}.composite-signal.build{color:#ef493b;background:#ffebe9}.composite-signal.hold{color:#ff9500;background:#fff3e6}.composite-signal.clear{color:#30c759;background:#eaf8ec}.composite-signal.pending{background:#f2f2f4}.composite-context{color:var(--gy-text-muted);font-size:10px;line-height:1.5}.composite-stages{position:relative;display:flex;justify-content:space-around;margin:8px 0 6px}.composite-stages:before{content:'';position:absolute;left:1%;right:1%;top:11px;height:2px;background:#e9e9ed}.composite-stage{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;color:#c5c5c9;font-size:10px;line-height:1.4}.composite-stage.is-active{color:#252525;font-weight:600}.stage-idle{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#eee;color:#bbb}.composite-stage.is-active :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px;box-shadow:0 0 0 3px #eaf1ff}.composite-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f2f2f4;padding-top:6px;color:var(--gy-text-muted);font-size:10px}.composite-tags{display:flex;flex-wrap:wrap;gap:6px}.composite-tags>span{border-radius:10px;padding:1px 6px;background:#f4f5f7;font-size:10px}.composite-disclaimer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:10px;line-height:1.5}.composite-disclaimer>span{color:#1681ff}.composite-reason{color:#b88134;font-size:11px}
 .composite-tags>.control-tag{color:#ff9500;background:#fff3e6}.composite-tags>.performance-tag{color:#1681ff;background:#eaf1ff}.space-down{color:#30c759}
-.composite-evidence{font-size:10px;color:#8e8e93;padding:5px 2px 0;line-height:1.5}.composite-evidence>summary{cursor:pointer}.list-composite p{margin:4px 0}.composite-heading{gap:6px}.composite-footer strong{font-size:13px}.composite-evidence :deep(.price-sources){padding:4px 0}
+.composite-evidence{font-size:10px;color:var(--gy-text-muted);padding:5px 2px 0;line-height:1.5}.composite-evidence>summary{cursor:pointer}.list-composite p{margin:4px 0}.composite-heading{gap:6px}.composite-footer strong{font-size:13px}.composite-evidence :deep(.price-sources){padding:4px 0}
 @media(max-width:600px){.composite-card{padding:10px}.composite-heading strong{font-size:13px}.composite-heading strong>span{font-size:16px}.composite-heading{gap:6px}.composite-signal{font-size:11px}}
 </style>

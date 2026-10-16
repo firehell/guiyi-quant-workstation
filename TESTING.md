@@ -1,5 +1,149 @@
 # 测试与验证命令
 
+## 八批看盘接口与资源回归
+
+所有测试串行；Node512MiB，类型/build768MiB，浏览器`--workers=1`。完整Web使用`pnpm -C apps/quant-web test`，build包含类型、能力生成和bundle拓扑校验。实际受影响后端集合与结果见[八批验收记录](docs/tasks/watch-eight-batches.md)。
+
+```bash
+NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web test
+NODE_OPTIONS=--max-old-space-size=768 pnpm -C apps/quant-web build
+NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/ui-unification.spec.mjs e2e/market-runtime.spec.mjs e2e/market-home-cache.spec.mjs e2e/hide-continuous.spec.mjs e2e/chart-first-loading.spec.mjs e2e/newow-chart-panes.spec.mjs e2e/subing-reference.spec.mjs e2e/reference-split.spec.mjs --workers=1
+```
+
+真实只读测试仅对已独立启动并核对身份的开发预览，设置`REAL_DEVELOP=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5176 PLAYWRIGHT_SKIP_WEBSERVER=1`，串行运行`chart-first-readonly.spec.mjs`、`multi-product-readonly.spec.mjs`和`watch-resource-readonly.spec.mjs`。完整参考对比可通过`REAL_REFERENCE_PRODUCT=jm|rb`选择固定样本；来源不可验证必须报告失败/待验，不跳过身份校验或改收益断言。
+
+## Web 隐藏主连
+
+旧主连链接与偏好在请求前迁移到真实主力；页面无主连入口，底层 API 和数据能力保留。
+定向单元覆盖路由、偏好与统计身份，浏览器检查桌面/390px、同身份旧链接、返回和指定合约。
+验证串行，保持单元并发1、浏览器单worker；fixture不证明Runtime或策略收益。
+
+```sh
+NODE_OPTIONS=--max-old-space-size=512 node --test --test-concurrency=1 apps/quant-web/tests/marketDetailRoute.test.ts apps/quant-web/tests/marketDetailPreferences.test.ts apps/quant-web/tests/marketDetailViewNav.test.ts apps/quant-web/tests/marketDetailViewModel.test.ts apps/quant-web/tests/freeDetailViewModel.test.ts apps/quant-web/tests/newowProductRoutes.test.ts
+NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/hide-continuous.spec.mjs --workers=1 --output /private/tmp/guiyi-hide-continuous
+```
+
+## 全站 UI 与收益展示统一
+
+覆盖清单与口径边界见[实施记录](docs/tasks/ui-unification.md)。验证严格串行，
+前端单元默认 `--test-concurrency=1`；不要同时启动全量单元、构建或浏览器。
+浏览器 fixture 不访问生产，不证明发布、Runtime 或历史盈利。
+
+```sh
+NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web test
+NODE_OPTIONS=--max-old-space-size=768 pnpm -C apps/quant-web build
+NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/ui-unification.spec.mjs e2e/return-curve-layout.spec.mjs --workers=1 --output /private/tmp/guiyi-ui-unification-e2e
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_market_messages.py services/quant-api/tests/reference_trading/test_messages.py services/quant-api/tests/research/test_new_subing_api.py services/quant-api/tests/research/test_new_subing_store.py services/quant-api/tests/newow/test_page_performance.py
+```
+
+中断后确认本任务进程已经退出再启动新一轮；超时终止精确测试进程树，禁止宽泛杀进程。
+
+
+## 既有 E2E 夹具与页面合同回归
+
+浏览器夹具维护、视觉更新依据及实际验收见[记录](docs/tasks/e2e-contract-alignment.md)。
+正常回归不带 `--update-snapshots` 或 `--ignore-snapshots`；保持原像素容差，以当前可见入口操作。
+端口必须空闲且不得复用其他工作区服务；测试输出单独指定，避免并行运行互相清理现场。
+
+```sh
+PLAYWRIGHT_PORT=5196 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs --output /private/tmp/guiyi-e2e-contract-results
+PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs --output /private/tmp/guiyi-e2e-preview-results
+```
+
+第二条固定使用5182隔离预览端口。真实后端只读验收仍需显式 `REAL_BACKEND=1` 及其现场条件，
+fixture通过与默认跳过都不证明生产、发布或Runtime状态。
+
+## 后续三批工程收敛
+
+Reference 事务、Newow 组装、Runtime 公共工具、新苏冰共享计算与能力合同的范围见
+[实施记录](docs/tasks/architecture-convergence-followups.md)。能力合同 JSON 是唯一版本资料，
+修改后运行生成器，build 会拒绝过期的 TypeScript 产物。
+
+```sh
+node tools/generate_newow_capabilities.mjs
+node tools/generate_newow_capabilities.mjs --check
+node --test apps/quant-web/tests/newowCapabilityContract.test.ts apps/quant-web/tests/newowProductTypes.test.ts
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/engineering/test_newow_capability_contract.py tests/unit/new_subing tests/unit/new_subing_v2 services/quant-api/tests/newow/test_composition.py services/quant-api/tests/reference_trading/test_checkpoint.py services/quant-api/tests/test_runtime_shared_tools.py
+```
+
+`test_transaction_guards_postgresql.py` 与既有 repository/conflict PostgreSQL 测试使用
+`GUIYI_ISOLATED_MIGRATION_DATABASE_URL` 指定独立测试实例，不配置时跳过，不算事务验收。
+共享计算 golden 冻结自修改前基线，不应因重构更新；公式或执行语义变化须独立版本化。
+
+## 第一批工程收敛
+
+异步事实的身份隔离、弹层行为与收益图布局使用以下稳定入口；范围与设计见
+[实施记录](docs/tasks/architecture-convergence-batch1.md)。浏览器使用隔离 Vite 与显式 fixture，
+不访问生产 API，不证明行情、收益或 Runtime 自然验收。
+
+```sh
+node --test apps/quant-web/tests/useIdentityBoundResource.test.ts apps/quant-web/tests/useHtdyAlertFacts.test.ts apps/quant-web/tests/useSubingAlertFacts.test.ts
+pnpm -C apps/quant-web test
+pnpm -C apps/quant-web build
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/overlay-lifecycle.spec.mjs e2e/alert-facts.spec.mjs e2e/return-curve-layout.spec.mjs
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_bindings.py services/quant-api/tests/test_runtime_handover.py services/quant-api/tests/test_tunnel_http_probe.py
+```
+
+下文含冻结公开源、特定日期及 `/private/tmp/` 路径的验证段落属于历史证据复现，
+不属于无前置条件的日常回归入口。缺少原输入、manifest 或哈希校验时停止；
+不替换输入或据历史通过记录推断当前版本通过。当前日常回归按功能段落中的仓库内测试路径运行。
+
+## 首页持久缓存与局部更新
+
+```sh
+pnpm -C apps/quant-web test
+pnpm -C apps/quant-web build
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-home-cache.spec.mjs
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_market_home_api.py services/quant-api/tests/test_market_home_projection_api.py services/quant-api/tests/data_foundation/test_market_home_overview.py services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/newow/test_product_service.py
+```
+
+覆盖 IndexedDB 重载、容量/时效/损坏、挂起存储、旧 token 禁用、失败保留、304、同日修正与并发校验。
+浏览器 fixture 只证明交互与缓存行为；真实性能必须另用独立只读候选 API 验证。
+
+## JM 因果候选与本地 Paper
+
+合同见 [Paper 试点](docs/PAPER_PILOT.md)。仅用本次独立本地 PostgreSQL 测试实例，
+显式非5432端口，数据库必须为 `guiyi_paper_isolated_test`；不配置时数据库项跳过，不算验收。
+
+```bash
+GUIYI_ISOLATED_PAPER_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:15462/guiyi_paper_isolated_test' \
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/unit/paper services/quant-api/tests/paper \
+  services/quant-api/tests/newow/test_research_backtest.py \
+  services/quant-api/tests/newow/test_research_evidence.py \
+  services/quant-api/tests/newow/test_research_walk_forward.py \
+  services/quant-api/tests/newow/test_jm_pilot_research.py
+```
+
+`scripts/research/jm_pilot_research.py` 读取精确 facts 文件、显式 market env 与 Canonical root，
+输出固定研究窗口的成本压力、诊断 WF 与 prefix parity；不会下载行情或更新 Catalog。
+`scripts/research/jm_paper.py` 的 `init` 仅创建专用 Paper schema，`run --dry-run` 完整内存预检，
+去掉 `--dry-run` 才写模型账本，`reconcile` 在新进程只读重放。必须单独提供
+`GUIYI_PAPER_DATABASE_URL`，不能复用生产 DATABASE_URL。同账户/同计划重跑必须保持
+event、command、fill数量不变；事实或窗口改变须新账户身份。
+这些 CLI 仅做 HISTORICAL_REPLAY，不订阅实时行情，不连接 SimNow。
+
+七策略六周期矩阵增量验证：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_causal_matrix_signals.py \
+  services/quant-api/tests/newow/test_jm_matrix_input.py \
+  services/quant-api/tests/paper/test_matrix.py \
+  services/quant-api/tests/paper/test_matrix_report.py tests/unit/paper
+```
+
+`scripts/research/jm_causal_matrix.py` 按 `--frequency`、可选 `--strategy` 列表和 `--scenario`
+读取固定近一年窗口，输出每格事件内核验算；`--owner-diagnostics` 额外生成独立物理段结果。
+显式提供已有 `--facts`、`--market-env`、`--canonical-root` 与 `--out`，不下载、不写数据库。
+已有结果文件拒绝覆盖。`jm_causal_matrix_report.py <结果目录>` 只有在42格齐全、执行时钟和
+费用hash一致、输入readback成立后才汇总排名；换月中断及无闭合交易组不列为年度赢家。
+`jm_causal_matrix_cost_trace.py` 接收相同facts/env/Canonical参数及 `--root <结果目录>`，
+对60m测试2和1d测试1重放基线/双费，记录逐笔成交与首次日停机时刻；年度结果须与原JSON完全
+一致（仅排除独立合约诊断），否则不输出trace。该诊断不写账户或改原始结果。
+
 ## 牛哇 v3.3.79 手册同输入验证
 
 该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，
@@ -104,7 +248,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
   services/quant-api/tests/newow/test_product_readonly_compatibility.py \
   services/quant-api/tests/newow/test_older_chart_windows.py \
   services/quant-api/tests/newow/test_historical_snapshot.py
-pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts tests/newowReferenceParts.test.ts
 ```
 
 共享 v2 迁移后的模块回归和静态检查：
@@ -263,7 +407,7 @@ env -u VITE_API_BASE_URL -u VITE_MARKET_WS_URL REAL_BACKEND=0 PLAYWRIGHT_PORT=51
 使用独立 worktree 和既有依赖；5182 必须空闲，不能复用其他工作区服务。正常验收不带 `--update-snapshots`；截图变更须先核对规范与实际差异。fixture 通过不代表生产历史或 Runtime 验收。
 
 ```bash
-pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts
+pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowReferenceParts.test.ts tests/newowDetailPresentation.test.ts
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-detail-light.spec.mjs --grep 'current FLAT waiting card'
 PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
   services/quant-api/tests/newow/test_reference_trades.py \
@@ -287,7 +431,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
   services/quant-api/tests/newow/test_reference_trades.py \
   services/quant-api/tests/newow/test_target_absorb_display.py
 pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
-  tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts \
+  tests/useNewowProduct.test.ts tests/newowReferenceParts.test.ts tests/newowDetailPresentation.test.ts \
   tests/newowProductChartPrimitives.test.ts tests/newowProductTypes.test.ts tests/NewowProductChartStage.test.ts
 ```
 
@@ -1400,7 +1544,7 @@ pnpm -C apps/quant-web exec node --test \
   tests/useNewowProduct.test.ts \
   tests/NewowProductChartStage.test.ts \
   tests/newowProductChartPrimitives.test.ts \
-  tests/newowReferencePanel.test.ts \
+  tests/newowReferenceParts.test.ts \
   tests/newowExplanationPanel.test.ts \
   tests/NewowTrendChartStage.test.ts \
   tests/marketDetailController.test.ts \
@@ -1471,7 +1615,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 pnpm -C apps/quant-web exec node --test \
   tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts \
   tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts \
-  tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts \
+  tests/newowReferenceParts.test.ts tests/newowExplanationPanel.test.ts \
   tests/newowDetailPresentation.test.ts tests/useNewowDailyQuote.test.ts
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
   e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs \
@@ -1731,6 +1875,33 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 ```
 
 隔离通过只证明工程收尾与原子性边界，不证明新 Runtime 已切换或自然盘后验收。
+
+## 新苏冰固定参数历史研究
+
+V1基线合同为 [NEW_SUBING_STRATEGY.md](docs/NEW_SUBING_STRATEGY.md)，V2独立版本为 [NEW_SUBING_STRATEGY_V2.md](docs/NEW_SUBING_STRATEGY_V2.md)。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/unit/new_subing services/quant-api/tests/research tests/unit/paper \
+  services/quant-api/tests/test_subing_ths_kernel.py tests/engineering/test_canonical_consistency.py
+```
+
+`scripts/research/new_subing_execution_facts.py --plan /exact/plan.json --project-env /private/project.env --out /new/attempt`
+先核对当前 Catalog 所有权与精确计划，再在预算内一次采集 RQData instrument、交易参数、
+交易所结算与独立日限价事实。已有或失败 attempt 不复用、不自动重试，不写 Canonical/Catalog。
+`scripts/research/new_subing.py --project-env /private/project.env --facts-dir /exact/attempt --out /new/results`
+只读固定 AL/RB/TA、2024-10-14..2026-10-09，与独立三成本场景、前后年及季度诊断。
+要求已提交代码身份；缺行情/成本时仍输出哈希绑定缺口包，不虚构零收益。
+`GUIYI_NEW_SUBING_RESULTS_ROOT=/exact/results` 仅配置本地候选 API 读取已有结果，HTTP不会启动研究。
+Web 定向验证：`node --test tests/newSubingResearch.test.ts tests/newSubingPageRace.test.ts tests/candidatePreview.test.ts`，以及通常的 Web build。
+隔离候选预览只放行精确 GET profiles/runs/SHA详情与 decisions/trades/equity 分页；POST、未知动作和编码路径不可转发。
+工程构造数据不证明原案例一致性；固定历史验证不自动称未见 OOS，收益不触发策略晋升。
+
+V2追加 `tests/unit/new_subing_v2` 与 `services/quant-api/tests/research/test_new_subing_v2_cli.py`。
+`scripts/research/new_subing_v2.py --project-env /private/project.env --facts-dir /exact/v1-facts --reference-root /exact/v1-results --out /new/v2-results`
+核对V1已索引结果的输入和执行事实哈希；同一逐prefix指标准备复用于两本金、三成本和七个独立账户窗口。
+10万元为主账户，100万元是单独诊断，不合并本金/收益。新attempt只写任务结果，不下载provider或改Canonical。
 
 ## Alert 内存交接与日周质量重预热 v2
 

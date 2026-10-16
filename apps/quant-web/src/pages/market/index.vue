@@ -11,7 +11,7 @@ import { newowMessageChartQuery, type NewowMessage } from '@/api/newowMessages'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
 import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.vue'
 import MarketHomeSkeleton from '@/components/market/MarketHomeSkeleton.vue'
-import { getMarketDominants, getMarketHomeOverview } from '@/api/market'
+import { getMarketProductDirectory, getMarketHomeOverview, normalizeMarketProductDirectory } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { useMarketHome } from '@/composables/useMarketHome'
 import { useMarketHomeLive } from '@/composables/useMarketHomeLive'
@@ -23,6 +23,8 @@ import { marketHomeEventChartQuery, marketHomeUnifiedProductChartQuery, marketHo
 import { filterAndSortMarketHomeRows, nextMarketHomeSort, type MarketHomeSort, type MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
 import { projectMarketHomeLiveRows } from '@/utils/marketHomeLiveView'
 
+import { homeSnapshotCache, homeCacheNamespace } from '@/api/homeSnapshotCache'
+import { validateStoredMarketHomeOverview } from '@/utils/marketHomeTypes'
 const router = useRouter()
 const initialPreferences = loadMarketHomePreferences()
 const sector = ref(initialPreferences.sector)
@@ -36,9 +38,13 @@ const navigationError = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
 const home = useMarketHome({
   fetchOverview: getMarketHomeOverview,
-  fetchDirectory: getMarketDominants,
+  fetchDirectory: getMarketProductDirectory,
   fetchRuntime: getRuntimeHealth,
-  overviewCacheKey: 'market-home-overview-v1',
+  overviewCacheKey: homeCacheNamespace,
+  persistence: homeSnapshotCache,
+  validateOverview: validateStoredMarketHomeOverview,
+  validateDirectory: normalizeMarketProductDirectory,
+  directoryMaxAgeMs: 24 * 60 * 60_000,
 })
 const productOptions = computed(() => normalizeProductOptions(home.directory.data.value?.items ?? []))
 const directoryStatus = computed(() => home.directory.unavailable.value ? 'error' : home.directory.data.value == null ? 'loading' : 'ready')
@@ -188,7 +194,8 @@ onBeforeUnmount(() => {
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
       <section class="market-home-main">
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>
-      <p v-else-if="home.overview.stale.value" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
+      <p v-else-if="home.overview.stale.value && !loading" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
+      <p v-if="home.overview.stale.value && loading" class="market-home-cache-status" role="status">本地快照 · {{ new Date(home.overview.updatedAt.value ?? 0).toLocaleString() }} · 正在重新验证</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />
       <template v-else>
         <MarketHomeStrategyCards :rows="rows" :products="strategyProducts" :authority="homeCardsReloadIdentity(home.overview.data.value)" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart">

@@ -32,11 +32,12 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
   let generation = 0
   let controller: AbortController | null = null
   let window: ReferenceWindow | null = null
+  const capped = ref(false)
   const pages = createReferencePageState<ReferenceTradeView>(item => item.reference_trade_id)
 
   function invalidate() {
     generation += 1
-    pages.reset()
+    pages.reset(); capped.value = false
     controller?.abort()
     controller = null
     stream.value = null; page.value = null; summary.value = null
@@ -69,6 +70,7 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
       if (current !== generation) return
       if (stats.snapshot !== first.snapshot) throw new Error('SNAPSHOT_CONFLICT')
       pages.first(`${chosen.stream_id}:${first.snapshot}:${first.revision_id}:${first.seq}`, first.items, first.next_cursor)
+      capped.value = pages.capped
       stream.value = chosen
       page.value = first
       summary.value = stats
@@ -103,7 +105,7 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
     const previous = page.value
     const chosen = stream.value
     const selectedWindow = window
-    if (!previous?.next_cursor || !chosen || !selectedWindow || loading.value) return
+    if (capped.value || !previous?.next_cursor || !chosen || !selectedWindow || loading.value) return
     const current = generation
     loading.value = true; error.value = null
     try {
@@ -115,10 +117,11 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
         throw new Error('SNAPSHOT_CONFLICT')
       }
       const items = pages.append(`${chosen.stream_id}:${next.snapshot}:${next.revision_id}:${next.seq}`, previous.next_cursor, next.items, next.next_cursor)
+      capped.value = pages.capped
       page.value = { ...next, items, next_cursor: pages.cursor }
     } catch (reason) {
       if (current === generation) {
-        pages.reset(); page.value = null; summary.value = null; signals.value = []; indicators.value = []
+        pages.reset(); capped.value = false; page.value = null; summary.value = null; signals.value = []; indicators.value = []
         error.value = referenceError(reason)
       }
     } finally {
@@ -127,7 +130,7 @@ export function useReferenceTrading(client: ReferenceClient = defaultClient) {
   }
 
   return {
-    stream: readonly(stream), page: readonly(page), summary: readonly(summary),
+    capped: readonly(capped), stream: readonly(stream), page: readonly(page), summary: readonly(summary),
     signals: readonly(signals), indicators: readonly(indicators),
     loading: readonly(loading), error: readonly(error), refresh, loadMore, dispose: invalidate,
   }

@@ -7,8 +7,8 @@ import {
 } from './useMarketSeries.ts'
 import type {
   BarData,
-  DominantContractListResponse,
-  DominantContractItem,
+  MarketProductDirectoryResponse,
+  MarketProductDirectoryItem,
   MarketOverlaySource,
   MarketReadState,
   ProductResearchResponse,
@@ -47,12 +47,14 @@ interface MarketDetailSeriesController {
 export interface MarketDetailControllerDependencies {
   routeQuery?: () => Record<string, unknown>
   createSeries?: () => MarketDetailSeriesController
-  fetchDominants?: () => Promise<DominantContractListResponse>
+  fetchDirectory?: () => Promise<MarketProductDirectoryResponse>
+  /** Test compatibility; responses are projected to static fields only. */
+  fetchDominants?: () => Promise<MarketProductDirectoryResponse>
   fetchResearch?: (params: {
     symbol: string
     seriesKind: MarketDetailIdentity['seriesKind']
     contract?: string
-  }) => Promise<ProductResearchResponse>
+  }, signal?: AbortSignal) => Promise<ProductResearchResponse>
 }
 
 function browserRouteQuery(): Record<string, string> {
@@ -60,25 +62,25 @@ function browserRouteQuery(): Record<string, string> {
   return Object.fromEntries(new URLSearchParams(window.location.search))
 }
 
-async function defaultFetchDominants(): Promise<DominantContractListResponse> {
-  const { getMarketDominants } = await import('../api/market.ts')
-  return getMarketDominants()
+async function defaultFetchDirectory(): Promise<MarketProductDirectoryResponse> {
+  const { loadMarketProductDirectory } = await import('../api/marketProductDirectoryCache.ts')
+  return loadMarketProductDirectory()
 }
 
 async function defaultFetchResearch(params: {
   symbol: string
   seriesKind: MarketDetailIdentity['seriesKind']
   contract?: string
-}): Promise<ProductResearchResponse> {
+}, signal?: AbortSignal): Promise<ProductResearchResponse> {
   const { getProductResearch } = await import('../api/market.ts')
-  return getProductResearch(params)
+  return getProductResearch(params, signal)
 }
 
 export function useMarketDetailController(
   dependencies: MarketDetailControllerDependencies = {},
 ): {
   state: Readonly<Ref<MarketDetailControllerState>>
-  productCatalog: Readonly<Ref<readonly DominantContractItem[]>>
+  productCatalog: Readonly<Ref<readonly MarketProductDirectoryItem[]>>
   bars: Readonly<Ref<BarData[]>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
   hasMoreBefore: Readonly<Ref<boolean>>
@@ -90,7 +92,7 @@ export function useMarketDetailController(
 } {
   const createSeries = dependencies.createSeries ?? (() => useMarketSeries())
   const series = createSeries()
-  const fetchDominants = dependencies.fetchDominants ?? defaultFetchDominants
+  const fetchDirectory = dependencies.fetchDirectory ?? dependencies.fetchDominants ?? defaultFetchDirectory
   const fetchResearch = dependencies.fetchResearch ?? defaultFetchResearch
   const route = parseMarketDetailRoute((dependencies.routeQuery ?? browserRouteQuery)())
   const state = ref<MarketDetailControllerState>({
@@ -101,15 +103,16 @@ export function useMarketDetailController(
     loading: false,
     error: null,
   })
-  const productCatalog = ref<DominantContractItem[]>([])
-  let currentDominants: DominantContractListResponse = { items: [] }
-  let dominantsRequest: Promise<DominantContractListResponse> | null = null
+  const productCatalog = ref<MarketProductDirectoryItem[]>([])
+  let currentDirectory: MarketProductDirectoryResponse = { items: [] }
+  let directoryRequest: Promise<MarketProductDirectoryResponse> | null = null
   let activeSeriesKey: string | null = null
   let activeResearchKey: string | null = null
   const currentResearch = ref<ProductResearchResponse | null>(null)
   const researchError = ref(false)
   let headerGeneration = 0
   let disposed = false
+  let researchController = new AbortController()
   const publicBars = computed(() => series.bars.value)
   const publicMutation = computed(() => series.mutation.value)
 
@@ -126,22 +129,23 @@ export function useMarketDetailController(
     return (previous.view === 'newow') === (next.view === 'newow')
   }
 
-  async function loadDominants(): Promise<DominantContractListResponse> {
-    if (currentDominants.items.length > 0) return currentDominants
-    if (!dominantsRequest) {
-      dominantsRequest = fetchDominants().then((value) => {
-        currentDominants = value
-        productCatalog.value = value.items
-        return value
-      }).finally(() => { dominantsRequest = null })
+  async function loadDirectory(): Promise<MarketProductDirectoryResponse> {
+    if (currentDirectory.items.length > 0) return currentDirectory
+    if (!directoryRequest) {
+      directoryRequest = fetchDirectory().then((value) => {
+        currentDirectory = { items: value.items.map(({ product, product_name, exchange, sector }) => ({ product, product_name, exchange, sector })) }
+        productCatalog.value = currentDirectory.items
+        return currentDirectory
+      }).finally(() => { directoryRequest = null })
     }
-    return dominantsRequest
+    return directoryRequest
   }
 
   function rebuildHeader(identity: MarketDetailIdentity): void {
     state.value.header = buildMarketDetailHeaderModel({
       identity,
-      dominant: currentDominants.items.find((item) => item.product.toLowerCase() === identity.symbol.toLowerCase()) ?? null,
+      dominant: null,
+      product: currentDirectory.items.find((item) => item.product.toLowerCase() === identity.symbol.toLowerCase()) ?? null,
       bars: series.bars.value,
       research: currentResearch.value,
       marketState: series.marketState.value,
@@ -169,6 +173,8 @@ export function useMarketDetailController(
   )
 
   async function switchIdentity(identity: MarketDetailIdentity): Promise<void> {
+    researchController.abort(); researchController = new AbortController()
+    const researchSignal = researchController.signal
     const generation = state.value.generation + 1
     const previousIdentity = state.value.identity
     const retainedHeader = canKeepHeader(previousIdentity, identity) ? state.value.header : null
@@ -192,7 +198,7 @@ export function useMarketDetailController(
       activeResearchKey = null
       researchError.value = false
     }
-    const metadataRequest = loadDominants().then(
+    const metadataRequest = loadDirectory().then(
       (value) => ({ ok: true as const, value }),
       () => ({ ok: false as const }),
     )
@@ -215,7 +221,7 @@ export function useMarketDetailController(
           symbol: identity.symbol,
           seriesKind: identity.seriesKind,
           contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
-        }).catch(() => null)
+        }, researchSignal).catch(() => null)
       : Promise.resolve(reuseResearch ? currentResearch.value : null)
     try {
       const [metadata, seriesResult] = await Promise.all([
@@ -271,6 +277,7 @@ export function useMarketDetailController(
   function dispose(): void {
     if (disposed) return
     disposed = true
+    researchController.abort()
     state.value.generation += 1
     stopSeriesWatch()
     series.dispose()

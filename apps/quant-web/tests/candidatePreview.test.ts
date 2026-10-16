@@ -241,6 +241,20 @@ test('candidate server rejects attempts to bind non-loopback', async () => {
   assert.doesNotThrow(() => hook({ server: { host: '127.0.0.1' } }))
 })
 
+test('frozen New SuBing research admits only exact GET reader paths', async () => {
+  const { previewTarget, candidatePreviewProxy } = await import('../previewProxy.ts')
+  const root = '/api/v1/research/new-subing'
+  for (const suffix of ['/profiles', '/runs', `/runs/${'a'.repeat(64)}`,
+    `/runs/${'a'.repeat(64)}/decisions`, `/runs/${'a'.repeat(64)}/trades`, `/runs/${'a'.repeat(64)}/equity`]) {
+    assert.equal(previewTarget('GET', root + suffix), 'http://127.0.0.1:8010')
+    assert.equal(previewTarget('POST', root + suffix), null)
+  }
+  for (const suffix of ['/apply', '/runs/../profiles', `/runs/${'A'.repeat(64)}`, `/runs/${'a'.repeat(64)}/rerun`, '/runs/']) {
+    assert.equal(previewTarget('GET', root + suffix), null)
+  }
+  assert.equal(candidatePreviewProxy()['^/api/v1/research/new-subing/'].target, 'http://127.0.0.1:8010')
+})
+
 
 test('third isolated candidate accepts only fixed loopback 8012 and defaults to independent 5178', async (context) => {
   context.mock.method(Date, 'now', () => Date.parse('2026-09-18T00:00:00Z'))

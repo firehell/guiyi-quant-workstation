@@ -39,6 +39,23 @@ def ready(query):
     )
 
 
+def test_resolve_with_chart_returns_the_verified_result_without_second_read():
+    results = []
+
+    class Service:
+        def query(self, query):
+            assert query.chart_limit == 120
+            result = ready(query)
+            results.append(result)
+            return result
+
+    snapshot, chart = NewowDailySnapshotResolver(
+        Reader(), lambda _cancelled: Service(), now=lambda: NEWER
+    ).resolve_with_chart("rb", "trend", "1d", chart_limit=120)
+    assert snapshot.as_of == NEWER
+    assert results == [chart]
+
+
 def test_daily_default_uses_verified_previous_close_when_latest_map_is_unpublished():
     calls = []
 

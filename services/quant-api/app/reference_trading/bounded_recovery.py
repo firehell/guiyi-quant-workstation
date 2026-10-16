@@ -23,55 +23,13 @@ from app.reference_trading.repository import RepositoryConflict, _identity_from_
 from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_from_json
 
 
+from app.reference_trading.transaction_guards import (
+    consumed_bound_receipt, receipt_hash as _receipt_hash,
+)
+
+
 def _hash(value):
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-
-
-def _receipt_hash(receipt):
-    return _hash({column.name: getattr(receipt, column.name)
-                  for column in receipt.__table__.columns})
-
-
-def _consumed_bound_receipt(session, receipt, revision):
-    """A previous one-shot interruption grants no automatic future recovery.
-
-    It may be renewed only after its exact generation/hash capture was consumed
-    by a committed calculation in this active revision. Uncertain/pending work
-    can never grant the next explicit task-local plan.
-    """
-    bound = receipt.budget.get("bounded_recovery_capture_sha256")
-    if receipt.recovery_policy != "interrupt_and_restart" or not isinstance(bound, str) or len(bound) != 64:
-        return False
-    previous = session.scalar(select(ReferenceActivationReceipt).where(
-        ReferenceActivationReceipt.stream_id == receipt.stream_id,
-        ReferenceActivationReceipt.generation == receipt.generation - 1))
-    if previous is None or receipt.budget.get("previous_receipt_sha256") != _receipt_hash(previous):
-        return False
-    additions = {"bounded_recovery_capture_sha256", "previous_receipt_sha256", "journal_proof_sha256"}
-    if ({k: v for k, v in receipt.budget.items() if k not in additions}
-            != {k: v for k, v in previous.budget.items() if k not in additions}
-            or not isinstance(receipt.budget.get("journal_proof_sha256"), str)
-            or len(receipt.budget["journal_proof_sha256"]) != 64):
-        return False
-    captures = session.scalars(select(ReferenceBatch).where(
-        ReferenceBatch.stream_id == receipt.stream_id,
-        ReferenceBatch.revision_id == receipt.revision_id,
-        ReferenceBatch.kind == "capture", ReferenceBatch.payload_hash == bound)).all()
-    if len(captures) != 1:
-        return False
-    capture = captures[0]
-    source = capture.source_evidence.get("forward_capture_v1", {})
-    calculation = session.get(ReferenceBatch, capture.consumed_by_batch_id) if capture.consumed_by_batch_id else None
-    proof = calculation.source_evidence.get("forward_capture_v1", {}) if calculation else {}
-    return (source.get("generation") == receipt.generation
-            and source.get("hash") == bound and source.get("source_kind") == "observation_interruption"
-            and calculation is not None and calculation.kind == "calculation"
-            and calculation.outcome == "committed"
-            and calculation.stream_id == capture.stream_id and calculation.revision_id == capture.revision_id
-            and proof.get("capture_id") == capture.batch_id and proof.get("hash") == bound
-            and proof.get("generation") == receipt.generation
-            and capture.expected_seq is not None and calculation.seq == capture.expected_seq + 1
-            and calculation.seq <= revision.last_seq)
 
 
 @dataclass(frozen=True)
@@ -127,7 +85,7 @@ class BoundedForwardRecovery:
                 or batch is None or not batch.checkpoint_text or revision.status != "active"
                 or revision.last_seq != stream.latest_seq or batch.seq != revision.last_seq):
             raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
-        if receipt.recovery_policy != "block" and not _consumed_bound_receipt(session, receipt, revision):
+        if receipt.recovery_policy != "block" and not consumed_bound_receipt(session, receipt, revision):
             raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
         identity = _identity_from_row(stream)
         if not identity.strategy_code.replace("-", "_").startswith("newow_") or identity.frequency != "60m":

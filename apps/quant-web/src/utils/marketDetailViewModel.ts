@@ -1,6 +1,7 @@
 import type {
   BarData,
   DominantContractItem,
+  MarketProductDirectoryItem,
   MarketOverlaySource,
   MarketReadState,
   ProductResearchResponse,
@@ -15,6 +16,7 @@ import { productSectorLabel } from './productDirectory.ts'
 export interface MarketDetailHeaderInput {
   identity: MarketDetailIdentity
   dominant: DominantContractItem | null
+  product?: MarketProductDirectoryItem | null
   bars: readonly BarData[]
   research: ProductResearchResponse | null
   marketState: MarketReadState | null
@@ -31,7 +33,7 @@ export interface MarketDetailHeaderInput {
 export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): MarketDetailHeaderModel {
   const identity = input.identity
   const dominant = matchingDominant(input.dominant, identity.symbol)
-  const research = matchingResearch(input.research, identity)
+  const research = matchingDetailResearch(input.research, identity)
   const state = matchingState(input.marketState, identity)
   const bars = sortedBars(input.bars)
   const latest = bars.at(-1) ?? null
@@ -41,7 +43,7 @@ export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): Ma
   const freshness: MarketDetailHeaderModel['freshness'] = unavailable
     ? 'unavailable'
     : input.stale ? 'stale' : 'fresh'
-  const product = dominant ?? research
+  const product = input.product ?? dominant ?? research
 
   if (unavailable) return unavailableHeader(input, product, state)
 
@@ -77,7 +79,7 @@ export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): Ma
 
 function unavailableHeader(
   input: MarketDetailHeaderInput,
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   state: MarketReadState | null,
 ): MarketDetailHeaderModel {
   return {
@@ -114,7 +116,7 @@ function matchingDominant(
   return dominant && sameSymbol(dominant.product, symbol) ? dominant : null
 }
 
-function matchingResearch(
+export function matchingDetailResearch(
   research: ProductResearchResponse | null,
   identity: MarketDetailIdentity,
 ): ProductResearchResponse | null {
@@ -144,7 +146,6 @@ function hasIdentityMismatch(
 ): boolean {
   if (input.dominant && !dominant) return true
   if (!latest) return false
-  if (input.identity.seriesKind === 'continuous') return Boolean(latest.physicalContract)
   if (input.identity.seriesKind === 'contract') {
     return !input.identity.contract
       || !!latest.physicalContract && !sameContract(latest.physicalContract, input.identity.contract)
@@ -158,7 +159,6 @@ function resolveDisplayContract(
   identity: MarketDetailIdentity,
   latest: BarData,
 ): string | null {
-  if (identity.seriesKind === 'continuous') return null
   if (identity.seriesKind === 'contract') return identity.contract ?? null
   return normalizeContract(latest.physicalContract) ?? null
 }
@@ -168,21 +168,21 @@ function marketDisclosure(
   latest: BarData | null,
   freshness: MarketDetailHeaderModel['freshness'],
   displayContract: string | null,
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   state: MarketReadState | null,
 ): readonly MarketDetailDisclosureSection[] {
-  const research = matchingResearch(input.research, input.identity)
+  const research = matchingDetailResearch(input.research, input.identity)
   const tone = freshness === 'fresh' ? 'default' : freshness === 'stale' ? 'warning' : 'unavailable'
   const unavailableSummary = freshness === 'unavailable' ? '关键行情身份不可证明' : freshness === 'stale' ? '正在展示上一份成功快照' : '当前行情事实'
   return [
     {
       id: 'market-extension',
       title: '行情扩展',
-      summary: unavailableSummary,
+      summary: input.research?.series_kind === 'continuous' ? '该统计不适用于当前序列' : unavailableSummary,
       updatedAt: latest?.time ?? null,
       tone,
       rows: [
-        { label: research?.series_kind === 'continuous' ? '统计序列' : '统计合约', value: research?.series_kind === 'continuous' ? 'MAIN 连续' : research?.metric_contract ?? '—', source: 'market' },
+        { label: '统计合约', value: research?.metric_contract ?? '—', source: 'market' },
         { label: '成交额', value: numberText(latest?.turnover), source: 'market' },
         { label: '量比20', value: numberText(research?.volume_ratio20), source: 'market' },
         { label: 'OI 1D', value: percentText(research?.oi_change_1d), source: 'market' },
@@ -259,13 +259,12 @@ function percentText(value: number | null | undefined): string {
 }
 
 function seriesKindText(seriesKind: MarketDetailIdentity['seriesKind']): string {
-  if (seriesKind === 'continuous') return '主连'
   if (seriesKind === 'contract') return '指定合约'
   return '真实主力'
 }
 
 function currentDominant(
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   research: ProductResearchResponse | null,
   contract: string | undefined,
 ): string {
@@ -274,7 +273,7 @@ function currentDominant(
 }
 
 function mappingDay(
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   research: ProductResearchResponse | null,
 ): string {
   if (product && 'dominant_mapping_date' in product) return product.dominant_mapping_date

@@ -1,0 +1,3178 @@
+{
+  "mode": "HISTORICAL_REPLAY",
+  "cash": "48200.47100",
+  "equity": "53660.471000000000000000",
+  "trading_day": "2026-10-09",
+  "day_start_equity": "49850.471000000000000000",
+  "daily_halt": false,
+  "rollover_halt": false,
+  "position_qty": 1,
+  "position_contract": "JM2701",
+  "order_count": 27,
+  "fill_count": 27,
+  "unresolved_orders": 0,
+  "retrospective_execution_facts": true,
+  "live_or_oos_evidence": false,
+  "strategy": "osc-test",
+  "frequency": "1d",
+  "scenario": "baseline",
+  "run_hash": "8d029ed27239526faedb188677bc412ced98bb74afb241b67608c996ff865e66",
+  "formula_versions": [
+    "newow_osc_test_causal_target_v1",
+    "newow_osc_test_page_v3379_v1"
+  ],
+  "signal_input_hash": "db0bc9202cd4531f31b0fcac2522425357204d1498bc20ea6587307186af6bac",
+  "execution_input_hash": "148eefb55f399735fd1682f7c8ea59896f13ac26914754190e37e635736fa5de",
+  "facts_hash": "bfa51b9f92ed3a7ba8983879e9614a40ba12118d3a6b678992845ecc13232e2b",
+  "status": "COMPLETE",
+  "annual_eligible": true,
+  "scope": "continuous_year",
+  "physical_contract": null,
+  "interruption": null,
+  "started_at": "2025-10-10T13:00:00+00:00",
+  "processed_through": "2026-10-09T07:00:00+00:00",
+  "valuation_at": "2026-10-09T07:00:00+00:00",
+  "planned_through": "2026-10-09T07:00:00+00:00",
+  "event_count": 82572,
+  "last_event_id": "c8772a3cf5892afbf5630a8ec5b93db7131fd0b1f86f5bdf5477c6d72b875622",
+  "closed_trades": 13,
+  "fees_paid": "209.52900",
+  "net_pnl": "3660.471000000000000000",
+  "account_return_pct": "7.320942000000000000",
+  "mark_to_market_max_drawdown_pct": "12.93327426955532892572571518",
+  "halt_days": [
+    "2025-10-15",
+    "2025-11-14",
+    "2025-11-24",
+    "2025-12-09",
+    "2026-01-27",
+    "2026-02-24",
+    "2026-04-03",
+    "2026-05-13",
+    "2026-06-22",
+    "2026-07-16",
+    "2026-07-30",
+    "2026-09-17"
+  ],
+  "daily": {
+    "2025-10-13": {
+      "equity": "50000",
+      "day_start_equity": "50000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-14": {
+      "equity": "50000",
+      "day_start_equity": "50000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-15": {
+      "equity": "49019.48300",
+      "day_start_equity": "50000",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2025-10-16": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-17": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-20": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-21": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-22": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-23": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-24": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-27": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-28": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-29": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-30": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-10-31": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-03": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-04": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-05": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-06": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-07": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-10": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-11": {
+      "equity": "49019.48300",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-12": {
+      "equity": "49492.217000000000000000",
+      "day_start_equity": "49019.48300",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2025-11-13": {
+      "equity": "49192.217000000000000000",
+      "day_start_equity": "49492.217000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2025-11-14": {
+      "equity": "48195.03200",
+      "day_start_equity": "49192.217000000000000000",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2025-11-17": {
+      "equity": "48195.03200",
+      "day_start_equity": "48195.03200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-18": {
+      "equity": "48195.03200",
+      "day_start_equity": "48195.03200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-19": {
+      "equity": "48195.03200",
+      "day_start_equity": "48195.03200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-20": {
+      "equity": "48195.03200",
+      "day_start_equity": "48195.03200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-21": {
+      "equity": "48195.03200",
+      "day_start_equity": "48195.03200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-24": {
+      "equity": "47125.37900",
+      "day_start_equity": "48195.03200",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2025-11-25": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-26": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-27": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-11-28": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-01": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-02": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-03": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-04": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-05": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-08": {
+      "equity": "47125.37900",
+      "day_start_equity": "47125.37900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-09": {
+      "equity": "45942.35000",
+      "day_start_equity": "47125.37900",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2025-12-10": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-11": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-12": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-15": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-16": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-17": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-18": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-19": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-22": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-23": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-24": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-25": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-26": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-29": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-30": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2025-12-31": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-05": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-06": {
+      "equity": "45942.35000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-07": {
+      "equity": "49775.750000000000000000",
+      "day_start_equity": "45942.35000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-01-08": {
+      "equity": "51238.61900",
+      "day_start_equity": "49775.750000000000000000",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-09": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-12": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-13": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-14": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-15": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-16": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-19": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-20": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-21": {
+      "equity": "51238.61900",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-22": {
+      "equity": "51171.824000000000000000",
+      "day_start_equity": "51238.61900",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-01-23": {
+      "equity": "52701.824000000000000000",
+      "day_start_equity": "51171.824000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-01-26": {
+      "equity": "52851.824000000000000000",
+      "day_start_equity": "52701.824000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-01-27": {
+      "equity": "51704.98100",
+      "day_start_equity": "52851.824000000000000000",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-01-28": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-29": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-01-30": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-02": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-03": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-04": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-05": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-06": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-09": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-10": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-11": {
+      "equity": "51704.98100",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-12": {
+      "equity": "51248.216000000000000000",
+      "day_start_equity": "51704.98100",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-02-13": {
+      "equity": "51308.216000000000000000",
+      "day_start_equity": "51248.216000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-02-24": {
+      "equity": "50191.60100",
+      "day_start_equity": "51308.216000000000000000",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-02-25": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-26": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-02-27": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-02": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-03": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-04": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-05": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-06": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-09": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-10": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-11": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-12": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-13": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-16": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-17": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-18": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-19": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-20": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-23": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-24": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-25": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-26": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-27": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-30": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-03-31": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-01": {
+      "equity": "50191.60100",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-02": {
+      "equity": "50844.878000000000000000",
+      "day_start_equity": "50191.60100",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-04-03": {
+      "equity": "49878.18500",
+      "day_start_equity": "50844.878000000000000000",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-04-07": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-08": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-09": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-10": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-13": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-14": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-15": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-16": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-17": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-20": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-21": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-22": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-23": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-24": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-27": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-28": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-29": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-04-30": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-06": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-07": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-08": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-11": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-12": {
+      "equity": "49878.18500",
+      "day_start_equity": "49878.18500",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-13": {
+      "equity": "48693.39200",
+      "day_start_equity": "49878.18500",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-05-14": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-15": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-18": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-19": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-20": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-21": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-22": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-25": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-26": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-27": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-28": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-05-29": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-01": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-02": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-03": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-04": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-05": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-08": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-09": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-10": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-11": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-12": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-15": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-16": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-17": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-18": {
+      "equity": "48693.39200",
+      "day_start_equity": "48693.39200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-22": {
+      "equity": "47598.13400",
+      "day_start_equity": "48693.39200",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-06-23": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-24": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-25": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-26": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-29": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-06-30": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-01": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-02": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-03": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-06": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-07": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-08": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-09": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-10": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-13": {
+      "equity": "47598.13400",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-14": {
+      "equity": "48820.697000000000000000",
+      "day_start_equity": "47598.13400",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-07-15": {
+      "equity": "49600.697000000000000000",
+      "day_start_equity": "48820.697000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-07-16": {
+      "equity": "48603.15800",
+      "day_start_equity": "49600.697000000000000000",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-07-17": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-20": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-21": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-22": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-23": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-24": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-27": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-28": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-29": {
+      "equity": "48603.15800",
+      "day_start_equity": "48603.15800",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-07-30": {
+      "equity": "47448.26600",
+      "day_start_equity": "48603.15800",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-07-31": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-03": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-04": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-05": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-06": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-07": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-10": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-11": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-12": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-13": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-14": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-17": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-18": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-19": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-20": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-21": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-24": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-25": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-26": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-27": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-28": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-08-31": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-01": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-02": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-03": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-04": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-07": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-08": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-09": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-10": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-11": {
+      "equity": "47448.26600",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-14": {
+      "equity": "47588.753000000000000000",
+      "day_start_equity": "47448.26600",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-09-15": {
+      "equity": "47588.753000000000000000",
+      "day_start_equity": "47588.753000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-09-16": {
+      "equity": "49268.753000000000000000",
+      "day_start_equity": "47588.753000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-09-17": {
+      "equity": "48209.16200",
+      "day_start_equity": "49268.753000000000000000",
+      "halted": true,
+      "position_qty": 0
+    },
+    "2026-09-18": {
+      "equity": "48209.16200",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-21": {
+      "equity": "48209.16200",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-22": {
+      "equity": "48209.16200",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-23": {
+      "equity": "48209.16200",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-24": {
+      "equity": "48209.16200",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-28": {
+      "equity": "48209.16200",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-29": {
+      "equity": "48209.16200",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 0
+    },
+    "2026-09-30": {
+      "equity": "48230.471000000000000000",
+      "day_start_equity": "48209.16200",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-10-08": {
+      "equity": "49850.471000000000000000",
+      "day_start_equity": "48230.471000000000000000",
+      "halted": false,
+      "position_qty": 1
+    },
+    "2026-10-09": {
+      "equity": "53660.471000000000000000",
+      "day_start_equity": "49850.471000000000000000",
+      "halted": false,
+      "position_qty": 1
+    }
+  },
+  "selection_overlap": true,
+  "independent_oos": false,
+  "promotion": false,
+  "persistence": "in_memory_same_paper_reducer_not_a_new_postgresql_account",
+  "owner_diagnostics": [
+    {
+      "mode": "HISTORICAL_REPLAY",
+      "cash": "47125.37900",
+      "equity": "47125.37900",
+      "trading_day": "2025-12-04",
+      "day_start_equity": "47125.37900",
+      "daily_halt": false,
+      "rollover_halt": false,
+      "position_qty": 0,
+      "position_contract": null,
+      "order_count": 6,
+      "fill_count": 6,
+      "unresolved_orders": 0,
+      "retrospective_execution_facts": true,
+      "live_or_oos_evidence": false,
+      "strategy": "osc-test",
+      "frequency": "1d",
+      "scenario": "baseline",
+      "run_hash": "3a4da9c9a267a49601d04a78852d8db8406dddbe611f85c42030be547bf1d007",
+      "formula_versions": [
+        "newow_osc_test_causal_target_v1",
+        "newow_osc_test_page_v3379_v1"
+      ],
+      "signal_input_hash": "db0bc9202cd4531f31b0fcac2522425357204d1498bc20ea6587307186af6bac",
+      "execution_input_hash": "148eefb55f399735fd1682f7c8ea59896f13ac26914754190e37e635736fa5de",
+      "facts_hash": "bfa51b9f92ed3a7ba8983879e9614a40ba12118d3a6b678992845ecc13232e2b",
+      "status": "COMPLETE",
+      "annual_eligible": false,
+      "scope": "independent_physical_segment",
+      "physical_contract": "JM2601",
+      "interruption": null,
+      "started_at": "2025-10-10T13:00:00+00:00",
+      "processed_through": "2025-12-04T07:00:00+00:00",
+      "valuation_at": "2025-12-04T07:00:00+00:00",
+      "planned_through": "2025-12-04T07:00:00+00:00",
+      "event_count": 13500,
+      "last_event_id": "13d3c548777eca0fddd72faa9c99342611b7ed3dfd4df71e57964775c9f45b0d",
+      "closed_trades": 3,
+      "fees_paid": "54.62100",
+      "net_pnl": "-2874.62100",
+      "account_return_pct": "-5.74924200",
+      "mark_to_market_max_drawdown_pct": "6.854132689287631472728384269",
+      "halt_days": [
+        "2025-10-15",
+        "2025-11-14",
+        "2025-11-24"
+      ],
+      "daily": {
+        "2025-10-13": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-14": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-15": {
+          "equity": "49019.48300",
+          "day_start_equity": "50000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2025-10-16": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-17": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-20": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-21": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-22": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-23": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-24": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-27": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-28": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-29": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-30": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-10-31": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-03": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-04": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-05": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-06": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-07": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-10": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-11": {
+          "equity": "49019.48300",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-12": {
+          "equity": "49492.217000000000000000",
+          "day_start_equity": "49019.48300",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2025-11-13": {
+          "equity": "49192.217000000000000000",
+          "day_start_equity": "49492.217000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2025-11-14": {
+          "equity": "48195.03200",
+          "day_start_equity": "49192.217000000000000000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2025-11-17": {
+          "equity": "48195.03200",
+          "day_start_equity": "48195.03200",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-18": {
+          "equity": "48195.03200",
+          "day_start_equity": "48195.03200",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-19": {
+          "equity": "48195.03200",
+          "day_start_equity": "48195.03200",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-20": {
+          "equity": "48195.03200",
+          "day_start_equity": "48195.03200",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-21": {
+          "equity": "48195.03200",
+          "day_start_equity": "48195.03200",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-24": {
+          "equity": "47125.37900",
+          "day_start_equity": "48195.03200",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2025-11-25": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-26": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-27": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-11-28": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-01": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-02": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-03": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-04": {
+          "equity": "47125.37900",
+          "day_start_equity": "47125.37900",
+          "halted": false,
+          "position_qty": 0
+        }
+      },
+      "selection_overlap": true,
+      "independent_oos": false,
+      "promotion": false,
+      "persistence": "in_memory_same_paper_reducer_not_a_new_postgresql_account"
+    },
+    {
+      "mode": "HISTORICAL_REPLAY",
+      "cash": "52542.82700",
+      "equity": "52542.82700",
+      "trading_day": "2026-04-16",
+      "day_start_equity": "52542.82700",
+      "daily_halt": false,
+      "rollover_halt": false,
+      "position_qty": 0,
+      "position_contract": null,
+      "order_count": 10,
+      "fill_count": 10,
+      "unresolved_orders": 0,
+      "retrospective_execution_facts": true,
+      "live_or_oos_evidence": false,
+      "strategy": "osc-test",
+      "frequency": "1d",
+      "scenario": "baseline",
+      "run_hash": "7aaa8887a7f3e051ed318024d99119ea6a440d110cf3ffddd3e9939dc573968c",
+      "formula_versions": [
+        "newow_osc_test_causal_target_v1",
+        "newow_osc_test_page_v3379_v1"
+      ],
+      "signal_input_hash": "db0bc9202cd4531f31b0fcac2522425357204d1498bc20ea6587307186af6bac",
+      "execution_input_hash": "148eefb55f399735fd1682f7c8ea59896f13ac26914754190e37e635736fa5de",
+      "facts_hash": "bfa51b9f92ed3a7ba8983879e9614a40ba12118d3a6b678992845ecc13232e2b",
+      "status": "COMPLETE",
+      "annual_eligible": false,
+      "scope": "independent_physical_segment",
+      "physical_contract": "JM2605",
+      "interruption": null,
+      "started_at": "2025-12-04T13:00:00+00:00",
+      "processed_through": "2026-04-16T07:00:00+00:00",
+      "valuation_at": "2026-04-16T07:00:00+00:00",
+      "planned_through": "2026-04-16T07:00:00+00:00",
+      "event_count": 29406,
+      "last_event_id": "c210af9a0484717492ffdf86f8697a5e22c89be5e1ef0c0bf72d9d357f6f7d42",
+      "closed_trades": 5,
+      "fees_paid": "67.17300",
+      "net_pnl": "2542.82700",
+      "account_return_pct": "5.08565400",
+      "mark_to_market_max_drawdown_pct": "7.025002199233415139194387290",
+      "halt_days": [
+        "2025-12-09",
+        "2026-01-27",
+        "2026-02-24",
+        "2026-04-03"
+      ],
+      "daily": {
+        "2025-12-05": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-08": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-09": {
+          "equity": "48816.97100",
+          "day_start_equity": "50000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2025-12-10": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-11": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-12": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-15": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-16": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-17": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-18": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-19": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-22": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-23": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-24": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-25": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-26": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-29": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-30": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2025-12-31": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-05": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-06": {
+          "equity": "48816.97100",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-07": {
+          "equity": "52650.371000000000000000",
+          "day_start_equity": "48816.97100",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-01-08": {
+          "equity": "54113.24000",
+          "day_start_equity": "52650.371000000000000000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-09": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-12": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-13": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-14": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-15": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-16": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-19": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-20": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-21": {
+          "equity": "54113.24000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-22": {
+          "equity": "54046.445000000000000000",
+          "day_start_equity": "54113.24000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-01-23": {
+          "equity": "55576.445000000000000000",
+          "day_start_equity": "54046.445000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-01-26": {
+          "equity": "55726.445000000000000000",
+          "day_start_equity": "55576.445000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-01-27": {
+          "equity": "54549.60500",
+          "day_start_equity": "55726.445000000000000000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-01-28": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-29": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-01-30": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-02": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-03": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-04": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-05": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-06": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-09": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-10": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-11": {
+          "equity": "54549.60500",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-12": {
+          "equity": "54092.840000000000000000",
+          "day_start_equity": "54549.60500",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-02-13": {
+          "equity": "54152.840000000000000000",
+          "day_start_equity": "54092.840000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-02-24": {
+          "equity": "52946.23400",
+          "day_start_equity": "54152.840000000000000000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-02-25": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-26": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-02-27": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-02": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-03": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-04": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-05": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-06": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-09": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-10": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-11": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-12": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-13": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-16": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-17": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-18": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-19": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-20": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-23": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-24": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-25": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-26": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-27": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-30": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-03-31": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-01": {
+          "equity": "52946.23400",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-02": {
+          "equity": "53599.511000000000000000",
+          "day_start_equity": "52946.23400",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-04-03": {
+          "equity": "52542.82700",
+          "day_start_equity": "53599.511000000000000000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-04-07": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-08": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-09": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-10": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-13": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-14": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-15": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-16": {
+          "equity": "52542.82700",
+          "day_start_equity": "52542.82700",
+          "halted": false,
+          "position_qty": 0
+        }
+      },
+      "selection_overlap": true,
+      "independent_oos": false,
+      "promotion": false,
+      "persistence": "in_memory_same_paper_reducer_not_a_new_postgresql_account"
+    },
+    {
+      "mode": "HISTORICAL_REPLAY",
+      "cash": "47570.08100",
+      "equity": "47570.08100",
+      "trading_day": "2026-08-18",
+      "day_start_equity": "47570.08100",
+      "daily_halt": false,
+      "rollover_halt": false,
+      "position_qty": 0,
+      "position_contract": null,
+      "order_count": 8,
+      "fill_count": 8,
+      "unresolved_orders": 0,
+      "retrospective_execution_facts": true,
+      "live_or_oos_evidence": false,
+      "strategy": "osc-test",
+      "frequency": "1d",
+      "scenario": "baseline",
+      "run_hash": "78bd8bba1f22f7e1c20f7f7ec067c3673f8f59d6dff00a80891e61207f9bb345",
+      "formula_versions": [
+        "newow_osc_test_causal_target_v1",
+        "newow_osc_test_page_v3379_v1"
+      ],
+      "signal_input_hash": "db0bc9202cd4531f31b0fcac2522425357204d1498bc20ea6587307186af6bac",
+      "execution_input_hash": "148eefb55f399735fd1682f7c8ea59896f13ac26914754190e37e635736fa5de",
+      "facts_hash": "bfa51b9f92ed3a7ba8983879e9614a40ba12118d3a6b678992845ecc13232e2b",
+      "status": "COMPLETE",
+      "annual_eligible": false,
+      "scope": "independent_physical_segment",
+      "physical_contract": "JM2609",
+      "interruption": null,
+      "started_at": "2026-04-16T13:00:00+00:00",
+      "processed_through": "2026-08-18T07:00:00+00:00",
+      "valuation_at": "2026-08-18T07:00:00+00:00",
+      "planned_through": "2026-08-18T07:00:00+00:00",
+      "event_count": 28833,
+      "last_event_id": "db09fa1c8a0e1716257ce9cd13b960a1c956b738c3de851b518f5d61db9894c9",
+      "closed_trades": 4,
+      "fees_paid": "59.91900",
+      "net_pnl": "-2429.91900",
+      "account_return_pct": "-4.85983800",
+      "mark_to_market_max_drawdown_pct": "5.073445529930728677101638808",
+      "halt_days": [
+        "2026-05-13",
+        "2026-06-22",
+        "2026-07-16",
+        "2026-07-30"
+      ],
+      "daily": {
+        "2026-04-17": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-20": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-21": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-22": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-23": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-24": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-27": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-28": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-29": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-04-30": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-06": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-07": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-08": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-11": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-12": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-13": {
+          "equity": "48815.20700",
+          "day_start_equity": "50000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-05-14": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-15": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-18": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-19": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-20": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-21": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-22": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-25": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-26": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-27": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-28": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-05-29": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-01": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-02": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-03": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-04": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-05": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-08": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-09": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-10": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-11": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-12": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-15": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-16": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-17": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-18": {
+          "equity": "48815.20700",
+          "day_start_equity": "48815.20700",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-22": {
+          "equity": "47719.94900",
+          "day_start_equity": "48815.20700",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-06-23": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-24": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-25": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-26": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-29": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-06-30": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-01": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-02": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-03": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-06": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-07": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-08": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-09": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-10": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-13": {
+          "equity": "47719.94900",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-14": {
+          "equity": "48942.512000000000000000",
+          "day_start_equity": "47719.94900",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-07-15": {
+          "equity": "49722.512000000000000000",
+          "day_start_equity": "48942.512000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-07-16": {
+          "equity": "48724.97300",
+          "day_start_equity": "49722.512000000000000000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-07-17": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-20": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-21": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-22": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-23": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-24": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-27": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-28": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-29": {
+          "equity": "48724.97300",
+          "day_start_equity": "48724.97300",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-07-30": {
+          "equity": "47570.08100",
+          "day_start_equity": "48724.97300",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-07-31": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-03": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-04": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-05": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-06": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-07": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-10": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-11": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-12": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-13": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-14": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-17": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-18": {
+          "equity": "47570.08100",
+          "day_start_equity": "47570.08100",
+          "halted": false,
+          "position_qty": 0
+        }
+      },
+      "selection_overlap": true,
+      "independent_oos": false,
+      "promotion": false,
+      "persistence": "in_memory_same_paper_reducer_not_a_new_postgresql_account"
+    },
+    {
+      "mode": "HISTORICAL_REPLAY",
+      "cash": "50752.20500",
+      "equity": "56212.205000000000000000",
+      "trading_day": "2026-10-09",
+      "day_start_equity": "52402.205000000000000000",
+      "daily_halt": false,
+      "rollover_halt": false,
+      "position_qty": 1,
+      "position_contract": "JM2701",
+      "order_count": 3,
+      "fill_count": 3,
+      "unresolved_orders": 0,
+      "retrospective_execution_facts": true,
+      "live_or_oos_evidence": false,
+      "strategy": "osc-test",
+      "frequency": "1d",
+      "scenario": "baseline",
+      "run_hash": "d6591be161424fa5ad048e5e67b34cd1b811e9dfeb97e9cf308bd0f26804bbd0",
+      "formula_versions": [
+        "newow_osc_test_causal_target_v1",
+        "newow_osc_test_page_v3379_v1"
+      ],
+      "signal_input_hash": "db0bc9202cd4531f31b0fcac2522425357204d1498bc20ea6587307186af6bac",
+      "execution_input_hash": "148eefb55f399735fd1682f7c8ea59896f13ac26914754190e37e635736fa5de",
+      "facts_hash": "bfa51b9f92ed3a7ba8983879e9614a40ba12118d3a6b678992845ecc13232e2b",
+      "status": "COMPLETE",
+      "annual_eligible": false,
+      "scope": "independent_physical_segment",
+      "physical_contract": "JM2701",
+      "interruption": null,
+      "started_at": "2026-08-18T13:00:00+00:00",
+      "processed_through": "2026-10-09T07:00:00+00:00",
+      "valuation_at": "2026-10-09T07:00:00+00:00",
+      "planned_through": "2026-10-09T07:00:00+00:00",
+      "event_count": 10836,
+      "last_event_id": "727f58317767ae48b2c0b89caa24b332a6248acf9f2e7439ed05e9c3b19dd37f",
+      "closed_trades": 1,
+      "fees_paid": "27.79500",
+      "net_pnl": "6212.205000000000000000",
+      "account_return_pct": "12.424410000000000000",
+      "mark_to_market_max_drawdown_pct": "7.622334716672718478970711077",
+      "halt_days": [
+        "2026-09-17"
+      ],
+      "daily": {
+        "2026-08-19": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-20": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-21": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-24": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-25": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-26": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-27": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-28": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-08-31": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-01": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-02": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-03": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-04": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-07": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-08": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-09": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-10": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-11": {
+          "equity": "50000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-14": {
+          "equity": "50140.487000000000000000",
+          "day_start_equity": "50000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-09-15": {
+          "equity": "50140.487000000000000000",
+          "day_start_equity": "50140.487000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-09-16": {
+          "equity": "51820.487000000000000000",
+          "day_start_equity": "50140.487000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-09-17": {
+          "equity": "50760.89600",
+          "day_start_equity": "51820.487000000000000000",
+          "halted": true,
+          "position_qty": 0
+        },
+        "2026-09-18": {
+          "equity": "50760.89600",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-21": {
+          "equity": "50760.89600",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-22": {
+          "equity": "50760.89600",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-23": {
+          "equity": "50760.89600",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-24": {
+          "equity": "50760.89600",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-28": {
+          "equity": "50760.89600",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-29": {
+          "equity": "50760.89600",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 0
+        },
+        "2026-09-30": {
+          "equity": "50782.205000000000000000",
+          "day_start_equity": "50760.89600",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-10-08": {
+          "equity": "52402.205000000000000000",
+          "day_start_equity": "50782.205000000000000000",
+          "halted": false,
+          "position_qty": 1
+        },
+        "2026-10-09": {
+          "equity": "56212.205000000000000000",
+          "day_start_equity": "52402.205000000000000000",
+          "halted": false,
+          "position_qty": 1
+        }
+      },
+      "selection_overlap": true,
+      "independent_oos": false,
+      "promotion": false,
+      "persistence": "in_memory_same_paper_reducer_not_a_new_postgresql_account"
+    }
+  ],
+  "matrix_version": "jm_paper_fixed_risk_matrix_v1",
+  "signal_bar_count": 241,
+  "execution_bar_count": 82305,
+  "facts_captured_at": "2026-10-11T14:47:35.217528+00:00",
+  "facts_composed_at": "2026-10-11T14:48:44.501531+00:00"
+}

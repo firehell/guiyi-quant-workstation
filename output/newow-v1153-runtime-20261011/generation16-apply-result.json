@@ -1,0 +1,163 @@
+{
+  "phase": "generation16_ready_calendars_idle",
+  "step": "final",
+  "failure_code": null,
+  "stopped": [
+    "api",
+    "web",
+    "live",
+    "alert",
+    "reference-worker",
+    "market-feed"
+  ],
+  "started": [
+    "market-feed",
+    "api",
+    "web",
+    "live",
+    "alert",
+    "reference-worker"
+  ],
+  "http_startup": {
+    "at": "2026-10-11T15:32:39.812399+00:00",
+    "polls": 6,
+    "ready": true,
+    "seconds": 3.4631787499965867
+  },
+  "scheduled_loaded": [
+    "after-market",
+    "late-provider-recovery",
+    "weekly-audit",
+    "log-rotate"
+  ],
+  "health_preflight": {
+    "at": "2026-10-11T15:32:41.812535+00:00",
+    "http": true,
+    "http_startup": {
+      "at": "2026-10-11T15:32:39.812399+00:00",
+      "polls": 6,
+      "ready": true,
+      "seconds": 3.4631787499965867
+    },
+    "identity": true,
+    "identity_seconds": 1.9992998339876067
+  },
+  "health_gate_evidence": {
+    "at": "2026-10-11T15:36:41.962505+00:00",
+    "heartbeat": true,
+    "heartbeat_proof": {
+      "live": {
+        "accepted": true,
+        "age_seconds": 1.60285,
+        "available": true,
+        "identity_matches": {
+          "runtime_commit": true,
+          "runtime_generation": true,
+          "runtime_root": true,
+          "runtime_tag": true
+        },
+        "operational_count": 60,
+        "present": true,
+        "runtime_commit": "c28438d3d7ad6d6c66272027996f4a25e2facdfe",
+        "runtime_generation": 16,
+        "runtime_root": "/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.15.3",
+        "runtime_tag": "v1.15.3"
+      },
+      "market-feed": {
+        "accepted": true,
+        "age_seconds": 1.351437,
+        "available": true,
+        "identity_matches": {
+          "runtime_commit": true,
+          "runtime_generation": true,
+          "runtime_root": true,
+          "runtime_tag": true
+        },
+        "operational_count": 60,
+        "present": true,
+        "runtime_commit": "c28438d3d7ad6d6c66272027996f4a25e2facdfe",
+        "runtime_generation": 16,
+        "runtime_root": "/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.15.3",
+        "runtime_tag": "v1.15.3"
+      }
+    },
+    "loaded_pids": true,
+    "owner_ready": true,
+    "owners": {
+      "alert": {
+        "at": "2026-10-11T15:36:42.053182+00:00",
+        "failure_code": null,
+        "generation": 16,
+        "phase": "active",
+        "ready": true,
+        "typed_proof": {}
+      },
+      "api": {
+        "at": "2026-10-11T15:36:42.009809+00:00",
+        "failure_code": null,
+        "generation": 16,
+        "phase": "active",
+        "ready": true,
+        "typed_proof": {}
+      },
+      "live": {
+        "at": "2026-10-11T15:36:41.588451+00:00",
+        "failure_code": null,
+        "generation": 16,
+        "phase": "active",
+        "ready": true,
+        "typed_proof": {}
+      },
+      "market-feed": {
+        "at": "2026-10-11T15:36:41.823500+00:00",
+        "failure_code": null,
+        "generation": 16,
+        "phase": "active",
+        "ready": true,
+        "typed_proof": {}
+      },
+      "reference-worker": {
+        "at": "2026-10-11T15:36:41.432920+00:00",
+        "failure_code": null,
+        "generation": 16,
+        "phase": "active",
+        "ready": true,
+        "typed_proof": {
+          "reference_runtime": {
+            "blocked_count": 0,
+            "blocked_counts": {},
+            "historical_refresh_alive": true,
+            "historical_refresh_error": null,
+            "notifications_alive": true,
+            "ready": true,
+            "stage": "cycle"
+          }
+        }
+      },
+      "web": {
+        "at": "2026-10-11T15:36:42.045522+00:00",
+        "failure_code": null,
+        "generation": 16,
+        "phase": "active",
+        "ready": true,
+        "typed_proof": {}
+      }
+    },
+    "registry": true,
+    "seconds": 0.37614799999573734
+  },
+  "cycle_evidence": {
+    "alert": "2026-10-11T15:36:42.053182+00:00",
+    "api": "2026-10-11T15:36:42.009809+00:00",
+    "live": "2026-10-11T15:36:41.588451+00:00",
+    "market-feed": "2026-10-11T15:36:41.823500+00:00",
+    "reference-worker": "2026-10-11T15:36:41.432920+00:00",
+    "web": "2026-10-11T15:36:42.045522+00:00"
+  },
+  "journal_sha256": "a69245ecfc6e1323c6466752a2979ca6f5aab22330ed2a9d55fe826eb0f54bd7",
+  "prior_journals": {
+    "reference-continuity-generation13.json": "97735faf858f628845959eda0755bb379074ca1fc2fc097645486da9cb58b872",
+    "reference-continuity-generation14-recovery.json": "9a4a33760ab36162c9883c6e66f7e51decc829d551421cc412220abba8a0363e",
+    "reference-continuity-generation15-recovery.json": "d1ba321fdb835df9a3fe3da52db8c23f2db1cf14db3e70992b0a3eca0db71baa"
+  }
+}

@@ -1,3 +1,4 @@
+import { annualizedReference } from './performancePresentation.ts'
 import type { NewowReferenceValue, NewowReferenceTrade } from '../types/newowProduct.ts'
 
 // Decimal addition remains exact; Number is used only for SVG coordinates.
@@ -64,8 +65,7 @@ export function newowReferenceAnnualized(value: NewowReferenceValue): number | n
   const days = (end - start) / 86_400_000
   const ratio = 1 + curve.points.at(-1)!.value / 100
   if (!Number.isFinite(days) || days <= 0 || ratio <= 0) return null
-  const annual = (Math.pow(ratio, 365 / days) - 1) * 100
-  return Number.isFinite(annual) ? annual : null
+  return annualizedReference({start:0,end:curve.points.at(-1)!.value,days})
 }
 
 export function newowTheoreticalDisplay(value: NewowReferenceValue): NewowReferenceValue | null {

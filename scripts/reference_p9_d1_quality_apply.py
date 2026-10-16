@@ -19,7 +19,7 @@ from app.market_data.subing_d1_quality_apply import (
     apply_frozen_candidates,
     preflight_frozen_candidates,
 )
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 from scripts.subing_d1_quality_apply import ReceiptJournal
 
 

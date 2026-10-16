@@ -71,14 +71,16 @@ test('withholds change and pct when the previous completed bar is absent', async
   assert.equal(model.pct, null)
 })
 
-test('does not invent a physical contract for continuous data', async () => {
+test('withholds continuous statistics on an actual-dominant page without relabelling them', async () => {
   const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
-  const model = buildMarketDetailHeaderModel(input({
-    identity: { view: 'free', symbol: 'jm', seriesKind: 'continuous', frequency: '15m' },
-    bars: [bar('2026-09-02T02:30:00Z', 100, undefined), bar('2026-09-02T02:45:00Z', 110, undefined)],
-  }))
-
-  assert.equal(model.displayContract, null)
+  const model = buildMarketDetailHeaderModel(input({research:{...input().research, series_kind:'continuous',volume_ratio20:12345,metric_contract:'MAIN'}}))
+  const section=model.extendedSections.find(section=>section.id==='market-extension')!
+  assert.equal(section.summary,'该统计不适用于当前序列')
+  assert.equal(section.rows.find(row=>row.label==='量比20')?.value,'—')
+  assert.equal(section.rows.find(row=>row.label==='统计合约')?.value,'—')
+  assert.equal(JSON.stringify(model).includes('MAIN'),false)
+  assert.equal(model.freshness,'fresh')
+  assert.equal(model.displayContract,'JM2601')
 })
 
 test('keeps the contract route identity as the displayed contract', async () => {
@@ -181,16 +183,13 @@ test('never manufactures the removed five-day change row for any series identity
   const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
   const identities = [
     identity,
-    { ...identity, seriesKind: 'continuous' as const },
     { ...identity, seriesKind: 'contract' as const, contract: 'JM2601' },
   ]
   for (const nextIdentity of identities) {
     const model = buildMarketDetailHeaderModel(input({
       identity: nextIdentity,
-      dominant: nextIdentity.seriesKind === 'continuous' ? null : input().dominant,
-      bars: nextIdentity.seriesKind === 'continuous'
-        ? [bar('2026-09-02T02:30:00Z', 100, undefined), bar('2026-09-02T02:45:00Z', 110, undefined)]
-        : input().bars,
+      dominant: input().dominant,
+      bars: input().bars,
       research: nextIdentity.seriesKind === 'contract' ? null : input().research,
     }))
     assert.equal(model.extendedSections.flatMap((section) => section.rows).some((row) => row.label === '5日涨跌'), false)

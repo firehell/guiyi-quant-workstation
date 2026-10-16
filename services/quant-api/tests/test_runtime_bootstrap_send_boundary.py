@@ -10,6 +10,10 @@ from app.runtime_bootstrap import BootstrapBackend, BootstrapError
 
 @pytest.fixture
 def boundary(monkeypatch, tmp_path):
+    # Load the composition aliases before patching the local Catalog constructor.
+    # A first import under this fixture must not retain its fake after teardown.
+    import app.market_data.composition  # noqa: F401
+
     now = datetime.now(UTC)
     status = {
         'last_transport_attempt_at': (now - timedelta(minutes=1)).isoformat(),

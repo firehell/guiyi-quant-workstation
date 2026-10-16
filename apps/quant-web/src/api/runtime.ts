@@ -160,6 +160,6 @@ export interface RuntimeHealthResponse {
   }
 }
 
-export function getRuntimeHealth() {
-  return request.get<never, RuntimeHealthResponse>('/api/runtime/health')
+export function getRuntimeHealth(signal?: AbortSignal) {
+  return request.get<never, RuntimeHealthResponse>('/api/runtime/health', { signal })
 }

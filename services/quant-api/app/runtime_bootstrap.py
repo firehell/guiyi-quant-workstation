@@ -176,7 +176,7 @@ class BootstrapBackend:
                 continue
             if path.is_symlink():
                 raise BootstrapError('BOOTSTRAP_PLIST_UNSAFE')
-            from app.market_data.closeout_binding import _snapshot
+            from app.runtime_identity import file_snapshot as _snapshot
             content, _stamp = _snapshot(path)
             payload = plistlib.loads(content)
             if service == 'log-rotate':
@@ -204,8 +204,8 @@ class BootstrapBackend:
             if marker:
                 marker_path = root / '.run' / marker
                 enabled = enabled and marker_path.is_file() and not marker_path.is_symlink() and marker_path.read_bytes() == b'enabled\n'
-            from app.market_data.captured_recovery_runtime import _read_launchd_service, _verify_loaded_service
-            from app.market_data.closeout_binding import _arguments
+            from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
+            from app.runtime_identity import launchd_arguments as _arguments
             observed = _read_launchd_service(label, root=root)
             if enabled and observed is None:
                 raise BootstrapError('BOOTSTRAP_LOADED_SERVICE_MISSING')
@@ -227,8 +227,8 @@ class BootstrapBackend:
 
     def _legacy_log_rotate(self, path, payload, content, disabled):
         """The old standalone script has no release identity; freeze its actual bytes."""
-        from app.market_data.closeout_binding import _arguments, _snapshot
-        from app.market_data.captured_recovery_runtime import _read_launchd_service
+        from app.runtime_identity import launchd_arguments as _arguments, file_snapshot as _snapshot
+        from app.runtime_identity import read_launchd_service as _read_launchd_service
         try:
             home = Path.home()
             directory = home / 'Library/Application Support/GuiyiQuant'
@@ -479,7 +479,7 @@ class BootstrapBackend:
         return result
 
     def _pid(self, label):
-        from app.market_data.captured_recovery_runtime import _read_launchd_service, CapturedRecoveryRuntimeError
+        from app.runtime_identity import read_launchd_service as _read_launchd_service, RuntimeIdentityError
         try:
             output = _read_launchd_service(label, root=Path.home())
             if output is None:
@@ -512,7 +512,7 @@ class BootstrapBackend:
             if fields['state'] != 'running' or not re.fullmatch(r'[1-9][0-9]{0,9}', value):
                 raise ValueError
             return int(value)
-        except CapturedRecoveryRuntimeError:
+        except RuntimeIdentityError:
             raise BootstrapError('BOOTSTRAP_LAUNCHD_OPERATION_FAILED') from None
         except (OSError, ValueError, TypeError):
             raise BootstrapError('BOOTSTRAP_PROCESS_STATE_UNPROVEN') from None
@@ -538,8 +538,8 @@ class BootstrapBackend:
             raise BootstrapError('BOOTSTRAP_LEGACY_DRAIN_UNPROVEN')
 
     def _legacy_loaded_identity(self, service, old):
-        from app.market_data.closeout_binding import _arguments, _snapshot
-        from app.market_data.captured_recovery_runtime import _read_launchd_service, _verify_loaded_service
+        from app.runtime_identity import launchd_arguments as _arguments, file_snapshot as _snapshot
+        from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
         try:
             root = Path(old['root'])
             path = Path.home() / 'Library/LaunchAgents' / f"{old['label']}.plist"
@@ -596,7 +596,7 @@ class BootstrapBackend:
             if service == 'log-rotate':
                 if self._pid(label) is not None:
                     raise BootstrapError('BOOTSTRAP_LOG_ROTATE_BUSY')
-                from app.market_data.closeout_binding import _snapshot
+                from app.runtime_identity import file_snapshot as _snapshot
                 try:
                     path = Path.home() / 'Library/LaunchAgents' / f'{label}.plist'
                     content = _snapshot(path)[0]
@@ -829,8 +829,8 @@ class BootstrapBackend:
         """Prove the narrow pre-schema/pre-install boundary; never infer rollback."""
         from app.runtime_bindings import _read as secure_read
         from app.runtime_handover import _read
-        from app.market_data.closeout_binding import _snapshot, _arguments
-        from app.market_data.captured_recovery_runtime import _read_launchd_service, _verify_loaded_service
+        from app.runtime_identity import file_snapshot as _snapshot, launchd_arguments as _arguments
+        from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
         from app.redis_connections import get_redis_connection
         directory = runtime_directory()
         attempt = _read(directory / 'topology-legacy-recovery.json')
@@ -1005,7 +1005,7 @@ class BootstrapBackend:
 
     def _assert_legacy_recovery_unchanged(self, recovery):
         from app.runtime_bindings import _read as secure_read
-        from app.market_data.closeout_binding import _snapshot
+        from app.runtime_identity import file_snapshot as _snapshot
         from app.redis_connections import get_redis_connection
         directory = runtime_directory()
         raw = secure_read(directory / 'topology-bootstrap.json')

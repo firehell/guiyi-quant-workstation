@@ -1,0 +1,79 @@
+{
+  "phase": "outcome_unknown",
+  "failure_code": "OWNER_IDENTITY_DRIFT",
+  "attempt_sha256": "9a4a33760ab36162c9883c6e66f7e51decc829d551421cc412220abba8a0363e",
+  "stopped": [
+    "api",
+    "web",
+    "live",
+    "alert",
+    "reference-worker",
+    "market-feed"
+  ],
+  "started": [
+    "market-feed",
+    "api",
+    "web",
+    "live",
+    "alert",
+    "reference-worker"
+  ],
+  "failure_typed_proof": {
+    "alert": {
+      "at": "2026-10-11T15:05:54.424002+00:00",
+      "failure_code": null,
+      "generation": 14,
+      "phase": "active",
+      "ready": false,
+      "typed_proof": {}
+    },
+    "api": {
+      "at": "2026-10-11T15:05:53.303482+00:00",
+      "failure_code": null,
+      "generation": 14,
+      "phase": "active",
+      "ready": false,
+      "typed_proof": {}
+    },
+    "live": {
+      "at": "2026-10-11T15:05:54.428966+00:00",
+      "failure_code": null,
+      "generation": 14,
+      "phase": "active",
+      "ready": false,
+      "typed_proof": {}
+    },
+    "market-feed": {
+      "at": "2026-10-11T15:05:54.421853+00:00",
+      "failure_code": null,
+      "generation": 14,
+      "phase": "active",
+      "ready": false,
+      "typed_proof": {}
+    },
+    "reference-worker": {
+      "at": "2026-10-11T15:05:54.349586+00:00",
+      "failure_code": null,
+      "generation": 14,
+      "phase": "active",
+      "ready": false,
+      "typed_proof": {
+        "reference_runtime": {
+          "ready": false,
+          "stage": "compose"
+        }
+      }
+    },
+    "web": {
+      "at": "2026-10-11T15:05:54.400354+00:00",
+      "failure_code": null,
+      "generation": 14,
+      "phase": "active",
+      "ready": true,
+      "typed_proof": {}
+    }
+  },
+  "parked_verified": true,
+  "halt_failed": [],
+  "startup_at": "2026-10-11T15:05:53.403424+00:00"
+}

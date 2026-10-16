@@ -607,6 +607,42 @@ calculation identity and observation-gap validation.
 - **THEN** it waits without creating an observation or requesting the unpublished daily range
 - **AND** missing older periods or failed authoritative input checks still block the route
 
+### Requirement: Unified bounded read-only message presentation
+
+`GET /api/market/messages` SHALL project committed Newow messages and immutable Alert history into one
+50-row paged list, ordered by parsed signal timestamp descending, source descending and stable source event
+identity descending. It MUST reuse the authoritative source readers and MUST NOT create events, transport
+attempts, reference trades or account facts. Product, trading-date, source, supported frequency, strategy/rule
+and product-name/code/contract search filters SHALL execute on the server.
+
+The reader SHALL retain the Newow 93-day date-span and 500-message cap. Alert scans SHALL retain their
+366-calendar-day maximum window and bounded 5000-event scan cap. Search applies inside these source scan
+bounds. Each response MUST disclose source availability, truncation, limits and available count separately
+from loaded count; an incomplete empty result MUST NOT claim no matching history exists.
+The response SHALL include `dataset_hash`, the same full bounded source projection digest bound to the cursor,
+and ready-source `scanned_count` (Alert additionally `scan_batches`). These are read diagnostics, not new facts.
+On page reentry Web MAY immediately preview its bounded cached snapshot but SHALL revalidate a fresh first page.
+Only an identical full `dataset_hash` may retain already loaded older pages and their original snapshot/cursor;
+changed facts replace the first page. Failed revalidation SHALL label the retained snapshot as stale/failed.
+Pagination SHALL reject changed snapshot or dataset identities before merging rows.
+
+A stateless cursor SHALL bind the exact normalized query, source cutoff, Alert ID high-water mark, active
+Newow revision identity and projected source dataset digest. New Alert insertions MUST NOT enter an existing
+snapshot. Newow batches after the cutoff MUST NOT enter an existing snapshot. Source revision changes,
+changes to previously read facts, or unavailable sources becoming available SHALL reject continuation with
+`MESSAGE_SNAPSHOT_STALE` and require an explicit refresh rather than skipping or duplicating rows.
+
+#### Scenario: A new Alert arrives between pages
+- **WHEN** the user loads a next page while newer Alert IDs have been committed
+- **THEN** pagination continues using the original Alert ID high-water mark, with no duplicates or skipped
+  rows from the accepted snapshot; refreshing starts a new snapshot.
+
+#### Scenario: Source revision changes or a source fails
+- **WHEN** a persisted Newow revision changes between pages
+- **THEN** continuation returns a stale-snapshot response and keeps the already displayed facts available.
+- **WHEN** a source fails on an initial read
+- **THEN** successful sources remain readable with explicit partial coverage and no false completeness claim.
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

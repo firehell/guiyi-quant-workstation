@@ -30,7 +30,7 @@ from app.market_data.weekly_quality import (
     WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2, classify_weekly_source,
     weekly_daily_revision_sha256,
 )
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 
 CONTRACT = "RS2609"
 SYMBOL = "rs"

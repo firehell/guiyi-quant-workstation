@@ -82,7 +82,7 @@ test('home supplemental facts keep daily ownership and ordinary page return', ()
 })
 
 const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
-const apiUrl = moduleUrl('export const performanceCalls=[];export const authorityCalls=[];export function configureHomeCardAuthority(...args){authorityCalls.push(args)};export function peekNewowHomeCards(){return undefined};export function getNewowHomePerformance(product,strategy,fact,signal){return new Promise((resolve,reject)=>performanceCalls.push({product,strategy,fact,signal,resolve,reject}))};export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
+const apiUrl = moduleUrl('export function invalidateHomeCard(){};export const performanceCalls=[];export const authorityCalls=[];export function configureHomeCardAuthority(...args){authorityCalls.push(args)};export function peekNewowHomeCards(){return undefined};export function getNewowHomePerformance(product,strategy,fact,signal){return new Promise((resolve,reject)=>performanceCalls.push({product,strategy,fact,signal,resolve,reject}))};export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
 const api = await import(apiUrl)
 async function loadList() {
   const iconSource = readFileSync(new URL('../src/components/market/MarketStateIcon.vue', import.meta.url), 'utf8')
@@ -110,7 +110,7 @@ const settle = async () => { await new Promise(resolve => setImmediate(resolve))
 test('rows expand and summary cards navigate with selected strategy while retaining notices', async () => {
   const List = await loadList(), root = element('root'), chart: unknown[] = [], sorts: unknown[] = []
   const sequence = ref(0)
-  const rows = [{ symbol: 'rb', product_name: '螺纹钢', close: 3100.125, price_change_1d: .0125, actual_contract: 'RB2701', data_as_of: '2026-10-09', liveQuote: { physicalContract: 'RB2701', barEnd: '2026-10-09T00:00:00Z' } }]
+  const rows = [{ symbol: 'rb', product_name: '螺纹钢', reason_codes: [], close: 3100.125, price_change_1d: .0125, actual_contract: 'RB2701', data_as_of: '2026-10-09', liveQuote: { physicalContract: 'RB2701', barEnd: '2026-10-09T00:00:00Z' } }]
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows, products: ['rb'], authority: 'one', refreshSequence: sequence.value, liveStale: true, sort: 'default', sortDirection: 'desc', onChart: (...args: unknown[]) => chart.push(args), onSort: (value: unknown) => sorts.push(value) }) }))
   try {
     app.mount(root)
@@ -178,7 +178,7 @@ test('rows expand and summary cards navigate with selected strategy while retain
 
 test('sector changes cancel obsolete requests and preserve displayed product order', async () => {
   const List = await loadList(), root = element('root')
-  const all = ['rb', 'cu', 'a'].map(symbol => ({ symbol, product_name: symbol, close: 100, price_change_1d: 0 }))
+  const all = ['rb', 'cu', 'a'].map(symbol => ({ symbol, product_name: symbol, reason_codes: [], close: 100, price_change_1d: 0 }))
   const rows = ref(all), authority = ref('one')
   const start = api.calls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, {
@@ -265,7 +265,7 @@ test('row hints require exact daily ownership and do not create a trend source',
 
 test('expanded performance is lazy, deduplicated, authority isolated and recovers one rejected product owner', async () => {
   const List = await loadList(), root = element('root'), authority = ref('first')
-  const row = { symbol: 'rb', product_name: '螺纹钢', close: 3100, price_change_1d: 0 }
+  const row = { symbol: 'rb', product_name: '螺纹钢', reason_codes: [], close: 3100, price_change_1d: 0 }
   const packet = (token: string) => ({ schema_version: 'newow_home_cards_v2', requested_at: ready('FLAT').display_as_of, items: [{ product:'rb', strategies: { trend: { '1d': { ...ready('FLAT'), snapshot_token:token }, '1w':ready('FLAT') }, oscillation: { '1d':{ ...ready('HOLD'), snapshot_token:token + '-osc' }, '1w':ready('HOLD') } } }] })
   const initialCount = api.performanceCalls.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows:[row], products:['rb'], authority:authority.value, refreshSequence:0, liveStale:false, sort:'default', sortDirection:'desc' }) }))

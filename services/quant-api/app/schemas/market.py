@@ -72,6 +72,17 @@ class DominantContractListResponse(BaseModel):
     items: list[DominantContractOut]
 
 
+class MarketProductDirectoryItem(BaseModel):
+    product: str
+    product_name: str
+    exchange: str
+    sector: str
+
+
+class MarketProductDirectoryResponse(BaseModel):
+    items: list[MarketProductDirectoryItem]
+
+
 class ProductResearchResponse(BaseModel):
     symbol: str
     product_name: str

@@ -74,6 +74,7 @@ def fusion_reference_comparison(
     window: PerformanceWindow,
     *,
     record_limit: int | None = 200,
+    selected_mode: str | None = None,
 ) -> dict[str, object]:
     """Replay both accepted source strategies over identical complete inputs.
 
@@ -82,6 +83,8 @@ def fusion_reference_comparison(
     """
     if record_limit is not None and (type(record_limit) is not int or record_limit <= 0):
         raise ValueError("NEWOW_FUSION_RECORD_LIMIT_INVALID")
+    if selected_mode not in (None, "page_ordinary", "page_ideal", "closed", "holding", "theoretical"):
+        raise ValueError("NEWOW_FUSION_MODE_INVALID")
     if (
         trend.identity.strategy is not ProductStrategy.TREND
         or oscillation.identity.strategy is not ProductStrategy.OSCILLATION
@@ -293,8 +296,10 @@ def fusion_reference_comparison(
         "snapshot_schema": "newow_fusion_reference_snapshot_v2",
         "reference_revision": revision,
         "summary": groups[-1],
-        "holding_curve": holding_reference_curve(rows, tuple(frame.bar for frame in trend.frames), window),
-        "theoretical": fusion_theoretical_reference(rows, tuple(frame.bar for frame in trend.frames), window),
+        **({"holding_curve": holding_reference_curve(rows, tuple(frame.bar for frame in trend.frames), window)}
+           if selected_mode in (None, "holding") else {}),
+        **({"theoretical": fusion_theoretical_reference(rows, tuple(frame.bar for frame in trend.frames), window)}
+           if selected_mode in (None, "theoretical") else {}),
         "curve": sorted(closed, key=lambda row: (row["exit_bar_end"], row["reference_trade_id"])),
         "source_profiles": [trend.identity.profile_id, oscillation.identity.profile_id],
         "product": trend.identity.product,

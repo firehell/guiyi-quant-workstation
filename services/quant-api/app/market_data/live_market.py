@@ -14,7 +14,7 @@ from typing import Any, ContextManager, Mapping, Protocol
 from zoneinfo import ZoneInfo
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m, bucket_window_for_bar
-from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
+from app.runtime_identity import runtime_heartbeat_identity
 from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 

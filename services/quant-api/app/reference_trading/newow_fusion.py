@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.reference_trading.checkpoint import checkpoint_watermark
+
 from dataclasses import dataclass
 
 from guiyi_quant.newow.fusion_reference import (
@@ -48,8 +50,6 @@ def fusion_input_policy(stream):
 
 
 def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=None):
-    from app.reference_trading.service import _checkpoint_watermark
-
     if (
         not isinstance(checkpoint.strategy_state, FusionReferenceReplayState)
         or checkpoint.reference_state is None
@@ -67,7 +67,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=N
         return (
             AdapterCheckpoint(
                 checkpoint.strategy_state,
-                _checkpoint_watermark(checkpoint, item, transition.state),
+                checkpoint_watermark(checkpoint, item, transition.state),
                 item.fingerprint,
                 item.physical_contract,
                 item.owner_segment_id,
@@ -231,7 +231,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=N
     return (
         AdapterCheckpoint(
             checkpoint.strategy_state,
-            _checkpoint_watermark(checkpoint, item, transition.state),
+            checkpoint_watermark(checkpoint, item, transition.state),
             item.fingerprint,
             item.physical_contract,
             item.owner_segment_id,
@@ -378,37 +378,13 @@ class PersistedFusionComparison:
         self._persisted = PersistedNewowReference(session_factory)
         self._query = self._persisted._query
 
-    def comparison(
-        self,
-        *,
-        product,
-        frequency,
-        since,
-        through,
-        cutoff,
-        reader,
-        limit=200,
-        cursor=None,
-        expected_source_generation=None,
-    ):
-        from datetime import date, datetime, timedelta
-        from app.reference_trading.query import QueryConflict, _decode, _encode
+    @staticmethod
+    def verify_saved_source(identity, manifest, *, product, frequency, through, cutoff, reader):
+        """Freshly verify the saved fusion source for calculations and cache hits."""
+        from datetime import date, datetime
+        from app.reference_trading.query import QueryConflict
         from app.reference_trading.source_identity import verify_saved_compact_source
 
-        matches = self._query.streams(
-            strategy="newow_dual_fusion", product=product, frequency=frequency
-        )
-        if len(matches) != 1:
-            raise QueryConflict(
-                "NOT_BUILT" if not matches else "STREAM_IDENTITY_AMBIGUOUS"
-            )
-        stream = matches[0]
-        stats = self._query.summary(
-            stream["stream_id"], since=since, through=through, cutoff=cutoff
-        )
-        identity, manifest = self._persisted._manifest(
-            stream["stream_id"], stats["revision_id"], stats["seq"]
-        )
         try:
             source_through = date.fromisoformat(manifest["query_through"])
             source_cutoff = datetime.fromisoformat(manifest["query_as_of"])
@@ -443,9 +419,9 @@ class PersistedFusionComparison:
                 source = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None).plan_stream(
                     HistoricalStreamRequest(source_stream, date.fromisoformat(manifest["query_since"]),
                         through, cutoff))
-                source_manifest = {**manifest, "reader":source_reader,
-                    "formula_versions":list(base_identity.formula_versions),
-                    "reference_model_version":source_stream.reference_model_version}
+                source_manifest = {**manifest, "reader": source_reader,
+                    "formula_versions": list(base_identity.formula_versions),
+                    "reference_model_version": source_stream.reference_model_version}
                 if manifest["reader"] == "newow_fusion_saved_sources_v2":
                     from hashlib import sha256
                     from app.reference_trading.inputs import _canonical
@@ -465,6 +441,39 @@ class PersistedFusionComparison:
                     frozenset((bar.physical_contract, bar.owner_segment_id) for bar in source.bars if bar.strategy_input))
         except (KeyError, TypeError, ValueError) as error:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from error
+
+    def comparison(
+        self,
+        *,
+        product,
+        frequency,
+        since,
+        through,
+        cutoff,
+        reader,
+        limit=200,
+        cursor=None,
+        expected_source_generation=None,
+    ):
+        from datetime import date, timedelta
+        from app.reference_trading.query import QueryConflict, _decode, _encode
+
+        matches = self._query.streams(
+            strategy="newow_dual_fusion", product=product, frequency=frequency
+        )
+        if len(matches) != 1:
+            raise QueryConflict(
+                "NOT_BUILT" if not matches else "STREAM_IDENTITY_AMBIGUOUS"
+            )
+        stream = matches[0]
+        stats = self._query.summary(
+            stream["stream_id"], since=since, through=through, cutoff=cutoff
+        )
+        identity, manifest = self._persisted._manifest(
+            stream["stream_id"], stats["revision_id"], stats["seq"]
+        )
+        self.verify_saved_source(identity, manifest, product=product, frequency=frequency,
+                                 through=through, cutoff=cutoff, reader=reader)
         dependencies = manifest.get("source_dependencies")
         if not isinstance(dependencies, list) or len(dependencies) != 2:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")

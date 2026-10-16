@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -6,12 +7,12 @@ from pydantic import ValidationError
 
 from app.market_data.newow.page_performance_adapter import project_page_performance
 from app.market_data.newow.product_reader import ResolvedPerformanceWindow
-from app.market_data.newow.product_service import NewowProductService, ProductServiceQuery
+from app.market_data.newow.product_service import NewowProductService, ProductServiceQuery, _has_unresolved_tail_gap
 from app.reference_trading.persisted_newow import PersistedNewowReference
 from app.schemas.market_newow_product import PagePerformanceOut, ProductMetaOut, ReferenceValueOut
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_adapters import label_calculation_segments
-from guiyi_quant.newow.product_contracts import ActionKind, ProductStrategy, StrategyAction, TradeEligibility
+from guiyi_quant.newow.product_contracts import ActionKind, DataInterruption, ProductStrategy, StrategyAction, TradeEligibility
 
 
 def test_typed_page_payload_and_terminal_does_not_mutate_reference(product_cases):
@@ -21,7 +22,11 @@ def test_typed_page_payload_and_terminal_does_not_mutate_reference(product_cases
         performance_since=query.performance_since, performance_through=query.performance_through,
         as_of=fake.as_of))
     value = result.reference.value
-    PagePerformanceOut.model_validate(value.page_performance)
+    wire = PagePerformanceOut.model_validate(value.page_performance)
+    assert wire.ordinary.drawdown_kind == value.page_performance['ordinary']['drawdown_kind']
+    assert wire.ideal.drawdown_kind == value.page_performance['ideal']['drawdown_kind']
+    legacy = {**value.page_performance, 'ordinary': {k: v for k, v in value.page_performance['ordinary'].items() if k != 'drawdown_kind'}}
+    assert 'drawdown_kind' not in PagePerformanceOut.model_validate(legacy).model_dump()['ordinary']
     before = value.projection
     # The independent page estimate can contain terminal valuation; strategy
     # projection and OPEN/CLOSED facts remain exactly the original object.
@@ -67,6 +72,33 @@ def test_persisted_empty_scope_decodes_cached_full_prefix_after_source_proof(pro
     assert len(calls) == 1 and len(proofs) == 3
     assert calls[0].performance_since == query.since
     assert full.reference_source_evidence_sha256
+
+
+def test_persisted_full_read_preserves_unresolved_tail_gap_for_readiness(product_cases, monkeypatch):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=80, frequency="60m")
+    original = reader.load(query, fake.as_of)
+    last = original.replay_bars[-1].bar
+    cutoff = last.bar_end + timedelta(microseconds=2)
+    gap = DataInterruption("rb", original.frequency, last.physical_contract,
+                           last.segment_id, last.trading_day,
+                           last.bar_end + timedelta(microseconds=1), "owned:tail-gap")
+    full_source = replace(original, as_of=cutoff,
+                          data_interruptions_by_frequency={original.frequency: (gap,)})
+    reader.load = lambda *_args: full_source
+    reader.historical_source_evidence = lambda **_kwargs: {"verified": "source"}
+    monkeypatch.setattr("app.reference_trading.persisted_newow.verify_saved_compact_source",
+                        lambda *_args: None)
+    manifest = {"reader": "newow_product_reader_intraday_v3",
+                "query_since": query.since.isoformat(),
+                "query_through": query.through.isoformat(),
+                "query_as_of": cutoff.isoformat()}
+    resolved = ResolvedPerformanceWindow(query.since, query.through, query.through, cutoff)
+    saved = PersistedNewowReference(lambda: None)
+    request = ProductServiceQuery("rb", "trend", "60m", section="reference")
+    full = saved._page_read(request, reader, manifest, resolved)
+    assert _has_unresolved_tail_gap(full)
+    assert not _has_unresolved_tail_gap(replace(full,
+        data_interruptions_by_frequency={original.frequency: ()}))
 
 
 def test_required_page_contract_and_old_schema_rejected():

@@ -17,9 +17,7 @@ import tempfile
 from time import sleep
 from uuid import uuid4
 
-SERVICES = frozenset({'api', 'web', 'market-feed', 'live', 'alert',
-                      'reference-worker', 'after-market', 'late-provider-recovery',
-                      'weekly-audit', 'log-rotate'})
+from app.runtime_contracts import SERVICES
 
 
 class HandoverError(RuntimeError):

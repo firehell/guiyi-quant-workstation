@@ -1,3 +1,4 @@
+import { returnCurveLayout } from './returnCurveLayout.ts'
 import { closedReferenceCurve, sumReferenceReturns } from './newowReferenceCurve.ts'
 export interface HoldingCurvePoint {
   bar_end: string
@@ -20,7 +21,7 @@ export interface HoldingCurve {
 }
 /** Uses complete server replay, never the limited chart or recent record list. */
 export function holdingCurvePlot(curve: HoldingCurve | null | undefined, since: string, through: string) {
-  const empty = (message: string) => ({ points: [] as (HoldingCurvePoint & { x: number; y: number })[], segments: [] as string[], levels: [] as {y:number;label:string}[], zero: 140, message })
+  const empty = (message: string) => ({ ...returnCurveLayout([] as (HoldingCurvePoint & {value:number;position:number;date:string;segment:string})[], {headroom:1.1,areaBaseline:'zero'}), message })
   if (!curve || curve.model_version !== 'newow_reference_marked_curve_v1' || !curve.page_parity || curve.executable) return empty('逐 Bar 持有过程暂不可用。')
   const source = curve.points.filter(p => p.trading_day >= since && p.trading_day <= through)
   const points = source.filter(p => p.marked_return_percentage_points !== null)
@@ -28,22 +29,17 @@ export function holdingCurvePlot(curve: HoldingCurve | null | undefined, since: 
   const start = first ? Date.parse(first.bar_end) : NaN, end = last ? Date.parse(last.bar_end) : NaN
   if (!points.length) return empty('该窗口暂无有效持有过程。')
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start || points.some((p,i) => !Number.isFinite(Number(p.marked_return_percentage_points)) || !Number.isFinite(Date.parse(p.bar_end)) || (i > 0 && p.bar_end <= points[i-1]!.bar_end))) return empty('持有过程事实不完整，暂不绘制曲线。')
-  let low = 0, high = 0
-  for (const p of points) { low = Math.min(low,Number(p.marked_return_percentage_points)); high = Math.max(high,Number(p.marked_return_percentage_points)) }
-  low *= 1.1; high = high * 1.1 || (low < 0 ? 0 : 1)
-  const y = (value: number) => 140 - (value-low)/(high-low)*140
-  const plotted = points.map(p => ({...p,x: Math.max(0,Math.min(712,(end === start ? 1 : (Date.parse(p.bar_end)-start)/(end-start))*712)), y:y(Number(p.marked_return_percentage_points))}))
-  const segments: string[] = []
-  let owner = ''
-  const breaks = new Set(source.filter(p=>p.marked_return_percentage_points===null).map(p=>p.bar_end))
-  let previous = ''
-  for (const p of plotted) {
-    const next = `${p.physical_contract}|${p.segment_id}|${p.calculation_segment_id}`
-    if (next !== owner || [...breaks].some(t=>t>previous && t<p.bar_end)) { segments.push(''); owner = next }
-    previous = p.bar_end
-    segments[segments.length-1] += `${p.x},${p.y} `
+  const layout = returnCurveLayout(source.map(point => ({
+    ...point,
+    value: point.marked_return_percentage_points === null ? null : Number(point.marked_return_percentage_points),
+    position: Date.parse(point.bar_end),
+    date: point.trading_day,
+    segment: JSON.stringify([point.physical_contract, point.segment_id, point.calculation_segment_id]),
+  })), { headroom: 1.1, areaBaseline: 'zero', valueUnit:'percentage_points' })
+  return {
+    ...layout,
+    message: layout.message ?? (layout.points.length ? null : '持有过程事实不完整，暂不绘制曲线。'),
   }
-  return {points:plotted,segments,zero:y(0),levels:Array.from({length:5},(_,i)=>({y:i*35,label:`${(high-(high-low)*i/4).toFixed(1)}%`})),message:null}
 }
 export interface FusionTheory {
   model_version: string

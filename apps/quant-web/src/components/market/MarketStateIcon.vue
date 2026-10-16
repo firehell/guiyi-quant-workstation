@@ -42,13 +42,13 @@ const mainGlyphTransform = computed(() => {
 </template>
 
 <style scoped>
-.market-state-icon { display: inline-grid; width: var(--market-state-icon-size); height: var(--market-state-icon-size); place-items: center; flex: 0 0 var(--market-state-icon-size); border-radius: 50%; color: #fff; }
+.market-state-icon { display: inline-grid; width: var(--market-state-icon-size); height: var(--market-state-icon-size); place-items: center; flex: 0 0 var(--market-state-icon-size); border-radius: 50%; color: var(--gy-bg-panel); }
 .market-state-icon svg { width: 100%; height: 100%; }
 .market-state-icon--up { background: var(--gy-market-icon-up); }
 .market-state-icon--aligned { background: var(--gy-market-icon-aligned); }
 .market-state-icon--down { background: var(--gy-market-icon-down); }
 .market-state-icon--neutral { background: var(--gy-market-icon-neutral); }
-.market-state-icon--mixed { background: #667085; }
+.market-state-icon--mixed { background: var(--gy-text-muted); }
 .market-state-icon--unavailable { background: var(--gy-market-icon-unavailable); }
 .market-state-icon:has(svg) { position: relative; }
 .market-state-icon--micro.market-state-icon--up { background: var(--gy-market-pill-up-soft); color: var(--gy-market-icon-up); }

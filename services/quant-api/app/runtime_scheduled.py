@@ -86,7 +86,7 @@ class ScheduledBackend:
         prior = _read(runtime_directory() / f"{binding.service}.scheduled-update.json")
         if prior is not None and prior.get("phase") not in ("switched", "scheduled_busy", "precondition_blocked"):
             raise ScheduledUpdateError("SCHEDULED_RECOVERY_READBACK_REQUIRED")
-        from app.market_data.closeout_binding import _snapshot
+        from app.runtime_identity import file_snapshot as _snapshot
         from app.runtime_bindings import authorized_program_arguments
         path = self._path(binding)
         content, _stamp = _snapshot(path)
@@ -103,8 +103,8 @@ class ScheduledBackend:
         return {'plist_sha256': hashlib.sha256(content).hexdigest()}
 
     def idle(self, binding):
-        from app.market_data.captured_recovery_runtime import _read_launchd_service, _verify_loaded_service
-        from app.market_data.closeout_binding import _arguments, _environments
+        from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
+        from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments
         from app.runtime_bindings import authorized_program_arguments
         output = _read_launchd_service(binding.label, root=Path(binding.root))
         if output is None:  # Reader returns None only for an exact explicit absent label.
@@ -187,7 +187,7 @@ class ScheduledBackend:
                 or env.get('GUIYI_RUNTIME_GENERATION') != str(binding.generation)):
             return False
         if not binding.enabled:
-            from app.market_data.captured_recovery_runtime import _read_launchd_service
+            from app.runtime_identity import read_launchd_service as _read_launchd_service
             return payload.get('Disabled') is True and _read_launchd_service(binding.label, root=Path(binding.root)) is None
         from app.services.deployment_identity import deployment_identity_health
         result = deployment_identity_health(root=Path(binding.root), commit=binding.commit)

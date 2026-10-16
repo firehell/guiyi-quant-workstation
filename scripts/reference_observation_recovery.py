@@ -72,7 +72,7 @@ def verify_code(root, commit):
 
 def load_dependencies(path):
     from dotenv import dotenv_values
-    from scripts.newow_weekly_recovery import _read_private_settings_content
+    from app.private_settings import read_private_settings_content as _read_private_settings_content
     raw = _read_private_settings_content(path)
     values = dotenv_values(stream=StringIO(raw.decode()))
     for key in ('DATABASE_URL','REDIS_URL','GUIYI_CANONICAL_DATA_ROOT'):

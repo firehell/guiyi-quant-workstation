@@ -13,7 +13,7 @@ import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
 
-test('production readers reuse home cutoff context and complete detail sections separately', async () => {
+test('home context and stored detail bodies remain separate from current verification', async () => {
   newowSessionResources.invalidate()
   const identity = { product: 'jm', strategy: 'trend' as const, frequency: '1d' as const, seriesKind: 'actual_dominant' as const }
   const snapshot = { schema_version: 'newow_daily_snapshot_v1', product: 'jm', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant', requested_at: AS_OF, expected_trading_day: '2026-08-14', available_trading_day: '2026-08-14', as_of: AS_OF, freshness: 'current' }
@@ -22,11 +22,10 @@ test('production readers reuse home cutoff context and complete detail sections 
   const request: NewowProductRequest = { identity, section: 'chart', asOf: AS_OF }
   const chart = normalizedChart(request)
   const key = `newow:jm:section:${JSON.stringify(buildNewowProductQuery(request))}`
-  // A summary owns no chart payload. Only a complete, validated section can serve a revisit.
+  // Retained bodies can support diagnostics but cannot authorize a current revisit.
   assert.equal(newowSessionResources.peek(key), undefined)
   newowSessionResources.put(key, chart)
-  assert.deepEqual(await getNewowProductSection(request), chart)
-  assert.deepEqual(await getNewowProductSection(request), chart)
+  assert.deepEqual(newowSessionResources.peek(key), chart)
   invalidateNewowProduct('jm')
   assert.equal(newowSessionResources.peek(key), undefined)
   assert.equal(newowSessionResources.peek('home:jm:authority'), undefined)
@@ -134,7 +133,7 @@ test('daily snapshot client rejects mismatched dates and preserves microsecond c
   await assert.rejects(() => getNewowDailySnapshot(identity, { request: async () => ({ ...payload, available_trading_day: '2026-09-19' }) }), /NEWOW_RESPONSE_INVALID/)
 })
 
-test('refresh keeps accepted D1 chart visible until a new cutoff is accepted', async () => {
+test('refresh hides old strategy facts until a new cutoff is accepted', async () => {
   const pending: Pending[] = []
   const daily: Array<(value: any) => void> = []
   const state = useNewowProduct({
@@ -146,10 +145,9 @@ test('refresh keeps accepted D1 chart visible until a new cutoff is accepted', a
   const snapshot = { schema_version: 'newow_daily_snapshot_v1', product: 'rb', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_trading_day: '2026-09-18', available_trading_day: '2026-09-17', as_of: '2026-09-17T07:00:00.000001Z', freshness: 'pending_update' }
   daily[0]!(snapshot); await flush()
   pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
-  const accepted = state.sections.chart.data.value
   state.refreshCurrent()
-  assert.equal(state.sections.chart.data.value, accepted)
-  assert.equal(state.dailySnapshot.value?.available_trading_day, '2026-09-17')
+  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.dailySnapshot.value, null)
   daily[1]!({ ...snapshot, available_trading_day: '2026-09-18', as_of: '2026-09-18T07:00:00.000001Z', freshness: 'current' }); await flush()
   assert.equal(pending[1]!.request.asOf, '2026-09-18T07:00:00.000001Z')
   pending[1]!.resolve(normalizedChart(pending[1]!.request)); await flush()
@@ -1377,7 +1375,7 @@ test('merges an older chart cursor page atomically without changing the fixed re
   state.dispose()
 })
 
-test('bounds cumulative chart and reference pages and stops exposing an older cursor at the cap', async () => {
+test('bounds chart pages and preserves the real reference cursor with an explicit display cap', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
   await nextTick()
@@ -1399,7 +1397,10 @@ test('bounds cumulative chart and reference pages and stops exposing an older cu
   pending[3]!.resolve(bulkReference(pending[3]!.request, 200, 200, 'must-not-survive'))
   await referencePage
   assert.equal(state.sections.reference.data.value?.section === 'reference' && state.sections.reference.data.value.value?.items.length, 300)
-  assert.equal(state.sections.reference.data.value?.section === 'reference' && state.sections.reference.data.value.value?.next_before, null)
+  assert.equal(state.sections.reference.data.value?.section === 'reference' && state.sections.reference.data.value.value?.next_before, 'must-not-survive')
+  assert.equal(state.referenceCapped.value, true)
+  await state.loadNextReferencePage()
+  assert.equal(pending.length, 4)
   state.dispose()
 })
 

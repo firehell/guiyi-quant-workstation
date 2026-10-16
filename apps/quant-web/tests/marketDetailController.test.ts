@@ -162,6 +162,23 @@ function deferredSeries() {
   return { series, requests }
 }
 
+test('research transport is cancelled on identity change and dispose', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const signals: AbortSignal[] = []
+  const controller = useMarketDetailController({ routeQuery: () => ({}), createSeries: fakeSeries,
+    fetchDirectory: async () => ({ items: [dominant('jm'), dominant('rb')] }),
+    fetchResearch: (_params, signal) => {
+      signals.push(signal!)
+      return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(Error('aborted')), { once: true }))
+    } })
+  const first = controller.switchIdentity(jmIdentity)
+  const second = controller.switchIdentity(rbIdentity)
+  assert.equal(signals[0].aborted, true)
+  controller.dispose()
+  assert.equal(signals[1].aborted, true)
+  await Promise.all([first, second])
+})
+
 test('keeps the quote header and cached metadata while switching Newow strategies', async () => {
   const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
   const series = fakeSeries()
@@ -425,7 +442,7 @@ test('reports only an active generation market-series failure', async () => {
   assert.equal(controller.state.value.header, null)
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.error, '详情行情加载失败')
-  assert.deepEqual(controller.productCatalog.value, [dominant('jm')])
+  assert.deepEqual(controller.productCatalog.value, [{ product: 'jm', product_name: '焦煤', exchange: 'DCE', sector: '黑色' }])
 })
 
 test('Newow chart starts while generic series is still pending', async () => {
@@ -462,7 +479,7 @@ test('Newow chart starts while generic series is still pending', async () => {
   await switched
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.header?.productName, '焦煤')
-  assert.deepEqual(controller.productCatalog.value, [dominant('jm')])
+  assert.deepEqual(controller.productCatalog.value, [{ product: 'jm', product_name: '焦煤', exchange: 'DCE', sector: '黑色' }])
   product.dispose()
   controller.dispose()
 })

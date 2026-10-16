@@ -57,22 +57,22 @@ const reasons: Record<string,string> = { PERIOD_CONTEXT_UNAVAILABLE:'周期数�
 </template>
 
 <style scoped>
-.period-path { margin:8px 0; background:#f8f9fd; border:1px solid #ff950055; border-radius:8px; overflow:hidden; color:#1c1c1e; }
+.period-path { margin:8px 0; background:#f8f9fd; border:1px solid #ff950055; border-radius:8px; overflow:hidden; color:var(--gy-text-primary); }
 .period-path__toggle { width:100%; display:flex; align-items:center; gap:10px; padding:12px 14px; border:0; background:transparent; color:#b86b00; font:inherit; cursor:pointer; text-align:left; }
-.period-path__toggle strong { font-size:14px; } .period-path__toggle span { color:#8e8e93; font-size:11px; } .period-path__toggle b { margin-left:auto; color:#ff9500; font-size:12px; font-weight:500; }
-.period-path__toggle:focus-visible { outline:2px solid #007aff; outline-offset:-2px; }
-.period-path__body { padding:0 14px 12px; } .period-path__legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; } .period-path__legend small { color:#8e8e93; margin-left:auto; }
-.period-path__canvas { overflow-x:auto; margin:10px 0; } svg { width:100%; max-width:1000px; display:block; margin:0 auto; } svg text { font-size:11px; } .period-path__axis { fill:#8e8e93; }
+.period-path__toggle strong { font-size:14px; } .period-path__toggle span { color:var(--gy-text-muted); font-size:11px; } .period-path__toggle b { margin-left:auto; color:#ff9500; font-size:12px; font-weight:500; }
+.period-path__toggle:focus-visible { outline:2px solid var(--gy-accent); outline-offset:-2px; }
+.period-path__body { padding:0 14px 12px; } .period-path__legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; } .period-path__legend small { color:var(--gy-text-muted); margin-left:auto; }
+.period-path__canvas { overflow-x:auto; margin:10px 0; } svg { width:100%; max-width:1000px; display:block; margin:0 auto; } svg text { font-size:11px; } .period-path__axis { fill:var(--gy-text-muted); }
 .period-path__values { display:grid; grid-template-columns:1fr 1fr; gap:8px; } article { display:flex; flex-wrap:wrap; gap:8px; padding:8px 10px; border-radius:6px; background:#f7f7f9; font-size:12px; } article small { flex-basis:100%; color:#94611b; }
-p { color:#8e8e93; font-size:11px; line-height:1.6; margin:7px 0 0; } .period-path__sources { font-size:11px; color:#8e8e93; margin-top:8px; overflow-wrap:anywhere; } summary { cursor:pointer; } .period-path__sources strong { display:block; margin-top:8px; } .period-path__sources small { font-size:10px; }
+p { color:var(--gy-text-muted); font-size:11px; line-height:1.6; margin:7px 0 0; } .period-path__sources { font-size:11px; color:var(--gy-text-muted); margin-top:8px; overflow-wrap:anywhere; } summary { cursor:pointer; } .period-path__sources strong { display:block; margin-top:8px; } .period-path__sources small { font-size:10px; }
 @media(max-width:600px) { .period-path__values { grid-template-columns:1fr; } .period-path__toggle { flex-wrap:wrap; } .period-path__legend small { flex-basis:100%; margin-left:0; } }
 </style>
 
 <style scoped>
 .period-path__toggle { padding:12px 14px; border-bottom:1px solid #ff950022; }
-.period-path__overview { display:flex; flex-wrap:wrap; gap:10px; padding-top:8px; color:#8e8e93; font-size:11px; }
+.period-path__overview { display:flex; flex-wrap:wrap; gap:10px; padding-top:8px; color:var(--gy-text-muted); font-size:11px; }
 .period-path__overview b { color:#24262d; }
-.period-path__legend { border-top:1px solid #e5e5ea; padding-top:7px; gap:10px; font-size:10px; }
+.period-path__legend { border-top:1px solid var(--gy-border); padding-top:7px; gap:10px; font-size:10px; }
 svg text { font-size:14px; font-weight:600; }
 svg .period-path__axis { font-weight:400; font-size:14px; }
 svg .period-path__now { font-weight:700; }

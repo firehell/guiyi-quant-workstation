@@ -38,7 +38,6 @@ test('free exposes identity facts and never strategy history', async () => {
 test('free formats all supported series kinds and periods as market facts', async () => {
   const { buildFreeDetailViewModel } = await import('../src/utils/freeDetailViewModel.ts')
   const seriesKinds = [
-    ['continuous', '主连'],
     ['actual_dominant', '真实主力'],
     ['contract', '指定合约'],
   ] as const

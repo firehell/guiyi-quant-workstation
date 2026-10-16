@@ -366,26 +366,19 @@ test('Free uses one shared series and frequency control surface while keeping a 
   await expect(page.getByRole('button', { name: /数据详情/ })).toHaveAttribute('aria-expanded', 'false')
 })
 
-test('Free reloads continuous, 60m, and daily identities without inventing a physical contract', async ({ page }) => {
+test('Free migrates legacy continuous links and keeps 60-minute and daily navigation', async ({ page }) => {
   const requests = await mockMarketDetail(page)
-  await page.goto(freeJm)
-  const seriesControls = page.getByRole('group', { name: '序列' })
+  await page.goto('/market/chart?symbol=jm&view=free&series_kind=continuous&frequency=15m')
+  await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('actual_dominant')
+  await expect(page.getByText('已切换为真实主力序列', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '主连', exact: true })).toHaveCount(0)
   const frequencyControls = page.getByRole('group', { name: '周期' })
-
-  await seriesControls.getByRole('button', { name: '主连', exact: true }).click()
-  await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('continuous')
-  await expect(page.locator('.detail-topbar__contract')).toHaveText('JM')
-  await expect.poll(() => requests.some((url) => (
-    url.pathname.endsWith('/bars/page') && url.searchParams.get('series_kind') === 'continuous'
-  ))).toBe(true)
-
-  await frequencyControls.getByRole('button', { name: '60m', exact: true }).click()
+  await frequencyControls.getByRole('button', { name: '60分钟', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('60m')
-  await frequencyControls.getByRole('button', { name: '日K', exact: true }).click()
+  await frequencyControls.getByRole('button', { name: '日线', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('1d')
-  await expect.poll(() => requests.some((url) => (
-    url.pathname.endsWith('/bars/page') && url.searchParams.get('frequency') === '1d'
-  ))).toBe(true)
+  await expect.poll(() => requests.some(url => url.pathname.endsWith('/bars/page') && url.searchParams.get('frequency') === '1d')).toBe(true)
+  expect(requests.some(url => url.searchParams.get('series_kind') === 'continuous')).toBe(false)
 })
 
 test('Free restores enabled EMA preferences after reload', async ({ page }) => {
@@ -421,10 +414,10 @@ test('Free clears a contract when the product changes and keeps HTDY preferences
   expect(new URL(page.url()).searchParams.has('contract')).toBe(false)
   await expect(page.getByText('已切换品种，指定合约已清除并回到真实主力。')).toBeVisible()
   await enableRangeDetector(page)
-  const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem('guiyi.market.detail.preferences.v1')))
+  const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem('guiyi.market.detail.preferences.v2')))
   expect(recursiveUpdates).toEqual([])
   expect(preferences.lastView).toBe('htdy')
-  expect(preferences.htdy).toEqual({ seriesKind: 'continuous', frequency: '30m', optionalEmaIndicators: ['ema_60'], showRangeDetector: true })
+  expect(preferences.htdy).toEqual({ seriesKind: 'actual_dominant', frequency: '30m', optionalEmaIndicators: ['ema_60'], showRangeDetector: true })
 })
 
 test('shared quote header exposes quote availability and display source', async ({ page }) => {
@@ -523,6 +516,7 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
   await expect(workspace).toBeVisible()
   const chart = page.getByTestId('kline-shell')
   await chart.scrollIntoViewIfNeeded()
+  for (const label of ['5分', '15分', '30分', '60分', '日线', '周线']) await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
   await expect(page).toHaveScreenshot('market-detail-subing-1440x900.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
   })
@@ -545,7 +539,7 @@ test('SuBing history opens the matching immutable AlertEvent detail while chart 
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
   await page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history button').first().click()
-  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 2026-09-03 10:45 北京时间 · JM2601')
+  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 未记录 · 2026-09-03 10:45 北京时间 · JM2601')
 })
 
 test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
@@ -628,7 +622,7 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=contract&contract=JM2601&frequency=15m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-  expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(before)
+  expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(before + 1)
 })
 
 test('HTDY keeps last successful immutable Event evidence when a later Event refresh fails', async ({ page }) => {

@@ -561,7 +561,7 @@ OPEN 只用本合约已完成 Bar 标记浮动；中断记录不生成退出价�
 列表 SHALL 显示方向、状态、合约、开平时间价格、持有 Bar 数和参考收益，点击记录定位对应 Bar。
 历史与实际 Event MUST 分别保留身份、来源和详情；刷新/切换窗口或周期撤销旧参考详情，
 迟到响应不得覆盖新身份。六周期读取各自 frequency 的持久苏冰 Event/Scope/Runtime 事实，5m/1w 不请求四周期历史参考接口，
-并标为历史研究、本周期未启用预警。
+5m/1w 历史参考面 SHALL 显示本周期暂无历史参考交易；不得据历史参考支持范围推断 Runtime 是否启用。
 
 #### Scenario: Historical data is unavailable but actual events exist
 
@@ -610,6 +610,13 @@ W1 仅接受 `weekly-d1-quality-v2` 已证实中断。未知缺口、owner/Sessi
 仅 Catalog 证明尚未发布的尾端可以等待并使用上一已发布 completed 端点，已发布端点若 typed replay 失败
 不得回退。不从可用旧价格猜最新日。
 分钟周期及 HTDY 保持既有输入合同；该版本不启用 SuBing 发送或扩大 Scope。
+
+
+#### Scenario: A formal quality replay encounters an unknown gap
+
+- **WHEN** 正式 D1/W1 物理合约生命周期重放遇到未知缺口或 owner/Session/端点冲突
+- **THEN** 整体 fail closed，不下载替代价格、不造价、不缩窗或跨物理合约继承状态
+- **AND** 已发布最新端点若 typed replay 失败，不回退先前价格
 
 
 ### Requirement: Six-period EMA21 alignment is a separate immutable study

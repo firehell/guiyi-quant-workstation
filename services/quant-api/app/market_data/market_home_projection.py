@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.read_timings import timed
+
 import json
 import os
 import re
@@ -264,6 +266,7 @@ class MarketHomeProjection:
         return response
 
 
+@timed("projection")
 def market_home_response(
     snapshot: MarketHomeOverviewSnapshot,
 ) -> MarketHomeOverviewResponse:

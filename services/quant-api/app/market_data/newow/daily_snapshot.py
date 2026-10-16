@@ -15,7 +15,7 @@ from app.market_data.diagnostics import data_reason
 from app.market_data.errors import InfrastructureError
 
 from .product_reader import NewowProductReadCancelled, NewowProductReadError, NewowProductReader
-from .product_service import NewowProductService, NewowProductServiceError, ProductSection, ProductServiceQuery
+from .product_service import NewowProductResult, NewowProductService, NewowProductServiceError, ProductSection, ProductServiceQuery
 
 
 _MISSING_DATA = frozenset({
@@ -63,6 +63,12 @@ class NewowDailySnapshotResolver:
     def resolve(
         self, product: str, strategy: ProductStrategy, frequency: ProductFrequency
     ) -> DailySnapshot:
+        return self.resolve_with_chart(product, strategy, frequency)[0]
+
+    def resolve_with_chart(
+        self, product: str, strategy: ProductStrategy, frequency: ProductFrequency,
+        *, chart_limit: int = 500,
+    ) -> tuple[DailySnapshot, NewowProductResult]:
         if ProductFrequency(frequency) is not ProductFrequency.DAILY:
             raise DailySnapshotError("NEWOW_FREQUENCY_NOT_OPEN")
         requested_at = self._now()
@@ -86,7 +92,7 @@ class NewowDailySnapshotResolver:
             try:
                 result = service.query(ProductServiceQuery(
                     product, strategy, frequency, section=ProductSection.CHART,
-                    as_of=cutoff,
+                    as_of=cutoff, chart_limit=chart_limit,
                 ))
             except (MarketDataError, InfrastructureError, NewowProductReadError, NewowProductServiceError) as exc:
                 # A historical display is a separately validated earlier cutoff,
@@ -119,5 +125,5 @@ class NewowDailySnapshotResolver:
                 product, ProductStrategy(strategy), ProductFrequency(frequency),
                 requested_at, expected, day, cutoff,
                 "current" if day == expected else "pending_update",
-            )
+            ), result
         raise DailySnapshotError("NEWOW_DAILY_SNAPSHOT_UNAVAILABLE")

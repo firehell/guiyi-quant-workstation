@@ -1,6 +1,9 @@
 import request from './request'
+import { createConditionalHomeRead } from './homeConditionalRead'
+import { READ_PRIORITY } from '../utils/readAdmission.ts'
 import type {
   DominantContractListResponse,
+  MarketProductDirectoryResponse,
   MarketBarsPageRequest,
   MarketBarsPageWireResponse,
   MarketFrequency,
@@ -13,16 +16,31 @@ import { normalizeMarketBarsPageResponse } from './marketWire.ts'
 
 export { normalizeMarketBarsPageResponse } from './marketWire.ts'
 
-export function getMarketDominants() {
-  return request.get<never, DominantContractListResponse>('/market/dominants')
+export function normalizeHomeDirectory(value: unknown): DominantContractListResponse {
+  const body = value as DominantContractListResponse
+  if (!body || !Array.isArray(body.items) || body.items.some(item => !item || typeof item.product !== 'string' || typeof item.product_name !== 'string')) throw new Error('INVALID_HOME_DIRECTORY')
+  return body
 }
+export const getMarketDominants = createConditionalHomeRead('/market/dominants', normalizeHomeDirectory)
 
-export function getMarketHomeOverview() {
-  return request.get<never, unknown>('/market/research/home-overview').then(normalizeMarketHomeOverviewResponse)
+export function normalizeMarketProductDirectory(value: unknown): MarketProductDirectoryResponse {
+  const body = value as MarketProductDirectoryResponse
+  if (!body || !Array.isArray(body.items) || !body.items.length || body.items.some(item =>
+    !item || typeof item.product !== 'string' || !item.product.trim()
+    || typeof item.product_name !== 'string' || !item.product_name.trim()
+    || typeof item.exchange !== 'string' || !item.exchange.trim()
+    || typeof item.sector !== 'string' || !item.sector.trim()
+    || 'actual_contract' in item || 'dominant_mapping_date' in item)
+    || new Set(body.items.map(item => item.product)).size !== body.items.length) throw new Error('INVALID_PRODUCT_DIRECTORY')
+  return body
 }
+export const getMarketProductDirectory = createConditionalHomeRead('/market/product-directory', normalizeMarketProductDirectory)
 
-export function getProductResearch(params: { symbol: string; seriesKind: SeriesKind; contract?: string }) {
+export const getMarketHomeOverview = createConditionalHomeRead('/market/research/home-overview', normalizeMarketHomeOverviewResponse)
+
+export function getProductResearch(params: { symbol: string; seriesKind: SeriesKind; contract?: string }, signal?: AbortSignal) {
   return request.get<never, ProductResearchResponse>('/market/research/product', {
+    signal,
     params: {
       symbol: params.symbol,
       series_kind: params.seriesKind,
@@ -51,7 +69,9 @@ function toNumber(value: number | string | null): number | null {
 }
 
 export function getMarketBarsPage(params: MarketBarsPageRequest, signal?: AbortSignal) {
-  return request.get<never, MarketBarsPageWireResponse>('/market/bars/page', { params, signal })
+  return request.get<never, MarketBarsPageWireResponse>('/market/bars/page', {
+    params, signal, readPriority: params.before ? READ_PRIORITY.history : READ_PRIORITY.foreground,
+  })
     .then(normalizeMarketBarsPageResponse)
 }
 
@@ -62,8 +82,9 @@ export interface MarketStateRequest {
   frequency: MarketFrequency
 }
 
-export function getMarketState(params: MarketStateRequest) {
+export function getMarketState(params: MarketStateRequest, signal?: AbortSignal) {
   return request.get<never, MarketReadState>('/market/state', {
+    signal,
     params: {
       series_kind: params.seriesKind,
       symbol: params.symbol,

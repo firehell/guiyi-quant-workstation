@@ -72,6 +72,22 @@ def stress_cost_snapshots(
                 commission_rate=costs.commission_rate * 2,
                 commission_per_contract=costs.commission_per_contract * 2,
             )
+            offset_fees = snapshot.offset_fees
+            if offset_fees is not None:
+                stressed.append(replace(
+                    snapshot,
+                    costs=costs,
+                    offset_fees=replace(
+                        offset_fees,
+                        open_rate=offset_fees.open_rate * 2,
+                        open_per_contract=offset_fees.open_per_contract * 2,
+                        close_today_rate=offset_fees.close_today_rate * 2,
+                        close_today_per_contract=offset_fees.close_today_per_contract * 2,
+                        close_yesterday_rate=offset_fees.close_yesterday_rate * 2,
+                        close_yesterday_per_contract=offset_fees.close_yesterday_per_contract * 2,
+                    ),
+                ))
+                continue
         else:
             costs = replace(
                 costs,

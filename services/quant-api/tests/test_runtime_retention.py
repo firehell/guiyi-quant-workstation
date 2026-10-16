@@ -69,7 +69,7 @@ def test_host_reader_keeps_registry_plist_and_loaded_references(tmp_path, monkey
     monkeypatch.setattr(backend, "_command", command)
     observed = (f"{label} = {{\n working directory = {root}\n arguments = {{\n/bin/bash\n/stable/launcher\nlive\n}}\n"
                 f"environment = {{\nGUIYI_PROJECT_ROOT => {root}\nIGNORED_SECRET => not-for-output\n}}\n}}")
-    monkeypatch.setattr("app.market_data.captured_recovery_runtime._read_launchd_service", lambda *a, **k: observed)
+    monkeypatch.setattr("app.runtime_identity.read_launchd_service", lambda *a, **k: observed)
     references = backend.references_by_root((root,))
     assert references[str(root)] == ["binding:live", f"plist:{label}", f"loaded:{label}"]
     assert "not-for-output" not in str(references)

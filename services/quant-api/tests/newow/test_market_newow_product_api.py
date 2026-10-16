@@ -75,6 +75,73 @@ def _initial_clear_service_result(product_cases):
     )
 
 
+def test_current_chart_reuses_resolver_result_and_serializes_snapshot(monkeypatch, product_cases):
+    result, cutoff = _service_result(product_cases)
+    calls = []
+
+    class Resolver:
+        def resolve_with_chart(self, product, strategy, frequency, *, chart_limit):
+            calls.append((product, chart_limit))
+            return DailySnapshot(product, strategy, frequency, cutoff, cutoff.date(), cutoff.date(), cutoff, "current"), result
+
+    monkeypatch.setattr(market_newow, "_build_daily_resolver", lambda *_args, **_kwargs: Resolver())
+    monkeypatch.setattr(market_newow, "_build_product_service", lambda *_args, **_kwargs: pytest.fail("chart reread"))
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/strategy-detail", params={
+                "product": "rb", "strategy": "trend", "frequency": "1d", "resolve_current": "true", "chart_limit": 120,
+            })
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    body = response.json()
+    assert body["snapshot_context"]["as_of"] == body["meta"]["as_of"]
+    assert body["snapshot_context"]["freshness"] == "current"
+    assert calls == [("rb", 120)]
+
+
+@pytest.mark.parametrize("extra", [
+    {"as_of": "2026-08-01T00:00:00Z"}, {"snapshot_token": "old"},
+    {"chart_before": "old"}, {"section": "reference"}, {"from": "2026-08-01"},
+])
+def test_current_chart_rejects_explicit_history_and_tokens(extra):
+    with TestClient(app) as client:
+        response = client.get("/api/v1/market/newow/strategy-detail", params={
+            "product": "rb", "strategy": "trend", "frequency": "1d", "resolve_current": "true", **extra,
+        })
+    assert response.status_code == 422
+
+
+def test_capabilities_support_validated_conditional_reads():
+    with TestClient(app) as client:
+        first = client.get("/api/v1/market/newow/product-capabilities")
+        same = client.get("/api/v1/market/newow/product-capabilities", headers={"If-None-Match": first.headers["etag"]})
+    assert first.status_code == 200
+    assert same.status_code == 304 and same.content == b""
+
+
+def test_large_chart_gzip_preserves_the_json_values(monkeypatch, product_cases):
+    result, cutoff = _service_result(product_cases)
+
+    class Service:
+        def query(self, _query):
+            return result
+
+    monkeypatch.setattr(market_newow, "_build_product_service", lambda *_args, **_kwargs: Service())
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            query = {"product": "rb", "strategy": "trend", "frequency": "1d", "as_of": cutoff.isoformat()}
+            plain = client.get("/api/v1/market/newow/strategy-detail", params=query, headers={"Accept-Encoding": "identity"})
+            compressed = client.get("/api/v1/market/newow/strategy-detail", params=query, headers={"Accept-Encoding": "gzip"})
+    finally:
+        app.dependency_overrides.clear()
+    assert plain.status_code == compressed.status_code == 200
+    assert compressed.headers["content-encoding"] == "gzip"
+    assert compressed.json() == plain.json()
+
+
 def test_daily_weekly_release_capabilities_are_public_without_database_access():
     with TestClient(app) as client:
         response = client.get("/api/v1/market/newow/product-capabilities")
@@ -252,7 +319,7 @@ def test_daily_snapshot_uses_formal_quality_policy(product, monkeypatch):
                 ),
             )
 
-    def inputs(_session, _cancelled, _now, quality_policy=InputQualityPolicy.V1):
+    def inputs(_session, _cancelled, _now, quality_policy=InputQualityPolicy.V1, *, home_services=None):
         selected.append(quality_policy)
         return Reader(), lambda _cancelled: Service()
 
@@ -447,6 +514,64 @@ def test_daily_release_defers_cross_frequency_explanation_before_service(
 
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "NEWOW_SECTION_NOT_OPEN"}}
+
+
+@pytest.mark.parametrize("part", ["history", "panel"])
+def test_split_response_on_actual_api(monkeypatch, product_cases, part):
+    from newow.test_product_service import _service
+
+    service, _reader, build, clear = _service(product_cases, "1d")
+    query = ProductServiceQuery(
+        "rb", "trend", "1d", section="reference", as_of=clear.bar_end,
+        performance_since=build.trading_day, performance_through=clear.trading_day,
+        reference_part=part, reference_mode="closed",
+    )
+    result = service.query(query)
+    queries = []
+    monkeypatch.setattr(market_newow, "_build_product_service",
+                        lambda *_args, **_kwargs: SimpleNamespace(query=lambda query: queries.append(query) or result))
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/strategy-detail", params={
+                "product": "rb", "strategy": "trend", "frequency": "1d",
+                "section": "reference", "as_of": clear.bar_end.isoformat(),
+                "performance_since": build.trading_day.isoformat(),
+                "performance_through": clear.trading_day.isoformat(),
+                "reference_part": part, "reference_mode": "closed",
+            })
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    value = response.json()["reference"]["value"]
+    assert value["reference_part"] == part
+    assert len(queries) == 1
+    if part == "history":
+        assert "next_before" in value and value["next_before"] is None
+    else:
+        assert value["summary"]["closed_count"] == value["curve"]["metrics"]["closed_count"]
+        assert len(value["recent_items"]) <= 3
+        assert "items" not in value and "next_before" not in value
+        assert "projection;dur=" in response.headers["Server-Timing"]
+        assert "response_encode;dur=" in response.headers["Server-Timing"]
+
+
+@pytest.mark.parametrize("part", ["panel", "overview", "curve"])
+def test_http_rejects_history_cursor_on_non_history_part_before_read(monkeypatch, part):
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid cursor must be rejected before building a reader")
+    monkeypatch.setattr(market_newow, "_build_product_service", forbidden)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/strategy-detail", params={
+                "product": "rb", "strategy": "trend", "frequency": "1d",
+                "section": "reference", "reference_part": part,
+                "reference_mode": "closed", "history_before": "obsolete-cursor",
+            })
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
 
 
 def test_strategy_detail_returns_only_requested_typed_section(
@@ -823,7 +948,7 @@ def test_older_chart_window_round_trip_and_invalid_binding(monkeypatch, product_
 
 def test_historical_resolver_reuses_shared_resource_controls(monkeypatch):
     monkeypatch.setattr(market_newow, "build_market_data_service", lambda _session: object())
-    monkeypatch.setattr(market_newow, "build_database_coverage_source", lambda _session: object())
+    monkeypatch.setattr(market_newow, "build_database_coverage_source", lambda _session, *, reuse_session_windows=False: object())
     monkeypatch.setattr(market_newow, "load_active_products", lambda: ("rb",))
     now = datetime(2026, 9, 8, 8, tzinfo=UTC)
     resolver = market_newow._build_historical_resolver(

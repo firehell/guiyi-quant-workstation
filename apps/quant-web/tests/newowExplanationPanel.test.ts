@@ -93,7 +93,7 @@ test('comparator remains a separately labelled theoretical five-window result', 
   assert.equal(model.physicalContract, 'JM2601')
   assert.equal(model.segmentId, 'segment-1')
   assert.deepEqual(model.windows.map((item) => item.window), [10, 20, 24, 30, 52])
-  assert.deepEqual(model.windows.map((item) => item.returnText), ['1%', '2%', '2.4%', '3%', '5.2%'])
+  assert.deepEqual(model.windows.map((item) => item.returnText), ['1.00%', '2.00%', '2.40%', '3.00%', '5.20%'])
   assert.equal(model.windows.every((item) => item.syntheticTerminal), true)
   assert.equal(model.syntheticTerminalIsReferenceExit, false)
   assert.match(model.disclosure, /不改变 ReferenceTrade 的 OPEN\/CLEAR/)
@@ -110,7 +110,7 @@ test('comparator selects only the exact default segment and fails closed on ambi
 
   const model = buildComparator(response)
   assert.equal(model.physicalContract, 'JM2601')
-  assert.deepEqual(model.windows.map((item) => item.returnText), ['1%', '2%', '2.4%', '3%', '5.2%'])
+  assert.deepEqual(model.windows.map((item) => item.returnText), ['1.00%', '2.00%', '2.40%', '3.00%', '5.20%'])
 
   response.value!.result!.value!.default_segment_id = 'missing-segment'
   assert.throws(() => buildComparator(response), /NEWOW_COMPARATOR_DEFAULT_SEGMENT_CONFLICT/)
@@ -227,7 +227,7 @@ test('workspace keeps one selected signal authority without the removed summary 
   assert.doesNotMatch(source, /detailsOpen|newow-details/)
   assert.match(source, /<NewowDetailDialog/)
   assert.doesNotMatch(source, /role="tablist"|researchTab/)
-  assert.match(source, /<NewowReferencePanel/)
+  assert.match(source, /<NewowReferencePartsPanel/)
   assert.equal((source.match(/<NewowExplanationPanel/g) ?? []).length, 1)
   assert.match(source, /loadFirstScreenResearch/)
   assert.match(source, /@locate="locateReferenceTrade"/)

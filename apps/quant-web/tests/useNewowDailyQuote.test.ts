@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { nextTick, ref } from 'vue'
-import { projectNewowDailyQuote, useNewowDailyQuote } from '../src/composables/useNewowDailyQuote.ts'
+import { projectNewowChartDailyQuote, projectNewowDailyQuote, useNewowDailyQuote } from '../src/composables/useNewowDailyQuote.ts'
+import type { NewowProductSectionResponse } from '../src/types/newowProduct.ts'
 import { normalizeMarketBarsPageResponse } from '../src/api/marketWire.ts'
 const bar = (day, close) => ({ bar_end: `${day}T07:00:00Z`, trading_day: day, open: 99, high: 110, low: 90, close, volume: 1, turnover: null, open_interest: null })
 const page = () => ({ request: { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1d', limit: 2, before: null, contract: null }, bars: [bar('2026-09-02', 100), bar('2026-09-03', 105)], canonical_coverage: { start: '2026-09-02', end: '2026-09-03' }, page: { has_more_before: true, next_before: 'cursor' }, resolved_contract_segments: [{contract:'RB2605',start_trading_day:'2026-01-01',end_trading_day:'2026-12-31'}] })
@@ -115,4 +116,34 @@ test('D1 timestamps must agree with Shanghai trading day and exact timestamp cov
   assert.equal(projectNewowDailyQuote(valid, 'rb', 'RB2605').close, 105)
   const ambiguous = page(); ambiguous.bars[1].bar_end = '2026-09-03T15:00:00'
   assert.throws(() => projectNewowDailyQuote(ambiguous, 'rb', 'RB2605'))
+})
+
+test('verified D1 chart reuses its owner and does not fetch a second daily page', async () => {
+  const cutoff = '2026-09-03T08:00:00Z'
+  const chart = {
+    section: 'chart', status: { status: 'ready' },
+    meta: { identity: { product: 'rb', frequency: '1d', series_kind: 'actual_dominant' }, as_of: cutoff },
+    snapshotContext: { frequency: '1d', product: 'rb', as_of: cutoff, available_trading_day: '2026-09-03' },
+    value: { bars: [
+      { bar_end: '2026-09-02T07:00:00Z', trading_day: '2026-09-02', physical_contract: 'RB2601', open: '98', high: '102', low: '97', close: '100', volume: 10, open_interest: 20, completed: true, observation_eligible: true },
+      { bar_end: '2026-09-03T07:00:00Z', trading_day: '2026-09-03', physical_contract: 'RB2605', open: '103', high: '106', low: '102', close: '105', volume: 11, open_interest: 21, completed: true, observation_eligible: true },
+    ] },
+  } as unknown as NewowProductSectionResponse<'chart'>
+  const quote = projectNewowChartDailyQuote(chart, 'rb', cutoff)
+  assert.equal(quote.close, 105)
+  assert.equal(quote.physicalContract, 'RB2605')
+  assert.equal(quote.change, null)
+  assert.equal(quote.pct, null)
+  const dailyChart = ref<NewowProductSectionResponse<'chart'> | null>(chart)
+  let calls = 0
+  const q = useNewowDailyQuote({ symbol: ref('rb'), contract: ref('RB2605'), snapshotAsOf: ref(cutoff),
+    reuseDailyChart: ref(true), dailyChart,
+    fetchPage: async () => { calls += 1; return page() },
+  })
+  await nextTick()
+  assert.equal(calls, 0)
+  assert.equal(q.quote.value?.close, 105)
+  dailyChart.value = { ...chart, meta: { ...chart.meta, as_of: '2026-09-04T08:00:00Z' } }
+  assert.equal(q.quote.value, null)
+  q.dispose()
 })

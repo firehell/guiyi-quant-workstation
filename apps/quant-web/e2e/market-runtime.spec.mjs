@@ -117,16 +117,16 @@ async function mockMarketApi(page, requests, controls = {}) {
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
     requests.push(url)
-    if (url.pathname.endsWith('/dominants')) {
+    if (url.pathname.endsWith('/product-directory')) {
       await route.fulfill({ json: { items: [
-        { product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-07' },
-        { product: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', actual_contract: 'JM2601', dominant_mapping_date: '2026-08-07' },
+        { product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE' },
+        { product: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE' },
       ] } })
       return
     }
     if (url.pathname.endsWith('/research/product')) {
       const symbol = url.searchParams.get('symbol') || 'ag'
-      await route.fulfill({ json: { ...detailResearch(symbol), product_name: symbol === 'ag' ? '白银' : '焦煤', series_kind: url.searchParams.get('series_kind'), as_of: initial.at(-1).bar_end } })
+      await route.fulfill({ json: { ...detailResearch(symbol), product_name: symbol === 'ag' ? '白银' : '焦煤', series_kind: url.searchParams.get('series_kind'), contract: url.searchParams.get('contract'), as_of: initial.at(-1).bar_end } })
       return
     }
     if (url.pathname.endsWith('/state')) {
@@ -134,7 +134,7 @@ async function mockMarketApi(page, requests, controls = {}) {
       const frequency = url.searchParams.get('frequency')
       const symbol = url.searchParams.get('symbol') || 'ag'
       const weekend = symbol === 'jm'
-      const breaking = kind === 'continuous'
+      const breaking = controls.breaking === true || kind === 'continuous'
       await route.fulfill({ json: state(symbol, {
         series_kind: kind,
         frequency,
@@ -243,12 +243,14 @@ test('renders the latest canonical page first, paginates left, and overlays actu
   expect(requests.every((url) => !(url.searchParams.has('start') && url.searchParams.has('end')))).toBe(true)
 })
 
-test('keeps continuous, BREAK, and weekend-closed history readable without Live errors', async ({ page }) => {
+test('migrates legacy links while keeping BREAK and weekend-closed history readable without Live errors', async ({ page }) => {
   const requests = []
   await installFakeWebSocket(page)
-  await mockMarketApi(page, requests)
+  await mockMarketApi(page, requests, { breaking: true })
 
   await page.goto('/market/chart?view=free&symbol=ag&series_kind=continuous&frequency=15m')
+  await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('actual_dominant')
+  expect(requests.some(url => url.searchParams.get('series_kind') === 'continuous')).toBe(false)
   await openMarketFacts(page)
   await expect(displayState(page)).toHaveText('Canonical')
   await expect(marketPhase(page)).toHaveText('盘中休市')
@@ -335,9 +337,11 @@ test('switches series and period from the workspace shell and opens research wit
   await page.goto('/market/chart?view=free&symbol=ag&series_kind=actual_dominant&frequency=15m')
   await expectBarCount(page, 300)
 
-  await page.getByRole('button', { name: '主连', exact: true }).click()
-  await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).at(-1)?.searchParams.get('series_kind')).toBe('continuous')
-  await page.getByRole('button', { name: '日K', exact: true }).click()
+  await expect(page.getByRole('button', { name: '主连', exact: true })).toHaveCount(0)
+  await page.getByRole('textbox', { name: '指定合约', exact: true }).fill('AG2601')
+  await page.getByRole('button', { name: '指定合约', exact: true }).click()
+  await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).at(-1)?.searchParams.get('series_kind')).toBe('contract')
+  await page.getByRole('button', { name: '日线', exact: true }).click()
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).at(-1)?.searchParams.get('frequency')).toBe('1d')
 
   const background = page.getByRole('button', { name: /市场背景/ })

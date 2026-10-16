@@ -37,7 +37,7 @@ from app.core.env import PROJECT_ROOT
 from app.runtime_bindings import RuntimeBindingError, resolve_service_binding
 from app.market_data.after_market import public_after_market_status
 from app.market_data.weekly_audit import weekly_audit_health
-from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
+from app.runtime_identity import runtime_heartbeat_identity
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.session_clock import SHANGHAI
 from app.models import Instrument, TradingCalendar

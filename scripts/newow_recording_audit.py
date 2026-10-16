@@ -127,8 +127,8 @@ def main(argv=None):
     from sqlalchemy.orm import sessionmaker
     from app.db.session import normalize_database_url
     from app.market_data.operational_universe import load_operational_products, load_active_products
-    from scripts.newow_weekly_recovery import load_private_readonly_settings
-    from scripts.newow_recording_history import _atomic_json
+    from app.private_settings import load_private_readonly_settings
+    from scripts.evidence_files import atomic_json
     settings, _ = load_private_readonly_settings(args.project_env)
     engine = create_engine(normalize_database_url(settings['DATABASE_URL']), pool_pre_ping=True)
     try:
@@ -136,7 +136,10 @@ def main(argv=None):
         with sessionmaker(engine, expire_on_commit=False)() as session:
             result = audit_history(session, products, at=datetime.now(UTC))
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_json(args.output, result)
+        try:
+            atomic_json(args.output, result)
+        except FileExistsError as error:
+            raise ValueError('HISTORY_PRIOR_RESULT_REQUIRES_READBACK') from error
         print(json.dumps({key: result[key] for key in (
             'version', 'observed_at', 'expected_count', 'registered_count', 'active_count', 'ready_count', 'status_counts',
         )}, sort_keys=True), flush=True)

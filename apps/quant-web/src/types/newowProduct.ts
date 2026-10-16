@@ -301,6 +301,109 @@ export interface NewowReferenceValue {
   readonly allowed_uses: readonly ['page_parity_reference', 'research_display']
 }
 
+export type NewowReferencePart = 'overview' | 'curve' | 'history' | 'panel'
+export type NewowReferenceMode = 'page_ordinary' | 'page_ideal' | 'closed' | 'holding' | 'theoretical'
+  | 'fusion_page_ordinary' | 'fusion_page_ideal' | 'fusion_closed' | 'fusion_holding' | 'fusion_theoretical'
+
+export interface NewowReferencePartRequest {
+  readonly identity: NewowProductIdentity
+  readonly asOf: string
+  readonly snapshotToken: string
+  readonly part: NewowReferencePart
+  readonly mode: NewowReferenceMode
+  readonly performanceSince?: string
+  readonly performanceThrough?: string
+  readonly historyBefore?: string
+  readonly historyLimit?: number
+}
+
+export interface NewowReferencePartCommon {
+  readonly reference_part: NewowReferencePart
+  readonly reference_mode: NewowReferenceMode
+  readonly performance_since: string
+  readonly performance_through: string
+  readonly actual_available_through: string
+  readonly reference_cutoff: string
+  readonly reference_input_sha256: string
+  readonly result_hash: string
+  readonly record_since: string
+  readonly records_window_limited: boolean
+  readonly history_coverage: 'FULL' | 'PARTIAL'
+  readonly storage_mode?: 'persisted'
+  readonly executable: false
+  readonly auto_order: false
+  readonly allowed_uses: readonly ['page_parity_reference', 'research_display']
+}
+
+export interface NewowReferencePartPoint {
+  readonly position: number
+  readonly bar_end: string
+  readonly trading_day: string
+  readonly segment_id: string
+  readonly physical_contract?: string
+  readonly value: string | null
+  readonly reference_trade_id?: string
+  readonly trade?: NewowReferenceTrade
+  readonly [key: string]: unknown
+}
+
+export interface NewowReferencePartCurve {
+  readonly mode: NewowReferenceMode
+  readonly points: readonly NewowReferencePartPoint[]
+  readonly total_points: number
+  readonly sampled: boolean
+  readonly summary?: Readonly<Record<string, unknown>> | null
+  readonly annualized_pct?: string | null
+  readonly metrics?: { readonly return_percentage_points: string | null; readonly win_rate_pct: string | null; readonly closed_count: number; readonly drawdown: string | null; readonly drawdown_kind: string | null }
+  readonly segment_annuals?: readonly Readonly<Record<string, unknown>>[]
+  readonly drawdown_kind?: string | null
+  readonly period?: string | null
+  readonly model_version?: string | null
+  readonly source_identity?: Readonly<Record<string, unknown>> | null
+}
+
+export interface NewowPageReferenceRecord {
+  readonly buyDate: string
+  readonly buyPrice: string
+  readonly sellDate: string
+  readonly sellPrice: string
+  readonly pct: string
+  readonly forceClose: boolean
+  readonly segment_id: string
+  readonly buyBarIsLive?: boolean
+}
+
+export type NewowReferenceRecord = NewowReferenceTrade | NewowPageReferenceRecord
+export interface NewowReferenceOverviewValue extends NewowReferencePartCommon {
+  readonly reference_part: 'overview'
+  readonly summary: NewowReferenceSummary
+  readonly coverage_intervals: NewowReferenceValue['coverage_intervals']
+  readonly unavailable_days: readonly string[]
+  readonly recent_items: readonly NewowReferenceRecord[]
+  readonly page_summaries: { readonly ordinary: Readonly<Record<string, unknown>> | null; readonly ideal: Readonly<Record<string, unknown>> | null }
+  readonly fusion_groups?: readonly Readonly<Record<string, unknown>>[]
+}
+export interface NewowReferenceCurveValue extends NewowReferencePartCommon {
+  readonly reference_part: 'curve'
+  readonly curve: NewowReferencePartCurve
+}
+export interface NewowReferenceHistoryValue extends NewowReferencePartCommon {
+  readonly reference_part: 'history'
+  readonly items: readonly NewowReferenceRecord[]
+  readonly next_before: string | null
+}
+export interface NewowReferencePanelValue extends Omit<NewowReferenceOverviewValue, 'reference_part'> {
+  readonly reference_part: 'panel'
+  readonly curve: NewowReferencePartCurve
+}
+export type NewowReferencePartValue = NewowReferenceOverviewValue | NewowReferenceCurveValue | NewowReferenceHistoryValue | NewowReferencePanelValue
+export interface NewowReferencePartResponse {
+  readonly meta: NewowProductMeta
+  readonly section: 'reference'
+  readonly status: NewowFeatureStatus
+  readonly value: NewowReferencePartValue | null
+}
+
 export interface NewowMainForceControlData {
   readonly kongpan: readonly number[]
   readonly status: readonly string[]
@@ -683,6 +786,7 @@ export interface NewowProductSectionValueMap {
 
 export type NewowProductSectionResponse<S extends NewowProductSection = NewowProductSection> = {
   readonly [K in S]: {
+    readonly snapshotContext?: NewowDailySnapshot | NewowWeeklySnapshot
     readonly meta: NewowProductMeta
     readonly section: K
     readonly status: NewowFeatureStatus
@@ -697,7 +801,7 @@ interface NewowRequestCommon {
 }
 
 export type NewowProductRequest =
-  | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
+  | (NewowRequestCommon & { readonly section: 'chart'; readonly resolveCurrent?: boolean; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
   | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly fusionBefore?: string; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
   | (NewowRequestCommon & { readonly section: 'explanation'; readonly decisionV2?: boolean })

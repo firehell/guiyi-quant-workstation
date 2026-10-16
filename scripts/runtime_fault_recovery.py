@@ -61,7 +61,7 @@ def main():
     verify_release(ROOT, "v1.15.4", args.candidate_commit)
     # Configuration remains private and unchanged; only this process loads it.
     from dotenv import dotenv_values
-    from scripts.newow_weekly_recovery import _read_private_settings_content
+    from app.private_settings import read_private_settings_content as _read_private_settings_content
     from app.runtime_handover import runtime_directory
 
     values = dotenv_values(

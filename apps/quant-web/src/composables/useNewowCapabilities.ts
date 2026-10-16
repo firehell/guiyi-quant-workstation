@@ -1,4 +1,4 @@
-import { computed, readonly, shallowRef } from 'vue'
+import { computed, readonly, shallowRef, getCurrentScope, onScopeDispose } from 'vue'
 
 import { NEWOW_FREQUENCIES } from '../types/marketDetail.ts'
 
@@ -17,13 +17,15 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
   const state = shallowRef<CapabilityState>('not_requested')
   const error = shallowRef<string | null>(null)
   let inFlight: Promise<void> | null = null
+  const controller = new AbortController()
+  if (getCurrentScope()) onScopeDispose(() => controller.abort())
 
-  function load(): Promise<void> {
-    if (state.value === 'ready') return Promise.resolve()
+  function load(force = false): Promise<void> {
+    if (!force && state.value === 'ready') return Promise.resolve()
     if (inFlight !== null) return inFlight
     state.value = 'loading'
     error.value = null
-    inFlight = fetchCapabilities()
+    inFlight = (fetchCapabilities === getNewowProductCapabilities ? getNewowProductCapabilities({ refresh: force, signal: controller.signal }) : fetchCapabilities())
       .then((value) => {
         capabilities.value = value
         state.value = 'ready'

@@ -216,7 +216,10 @@ registry-owned active Alert Rules 的 exact trading day `AlertEvent`。`limit` M
 ### Requirement: Market Home Web preserves independent read authorities
 
 `/market` SHALL 独立读取 Market Home overview、Runtime health、消息和本规范定义的批量行情资源。
-品种目录 SHALL 独立读取既有 `/market/dominants` 批量接口，只用于搜索、导航和消息品种筛选，
+品种目录 SHALL 独立读取 `/market/product-directory` 批量接口，只包含 active 品种的
+`product`、`product_name`、`exchange`、`sector`（taxonomy 与 Instrument），不读取主力映射，
+只用于搜索、导航和消息品种筛选。该静态目录的 ETag 与 Web 缓存有效期为 24 小时；旧
+`/market/dominants` 快照不得迁入静态目录缓存。当前合约、映射日与报价仍须来自经验证的动态图表或研究读取，
 不得从 overview 的参与行情行推导目录，也不得用目录补造缺失行情。消息按需加载且不阻塞市场列表。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为
 stale/unavailable；它不得由 Runtime heartbeat 推导 overview/Alert 状态，也不得由 Event 空列表推导
 Runtime 正常静默。品种目录只使用上述单一批量目录读取；日周策略事实另外读取只读
@@ -227,7 +230,7 @@ Runtime 正常静默。品种目录只使用上述单一批量目录读取；日
 返回首页 SHALL 立即恢复已成功的列表、筛选、排序和滚动位置；有效缓存不得因重新挂载或浏览器重新
 可见而被清空并强制全量刷新。缓存 MUST 有有界失效条件；必要刷新在保留旧结果的同时执行，旧结果
 仍保持自己的时间与 freshness。并发请求 MUST 去重，过期身份响应不得覆盖新资源；timer/listener/socket
-由单一生命周期 owner 管理。可见页面 SHALL 在既有 60 秒周期检查 overview 和目录的五分钟缓存
+由单一生命周期 owner 管理。可见页面 SHALL 在既有 60 秒周期检查 overview 的五分钟缓存和目录的 24 小时缓存
 及失败状态；未过期的成功快照不重读，失败资源至多每周期发起一次合并后的恢复读取，隐藏页停止定时器。
 
 #### Scenario: Overview is slow or has no participating quote rows
@@ -418,3 +421,32 @@ Runtime health 包装成不存在的历史系统消息。
 
 - **WHEN** 消息查询失败或事件身份不兼容
 - **THEN** 页面显示不可用/失败状态，保留已知快照的时间，不得写成“暂无消息”或展示伪造的发送成功状态
+
+### Requirement: Persistent display snapshots revalidate independently
+
+The browser SHALL persist successful directory, completed overview and per-product D1/W1 display cards in IndexedDB, isolated by origin/API environment, app version and schema/display contract. Budgets SHALL be at most 60 product cards, 10 MiB and seven days. Invalid, incompatible or expired entries SHALL be discarded; unavailable or stalled storage SHALL degrade to memory without blocking network reads. Restored facts SHALL show original time and remain stale until a successful current read. Runtime health SHALL NOT be persisted.
+
+Visible resources SHALL reconcile every five minutes and after visibility/authority changes or manual refresh. Reconciliation SHALL preserve accepted rows, expanded state and scrolling, replacing changed product facts. Same-identity completed minute updates SHALL affect only the independent price overlay. Late obsolete responses SHALL NOT replace current ownership. Hidden products SHALL revalidate changed authority on readmission.
+
+Persisted strategy tokens and reference performance SHALL NOT enable new reference queries. Cards SHALL reacquire ownership through the existing bounded authoritative read before lazy performance reads. Conditional directory/overview requests MAY reuse an in-session validated body; persisted bodies alone SHALL NOT satisfy HTTP 304.
+
+#### Scenario: Reload with delayed or failed backend
+
+- **WHEN** a valid persistent snapshot exists and network reads are slow or fail
+- **THEN** cached facts appear first with time/stale disclosure; failures preserve them without declaring current authority or Runtime health
+
+### Requirement: Verified reuse and conditional transfer preserve authority
+
+Backend result reuse SHALL be bounded and occur after existing input checks. Overview metric keys SHALL bind checked D1/W1 Bars, owner, quality/interruption facts, metric policy and taxonomy. Newow shared calculation flights SHALL join only after every request lifecycle establishes its input fingerprint/dependency proof. Errors SHALL NOT become successful cached facts.
+
+Existing unconditional derived-projection reads remain unchanged. An overview request with If-None-Match SHALL obtain a fresh authoritative snapshot before deciding 304; same-day correction SHALL remain observable. ETags SHALL NOT replace quality checks. Card tags SHALL retain token ownership; expired/renewed tokens cannot receive 304 for the old token. Period failures return typed bodies. HTTP reads MUST NOT publish/repair production projections.
+
+#### Scenario: Same-day input correction
+
+- **WHEN** checked Bars, quality, mapping or strategy/config versions change without changing the date
+- **THEN** old calculation results cannot satisfy the new input identity; conditional transfer returns updated facts or a typed failure
+
+#### Scenario: Concurrent valid inputs
+
+- **WHEN** separate requests establish identical checked inputs concurrently
+- **THEN** calculation may be shared while both retain authority validation and cancellation boundaries

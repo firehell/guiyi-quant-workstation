@@ -20,6 +20,7 @@ from guiyi_quant.newow import (
     build_walk_forward_evidence_rows,
     stress_cost_snapshots,
 )
+from guiyi_quant.newow.research_backtest import BacktestOffsetFees
 
 
 def _snapshot() -> BacktestCostSnapshot:
@@ -63,6 +64,31 @@ def test_cost_stress_changes_only_the_requested_cost_dimension() -> None:
         assert stressed.costs.contract_multiplier == Decimal("10")
         assert stressed.costs.price_tick == Decimal("1")
         assert stressed.source_identity == baseline.source_identity
+
+
+def test_cost_stress_doubles_all_sourced_offset_commissions() -> None:
+    baseline = replace(
+        _snapshot(),
+        offset_fees=BacktestOffsetFees(
+            open_rate=Decimal("0.0001"), open_per_contract=Decimal("1"),
+            close_today_rate=Decimal("0.0002"),
+            close_today_per_contract=Decimal("2"),
+            close_yesterday_rate=Decimal("0.0003"),
+            close_yesterday_per_contract=Decimal("3"),
+        ),
+    )
+
+    stressed = stress_cost_snapshots(
+        (baseline,), CostStressScenario.DOUBLE_COMMISSION
+    )[0]
+
+    assert stressed.offset_fees == BacktestOffsetFees(
+        open_rate=Decimal("0.0002"), open_per_contract=Decimal("2"),
+        close_today_rate=Decimal("0.0004"), close_today_per_contract=Decimal("4"),
+        close_yesterday_rate=Decimal("0.0006"),
+        close_yesterday_per_contract=Decimal("6"),
+    )
+    assert stressed.source_identity == baseline.source_identity
 
 
 def test_fold_evidence_reports_required_nonaggregate_dimensions() -> None:

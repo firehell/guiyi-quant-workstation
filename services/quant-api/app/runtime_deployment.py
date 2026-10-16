@@ -146,7 +146,7 @@ def prove_feed_quiescent(binding):
 
 
 def owner_process_matches(state, binding):
-    from app.market_data.captured_recovery_runtime import _read_launchd_service, _verify_loaded_service
+    from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
     output = _read_launchd_service(binding.label, root=Path(binding.root))
     if output is None:
         return False

@@ -1,3 +1,4 @@
+import { matchingDetailResearch } from './marketDetailViewModel.ts'
 import type { ProductResearchResponse } from '../types/market.ts'
 import type { DetailViewModel, MarketDetailHeaderModel, MarketDetailIdentity } from '../types/marketDetail.ts'
 
@@ -19,6 +20,7 @@ export function buildFreeDetailViewModel(input: {
       : input.rangeState === 'insufficient'
         ? `箱体历史预载不足；${rangeRisk}`
         : null
+  const statisticsMismatch = input.research !== null && matchingDetailResearch(input.research, input.identity) === null
   const semanticStatement = '自由看盘仅提供行情与通用指标复核，不生成策略结论。'
   return {
     view: 'free',
@@ -27,8 +29,8 @@ export function buildFreeDetailViewModel(input: {
     semanticBanner: {
       text: rangeMessage
         ? `${rangeMessage}；${semanticStatement}`
-        : input.researchError ? `市场背景暂不可用；${semanticStatement}` : semanticStatement,
-      tone: rangeMessage || input.researchError ? 'warning' : 'info',
+        : statisticsMismatch ? `该统计不适用于当前序列；${semanticStatement}` : input.researchError ? `市场背景暂不可用；${semanticStatement}` : semanticStatement,
+      tone: rangeMessage || input.researchError || statisticsMismatch ? 'warning' : 'info',
     },
     facts: [
       fact('series', '当前序列', seriesKindText(input.identity.seriesKind), 'market'),
@@ -52,7 +54,6 @@ function fact(
 }
 
 function seriesKindText(value: MarketDetailIdentity['seriesKind']): string {
-  if (value === 'continuous') return '主连'
   if (value === 'contract') return '指定合约'
   return '真实主力'
 }

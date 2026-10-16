@@ -52,6 +52,7 @@ function renderIcon(name: string) {
 const menuOptions = computed<MenuOption[]>(() => {
   const children: MenuOption[] = [
     { label: 'Market 工作台', key: 'market', icon: renderIcon('market') },
+    { label: '新苏冰历史研究', key: 'new-subing-research', icon: renderIcon('market') },
   ]
   return [{ type: 'group', label: '工作', key: 'work-group', children }]
 })
@@ -185,7 +186,7 @@ onUnmounted(() => {
           :reset="clearRouteError"
         />
         <RouterView v-else v-slot="{ Component }">
-          <Transition name="gy-page" mode="out-in">
+          <Transition name="gy-page" mode="out-in" @before-leave="element => element.setAttribute('inert', '')" @leave-cancelled="element => element.removeAttribute('inert')">
             <component :is="Component" :key="String(route.name)" />
           </Transition>
         </RouterView>
@@ -369,9 +370,9 @@ onUnmounted(() => {
   }
 }
 /* Market Home and every unified detail view own their full-width white canvas. */
-.content.content--market-detail { padding: 0; background: #fff; }
+.content.content--market-detail { padding: 0; background: var(--gy-bg-panel); }
 .content.content--market-home {
   padding: 0;
-  background: #fff;
+  background: var(--gy-bg-panel);
 }
 </style>

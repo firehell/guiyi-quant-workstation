@@ -8,8 +8,9 @@ import fcntl
 from datetime import UTC, datetime
 import json
 import os
-import tempfile
 from pathlib import Path
+
+from scripts.evidence_files import atomic_json
 
 from sqlalchemy import select
 
@@ -45,29 +46,11 @@ def _read_json(path):
 
 
 def _atomic_json(path, value, *, exclusive=True):
-    """Publish complete bytes durably; reservation never replaces older evidence."""
-    if path.is_symlink():
-        raise ValueError('HISTORY_PRIOR_RESULT_REQUIRES_READBACK')
-    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=path.parent)
+    """Retain the historical driver's public collision code."""
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as file:
-            json.dump(value, file, sort_keys=True, separators=(',', ':'))
-            file.flush()
-            os.fsync(file.fileno())
-        if exclusive:
-            try:
-                os.link(temporary, path)
-            except FileExistsError as error:
-                raise ValueError('HISTORY_PRIOR_RESULT_REQUIRES_READBACK') from error
-        else:
-            os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+        atomic_json(path, value, exclusive=exclusive)
+    except FileExistsError as error:
+        raise ValueError('HISTORY_PRIOR_RESULT_REQUIRES_READBACK') from error
 
 
 @contextmanager

@@ -40,7 +40,7 @@ withDefaults(
 }
 
 .brand-logo__copy strong {
-  color: #ffffff;
+  color: var(--gy-bg-panel);
   font-size: 17px;
   letter-spacing: 0.06em;
   white-space: nowrap;

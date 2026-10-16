@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { pagePerformanceSegmentAnnualized, pagePerformanceAnnualized } from '../src/utils/newowPagePerformance.ts'
+import { pagePerformanceSummaryAnnualized, pagePerformanceSegmentAnnualized, pagePerformanceAnnualized } from '../src/utils/newowPagePerformance.ts'
 
 test('page annualization uses selected curve endpoints, not summary or trade returns', () => {
   const mode = { dates: ['2025-01-01', '2026-01-01'], equity: ['20', '32'] }
@@ -38,4 +38,16 @@ test('annualized page values never bridge physical calculation segments', () => 
   assert.ok(Math.abs(values[0]!.annualized! - 10) < 1e-10)
   assert.ok(Math.abs(values[1]!.annualized! - 20) < 1e-10)
   assert.equal(pagePerformanceAnnualized({ ...mode, segment_ids: ['a'] }), null)
+})
+
+test('page summary annualizes the existing complete curve, without summing segment annuals or modifying it', () => {
+  const mode = { dates: ['2024-01-01', '2024-12-31', '2025-01-01', '2026-01-01'], equity: ['0', '10', '10', '32'], segment_ids: ['a', 'a', 'b', 'b'] }
+  const before = structuredClone(mode)
+  const expected = 100 * (Math.pow(1.32, 365 / 731) - 1)
+  assert.ok(Math.abs(pagePerformanceSummaryAnnualized(mode)! - expected) < 1e-10)
+  assert.notEqual(pagePerformanceSummaryAnnualized(mode), 30)
+  assert.deepEqual(mode, before)
+  assert.equal(pagePerformanceSummaryAnnualized({ ...mode, segment_ids: ['a'] }), null)
+  assert.equal(pagePerformanceSummaryAnnualized({ ...mode, segment_ids: ['a', 'b', 'a', 'a'] }), null)
+  assert.equal(pagePerformanceSummaryAnnualized({ ...mode, equity: ['0', '10', '10', '-100'] }), null)
 })

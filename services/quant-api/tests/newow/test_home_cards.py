@@ -292,3 +292,40 @@ def test_home_reuses_snapshot_validation_service(monkeypatch, product_cases):
         assert len(reader.loads) == 1
     finally:
         app.dependency_overrides.clear()
+
+
+def test_conditional_cards_keep_token_identity_and_never_hide_failed_read(monkeypatch, product_cases):
+    service, _, _, clear = _service(product_cases)
+    result = [service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end))]
+    monkeypatch.setattr(market_newow, '_PRODUCT_CACHE', service._cache)
+    calls = []
+    def query(request):
+        calls.append(request)
+        return result[0]
+    monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: SimpleNamespace(query=query))
+    def resolver(*args, **kwargs):
+        return SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current'))
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', resolver)
+    monkeypatch.setattr(market_newow, '_build_weekly_resolver', resolver)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            path = '/api/v1/market/newow/home-cards?products=rb'
+            first = client.get(path)
+            assert first.status_code == 200
+            headers = {'If-None-Match': first.headers['etag']}
+            assert client.get(path, headers=headers).status_code == 304
+            assert len(calls) == 8
+            # Eviction must transfer a body even when the projected fields
+            # still happen to contain the old token.
+            service._cache._entries.clear()
+            service._cache._tokens.clear()
+            assert client.get(path, headers=headers).status_code == 200
+            result[0] = replace(result[0], meta=replace(result[0].meta, snapshot_token='new-token-after-expiry'))
+            changed = client.get(path, headers=headers)
+            assert changed.status_code == 200 and changed.headers['etag'] != first.headers['etag']
+            monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *args, **kwargs: (_ for _ in ()).throw(ValueError('NEWOW_WEEKLY_STALE')))
+            failure = client.get(path)
+            assert client.get(path, headers={'If-None-Match': failure.headers['etag']}).status_code == 200
+    finally:
+        app.dependency_overrides.clear()

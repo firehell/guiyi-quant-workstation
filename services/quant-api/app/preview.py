@@ -27,6 +27,7 @@ PREVIEW_PATHS = frozenset(
         "/api/preview/identity",
         "/api/v1/market/bars/page",
         "/api/v1/market/dominants",
+        "/api/v1/market/product-directory",
         "/api/v1/market/research/home-overview",
         "/api/v1/market/newow/product-capabilities",
         "/api/v1/market/newow/strategy-detail",
@@ -40,13 +41,17 @@ PREVIEW_PATHS = frozenset(
 _SUBING_REFERENCE_PATH = re.compile(
     r"^/api/v1/market/[a-z]{1,8}/subing/reference$"
 )
+_NEW_SUBING_RESEARCH_PATH = re.compile(
+    r"^/api/v1/research/new-subing/(?:profiles|runs(?:/[0-9a-f]{64}(?:/(?:decisions|trades|equity))?)?)$"
+)
 _LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[012]$")
 DEFAULT_CANDIDATE_ORIGIN = "http://127.0.0.1:8010"
 DEFAULT_STATUS_ORIGIN = "http://127.0.0.1:8000"
 
 
 def _preview_path_allowed(path: str) -> bool:
-    return path in PREVIEW_PATHS or _SUBING_REFERENCE_PATH.fullmatch(path) is not None
+    return (path in PREVIEW_PATHS or _SUBING_REFERENCE_PATH.fullmatch(path) is not None
+            or _NEW_SUBING_RESEARCH_PATH.fullmatch(path) is not None)
 
 
 def _instant(value: str | None) -> datetime:
@@ -135,7 +140,7 @@ def create_preview_app(
     code_sha = _code_sha()
     candidate_origin = _candidate_origin()
 
-    from app.api import market, market_newow, market_subing_reference
+    from app.api import market, market_newow, market_subing_reference, research_new_subing
     from app.db.session import SessionLocal, get_db
 
     if _intraday_preview_products() is not None:
@@ -266,6 +271,7 @@ def create_preview_app(
     app.include_router(market.router)
     app.include_router(market_newow.router)
     app.include_router(market_subing_reference.router)
+    app.include_router(research_new_subing.router)
     return app
 
 

@@ -30,7 +30,7 @@ from app.market_data import rqdata_adapter
 from app.market_data.rqdata_adapter import WEEKLY_AGGREGATION_VERSION, _aggregate_daily_rows
 from app.market_data.storage import CANONICAL_SCHEMA, CanonicalMonthlyStore, PublishRequest
 from app.market_data import storage as storage_module
-from scripts.newow_weekly_recovery import load_private_readonly_settings
+from app.private_settings import load_private_readonly_settings
 
 CONTRACT = "OI2611"
 CUTOFF = datetime.fromisoformat("2026-09-18T07:00:00.000001+00:00")

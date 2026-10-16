@@ -18,8 +18,8 @@ const entry = computed(() => NEWOW_FORMULA_HELP[selected.value])
 </template>
 <style scoped>
 .newow-formula-help { display:grid; gap:10px; color:#475467; font-size:12px; line-height:1.65; }
-h3,p { margin:0; } h3 { color:#20242b; font-size:15px; }
-label { display:flex; align-items:center; gap:12px; } select { flex:1; min-width:0; min-height:40px; background:#fff; border:1px solid #d0d5dd; border-radius:8px; padding:0 8px; color:#344054; }
+h3,p { margin:0; } h3 { color:var(--gy-text-primary); font-size:15px; }
+label { display:flex; align-items:center; gap:12px; } select { flex:1; min-width:0; min-height:40px; background:var(--gy-bg-panel); border:1px solid #d0d5dd; border-radius:8px; padding:0 8px; color:#344054; }
 details { border:1px solid #ebedf0; border-radius:8px; padding:10px 12px; } summary { cursor:pointer; font-weight:600; color:#344054; }
 pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; font-family:ui-monospace,monospace; padding:10px; background:#f8fafc; border-radius:6px; }
 </style>

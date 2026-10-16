@@ -48,6 +48,27 @@ export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHom
   return { status, target_as_of: targetAsOf, data_as_of: dataAsOf, freshness, active_count: activeCount, participant_count: participantCount, stale_count: staleCount, unavailable_count: unavailableCount, summary, items, sectors }
 }
 
+/** Cache stores the normalized view model; reconstitute Decimal wire fields only after finite-number checks. */
+export function validateStoredMarketHomeOverview(payload: unknown): MarketHomeOverviewResponse {
+  const value = record(payload, 'stored overview')
+  const storedDecimal = (input: unknown) => {
+    if (input === null) return null
+    if (typeof input !== 'number' || !Number.isFinite(input)) throw new Error('invalid stored overview number')
+    return String(input)
+  }
+  const fields = ['close', 'price_change_1d', 'price_change_5d', 'volume_ratio20', 'oi_change_1d', 'atr14_percentile252'] as const
+  const items = array(value.items, 'items').map(item => {
+    const row = { ...record(item, 'stored item') }
+    for (const field of fields) row[field] = storedDecimal(row[field])
+    return row
+  })
+  const sectors = array(value.sectors, 'sectors').map(item => {
+    const sector = record(item, 'stored sector')
+    return { ...sector, median_price_change_1d: storedDecimal(sector.median_price_change_1d) }
+  })
+  return normalizeMarketHomeOverviewResponse({ ...value, items, sectors })
+}
+
 export function normalizeCurrentAlertEventsResponse(payload: unknown): CurrentAlertEventsResponse {
   const value = record(payload, 'current Alert events')
   const status = literal(value.status, ['ready', 'unavailable'], 'status')

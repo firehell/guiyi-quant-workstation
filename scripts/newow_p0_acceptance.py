@@ -142,7 +142,7 @@ def main():
         raise ValueError("P0_ACCEPTANCE_SCOPE_INVALID")
     output = safe_path(args.output, root / "outputs")
     target = safe_path(output / "acceptance" / f"{args.product}-{args.frequency}-{args.read_id}", output)
-    from scripts.newow_weekly_recovery import load_private_readonly_settings
+    from app.private_settings import load_private_readonly_settings
     settings, config_identity = load_private_readonly_settings(CONFIG)
     bootstrap = json.loads((output / "bootstrap-completed.json").read_text())
     if (bootstrap.get("manifest_sha256") != sha256(args.manifest.read_bytes()).hexdigest()

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { homeCardsReloadIdentity, createHomeCardLoader, normalizeHomeCards, type CardDelivery, type HomeCardsResponse } from '../src/utils/newowHomeCards.ts'
+import { homeCardSessionKey, homeCardsReloadIdentity, createHomeCardLoader, normalizeHomeCards, type CardDelivery, type HomeCardsResponse } from '../src/utils/newowHomeCards.ts'
 import { marketHomeUnifiedProductChartQuery } from '../src/utils/marketHomeRoutes.ts'
 
 const response = (products: string[]): HomeCardsResponse => ({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: products.map(product => ({ product, strategies: { trend: { '1d': { status: 'warming', state: null }, '1w': { status: 'unavailable', state: null } }, oscillation: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } } } })) })
@@ -78,4 +78,56 @@ test('unchanged overview readback does not cancel the bounded strategy queue', (
   assert.equal(homeCardsReloadIdentity(data), homeCardsReloadIdentity({ ...data, items: [...data.items].reverse() }))
   assert.notEqual(homeCardsReloadIdentity(data), homeCardsReloadIdentity({ ...data, items: [{ ...data.items[0]!, actual_contract: 'RB2705' }, data.items[1]!] }))
   assert.notEqual(homeCardsReloadIdentity(data), homeCardsReloadIdentity({ ...data, target_as_of: '2026-10-12' }))
+})
+
+
+test('persisted display cards publish stale first and must reacquire a network owner', async () => {
+  let items: Record<string, CardDelivery> = {}
+  let complete!: (value: HomeCardsResponse) => void
+  let reads = 0
+  const loader = createHomeCardLoader(() => { reads++; return new Promise(resolve => { complete = resolve }) }, value => { items = value }, () => ({ ...response(['rb']), restored: true }))
+  const pending = loader.load(['rb'])
+  assert.ok(items.rb!.card)
+  assert.equal(items.rb!.stale, true)
+  assert.equal(items.rb!.loading, true)
+  assert.equal(reads, 1)
+  complete(response(['rb'])); await pending
+  assert.equal(items.rb!.stale, false)
+  loader.dispose()
+})
+
+test('selective refresh leaves unaffected cards and old contents visible and rejects late owners', async () => {
+  let items: Record<string, CardDelivery> = {}, phase = false
+  const pending: Array<(value: HomeCardsResponse) => void> = []
+  const calls: string[] = []
+  const loader = createHomeCardLoader(products => { calls.push(products[0]!); return phase ? new Promise(resolve => pending.push(resolve)) : Promise.resolve(response(products)) }, value => { items = value })
+  await loader.load(['rb', 'cu'])
+  const cu = items.cu!.card, rb = items.rb!.card
+  phase = true
+  const old = loader.reloadProduct('rb'), fresh = loader.reloadProduct('rb')
+  assert.equal(items.cu!.card, cu)
+  assert.equal(items.rb!.card, rb)
+  assert.equal(items.rb!.stale, true)
+  const current = { ...response(['rb']), requested_at: '2026-10-14T00:00:00Z' }
+  pending[1]!(current); await fresh
+  const owner = items.rb!.card
+  pending[0]!(response(['rb'])); await old
+  assert.equal(items.rb!.card, owner)
+  assert.deepEqual(calls, ['rb', 'cu', 'rb', 'rb'])
+  loader.dispose()
+})
+
+
+test('a previously hidden product cannot reuse a fresh card alias from another authority', async () => {
+  const { createSessionResources } = await import('../src/utils/newowSessionResources.ts')
+  const cache = createSessionResources()
+  const first = homeCardSessionKey(['rb'], 'contract-generation-one')
+  const second = homeCardSessionKey(['rb'], 'contract-generation-two')
+  cache.put(first, response(['rb']), 'one')
+  assert.ok(cache.peek(first))
+  assert.equal(cache.peek(second), undefined)
+  let reads = 0
+  await cache.load(second, async () => { reads++; return response(['rb']) }, () => 'two')
+  assert.equal(reads, 1)
+  assert.ok(cache.peek(second))
 })

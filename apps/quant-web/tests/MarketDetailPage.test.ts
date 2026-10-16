@@ -87,17 +87,19 @@ test('keeps navigation and one workspace slot mounted while source data changes 
 test('gives every market detail route the same full-width layout canvas', () => {
   const source = readFileSync(mainLayoutUrl, 'utf8')
   assert.match(source, /'content--market-detail': route\.name === 'market-chart'/)
-  assert.match(source, /\.content\.content--market-detail \{ padding: 0; background: #fff; \}/)
+  assert.match(source, /\.content\.content--market-detail \{ padding: 0; background: var\(--gy-bg-panel\); \}/)
   assert.doesNotMatch(source, /content--newow-detail|route\.query\.view === 'newow'/)
 })
 
-test('accepted Newow chart starts first-screen research once without viewport observation', () => {
+test('accepted Newow chart defers reference research until visible', () => {
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
 
   assert.match(workspace, /loadFirstScreenResearch/)
-  assert.match(workspace, /loader\.loadReference\(\)/)
+  assert.match(workspace, /useNewowReferenceParts\(chartResponse, referenceVisible, dualMode\)/)
   assert.match(workspace, /sectionOpen\('explanation'\)/)
-  assert.doesNotMatch(workspace, /IntersectionObserver/)
+  assert.match(workspace, /IntersectionObserver/)
+  assert.match(workspace, /if \(referenceVisible\.value\) loadReferenceOnce\(\)/)
+  assert.match(workspace, /<NewowReferencePartsPanel/)
   assert.equal((workspace.match(/<NewowExplanationPanel/g) ?? []).length, 1)
   assert.doesNotMatch(workspace, /detailsOpen|newow-details/)
   assert.match(workspace, /<MarketDetailUnavailable v-if="chartResponse === null/)

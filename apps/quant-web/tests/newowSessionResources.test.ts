@@ -4,6 +4,59 @@ import { createSessionResources, createReadQueue } from '../src/utils/newowSessi
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
+test('immutable resources share one isolated frozen body across cache hits', async () => {
+  const store = createSessionResources({ immutable: true })
+  const original = { rows: [{ value: 3 }] }
+  store.put('frozen', original, 'v1')
+  const first = store.peek<typeof original>('frozen')!
+  const second = store.peek<typeof original>('frozen')!
+  assert.equal(first, second)
+  assert.notEqual(first, original)
+  assert.equal(Object.isFrozen(first.rows[0]), true)
+  original.rows[0].value = 10
+  assert.equal(first.rows[0].value, 3)
+  assert.throws(() => { first.rows[0].value = 99 }, TypeError)
+  const fetched = await store.load('new', async () => original, () => 'v1')
+  assert.equal(fetched, store.peek('new'))
+})
+
+test('an invalidated immutable flight never borrows the replacement body', async () => {
+  const store = createSessionResources({ immutable: true })
+  let finish!: (value: { version: string }) => void
+  const old = store.load('same', () => new Promise(resolve => { finish = resolve }), value => value.version)
+  await tick()
+  store.invalidate('same')
+  store.put('same', { version: 'new' }, 'new')
+  finish({ version: 'old' })
+  assert.equal((await old).version, 'old')
+  assert.equal(store.peek<{ version: string }>('same')?.version, 'new')
+})
+
+test('last consumer leaving cancels work and late responses cannot enter cache', async () => {
+  const store = createSessionResources(), consumer = new AbortController()
+  let finish!: (value: string) => void, owner!: AbortSignal
+  const result = store.load('obsolete', signal => { owner = signal; return new Promise<string>(resolve => { finish = resolve }) }, String, consumer.signal)
+  await tick(); consumer.abort()
+  await assert.rejects(result, { name: 'AbortError' })
+  assert.equal(owner.aborted, true)
+  finish('late'); await tick()
+  assert.equal(store.peek('obsolete'), undefined)
+  assert.equal(store.stats().pending, 0)
+})
+
+test('current validation bypasses a TTL body but still coalesces concurrent readers', async () => {
+  const store = createSessionResources()
+  store.put('section', 'old-input', String('old'))
+  let calls = 0, finish!: (value: string) => void
+  const read = () => { calls++; return new Promise<string>(resolve => { finish = resolve }) }
+  const first = store.load('section', read, String, undefined, true)
+  const second = store.load('section', read, String, undefined, true)
+  await tick(); assert.equal(calls, 1)
+  finish('verified-input')
+  assert.deepEqual(await Promise.all([first, second]), ['verified-input', 'verified-input'])
+  assert.equal(store.peek('section'), 'verified-input')
+})
+
 test('navigation detaches one consumer while a shared request continues and reuses its result', async () => {
   const store = createSessionResources(), first = new AbortController()
   let calls = 0, resolve!: (value: { token: string }) => void, underlying!: AbortSignal

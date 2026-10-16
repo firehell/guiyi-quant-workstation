@@ -1,0 +1,178 @@
+{
+  "actual_through": "2026-10-09",
+  "as_of": "2026-10-11T00:00:00+08:00",
+  "execution_1m": {
+    "bar_count": 82305,
+    "first_bar_end": "2025-10-10T13:01:00+00:00",
+    "first_trading_day": "2025-10-13",
+    "last_bar_end": "2026-10-09T07:00:00+00:00",
+    "last_trading_day": "2026-10-09",
+    "physical_contracts": [
+      "JM2601",
+      "JM2605",
+      "JM2609",
+      "JM2701"
+    ],
+    "status": "READY"
+  },
+  "frequencies": {
+    "15m": {
+      "actual_through": "2026-10-09",
+      "bar_count": 5487,
+      "completed_cutoff": "2026-10-09T07:00:00+00:00",
+      "first_bar_end": "2025-10-10T13:15:00+00:00",
+      "first_trading_day": "2025-10-13",
+      "input_sha256": "6e248a0e2437025c75313be37da1e2d6e40c95bdedb6d61a95625000aae15209",
+      "last_bar_end": "2026-10-09T07:00:00+00:00",
+      "last_trading_day": "2026-10-09",
+      "physical_contracts": [
+        "JM2601",
+        "JM2605",
+        "JM2609",
+        "JM2701"
+      ],
+      "reader_window_complete": true,
+      "reader_window_reason": null,
+      "replay_segment_count": 4,
+      "status": "READY"
+    },
+    "1d": {
+      "actual_through": "2026-10-09",
+      "bar_count": 241,
+      "completed_cutoff": "2026-10-09T07:00:00+00:00",
+      "first_bar_end": "2025-10-13T07:00:00+00:00",
+      "first_trading_day": "2025-10-13",
+      "input_sha256": "db0bc9202cd4531f31b0fcac2522425357204d1498bc20ea6587307186af6bac",
+      "last_bar_end": "2026-10-09T07:00:00+00:00",
+      "last_trading_day": "2026-10-09",
+      "physical_contracts": [
+        "JM2601",
+        "JM2605",
+        "JM2609",
+        "JM2701"
+      ],
+      "reader_window_complete": true,
+      "reader_window_reason": null,
+      "replay_segment_count": 4,
+      "status": "READY"
+    },
+    "1w": {
+      "actual_through": "2026-10-09",
+      "bar_count": 51,
+      "completed_cutoff": "2026-10-09T07:00:00+00:00",
+      "first_bar_end": "2025-10-17T07:00:00+00:00",
+      "first_trading_day": "2025-10-17",
+      "input_sha256": "694a244e7684f7988aefba3f2255f2d8f6381c6fe5a3b8553a5c7313945f19f3",
+      "last_bar_end": "2026-10-09T07:00:00+00:00",
+      "last_trading_day": "2026-10-09",
+      "physical_contracts": [
+        "JM2601",
+        "JM2605",
+        "JM2609",
+        "JM2701"
+      ],
+      "reader_window_complete": false,
+      "reader_window_reason": "NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING",
+      "replay_segment_count": 4,
+      "status": "READY"
+    },
+    "30m": {
+      "actual_through": "2026-10-09",
+      "bar_count": 2864,
+      "completed_cutoff": "2026-10-09T07:00:00+00:00",
+      "first_bar_end": "2025-10-10T13:30:00+00:00",
+      "first_trading_day": "2025-10-13",
+      "input_sha256": "c9d742fd00f75bf8df7a82da59456b6ec66bef2a99e8791df1f4d2dc61d61aa4",
+      "last_bar_end": "2026-10-09T07:00:00+00:00",
+      "last_trading_day": "2026-10-09",
+      "physical_contracts": [
+        "JM2601",
+        "JM2605",
+        "JM2609",
+        "JM2701"
+      ],
+      "reader_window_complete": true,
+      "reader_window_reason": null,
+      "replay_segment_count": 4,
+      "status": "READY"
+    },
+    "5m": {
+      "actual_through": "2026-10-09",
+      "bar_count": 16461,
+      "completed_cutoff": "2026-10-09T07:00:00+00:00",
+      "first_bar_end": "2025-10-10T13:05:00+00:00",
+      "first_trading_day": "2025-10-13",
+      "input_sha256": "aaf7118da7607e93bb16b898df3160f55a3497fc191bd80876d15c7661090ab1",
+      "last_bar_end": "2026-10-09T07:00:00+00:00",
+      "last_trading_day": "2026-10-09",
+      "physical_contracts": [
+        "JM2601",
+        "JM2605",
+        "JM2609",
+        "JM2701"
+      ],
+      "reader_window_complete": true,
+      "reader_window_reason": null,
+      "replay_segment_count": 4,
+      "status": "READY"
+    },
+    "60m": {
+      "actual_through": "2026-10-09",
+      "bar_count": 1673,
+      "completed_cutoff": "2026-10-09T07:00:00+00:00",
+      "first_bar_end": "2025-10-10T14:00:00+00:00",
+      "first_trading_day": "2025-10-13",
+      "input_sha256": "b3d38f45f241319f73d3d5f6d1ca3f9b3fafd886f43dd7f54b94b3572813dcaf",
+      "last_bar_end": "2026-10-09T07:00:00+00:00",
+      "last_trading_day": "2026-10-09",
+      "physical_contracts": [
+        "JM2601",
+        "JM2605",
+        "JM2609",
+        "JM2701"
+      ],
+      "reader_window_complete": true,
+      "reader_window_reason": null,
+      "replay_segment_count": 4,
+      "status": "READY"
+    }
+  },
+  "owner_continuity": {
+    "covered_trading_day_count": 241,
+    "nonoverlapping_trading_day_coverage": true,
+    "owner_count": 4,
+    "owners": [
+      {
+        "contract": "JM2601",
+        "covered_requested_trading_day_count": 39,
+        "end_trading_day": "2025-12-04",
+        "start_trading_day": "2025-08-01"
+      },
+      {
+        "contract": "JM2605",
+        "covered_requested_trading_day_count": 86,
+        "end_trading_day": "2026-04-16",
+        "start_trading_day": "2025-12-05"
+      },
+      {
+        "contract": "JM2609",
+        "covered_requested_trading_day_count": 84,
+        "end_trading_day": "2026-08-18",
+        "start_trading_day": "2026-04-17"
+      },
+      {
+        "contract": "JM2701",
+        "covered_requested_trading_day_count": 32,
+        "end_trading_day": "2026-10-12",
+        "start_trading_day": "2026-08-19"
+      }
+    ],
+    "status": "PASS",
+    "unique_contracts": true
+  },
+  "product": "jm",
+  "read_only": true,
+  "requested_since": "2025-10-11",
+  "requested_through": "2026-10-10",
+  "schema_version": 1
+}
