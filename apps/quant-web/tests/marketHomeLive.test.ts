@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { useMarketHomeLive } from '../src/composables/useMarketHomeLive.ts'
+
+test('a background-mounted home does not open sockets until visible', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  let onVisibility!: () => void
+  const document = { visibilityState: 'hidden', addEventListener(_name: string, callback: () => void) { onVisibility = callback }, removeEventListener() {} }
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: document })
+  let opens = 0
+  const live = useMarketHomeLive({ createWebSocket: () => { opens++; return new FakeSocket() } })
+  try {
+    live.start(); live.start(); live.restart()
+    assert.equal(opens, 0)
+    document.visibilityState = 'visible'; onVisibility()
+    assert.equal(opens, 1)
+  } finally {
+    live.dispose()
+    if (original) Object.defineProperty(globalThis, 'document', original)
+    else Reflect.deleteProperty(globalThis, 'document')
+  }
+})
 import { normalizeMarketHomeLiveFrame } from '../src/utils/marketHomeLive.ts'
 
 const quote = (overrides = {}) => ({ symbol: 'ag', physical_contract: 'AG2612', trading_day: '2026-09-13', bar_end: '2026-09-13T02:31:00Z', price: '8123.5', previous_close: '8000', price_change: '0.0154375', source: 'completed_1m', availability: 'live', phase: 'TRADING', reason: null, ...overrides })

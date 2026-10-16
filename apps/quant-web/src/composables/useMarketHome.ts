@@ -2,9 +2,9 @@ import { shallowRef } from 'vue'
 import type { HomeSnapshotCache } from '../utils/marketHomePersistence.ts'
 
 interface MarketHomeOptions<O, R, D> {
-  fetchOverview: () => Promise<O>
-  fetchDirectory: () => Promise<D>
-  fetchRuntime: () => Promise<R>
+  fetchOverview: (signal?: AbortSignal) => Promise<O>
+  fetchDirectory: (signal?: AbortSignal) => Promise<D>
+  fetchRuntime: (signal?: AbortSignal) => Promise<R>
   overviewCacheKey?: string
   overviewMaxAgeMs?: number
   directoryMaxAgeMs?: number
@@ -36,6 +36,8 @@ interface ResourceState<T> {
   updatedAt: ReturnType<typeof shallowRef<number | null>>
   generation: number
   inFlight: Promise<void> | null
+  queuedRefresh: boolean
+  controller: AbortController | null
 }
 
 let cachedHome: { key: string; overview: ResourceState<unknown>; directory: ResourceState<unknown> } | null = null
@@ -127,7 +129,7 @@ export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
 }
 
 function createResource<T>(
-  fetch: () => Promise<T>,
+  fetch: (signal?: AbortSignal) => Promise<T>,
   isTypedUnavailable?: (value: T) => boolean,
   existingState?: ResourceState<T>,
   now: () => number = Date.now,
@@ -137,8 +139,10 @@ function createResource<T>(
   async function refresh() {
     if (state.inFlight) return state.inFlight
     state.loading.value = true
+    state.queuedRefresh = false
+    state.controller = new AbortController()
     const generation = ++state.generation
-    const request = fetch().then((value) => {
+    const request: Promise<void> = fetch(state.controller.signal).then((value) => {
       if (generation !== state.generation) return
       if (isTypedUnavailable?.(value)) {
         state.stale.value = state.data.value !== null
@@ -158,17 +162,23 @@ function createResource<T>(
       state.unavailable.value = true
       state.error.value = 'request-failed'
     }).finally(() => {
-      if (generation !== state.generation) return
-      state.loading.value = false
+      if (state.inFlight !== request) return
       state.inFlight = null
+      state.controller = null
+      if (state.queuedRefresh) {
+        state.queuedRefresh = false
+        return refresh()
+      }
+      state.loading.value = false
     })
     state.inFlight = request
     return request
   }
   function invalidate() {
     state.generation += 1
-    state.inFlight = null
-    state.loading.value = false
+    state.controller?.abort()
+    state.queuedRefresh = state.inFlight !== null
+    state.loading.value = state.inFlight !== null
     state.stale.value = state.data.value !== null
     state.updatedAt.value = null
   }
@@ -185,6 +195,8 @@ function createResourceState<T>(): ResourceState<T> {
     updatedAt: shallowRef<number | null>(null),
     generation: 0,
     inFlight: null,
+    queuedRefresh: false,
+    controller: null,
   }
 }
 

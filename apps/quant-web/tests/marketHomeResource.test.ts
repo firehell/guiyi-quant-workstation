@@ -2,6 +2,26 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { useMarketHome } from '../src/composables/useMarketHome.ts'
 
+test('authority reset bursts queue one verified refresh without parallel overview reads', async () => {
+  const completions: Array<(value: string) => void> = []
+  const home = useMarketHome({ fetchDirectory: async () => 'directory', fetchRuntime: async () => 'runtime',
+    fetchOverview: () => new Promise<string>(resolve => completions.push(resolve)) })
+  const initial = home.refreshOverview()
+  for (let index = 0; index < 5; index++) {
+    home.invalidateOverview()
+    void home.refreshOverviewIfExpired()
+  }
+  assert.equal(completions.length, 1)
+  completions[0]('superseded')
+  for (let index = 0; index < 8; index++) await Promise.resolve()
+  assert.equal(completions.length, 2)
+  assert.equal(home.overview.data.value, null)
+  completions[1]('verified-current')
+  await initial
+  assert.equal(home.overview.data.value, 'verified-current')
+  home.dispose()
+})
+
 test('loads independent resources and coalesces duplicate in-flight refreshes', async () => {
   let resolveOverview!: (value: string) => void
   const pending = new Promise<string>((resolve) => { resolveOverview = resolve })
@@ -131,9 +151,12 @@ test('invalidating an identity prevents its late response from replacing the new
   const oldRequest = home.refreshOverview()
   home.invalidateOverview()
   const newRequest = home.refreshOverview()
+  assert.equal(resolvers.length, 1, 'replacement is coalesced behind the cancelled owner')
+  resolvers[0]('old-identity')
+  for (let index = 0; index < 8; index++) await Promise.resolve()
+  assert.equal(home.overview.data.value, null)
   resolvers[1]('new-identity')
   await newRequest
-  resolvers[0]('old-identity')
   await oldRequest
 
   assert.equal(home.overview.data.value, 'new-identity')
