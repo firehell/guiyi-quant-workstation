@@ -10,7 +10,7 @@ for (const width of [1440, 390]) {
       if (value.reference_part === 'history') {
         value.next_before = url.searchParams.has('history_before') ? null : 'reference-page-2'
       }
-      if (value.reference_part === 'curve') {
+      if (value.reference_part === 'panel') {
         const closed = value.curve.points.toSorted((a, b) => a.bar_end.localeCompare(b.bar_end))
         value.curve.points = closed.map((point, position) => ({ ...point, position, value: position ? '10.2040' : '5.1020' }))
       }

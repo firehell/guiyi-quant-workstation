@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.market_data.newow.read_timings import timed
+
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields, is_dataclass
@@ -71,6 +73,7 @@ class SnapshotCache:
             if entry.expires_at <= current:
                 self._drop(fact_key)
 
+    @timed("cache")
     def put(
         self,
         fact_key: str,
@@ -149,6 +152,7 @@ class SnapshotCache:
             self._bytes = retained_bytes
             return candidate.token
 
+    @timed("cache")
     def get(
         self, fact_key: str, section_key: tuple[object, ...], *, touch: bool = True
     ) -> object | None:
@@ -162,6 +166,7 @@ class SnapshotCache:
                 self._entries.move_to_end(fact_key)
             return value
 
+    @timed("cache")
     def get_by_token(
         self,
         token: str,

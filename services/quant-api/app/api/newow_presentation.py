@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.market_data.newow.read_timings import timed
+
 from dataclasses import fields, is_dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -163,6 +165,7 @@ def _delivery(value, serializer) -> dict[str, object]:
     }
 
 
+@timed("projection")
 def _product_response(
     result: NewowProductResult, *, reference_part: str | None = None,
     reference_mode: str | None = None, history_before: str | None = None,

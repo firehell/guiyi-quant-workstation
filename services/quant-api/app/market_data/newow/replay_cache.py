@@ -34,7 +34,9 @@ def verified_replay(
     # manufacturing a public data identity or serializing a second huge graph.
     digest = sha256(b"newow-pure-replay-v1")
     for group in ((identity, quality_identity), bars, lifecycle_evidence, data_interruptions):
-        for item in group:
+        for index, item in enumerate(group):
+            if index % 256 == 0 and cancelled is not None and cancelled():
+                raise NewowComputationCancelled(NewowComputationCancelled.code)
             digest.update(repr(item).encode())
             digest.update(b"\0")
     key = "pure-replay:" + digest.hexdigest()

@@ -5,7 +5,7 @@ for (const width of [1440, 390]) {
   test(`selected split reference curve retains gap, owner and keyboard geometry at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
-      if (section !== 'reference' || url.searchParams.get('reference_part') !== 'curve'
+      if (section !== 'reference' || url.searchParams.get('reference_part') !== 'panel'
         || url.searchParams.get('reference_mode') !== 'holding') return
       const payload = buildNewowSplitFixtureEnvelopeForTest(url)
       payload.reference.value.curve.points = [
@@ -41,7 +41,7 @@ for (const width of [1440, 390]) {
   test(`two single-point owners stay separate and visible at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
-      if (section !== 'reference' || url.searchParams.get('reference_part') !== 'curve'
+      if (section !== 'reference' || url.searchParams.get('reference_part') !== 'panel'
         || url.searchParams.get('reference_mode') !== 'page_ordinary') return
       const payload = buildNewowSplitFixtureEnvelopeForTest(url)
       payload.reference.value.curve.points = [

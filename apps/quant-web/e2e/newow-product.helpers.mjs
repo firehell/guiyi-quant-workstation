@@ -323,7 +323,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
   const part = url.searchParams.get('reference_part'), mode = url.searchParams.get('reference_mode')
-  if (part && (section !== 'reference' || !['overview', 'curve', 'history'].includes(part) || !['page_ordinary', 'page_ideal', 'closed', 'holding', 'theoretical', 'fusion_page_ordinary', 'fusion_page_ideal', 'fusion_closed', 'fusion_holding', 'fusion_theoretical'].includes(mode))) return `invalid split reference ${url.search}`
+  if (part && (section !== 'reference' || !['overview', 'curve', 'history', 'panel'].includes(part) || !['page_ordinary', 'page_ideal', 'closed', 'holding', 'theoretical', 'fusion_page_ordinary', 'fusion_page_ideal', 'fusion_closed', 'fusion_holding', 'fusion_theoretical'].includes(mode))) return `invalid split reference ${url.search}`
   if (url.searchParams.has('include_fusion') && (section !== 'reference' || strategy !== 'trend' || url.searchParams.get('include_fusion') !== 'true' || !mode?.startsWith('fusion_'))) return `invalid fusion query ${url.search}`
   if (part && mode.startsWith('fusion_') !== url.searchParams.has('include_fusion')) return `fusion mode flag conflict ${url.search}`
   if (url.searchParams.has('decision_v2') && (section !== 'explanation' || url.searchParams.get('decision_v2') !== 'true')) return `invalid decision V2 query ${url.search}`
@@ -392,7 +392,7 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
     if (url?.searchParams.has('reference_part')) {
       const value = payload.reference.value
       if (value.reference_part !== url.searchParams.get('reference_part') || value.reference_mode !== url.searchParams.get('reference_mode')) throw new Error('split fixture mode drift')
-      if (value.reference_part === 'overview' && value.recent_items.length > 3 || value.reference_part === 'curve' && value.curve.points.length > 2000 || value.reference_part === 'history' && value.items.length > 50) throw new Error('split fixture budget drift')
+      if (['overview', 'panel'].includes(value.reference_part) && value.recent_items.length > 3 || ['curve', 'panel'].includes(value.reference_part) && value.curve.points.length > 2000 || value.reference_part === 'history' && value.items.length > 50) throw new Error('split fixture budget drift')
       return
     }
     validateReferenceWire(payload.reference.value, companions.charts ?? [])
@@ -738,10 +738,11 @@ function splitReferenceValue(value, url, strategy) {
     sellDate: row.exit_bar_end, sellPrice: row.exit_reference_price, pct: row.reference_return_pct,
     forceClose: false, segment_id: row.segment_id }))
   const rows = localMode.startsWith('page_') ? pageRows : value.items
-  if (part === 'overview') return { ...common, summary: value.summary,
+  const overview = { ...common, summary: value.summary,
     unavailable_days: value.unavailable_days, coverage_intervals: value.coverage_intervals,
     recent_items: rows.slice(0, 3), page_summaries: { ordinary: { cumReturn: value.summary.sum_return_percentage_points ?? '0', accuracy: value.summary.closed_count ? 100 : 0, maxDrawdown: '0', tradeCount: pageRows.length }, ideal: { cumReturn: value.summary.sum_return_percentage_points ?? '0', accuracy: value.summary.closed_count ? 100 : 0, maxDrawdown: '0', tradeCount: pageRows.length } },
     ...(mode.startsWith('fusion_') ? { fusion_groups: ['trend', 'oscillation', 'fusion'].map(model => ({ model, closed_count: value.summary.closed_count, sum_return_percentage_points: value.summary.sum_return_percentage_points, open_count: value.summary.open_count, interrupted_count: value.summary.interrupted_count })) } : {}) }
+  if (part === 'overview') return overview
   if (part === 'history') return { ...common, items: rows.length > 2 ? rows.slice(0, 2) : rows.slice(0, 50),
     next_before: rows.length > 2 ? 'reference-page-2' : value.next_before }
   const pagePoints = closed.length ? [
@@ -760,7 +761,7 @@ function splitReferenceValue(value, url, strategy) {
     { position: 1, bar_end: closed[0].exit_bar_end, trading_day: closed[0].exit_trading_day, segment_id: closed[0].segment_id, physical_contract: closed[0].physical_contract, value: closed[0].reference_return_pct },
   ] : []
   const points = localMode.startsWith('page_') ? pagePoints : localMode === 'holding' ? holdingPoints : closedPoints
-  return { ...common, curve: { mode, points, total_points: points.length, sampled: false,
+  return { ...(part === 'panel' ? overview : common), curve: { mode, points, total_points: points.length, sampled: false,
     model_version: localMode.startsWith('page_') ? 'newow_page_performance_v3379_v2' : 'newow_marker_reference_zero_cost_v4',
     annualized_pct: closed.length ? '5.10' : null,
     metrics: { return_percentage_points: value.summary.sum_return_percentage_points, win_rate_pct: value.summary.win_rate_pct,

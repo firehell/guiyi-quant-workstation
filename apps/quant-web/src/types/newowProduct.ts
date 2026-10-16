@@ -301,7 +301,7 @@ export interface NewowReferenceValue {
   readonly allowed_uses: readonly ['page_parity_reference', 'research_display']
 }
 
-export type NewowReferencePart = 'overview' | 'curve' | 'history'
+export type NewowReferencePart = 'overview' | 'curve' | 'history' | 'panel'
 export type NewowReferenceMode = 'page_ordinary' | 'page_ideal' | 'closed' | 'holding' | 'theoretical'
   | 'fusion_page_ordinary' | 'fusion_page_ideal' | 'fusion_closed' | 'fusion_holding' | 'fusion_theoretical'
 
@@ -392,7 +392,11 @@ export interface NewowReferenceHistoryValue extends NewowReferencePartCommon {
   readonly items: readonly NewowReferenceRecord[]
   readonly next_before: string | null
 }
-export type NewowReferencePartValue = NewowReferenceOverviewValue | NewowReferenceCurveValue | NewowReferenceHistoryValue
+export interface NewowReferencePanelValue extends Omit<NewowReferenceOverviewValue, 'reference_part'> {
+  readonly reference_part: 'panel'
+  readonly curve: NewowReferencePartCurve
+}
+export type NewowReferencePartValue = NewowReferenceOverviewValue | NewowReferenceCurveValue | NewowReferenceHistoryValue | NewowReferencePanelValue
 export interface NewowReferencePartResponse {
   readonly meta: NewowProductMeta
   readonly section: 'reference'

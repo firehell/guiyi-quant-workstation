@@ -7,13 +7,13 @@ test('selected split mode keeps full metrics, lazy records and source positions 
     if (section !== 'reference' || !url.searchParams.has('reference_part')) return
     const payload = buildNewowSplitFixtureEnvelopeForTest(url)
     const value = payload.reference.value
-    if (value.reference_mode === 'page_ordinary' && value.reference_part === 'overview') {
+    if (value.reference_mode === 'page_ordinary' && value.reference_part === 'panel') {
       const first = value.recent_items[0]
       value.recent_items = ['2026-06-11T07:00:00.000Z', '2026-06-12T07:00:00.000Z', '2026-06-13T07:00:00.000Z']
         .map((buyDate, index) => ({ ...first, buyDate,
           ...(index === 0 ? { forceClose: true, buyBarIsLive: true } : {}) }))
     }
-    if (value.reference_mode === 'page_ordinary' && value.reference_part === 'curve') {
+    if (value.reference_mode === 'page_ordinary' && value.reference_part === 'panel') {
       value.curve.points = [
         { position: 0, bar_end: '2026-01-01T07:00:00.000Z', trading_day: '2026-01-01', segment_id: 'first', value: '0' },
         { position: 1250, bar_end: '2026-06-01T07:00:00.000Z', trading_day: '2026-06-01', segment_id: 'first', value: null },
@@ -46,7 +46,7 @@ test('selected split mode keeps full metrics, lazy records and source positions 
   await page.goto(newowRoute())
   const region = page.getByRole('region', { name: 'Newow 参考与解释', exact: true })
   await region.scrollIntoViewIfNeeded()
-  await expect.poll(() => productRequests(state, 'reference').map(entry => entry.url.searchParams.get('reference_part'))).toEqual(['overview', 'curve'])
+  await expect.poll(() => productRequests(state, 'reference').map(entry => entry.url.searchParams.get('reference_part'))).toEqual(['panel'])
   await expect(region.getByText('曲线显示 3 / 2500 个保留采样点')).toBeVisible()
   await expect(region.getByTestId('newow-reference-summary')).toContainText('12.34')
   await expect(region.getByTestId('newow-reference-summary')).toContainText('7.89')
@@ -70,7 +70,7 @@ test('selected split mode keeps full metrics, lazy records and source positions 
   await region.getByRole('button', { name: '加载更多历史参考记录' }).click()
   await expect(region.locator('.newow-reference__card')).toHaveCount(51)
   await region.getByRole('button', { name: '已完成参考交易' }).click()
-  await expect.poll(() => productRequests(state, 'reference').some(entry => entry.url.searchParams.get('reference_mode') === 'closed' && entry.url.searchParams.get('reference_part') === 'curve')).toBe(true)
+  await expect.poll(() => productRequests(state, 'reference').some(entry => entry.url.searchParams.get('reference_mode') === 'closed' && entry.url.searchParams.get('reference_part') === 'panel')).toBe(true)
   await expect(region.getByTestId('newow-reference-summary')).toContainText('参考权益比例回撤')
   await region.getByRole('button', { name: '页面参考收益' }).click()
   await region.getByRole('button', { name: '理论值' }).click()
@@ -79,7 +79,7 @@ test('selected split mode keeps full metrics, lazy records and source positions 
   await region.getByRole('button', { name: '已完成参考交易' }).click()
   await expect.poll(() => productRequests(state, 'reference').some(entry => entry.url.searchParams.get('reference_mode') === 'theoretical')).toBe(true)
   await region.getByRole('button', { name: '近3月' }).click()
-  await expect.poll(() => productRequests(state, 'reference').some(entry => entry.url.searchParams.get('reference_part') === 'overview' && entry.url.searchParams.get('performance_since') === '2026-06-03')).toBe(true)
+  await expect.poll(() => productRequests(state, 'reference').some(entry => entry.url.searchParams.get('reference_part') === 'panel' && entry.url.searchParams.get('performance_since') === '2026-06-03')).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
   assertNoUnexpectedRequests(state)
 })
@@ -87,7 +87,7 @@ test('selected split mode keeps full metrics, lazy records and source positions 
 test('mixed page segments retain their own drawdown unit', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
     if (section !== 'reference' || url.searchParams.get('reference_mode') !== 'page_ordinary'
-      || url.searchParams.get('reference_part') !== 'curve') return
+      || url.searchParams.get('reference_part') !== 'panel') return
     const payload = buildNewowSplitFixtureEnvelopeForTest(url)
     payload.reference.value.curve.metrics.drawdown_kind = 'mixed_segment'
     payload.reference.value.curve.metrics.drawdown = '3.125'
@@ -103,7 +103,7 @@ test('mixed page segments retain their own drawdown unit', async ({ page }) => {
 
 test('mode switch cancels a delayed curve without displaying its stale metrics', async ({ page }) => {
   const state = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
-    if (section !== 'reference' || url.searchParams.get('reference_part') !== 'curve') return
+    if (section !== 'reference' || url.searchParams.get('reference_part') !== 'panel') return
     const payload = buildNewowSplitFixtureEnvelopeForTest(url)
     if (url.searchParams.get('reference_mode') === 'page_ordinary') {
       payload.reference.value.curve.metrics.return_percentage_points = '99.99'
@@ -115,7 +115,7 @@ test('mode switch cancels a delayed curve without displaying its stale metrics',
   await page.goto(newowRoute())
   const region = page.getByRole('region', { name: 'Newow 参考与解释', exact: true })
   await region.scrollIntoViewIfNeeded()
-  await expect.poll(() => productRequests(state, 'reference').some(entry => entry.url.searchParams.get('reference_mode') === 'page_ordinary' && entry.url.searchParams.get('reference_part') === 'curve')).toBe(true)
+  await expect.poll(() => productRequests(state, 'reference').some(entry => entry.url.searchParams.get('reference_mode') === 'page_ordinary' && entry.url.searchParams.get('reference_part') === 'panel')).toBe(true)
   await region.getByRole('button', { name: '已完成参考交易' }).click()
   await expect(region.getByTestId('newow-reference-summary')).toContainText('+5.1%')
   await expect(region.getByTestId('newow-reference-summary')).not.toContainText('99.99')
@@ -126,7 +126,7 @@ test('changing the window in the same mode clears a selected older trade', async
   const oldId = 'trade-before-three-month-window'
   const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
     if (section !== 'reference' || url.searchParams.get('reference_mode') !== 'closed'
-      || url.searchParams.get('reference_part') !== 'curve') return
+      || url.searchParams.get('reference_part') !== 'panel') return
     const payload = buildNewowSplitFixtureEnvelopeForTest(url)
     const value = payload.reference.value
     if (!url.searchParams.has('performance_since') || url.searchParams.get('performance_since') === '2026-01-01') {
@@ -152,7 +152,7 @@ test('changing the window in the same mode clears a selected older trade', async
   await expect(region.locator(`#reference-trade-${oldId}`)).toBeVisible()
   await region.getByRole('button', { name: '近3月' }).click()
   await expect.poll(() => productRequests(fixture, 'reference').some(entry => entry.url.searchParams.get('reference_mode') === 'closed'
-    && entry.url.searchParams.get('reference_part') === 'curve' && entry.url.searchParams.get('performance_since') === '2026-06-03')).toBe(true)
+    && entry.url.searchParams.get('reference_part') === 'panel' && entry.url.searchParams.get('performance_since') === '2026-06-03')).toBe(true)
   await expect(region.locator(`#reference-trade-${oldId}`)).toHaveCount(0)
   assertNoUnexpectedRequests(fixture)
 })

@@ -194,7 +194,7 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
         return _build_snapshot_inputs(session, cancelled, lambda: now,
             _input_quality_policy(request, product, frequency))[0]
     try:
-        with _PRODUCT_GATE.acquire(cancelled):
+        with _PRODUCT_GATE.acquire(cancelled, priority=2):
             combos = analyze_product(product, as_of, reader_factory, cancelled,
                                      lambda frequency: _enforce_product_frequency(request, product, frequency))
         return {"schema_version": ("newow_ai_analysis_v2" if getattr(request.state, "candidate_preview_as_of", None) is not None else "newow_ai_analysis_v3"), "product": product,
@@ -818,7 +818,7 @@ def newow_strategy_detail(
     | None = Query(None),
     history_limit: int = Query(50, ge=1, le=200),
     history_before: str | None = Query(None, min_length=1, max_length=2048),
-    reference_part: Literal["overview", "curve", "history"] | None = Query(None),
+    reference_part: Literal["overview", "curve", "history", "panel"] | None = Query(None),
     reference_mode: Literal[
         "page_ordinary", "page_ideal", "closed", "holding", "theoretical",
         "fusion_page_ordinary", "fusion_page_ideal", "fusion_closed",
@@ -839,6 +839,7 @@ def newow_strategy_detail(
     }
     if (
         unknown
+        or (reference_part is not None and reference_part != "history" and history_before is not None)
         or (resolve_current and (frequency not in {"1d", "1w"} or section != "chart" or as_of is not None
             or any(value is not None for value in (from_, through, performance_since, performance_through,
                 chart_before, chart_older_window, component, history_before, snapshot_token, fusion_before,
@@ -981,7 +982,7 @@ def newow_experiments(
             build_market_data_service(session), build_database_coverage_source(session),
             load_active_products(), policy,
         ).reader(cancelled=cancelled)
-        with _PRODUCT_GATE.acquire(cancelled):
+        with _PRODUCT_GATE.acquire(cancelled, priority=3 if all_history else 0):
             result = NewowExperimentService(reader, cancelled=cancelled).query(ExperimentQuery(
                 product, ProductFrequency(frequency), ExperimentKind(kind), as_of, from_, through, chart_limit, all_history,
             ))

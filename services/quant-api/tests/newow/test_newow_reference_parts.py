@@ -51,6 +51,20 @@ def test_reference_parts_return_only_requested_payload():
     assert overview["records_window_limited"] is False
 
 
+@pytest.mark.parametrize("mode", ["page_ordinary", "closed"])
+def test_panel_is_exact_overview_and_selected_curve_from_one_result(mode):
+    source = _value()
+    args = dict(snapshot_token="token", as_of="2026-01-01T07:00:00Z")
+    panel = project_reference_part(source, "panel", mode, **args)
+    overview = project_reference_part(source, "overview", mode, **args)
+    curve = project_reference_part(source, "curve", mode, **args)
+    assert panel == {**overview, "reference_part": "panel", "curve": curve["curve"]}
+    assert panel["result_hash"] == curve["result_hash"]
+    assert "items" not in panel and "next_before" not in panel
+    assert ProductServiceQuery(product="rb", strategy="trend", frequency="1d",
+                               section="reference", reference_part="panel", reference_mode=mode)
+
+
 def test_record_window_limit_is_explicit_without_changing_full_result_hash():
     source = _value()
     source["record_since"] = "2025-01-02"
@@ -147,11 +161,12 @@ def test_holding_annualizes_valid_endpoints_and_preserves_null_gaps():
     assert curve["metrics"]["return_percentage_points"] == "1"
 
 
-def test_split_query_rejects_mixed_history_and_curve_parameters():
+@pytest.mark.parametrize("part", ["curve", "panel"])
+def test_split_query_rejects_mixed_history_and_curve_parameters(part):
     with pytest.raises(ValueError, match="NEWOW_SECTION_PARAMETER_INVALID"):
         ProductServiceQuery("rb", "trend", "1d", section="reference",
-                            reference_part="curve", reference_mode="closed",
+                            reference_part=part, reference_mode="closed",
                             history_before="old")
     with pytest.raises(ValueError, match="NEWOW_SECTION_PARAMETER_INVALID"):
         ProductServiceQuery("rb", "trend", "1d", section="reference",
-                            reference_part="curve", reference_mode="fusion_closed")
+                            reference_part=part, reference_mode="fusion_closed")

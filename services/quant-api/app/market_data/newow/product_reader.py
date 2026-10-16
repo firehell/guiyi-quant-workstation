@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.market_data.newow.read_timings import timed
+
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
@@ -420,6 +422,7 @@ class NewowProductReader:
         self._check_cancelled()
         return self._market_data.weekly_tail_unpublished(symbol=product, week_end=week_end)
 
+    @timed("read")
     def resolve_performance_window(
         self,
         product: str,
@@ -501,6 +504,7 @@ class NewowProductReader:
             reason,
         )
 
+    @timed("read")
     def resolve_chart_window(
         self,
         product: str,
@@ -515,6 +519,7 @@ class NewowProductReader:
             raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
         return window
 
+    @timed("read")
     def resolve_older_chart_window(
         self, product: str, frequency: ProductFrequency, limit: int,
         as_of: datetime, before: date,
@@ -577,6 +582,7 @@ class NewowProductReader:
             day_count *= 7
         return ProductReadWindow(days[max(0, len(days) - day_count)], days[-1])
 
+    @timed("read")
     def load(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
         """Freeze one read; context periods are optional and never frequency fallbacks."""
         if not isinstance(query, NewowProductQuery):
@@ -991,6 +997,7 @@ class NewowProductReader:
             result[contract] = tuple(bar for bar in series.bars if bar.bar_end <= cutoff)
         return result
 
+    @timed("read")
     def load_reference_scope(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
         """Read saved-projection provenance; never decode a strategy warmup prefix."""
         from hashlib import sha256
@@ -1159,6 +1166,7 @@ class NewowProductReader:
             symbol=product, since=since, through=through,
         )
 
+    @timed("read")
     def historical_source_evidence(
         self, *, product: str, frequency: str, since: date, through: date,
         as_of: datetime,
@@ -1317,6 +1325,7 @@ class NewowProductReader:
             ) if quality_gaps else "NORMAL"
         return result
 
+    @timed("verify")
     def _validate_prefix(
         self, product: str, contract: str, frequency: ProductFrequency, cutoff: datetime,
         prefix: tuple[CanonicalBar, ...],

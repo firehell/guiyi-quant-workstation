@@ -100,9 +100,8 @@ for (const strategy of NEWOW_STRATEGIES) {
       await showReference(page)
       await expect(page.getByTestId('newow-reference-summary')).toContainText('100')
       const closedParts = () => productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed')
-      await expect.poll(() => closedParts().map(item => item.url.searchParams.get('reference_part'))).toEqual(['overview', 'curve'])
-      expectExactQuery(closedParts()[0], { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', section: 'reference', as_of: NEWOW_AS_OF, snapshot_token: `snapshot:${strategy}:${frequency}:fixture-revision-1`, reference_part: 'overview', reference_mode: 'closed' })
-      expectExactQuery(closedParts()[1], { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', section: 'reference', as_of: NEWOW_AS_OF, performance_since: '2026-01-01', performance_through: '2026-09-03', snapshot_token: `snapshot:${strategy}:${frequency}:fixture-revision-1`, reference_part: 'curve', reference_mode: 'closed' })
+      await expect.poll(() => closedParts().map(item => item.url.searchParams.get('reference_part'))).toEqual(['panel'])
+      expectExactQuery(closedParts()[0], { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', section: 'reference', as_of: NEWOW_AS_OF, snapshot_token: `snapshot:${strategy}:${frequency}:fixture-revision-1`, reference_part: 'panel', reference_mode: 'closed' })
       const summaryBefore = await page.getByTestId('newow-reference-summary').innerText()
       await page.getByTestId('newow-load-earlier').click()
       await expect.poll(() => productRequests(fixture, 'chart').length).toBe(2)
@@ -517,7 +516,7 @@ test('generic series failure does not suppress chart-first Newow or its snapshot
   expect(productRequests(fixture, 'chart')).toHaveLength(1)
   await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(1)
   await showReference(page)
-  await expect.poll(() => productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed').map(item => item.url.searchParams.get('reference_part'))).toEqual(['overview', 'curve'])
+  await expect.poll(() => productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed').map(item => item.url.searchParams.get('reference_part'))).toEqual(['panel'])
   expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'history')).toHaveLength(0)
   expect(productRequests(fixture, 'explanation').filter(item => !item.url.searchParams.has('decision_v2'))).toHaveLength(0)
   expect(productRequests(fixture, 'comparator')).toHaveLength(0)
@@ -706,7 +705,7 @@ test('reference window conflict stays bounded until explicit retry without reque
   let performanceRequests = 0
   const fixture = await installNewowProductFixtures(page, {
     onProductRequest: async ({ route, url, section }) => {
-      if (section !== 'reference' || url.searchParams.get('reference_mode') !== 'closed' || url.searchParams.get('reference_part') !== 'overview') return
+      if (section !== 'reference' || url.searchParams.get('reference_mode') !== 'closed' || url.searchParams.get('reference_part') !== 'panel') return
       if (++performanceRequests === 2) {
         await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' } } })
         return 'handled'
@@ -723,7 +722,7 @@ test('reference window conflict stays bounded until explicit retry without reque
   await page.locator('.newow-reference [role="alert"]').getByRole('button', { name: '重试' }).click()
   await expect.poll(() => performanceRequests).toBe(3)
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
-  const rebuilt = productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed' && item.url.searchParams.get('reference_part') === 'overview').at(-1)
+  const rebuilt = productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed' && item.url.searchParams.get('reference_part') === 'panel').at(-1)
   expect(rebuilt.url.searchParams.get('snapshot_token')).toBe('snapshot:trend:1d:fixture-revision-1')
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   expect(productRequests(fixture, 'explanation').filter(item => !item.url.searchParams.has('decision_v2'))).toHaveLength(0)
@@ -734,7 +733,7 @@ test('a snapshot conflict clears the selected reference until explicit retry', a
   let failed = false
   const conflict = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
     if (section !== 'reference' || url.searchParams.get('reference_mode') !== 'closed'
-      || url.searchParams.get('reference_part') !== 'overview' || failed) return
+      || url.searchParams.get('reference_part') !== 'panel' || failed) return
     failed = true
     await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' } } })
     return 'handled'
@@ -863,7 +862,7 @@ test('main-rise cycle explanation stays separate from chart, records and optiona
   await showReference(page)
   expect(await page.locator('article[data-reference-category="open"]').innerText()).toBe(openBefore)
   expect(await chart.getAttribute('data-action-ids')).toBe(actionIdsBefore)
-  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed').map(item => item.url.searchParams.get('reference_part'))).toEqual(['overview', 'curve'])
+  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed').map(item => item.url.searchParams.get('reference_part'))).toEqual(['panel'])
   expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'history')).toHaveLength(0)
   assertNoUnexpectedRequests(fixture)
 })

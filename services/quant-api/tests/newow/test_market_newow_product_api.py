@@ -516,18 +516,20 @@ def test_daily_release_defers_cross_frequency_explanation_before_service(
     assert response.json() == {"detail": {"code": "NEWOW_SECTION_NOT_OPEN"}}
 
 
-def test_split_history_terminal_cursor_is_explicit_null_on_actual_api(monkeypatch, product_cases):
+@pytest.mark.parametrize("part", ["history", "panel"])
+def test_split_response_on_actual_api(monkeypatch, product_cases, part):
     from newow.test_product_service import _service
 
     service, _reader, build, clear = _service(product_cases, "1d")
     query = ProductServiceQuery(
         "rb", "trend", "1d", section="reference", as_of=clear.bar_end,
         performance_since=build.trading_day, performance_through=clear.trading_day,
-        reference_part="history", reference_mode="closed",
+        reference_part=part, reference_mode="closed",
     )
     result = service.query(query)
+    queries = []
     monkeypatch.setattr(market_newow, "_build_product_service",
-                        lambda *_args, **_kwargs: SimpleNamespace(query=lambda _query: result))
+                        lambda *_args, **_kwargs: SimpleNamespace(query=lambda query: queries.append(query) or result))
     app.dependency_overrides[get_db] = lambda: object()
     try:
         with TestClient(app) as client:
@@ -536,14 +538,40 @@ def test_split_history_terminal_cursor_is_explicit_null_on_actual_api(monkeypatc
                 "section": "reference", "as_of": clear.bar_end.isoformat(),
                 "performance_since": build.trading_day.isoformat(),
                 "performance_through": clear.trading_day.isoformat(),
-                "reference_part": "history", "reference_mode": "closed",
+                "reference_part": part, "reference_mode": "closed",
             })
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 200
     value = response.json()["reference"]["value"]
-    assert value["reference_part"] == "history"
-    assert "next_before" in value and value["next_before"] is None
+    assert value["reference_part"] == part
+    assert len(queries) == 1
+    if part == "history":
+        assert "next_before" in value and value["next_before"] is None
+    else:
+        assert value["summary"]["closed_count"] == value["curve"]["metrics"]["closed_count"]
+        assert len(value["recent_items"]) <= 3
+        assert "items" not in value and "next_before" not in value
+        assert "projection;dur=" in response.headers["Server-Timing"]
+        assert "response_encode;dur=" in response.headers["Server-Timing"]
+
+
+@pytest.mark.parametrize("part", ["panel", "overview", "curve"])
+def test_http_rejects_history_cursor_on_non_history_part_before_read(monkeypatch, part):
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid cursor must be rejected before building a reader")
+    monkeypatch.setattr(market_newow, "_build_product_service", forbidden)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/strategy-detail", params={
+                "product": "rb", "strategy": "trend", "frequency": "1d",
+                "section": "reference", "reference_part": part,
+                "reference_mode": "closed", "history_before": "obsolete-cursor",
+            })
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
 
 
 def test_strategy_detail_returns_only_requested_typed_section(

@@ -54,7 +54,7 @@ test('daily summary loads selected reference on visibility and keeps deferred ex
   await expect(info).toBeFocused()
   await expect(page.locator('#newow-details')).toHaveCount(0)
   await openRawReference(page)
-  await expect.poll(() => productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed').map(item => item.url.searchParams.get('reference_part'))).toEqual(['overview', 'curve'])
+  await expect.poll(() => productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_mode') === 'closed').map(item => item.url.searchParams.get('reference_part'))).toEqual(['panel'])
   await page.locator('section.newow-reference').scrollIntoViewIfNeeded()
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
   await expect(page.locator('article[data-reference-category]')).toHaveCount(3)
@@ -234,8 +234,8 @@ test('auxiliary indicator rejection and reference failure stay explicit and retr
   expect(productRequests(fixture, 'auxiliary')).toHaveLength(1)
   await page.locator('.newow-reference').getByRole('button', { name: '重试' }).click()
   await expect(page.getByTestId('newow-reference-summary')).toBeVisible()
-  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'overview')).toHaveLength(2)
-  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'curve')).toHaveLength(1)
+  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'panel')).toHaveLength(2)
+  expect(productRequests(fixture, 'reference').filter(item => item.url.searchParams.get('reference_part') === 'curve')).toHaveLength(0)
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -251,14 +251,15 @@ for (const width of [1440, 390]) {
           payload.chart.value.frames.forEach(frame => { frame.main_state = 'FLAT' })
         } else {
           const value = payload.reference.value
-          if (value.reference_part === 'overview') {
+          if (value.reference_part === 'panel') {
             value.recent_items = []
             value.summary.open_count = 0
             value.summary.interrupted_count = 0
             value.summary.rollover_interrupted_count = 0
             value.summary.initial_count = 0
-          } else if (value.reference_part === 'history') value.items = []
-          else {
+          }
+          if (value.reference_part === 'history') value.items = []
+          if (value.reference_part === 'panel') {
             value.curve.points = []
             value.curve.total_points = 0
             value.curve.metrics = { return_percentage_points: null, win_rate_pct: null,

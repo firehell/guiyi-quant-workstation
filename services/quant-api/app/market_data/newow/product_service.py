@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.market_data.newow.read_timings import timed
+
 from guiyi_quant.newow.product_contracts import LEGACY_PRODUCT_FREQUENCIES, INTRADAY_PRODUCT_FREQUENCIES
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
@@ -106,6 +108,7 @@ class ProductSection(StrEnum):
 
 
 class ReferencePart(StrEnum):
+    PANEL = "panel"
     OVERVIEW = "overview"
     CURVE = "curve"
     HISTORY = "history"
@@ -468,6 +471,7 @@ def _not_requested() -> SectionDelivery:
     return SectionDelivery("not_requested", None, None)
 
 
+@timed("verify")
 def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
     bars = []
     for frequency in sorted(read.bars_by_frequency, key=str):
@@ -626,6 +630,7 @@ def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
     ).hexdigest()
 
 
+@timed("verify")
 def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
     proof: dict[str, str] = {}
     if read.reference_source_evidence_sha256 is not None:
@@ -834,6 +839,17 @@ class NewowProductService:
             self._cancelled,
         )
 
+    @staticmethod
+    def _priority(request: ProductServiceQuery) -> int:
+        if any((request.chart_before, request.chart_older_window,
+                request.history_before, request.fusion_before)) or request.reference_part is ReferencePart.HISTORY:
+            return 3
+        if request.section is ProductSection.CHART:
+            return 0
+        if request.section is ProductSection.AUXILIARY:
+            return 1
+        return 2
+
     def _query(
         self,
         request: ProductServiceQuery,
@@ -847,7 +863,7 @@ class NewowProductService:
                 and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
                 and self._persisted_reference is not None
             ) else self._gate
-            with gate.acquire(cancelled):
+            with gate.acquire(cancelled, priority=self._priority(request)):
                 return self._query_admitted(request, as_of, cancelled)
         return self._query_admitted(request, as_of, cancelled)
 
@@ -1135,7 +1151,7 @@ class NewowProductService:
             # after those reads, so price-only API work remains independent.
             lease = (nullcontext() if request.section in {
                 ProductSection.REFERENCE, ProductSection.COMPARATOR,
-            } else self._gate.acquire(cancelled))
+            } else self._gate.acquire(cancelled, priority=self._priority(request)))
             with lease:
                 result = self._calculate(
                     request, read, identity, fact_key, page_identity, resolved,
@@ -1335,6 +1351,7 @@ class NewowProductService:
             in {FeatureRuntimeStatus.READY, FeatureRuntimeStatus.WARMING}
         )
 
+    @timed("compute")
     def _calculate(
         self,
         request: ProductServiceQuery,
@@ -1405,6 +1422,7 @@ class NewowProductService:
             deliveries[ProductSection.COMPARATOR],
         )
 
+    @timed("replay")
     def _replay_strategy(
         self, identity: ProductIdentity, bars: tuple[ProductBar, ...], *,
         lifecycle_evidence: tuple = (), data_interruptions: tuple = (),

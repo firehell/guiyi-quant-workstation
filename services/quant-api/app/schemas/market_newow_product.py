@@ -466,7 +466,7 @@ class ReferenceCurveOut(_Out):
 
 
 class ReferenceSplitValueOut(_Out):
-    reference_part: Literal["overview", "curve", "history"]
+    reference_part: Literal["overview", "curve", "history", "panel"]
     reference_mode: ReferenceModeValue | None = Field(default=None, exclude_if=lambda value: value is None)
     performance_since: date
     performance_through: date
@@ -493,10 +493,12 @@ class ReferenceSplitValueOut(_Out):
 
     @model_validator(mode="after")
     def single_part(self):
-        if self.reference_part == "overview":
+        if self.reference_part in {"overview", "panel"}:
             valid = (self.summary is not None and self.coverage_intervals is not None
                      and self.unavailable_days is not None and self.recent_items is not None
-                     and self.page_summaries is not None and self.curve is None
+                     and self.page_summaries is not None
+                     and (self.curve is None if self.reference_part == "overview" else
+                          self.curve is not None and self.curve.mode == self.reference_mode)
                      and self.items is None and self.reference_mode is not None)
         elif self.reference_part == "curve":
             valid = (self.curve is not None and self.curve.mode == self.reference_mode

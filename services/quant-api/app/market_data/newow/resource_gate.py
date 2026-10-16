@@ -1,4 +1,4 @@
-"""FIFO process-local admission control for heavy read-only Newow calculations."""
+"""Bounded priority admission; FIFO within each priority, never preempt work."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from threading import Condition
 from time import monotonic
+
+from .read_timings import timed
 
 
 class NewowResourceBusy(RuntimeError):
@@ -44,7 +46,7 @@ class HeavyResourceGate:
         self._max_waiting = max_waiting
         self._timeout = wait_timeout
         self._running = 0
-        self._waiters: deque[object] = deque()
+        self._waiters: deque[tuple[int, object]] = deque()
         self._condition = Condition()
 
     @property
@@ -57,31 +59,36 @@ class HeavyResourceGate:
         with self._condition:
             return len(self._waiters)
 
-    def acquire(self, cancelled: Callable[[], bool] | None = None) -> _Lease:
+    @timed("queue")
+    def acquire(self, cancelled: Callable[[], bool] | None = None, *, priority: int = 2) -> _Lease:
+        if type(priority) is not int or priority not in range(4):
+            raise ValueError("NEWOW_RESOURCE_INVALID_PRIORITY")
         with self._condition:
+            if cancelled is not None and cancelled():
+                raise NewowResourceBusy("NEWOW_RESOURCE_CANCELLED")
             if self._running < self._max_running and not self._waiters:
                 self._running += 1
                 return _Lease(self)
             if len(self._waiters) >= self._max_waiting:
                 raise NewowResourceBusy(NewowResourceBusy.code)
-            ticket = object()
+            ticket = (priority, object())
             self._waiters.append(ticket)
             deadline = monotonic() + self._timeout
             try:
                 while True:
                     if cancelled is not None and cancelled():
                         raise NewowResourceBusy("NEWOW_RESOURCE_CANCELLED")
-                    if (
-                        self._waiters
-                        and self._waiters[0] is ticket
-                        and self._running < self._max_running
-                    ):
-                        self._waiters.popleft()
-                        self._running += 1
-                        return _Lease(self)
                     remaining = deadline - monotonic()
                     if remaining <= 0:
                         raise NewowResourceBusy(NewowResourceBusy.code)
+                    if (
+                        self._waiters
+                        and min(self._waiters, key=lambda item: item[0]) is ticket
+                        and self._running < self._max_running
+                    ):
+                        self._waiters.remove(ticket)
+                        self._running += 1
+                        return _Lease(self)
                     self._condition.wait(min(remaining, 0.05))
             except BaseException:
                 if ticket in self._waiters:

@@ -21,6 +21,34 @@ const common = {
   result_hash: 'c'.repeat(64), record_since: '2026-01-01', records_window_limited: false,
   allowed_uses: ['page_parity_reference', 'research_display'],
 }
+
+test('panel validates both bounded parts and first display makes one request', async () => {
+  const panelRequest = { ...request, part: 'panel' as const }
+  const payload = wire({ ...common, reference_part: 'panel', summary: {}, recent_items: [],
+    coverage_intervals: [], unavailable_days: [], page_summaries: {},
+    curve: { mode: 'closed', points: [], total_points: 0, sampled: false } })
+  assert.equal(normalizeNewowReferencePartResponse(payload, panelRequest).value?.reference_part, 'panel')
+  const invalid = structuredClone(payload)
+  invalid.reference.value.curve = { ...payload.reference.value.curve, mode: 'holding' }
+  assert.throws(() => normalizeNewowReferencePartResponse(invalid, panelRequest))
+  const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d')
+  const requests: string[] = []
+  const scope = effectScope()
+  const state = scope.run(() => useNewowReferenceParts(ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart }),
+    ref(true), ref(false), async requested => {
+      requests.push(requested.part)
+      return { meta: raw.meta, section: 'reference', status: { status: 'ready' }, value: {
+        ...payload.reference.value, reference_mode: requested.mode,
+        curve: { mode: requested.mode, points: [], total_points: 0, sampled: false },
+      } } as any
+    }))!
+  for (let index = 0; index < 8; index++) await Promise.resolve()
+  assert.deepEqual(requests, ['panel'])
+  assert.equal(state.overview.value?.value?.reference_part, 'overview')
+  assert.equal(state.curve.value?.value?.reference_part, 'curve')
+  assert.equal(sameNewowReferenceResult(state.overview.value!, state.curve.value!), true)
+  scope.stop()
+})
 function wire(value: Record<string, unknown>) {
   return {
     meta: { identity: { product: 'rb', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant' },
@@ -119,28 +147,27 @@ test('hidden reference invalidates old identity and aborts in-flight work before
   scope.stop()
 })
 
-test('split overview and curve reject a different reference hash on one chart token', async () => {
+test('history rejects another result after an atomic panel has been accepted', async () => {
   const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, null, { dualMarket: true })
-  const current = ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart })
   const requests: NewowReferencePartRequest[] = []
-  const part = (requested: NewowReferencePartRequest) => ({
-    meta: { ...raw.meta, input_content_sha256: requested.part === 'overview' ? hash : 'b'.repeat(64) },
-    section: 'reference' as const, status: { status: 'ready' as const },
-    value: { ...common, reference_mode: requested.mode, reference_part: requested.part,
-      performance_since: '2026-01-01', performance_through: '2026-10-15',
-      ...(requested.part === 'overview' ? { summary: {}, recent_items: [], coverage_intervals: [], unavailable_days: [], page_summaries: {} }
-        : { curve: { mode: requested.mode, points: [], total_points: 0, sampled: false } }) },
-  })
   const scope = effectScope()
-  const state = scope.run(() => useNewowReferenceParts(current, ref(true), ref(false), async requested => {
-    requests.push(requested)
-    return part(requested) as any
-  }))!
+  const state = scope.run(() => useNewowReferenceParts(ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart }),
+    ref(true), ref(false), async requested => {
+      requests.push(requested)
+      const value = requested.part === 'panel'
+        ? { ...common, reference_mode: requested.mode, reference_part: 'panel', summary: {}, recent_items: [],
+          coverage_intervals: [], unavailable_days: [], page_summaries: {},
+          curve: { mode: requested.mode, points: [], total_points: 0, sampled: false } }
+        : { ...common, reference_mode: requested.mode, reference_part: 'history', items: [], next_before: null }
+      return { meta: { ...raw.meta, input_content_sha256: requested.part === 'panel' ? hash : 'b'.repeat(64) },
+        section: 'reference', status: { status: 'ready' }, value } as any
+    }))!
   for (let index = 0; index < 8; index++) await Promise.resolve()
-  assert.deepEqual(requests.map(item => item.part), ['overview', 'curve'])
-  assert.equal(state.overview.value, null)
-  assert.equal(state.curve.value, null)
-  assert.match(state.error.value ?? '', /暂不可用/)
+  await state.loadHistory()
+  assert.deepEqual(requests.map(item => item.part), ['panel', 'history'])
+  assert.equal(state.overview.value?.value?.reference_part, 'overview')
+  assert.equal(state.history.value, null)
+  assert.match(state.historyError.value ?? '', /暂不可用/)
   scope.stop()
 })
 
@@ -173,11 +200,9 @@ test('explicit history accumulation stops at 300 without treating the cap as ser
   const state = scope.run(() => useNewowReferenceParts(source, ref(false), ref(false), async requested => {
     requests.push(requested)
     const base = { ...common, reference_mode: requested.mode, performance_through: '2026-09-03' }
-    const value = requested.part === 'overview'
-      ? { ...base, reference_part: 'overview', summary: {}, recent_items: [], coverage_intervals: [], unavailable_days: [], page_summaries: {} }
-      : requested.part === 'curve'
-        ? { ...base, reference_part: 'curve', curve: { mode: requested.mode, points: [], total_points: 0,
-          sampled: false, metrics: { closed_count: 350 } } }
+    const value = requested.part === 'panel'
+      ? { ...base, reference_part: 'panel', summary: {}, recent_items: [], coverage_intervals: [], unavailable_days: [], page_summaries: {},
+          curve: { mode: requested.mode, points: [], total_points: 0, sampled: false, metrics: { closed_count: 350 } } }
         : (() => { const start = requested.historyBefore ? Number(requested.historyBefore.slice(7)) : 0
           const end = Math.min(start + 50, rows.length)
           return { ...base, reference_part: 'history', items: rows.slice(start, end), next_before: end < rows.length ? `cursor-${end}` : null } })()

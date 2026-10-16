@@ -237,7 +237,7 @@ def project_reference_part(
     history_before: str | None = None, snapshot_token: str | None = None,
     as_of: str = "", calculation_version: str = "",
 ) -> dict[str, Any]:
-    if mode is None:
+    if mode is None or (part != "history" and history_before is not None):
         raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
     common = {key: value[key] for key in _COMMON if key in value}
     common["reference_part"] = part
@@ -265,14 +265,17 @@ def project_reference_part(
         common["records_window_limited"] = value.get("records_window_limited", False)
     recent_source = (list(reversed(page_result["trades"])) if page_mode
                      else selected.get("items", []))
-    if part == "overview":
+    overview = {}
+    if part in {"overview", "panel"}:
         page_summaries = ({local_mode.removeprefix("page_"): page_result["summary"]}
                           if page_mode else {})
-        return {**common, "summary": value["summary"],
+        overview = {"summary": value["summary"],
                 "unavailable_days": value["unavailable_days"],
                 "coverage_intervals": value["coverage_intervals"],
                 "recent_items": recent_source[:3], "page_summaries": page_summaries,
                 **({"fusion_groups": selected["groups"]} if fusion else {})}
+        if part == "overview":
+            return {**common, **overview}
     if part == "history":
         if page_mode or (fusion and value.get("storage_mode") != "persisted"):
             offset = _history_offset(history_before, mode, value, snapshot_token, as_of, recent_source)
@@ -284,7 +287,7 @@ def project_reference_part(
             rows = selected.get("items", [])[:50]
             next_before = selected.get("next_cursor") if fusion else value["next_before"]
         return {**common, "items": rows, "next_before": next_before}
-    if part != "curve":
+    if part not in {"curve", "panel"}:
         raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
     extra: dict[str, Any] = {}
     if local_mode in {"page_ordinary", "page_ideal"}:
@@ -356,5 +359,5 @@ def project_reference_part(
                             "drawdown": _drawdown(points) if value["history_coverage"] == "FULL" else None,
                             "drawdown_kind": "equity_ratio"}
         extra["model_version"] = selected["reference_model_version"] if fusion else None
-    return {**common, "reference_mode": mode,
+    return {**common, **overview, "reference_mode": mode,
             "curve": {"mode": mode, **_curve_points(points), **extra}}

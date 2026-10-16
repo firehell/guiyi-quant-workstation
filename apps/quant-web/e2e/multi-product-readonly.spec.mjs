@@ -15,7 +15,7 @@ test('real selected reference parts preserve complete metrics and keep page bodi
   expect(legacyResponse.status()).toBe(200)
   const legacyText = await legacyResponse.text(), legacy = JSON.parse(legacyText).reference.value
   const results = {}, sizes = { legacy: Buffer.byteLength(legacyText) }
-  for (const part of ['overview', 'curve', 'history']) {
+  for (const part of ['overview', 'curve', 'history', 'panel']) {
     const started = Date.now()
     const response = await request.get('/api/v1/market/newow/strategy-detail', { params: {
       ...common, reference_part: part, reference_mode: 'page_ordinary',
@@ -24,7 +24,9 @@ test('real selected reference parts preserve complete metrics and keep page bodi
     expect(response.status()).toBe(200)
     const raw = await response.text(), body = JSON.parse(raw)
     results[part] = body.reference.value
-    sizes[part] = { decodedBytes: Buffer.byteLength(raw), elapsedMs: Date.now() - started }
+    sizes[part] = { decodedBytes: Buffer.byteLength(raw), elapsedMs: Date.now() - started, serverTiming: response.headers()['server-timing'] }
+    expect(response.headers()['server-timing']).toContain('total;dur=')
+    expect(response.headers()['server-timing']).toContain('response_encode;dur=')
     expect(body.meta.snapshot_token).toBe(accepted.meta.snapshot_token)
     expect(body.reference.value.reference_input_sha256).toBe(legacy.reference_input_sha256)
   }
@@ -38,9 +40,14 @@ test('real selected reference parts preserve complete metrics and keep page bodi
   expect(results.history).not.toHaveProperty('curve')
   expect(results.history).not.toHaveProperty('summary')
   expect(results.overview).not.toHaveProperty('curve')
+  expect(results.panel).toEqual({ ...results.overview, reference_part: 'panel', curve: results.curve.curve })
   console.log(JSON.stringify({ realReferenceSizes: sizes }))
 
-  const errors = []
+  const errors = [], panelRequests = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname.endsWith('/newow/strategy-detail') && url.searchParams.get('section') === 'reference') panelRequests.push(url.searchParams.get('reference_part'))
+  })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/market/chart?view=newow&symbol=jm&strategy=oscillation&series_kind=actual_dominant&frequency=1d')
   await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible({ timeout: 20000 })
@@ -48,6 +55,7 @@ test('real selected reference parts preserve complete metrics and keep page bodi
   await reference.scrollIntoViewIfNeeded()
   await expect(reference.getByTestId('newow-reference-summary')).toBeVisible({ timeout: 20000 })
   await expect(reference.getByRole('alert')).toHaveCount(0)
+  expect(panelRequests).toEqual(['panel'])
   await page.screenshot({ path: '/private/tmp/guiyi-multi-product-real-desktop.png' })
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(reference.getByTestId('newow-reference-summary')).toBeVisible()

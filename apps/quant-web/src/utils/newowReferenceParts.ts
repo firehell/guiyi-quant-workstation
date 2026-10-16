@@ -88,7 +88,18 @@ export function normalizeNewowReferencePartResponse(payload: unknown, request: N
     || request.performanceSince !== undefined && since !== request.performanceSince
     || request.performanceThrough !== undefined && through !== request.performanceThrough
     || !['FULL', 'PARTIAL'].includes(text(value.history_coverage))) throw Error('reference window conflict')
-  if (request.part === 'overview') {
+  if (request.part === 'panel') {
+    // Validate each existing contract against the same envelope, without a
+    // second network read or a second calculation of the selected mode.
+    const { curve, ...overview } = value
+    const { summary: _summary, coverage_intervals: _coverage, unavailable_days: _gaps,
+      recent_items: _recent, page_summaries: _page, fusion_groups: _fusion, ...selected } = value
+    for (const [part, projected] of [['overview', overview], ['curve', selected]] as const) {
+      normalizeNewowReferencePartResponse({ ...top, reference: { ...wrapper, value: { ...projected, reference_part: part } } },
+        { ...request, part })
+    }
+    if (curve === undefined) throw Error('panel curve missing')
+  } else if (request.part === 'overview') {
     object(value.summary); object(value.page_summaries)
     if (!Array.isArray(value.coverage_intervals) || !Array.isArray(value.unavailable_days)) throw Error('reference overview invalid')
     records(value.recent_items, request.mode, 3)

@@ -927,7 +927,9 @@ summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit �
 失效 token 或缓存关闭时仍不得宣称已建立 snapshot。
 
 失败、不完整读取和未验证结果不得缓存。关闭缓存时结果、身份和错误语义 MUST 不变。reference/comparator
-共享同一个重型预算：运行并发 1、FIFO 等待队列最多 2、等待 5 秒超时；第三个等待者或超时返回429。
+共享同一个重型预算：运行并发 1、等待队列最多 2、等待 5 秒超时；第三个等待者或超时返回429。
+等待中的当前主图优先于所选辅助、可见收益/解释及历史追加，同级 FIFO；不抢占运行任务，
+不扩大既有持久化参考读取的独立额度。取消或超时的等待任务不得取得执行额度。
 排队取消必须移除 waiter 并释放名额，运行阶段在安全边界释放 permit，不新增常驻 worker。取消 MUST
 传至分页和安全计算边界；共享计算以相同 entry key+section result key 去重且只有最后消费者取消才停止。对不可抢占原语不得承诺
 浏览器 abort 即瞬时停止，也不得跨线程共享不安全数据库 Session。
@@ -1574,12 +1576,25 @@ remain active while any attached reader is still interested.
 
 ### Requirement: Selected reference response parts
 
-The Web SHALL read reference `overview`, `curve` and `history` independently for
+The API SHALL expose reference `overview`, `curve` and `history` independently for
 an explicit reference mode and one accepted snapshot/window/result identity.
+The Web SHALL use `panel` to receive overview and only the selected curve from one
+verified result in one request. Mode/window changes SHALL request only that selected
+mode, including its at-most-three preview records; no other mode curves are computed.
+History remains independently requested. A panel SHALL have the same result hash and
+field values as the corresponding overview and curve responses; history cursors and
+full history records are forbidden on a panel request.
 Overview SHALL show at most three recent records; history SHALL use cursors of
 50 records and SHALL NOT repeat full curves or summaries. Source record limits
 SHALL be explicit and SHALL NOT imply full history coverage. Existing internal
 full-result consumers retain their original calculation contract.
+
+Strategy-detail SHALL expose bounded request-local phase durations through Server-Timing:
+queue, authority read, identity verification, cache access/admission, computation,
+replay and projection, plus total and response-model encoding/construction when available.
+Nested phase durations are not additive. The encoding/construction interval excludes
+network delivery and compression. Diagnostics SHALL NOT retain or expose query values,
+market payloads, credentials or internal paths, and SHALL NOT change response facts.
 
 #### Scenario: Rendering a sampled curve
 - **WHEN** a selected reference curve exceeds 2000 original points

@@ -16,7 +16,7 @@ test('real JM/RB chart, cache revisit and switch waterfall', async ({ page }) =>
     if (!request.url().includes('/api/v1/market/')) return
     try {
       const response = await request.response()
-      waterfall.push({ path: new URL(request.url()).pathname, query: new URL(request.url()).search, status: response?.status(), timing: request.timing(), sizes: await request.sizes() })
+      waterfall.push({ path: new URL(request.url()).pathname, query: new URL(request.url()).search, status: response?.status(), timing: request.timing(), serverTiming: response?.headers()['server-timing'], sizes: await request.sizes() })
     } catch { /* Navigation may close a response after its completed facts were displayed. */ }
   })
   for (const [symbol, frequency, strategy] of [['jm','1d','oscillation'], ['rb','1d','oscillation'], ['jm','1d','oscillation'], ['jm','60m','oscillation'], ['jm','1d','trend']]) {

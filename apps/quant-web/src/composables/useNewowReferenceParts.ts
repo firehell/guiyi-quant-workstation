@@ -79,7 +79,7 @@ export function useNewowReferenceParts(
   async function load(explicit = false) {
     if ((!visible.value && !explicit) || !proof.value) return
     clear()
-    const own = generation, request = baseRequest('overview')
+    const own = generation, request = baseRequest('panel')
     if (!request) return
     controller = new AbortController()
     const active = controller
@@ -88,16 +88,13 @@ export function useNewowReferenceParts(
       const first = await fetchPart(request, { signal: active.signal })
       if (own !== generation || active.signal.aborted) return
       if (!first.value) { error.value = partUnavailable(first, '参考统计'); return }
-      if (first.value.reference_part !== 'overview') throw Error('NEWOW_REFERENCE_PART_CONFLICT')
-      overview.value = first
-      const next = baseRequest('curve')
-      if (!next) return
-      const selectedWindow = { performanceSince: first.value.performance_since, performanceThrough: first.value.performance_through }
-      const result = await fetchPart({ ...next, ...selectedWindow }, { signal: active.signal })
-      if (own !== generation || active.signal.aborted) return
-      if (!result.value) { overview.value = null; error.value = partUnavailable(result, '参考曲线'); return }
-      if (!sameNewowReferenceResult(first, result)) throw Error('NEWOW_REFERENCE_IDENTITY_CONFLICT')
-      curve.value = result
+      if (first.value.reference_part !== 'panel' || first.value.curve.mode !== request.mode
+        || first.value.reference_mode !== request.mode) throw Error('NEWOW_REFERENCE_PART_CONFLICT')
+      const { curve: selected, ...summary } = first.value
+      overview.value = { ...first, value: { ...summary, reference_part: 'overview' } }
+      const { summary: _summary, recent_items: _recent, page_summaries: _page,
+        fusion_groups: _groups, coverage_intervals: _coverage, unavailable_days: _gaps, ...common } = summary
+      curve.value = { ...first, value: { ...common, reference_part: 'curve', curve: selected } }
     } catch (cause) {
       if (own === generation && !active.signal.aborted && !isCancelled(cause)) {
         overview.value = null; curve.value = null
