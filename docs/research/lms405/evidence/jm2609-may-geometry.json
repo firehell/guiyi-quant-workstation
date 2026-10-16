@@ -1,0 +1,142 @@
+{
+  "identity": "lms405-jm2609-may-case-v1",
+  "source_ids": [
+    "G02",
+    "G03",
+    "G04",
+    "G05",
+    "G06",
+    "F08"
+  ],
+  "mode": "RETROSPECTIVE_GEOMETRY_ONLY",
+  "input_snapshot_sha256": "cedca0a8ce6ff61ac52f985749391abe79ff70661e43dd88adc955285b894874",
+  "input_bar_count": 1035,
+  "source_period": "UNKNOWN",
+  "historical_known_at_verified": false,
+  "publication_proxy": "2026-05-20T17:24:00+08:00",
+  "source_split": "development",
+  "day_session_extrema": {
+    "2026-05-20": {
+      "bar_count": 225,
+      "high": "1222.000000000000000000",
+      "low": "1196.500000000000000000"
+    },
+    "2026-05-21": {
+      "bar_count": 225,
+      "high": "1225.000000000000000000",
+      "low": "1189.500000000000000000"
+    },
+    "2026-05-22": {
+      "bar_count": 225,
+      "high": "1177.000000000000000000",
+      "low": "1160.500000000000000000"
+    }
+  },
+  "nodes_may21_day_session": [
+    {
+      "id": "watershed",
+      "lower": "1223",
+      "upper": "1228.5",
+      "eligible_bars": 225,
+      "first_lower_touch": "2026-05-21T09:37:00+08:00",
+      "first_upper_touch": null,
+      "first_close_above": null,
+      "first_close_below": "2026-05-21T09:01:00+08:00",
+      "minimum_low": "1189.500000000000000000",
+      "maximum_high": "1225.000000000000000000",
+      "stand_firm": "UNKNOWN",
+      "condition_satisfied": null,
+      "signal": "UNKNOWN",
+      "action_match": null
+    },
+    {
+      "id": "long-target-1",
+      "lower": "1229",
+      "upper": "1235",
+      "eligible_bars": 225,
+      "first_lower_touch": null,
+      "first_upper_touch": null,
+      "first_close_above": null,
+      "first_close_below": "2026-05-21T09:01:00+08:00",
+      "minimum_low": "1189.500000000000000000",
+      "maximum_high": "1225.000000000000000000",
+      "stand_firm": "UNKNOWN",
+      "condition_satisfied": null,
+      "signal": "UNKNOWN",
+      "action_match": null
+    },
+    {
+      "id": "long-target-2",
+      "lower": "1241.5",
+      "upper": "1248.5",
+      "eligible_bars": 225,
+      "first_lower_touch": null,
+      "first_upper_touch": null,
+      "first_close_above": null,
+      "first_close_below": "2026-05-21T09:01:00+08:00",
+      "minimum_low": "1189.500000000000000000",
+      "maximum_high": "1225.000000000000000000",
+      "stand_firm": "UNKNOWN",
+      "condition_satisfied": null,
+      "signal": "UNKNOWN",
+      "action_match": null
+    },
+    {
+      "id": "short-target-1",
+      "lower": "1214.5",
+      "upper": "1216",
+      "eligible_bars": 225,
+      "first_lower_touch": "2026-05-21T09:05:00+08:00",
+      "first_upper_touch": "2026-05-21T09:07:00+08:00",
+      "first_close_above": "2026-05-21T09:07:00+08:00",
+      "first_close_below": "2026-05-21T09:01:00+08:00",
+      "minimum_low": "1189.500000000000000000",
+      "maximum_high": "1225.000000000000000000",
+      "stand_firm": "UNKNOWN",
+      "condition_satisfied": null,
+      "signal": "UNKNOWN",
+      "action_match": null
+    },
+    {
+      "id": "short-target-2",
+      "lower": "1206",
+      "upper": "1210.5",
+      "eligible_bars": 225,
+      "first_lower_touch": "2026-05-21T13:35:00+08:00",
+      "first_upper_touch": "2026-05-21T09:01:00+08:00",
+      "first_close_above": "2026-05-21T09:02:00+08:00",
+      "first_close_below": "2026-05-21T13:44:00+08:00",
+      "minimum_low": "1189.500000000000000000",
+      "maximum_high": "1225.000000000000000000",
+      "stand_firm": "UNKNOWN",
+      "condition_satisfied": null,
+      "signal": "UNKNOWN",
+      "action_match": null
+    },
+    {
+      "id": "short-target-3",
+      "lower": "1196.5",
+      "upper": "1205.5",
+      "eligible_bars": 225,
+      "first_lower_touch": "2026-05-21T14:08:00+08:00",
+      "first_upper_touch": "2026-05-21T13:44:00+08:00",
+      "first_close_above": "2026-05-21T09:01:00+08:00",
+      "first_close_below": "2026-05-21T14:08:00+08:00",
+      "minimum_low": "1189.500000000000000000",
+      "maximum_high": "1225.000000000000000000",
+      "stand_firm": "UNKNOWN",
+      "condition_satisfied": null,
+      "signal": "UNKNOWN",
+      "action_match": null
+    }
+  ],
+  "author_position_transition": "CONSISTENT_WITH_BUT_NOT_IDENTIFIED",
+  "same_account_verified": false,
+  "missing_screenshot_leg_is_zero": false,
+  "complete_action_cases": 0,
+  "signal_comparison": null,
+  "action_match_rate": null,
+  "fill": null,
+  "performance": null,
+  "executable": false
+}

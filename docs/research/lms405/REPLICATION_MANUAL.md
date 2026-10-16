@@ -260,3 +260,13 @@ scripts/research/lms405_validation_package.py \
 本批13条详情均正常访问，F08查看图1，其余以正文为证据且未核验持仓图；新读材料未提供可验收的逐bar OHLC、完整时间数量或真实订单。未见编辑标记不等于历史正文已证实；有编辑标记的F02/F04/F12只记录当前版本。其他版本拟合收益和无新增信息日志筛摘要后跳过，未统计全量摘要，未达到检索饱和。
 
 结论仍为部分还原。新增确认的是人工参与和交易需求边界，未新增私有公式、确定性自动解锁器或收益结论。局部JM2509事前区域及120分钟研究重放保存在工作区`output/lms405-jm2509-version-20261016/`；它是具体历史开发案例，不改变本手册的原策略验收状态。
+
+## 2026-10-17：JM2609前日计划与连续持仓核验
+
+作者流程汇总见[AUTHOR_STRATEGY](AUTHOR_STRATEGY.md)；本轮新增[案例报告](evidence/JM2609_MAY_CASE.md)、[G01–G09索引](evidence/jm2609-may-20261016.csv)与[机器几何输出](evidence/jm2609-may-geometry.json)。G07为F08复读，其余8条新增详情，不改旧索引及冻结身份。
+
+已找到5月20日明确4.0.5的JM2609计划及5月20–21日四张持仓图。只读MDS取到1035根1m；本地5月21日高1225低1189.5与F08披露相同；5月20日低1196.5等于G02区域端点，不计独立极值验收。截图显示空20/1213、多20/1206、双持20/20、空20/1215.88的不同快照，但同账户、未列腿数量和中间动作未核实，不能拼成已确认成交链。深色回报表不能绑定白色持仓表或4.0.5。原版合格信号Bar、本批完整动作案例均为0，收益保持未知。
+
+新增固定样本脚本`scripts/research/lms405_jm_may_case.py`仅复用已有几何与日盘核验函数，绑定输入CSV哈希，无行情resolver、订单、信号公式或生产写入。未核实历史修订的文章不能晋升为事前证据。定时研究任务`lms-4-0-5`已按用户要求删除，继续读取时Mac锁屏，解锁前只处理离线材料。
+
+本轮验证：`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/lms405` 为58 passed；新增脚本ruff通过；固定数据复算、拒绝覆盖及哈希不符拒绝均通过；CSV/本地文档引用、定向secret scan和diff检查通过。独立Review复算数值0差异，并要求收窄5月20日极值证据归属；修正后复核允许研究范围集成develop。原截图未获独立网页核验仍保留风险，不宣称原版复刻完成。
