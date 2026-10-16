@@ -89,7 +89,7 @@
 - 精确受影响后端612 passed，覆盖read_timings、product_reader/service/resource_gate/inflight/snapshot_cache、reference_parts/socket_http/page_performance、storage/catalog/homeoverview、home/projection/conditional/messages和冻结研究store/API；工程能力合同3 passed。日志`/private/tmp/guiyi-eight-backend-affected.log`及`guiyi-eight-engineering-final.log`。
 - 曾扩大到整个Newow研究目录，720项通过后在无关长时Fraction研究计算中优雅中断；不计为全后端通过，测试RSS约178–182MiB。随后上述受影响集合完整通过。
 - `NODE_OPTIONS=--max-old-space-size=768 pnpm -C apps/quant-web build`通过（含vue-tsc、能力生成和bundle topology）。保留既有大chunk警告，不放宽阈值。Ruff、OpenSpec strict11项通过，secret/diff检查及集成记录见末尾。
-- 浏览器矩阵62 passed：`ui-unification / market-runtime / market-home-cache / hide-continuous / chart-first-loading / newow-chart-panes / subing-reference / reference-split`，单worker。另按1440×900、1280×720、1024×768及390×844精确视口补跑统一UI矩阵，结果见末尾、正式/融合/四实验、苏冰/HTDY/自由、研究V1/V2、离线/切换/返回与偏好；未更新截图基线或阈值。
+- 浏览器矩阵62 passed：`ui-unification / market-runtime / market-home-cache / hide-continuous / chart-first-loading / newow-chart-panes / subing-reference / reference-split`，单worker。另按1440×900、1280×720、1024×768及390×844精确视口补跑统一UI矩阵，结果见末尾；覆盖正式/融合/四实验、苏冰/HTDY/自由、研究V1/V2、离线/切换/返回与偏好；未更新截图基线或阈值。
 - 消息六项浏览器另行通过（首轮5项及返回/滚动补跑1项）；返回页面重新核验、digest不变保留已加载两页和原游标。
 - 独立Astra整分支Review确认1项P2：研究分页在途切未读Tab不恢复。已补成功/失败两条回归并修复；复核允许集成develop，无新增Confirmed Issue。完整Web还识别legacy参考适配器依赖空cursor表达容量，已接独立referenceCapped，保留真实cursor且停止超额读取；独审复核无遗漏active UI消费者。
 - 能力工程测试原来仅接受JSONResponse；一次编码现返回标准Response，测试改为解码实际Response body后仍交真实Web严格validator，没有删去合同校验。
@@ -114,3 +114,11 @@
 - `python3 scripts/engineering/secret_scan.py --json`及新只读资源测试显式扫描均finding_count=0；全diff检查通过。
 - 独立Review最终结论：允许集成develop；SOURCE_IDENTITY_UNVERIFIED的真实数值Gate不阻断本次工程集成，不表示该Gate通过。
 - `git fetch origin develop`后远端/本地develop仍为d49604d24，未发现需要合并的其他develop提交。正式发布、Runtime切换与数据处理不在交付范围。
+
+## Git集成记录
+
+- 八批源码/验收提交：209477284、1cccda473、73914b873、34f2d2c28、06d34961d、0f21e8d9b、681bbdd5e、982395b59。
+- `codex/watch-eight-batches`已普通推送到origin；develop由d49604d24快进至982395b59并普通推送成功。无force、main/tag/release/Runtime操作；所有用户未跟踪研究产物保留。
+- 本记录的收尾提交只更新文档；实际应用代码及所有工程验证对应982395b59。预览root checkout切至develop后源码与已验收分支相同，保留5176/8003。
+- 状态：CODE_COMPLETE、REVIEW_COMPLETE；上述工程测试通过。真实完整收益数值EXTERNAL_GATE_PENDING（基线SOURCE_IDENTITY_UNVERIFIED），不是全部真实验收通过。
+- 最小后续工作：单独核对既有参考物化结果的来源身份，在事实可验证后补跑严格JM/RB完整收益数值验收；不得用本轮缓存结果替代验证。

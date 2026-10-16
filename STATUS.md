@@ -2,7 +2,7 @@
 
 ## 10/16 八批看盘优化工程验收
 
-八批代码与独立Review完成：MDS同请求去重/细分计时、底层取消与有界只读缓存、刷新合并、一次JSON编码、
+八批代码已推送并集成develop（源码982395b59），独立Review通过：MDS同请求去重/细分计时、底层取消与有界只读缓存、刷新合并、一次JSON编码、
 冻结研究按Tab读取/hash绑定、主图局部更新、消息全digest重新核验及批量扫描已收敛。公式/收益窗口未变。
 完整Web1133 passed/3 skipped，受影响后端612及工程3 passed；浏览器矩阵62、消息6、真实价格/资源/失败态5项通过。
 类型/build/topology、OpenSpec strict11、Ruff通过；secret/diff及提交记录见任务记录。
