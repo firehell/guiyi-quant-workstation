@@ -42,7 +42,7 @@ export function createHomeSnapshotCache(storage: HomeSnapshotStorage, options: {
   // Include the persisted envelope and conservatively budget the byte-count field.
   const size = (key: string, value: unknown, savedAt = now()) => new TextEncoder().encode(JSON.stringify({ key, value, savedAt, bytes: 99999999 })).byteLength
   const prune = () => {
-    for (const [key, value] of entries) if (value.savedAt > now() || now() - value.savedAt > (key === "directory" ? Math.min(maxAge, 86400_000) : maxAge)) entries.delete(key)
+    for (const [key, value] of entries) if (value.savedAt > now() || now() - value.savedAt > (key === "product-directory" ? Math.min(maxAge, 86400_000) : maxAge)) entries.delete(key)
     const oldest = () => [...entries.values()].sort((a, b) => a.savedAt - b.savedAt)
     while ([...entries.keys()].filter(key => key.startsWith('card:')).length > maxProducts) entries.delete(oldest().find(value => value.key.startsWith('card:'))!.key)
     while ([...entries.values()].reduce((sum, value) => sum + value.bytes, 0) > maxBytes) entries.delete(oldest()[0]!.key)

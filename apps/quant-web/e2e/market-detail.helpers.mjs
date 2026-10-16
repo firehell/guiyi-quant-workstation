@@ -117,10 +117,10 @@ export async function mockMarketDetail(page, options = {}) {
       return route.abort('failed')
     }
 
-    if (url.pathname.endsWith('/dominants')) {
+    if (url.pathname.endsWith('/product-directory')) {
       return route.fulfill({ json: { items: [
-        { product: 'jm', product_name: '焦煤', sector: '黑色', exchange: 'DCE', actual_contract: 'JM2601', dominant_mapping_date: '2026-09-03' },
-        { product: 'rb', product_name: '螺纹钢', sector: '黑色', exchange: 'SHFE', actual_contract: 'RB2601', dominant_mapping_date: '2026-09-03' },
+        { product: 'jm', product_name: '焦煤', sector: '黑色', exchange: 'DCE' },
+        { product: 'rb', product_name: '螺纹钢', sector: '黑色', exchange: 'SHFE' },
       ] } })
     }
     if (url.pathname.endsWith('/research/product')) {

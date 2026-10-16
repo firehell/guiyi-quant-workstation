@@ -7,6 +7,7 @@ interface MarketHomeOptions<O, R, D> {
   fetchRuntime: () => Promise<R>
   overviewCacheKey?: string
   overviewMaxAgeMs?: number
+  directoryMaxAgeMs?: number
   now?: () => number
   persistence?: HomeSnapshotCache
   validateOverview?: (value: unknown) => O
@@ -42,39 +43,42 @@ let cachedHome: { key: string; overview: ResourceState<unknown>; directory: Reso
 export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
   const now = options.now ?? Date.now
   const overview = createResource(options.fetchOverview, undefined, cachedState<O>('overview', options.overviewCacheKey), now, value => options.persistence?.put('overview', value))
-  const directory = createResource(options.fetchDirectory, undefined, cachedState<D>('directory', options.overviewCacheKey), now, value => options.persistence?.put('directory', value))
+  const directory = createResource(options.fetchDirectory, undefined, cachedState<D>('directory', options.overviewCacheKey), now, value => options.persistence?.put('product-directory', value))
   const restored = shallowRef(false)
   const restore = async () => {
     if (restored.value || !options.persistence) return
     await options.persistence.restore()
     for (const [key, resource, validate] of [['overview', overview, options.validateOverview], ['directory', directory, options.validateDirectory]] as const) {
       if (resource.data.value != null || !validate) continue
-      const snapshot = options.persistence.peek(key)
+      const snapshot = options.persistence.peek(key === 'directory' ? 'product-directory' : key)
       if (!snapshot) continue
       try {
         resource.data.value = validate(snapshot.value) as O & D
         resource.updatedAt.value = snapshot.savedAt
-        resource.stale.value = true
-      } catch { await options.persistence.discard(key) }
+        resource.stale.value = key === 'directory'
+          ? now() - snapshot.savedAt > (options.directoryMaxAgeMs ?? 5 * 60_000)
+          : true
+      } catch { await options.persistence.discard(key === 'directory' ? 'product-directory' : key) }
     }
     restored.value = true
   }
   const runtime = createResource(options.fetchRuntime, undefined, undefined, now)
   const overviewMaxAgeMs = options.overviewMaxAgeMs ?? 5 * 60_000
+  const directoryMaxAgeMs = options.directoryMaxAgeMs ?? overviewMaxAgeMs
   let timer: ReturnType<typeof setInterval> | null = null
   let started = false
 
   async function refreshOverview() { if (options.persistence) await restore(); await overview.refresh() }
   async function refreshOverviewIfExpired() {
-    await refreshIfExpired(overview)
+    await refreshIfExpired(overview, overviewMaxAgeMs)
   }
-  async function refreshIfExpired<T>(resource: Resource<T>) {
+  async function refreshIfExpired<T>(resource: Resource<T>, maxAgeMs: number) {
     if (options.persistence) await restore()
     const acceptedAt = resource.updatedAt.value
-    if (!resource.stale.value && !resource.unavailable.value && resource.data.value != null && acceptedAt != null && now() - acceptedAt <= overviewMaxAgeMs) return
+    if (!resource.stale.value && !resource.unavailable.value && resource.data.value != null && acceptedAt != null && now() - acceptedAt <= maxAgeMs) return
     await resource.refresh()
   }
-  async function refreshDirectoryIfExpired() { await refreshIfExpired(directory) }
+  async function refreshDirectoryIfExpired() { await refreshIfExpired(directory, directoryMaxAgeMs) }
   function invalidateOverview() { overview.invalidate() }
   async function refreshRuntime() { await runtime.refresh() }
   async function refreshAll() {

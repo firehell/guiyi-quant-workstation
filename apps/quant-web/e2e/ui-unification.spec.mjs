@@ -1,13 +1,8 @@
 import { test, expect } from '@playwright/test'
-import { installNewowProductFixtures, buildNewowFixtureEnvelopeForTest, newowRoute } from './newow-product.helpers.mjs'
+import { installNewowProductFixtures, newowRoute } from './newow-product.helpers.mjs'
 import { mockMarketDetail } from './market-detail.helpers.mjs'
 
 const dimensions = [[1440,900],[1280,720],[1024,768],[390,844]]
-function projection(strategy) {
-  const dates=['2026-09-01T07:00:00Z','2026-09-02T07:00:00Z','2026-09-03T07:00:00Z']
-  const model={period:'1d',drawdown_kind:'peak_difference',summary:{cumReturn:'1',accuracy:100,maxDrawdown:'0',tradeCount:1},dates,trading_days:dates.map(d=>d.slice(0,10)),segment_ids:['a','a','a'],equity:['0','1','1'],trades:[{buyDate:dates[0],sellDate:dates[1],buyPrice:'100',sellPrice:'101',pct:'1',forceClose:false,segment_id:'a'}]}
-  return {version:'newow_page_performance_v3379_v2',source_version:'3.3.79',source_sha256:'3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d',page_parity:true,executable:false,strategy,input_sha256:'f'.repeat(64),source_evidence_sha256:null,segment_count:1,ordinary_interrupted_count:0,ideal_open_count:0,ordinary:model,ideal:{...model,drawdown_kind:'maximum_trade_loss'}}
-}
 async function noOverflow(page) {
   expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1)).toBe(true)
   for (const box of await page.locator('.performance-panel').all()) {
@@ -16,30 +11,27 @@ async function noOverflow(page) {
   }
 }
 async function newowFixtures(page) {
-  return installNewowProductFixtures(page,{onProductRequest:async({route,section,strategy,frequency})=>{
-    if(section!=='reference') return
-    const envelope=buildNewowFixtureEnvelopeForTest(section,strategy,frequency)
-    envelope.reference.value.page_performance=projection(strategy)
-    await route.fulfill({json:envelope});return 'handled'
-  }})
+  return installNewowProductFixtures(page)
 }
 for (const [width,height] of dimensions) {
   test(`unified strategy modes and curve interaction ${width}`,async({page})=>{
     await page.setViewportSize({width,height});await newowFixtures(page)
     for(const strategy of ['trend','oscillation','main_rise']) {
       await page.goto(newowRoute(strategy));const panel=page.locator('.page-performance')
+      await panel.scrollIntoViewIfNeeded()
       await expect(panel).toBeVisible();await expect(panel.locator('.return-curve svg')).toBeVisible()
-      await expect(panel).toContainText('累计参考收益（百分点）')
+      await expect(panel).toContainText('累计参考收益')
+      await expect(panel).toContainText('百分点')
       await expect(page.locator('.detail-view-nav')).toContainText('日线')
       const svg=panel.locator('.return-curve svg');await svg.focus();await svg.press('End')
       await expect(panel.locator('.return-curve__readout')).toContainText('百分点')
-      await panel.getByRole('button',{name:'收益分析 ›',exact:true}).click()
+      await page.getByRole('region',{name:'Newow 参考与解释',exact:true}).getByRole('button',{name:'收益分析 ›',exact:true}).click()
       await expect(page.getByRole('dialog',{name:'收益分析',exact:true})).toBeVisible()
       await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'收益分析',exact:true})).toHaveCount(0)
       await page.getByRole('button',{name:'已完成参考交易',exact:true}).click()
       await expect(page.locator('[data-testid="newow-reference-summary"]')).toContainText('已完成参考收益（百分点）')
       await page.getByRole('button',{name:'含浮动参考',exact:true}).click()
-      await expect(page.getByRole('status').filter({hasText:'下方仅展示已完成参考统计'})).toBeVisible()
+      await expect(page.getByRole('region',{name:'逐 Bar 持有过程'})).toBeVisible()
       await noOverflow(page)
     }
     await page.screenshot({path:`/private/tmp/guiyi-ui-newow-${width}.png`,fullPage:true})

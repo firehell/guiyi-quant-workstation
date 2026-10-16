@@ -1,7 +1,5 @@
-import { compileCurveComponent } from './helpers/compileCurveComponent.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createRenderer, defineComponent, h, nextTick } from 'vue'
 import { normalizePagePerformance, pagePerformancePlot } from '../src/utils/newowPagePerformance.ts'
 function payload() {
   const mode = (pct:string,forceClose:boolean) => ({period:'day',drawdown_kind:forceClose?'peak_difference':'maximum_trade_loss',summary:{cumReturn:pct,accuracy:100,maxDrawdown:'0',tradeCount:1},dates:['2026-01-01','2026-01-02','2026-01-03'],trading_days:['2026-01-01','2026-01-02','2026-01-03'],segment_ids:['owner','owner','owner'],equity:['0','1',pct],trades:[{buyDate:'2026-01-01',buyPrice:'100',sellDate:'2026-01-03',sellPrice:String(100+Number(pct)),pct,forceClose,segment_id:'owner'}]})
@@ -15,50 +13,6 @@ test('strict page projection rejects source identity and curve/trade contradicti
   const parsed=normalizePagePerformance(payload(),'trend')!; assert.equal(parsed.ordinary!.trades[0]!.forceClose,true)
   const split={...parsed.ordinary!,segment_ids:['one','two','two']};assert.equal(pagePerformancePlot(split).length,2)
 })
-async function panel(){
- return (await import(await compileCurveComponent(new URL('../src/components/market/detail/newow/NewowPagePerformancePanel.vue',import.meta.url)))).default
-}
-test('ordinary/theoretical toggle changes independent curve summary and estimate records together',async()=>{
- const Panel=await panel(),root=element('root')
- const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{value:normalizePagePerformance(payload(),'trend'),since:'2026-01-01',through:'2026-01-02'})}))
- app.mount(root)
- assert.match(nodeText(root),/持仓参考中/)
- assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/2/)
- const ordinary=findNode(root,n=>n.type==='polyline')!.props.points
- const button=findNode(root,n=>n.type==='button'&&nodeText(n)==='理论值')!
- ;(button.props.onClick as Function)();await nextTick()
- assert.match(nodeText(root),/日线/)
- assert.doesNotMatch(nodeText(root),/持仓参考中/)
- assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/9/)
- assert.match(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/单笔最大亏损/)
- assert.doesNotMatch(nodeText(findNode(root,n=>n.props['data-testid']==='page-performance-summary')!),/页面回撤/)
- assert.notEqual(findNode(root,n=>n.type==='polyline')!.props.points,ordinary)
- app.unmount()
- const absent=element('root'),empty=createRenderer(nodeOperations()).createApp(Panel,{value:null});empty.mount(absent)
- assert.match(nodeText(absent),/投影不可用/);assert.equal(findNode(absent,n=>n.props['data-testid']==='page-performance-summary'),undefined);empty.unmount()
-})
-interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string }
-function element(type: string): TestNode { return { type, props: {}, parent: null, children: [], text: '' } }
-function findNode(node: TestNode, match: (candidate: TestNode) => boolean): TestNode | undefined {
-  if (match(node)) return node
-  for (const child of node.children) { const found = findNode(child, match); if (found) return found }
-  return undefined
-}
-function findNodes(node: TestNode, match: (candidate: TestNode) => boolean): TestNode[] {
-  return [match(node) ? node : null, ...node.children.flatMap((child) => findNodes(child, match))].filter((item): item is TestNode => item !== null)
-}
-function nodeText(node: TestNode): string { return [node.text, ...node.children.map(nodeText)].join(' ') }
-function nodeOperations() {
-  return {
-    patchProp(node: TestNode, key: string, _previous: unknown, next: unknown) { node.props[key] = next },
-    insert(child: TestNode, parent: TestNode, anchor: TestNode | null = null) { if (child.parent) child.parent.children = child.parent.children.filter(node => node !== child); child.parent = parent; const index = anchor === null ? -1 : parent.children.indexOf(anchor); if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child) },
-    remove(child: TestNode) { if (child.parent === null) return; child.parent.children = child.parent.children.filter((item) => item !== child); child.parent = null },
-    createElement: (type: string) => element(type), createText(text: string) { const node = element('#text'); node.text = text; return node }, createComment(text: string) { const node = element('#comment'); node.text = text; return node },
-    setText(node: TestNode, text: string) { node.text = text }, setElementText(node: TestNode, text: string) { node.text = text; node.children = [] },
-    parentNode(node: TestNode) { return node.parent }, nextSibling(node: TestNode) { if (node.parent === null) return null; const index = node.parent.children.indexOf(node); return node.parent.children[index + 1] ?? null }, querySelector() { return null }, setScopeId() {}, insertStaticContent() { return [element('#static'), element('#static')] as const },
-  }
-}
-
 test('projection rejects cross-owner chronology, forged trades and invalid terminal while allowing prior-window entry',()=>{
   const bad=[(p:ReturnType<typeof payload>)=>{p.ordinary.segment_ids=['a','b','b'];p.ordinary.dates=['2026-01-03','2026-01-01','2026-01-02']},
     (p:ReturnType<typeof payload>)=>{p.ordinary.trades[0]!.segment_id='missing'},
@@ -79,30 +33,4 @@ test('full-history page curve accepts 200000 points and preserves owner breaks',
  assert.equal(parts.map(part => part.trim().split(' ').length).reduce((a,b) => a+b, 0), size)
  assert.match(parts[0]!, /^0,140 /)
  assert.ok(parts[1]!.includes('712,'))
-})
-
-test('compact plot aligns grid and date axes while separate owners stay disconnected', async () => {
- const Panel = await panel(), root = element('root')
- const value = normalizePagePerformance(payload(), 'trend')!
- const split = {...value, ordinary: {...value.ordinary!, segment_ids:['one','two','two']}}
- const app = createRenderer(nodeOperations()).createApp(Panel, {value:split,since:'2026-01-01',through:'2026-01-03'})
- app.mount(root)
- assert.equal(findNodes(root,n=>n.type==='line').length,5)
- assert.equal(findNodes(root,n=>n.type==='polygon').length,2)
- assert.equal(findNodes(root,n=>n.type==='polyline').length,2)
- assert.match(nodeText(root),/01-01/)
- assert.match(nodeText(root),/统计窗口 2026-01-01 → 2026-01-03/)
- assert.equal(findNodes(root,n=>n.type==='button' && nodeText(n)==='普通值').length,0)
- const analysis = findNode(root,n=>n.type==='button' && nodeText(n)==='收益分析 ›')!
- ;(analysis.props.onClick as Function)();await nextTick()
- assert.match(nodeText(findNode(root,n=>n.type==='dialog')!),/普通值/)
- const theory = findNode(root,n=>n.type==='button' && nodeText(n)==='理论值')!
- ;(theory.props.onClick as Function)();await nextTick()
- assert.equal(findNode(root,n=>n.type==='dialog'),undefined,'changing the displayed model closes its old dialog')
- ;(analysis.props.onClick as Function)();await nextTick()
- assert.match(nodeText(findNode(root,n=>n.type==='dialog')!),/理论值/)
- assert.equal(findNodes(root,n=>n.type==='polygon').length,1)
- const drawdown = findNode(root,n=>n.type==='dd' && n.props.class==='newow-reference__drawdown')!
- assert.equal(nodeText(drawdown),'0.00 百分点')
- app.unmount()
 })

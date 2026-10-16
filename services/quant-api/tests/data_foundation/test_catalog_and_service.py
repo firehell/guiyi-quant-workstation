@@ -942,6 +942,27 @@ def test_latest_dominants_uses_repository_display_name_instead_of_provider_code(
     assert items[0].sector == "black"
 
 
+def test_product_directory_reads_taxonomy_and_active_instrument_without_mapping(
+    session, tmp_path, monkeypatch
+) -> None:
+    from app.market_data.product_taxonomy import ProductTaxonomyEntry
+    from app.market_data.market_data_service import MarketDataError
+
+    monkeypatch.setattr(
+        "app.market_data.market_data_service.load_product_taxonomy",
+        lambda: {"jm": ProductTaxonomyEntry("焦煤", "black")},
+    )
+    catalog = MarketCatalog(session, tmp_path)
+    service = MarketDataService(catalog, CanonicalMonthlyStore(tmp_path))
+    assert [(item.product, item.product_name, item.exchange, item.sector)
+            for item in service.list_product_directory()] == [("jm", "焦煤", "DCE", "black")]
+    instrument = session.query(Instrument).filter_by(symbol="jm").one()
+    instrument.is_active = False
+    session.flush()
+    with pytest.raises(MarketDataError, match="PRODUCT_DIRECTORY_INCOMPLETE"):
+        service.list_product_directory()
+
+
 def test_latest_directory_loads_only_latest_mapping_rows(session, tmp_path):
     from sqlalchemy import event
     from app.models.market_tables import MainContractMap

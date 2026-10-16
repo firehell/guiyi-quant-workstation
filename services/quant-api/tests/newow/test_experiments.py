@@ -211,7 +211,7 @@ def test_route_read_only_projection(monkeypatch):
     )
     monkeypatch.setattr(market_newow, "load_active_products", lambda: {"rb"})
     monkeypatch.setattr(
-        market_newow, "NewowProductReader", lambda *args, **kwargs: reader
+        "app.market_data.newow.composition.NewowProductReader", lambda *args, **kwargs: reader
     )
     app.dependency_overrides[get_db] = lambda: object()
     try:

@@ -516,6 +516,36 @@ def test_daily_release_defers_cross_frequency_explanation_before_service(
     assert response.json() == {"detail": {"code": "NEWOW_SECTION_NOT_OPEN"}}
 
 
+def test_split_history_terminal_cursor_is_explicit_null_on_actual_api(monkeypatch, product_cases):
+    from newow.test_product_service import _service
+
+    service, _reader, build, clear = _service(product_cases, "1d")
+    query = ProductServiceQuery(
+        "rb", "trend", "1d", section="reference", as_of=clear.bar_end,
+        performance_since=build.trading_day, performance_through=clear.trading_day,
+        reference_part="history", reference_mode="closed",
+    )
+    result = service.query(query)
+    monkeypatch.setattr(market_newow, "_build_product_service",
+                        lambda *_args, **_kwargs: SimpleNamespace(query=lambda _query: result))
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/strategy-detail", params={
+                "product": "rb", "strategy": "trend", "frequency": "1d",
+                "section": "reference", "as_of": clear.bar_end.isoformat(),
+                "performance_since": build.trading_day.isoformat(),
+                "performance_through": clear.trading_day.isoformat(),
+                "reference_part": "history", "reference_mode": "closed",
+            })
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    value = response.json()["reference"]["value"]
+    assert value["reference_part"] == "history"
+    assert "next_before" in value and value["next_before"] is None
+
+
 def test_strategy_detail_returns_only_requested_typed_section(
     monkeypatch, product_cases
 ):

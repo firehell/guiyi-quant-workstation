@@ -9,7 +9,8 @@ from guiyi_quant.newow.product_adapters import build_product_identity, label_cal
 from guiyi_quant.newow.product_contracts import ActionKind, ProductStrategy, TradeEligibility, lifecycle_input_sha256
 
 
-def project_page_performance(read, identity, resolved, *, fusion=False, replays=None):
+def project_page_performance(read, identity, resolved, *, fusion=False, replays=None,
+                             selected_mode=None):
     """Never consume ReferenceTrade pairing or alter the strategy facts.
 
     Warm-up prefixes remain inside their own physical/calculation owner. A final
@@ -65,7 +66,7 @@ def project_page_performance(read, identity, resolved, *, fusion=False, replays=
             tuple(action for action in actions.get(owner, ()) if action.date in dates)))
     result = compute_page_performance(segments, "fusion" if fusion else identity.strategy.value,
         period=identity.frequency.value, since=resolved.requested_since.isoformat(),
-        through=resolved.requested_through.isoformat())
+        through=resolved.requested_through.isoformat(), selected_mode=selected_mode)
     result["input_sha256"] = lifecycle_input_sha256(labeled)
     result["source_evidence_sha256"] = read.reference_source_evidence_sha256
     return result

@@ -1,7 +1,9 @@
 import request from './request'
 import { createConditionalHomeRead } from './homeConditionalRead'
+import { READ_PRIORITY } from '../utils/readAdmission.ts'
 import type {
   DominantContractListResponse,
+  MarketProductDirectoryResponse,
   MarketBarsPageRequest,
   MarketBarsPageWireResponse,
   MarketFrequency,
@@ -20,6 +22,19 @@ export function normalizeHomeDirectory(value: unknown): DominantContractListResp
   return body
 }
 export const getMarketDominants = createConditionalHomeRead('/market/dominants', normalizeHomeDirectory)
+
+export function normalizeMarketProductDirectory(value: unknown): MarketProductDirectoryResponse {
+  const body = value as MarketProductDirectoryResponse
+  if (!body || !Array.isArray(body.items) || !body.items.length || body.items.some(item =>
+    !item || typeof item.product !== 'string' || !item.product.trim()
+    || typeof item.product_name !== 'string' || !item.product_name.trim()
+    || typeof item.exchange !== 'string' || !item.exchange.trim()
+    || typeof item.sector !== 'string' || !item.sector.trim()
+    || 'actual_contract' in item || 'dominant_mapping_date' in item)
+    || new Set(body.items.map(item => item.product)).size !== body.items.length) throw new Error('INVALID_PRODUCT_DIRECTORY')
+  return body
+}
+export const getMarketProductDirectory = createConditionalHomeRead('/market/product-directory', normalizeMarketProductDirectory)
 
 export const getMarketHomeOverview = createConditionalHomeRead('/market/research/home-overview', normalizeMarketHomeOverviewResponse)
 
@@ -53,7 +68,9 @@ function toNumber(value: number | string | null): number | null {
 }
 
 export function getMarketBarsPage(params: MarketBarsPageRequest, signal?: AbortSignal) {
-  return request.get<never, MarketBarsPageWireResponse>('/market/bars/page', { params, signal })
+  return request.get<never, MarketBarsPageWireResponse>('/market/bars/page', {
+    params, signal, readPriority: params.before ? READ_PRIORITY.history : READ_PRIORITY.foreground,
+  })
     .then(normalizeMarketBarsPageResponse)
 }
 

@@ -11,7 +11,7 @@ import { newowMessageChartQuery, type NewowMessage } from '@/api/newowMessages'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
 import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.vue'
 import MarketHomeSkeleton from '@/components/market/MarketHomeSkeleton.vue'
-import { getMarketDominants, getMarketHomeOverview, normalizeHomeDirectory } from '@/api/market'
+import { getMarketProductDirectory, getMarketHomeOverview, normalizeMarketProductDirectory } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { useMarketHome } from '@/composables/useMarketHome'
 import { useMarketHomeLive } from '@/composables/useMarketHomeLive'
@@ -38,12 +38,13 @@ const navigationError = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
 const home = useMarketHome({
   fetchOverview: getMarketHomeOverview,
-  fetchDirectory: getMarketDominants,
+  fetchDirectory: getMarketProductDirectory,
   fetchRuntime: getRuntimeHealth,
   overviewCacheKey: homeCacheNamespace,
   persistence: homeSnapshotCache,
   validateOverview: validateStoredMarketHomeOverview,
-  validateDirectory: normalizeHomeDirectory,
+  validateDirectory: normalizeMarketProductDirectory,
+  directoryMaxAgeMs: 24 * 60 * 60_000,
 })
 const productOptions = computed(() => normalizeProductOptions(home.directory.data.value?.items ?? []))
 const directoryStatus = computed(() => home.directory.unavailable.value ? 'error' : home.directory.data.value == null ? 'loading' : 'ready')

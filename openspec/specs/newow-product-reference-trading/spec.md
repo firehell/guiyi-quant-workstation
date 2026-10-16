@@ -1558,6 +1558,41 @@ Unavailable marked facts SHALL disclose the reason and any CLOSED-only fallback.
 - **THEN** its displayed total and direction color both describe the negative marked value
 - **AND** switching to CLOSED restores the independent original CLOSED statistic
 
+### Requirement: Verified multi-product display reuse
+
+Current Web requests SHALL establish their MDS authority proof before reusing any
+strategy computation. Pure replay reuse SHALL bind every kernel input, lifecycle
+and interruption fact, formula/profile and quality policy; it SHALL NOT reuse a
+request token, cutoff or window projection as a current authority. Replay artifacts
+SHALL share the existing bounded process cache budget. Shared computation SHALL
+remain active while any attached reader is still interested.
+
+#### Scenario: Same completed inputs at a later request cutoff
+- **WHEN** a fresh authority read establishes unchanged completed kernel inputs at a new cutoff
+- **THEN** the service MAY reuse pure replay but SHALL issue the independently verified request envelope
+- **AND** revised prices, source hashes, quality policy or physical segments SHALL invalidate that reuse
+
+### Requirement: Selected reference response parts
+
+The Web SHALL read reference `overview`, `curve` and `history` independently for
+an explicit reference mode and one accepted snapshot/window/result identity.
+Overview SHALL show at most three recent records; history SHALL use cursors of
+50 records and SHALL NOT repeat full curves or summaries. Source record limits
+SHALL be explicit and SHALL NOT imply full history coverage. Existing internal
+full-result consumers retain their original calculation contract.
+
+#### Scenario: Rendering a sampled curve
+- **WHEN** a selected reference curve exceeds 2000 original points
+- **THEN** the service SHALL retain endpoints, extrema and interruption/owner boundaries without interpolation
+- **AND** summary, annualization and drawdown SHALL use the complete result rather than sampled points
+- **AND** an unrepresentable boundary set SHALL return an explicit unavailable condition
+
+#### Scenario: Mode switch and hidden page identity change
+- **WHEN** the selected mode, window or chart identity changes, including while the reference region is hidden
+- **THEN** the Web SHALL cancel obsolete subscriptions and clear incompatible reference results
+- **AND** it SHALL reject pages or curves from a different result identity
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

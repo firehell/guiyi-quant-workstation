@@ -82,6 +82,8 @@ from app.market_data.newow.product_service import (
     NewowProductService,
     ProductServiceQuery,
     ProductSection,
+    ReferencePart,
+    ReferenceMode,
     AuxiliaryComponent,
 )
 from app.market_data.newow.resource_gate import HeavyResourceGate
@@ -148,6 +150,8 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "component",
         "history_limit",
         "history_before",
+        "reference_part",
+        "reference_mode",
         "snapshot_token",
         "include_fusion",
         "fusion_before",
@@ -421,7 +425,9 @@ def _build_product_service(
         factory = (sessionmaker(bind=engine.execution_options(
             schema_translate_map={None: INTRADAY_HISTORY_SCHEMA}), autoflush=False)
             if historical_intraday else SessionLocal)
-        persisted_reference = PersistedNewowReference(factory).section
+        persisted_reference = PersistedNewowReference(
+            factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
+        ).section
     else:
         persisted_reference = None
     return composition.service(
@@ -812,6 +818,12 @@ def newow_strategy_detail(
     | None = Query(None),
     history_limit: int = Query(50, ge=1, le=200),
     history_before: str | None = Query(None, min_length=1, max_length=2048),
+    reference_part: Literal["overview", "curve", "history"] | None = Query(None),
+    reference_mode: Literal[
+        "page_ordinary", "page_ideal", "closed", "holding", "theoretical",
+        "fusion_page_ordinary", "fusion_page_ideal", "fusion_closed",
+        "fusion_holding", "fusion_theoretical",
+    ] | None = Query(None),
     snapshot_token: str | None = Query(None, min_length=1, max_length=256),
     include_fusion: bool = Query(False),
     fusion_before: str | None = Query(None, min_length=1, max_length=2048),
@@ -829,7 +841,8 @@ def newow_strategy_detail(
         unknown
         or (resolve_current and (frequency not in {"1d", "1w"} or section != "chart" or as_of is not None
             or any(value is not None for value in (from_, through, performance_since, performance_through,
-                chart_before, chart_older_window, component, history_before, snapshot_token, fusion_before))
+                chart_before, chart_older_window, component, history_before, snapshot_token, fusion_before,
+                reference_part, reference_mode))
             or include_fusion or decision_v2))
         or duplicates
         or (as_of is not None and as_of.utcoffset() is None)
@@ -883,10 +896,15 @@ def newow_strategy_detail(
             chart_older_window=chart_older_window,
             component=AuxiliaryComponent(component) if component is not None else None,
             history_limit=history_limit,
-            history_before=history_before,
+            history_before=(history_before if reference_part is None or
+                (reference_part == "history" and reference_mode in {"closed", "holding", "theoretical"}) else None),
+            reference_part=ReferencePart(reference_part) if reference_part is not None else None,
+            reference_mode=ReferenceMode(reference_mode) if reference_mode is not None else None,
             snapshot_token=snapshot_token,
             include_fusion=include_fusion,
-            fusion_before=fusion_before,
+            fusion_before=(history_before if reference_part == "history" and reference_mode in {
+                "fusion_closed", "fusion_holding", "fusion_theoretical"
+            } else fusion_before),
             decision_v2=decision_v2,
         )
         policy = _input_quality_policy(request, product, frequency)
@@ -898,7 +916,8 @@ def newow_strategy_detail(
                    _build_product_service(session, cancelled) if policy is InputQualityPolicy.V1
                    else _build_product_service(session, cancelled, policy))
         result = service.query(product_query)
-        return _product_response(result)
+        return _product_response(result, reference_part=reference_part,
+                                 reference_mode=reference_mode, history_before=history_before)
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}

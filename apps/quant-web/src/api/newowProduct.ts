@@ -7,8 +7,12 @@ import type {
   NewowProductCapabilities,
   NewowProductRequest,
   NewowProductSectionResponse,
+  NewowReferencePartRequest,
+  NewowReferencePartResponse,
 } from '../types/newowProduct.ts'
 import { normalizeNewowProductResponse } from '../utils/newowProductTypes.ts'
+import { normalizeNewowReferencePartResponse } from '../utils/newowReferenceParts.ts'
+import { READ_PRIORITY, type ReadPriority } from '../utils/readAdmission.ts'
 import { formatNewowDataDiagnostic, parseNewowDataDiagnostic, type NewowDataDiagnostic } from '../utils/newowDataDiagnostics.ts'
 
 export type NewowProductErrorClassification = 'invalid' | 'conflict' | 'busy' | 'cancelled' | 'unavailable' | 'response_invalid'
@@ -248,6 +252,7 @@ interface ProductRequestConfig {
   readonly timeout?: number
   readonly params: Record<string, unknown>
   readonly signal?: AbortSignal
+  readonly readPriority?: ReadPriority
 }
 
 type ProductTransport = (path: string, config: ProductRequestConfig) => Promise<unknown>
@@ -271,6 +276,10 @@ export async function getNewowProductSection(
       params: buildNewowProductQuery(request),
       signal: options.signal,
       timeout: options.timeout ?? 60000,
+      readPriority: request.section === 'chart' ? (request.chartBefore || request.chartOlderWindow ? READ_PRIORITY.history : READ_PRIORITY.foreground)
+        : request.section === 'auxiliary' ? READ_PRIORITY.selectedAuxiliary
+        : request.section === 'reference' && request.historyBefore !== undefined ? READ_PRIORITY.history
+        : READ_PRIORITY.visibleDetail,
     })
   } catch (error) {
     if (error instanceof NewowProductRequestError) throw error
@@ -281,6 +290,41 @@ export async function getNewowProductSection(
   } catch {
     throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
   }
+}
+
+export function buildNewowReferencePartQuery(request: NewowReferencePartRequest): Record<string, unknown> {
+  if ((request.performanceSince === undefined) !== (request.performanceThrough === undefined)) throw new NewowProductRequestError('NEWOW_INVALID_PERFORMANCE_WINDOW', 'invalid')
+  if (request.part !== 'history' && (request.historyBefore !== undefined || request.historyLimit !== undefined)) throw new NewowProductRequestError('NEWOW_SECTION_PARAMETER_INVALID', 'invalid')
+  if (request.historyLimit !== undefined && request.historyLimit !== 50) throw new NewowProductRequestError('NEWOW_INVALID_HISTORY_LIMIT', 'invalid')
+  return {
+    product: request.identity.product, strategy: request.identity.strategy, frequency: request.identity.frequency,
+    series_kind: request.identity.seriesKind, section: 'reference', reference_part: request.part,
+    reference_mode: request.mode, as_of: request.asOf, snapshot_token: request.snapshotToken,
+    ...(request.mode.startsWith('fusion_') ? { include_fusion: true } : {}),
+    ...(request.performanceSince === undefined ? {} : { performance_since: request.performanceSince, performance_through: request.performanceThrough }),
+    ...(request.historyBefore === undefined ? {} : { history_before: request.historyBefore }),
+    ...(request.historyLimit === undefined ? {} : { history_limit: request.historyLimit }),
+  }
+}
+
+export async function getNewowReferencePart(
+  input: NewowReferencePartRequest,
+  options: NewowProductRequestOptions = {},
+): Promise<NewowReferencePartResponse> {
+  const query = buildNewowReferencePartQuery(input)
+  const transport = options.request ?? defaultRequest
+  let payload: unknown
+  try {
+    payload = await transport('/market/newow/strategy-detail', {
+      params: query, signal: options.signal, timeout: options.timeout ?? 60000,
+      readPriority: input.part === 'history' ? READ_PRIORITY.history : READ_PRIORITY.visibleDetail,
+    })
+  } catch (error) {
+    if (error instanceof NewowProductRequestError) throw error
+    throw classifyTransportError(error)
+  }
+  try { return normalizeNewowReferencePartResponse(payload, input) }
+  catch { throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid') }
 }
 
 export function buildNewowProductQuery(request: NewowProductRequest): Record<string, unknown> {

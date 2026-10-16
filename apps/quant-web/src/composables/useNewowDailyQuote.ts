@@ -1,5 +1,6 @@
 import { computed, readonly, shallowRef, watch, type Ref } from 'vue'
 import type { MarketBarsPageRequest, MarketBarsPageResponse } from '../types/market.ts'
+import type { NewowProductSectionResponse } from '../types/newowProduct.ts'
 import { formatChartTimeInShanghai } from '../utils/barTime.ts'
 import { resolveHistoricalPhysicalContract } from './useMarketSeries.ts'
 import { candidatePreview } from '../utils/candidatePreview.ts'
@@ -49,10 +50,52 @@ export function projectNewowDailyQuote(page: MarketBarsPageResponse, symbol: str
   return { close: latest.close, open: latest.open, high: latest.high, low: latest.low, volume: latest.volume, openInterest: latest.open_interest, asOf: latest.bar_end, tradingDay: latest.trading_day, change, pct: change === null || !prior ? null : change / prior.close * 100 }
 }
 
+export function projectNewowChartDailyQuote(
+  chart: NewowProductSectionResponse<'chart'>,
+  symbol: string,
+  expectedBefore: string,
+) {
+  const invalid = () => { throw new Error('NEWOW_DAILY_QUOTE_INVALID') }
+  const context = chart.snapshotContext
+  if (chart.section !== 'chart' || !chart.value
+    || chart.meta.identity.product !== symbol || chart.meta.identity.frequency !== '1d'
+    || chart.meta.identity.series_kind !== 'actual_dominant'
+    || context?.frequency !== '1d' || context.product !== symbol
+    || quoteInstant(context.as_of) !== quoteInstant(expectedBefore)
+    || quoteInstant(chart.meta.as_of) !== quoteInstant(context.as_of)) invalid()
+  const bars = chart.value!.bars
+  const latest = bars.at(-1)
+  if (!latest || !latest.completed
+    || latest.trading_day !== (context!.frequency === '1d' ? context!.available_trading_day : null)
+    || quoteInstant(latest.bar_end) >= quoteInstant(expectedBefore)
+    || !/^[A-Z]+\d+$/i.test(latest.physical_contract)) invalid()
+  const previous = bars.at(-2)
+  if (previous && (quoteInstant(previous.bar_end) >= quoteInstant(latest!.bar_end)
+    || previous.trading_day >= latest!.trading_day)) invalid()
+  const open = Number(latest!.open), high = Number(latest!.high)
+  const low = Number(latest!.low), close = Number(latest!.close)
+  if (![open, high, low, close, latest!.volume].every(Number.isFinite)
+    || low <= 0 || low > Math.min(open, close) || high < Math.max(open, close)
+    || latest!.volume < 0) invalid()
+  const priorClose = previous && previous.physical_contract === latest!.physical_contract
+    ? Number(previous.close) : null
+  if (priorClose !== null && (!Number.isFinite(priorClose) || priorClose <= 0)) invalid()
+  const change = priorClose === null ? null : close - priorClose
+  return {
+    close, open, high, low, volume: latest!.volume,
+    openInterest: latest!.open_interest,
+    asOf: latest!.bar_end, tradingDay: latest!.trading_day,
+    change, pct: change === null || priorClose === null ? null : change / priorClose * 100,
+    physicalContract: latest!.physical_contract,
+  }
+}
+
 export function useNewowDailyQuote(options: {
   symbol: Readonly<Ref<string | null>>
   contract: Readonly<Ref<string | null>>
   snapshotAsOf?: Readonly<Ref<string | null>>
+  reuseDailyChart?: Readonly<Ref<boolean>>
+  dailyChart?: Readonly<Ref<NewowProductSectionResponse<'chart'> | null>>
   fetchPage?: (request: MarketBarsPageRequest, signal: AbortSignal) => Promise<MarketBarsPageResponse>
 }) {
   const page = shallowRef<MarketBarsPageResponse | null>(null)
@@ -65,7 +108,7 @@ export function useNewowDailyQuote(options: {
   async function load(symbol: string | null): Promise<void> {
     const current = ++generation
     controller?.abort(); page.value = null
-    if (!symbol || (options.snapshotAsOf && !options.snapshotAsOf.value)) { state.value = 'unavailable'; return }
+    if (!symbol || (options.snapshotAsOf && !options.snapshotAsOf.value) || options.reuseDailyChart?.value) { state.value = 'unavailable'; return }
     controller = new AbortController(); state.value = 'loading'
     try {
       const response = await fetchPage({ series_kind: 'actual_dominant', symbol, frequency: '1d', limit: 2, ...(before.value === null ? {} : { before: before.value }) }, controller.signal)
@@ -73,8 +116,12 @@ export function useNewowDailyQuote(options: {
       page.value = response; state.value = 'ready'
     } catch { if (generation === current) state.value = 'unavailable' }
   }
-  const stop = watch(() => [options.symbol.value, options.snapshotAsOf?.value] as const, ([symbol]) => { void load(symbol) }, { immediate: true, flush: 'sync' })
+  const stop = watch(() => [options.symbol.value, options.snapshotAsOf?.value, options.reuseDailyChart?.value] as const, ([symbol]) => { void load(symbol) }, { immediate: true, flush: 'sync' })
   const quote = computed(() => {
+    if (options.reuseDailyChart?.value) {
+      if (!options.dailyChart?.value || !options.symbol.value || !options.snapshotAsOf?.value) return null
+      try { return projectNewowChartDailyQuote(options.dailyChart.value, options.symbol.value, options.snapshotAsOf.value) } catch { return null }
+    }
     if (!page.value || !options.symbol.value || !options.contract.value) return null
     try { return projectNewowDailyQuote(page.value, options.symbol.value, options.contract.value, before.value) } catch { return null }
   })

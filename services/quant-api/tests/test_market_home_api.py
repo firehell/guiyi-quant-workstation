@@ -240,3 +240,27 @@ def test_directory_conditional_request_rechecks_current_owner(monkeypatch):
     values[0] = replace(values[0], actual_contract="JM2509")
     assert client.get(path, headers=headers).status_code == 200
     assert len(calls) == 3
+
+
+def test_static_product_directory_etag_excludes_current_owner(monkeypatch):
+    from types import SimpleNamespace
+    from app.market_data.market_data_service import MarketProductDirectoryEntry
+
+    entries = [MarketProductDirectoryEntry("jm", "焦煤", "DCE", "black")]
+    calls = []
+    def read():
+        calls.append(True)
+        return tuple(entries)
+    monkeypatch.setattr("app.api.market.build_market_data_service", lambda _session: SimpleNamespace(list_product_directory=read))
+    client = TestClient(app)
+    path = "/api/v1/market/product-directory"
+    first = client.get(path)
+    assert first.status_code == 200
+    assert first.json() == {"items": [{"product": "jm", "product_name": "焦煤", "exchange": "DCE", "sector": "black"}]}
+    assert first.headers["cache-control"] == "private, max-age=86400"
+    same = client.get(path, headers={"If-None-Match": first.headers["etag"]})
+    assert same.status_code == 304 and same.content == b""
+    entries[0] = MarketProductDirectoryEntry("jm", "新焦煤", "DCE", "black")
+    changed = client.get(path, headers={"If-None-Match": first.headers["etag"]})
+    assert changed.status_code == 200 and changed.headers["etag"] != first.headers["etag"]
+    assert len(calls) == 3

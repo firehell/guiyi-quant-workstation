@@ -1,12 +1,10 @@
 import type {
-  NewowProductHint,
   NewowProductDisplayState,
   NewowProductSection,
   NewowProductSectionResponse,
   NewowReferenceTrade,
   NewowResourceLifecycle,
 } from '../types/newowProduct.ts'
-import { newowReferencePrice } from './newowPagePresentation.ts'
 import { newowErrorDisplay } from './newowDataDiagnostics.ts'
 import { formatBeijingInstant, formatDecimalText, formatPerformancePercent } from './marketDisplay.ts'
 
@@ -34,123 +32,6 @@ export function buildNewowProductSectionViewModel(input: {
     reasonCode: input.response?.status.reason_code ?? null,
     staleReadAt: input.lifecycle === 'stale' ? input.response?.meta.read_at ?? null : null,
   }
-}
-
-export type NewowReferenceCategory = 'closed' | 'open' | 'interrupted'
-export type NewowReferenceFilter = 'all' | NewowReferenceCategory | 'initial'
-
-export interface NewowReferenceHintViewModel {
-  readonly id: string
-  readonly availability: 'loaded' | 'unavailable'
-  readonly text: string
-  readonly fact: NewowProductHint | null
-}
-
-export interface NewowReferenceRowViewModel {
-  readonly id: string
-  readonly trade: NewowReferenceTrade
-  readonly category: NewowReferenceCategory
-  readonly initial: boolean
-  readonly lifecycle: NewowReferenceTrade['status']
-  readonly statusText: string
-  readonly returnText: string
-  readonly valuationText: string
-  readonly hints: readonly NewowReferenceHintViewModel[]
-}
-
-export interface NewowReferencePanelViewModel {
-  readonly summary: {
-    readonly closedCount: number
-    readonly winRateText: string
-    readonly meanText: string
-    readonly sumText: string
-    readonly sumUnit: '百分点（简单相加）'
-  }
-  readonly counts: {
-    readonly open: number
-    readonly interrupted: number
-    readonly rolloverInterrupted: number
-    readonly dataInterrupted: number
-    readonly initial: number
-  }
-  readonly performanceWindow: {
-    readonly since: string
-    readonly through: string
-    readonly cutoff: string
-  }
-  readonly actualAvailableThrough: string
-  readonly statusExplanation: string
-  readonly completeWindowAction: {
-    readonly since: string
-    readonly through: string
-  } | null
-  readonly rows: readonly NewowReferenceRowViewModel[]
-  readonly nextBefore: string | null
-}
-
-/** Projects server-owned reference facts for display without calculating returns or aggregates. */
-export function buildNewowReferencePanelViewModel(
-  response: NewowProductSectionResponse<'reference'>,
-  chart: NewowProductSectionResponse<'chart'> | null,
-  crossSectionCompatible = false,
-): NewowReferencePanelViewModel {
-  if (response.value === null) throw new Error('Newow reference value is unavailable')
-  const value = response.value
-  const weeklyPartial = response.meta.identity.frequency === '1w'
-    && response.status.reason_code === 'NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL'
-  const completeWindowAction = weeklyPartial
-    && value.actual_available_through >= value.performance_since
-    && value.actual_available_through < value.performance_through
-    ? { since: value.performance_since, through: value.actual_available_through }
-    : null
-  const loadedHints = new Map((crossSectionCompatible ? chart?.value?.hints ?? [] : []).map((hint) => [hint.hint_id, hint]))
-  return {
-    summary: {
-      closedCount: value.summary.closed_count,
-      winRateText: percentageText(value.summary.win_rate_pct),
-      meanText: percentageText(value.summary.mean_return_pct),
-      sumText: formatDecimalString(value.summary.sum_return_percentage_points),
-      sumUnit: '百分点（简单相加）',
-    },
-    counts: {
-      open: value.summary.open_count,
-      interrupted: value.summary.interrupted_count,
-      rolloverInterrupted: value.summary.rollover_interrupted_count,
-      dataInterrupted: value.summary.data_interrupted_count,
-      initial: value.summary.initial_count,
-    },
-    performanceWindow: {
-      since: value.performance_since,
-      through: value.performance_through,
-      cutoff: value.reference_cutoff,
-    },
-    actualAvailableThrough: value.actual_available_through,
-    statusExplanation: referenceStatusExplanation(response.status.reason_code),
-    completeWindowAction,
-    rows: value.items.map((trade) => referenceRow(trade, loadedHints, crossSectionCompatible)),
-    nextBefore: value.next_before,
-  }
-}
-
-function referenceStatusExplanation(reason: string | null): string {
-  const labels: Readonly<Record<string, string>> = {
-    NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL: '本周尚未完成；历史记录仍按已验证截止展示，当前未完成周不计入。',
-    NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING: '本周尚未形成已完成周线，当前参考仍在等待。',
-    NEWOW_REFERENCE_WINDOW_PARTIAL: '所选统计终点晚于当前权威可用截止；已验证历史记录继续展示。',
-    NEWOW_COMPLETE_PERIOD_MISSING: '所选范围没有可验证的已完成周期。',
-    NEWOW_CHART_WARMING: '策略输入仍在预热，当前状态不可据此推定。',
-    NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING: '来源价格不可用后，当前策略参考正在重新预热；历史已验证记录继续展示。',
-  }
-  if (reason === null) return '所选统计区间已按权威截止完成计算。'
-  return labels[reason] ?? '当前参考原因未识别；原始原因码保留在技术详情。'
-}
-
-export function filterNewowReferenceRows(
-  model: NewowReferencePanelViewModel,
-  filter: NewowReferenceFilter,
-): NewowReferencePanelViewModel {
-  if (filter === 'all') return model
-  return { ...model, rows: model.rows.filter((row) => filter === 'initial' ? row.initial : row.category === filter) }
 }
 
 export type NewowReferenceLocate =
@@ -435,46 +316,6 @@ export function resolveNewowPanelRenderState(
       return failedPanelState(reason)
     default:
       return assertNever(lifecycle)
-  }
-}
-
-function referenceRow(
-  trade: NewowReferenceTrade,
-  loadedHints: ReadonlyMap<string, NewowProductHint>,
-  crossSectionCompatible: boolean,
-): NewowReferenceRowViewModel {
-  const initial = trade.statistics_membership === 'initial_before_window'
-  const category: NewowReferenceCategory = trade.status === 'CLOSED'
-      ? 'closed'
-      : trade.status === 'OPEN'
-        ? 'open'
-        : 'interrupted'
-  const initialSuffix = initial ? '；期初已有，不计入窗口统计' : ''
-  const percentage = trade.status === 'CLOSED'
-      ? percentageText(trade.reference_return_pct, initial ? '（期初已有，不计入窗口统计）' : '')
-      : trade.status === 'ROLLOVER_INTERRUPTED'
-        ? percentageText(trade.mark_change_pct, `（中断浮动${initialSuffix}）`)
-        : percentageText(trade.mark_change_pct, `（当前浮动${initialSuffix}）`)
-  return {
-    id: trade.reference_trade_id,
-    trade,
-    category,
-    initial,
-    lifecycle: trade.status,
-    statusText: `${trade.status}${initial ? ' · 期初已有' : ''}`,
-    returnText: percentage,
-    valuationText: trade.mark_bar_end === null || trade.mark_reference_price === null
-      ? `不可用${trade.interruption_reason === null ? '' : `（${trade.interruption_reason}）`}`
-      : `${trade.mark_bar_end} · ${newowReferencePrice(trade.mark_reference_price)}`,
-    hints: trade.hint_ids.map((id) => {
-      const fact = loadedHints.get(id) ?? null
-      if (!crossSectionCompatible) {
-        return { id, availability: 'unavailable' as const, text: 'Reference 与 Chart 没有共同快照证明，不能跨区关联 Hint。', fact: null }
-      }
-      return fact === null
-        ? { id, availability: 'unavailable', text: '未在已加载图表事实中找到，不能按邻近日期或当前上下文推断。', fact }
-        : { id, availability: 'loaded', text: `${fact.kind} · ${fact.bar_end} · 关联 Hint（不推断与主动作的同 Bar 顺序）`, fact }
-    }),
   }
 }
 

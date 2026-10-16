@@ -236,7 +236,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
   services/quant-api/tests/newow/test_product_readonly_compatibility.py \
   services/quant-api/tests/newow/test_older_chart_windows.py \
   services/quant-api/tests/newow/test_historical_snapshot.py
-pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts tests/newowReferenceParts.test.ts
 ```
 
 共享 v2 迁移后的模块回归和静态检查：
@@ -395,7 +395,7 @@ env -u VITE_API_BASE_URL -u VITE_MARKET_WS_URL REAL_BACKEND=0 PLAYWRIGHT_PORT=51
 使用独立 worktree 和既有依赖；5182 必须空闲，不能复用其他工作区服务。正常验收不带 `--update-snapshots`；截图变更须先核对规范与实际差异。fixture 通过不代表生产历史或 Runtime 验收。
 
 ```bash
-pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts
+pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowReferenceParts.test.ts tests/newowDetailPresentation.test.ts
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-detail-light.spec.mjs --grep 'current FLAT waiting card'
 PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
   services/quant-api/tests/newow/test_reference_trades.py \
@@ -419,7 +419,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
   services/quant-api/tests/newow/test_reference_trades.py \
   services/quant-api/tests/newow/test_target_absorb_display.py
 pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
-  tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts \
+  tests/useNewowProduct.test.ts tests/newowReferenceParts.test.ts tests/newowDetailPresentation.test.ts \
   tests/newowProductChartPrimitives.test.ts tests/newowProductTypes.test.ts tests/NewowProductChartStage.test.ts
 ```
 
@@ -1532,7 +1532,7 @@ pnpm -C apps/quant-web exec node --test \
   tests/useNewowProduct.test.ts \
   tests/NewowProductChartStage.test.ts \
   tests/newowProductChartPrimitives.test.ts \
-  tests/newowReferencePanel.test.ts \
+  tests/newowReferenceParts.test.ts \
   tests/newowExplanationPanel.test.ts \
   tests/NewowTrendChartStage.test.ts \
   tests/marketDetailController.test.ts \
@@ -1603,7 +1603,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 pnpm -C apps/quant-web exec node --test \
   tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts \
   tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts \
-  tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts \
+  tests/newowReferenceParts.test.ts tests/newowExplanationPanel.test.ts \
   tests/newowDetailPresentation.test.ts tests/useNewowDailyQuote.test.ts
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
   e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs \

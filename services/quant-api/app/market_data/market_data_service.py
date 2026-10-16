@@ -66,7 +66,7 @@ from app.market_data.weekly_quality import (
     classify_weekly_source,
     weekly_daily_revision_sha256,
 )
-from app.models import Instrument, MainContractMap, TradingCalendar, TradingSession
+from app.models import Exchange, Instrument, MainContractMap, TradingCalendar, TradingSession
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -102,6 +102,14 @@ class DominantContractSummary:
     exchange: str
     actual_contract: str
     dominant_mapping_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class MarketProductDirectoryEntry:
+    product: str
+    product_name: str
+    exchange: str
+    sector: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -2240,6 +2248,26 @@ class MarketDataService:
             if set(actual) - set(expected):
                 raise MarketDataError(missing_code, reason="REPLAY_ENDPOINTS_EXTRA")
             raise MarketDataError(missing_code)
+
+    def list_product_directory(self) -> tuple[MarketProductDirectoryEntry, ...]:
+        """Static active-product metadata; never reads MainContractMap."""
+        taxonomy = load_product_taxonomy()
+        rows = self.catalog.session.execute(
+            select(Instrument, Exchange)
+            .join(Exchange, Instrument.exchange_code == Exchange.code)
+            .where(Instrument.symbol.in_(tuple(taxonomy)))
+        ).all()
+        instruments = {instrument.symbol: (instrument, exchange) for instrument, exchange in rows}
+        if set(instruments) != set(taxonomy) or any(
+            not instrument.is_active or not exchange.is_active
+            or not exchange.code or instrument.exchange_code != exchange.code
+            for instrument, exchange in instruments.values()
+        ):
+            raise MarketDataError("PRODUCT_DIRECTORY_INCOMPLETE")
+        return tuple(
+            MarketProductDirectoryEntry(symbol, item.name, instruments[symbol][1].code, item.sector)
+            for symbol, item in sorted(taxonomy.items())
+        )
 
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         """返回每个品种最近一条主力映射（按 trade_date 降序取首条）。"""

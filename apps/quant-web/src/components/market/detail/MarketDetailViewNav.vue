@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { type DominantContractItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
+import { type MarketProductDirectoryItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
 import {
   type DetailSeriesKind,
   type MarketDetailIdentity,
@@ -12,7 +12,7 @@ import {
 import { resolveViewSwitchIdentity } from '@/utils/marketDetailRoute'
 
 const props = withDefaults(defineProps<{
-  products?: readonly DominantContractItem[]
+  products?: readonly MarketProductDirectoryItem[]
   identity: MarketDetailIdentity
   restore: MarketDetailViewRestore
   seriesKinds?: readonly SeriesKind[]

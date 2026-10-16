@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import dataclass
 from hashlib import sha256
 import json
 from threading import Lock
@@ -21,10 +22,22 @@ from app.reference_trading.repository import _identity_from_row
 from app.reference_trading.source_identity import verify_saved_input_prefix, verify_saved_compact_source
 
 
+@dataclass(frozen=True, slots=True)
+class _CompletePresentation:
+    """One exact saved generation, retained inside the existing product budget."""
+
+    payload: dict[str, Any]
+    items_by_saved_id: dict[str, dict[str, Any]]
+    status: Any
+    generation: tuple[str, str, int]
+    materials: dict[str, Any] | None = None
+
+
 class PersistedNewowReference:
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory, *, cache=None) -> None:
         self._factory = session_factory
         self._query = HistoricalReferenceQuery(session_factory)
+        self._cache = cache
         self._page_reads: OrderedDict[tuple, Any] = OrderedDict()
         self._page_read_lock = Lock()
 
@@ -236,7 +249,7 @@ class PersistedNewowReference:
                     facts["action"].append(point)
         return facts
 
-    def validate_cached_generation(self, delivery):
+    def validate_cached_generation(self, delivery, *, reader=None):
         from app.reference_trading.contracts import manifest_sha256
         payload = delivery.value.payload
         saved = delivery.value.saved_generation
@@ -254,18 +267,31 @@ class PersistedNewowReference:
         if len(streams) != 1:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         latest = self._query.summary(streams[0]["stream_id"], since=since, through=through, cutoff=cutoff)
-        _, manifest = self._manifest(streams[0]["stream_id"], latest["revision_id"], latest["seq"])
+        identity, manifest = self._manifest(streams[0]["stream_id"], latest["revision_id"], latest["seq"])
         dependencies = manifest.get("source_dependencies")
         if not isinstance(dependencies, list) or len(dependencies) != 2:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
         revision = manifest_sha256({"snapshot": latest["snapshot"], "dependencies": dependencies,
-            "record_since": (through - timedelta(days=364)).isoformat(), "record_through": through.isoformat()})
+            "record_since": fusion.get("record_since", (through - timedelta(days=364)).isoformat()),
+            "record_through": through.isoformat()})
         if revision != fusion["reference_revision"]:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         for strategy, dependency in zip(("trend", "oscillation"), dependencies):
             base = self._query.streams(strategy="newow_" + strategy, product=fusion["product"], frequency=fusion["frequency"])
             if len(base) != 1 or (base[0]["stream_id"], base[0]["active_revision_id"], base[0]["latest_seq"]) != (dependency["stream_id"], dependency["revision_id"], dependency["seq"]):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+            _, dependency_manifest = self._manifest(dependency["stream_id"], dependency["revision_id"], dependency["seq"])
+            if manifest_sha256(dependency_manifest) != dependency.get("dependency_digest"):
+                raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+            dependency_summary = self._query.summary(dependency["stream_id"], since=since, through=through, cutoff=cutoff)
+            if (dependency_summary["revision_id"], dependency_summary["seq"]) != (dependency["revision_id"], dependency["seq"]):
+                raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+        if reader is not None:
+            from app.reference_trading.newow_fusion import PersistedFusionComparison
+            PersistedFusionComparison.verify_saved_source(
+                identity, manifest, product=fusion["product"], frequency=fusion["frequency"],
+                through=through, cutoff=cutoff, reader=reader,
+            )
 
     def attach_cached_fusion(self, request, delivery, reader, fact_key, resolved):
         from dataclasses import replace
@@ -297,6 +323,68 @@ class PersistedNewowReference:
         fusion["page_performance"] = project_page_performance(full, source_identity, resolved, fusion=True)
         self.validate_cached_generation(delivery)
         return replace(delivery, value=PersistedReferenceSectionValue({**payload, "fusion_comparison": fusion}, saved))
+
+    def _selected_projection(self, request, read, identity, reader, fact_key, resolved,
+                             generation, snapshot, manifest, curve_items, availability, boundaries,
+                             full_read=None):
+        """Derive only the requested display model from one complete saved base."""
+        from app.market_data.newow.page_performance_adapter import project_page_performance
+        stream_id = generation[0]
+        reference_mode = getattr(request, "reference_mode", None)
+        mode = reference_mode.value if reference_mode is not None else None
+        local = mode.removeprefix("fusion_") if mode is not None else None
+        fusion_selected = mode is not None and mode.startswith("fusion_")
+        page_mode = local.removeprefix("page_") if local is not None and local.startswith("page_") else None
+        legacy = mode is None
+        extra = {}
+        marks = None
+        if legacy or (not fusion_selected and local in {"holding", "theoretical"}):
+            marks = self._query.curve_marks(stream_id, since=resolved.requested_since,
+                through=resolved.requested_through, cutoff=resolved.cutoff, snapshot_token=snapshot)
+        if legacy or (not fusion_selected and local == "holding"):
+            from app.reference_trading.saved_holding_curve import saved_holding_curve
+            extra["holding_curve"] = saved_holding_curve(curve_items, marks, availability,
+                resolved.requested_since.isoformat(), resolved.requested_through.isoformat(),
+                resolved.cutoff, boundaries)
+        if (legacy or (not fusion_selected and local == "theoretical")) and callable(
+                getattr(reader, "reference_theoretical_bars", None)):
+            from app.reference_trading.saved_theoretical import saved_theoretical
+            member_trades = [trade for trade in curve_items
+                             if resolved.requested_since.isoformat() <= trade["entry_trading_day"] <= resolved.requested_through.isoformat()]
+            theory_bars = reader.reference_theoretical_bars(
+                request.product, request.frequency.value, member_trades, resolved.cutoff)
+            if manifest.get("reader") == "newow_product_reader_intraday_v3":
+                verify_saved_compact_source(manifest, reader.historical_source_evidence(
+                    product=request.product, frequency=request.frequency.value,
+                    since=date.fromisoformat(manifest["query_since"]),
+                    through=date.fromisoformat(manifest["query_through"]),
+                    as_of=datetime.fromisoformat(manifest["query_as_of"])))
+            extra["theoretical"] = saved_theoretical(member_trades, marks, theory_bars,
+                request.strategy.value, resolved.requested_since.isoformat(),
+                resolved.requested_through.isoformat())
+        if request.include_fusion and (legacy or fusion_selected):
+            from app.reference_trading.newow_fusion import PersistedFusionComparison
+            fusion = PersistedFusionComparison(self._factory).comparison(
+                product=request.product, frequency=request.frequency.value,
+                since=resolved.requested_since, through=resolved.requested_through,
+                cutoff=resolved.cutoff, reader=reader, limit=request.history_limit,
+                cursor=request.fusion_before,
+                expected_source_generation=(request.strategy.value, *generation),
+            )
+            fusion["fusion_input_sha256"] = fusion["reference_input_sha256"]
+            fusion["reference_input_sha256"] = fact_key
+            extra["fusion_comparison"] = fusion
+        if legacy or page_mode is not None:
+            full = full_read if full_read is not None else (
+                self._page_read(request, reader, manifest, resolved) if
+                request.frequency.value in {"1m", "5m", "15m", "30m", "60m"} else read)
+            if legacy or not fusion_selected:
+                extra["page_performance"] = project_page_performance(
+                    full, identity, resolved, selected_mode=page_mode)
+            if "fusion_comparison" in extra:
+                extra["fusion_comparison"]["page_performance"] = project_page_performance(
+                    full, identity, resolved, fusion=True, selected_mode=page_mode)
+        return extra
 
     def section(self, request, read, identity, reader, fact_key, _page_identity, resolved):
         from guiyi_quant.newow.product_contracts import (
@@ -373,6 +461,51 @@ class PersistedNewowReference:
                 frozenset((bar.physical_contract, bar.owner_segment_id)
                           for bar in source.bars if bar.strategy_input),
             )
+        # A cache hit is useful only after a fresh saved-generation and source
+        # validation above. The process cache is never an authority for either.
+        generation = (stream_id, page["revision_id"], page["seq"])
+        selected_mode = request.reference_mode.value if getattr(request, "reference_mode", None) is not None else None
+        selected_key = ("selected", selected_mode, request.fusion_before) if selected_mode is not None else None
+        cache_identity = sha256(json.dumps({
+            "stream": stream_id, "revision": page["revision_id"], "seq": page["seq"],
+            "snapshot": snapshot, "since": since.isoformat(), "through": through.isoformat(),
+            "cutoff": cutoff.isoformat(), "fact": fact_key,
+            "include_fusion": getattr(request, "include_fusion", False) if selected_mode is None else None,
+            "fusion_before": getattr(request, "fusion_before", None) if selected_mode is None else None,
+            "manifest": manifest,
+        }, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+        cache_key = f"persisted-reference-complete:{cache_identity}"
+        cached = self._cache.get(cache_key, ("complete",), touch=False) if self._cache is not None else None
+        if (isinstance(cached, _CompletePresentation) and cached.generation == generation
+                and (selected_mode is None or cached.materials is not None)):
+            items = []
+            for saved_item in page["items"]:
+                item = cached.items_by_saved_id.get(saved_item["reference_trade_id"])
+                if item is None:
+                    raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+                items.append(item)
+            from app.market_data.newow.product_service import PersistedReferenceSectionValue, SectionDelivery
+            extra = {}
+            selected_missing = False
+            if selected_key is not None:
+                extra = self._cache.get(cache_key, selected_key, touch=False) if self._cache is not None else None
+                if extra is None:
+                    selected_missing = True
+                    materials = cached.materials
+                    extra = self._selected_projection(
+                        request, read, identity, reader, fact_key, resolved, generation,
+                        materials["snapshot"], manifest, materials["curve_items"],
+                        materials["availability"], materials["boundaries"],
+                    )
+            delivery = SectionDelivery("delivered", cached.status, PersistedReferenceSectionValue(
+                {**cached.payload, **extra, "items": items, "next_before": page["next_cursor"]}, generation,
+            ))
+            self.validate_cached_generation(delivery, reader=reader)
+            if selected_missing and self._cache is not None:
+                self._cache.put(cache_key, selected_key, extra)
+            elif self._cache is not None:
+                self._cache.get(cache_key, ("complete",))
+            return delivery
         stats = self._query.summary(
             stream_id, since=since, through=through, cutoff=cutoff,
             snapshot_token=snapshot,
@@ -472,6 +605,8 @@ class PersistedNewowReference:
             "reference_cutoff": cutoff.isoformat(),
             "reference_input_sha256": fact_key,
             "history_coverage": "PARTIAL" if any(i["status"] != "VALID" for i in intervals) else "FULL",
+            "record_since": record_since.isoformat(),
+            "records_window_limited": record_since > since,
             "unavailable_days": unavailable, "coverage_intervals": intervals,
             "summary": {**{key: stats[key] for key in (
                 "closed_count", "win_count", "loss_count", "flat_count",
@@ -489,42 +624,19 @@ class PersistedNewowReference:
             "storage_mode": "persisted",
             "allowed_uses": ["page_parity_reference", "research_display"],
         }
-        from app.reference_trading.saved_holding_curve import saved_holding_curve
-        marks = self._query.curve_marks(stream_id, since=since, through=through,
-            cutoff=cutoff, snapshot_token=snapshot)
-        payload["holding_curve"] = saved_holding_curve(curve_items, marks, availability,
-            since.isoformat(), through.isoformat(), cutoff, boundaries)
-        if callable(getattr(reader, "reference_theoretical_bars", None)):
-            from app.reference_trading.saved_theoretical import saved_theoretical
-            member_trades = [t for t in curve_items if since.isoformat() <= t['entry_trading_day'] <= through.isoformat()]
-            theory_bars = reader.reference_theoretical_bars(request.product, request.frequency.value, member_trades, cutoff)
-            if manifest.get("reader") == "newow_product_reader_intraday_v3":
-                verify_saved_compact_source(manifest, reader.historical_source_evidence(
-                    product=request.product, frequency=request.frequency.value,
-                    since=date.fromisoformat(storage_start), through=source_through, as_of=source_as_of))
-            payload["theoretical"] = saved_theoretical(member_trades, marks, theory_bars,
-                request.strategy.value, since.isoformat(), through.isoformat())
-        if request.include_fusion:
-            from app.reference_trading.newow_fusion import PersistedFusionComparison
-            payload["fusion_comparison"] = PersistedFusionComparison(self._factory).comparison(
-                product=request.product, frequency=request.frequency.value, since=since,
-                through=through, cutoff=cutoff, reader=reader, limit=request.history_limit,
-                cursor=request.fusion_before,
-                expected_source_generation=(request.strategy.value, stream_id, page["revision_id"], page["seq"]),
-            )
-            payload["fusion_comparison"]["fusion_input_sha256"] = payload["fusion_comparison"]["reference_input_sha256"]
-            payload["fusion_comparison"]["reference_input_sha256"] = fact_key
-        from app.market_data.newow.page_performance_adapter import project_page_performance
-        if minute:
-            full = self._page_read(request, reader, manifest, resolved)
-        else:
-            full = read
-        payload["page_performance"] = project_page_performance(full, identity, resolved)
-        if request.include_fusion:
-            payload["fusion_comparison"]["page_performance"] = project_page_performance(full, identity, resolved, fusion=True)
-        latest = self._query.summary(stream_id, since=since, through=through, cutoff=cutoff)
-        if (latest["revision_id"], latest["seq"]) != (page["revision_id"], page["seq"]):
-            raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+        payload["result_identity_sha256"] = sha256(json.dumps({
+            "generation": generation, "summary": payload["summary"],
+            "records": output_items, "coverage": intervals,
+        }, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+        base_payload = dict(payload)
+        # Read the complete persisted window for readiness even when no page
+        # estimate is requested: the bounded display read can miss a tail gap.
+        full = self._page_read(request, reader, manifest, resolved) if minute else read
+        selected_extra = self._selected_projection(
+            request, read, identity, reader, fact_key, resolved, generation,
+            snapshot, manifest, curve_items, availability, boundaries, full_read=full,
+        )
+        payload.update(selected_extra)
         warming = (
             not resolved.complete or _has_unresolved_tail_gap(full)
             or bool(availability and availability[-1]["value"].get("last_status", availability[-1]["value"]["status"]) != "ready")
@@ -534,6 +646,21 @@ class PersistedNewowReference:
             EvidenceStatus.ACTIVE_CODE_VERIFIED,
             (resolved.reason_code or "NEWOW_REFERENCE_WINDOW_PARTIAL") if warming else None,
         )
-        return SectionDelivery(
-            "delivered", status, PersistedReferenceSectionValue(payload, (stream_id, page["revision_id"], page["seq"])),
+        delivery = SectionDelivery(
+            "delivered", status, PersistedReferenceSectionValue(payload, generation),
         )
+        # The selected fusion or its dependencies can advance while the base
+        # projection is being derived. Recheck the complete result before any
+        # cache admission, including a fresh fusion source proof.
+        self.validate_cached_generation(delivery, reader=reader)
+        if self._cache is not None:
+            self._cache.put(cache_key, ("complete",), _CompletePresentation(
+                {key: item for key, item in (payload if selected_mode is None else base_payload).items()
+                 if key not in {"items", "next_before"}},
+                {raw["reference_trade_id"]: item for raw, item in zip(curve_items, output_items, strict=True)},
+                status, generation,
+                ({"snapshot": snapshot, "curve_items": curve_items,
+                  "availability": availability, "boundaries": boundaries}
+                 if selected_mode is not None else None),
+            ), related_values={selected_key: selected_extra} if selected_key is not None else None)
+        return delivery

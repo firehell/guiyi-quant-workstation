@@ -63,6 +63,30 @@ test('reuses a fresh accepted overview immediately after dispose and reentry', a
   second.dispose()
 })
 
+test('static product directory holds its 24-hour refresh interval independently of overview', async () => {
+  let now = 1_000
+  let directoryCalls = 0
+  let overviewCalls = 0
+  const home = useMarketHome({
+    fetchDirectory: async () => { directoryCalls += 1; return { items: [{ product: 'rb', product_name: '螺纹钢', exchange: 'SHFE', sector: 'steel' }] } },
+    fetchOverview: async () => { overviewCalls += 1; return overviewCalls },
+    fetchRuntime: async () => null,
+    now: () => now,
+    overviewMaxAgeMs: 5 * 60_000,
+    directoryMaxAgeMs: 24 * 60 * 60_000,
+  })
+  await home.refreshAll()
+  now += 6 * 60_000
+  await home.refreshOverviewIfExpired()
+  await home.refreshDirectoryIfExpired()
+  assert.equal(overviewCalls, 2)
+  assert.equal(directoryCalls, 1)
+  now += 24 * 60 * 60_000
+  await home.refreshDirectoryIfExpired()
+  assert.equal(directoryCalls, 2)
+  home.dispose()
+})
+
 test('keeps an expired overview visible while one background refresh replaces it', async () => {
   let now = 1_000
   let calls = 0

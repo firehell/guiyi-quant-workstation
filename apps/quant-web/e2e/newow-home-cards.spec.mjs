@@ -11,7 +11,7 @@ async function setup(page) {
   page.on('pageerror', e => control.errors.push(e.message))
   await page.route('**/api/runtime/health', r => r.fulfill({ json: { status:'ok', readonly:true, components:{} } }))
   await page.route('**/api/v1/market/research/home-overview', r => r.fulfill({ json: overview }))
-  await page.route('**/api/v1/market/dominants', r => r.fulfill({ json: {items:overview.items.map(x=>({product:x.symbol,product_name:x.product_name,actual_contract:x.actual_contract,dominant_mapping_date:x.dominant_mapping_date}))} }))
+  await page.route('**/api/v1/market/product-directory', r => r.fulfill({ json: {items:overview.items.map(x=>({product:x.symbol,product_name:x.product_name,exchange:x.exchange,sector:x.sector}))} }))
   await page.route('**/api/v1/market/newow/home-cards?*', async route => {
     const products = new URL(route.request().url()).searchParams.get('products').split(',')
     control.products.push(products); control.active++; control.maximum=Math.max(control.maximum,control.active)

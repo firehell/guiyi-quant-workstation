@@ -262,6 +262,7 @@ def compute_page_performance(
     period: str = "day",
     since: str | None = None,
     through: str | None = None,
+    selected_mode: str | None = None,
 ) -> dict:
     """Compute independent source ordinary/ideal pairing from validated owners.
 
@@ -276,6 +277,8 @@ def compute_page_performance(
     ):
         raise ValueError("NEWOW_INVALID_QUERY")
     if strategy not in ("trend", "oscillation", "main_rise", "fusion"):
+        raise ValueError("NEWOW_INVALID_QUERY")
+    if selected_mode not in (None, "ordinary", "ideal"):
         raise ValueError("NEWOW_INVALID_QUERY")
     last_eligible_date = None
     owners = set()
@@ -357,7 +360,7 @@ def compute_page_performance(
         bar.observation_eligible and (bar.trading_day or bar.date) >= since
         for segment in segments for bar in segment.bars
     )
-    for ideal in (False, True):
+    for ideal in ((False, True) if selected_mode is None else (selected_mode == "ideal",)):
         aggregate: dict[str, Any] = {
             "period": period,
             "dates": [],

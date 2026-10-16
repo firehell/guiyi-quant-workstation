@@ -117,10 +117,10 @@ async function mockMarketApi(page, requests, controls = {}) {
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
     requests.push(url)
-    if (url.pathname.endsWith('/dominants')) {
+    if (url.pathname.endsWith('/product-directory')) {
       await route.fulfill({ json: { items: [
-        { product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-07' },
-        { product: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', actual_contract: 'JM2601', dominant_mapping_date: '2026-08-07' },
+        { product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE' },
+        { product: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE' },
       ] } })
       return
     }

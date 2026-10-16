@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"]
 ProductStrategyValue = Literal["trend", "oscillation", "main_rise"]
+ReferenceModeValue = Literal[
+    "page_ordinary", "page_ideal", "closed", "holding", "theoretical",
+    "fusion_page_ordinary", "fusion_page_ideal", "fusion_closed",
+    "fusion_holding", "fusion_theoretical",
+]
 RuntimeStatusValue = Literal[
     "ready", "warming", "unavailable", "not_applicable", "evidence_required"
 ]
@@ -443,6 +448,74 @@ class ReferenceValueOut(_Out):
     executable: Literal[False]
     auto_order: Literal[False]
     allowed_uses: list[str]
+
+
+class ReferenceCurveOut(_Out):
+    mode: ReferenceModeValue
+    points: list[dict[str, Any]] = Field(max_length=2000)
+    total_points: int
+    sampled: bool
+    model_version: str | None = None
+    summary: dict[str, Any] | None = None
+    drawdown_kind: str | None = None
+    period: ProductFrequencyValue | None = None
+    annualized_pct: str | None = None
+    segment_annuals: list[dict[str, Any]] | None = None
+    metrics: dict[str, Any] | None = None
+    source_identity: dict[str, Any] | None = None
+
+
+class ReferenceSplitValueOut(_Out):
+    reference_part: Literal["overview", "curve", "history"]
+    reference_mode: ReferenceModeValue | None = Field(default=None, exclude_if=lambda value: value is None)
+    performance_since: date
+    performance_through: date
+    actual_available_through: date
+    reference_cutoff: datetime
+    reference_input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    record_since: date
+    records_window_limited: bool
+    history_coverage: Literal["FULL", "PARTIAL"]
+    storage_mode: Literal["persisted"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    executable: Literal[False]
+    auto_order: Literal[False]
+    allowed_uses: list[str]
+    summary: ReferenceSummaryOut | None = Field(default=None, exclude_if=lambda value: value is None)
+    unavailable_days: list[date] | None = Field(default=None, exclude_if=lambda value: value is None)
+    coverage_intervals: list[ReferenceCoverageIntervalOut] | None = Field(default=None, exclude_if=lambda value: value is None)
+    recent_items: list[dict[str, Any]] | None = Field(default=None, max_length=3, exclude_if=lambda value: value is None)
+    page_summaries: dict[str, PagePerformanceSummaryOut | None] | None = Field(default=None, exclude_if=lambda value: value is None)
+    fusion_groups: list[FusionGroupOut] | None = Field(default=None, exclude_if=lambda value: value is None)
+    curve: ReferenceCurveOut | None = Field(default=None, exclude_if=lambda value: value is None)
+    items: list[dict[str, Any]] | None = Field(default=None, max_length=50, exclude_if=lambda value: value is None)
+    next_before: str | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def single_part(self):
+        if self.reference_part == "overview":
+            valid = (self.summary is not None and self.coverage_intervals is not None
+                     and self.unavailable_days is not None and self.recent_items is not None
+                     and self.page_summaries is not None and self.curve is None
+                     and self.items is None and self.reference_mode is not None)
+        elif self.reference_part == "curve":
+            valid = (self.curve is not None and self.curve.mode == self.reference_mode
+                     and self.summary is None and self.items is None and self.recent_items is None)
+        else:
+            valid = (self.items is not None and self.curve is None and self.summary is None
+                     and self.reference_mode is not None and self.recent_items is None)
+        if not valid:
+            raise ValueError("reference parts are mixed")
+        return self
+
+    @model_serializer(mode="wrap")
+    def serialize_part(self, handler):
+        payload = handler(self)
+        if self.reference_part == "history":
+            payload["next_before"] = self.next_before
+        else:
+            payload.pop("next_before", None)
+        return payload
 
 
 class SourceFactOut(_Out):
@@ -927,7 +1000,7 @@ class AuxiliaryDeliveryOut(_Out):
 class ReferenceDeliveryOut(_Out):
     delivery: Literal["delivered", "not_requested"]
     status: ProductFeatureStatusOut | None
-    value: ReferenceValueOut | None
+    value: ReferenceValueOut | ReferenceSplitValueOut | None
 
 
 class ExplanationDeliveryOut(_Out):

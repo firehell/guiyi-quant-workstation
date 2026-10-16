@@ -1,5 +1,6 @@
 from dataclasses import replace
 from datetime import date, timedelta
+from decimal import Decimal
 from threading import Event, Thread
 from time import sleep
 from types import SimpleNamespace
@@ -34,7 +35,7 @@ from app.market_data.newow.product_service import (
     _dependency_proof,
     _reference_coverage_intervals,
 )
-from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus
+from guiyi_quant.newow.product_contracts import EvidenceStatus, FeatureRuntimeStatus, FeatureStatus
 
 
 def test_intraday_reference_coverage_keeps_mixed_warmup_day_warming():
@@ -141,6 +142,57 @@ def _service(product_cases, frequency="1d"):
     now = clear.bar_end.replace(year=2027)
     service = NewowProductService(lambda _context, _cancelled: reader, now=lambda: now)
     return service, reader, build, clear
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_split_reference_matches_legacy_complete_values_for_daily_and_weekly(product_cases, frequency):
+    from app.api.market_newow import _product_response
+
+    service, _reader, build, clear = _service(product_cases, frequency)
+    query = ProductServiceQuery(
+        "rb", "trend", frequency, section="reference",
+        performance_since=build.trading_day, performance_through=clear.trading_day,
+        as_of=clear.bar_end,
+    )
+    legacy = _product_response(service.query(query)).model_dump(mode="json")["reference"]["value"]
+    for mode, page_key in (("page_ordinary", "ordinary"), ("page_ideal", "ideal")):
+        overview = _product_response(
+            service.query(replace(query, reference_part="overview", reference_mode=mode)),
+            reference_part="overview", reference_mode=mode,
+        ).model_dump(mode="json")["reference"]["value"]
+        curve = _product_response(
+            service.query(replace(query, reference_part="curve", reference_mode=mode)),
+            reference_part="curve", reference_mode=mode,
+        ).model_dump(mode="json")["reference"]["value"]
+        assert overview["page_summaries"] == {page_key: legacy["page_performance"][page_key]["summary"]}
+        assert [point["value"] for point in curve["curve"]["points"]] == legacy["page_performance"][page_key]["equity"]
+        assert curve["curve"]["metrics"]["return_percentage_points"] == legacy["page_performance"][page_key]["summary"]["cumReturn"]
+        assert overview["result_hash"] == curve["result_hash"]
+    for mode in ("closed", "holding", "theoretical"):
+        overview = _product_response(
+            service.query(replace(query, reference_part="overview", reference_mode=mode)),
+            reference_part="overview", reference_mode=mode,
+        ).model_dump(mode="json")["reference"]["value"]
+        curve = _product_response(
+            service.query(replace(query, reference_part="curve", reference_mode=mode)),
+            reference_part="curve", reference_mode=mode,
+        ).model_dump(mode="json")["reference"]["value"]
+        history = _product_response(
+            service.query(replace(query, reference_part="history", reference_mode=mode)),
+            reference_part="history", reference_mode=mode,
+        ).model_dump(mode="json")["reference"]["value"]
+        assert overview["summary"] == legacy["summary"]
+        assert history["items"] == legacy["items"]
+        assert overview["result_hash"] == curve["result_hash"] == history["result_hash"]
+        if mode == "closed":
+            expected = sum((Decimal(trade["reference_return_pct"])
+                            for trade in legacy["curve_trades"]), Decimal(0))
+            assert Decimal(curve["curve"]["metrics"]["return_percentage_points"]) == expected
+        elif mode == "holding":
+            assert [point["value"] for point in curve["curve"]["points"]] == [
+                point["marked_return_percentage_points"] for point in legacy["holding_curve"]["points"]]
+        else:
+            assert curve["curve"]["summary"] == legacy["theoretical"]
 
 
 def test_readiness_service_reuses_identical_read_inputs_across_sections(product_cases):
@@ -1716,6 +1768,45 @@ def test_saved_minute_reference_admission_does_not_starve_current_calculation(mo
     assert reference.running == calculation.running == 0
 
 
+def test_saved_fusion_split_uses_selected_persisted_path_without_legacy_attach(product_cases, monkeypatch):
+    from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
+
+    reader, source_query, fake = product_cases.paged_reader(prefix_bars=80, frequency="60m")
+    # This fixture has no persisted Canonical source API. Keep this test focused
+    # on the selected-mode service branch; source proof is exercised separately.
+    monkeypatch.setattr(reader, "load_reference_scope", lambda query, cutoff: reader.load(query, cutoff))
+    monkeypatch.setattr(reader, "historical_source_evidence", lambda **_kwargs: {
+        "schema": "selected-fusion-service-branch-fixture",
+        "generation": "fixed",
+    })
+    calls = []
+
+    class Persisted:
+        def section(self, request, *_args):
+            calls.append(request.reference_mode.value)
+            return SectionDelivery("delivered", FeatureStatus(
+                FeatureRuntimeStatus.READY, EvidenceStatus.ACTIVE_CODE_VERIFIED),
+                PersistedReferenceSectionValue({"reference_input_sha256": "a" * 64}))
+
+        def attach_cached_fusion(self, *_args):
+            pytest.fail("legacy fusion attachment must not run for a selected split mode")
+
+        def validate_cached_generation(self, *_args, **_kwargs):
+            pass
+
+    persisted = Persisted()
+    service = NewowProductService(lambda *_args: reader,
+        persisted_reference=persisted.section, now=lambda: fake.as_of)
+    request = ProductServiceQuery("rb", "trend", "60m", section="reference",
+        performance_since=source_query.performance_since,
+        performance_through=source_query.performance_through,
+        as_of=fake.as_of, include_fusion=True,
+        reference_part="overview", reference_mode="fusion_page_ordinary")
+    result = service.query(request)
+    assert result.reference.delivery == "delivered"
+    assert calls == ["fusion_page_ordinary"]
+
+
 def test_rejected_result_keeps_token_only_when_entire_read_proof_is_saved(product_cases, monkeypatch):
     from app.market_data.newow.snapshot_cache import SnapshotCache
 
@@ -1799,7 +1890,7 @@ def test_fresh_cached_read_renews_existing_token_after_actual_authoritative_load
     assert len(reader.loads) == 2
     assert current.meta.snapshot_token == first.meta.snapshot_token
     assert replace(current, meta=first.meta) == first
-    assert next(iter(service._cache._entries.values())).expires_at == 599
+    assert service._cache._entries[service._cache.fact_key_for_token(first.meta.snapshot_token)].expires_at == 599
 
 
 @pytest.mark.parametrize('bound', [True, False])
@@ -1908,7 +1999,7 @@ def test_memoized_cache_hit_cannot_return_expired_or_different_bound_token(produ
 
 def test_hourly_decision_never_replays_main_rise_and_uses_hourly_readiness(product_cases, monkeypatch):
     reader, query, fake = product_cases.paged_reader(prefix_bars=120, frequency="60m")
-    from app.market_data.newow import product_service as module
+    from app.market_data.newow import replay_cache as module
     original = module.replay_strategy
     seen = []
     def replay(identity, *args, **kwargs):
@@ -2054,3 +2145,72 @@ def test_concurrent_same_day_correction_does_not_join_old_proof(monkeypatch, pro
     assert len(calls) == 2
     assert one.meta.input_content_sha256 != two.meta.input_content_sha256
     assert one.meta.snapshot_token != two.meta.snapshot_token
+
+
+def test_fresh_cutoff_reuses_only_kernel_after_new_authority_read(product_cases):
+    from unittest.mock import patch
+    from app.market_data.newow import replay_cache
+    service, reader, _build, clear = _service(product_cases)
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)
+    with patch.object(replay_cache, "replay_strategy", wraps=replay_cache.replay_strategy) as kernel:
+        first = service.query(request)
+        second = service.query(replace(request, as_of=clear.bar_end + timedelta(minutes=1)))
+    assert len(reader.loads) == 2
+    assert kernel.call_count == 1
+    assert first.meta.snapshot_token != second.meta.snapshot_token
+    assert first.meta.as_of != second.meta.as_of
+    assert first.chart.value.replay == second.chart.value.replay
+
+
+def test_uncached_chart_joins_single_heavy_calculation_budget(product_cases):
+    service, _reader, _build, clear = _service(product_cases)
+    service._gate = HeavyResourceGate(max_waiting=0)
+    with service._gate.acquire():
+        with pytest.raises(NewowResourceBusy):
+            service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+    assert service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)).chart.value
+
+
+def test_cancelled_kernel_leader_does_not_cancel_active_outer_follower(product_cases, monkeypatch):
+    from time import monotonic
+    from app.market_data.newow import replay_cache
+    from app.market_data.newow.inflight import NewowComputationCancelled
+    first, reader, _build, clear = _service(product_cases)
+    departed = Event()
+    first._cancelled = departed.is_set
+    second = NewowProductService(lambda *_: reader, cache=first._cache, now=first._now)
+    entered, release = Event(), Event()
+    original = replay_cache.replay_strategy
+    def slow(*args, **kwargs):
+        entered.set()
+        assert release.wait(3)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(replay_cache, "replay_strategy", slow)
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)
+    results = {}
+    def run(name, service):
+        try:
+            results[name] = service.query(request)
+        except BaseException as error:
+            results[name] = error
+    leader = Thread(target=run, args=("leader", first))
+    follower = Thread(target=run, args=("follower", second))
+    leader.start()
+    assert entered.wait(2)
+    follower.start()
+    deadline = monotonic() + 2
+    joined = False
+    while monotonic() < deadline:
+        with first._cache.calculations._lock:
+            joined = any(len(call.consumers) == 2 for call in first._cache.calculations._calls.values())
+        if joined:
+            break
+        sleep(0.005)
+    departed.set()
+    release.set()
+    leader.join(3)
+    follower.join(3)
+    assert joined
+    assert isinstance(results["leader"], (NewowComputationCancelled, NewowProductServiceError))
+    assert not isinstance(results["follower"], BaseException)
+    assert results["follower"].chart.value is not None

@@ -227,7 +227,7 @@ test('workspace keeps one selected signal authority without the removed summary 
   assert.doesNotMatch(source, /detailsOpen|newow-details/)
   assert.match(source, /<NewowDetailDialog/)
   assert.doesNotMatch(source, /role="tablist"|researchTab/)
-  assert.match(source, /<NewowReferencePanel/)
+  assert.match(source, /<NewowReferencePartsPanel/)
   assert.equal((source.match(/<NewowExplanationPanel/g) ?? []).length, 1)
   assert.match(source, /loadFirstScreenResearch/)
   assert.match(source, /@locate="locateReferenceTrade"/)

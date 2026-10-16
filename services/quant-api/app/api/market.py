@@ -26,6 +26,7 @@ from app.market_data.domain import (
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.market_home_overview import MarketHomeOverviewError
 from app.market_data.market_research_service import ResearchSeriesIdentity
+from app.market_data.product_taxonomy import ProductTaxonomyError
 from app.schemas.market import (
     ContractSegmentOut,
     CoverageOut,
@@ -35,6 +36,8 @@ from app.schemas.market import (
     MarketBarsPageResponse,
     MarketHomeOverviewResponse,
     MarketPageMetaOut,
+    MarketProductDirectoryItem,
+    MarketProductDirectoryResponse,
     ProductResearchResponse,
 )
 
@@ -143,6 +146,23 @@ def market_dominants(request: Request, session: Session = Depends(get_db)) -> Re
     )
 
     return conditional_json(request, value.model_dump(mode="json"))
+
+
+@router.get("/product-directory", response_model=MarketProductDirectoryResponse)
+def market_product_directory(request: Request, session: Session = Depends(get_db)) -> Response:
+    try:
+        items = build_market_data_service(session).list_product_directory()
+    except (MarketDataError, ProductTaxonomyError) as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    value = MarketProductDirectoryResponse(items=[
+        MarketProductDirectoryItem(
+            product=item.product, product_name=item.product_name,
+            exchange=item.exchange, sector=item.sector,
+        ) for item in items
+    ])
+    response = conditional_json(request, value.model_dump(mode="json"))
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response
 
 @router.get("/research/product", response_model=ProductResearchResponse)
 def product_research(

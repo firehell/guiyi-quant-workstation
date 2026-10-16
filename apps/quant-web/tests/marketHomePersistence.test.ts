@@ -32,11 +32,11 @@ test('IDB unavailable and failed writes degrade to bounded memory without failin
 test('detail disk bookkeeping can release memory and directory metadata expires at 24 hours', async () => {
   const now = 2 * 86400_000
   const cache = createHomeSnapshotCache({ read: async () => [
-    { key: 'directory', savedAt: 0, value: ['old'] },
+    { key: 'product-directory', savedAt: 0, value: ['old'] },
     { key: 'price:jm', savedAt: now, value: { prices: [1] } },
-  ], write: async () => {} }, { now: () => now, acceptsKey: key => key === 'directory' || key.startsWith('price:') })
+  ], write: async () => {} }, { now: () => now, acceptsKey: key => key === 'product-directory' || key.startsWith('price:') })
   await cache.restore()
-  assert.equal(cache.peek('directory'), undefined)
+  assert.equal(cache.peek('product-directory'), undefined)
   assert.deepEqual(cache.peek('price:jm')?.value, { prices: [1] })
   await cache.releaseMemory()
   assert.equal(cache.stats().bytes, 0)

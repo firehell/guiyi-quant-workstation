@@ -24,11 +24,11 @@ import type {
 } from '../types/newowProduct.ts'
 import { sharedChartBarsAgree } from '../utils/newowProductTypes.ts'
 import { createReferencePageState } from './referencePageState.ts'
+import { MAX_ACCUMULATED_REFERENCE_TRADES } from '../utils/newowReferenceParts.ts'
 
 type FetchSection = (request: NewowProductRequest, signal: AbortSignal) => Promise<NewowProductSectionResponse>
 
 const MAX_ACCUMULATED_CHART_ROWS = 3000
-const MAX_ACCUMULATED_REFERENCE_TRADES = 300
 const NEWOW_STRATEGY_SET = new Set<string>(NEWOW_PRODUCT_STRATEGIES)
 const NEWOW_FREQUENCY_SET = new Set<string>(NEWOW_PRODUCT_FREQUENCIES)
 

@@ -8,6 +8,8 @@ from decimal import Decimal
 from enum import Enum
 from fractions import Fraction
 from math import isfinite
+from hashlib import sha256
+import json
 from collections.abc import Mapping
 from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainMarker
 from app.market_data.newow.product_service import (
@@ -161,7 +163,10 @@ def _delivery(value, serializer) -> dict[str, object]:
     }
 
 
-def _product_response(result: NewowProductResult) -> NewowProductResponse:
+def _product_response(
+    result: NewowProductResult, *, reference_part: str | None = None,
+    reference_mode: str | None = None, history_before: str | None = None,
+) -> NewowProductResponse:
     meta = result.meta
     identity = meta.identity
     chart = _delivery(
@@ -288,6 +293,14 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 "actual_available_through": value.actual_available_through,
                 "reference_cutoff": value.reference_cutoff,
                 "reference_input_sha256": value.reference_input_sha256,
+                **({
+                    "record_since": value.requested_window.since,
+                    "records_window_limited": False,
+                    "result_identity_sha256": sha256(json.dumps([
+                        _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
+                        for item in value.projection.trades
+                    ], sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest(),
+                } if reference_part is not None else {}),
                 "history_coverage": value.history_coverage,
                 "theoretical": value.theoretical,
                 "holding_curve": value.holding_curve,
@@ -349,6 +362,18 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             }
         ),
     )
+    if reference_part is None and reference["value"] is not None:
+        reference["value"] = {key: item for key, item in reference["value"].items()
+                              if key not in {"record_since", "records_window_limited",
+                                             "result_identity_sha256"}}
+    if reference_part is not None and reference["value"] is not None:
+        from .newow_reference_parts import project_reference_part
+        reference["value"] = project_reference_part(
+            reference["value"], reference_part, reference_mode,
+            history_before=history_before, snapshot_token=result.meta.snapshot_token,
+            as_of=result.meta.as_of.isoformat(),
+            calculation_version=result.meta.reference_model_version,
+        )
     auxiliary = _delivery(
         result.auxiliary,
         lambda value: {

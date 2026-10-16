@@ -102,7 +102,7 @@ async function loadPage(initialSector = '') {
     import { defineComponent, h } from '${vueUrl}'
     export const NButton = defineComponent({ setup(_props, { slots }) { return () => h('button', slots.default?.()) } })
   `)
-  const apiModule = moduleUrl('export function normalizeHomeDirectory(value){return value};export async function getMarketDominants() {}\nexport async function getMarketHomeOverview() {}\nexport async function getCurrentAlertEvents() {}\nexport async function getRuntimeHealth() {}')
+  const apiModule = moduleUrl('export function normalizeMarketProductDirectory(value){return value};export async function getMarketProductDirectory() {}\nexport async function getMarketHomeOverview() {}\nexport async function getCurrentAlertEvents() {}\nexport async function getRuntimeHealth() {}')
   const homeModule = moduleUrl(`
     import { ref } from '${vueUrl}'
     function resource(data = null) {

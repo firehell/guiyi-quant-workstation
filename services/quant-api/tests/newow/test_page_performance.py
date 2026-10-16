@@ -71,6 +71,16 @@ def test_fusion_source_full_projection():
     assert numeric(result["ordinary"]) == numeric(case["terminal"])
 
 
+def test_selected_page_mode_matches_full_result_without_calculating_other_mode():
+    case = ORACLE["fusion_witness"]
+    rows = [PageSegment("owner", tuple(map(bar, case["bars"])), True)]
+    complete = compute_page_performance(rows, "trend")
+    for mode in ("ordinary", "ideal"):
+        selected = compute_page_performance(rows, "trend", selected_mode=mode)
+        assert selected[mode] == complete[mode]
+        assert ("ideal" if mode == "ordinary" else "ordinary") not in selected
+
+
 def test_no_terminal_realization_on_boundary_and_no_owner_pairing():
     case = ORACLE["fusion_witness"]
     rows = tuple(map(bar, case["bars"]))

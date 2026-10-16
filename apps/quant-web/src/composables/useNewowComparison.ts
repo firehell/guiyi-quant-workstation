@@ -1,5 +1,5 @@
 import { computed, shallowRef, watch, type Ref } from 'vue'
-import { getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
+import { getNewowProductSection } from '../api/newowProduct.ts'
 import type { NewowProductRequest, NewowProductSectionResponse, NewowResourceLifecycle } from '../types/newowProduct.ts'
 import { newowChartSnapshotKey } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
 import { sharedChartBarsAgree } from '../utils/newowProductTypes.ts'
@@ -7,15 +7,14 @@ import { newowComparisonCompatible, newowComparisonWindow } from '../utils/newow
 
 type Chart = NewowProductSectionResponse<'chart'>
 type FetchChart = (request: NewowProductRequest, signal: AbortSignal) => Promise<NewowProductSectionResponse>
-export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: Readonly<Ref<boolean>>, fetch: FetchChart = (request, signal) => getNewowProductSection(request, { signal }), referenceEnabled: Readonly<Ref<boolean>> = shallowRef(true)) {
+export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: Readonly<Ref<boolean>>, fetch: FetchChart = (request, signal) => getNewowProductSection(request, { signal }), _referenceEnabled: Readonly<Ref<boolean>> = shallowRef(true)) {
   const response = shallowRef<Chart | null>(null)
-  const reference = shallowRef<NewowProductSectionResponse<'reference'> | null>(null)
+  const reference = shallowRef<null>(null)
   const referenceError = shallowRef<string | null>(null)
   const state = shallowRef<NewowResourceLifecycle>('not_requested')
   const error = shallowRef<string | null>(null)
-  // Chart readiness precedes the partner reference request; fusion must wait for both.
-  const referenceSettled = computed(() => enabled.value && (state.value === 'unavailable' || state.value === 'input_conflict'
-    || (state.value === 'ready' && (reference.value !== null || referenceError.value !== null))))
+  // Fusion reference parts prove their own inputs; partner chart serves only visual comparison.
+  const referenceSettled = computed(() => enabled.value && ['ready', 'unavailable', 'input_conflict'].includes(state.value))
   let controller: AbortController | null = null
   let generation = 0
   let disposed = false
@@ -51,45 +50,12 @@ export function useNewowComparison(base: Readonly<Ref<Chart | null>>, enabled: R
       return isCurrent() ? result : null
     }
     try {
-      // A partner reference snapshot conflict revokes that chart's token. Rebuild
-      // the same accepted window once, then bind its fresh token to reference.
-      for (let rebuild = 0; rebuild < 2; rebuild++) {
-        const result = await loadPartnerChart()
-        if (!result) return
-        if (result.section !== 'chart' || !newowComparisonCompatible(accepted, result)) {
-          state.value = 'input_conflict'; error.value = '两策略的窗口、时间或物理合约事实无法对齐，已停止叠加。'; return
-        }
-        response.value = result; state.value = 'ready'
-        try {
-          if (!referenceEnabled.value) await new Promise<void>((resolve, reject) => {
-            const stop = watch(referenceEnabled, value => { if (value) { cleanup(); resolve() } }, { flush: 'sync' })
-            const abort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')) }
-            const cleanup = () => { stop(); active.signal.removeEventListener('abort', abort) }
-            active.signal.addEventListener('abort', abort, { once: true })
-            if (active.signal.aborted) abort()
-          })
-          if (!isCurrent()) return
-          const records = await fetch({ identity: request.identity, section: 'reference', asOf: request.asOf,
-            snapshotToken: result.meta.snapshot_token ?? undefined, historyLimit: 200 }, active.signal)
-          if (!isCurrent()) return
-          if (records.section !== 'reference' || records.status.status !== 'ready' || records.meta.snapshot_token !== result.meta.snapshot_token
-            || records.meta.identity.strategy !== result.meta.identity.strategy || records.meta.identity.product !== result.meta.identity.product
-            || records.meta.identity.frequency !== result.meta.identity.frequency || records.meta.as_of !== result.meta.as_of) throw new Error('reference conflict')
-          reference.value = records
-          return
-        } catch (cause) {
-          if (!isCurrent()) return
-          if (cause instanceof NewowProductRequestError && cause.classification === 'conflict'
-            && cause.code === 'NEWOW_SNAPSHOT_GENERATION_CONFLICT') {
-            response.value = null; reference.value = null
-            if (rebuild === 0) { state.value = 'loading'; continue }
-            state.value = 'input_conflict'; error.value = '另一策略参考快照持续冲突，已停止叠加。'
-            return
-          }
-          referenceError.value = '另一策略参考收益暂不可用，未计算缺失样本。'
-          return
-        }
+      const result = await loadPartnerChart()
+      if (!result) return
+      if (result.section !== 'chart' || !newowComparisonCompatible(accepted, result)) {
+        state.value = 'input_conflict'; error.value = '两策略的窗口、时间或物理合约事实无法对齐，已停止叠加。'; return
       }
+      response.value = result; state.value = 'ready'
     } catch {
       if (!isCurrent()) return
       state.value = 'unavailable'; error.value = '双策略对照读取失败；单策略结果保持独立，可手动重试。'

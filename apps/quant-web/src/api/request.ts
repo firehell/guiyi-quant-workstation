@@ -1,4 +1,4 @@
-import { createReadAdmission } from '../utils/readAdmission.ts'
+import { createReadAdmission, type ReadPriority } from '../utils/readAdmission.ts'
 import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import {
   formatApiLogSummary,
@@ -8,6 +8,10 @@ import {
 import { normalizeApiBaseURL } from '@/utils/network'
 import { purgeLegacyWebCredentials } from '@/utils/settings'
 import { candidatePreview } from '../utils/candidatePreview.ts'
+
+declare module 'axios' {
+  interface AxiosRequestConfig { readPriority?: ReadPriority }
+}
 
 interface RequestMetadata {
   startTime: number
@@ -54,7 +58,9 @@ request.interceptors.request.use(
     // /api/*（非 /api/v1/*）走同源相对路径，避免重复拼接 baseURL
     timedConfig.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
     timedConfig.metadata = { startTime: Date.now() }
-    if ((timedConfig.method ?? 'get').toLowerCase() === 'get') timedConfig.metadata.release = await admitRead(timedConfig.signal as AbortSignal | undefined)
+    if ((timedConfig.method ?? 'get').toLowerCase() === 'get') {
+      timedConfig.metadata.release = await admitRead(timedConfig.signal as AbortSignal | undefined, timedConfig.readPriority)
+    }
     return timedConfig
   },
   (error) => Promise.reject(error),

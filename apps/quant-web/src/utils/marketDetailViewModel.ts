@@ -1,6 +1,7 @@
 import type {
   BarData,
   DominantContractItem,
+  MarketProductDirectoryItem,
   MarketOverlaySource,
   MarketReadState,
   ProductResearchResponse,
@@ -15,6 +16,7 @@ import { productSectorLabel } from './productDirectory.ts'
 export interface MarketDetailHeaderInput {
   identity: MarketDetailIdentity
   dominant: DominantContractItem | null
+  product?: MarketProductDirectoryItem | null
   bars: readonly BarData[]
   research: ProductResearchResponse | null
   marketState: MarketReadState | null
@@ -41,7 +43,7 @@ export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): Ma
   const freshness: MarketDetailHeaderModel['freshness'] = unavailable
     ? 'unavailable'
     : input.stale ? 'stale' : 'fresh'
-  const product = dominant ?? research
+  const product = input.product ?? dominant ?? research
 
   if (unavailable) return unavailableHeader(input, product, state)
 
@@ -77,7 +79,7 @@ export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): Ma
 
 function unavailableHeader(
   input: MarketDetailHeaderInput,
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   state: MarketReadState | null,
 ): MarketDetailHeaderModel {
   return {
@@ -166,7 +168,7 @@ function marketDisclosure(
   latest: BarData | null,
   freshness: MarketDetailHeaderModel['freshness'],
   displayContract: string | null,
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   state: MarketReadState | null,
 ): readonly MarketDetailDisclosureSection[] {
   const research = matchingDetailResearch(input.research, input.identity)
@@ -262,7 +264,7 @@ function seriesKindText(seriesKind: MarketDetailIdentity['seriesKind']): string 
 }
 
 function currentDominant(
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   research: ProductResearchResponse | null,
   contract: string | undefined,
 ): string {
@@ -271,7 +273,7 @@ function currentDominant(
 }
 
 function mappingDay(
-  product: DominantContractItem | ProductResearchResponse | null,
+  product: MarketProductDirectoryItem | DominantContractItem | ProductResearchResponse | null,
   research: ProductResearchResponse | null,
 ): string {
   if (product && 'dominant_mapping_date' in product) return product.dominant_mapping_date

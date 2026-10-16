@@ -10,7 +10,7 @@ async function setup(page) {
   const overview = lightHomeOverview()
   const delay = async () => { if (control.slow) await new Promise(resolve => setTimeout(resolve, 1800)) }
   await page.route('**/api/runtime/health', route => route.fulfill({ json: { status:'ok', readonly:true, components:{} } }))
-  await page.route('**/api/v1/market/dominants', async route => { await delay(); return route.fulfill({ json: { items: overview.items.map(x => ({product:x.symbol, product_name:x.product_name, actual_contract:x.actual_contract, dominant_mapping_date:x.dominant_mapping_date})) }, headers: { ETag: '"directory-fixture"' } }) })
+  await page.route('**/api/v1/market/product-directory', async route => { await delay(); return route.fulfill({ json: { items: overview.items.map(x => ({product:x.symbol, product_name:x.product_name, exchange:x.exchange, sector:x.sector})) }, headers: { ETag: '"directory-fixture"' } }) })
   await page.route('**/api/v1/market/research/home-overview', async route => {
     control.overviewCalls++; await delay()
     if (control.fail) return route.fulfill({ status:503, json:{detail:{code:'UNAVAILABLE'}} })

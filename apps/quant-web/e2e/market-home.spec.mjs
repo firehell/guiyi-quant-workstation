@@ -135,13 +135,13 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
     }
     if (url.pathname === '/api/v1/reference-trading/newow/messages') return route.fulfill({ json: { items: [], truncated: false } })
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
-    const allowed = new Set(['/api/v1/market/dominants', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history', '/api/market/messages'])
+    const allowed = new Set(['/api/v1/market/product-directory', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history', '/api/market/messages'])
     if (route.request().method() !== 'GET' || !allowed.has(url.pathname)) {
       requests.unexpected.push(`${route.request().method()} ${url.pathname}`)
       return route.abort('blockedbyclient')
     }
     requests.push(url.pathname)
-    if (url.pathname === '/api/v1/market/dominants') return route.fulfill({ json: { items: lightHomeOverview().items.map(({ symbol, product_name, actual_contract, dominant_mapping_date }) => ({ product: symbol, product_name, actual_contract, dominant_mapping_date })) } })
+    if (url.pathname === '/api/v1/market/product-directory') return route.fulfill({ json: { items: lightHomeOverview().items.map(({ symbol, product_name, exchange, sector }) => ({ product: symbol, product_name, exchange, sector })) } })
     if (url.pathname.endsWith('/market/research/home-overview')) { const value = typeof currentOverview === 'function' ? currentOverview() : currentOverview; return value === null ? route.abort() : route.fulfill({ json: value }) }
     if (url.pathname === '/api/runtime/health') return route.fulfill({ json: typeof currentRuntime === 'function' ? currentRuntime() : currentRuntime })
     if (url.pathname === '/api/market/messages') {
@@ -448,13 +448,12 @@ test('sort and sector survive refresh and browser back while absent sector recov
   await expect(page.locator('.strategy-list-item')).toHaveCount(4)
   await expect(page.locator('.strategy-sort button').filter({ hasText: /价格 ↓/ })).toHaveAttribute('aria-pressed', 'true')
   expectHomeReads(requests, 2)
-  const detailDirectoryReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/market/dominants' && response.ok())
   const detailStrategySettled = page.waitForEvent('requestfailed', request => new URL(request.url()).pathname === '/api/v1/market/newow/strategy-detail')
   await page.getByRole('button', { name: '白银展开策略摘要' }).click()
   await page.getByRole('link', { name: '白银趋势策略详情' }).click()
   await expect(page).toHaveURL(/view=newow.*symbol=ag/)
   await expect(page.locator('.market-dashboard-page')).toHaveCount(0)
-  await Promise.all([detailDirectoryReady, detailStrategySettled])
+  await detailStrategySettled
   await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
   const returnRequestStart = requests.all.length
   requests.length = 0
@@ -646,7 +645,7 @@ for (const state of ['loading', 'failed', 'empty']) {
       await expect.poll(() => requests.includes('history:all:au:first')).toBe(true)
       await page.locator('.market-message-filters select').selectOption('jm')
       await expect.poll(() => requests.includes('history:all:jm:first')).toBe(true)
-      expect(requests.filter(path => path === '/api/v1/market/dominants')).toHaveLength(1)
+      expect(requests.filter(path => path === '/api/v1/market/product-directory')).toHaveLength(1)
       expect(requests.unexpected).toEqual([])
       expect(requests.pageErrors).toEqual([])
     } finally { release() }
@@ -658,7 +657,7 @@ test('directory failure and recovery stay independent from quote rows and retain
   const requests = []
   await mockMarketHomeApi(page, requests)
   let fail = true
-  await page.route('**/market/dominants', route => fail ? route.abort() : route.fallback())
+  await page.route('**/market/product-directory', route => fail ? route.abort() : route.fallback())
   await page.goto('/market')
   await expect(page.locator('.strategy-list-item')).toHaveCount(2)
   const search = page.getByRole('combobox', { name: '搜索60品种' })

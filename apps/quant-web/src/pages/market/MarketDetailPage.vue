@@ -23,6 +23,7 @@ import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
 import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
+import type { NewowProductSectionResponse } from '@/types/newowProduct'
 import type { ProductOption } from '@/utils/productSearch'
 import { normalizeProductOptions } from '@/utils/productSearch'
 import {
@@ -69,6 +70,7 @@ function adoptAiRecommendation(combo: AiCombo) {
 }
 const newowDailyAsOf = ref<string | null>(null)
 const newowDailyPending = ref(false)
+const newowDailyChart = ref<NewowProductSectionResponse<'chart'> | null>(null)
 const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
 const newowCapabilities = useNewowCapabilities()
 const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
@@ -82,14 +84,24 @@ const newowWorkspace = ref<InstanceType<typeof NewowProductWorkspace> | null>(nu
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
 const hasSubingHistory = ref(false)
-const quoteContract = computed(() => explicitIdentity.value?.frequency === '1w'
-  ? newowWeeklyQuoteContext.value.physicalContract
-  : controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null)
+const quoteContract = computed(() => {
+  const identity = explicitIdentity.value
+  if (identity?.frequency === '1w') return newowWeeklyQuoteContext.value.physicalContract
+  const chart = newowDailyChart.value
+  return chart !== null && chart.meta.identity.product === identity?.symbol
+    && chart.meta.identity.frequency === identity?.frequency
+    ? chart.value?.bars.at(-1)?.physical_contract ?? null : null
+})
 const dailyQuote = useNewowDailyQuote({
   symbol: computed(() => isNewowView.value ? explicitIdentity.value!.symbol : null),
   contract: quoteContract,
   snapshotAsOf: computed(() => explicitIdentity.value?.frequency === '1w'
-    ? newowWeeklyQuoteContext.value.asOf : newowDailyAsOf.value),
+    ? newowWeeklyQuoteContext.value.asOf
+    : explicitIdentity.value?.frequency === '1d'
+      ? newowDailyAsOf.value
+      : newowDailyChart.value?.meta.as_of ?? null),
+  reuseDailyChart: computed(() => isNewowView.value && explicitIdentity.value?.frequency === '1d'),
+  dailyChart: newowDailyChart,
 })
 const productOptions = computed(() => normalizeProductOptions(controller.productCatalog.value))
 const productSelectorStatus = computed(() => productOptions.value.length > 0
@@ -99,7 +111,11 @@ const header = computed(() => {
   const base = controller.state.value.header
   if (!base || !isNewowView.value) return base
   const quote = dailyQuote.quote.value
-  return { ...base, ...(quote ?? {}), displayContract: quote ? quoteContract.value : null, freshness: newowQuoteFreshness(quote !== null, explicitIdentity.value?.frequency === '1d' && newowDailyPending.value) }
+  const freshness = newowQuoteFreshness(quote !== null, explicitIdentity.value?.frequency === '1d' && newowDailyPending.value)
+  return quote
+    ? { ...base, ...quote, turnover: null, displayContract: quoteContract.value, freshness }
+    : { ...base, open: null, high: null, low: null, close: null, change: null, pct: null,
+      volume: null, turnover: null, openInterest: null, asOf: null, tradingDay: null, displayContract: null, freshness }
 })
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -131,6 +147,7 @@ async function activateRoute() {
     newowHistoricalAsOf.value = null
     newowDailyAsOf.value = null
     newowDailyPending.value = false
+    newowDailyChart.value = null
     newowWeeklyQuoteContext.value = { asOf: null, physicalContract: null }
   }
   hasHtdyHistory.value = false
@@ -320,6 +337,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
             @daily-snapshot-pending="newowDailyPending = $event"
+            @daily-chart="newowDailyChart = $event"
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
             @refresh-current="dailyQuote.refresh(); newowCapabilities.load(true)"
             @analysis-as-of="aiAsOf = $event"

@@ -425,7 +425,7 @@ test('reports only an active generation market-series failure', async () => {
   assert.equal(controller.state.value.header, null)
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.error, '详情行情加载失败')
-  assert.deepEqual(controller.productCatalog.value, [dominant('jm')])
+  assert.deepEqual(controller.productCatalog.value, [{ product: 'jm', product_name: '焦煤', exchange: 'DCE', sector: '黑色' }])
 })
 
 test('Newow chart starts while generic series is still pending', async () => {
@@ -462,7 +462,7 @@ test('Newow chart starts while generic series is still pending', async () => {
   await switched
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.header?.productName, '焦煤')
-  assert.deepEqual(controller.productCatalog.value, [dominant('jm')])
+  assert.deepEqual(controller.productCatalog.value, [{ product: 'jm', product_name: '焦煤', exchange: 'DCE', sector: '黑色' }])
   product.dispose()
   controller.dispose()
 })

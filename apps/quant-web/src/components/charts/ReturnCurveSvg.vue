@@ -8,10 +8,17 @@ const props = defineProps<{
   zeroLine?: boolean
   role?: 'group' | 'img'
 }>()
-const emit = defineEmits<{ click: [event: MouseEvent]; mousemove: [event: MouseEvent]; mouseleave: [event: MouseEvent] }>()
+const emit = defineEmits<{ click: [event: MouseEvent]; select: [index: number]; mousemove: [event: MouseEvent]; mouseleave: [event: MouseEvent] }>()
 const gradient = `return-curve-${useId()}`
 const selected = ref<number | null>(null)
 const point = computed(() => selected.value === null ? null : props.plot.points[selected.value] ?? null)
+const isolatedPoints = computed(() => props.plot.segments.flatMap(segment => {
+  const pairs = segment.trim().split(/\s+/)
+  if (pairs.length !== 1) return []
+  const pair = pairs[0]!
+  const comma = pair.indexOf(',')
+  return [{ x: Number(pair.slice(0, comma)), y: Number(pair.slice(comma + 1)) }]
+}))
 watch(() => props.plot, () => { selected.value = null })
 function inspect(event: PointerEvent) {
   const rect = (event.currentTarget as SVGSVGElement).getBoundingClientRect()
@@ -22,17 +29,19 @@ function inspect(event: PointerEvent) {
   selected.value = best
 }
 function step(delta:number) { selected.value = Math.max(0,Math.min(props.plot.points.length-1,(selected.value ?? -1)+delta)) }
+function activate() { if (props.plot.points.length) emit('select', selected.value ?? 0) }
 </script>
 <template>
   <div class="return-curve">
     <p v-if="plot.message" role="status">{{ plot.message }}</p>
     <div v-else class="return-curve__area">
-      <svg viewBox="0 0 712 140" preserveAspectRatio="none" :role="role ?? 'img'" :aria-label="label" tabindex="0" @pointermove="inspect" @pointerdown="inspect" @keydown.left.prevent="step(-1)" @keydown.right.prevent="step(1)" @keydown.home.prevent="selected = 0" @keydown.end.prevent="selected = plot.points.length - 1" @click="emit('click', $event)" @mousemove="emit('mousemove', $event)" @mouseleave="emit('mouseleave', $event)">
+      <svg viewBox="0 0 712 140" preserveAspectRatio="none" :role="role ?? 'img'" :aria-label="label" tabindex="0" @pointermove="inspect" @pointerdown="inspect" @keydown.left.prevent="step(-1)" @keydown.right.prevent="step(1)" @keydown.home.prevent="selected = 0" @keydown.end.prevent="selected = plot.points.length - 1" @keydown.enter.prevent="activate" @keydown.space.prevent="activate" @click="emit('click', $event)" @mousemove="emit('mousemove', $event)" @mouseleave="emit('mouseleave', $event)">
         <defs><linearGradient :id="gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" class="return-curve__gradient-start"/><stop offset="100%" class="return-curve__gradient-end"/></linearGradient></defs>
         <line v-for="level in plot.levels" :key="level.y" class="return-curve__grid" x1="0" x2="712" :y1="level.y" :y2="level.y"/>
         <polygon v-for="(part,i) in area ? plot.areas : []" :key="`area-${i}`" :points="part" :fill="`url(#${gradient})`"/>
         <line v-if="zeroLine" class="return-curve__zero" x1="0" x2="712" :y1="plot.zero" :y2="plot.zero" stroke-dasharray="4 4"/>
         <polyline v-for="(part,i) in plot.segments" :key="i" :points="part" class="return-curve__line" fill="none" vector-effect="non-scaling-stroke"/>
+        <circle v-for="(item,i) in isolatedPoints" :key="`isolated-${i}`" class="return-curve__isolated" :cx="item.x" :cy="item.y" r="4" vector-effect="non-scaling-stroke"/>
         <line v-if="point" :x1="point.x" :x2="point.x" y1="0" y2="140" stroke="var(--gy-text-muted)" stroke-dasharray="3 3" />
         <circle v-if="point" :cx="point.x" :cy="point.y" r="3" fill="var(--gy-detail-accent)" />
         <slot />
@@ -48,6 +57,7 @@ function step(delta:number) { selected.value = Math.max(0,Math.min(props.plot.po
 .return-curve__area { position:absolute; top:20px; bottom:20px; left:44px; right:30px; }
 .return-curve__area svg { display:block; width:100%; height:100%; min-height:0; margin:0; overflow:visible; }
 .return-curve__line { stroke:var(--curve-line); stroke-width:var(--return-curve-width,1.8); }
+.return-curve__isolated { fill:var(--curve-line); stroke:var(--gy-surface,#fff); stroke-width:1.5; }
 .return-curve__readout{position:absolute;top:0;left:44px;font-size:11px;color:var(--gy-text-secondary);max-width:calc(100% - 48px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .return-curve__grid { stroke:var(--curve-grid); }
 .return-curve__zero { stroke:var(--return-curve-zero,#d0d5dd); }

@@ -95,10 +95,11 @@ test('accepted Newow chart defers reference research until visible', () => {
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
 
   assert.match(workspace, /loadFirstScreenResearch/)
-  assert.match(workspace, /loader\.loadReference\(\)/)
+  assert.match(workspace, /useNewowReferenceParts\(chartResponse, referenceVisible, dualMode\)/)
   assert.match(workspace, /sectionOpen\('explanation'\)/)
   assert.match(workspace, /IntersectionObserver/)
   assert.match(workspace, /if \(referenceVisible\.value\) loadReferenceOnce\(\)/)
+  assert.match(workspace, /<NewowReferencePartsPanel/)
   assert.equal((workspace.match(/<NewowExplanationPanel/g) ?? []).length, 1)
   assert.doesNotMatch(workspace, /detailsOpen|newow-details/)
   assert.match(workspace, /<MarketDetailUnavailable v-if="chartResponse === null/)
