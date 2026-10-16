@@ -9,6 +9,22 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+test('identity resources abort replaced and disposed transport owners', async () => {
+  const signals: AbortSignal[] = []
+  const resource = useIdentityBoundResource({ key: (id: string) => id,
+    load: (_id: string, signal: AbortSignal) => {
+      signals.push(signal)
+      return new Promise<number>((_resolve, reject) => signal?.addEventListener('abort', () => reject(Error('cancelled')), { once: true }))
+    }, project: (value: number) => value })
+  const first = resource.refresh('jm')
+  const next = resource.refresh('rb')
+  assert.equal(signals[0].aborted, true)
+  resource.dispose()
+  assert.equal(signals[1].aborted, true)
+  await Promise.all([first, next])
+  assert.equal(resource.value.value, null)
+})
+
 test('a late failure cannot clear a newer accepted identity', async () => {
   const old = deferred<number>()
   const resource = useIdentityBoundResource({

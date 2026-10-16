@@ -1,9 +1,18 @@
 /** Read-only page resources. Account facts and order commands never belong here. */
-export function createSessionResources(options: { maxEntries?: number; maxBytes?: number; ttl?: number; now?: () => number } = {}) {
+export function createSessionResources(options: { maxEntries?: number; maxBytes?: number; ttl?: number; now?: () => number; immutable?: boolean } = {}) {
   const maxEntries = options.maxEntries ?? 120, maxBytes = options.maxBytes ?? 32 * 1024 * 1024
   const ttl = options.ttl ?? 5 * 60_000, now = options.now ?? Date.now
   const entries = new Map<string, { value: unknown; expires: number; bytes: number; identity: string }>()
   const pending = new Map<string, { controller: AbortController; promise: Promise<unknown>; consumers: number }>()
+  const immutable = options.immutable === true
+  const freeze = <T>(value: T): T => {
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+      for (const child of Object.values(value)) freeze(child)
+      Object.freeze(value)
+    }
+    return value
+  }
+  const deliver = <T>(value: T): T => immutable ? value : structuredClone(value)
   let bytes = 0
   function remove(key: string) { const entry = entries.get(key); if (entry) bytes -= entry.bytes; entries.delete(key) }
   function prune() { for (const [key, entry] of entries) if (entry.expires <= now()) remove(key) }
@@ -12,13 +21,13 @@ export function createSessionResources(options: { maxEntries?: number; maxBytes?
     const size = new TextEncoder().encode(JSON.stringify(value) + identity + key).byteLength
     if (size > maxBytes) return
     while (entries.size >= maxEntries || bytes + size > maxBytes) remove(entries.keys().next().value!)
-    entries.set(key, { value: structuredClone(value), identity, expires: now() + ttl, bytes: size }); bytes += size
+    entries.set(key, { value: immutable ? freeze(structuredClone(value)) : structuredClone(value), identity, expires: now() + ttl, bytes: size }); bytes += size
   }
   function peek<T>(key: string): T | undefined {
     prune(); const entry = entries.get(key)
     if (!entry) return undefined
     entries.delete(key); entries.set(key, entry)
-    return structuredClone(entry.value) as T
+    return deliver(entry.value) as T
   }
   function invalidate(prefix = '') {
     for (const key of entries.keys()) if (key.startsWith(prefix)) remove(key)
@@ -28,7 +37,7 @@ export function createSessionResources(options: { maxEntries?: number; maxBytes?
     prune()
     for (const [key, entry] of entries) {
       const value = select(entry.value)
-      if (value !== undefined) { entries.delete(key); entries.set(key, entry); return structuredClone(value) }
+      if (value !== undefined) { entries.delete(key); entries.set(key, entry); return immutable ? freeze(structuredClone(value)) : structuredClone(value) }
     }
     return undefined
   }
@@ -46,8 +55,12 @@ export function createSessionResources(options: { maxEntries?: number; maxBytes?
       promise = Promise.resolve().then(() => fetch(controller.signal)).then(value => {
         // Invalidation deletes the owner before aborting. Even a transport
         // ignoring cancellation cannot admit an obsolete result.
-        if (pending.get(key) === item && !controller.signal.aborted) put(key, value, identity(value))
-        return value
+        let admitted: T | undefined
+        if (pending.get(key) === item && !controller.signal.aborted) {
+          put(key, value, identity(value))
+          if (immutable) admitted = peek<T>(key)
+        }
+        return immutable ? admitted ?? freeze(structuredClone(value)) : value
       }).finally(() => { if (pending.get(key) === item) pending.delete(key) })
       item.promise = promise; pending.set(key, item)
     }
@@ -59,19 +72,19 @@ export function createSessionResources(options: { maxEntries?: number; maxBytes?
         pending.delete(key); item.controller.abort()
       }
     }
-    if (!signal) { try { return structuredClone(await promise) } finally { detach() } }
+    if (!signal) { try { return deliver(await promise) } finally { detach() } }
     return new Promise<T>((resolve, reject) => {
       const abort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')) }
       let attached = true
       const cleanup = () => { if (attached) { attached = false; signal.removeEventListener('abort', abort); detach() } }
       signal.addEventListener('abort', abort, { once: true })
-      promise.then(value => { cleanup(); if (!signal.aborted) resolve(structuredClone(value)) }, error => { cleanup(); reject(error) })
+      promise.then(value => { cleanup(); if (!signal.aborted) resolve(deliver(value)) }, error => { cleanup(); reject(error) })
     })
   }
-  return { load, put, peek, find, invalidate, stats: () => { prune(); return { entries: entries.size, pending: pending.size, bytes } } }
+  return { load, put, peek, find, invalidate, stats: () => { prune(); return { entries: entries.size, pending: pending.size, bytes, maxBytes, maxEntries } } }
 }
 
-export const newowSessionResources = createSessionResources()
+export const newowSessionResources = createSessionResources({ immutable: true })
 
 export function invalidateNewowProduct(product: string) {
   newowSessionResources.invalidate(`newow:${product}:`)

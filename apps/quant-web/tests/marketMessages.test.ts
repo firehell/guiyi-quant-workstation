@@ -8,6 +8,29 @@ const event = (id: number) => ({ id, rule_code: 'htdy_original_15m', symbol: 'ag
 function page(ids: number[], cursor: string | null = null): UnifiedMessagePage {
   return { items: ids.map(id => ({ source: 'alert', id: String(id), symbol: 'ag', bar_end: '2026-10-15T02:45:00Z', event: event(id) } as UnifiedMessagePage['items'][number])), next_cursor: cursor, available_count: 100, coverage: 'complete', sources: { alert: { status: 'ready', truncated: false, limit: 5000 } }, snapshot: { cutoff: '2026-10-15T05:00:00Z', alert_max_id: 100 } }
 }
+
+test('message retention stops at 300 without pretending the source cursor ended', async () => {
+  let calls = 0
+  const messages = useUnifiedMessages(async () => {
+    const start = calls++ * 50
+    return page(Array.from({ length: 50 }, (_, index) => start + index), `cursor-${calls}`)
+  })
+  await messages.load(query)
+  for (let index = 0; index < 10; index++) await messages.loadMore()
+  assert.equal(calls, 6)
+  assert.equal(messages.page.value?.items.length, 300)
+  assert.equal(messages.retentionCapped.value, true)
+  assert.equal(messages.page.value?.next_cursor, 'cursor-6')
+})
+
+test('an oversized message cannot exceed the bounded retained byte budget', async () => {
+  const source = page([1], 'more')
+  ;(source.items[0]!.event as any).reason = 'x'.repeat(3 * 1024 * 1024)
+  const messages = useUnifiedMessages(async () => source)
+  await messages.load(query)
+  assert.equal(messages.retentionCapped.value, true)
+  assert.equal(messages.page.value?.items.length, 0)
+})
 test('authoritative alert normalizer retains bounded cursors and no delivery claim', () => {
   const value = normalizeAlertHistoryResponse({ status: 'ready', start_day: '2026-10-01', end_day: '2026-10-15', symbol: null, rule_code: null, items: [event(1)], next_before: 'opaque' })
   assert.equal(value.next_before, 'opaque'); assert.equal('delivered' in value.items[0], false)

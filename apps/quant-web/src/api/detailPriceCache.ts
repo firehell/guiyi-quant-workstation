@@ -7,6 +7,7 @@ import type { MarketBarsPageRequest, MarketBarsPageResponse } from '../types/mar
 // Disposable prices only: neither this key nor its TTL authorizes strategy facts.
 const memory = createSessionResources({ maxBytes: 8 * 1024 * 1024, ttl: 7 * 86400_000 })
 const disk = createDetailPriceDiskCache(indexedDetailPriceStorage(`guiyi-detail-prices-v1:${homeCacheNamespace}`))
+export const detailPriceCacheStats = () => memory.stats()
 export const detailPriceKey = (query: MarketBarsPageRequest) => `price:${JSON.stringify([homeCacheNamespace, query.symbol, query.series_kind, query.contract ?? null, query.frequency, query.before ?? null, query.limit ?? 500])}`
 export function peekDetailPrice(query: MarketBarsPageRequest): MarketBarsPageResponse | undefined {
   return memory.peek(detailPriceKey(query))

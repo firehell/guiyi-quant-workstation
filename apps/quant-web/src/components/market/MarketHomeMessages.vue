@@ -92,8 +92,9 @@ function loadQuery(): UnifiedMessageQuery {
           <small v-else>历史预警 · 记录于 {{ time(row.event.detected_at) }} · {{ row.event.notification_attempted_at ? `已尝试发送 ${time(row.event.notification_attempted_at)}` : '未记录发送尝试' }}</small>
         </button>
       </div>
-      <div v-else-if="!messages.loading.value && !messages.error.value" class="market-message-empty"><p>{{ page.coverage === 'complete' ? '当前查询范围暂无匹配消息' : '可读取范围内暂无匹配消息；部分来源失败或截断' }}</p></div>
-      <button v-if="page.next_cursor" class="market-message-more" type="button" :disabled="messages.loading.value || messages.loadingMore.value || messages.error.value === 'stale'" @click="messages.loadMore()">{{ messages.loadingMore.value ? '读取中…' : '加载更多' }}</button>
+      <div v-else-if="!messages.loading.value && !messages.error.value && !messages.retentionCapped.value" class="market-message-empty"><p>{{ page.coverage === 'complete' ? '当前查询范围暂无匹配消息' : '可读取范围内暂无匹配消息；部分来源失败或截断' }}</p></div>
+      <p v-if="messages.retentionCapped.value" class="market-message-note" role="status">已达到本页记录显示上限，请缩小日期或筛选范围继续查看；这不代表完整历史已读取。</p>
+      <button v-if="page.next_cursor && !messages.retentionCapped.value" class="market-message-more" type="button" :disabled="messages.loading.value || messages.loadingMore.value || messages.error.value === 'stale'" @click="messages.loadMore()">{{ messages.loadingMore.value ? '读取中…' : '加载更多' }}</button>
     </template>
     <p class="market-message-note">牛哇只读取已就绪的盘中观察策略流及其已保存参考记录；历史预警的发送尝试不代表已送达。消息不代表账户成交。</p>
   </section>

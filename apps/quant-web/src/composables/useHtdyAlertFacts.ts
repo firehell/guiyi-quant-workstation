@@ -9,17 +9,17 @@ import { useIdentityBoundResource } from './useIdentityBoundResource.ts'
 export type HtdyAlertFactsIdentity = AlertFactsIdentity
 
 export function useHtdyAlertFacts(dependencies: {
-  fetchRuntime: () => Promise<AlertRuntimeStatus>
-  fetchProductAlerts: (symbol: string) => Promise<ProductAlertStateResponse>
+  fetchRuntime: (signal?: AbortSignal) => Promise<AlertRuntimeStatus>
+  fetchProductAlerts: (symbol: string, signal?: AbortSignal) => Promise<ProductAlertStateResponse>
 }) {
   const runtimeResource = useIdentityBoundResource({
     key: () => 'runtime',
-    load: dependencies.fetchRuntime,
+    load: (_identity: HtdyAlertFactsIdentity, signal) => dependencies.fetchRuntime(signal),
     project: runtimeState,
   })
   const scopeResource = useIdentityBoundResource({
     key: (identity: HtdyAlertFactsIdentity) => `${identity.symbol}:${identity.frequency}`,
-    load: (identity: HtdyAlertFactsIdentity) => dependencies.fetchProductAlerts(identity.symbol),
+    load: (identity: HtdyAlertFactsIdentity, signal) => dependencies.fetchProductAlerts(identity.symbol, signal),
     project: ruleScopeText,
   })
 

@@ -54,7 +54,7 @@ export interface MarketDetailControllerDependencies {
     symbol: string
     seriesKind: MarketDetailIdentity['seriesKind']
     contract?: string
-  }) => Promise<ProductResearchResponse>
+  }, signal?: AbortSignal) => Promise<ProductResearchResponse>
 }
 
 function browserRouteQuery(): Record<string, string> {
@@ -71,9 +71,9 @@ async function defaultFetchResearch(params: {
   symbol: string
   seriesKind: MarketDetailIdentity['seriesKind']
   contract?: string
-}): Promise<ProductResearchResponse> {
+}, signal?: AbortSignal): Promise<ProductResearchResponse> {
   const { getProductResearch } = await import('../api/market.ts')
-  return getProductResearch(params)
+  return getProductResearch(params, signal)
 }
 
 export function useMarketDetailController(
@@ -112,6 +112,7 @@ export function useMarketDetailController(
   const researchError = ref(false)
   let headerGeneration = 0
   let disposed = false
+  let researchController = new AbortController()
   const publicBars = computed(() => series.bars.value)
   const publicMutation = computed(() => series.mutation.value)
 
@@ -172,6 +173,8 @@ export function useMarketDetailController(
   )
 
   async function switchIdentity(identity: MarketDetailIdentity): Promise<void> {
+    researchController.abort(); researchController = new AbortController()
+    const researchSignal = researchController.signal
     const generation = state.value.generation + 1
     const previousIdentity = state.value.identity
     const retainedHeader = canKeepHeader(previousIdentity, identity) ? state.value.header : null
@@ -218,7 +221,7 @@ export function useMarketDetailController(
           symbol: identity.symbol,
           seriesKind: identity.seriesKind,
           contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
-        }).catch(() => null)
+        }, researchSignal).catch(() => null)
       : Promise.resolve(reuseResearch ? currentResearch.value : null)
     try {
       const [metadata, seriesResult] = await Promise.all([
@@ -274,6 +277,7 @@ export function useMarketDetailController(
   function dispose(): void {
     if (disposed) return
     disposed = true
+    researchController.abort()
     state.value.generation += 1
     stopSeriesWatch()
     series.dispose()

@@ -30,12 +30,12 @@ export function getCurrentAlertEvents() {
     .then(normalizeCurrentAlertEventsResponse)
 }
 
-export function getProductAlerts(symbol: string) {
-  return request.get<never, ProductAlertStateResponse>(`/api/alerts/products/${symbol}`)
+export function getProductAlerts(symbol: string, signal?: AbortSignal) {
+  return request.get<never, ProductAlertStateResponse>(`/api/alerts/products/${symbol}`, { signal })
 }
 
-export function getAlertRuntimeStatus() {
-  return getRuntimeHealth().then((response) => response.components.alert.status)
+export function getAlertRuntimeStatus(signal?: AbortSignal) {
+  return getRuntimeHealth(signal).then((response) => response.components.alert.status)
 }
 
 export function getAlertEvents(params: { symbol: string; frequency: MarketFrequency; start: string; end: string; ruleCode: AlertRuleCode }) {

@@ -43,6 +43,20 @@ function page(
 }
 
 describe('market historical series', () => {
+  it('aborts the underlying old page on switching and disposal', async () => {
+    const signals: AbortSignal[] = []
+    const series = useMarketSeries({ fetchPage: (_params, signal) => {
+      signals.push(signal!)
+      return new Promise((_resolve, reject) => signal?.addEventListener('abort',
+        () => reject(new DOMException('Aborted', 'AbortError')), { once: true }))
+    } })
+    const old = series.replaceSeries({ symbol: 'jm', seriesKind: 'actual_dominant', frequency: '15m' })
+    const current = series.replaceSeries({ symbol: 'rb', seriesKind: 'actual_dominant', frequency: '15m' })
+    assert.equal(signals[0].aborted, true)
+    series.dispose()
+    assert.equal(signals[1].aborted, true)
+    await Promise.all([old, current])
+  })
   it('binds contract history to the normalized requested physical contract', () => {
     const response = page([
       { bar_end: '2026-08-07T09:15:00Z', close: 101 },

@@ -38,8 +38,9 @@ export const getMarketProductDirectory = createConditionalHomeRead('/market/prod
 
 export const getMarketHomeOverview = createConditionalHomeRead('/market/research/home-overview', normalizeMarketHomeOverviewResponse)
 
-export function getProductResearch(params: { symbol: string; seriesKind: SeriesKind; contract?: string }) {
+export function getProductResearch(params: { symbol: string; seriesKind: SeriesKind; contract?: string }, signal?: AbortSignal) {
   return request.get<never, ProductResearchResponse>('/market/research/product', {
+    signal,
     params: {
       symbol: params.symbol,
       series_kind: params.seriesKind,
@@ -81,8 +82,9 @@ export interface MarketStateRequest {
   frequency: MarketFrequency
 }
 
-export function getMarketState(params: MarketStateRequest) {
+export function getMarketState(params: MarketStateRequest, signal?: AbortSignal) {
   return request.get<never, MarketReadState>('/market/state', {
+    signal,
     params: {
       series_kind: params.seriesKind,
       symbol: params.symbol,

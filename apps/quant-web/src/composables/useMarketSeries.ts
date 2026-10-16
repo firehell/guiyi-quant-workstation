@@ -61,8 +61,8 @@ export interface MarketWebSocket {
 }
 
 export interface MarketSeriesDependencies {
-  fetchPage?: (params: MarketBarsPageRequest) => Promise<MarketBarsPageResponse>
-  fetchState?: (identity: MarketSeriesIdentity) => Promise<MarketReadState>
+  fetchPage?: (params: MarketBarsPageRequest, signal?: AbortSignal) => Promise<MarketBarsPageResponse>
+  fetchState?: (identity: MarketSeriesIdentity, signal?: AbortSignal) => Promise<MarketReadState>
   createWebSocket?: (url: string) => MarketWebSocket
   resolveWsURL?: () => string
   scheduleReconnect?: (callback: () => void, delayMs: number) => unknown
@@ -143,14 +143,14 @@ function toPageRequest(identity: MarketSeriesIdentity, before?: string): MarketB
   }
 }
 
-async function defaultFetchPage(params: MarketBarsPageRequest): Promise<MarketBarsPageResponse> {
+async function defaultFetchPage(params: MarketBarsPageRequest, signal?: AbortSignal): Promise<MarketBarsPageResponse> {
   const { getMarketBarsPage } = await import('../api/market')
-  return getMarketBarsPage(params)
+  return getMarketBarsPage(params, signal)
 }
 
-async function defaultFetchState(identity: MarketSeriesIdentity): Promise<MarketReadState> {
+async function defaultFetchState(identity: MarketSeriesIdentity, signal?: AbortSignal): Promise<MarketReadState> {
   const { getMarketState } = await import('../api/market')
-  return getMarketState(identity)
+  return getMarketState(identity, signal)
 }
 
 function defaultCreateWebSocket(url: string): MarketWebSocket {
@@ -247,6 +247,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   const scheduleReconnect = dependencies.scheduleReconnect ?? defaultScheduleReconnect
   const clearReconnect = dependencies.clearReconnect ?? defaultClearReconnect
   let generation = 0
+  let reads = new AbortController()
   let identity: MarketSeriesIdentity | null = null
   let canonicalBars: BarData[] = []
   let liveBars: BarData[] = []
@@ -287,6 +288,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
 
   function resetSeriesState(nextIdentity: MarketSeriesIdentity | null): number {
     const requestGeneration = ++generation
+    reads.abort(); reads = new AbortController()
     clearSocket()
     identity = nextIdentity ? { ...nextIdentity } : null
     canonicalBars = []
@@ -317,8 +319,9 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     refreshToken: number,
     expectedCanonicalEnd: string,
   ): Promise<boolean> {
+    const signal = reads.signal
     try {
-      const page = await fetchPage(toPageRequest(nextIdentity))
+      const page = await fetchPage(toPageRequest(nextIdentity), signal)
       if (!isCurrentGeneration(requestGeneration, generation) || refreshToken !== canonicalRefreshToken) return false
       const merged = mergeInitialPage(page)
       const fresh = merged.bars
@@ -492,8 +495,9 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   async function replaceSeries(nextIdentity: MarketSeriesIdentity): Promise<void> {
     const requestGeneration = resetSeriesState(nextIdentity)
     loadingInitial.value = true
+    const signal = reads.signal
     try {
-      const page = await fetchPage(toPageRequest(nextIdentity))
+      const page = await fetchPage(toPageRequest(nextIdentity), signal)
       if (!isCurrentGeneration(requestGeneration, generation)) return
       const merged = mergeInitialPage(page)
       canonicalBars = merged.bars
@@ -503,13 +507,15 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       publishMerged({ kind: 'replace' })
       try {
         if (candidatePreview.enabled) return
-        const nextState = await fetchState(nextIdentity)
+        const nextState = await fetchState(nextIdentity, signal)
         if (!isCurrentGeneration(requestGeneration, generation)) return
         marketState.value = nextState
         if (shouldKeepStateSocket(nextIdentity, nextState)) openSocket(requestGeneration, nextIdentity)
       } catch {
         if (isCurrentGeneration(requestGeneration, generation)) liveUnavailable.value = true
       }
+    } catch (error) {
+      if (!signal.aborted && isCurrentGeneration(requestGeneration, generation)) throw error
     } finally {
       if (isCurrentGeneration(requestGeneration, generation)) loadingInitial.value = false
     }
@@ -526,10 +532,11 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     const requestIdentity = identity
     const requestGeneration = generation
     const before = nextBefore.value
+    const signal = reads.signal
     loadingBefore.value = true
     const request = Promise.resolve().then(async () => {
       try {
-        const page = await fetchPage(toPageRequest(requestIdentity, before))
+        const page = await fetchPage(toPageRequest(requestIdentity, before), signal)
         if (!isCurrentGeneration(requestGeneration, generation)) return
         const merged = prependHistoricalPage(canonicalBars, page)
         const previous = canonicalBars
@@ -539,6 +546,8 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
         const previousTimes = new Set(previous.map((bar) => bar.time))
         publishMerged({ kind: 'prepend', bars: canonicalBars.filter((bar) => !previousTimes.has(bar.time)) })
+      } catch (error) {
+        if (!signal.aborted && isCurrentGeneration(requestGeneration, generation)) throw error
       } finally {
         if (isCurrentGeneration(requestGeneration, generation)) loadingBefore.value = false
         if (loadingBeforePromise === request) loadingBeforePromise = null
@@ -550,6 +559,8 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
 
   function dispose(): void {
     generation += 1
+    reads.abort()
+    loadingInitial.value = false; loadingBefore.value = false
     clearSocket()
   }
 

@@ -162,6 +162,23 @@ function deferredSeries() {
   return { series, requests }
 }
 
+test('research transport is cancelled on identity change and dispose', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const signals: AbortSignal[] = []
+  const controller = useMarketDetailController({ routeQuery: () => ({}), createSeries: fakeSeries,
+    fetchDirectory: async () => ({ items: [dominant('jm'), dominant('rb')] }),
+    fetchResearch: (_params, signal) => {
+      signals.push(signal!)
+      return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(Error('aborted')), { once: true }))
+    } })
+  const first = controller.switchIdentity(jmIdentity)
+  const second = controller.switchIdentity(rbIdentity)
+  assert.equal(signals[0].aborted, true)
+  controller.dispose()
+  assert.equal(signals[1].aborted, true)
+  await Promise.all([first, second])
+})
+
 test('keeps the quote header and cached metadata while switching Newow strategies', async () => {
   const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
   const series = fakeSeries()

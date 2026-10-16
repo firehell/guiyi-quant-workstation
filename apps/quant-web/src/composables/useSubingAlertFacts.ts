@@ -17,17 +17,17 @@ export interface SubingRuleScopeFact {
 }
 
 export function useSubingAlertFacts(dependencies: {
-  fetchRuntime: () => Promise<RuntimeHealthResponse>
-  fetchProductAlerts: (symbol: string) => Promise<ProductAlertStateResponse>
+  fetchRuntime: (signal?: AbortSignal) => Promise<RuntimeHealthResponse>
+  fetchProductAlerts: (symbol: string, signal?: AbortSignal) => Promise<ProductAlertStateResponse>
 }) {
   const runtimeResource = useIdentityBoundResource({
     key: () => 'runtime',
-    load: dependencies.fetchRuntime,
+    load: (_identity: SubingAlertFactsIdentity, signal) => dependencies.fetchRuntime(signal),
     project: (response: RuntimeHealthResponse) => normalizeRuntimeAlertProjection(response.components.alert),
   })
   const ruleResource = useIdentityBoundResource({
     key: (identity: SubingAlertFactsIdentity) => `${identity.symbol}:${identity.frequency}`,
-    load: (identity: SubingAlertFactsIdentity) => dependencies.fetchProductAlerts(identity.symbol),
+    load: (identity: SubingAlertFactsIdentity, signal) => dependencies.fetchProductAlerts(identity.symbol, signal),
     project: ruleScopeFact,
   })
   async function refresh(identity: SubingAlertFactsIdentity) {

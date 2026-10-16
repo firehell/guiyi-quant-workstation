@@ -4,6 +4,34 @@ import { createSessionResources, createReadQueue } from '../src/utils/newowSessi
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
+test('immutable resources share one isolated frozen body across cache hits', async () => {
+  const store = createSessionResources({ immutable: true })
+  const original = { rows: [{ value: 3 }] }
+  store.put('frozen', original, 'v1')
+  const first = store.peek<typeof original>('frozen')!
+  const second = store.peek<typeof original>('frozen')!
+  assert.equal(first, second)
+  assert.notEqual(first, original)
+  assert.equal(Object.isFrozen(first.rows[0]), true)
+  original.rows[0].value = 10
+  assert.equal(first.rows[0].value, 3)
+  assert.throws(() => { first.rows[0].value = 99 }, TypeError)
+  const fetched = await store.load('new', async () => original, () => 'v1')
+  assert.equal(fetched, store.peek('new'))
+})
+
+test('an invalidated immutable flight never borrows the replacement body', async () => {
+  const store = createSessionResources({ immutable: true })
+  let finish!: (value: { version: string }) => void
+  const old = store.load('same', () => new Promise(resolve => { finish = resolve }), value => value.version)
+  await tick()
+  store.invalidate('same')
+  store.put('same', { version: 'new' }, 'new')
+  finish({ version: 'old' })
+  assert.equal((await old).version, 'old')
+  assert.equal(store.peek<{ version: string }>('same')?.version, 'new')
+})
+
 test('last consumer leaving cancels work and late responses cannot enter cache', async () => {
   const store = createSessionResources(), consumer = new AbortController()
   let finish!: (value: string) => void, owner!: AbortSignal
