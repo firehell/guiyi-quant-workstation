@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.read_timings import timed
+
 import json
 from collections import defaultdict
 from collections.abc import Callable, Mapping
@@ -150,6 +152,7 @@ class MarketHomeOverviewService:
             authority_digest=sha256(encoded).hexdigest(),
         )
 
+    @timed("read")
     def snapshot(self) -> MarketHomeOverviewSnapshot:
         target_as_of = self._target_as_of()
         dominants = _dominants_by_symbol(
@@ -197,6 +200,7 @@ class MarketHomeOverviewService:
                 gaps, history_missing, weekly, weekly_reasons,
             )).encode("utf-8")).hexdigest()
 
+            @timed("compute")
             def calculate() -> ResearchMetrics:
                 cached = _METRIC_CACHE.get(metric_key, ("metrics",))
                 if cached is not None:

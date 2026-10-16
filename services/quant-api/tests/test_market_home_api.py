@@ -207,7 +207,7 @@ def test_conditional_overview_freshly_checks_inputs_and_preserves_failure(monkey
     path = "/api/v1/market/research/home-overview"
     first = client.get(path, headers={"Origin": "http://localhost:5173"})
     assert first.status_code == 200 and "etag" in first.headers
-    assert first.headers["access-control-expose-headers"] == "ETag"
+    assert {value.strip() for value in first.headers["access-control-expose-headers"].split(",")} == {"ETag", "Server-Timing"}
     headers = {"If-None-Match": first.headers["etag"]}
     same = client.get(path, headers=headers)
     assert same.status_code == 304 and same.content == b"" and len(reads) == 1

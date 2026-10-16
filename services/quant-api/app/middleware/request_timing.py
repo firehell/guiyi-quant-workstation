@@ -23,7 +23,9 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         started = time.perf_counter()
-        enabled = request.url.path.rstrip("/").endswith("/market/newow/strategy-detail")
+        enabled = request.url.path.rstrip("/").endswith((
+            "/market/newow/strategy-detail", "/market/research/home-overview", "/market/product-directory",
+        ))
         with detail_timings() if enabled else nullcontext() as metrics:
             response = await call_next(request)
         if metrics is not None:

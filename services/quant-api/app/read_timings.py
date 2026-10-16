@@ -14,7 +14,7 @@ from typing import Callable, ParamSpec, TypeVar
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
 _NAMES = frozenset({"queue", "read", "verify", "cache", "compute", "replay", "projection",
-                    "catalog", "mapping", "session", "file_read", "integrity", "parquet", "assemble"})
+                    "catalog", "mapping", "session", "file_read", "integrity", "parquet", "assemble", "response_encode"})
 
 
 class DetailTimings:
@@ -32,7 +32,7 @@ class DetailTimings:
     def header(self, total_ms: float) -> str:
         with self._lock:
             entries = sorted(self.values.items())
-            if self.projected_at is not None:
+            if self.projected_at is not None and "response_encode" not in self.values:
                 # FastAPI response-model encoding and response construction
                 # after the final projection; excludes network/gzip delivery.
                 entries.append(("response_encode", (perf_counter() - self.projected_at) * 1000))
