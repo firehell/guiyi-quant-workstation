@@ -21,3 +21,11 @@
 本轮只读60品种Session与当日自然18:05盘后Gate通过；Reference实测720启用：508 READY、212 DATA_CONFLICT、pending0，完整就绪Gate失败；禁止drain及切换。
 未停止、drain或修改现役服务，未执行migration。
 独立Review发现旧caller用v7算法生成候选合同，已在新独立caller以候选自身进程算法隔离修正；旧绑定仍按v7校验。
+
+## 实际交付
+
+- PR #458已合入main，annotated v1.15.10 peeled commit为79c6ed573234ec6737e860f197498738a51c7c7d；main合并树与已测试候选66c18c54e逐树相同。
+- GitHub Release已公开发布，非draft/prerelease：https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.15.10 。main/develop同步；精确发布树.worktrees/release-v1.15.10已创建并安装锁定Python依赖。
+- 精确发布树的候选自身合同算法实际只读计算通过；input/launcher与旧算法区分正确。caller最终76项测试通过。未生成或执行生产plan/attempt。
+- 最终local-services-status只读回读10服务身份均matched，仍为v1.15.7/gen19；API/Web HTTP通过但Runtime health blocked，不声明RUNTIME_READY。
+- 结论：RELEASED，Runtime切换技术阻断。下一步定位212项Reference DATA_CONFLICT并按原始事实合同消除阻断，之后重做完整切换preflight；不能清空冲突或降低Gate。

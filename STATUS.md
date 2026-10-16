@@ -1,7 +1,8 @@
 # 当前状态
 
-## 10/16 v1.15.10 发布候选与切换阻断
+## 10/16 v1.15.10 已发布，Runtime切换阻断
 
+v1.15.10已发布：tag peeled/main为79c6ed573234ec6737e860f197498738a51c7c7d，PR #458合并，GitHub Release非draft/prerelease；develop已同步。
 已汇总已验收develop、版本准备和已发布main，完成完整Web1133 passed/3 skipped、发布相关后端185 passed、build/type/topology、OpenSpec11及secret零发现。
 现役仍为v1.15.7/gen19/schema0051。当前Reference720启用中508 READY、212 DATA_CONFLICT、pending0；完整就绪Gate失败。
 未drain、未迁移、未切换；发布与Runtime独立记录。见[发布汇总](docs/tasks/release-all-v1.15.10.md)。
