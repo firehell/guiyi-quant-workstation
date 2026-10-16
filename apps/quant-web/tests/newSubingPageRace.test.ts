@@ -7,13 +7,14 @@ import { createRenderer, h, nextTick } from 'vue'
 
 const vueUrl = import.meta.resolve('vue')
 const apiUrl = `data:text/javascript;base64,${Buffer.from(`
-export const pending=[];
+export const pending=[]; export const reads=[];
 const meta=(product,cash='100000')=>({run_id:(product+cash).repeat(64).slice(0,64),product,scenario:'baseline',status:'COMPLETED',strategy_code:'new_subing_v2',initial_cash:cash});
 export function getNewSubingEquityCurve(id){return Promise.resolve({run_id:id,sha256:id,items:[],total:0,sampled:false,status:'COMPLETED',since:'2026-01-01',through:'2026-10-01',sampling_version:'exact_extrema_boundaries_v1'})}
 export function getNewSubingProfiles(){return Promise.resolve({strategy_code:'new_subing_v1',profiles:[]})}
 export function getNewSubingRuns(){return Promise.resolve({runs:[meta('AL'),meta('RB'),meta('AL','1000000')]})}
-export function getNewSubingRun(id){return Promise.resolve({metadata:meta(id.startsWith('R')?'RB':'AL',id.includes('1000000')?'1000000':'100000'),summary:{status:'COMPLETED'},diagnostics:{}})}
-export function getNewSubingPage(id,kind,cursor){
+export function getNewSubingRun(id){return Promise.resolve({sha256:id,metadata:meta(id.startsWith('R')?'RB':'AL',id.includes('1000000')?'1000000':'100000'),summary:{status:'COMPLETED'},diagnostics:{}})}
+export function getNewSubingPage(id,kind,cursor,options){
+  reads.push({id,kind,cursor,signal:options?.signal});
   if(cursor)return new Promise(resolve=>pending.push({id,kind,cursor,resolve}));
   return Promise.resolve({items:[{reason:id.startsWith('A')?'AL-FIRST':'RB-FIRST'}],next_cursor:'more-'+id,run_id:id,sha256:id});
 }
@@ -109,4 +110,19 @@ test('decision action selector offers core trace actions without BUILD', () => {
 test('metric cards wrap exact fallback values rather than clipping them', () => {
   const source = readFileSync(new URL('../src/pages/research/NewSubingPage.vue', import.meta.url), 'utf8')
   assert.match(source, /\.metrics strong\{[^}]*overflow-wrap:anywhere/)
+})
+
+ test('research loads only selected table and aborts obsolete pagination', async () => {
+  api.reads.length = 0
+  const Page = await component(); Page.render = () => h('div')
+  const app = renderer().createApp(Page); app.mount({}); await settle()
+  const state = (app as any)._instance.setupState
+  assert.deepEqual(api.reads.map(row => row.kind), ['decisions'])
+  void state.nextPage()
+  const signal = api.reads.at(-1).signal
+  state.selectedProduct = 'RB'; await state.selectRun()
+  assert.equal(signal.aborted, true)
+  state.pageKind = 'trades'; await settle()
+  assert.ok(api.reads.some(row => row.kind === 'trades'))
+  app.unmount()
 })

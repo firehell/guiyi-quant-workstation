@@ -4,7 +4,7 @@ import PerformancePanel from '@/components/performance/PerformancePanel.vue'
 import type { SubingReferenceResponse, SubingReferenceTrade } from '@/types/subingReference'
 import { referenceTone, referenceDecimalDisplay } from '@/utils/subingReference'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
-const props = defineProps<{ data: SubingReferenceResponse | null; loading: boolean; error: string | null }>()
+const props = defineProps<{ data: SubingReferenceResponse | null; loading: boolean; error: string | null; capped?: boolean }>()
 const emit = defineEmits<{ refresh: [dates: { since?: string; through?: string }]; 'load-more': []; focus: [trade: SubingReferenceTrade]; details: [trade: SubingReferenceTrade] }>()
 const since = ref(''); const through = ref('')
 const invalidRange = computed(() => !!since.value && !!through.value && since.value > through.value)
@@ -18,7 +18,6 @@ const readinessLabel = (status: SubingReferenceResponse['research_status']) => (
     <header><div><h3>{{ data?.storage_mode === 'persisted' ? '已保存历史参考' : '历史重算参考' }}</h3><p>{{ data?.storage_mode === 'persisted' ? '历史参考·已保存' : '历史重算·乐观参考' }}｜零费用/零滑点</p></div><span>{{ data?.frequency ?? '当前周期' }} · 双向反手 · 非可执行</span></header>
     <form @submit.prevent="refresh"><label>开始交易日<input v-model="since" type="date" aria-label="参考开始交易日" /></label><label>结束交易日<input v-model="through" type="date" aria-label="参考结束交易日" /></label><button type="submit" :disabled="loading || invalidRange">{{ loading ? '读取中…' : '读取参考' }}</button></form>
     <p v-if="invalidRange" class="subing-reference__validation" role="alert">开始交易日不能晚于结束交易日。</p>
-    <p v-if="error" role="status">{{ error }}</p>
     <template v-if="data">
       <div class="subing-reference__summary"><span>已平 <b>{{ data.summary.closed_count }}</b></span><span>胜 / 负 / 平 <b>{{ data.summary.win_count }} / {{ data.summary.loss_count }} / {{ data.summary.flat_count }}</b></span><span>胜率 <b>{{ data.summary.win_rate_pct === null ? '—' : `${referenceDecimalDisplay(data.summary.win_rate_pct, false)}%` }}</b></span><span>平均参考收益 <b :class="referenceTone(data.summary.mean_return_pct)">{{ data.summary.mean_return_pct === null ? '—' : `${referenceDecimalDisplay(data.summary.mean_return_pct)}%` }}</b></span><span>累计参考收益（百分点） <b :class="referenceTone(data.summary.sum_return_percentage_points)">{{ referenceDecimalDisplay(data.summary.sum_return_percentage_points) }} 百分点</b></span></div>
       <p class="subing-reference__note">统计按所选交易日固定，不随图表缩放或翻页变化。未平 {{ data.summary.open_count }} · 换月中断 {{ data.summary.rollover_interrupted_count ?? data.summary.interrupted_count }} · 数据中断 {{ data.summary.data_interrupted_count ?? 0 }} · 窗口初始 {{ data.summary.initial_count }}；未平和中断不计入已平收益。百分比之和不是账户复利收益。</p>
@@ -27,7 +26,8 @@ const readinessLabel = (status: SubingReferenceResponse['research_status']) => (
       <div class="subing-reference__table"><table><thead><tr><th>方向 / 状态</th><th>物理合约</th><th>建仓参考</th><th>清仓参考</th><th>持有 Bar</th><th>参考收益 / 浮动</th><th>操作</th></tr></thead><tbody><tr v-for="trade in data.items" :key="trade.reference_trade_id"><td>{{ trade.side === 'LONG' ? '多' : '空' }} · {{ statusLabel(trade) }}{{ trade.initial ? ' · 窗口初始' : '' }}</td><td>{{ trade.physical_contract }}</td><td>{{ formatMarketDecimal(trade.entry_reference_price) }}<small>{{ formatBeijingInstant(trade.entry_bar_end) }}</small></td><td>{{ formatMarketDecimal(trade.exit_reference_price) }}<small>{{ (trade.exit_bar_end ? formatBeijingInstant(trade.exit_bar_end) : null) ?? (trade.status === 'DATA_INTERRUPTED' ? `数据中断（${trade.interruption_reason}），未配对平仓` : trade.status === 'ROLLOVER_INTERRUPTED' ? '换月中断，未配对平仓' : '尚无反向信号') }}</small></td><td>{{ trade.holding_bars }}</td><td :class="referenceTone(trade.reference_return_pct ?? trade.mark_change_pct)">{{ trade.reference_return_pct !== null ? `${referenceDecimalDisplay(trade.reference_return_pct)}%` : trade.mark_change_pct !== null ? `${referenceDecimalDisplay(trade.mark_change_pct)}% · 参考浮动` : '—' }}</td><td class="subing-reference__actions"><button type="button" @click="emit('focus', trade)">定位图表</button><button type="button" @click="emit('details', trade)">查看详情</button></td></tr></tbody></table></div>
       <p v-if="data.research_status === 'warming' || data.research_status === 'WARMING' || data.research_status === 'INDICATOR_READY_CROSS_UNEVALUABLE'" role="status">物理合约当前计算分段尚未形成可判定交叉；当前零交易不能解释为无信号或零胜率。</p>
       <p v-else-if="!data.items.length">已完成计算，所选窗口暂无历史参考记录。</p>
-      <button v-if="data.next_before" type="button" :disabled="loading" @click="emit('load-more')">{{ loading ? '读取中…' : '加载更多参考记录' }}</button>
+      <p v-if="capped" role="status">已达到本页显示容量，尚未读取完整历史；请缩小日期窗口。</p>
+      <button v-if="data.next_before && !capped" type="button" :disabled="loading" @click="emit('load-more')">{{ loading ? '读取中…' : '加载更多参考记录' }}</button>
       <p class="subing-reference__note">历史来源截止 {{ formatBeijingInstant(data.reference_cutoff) }} · {{ data.performance_since }} — {{ data.performance_through }}</p>
     </template>
   </PerformancePanel>

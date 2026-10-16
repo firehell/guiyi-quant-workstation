@@ -76,7 +76,8 @@ onBeforeUnmount(reference.dispose)
         </tr></tbody>
       </table></div>
       <p v-if="!reference.page.value.items.length">所选窗口暂无已观察的参考交易。</p>
-      <button v-if="reference.page.value.next_cursor" type="button" :disabled="reference.loading.value" @click="reference.loadMore()">加载更多</button>
+      <p v-if="reference.capped.value" role="status">已达到本页显示容量，尚未读取完整历史；请缩小日期窗口。</p>
+      <button v-if="reference.page.value.next_cursor && !reference.capped.value" type="button" :disabled="reference.loading.value" @click="reference.loadMore()">加载更多</button>
     </template>
   </PerformancePanel>
 </template>

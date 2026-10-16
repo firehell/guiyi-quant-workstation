@@ -37,6 +37,10 @@ const selectedCurvePoint = ref(0)
 const pageError = ref<string | null>(null)
 let generation = 0
 let mounted = true
+let controller = new AbortController()
+const resultHash = ref<string | null>(null)
+const retainedLimit = 1000
+const tableCapped = computed(() => (pages.value[pageKind.value]?.items.length ?? 0) >= retainedLimit && !!pages.value[pageKind.value]?.next_cursor)
 
 const available = computed(() => runs.value.filter(run => matchingRun(run, selectedVersion.value, selectedCapital.value, selectedProduct.value, selectedScenario.value)))
 const latest = computed(() => available.value.at(-1) ?? null)
@@ -60,11 +64,12 @@ function inspectCurve(event: MouseEvent) {
 }
 
 async function loadCatalog() {
+  controller.abort(); controller = new AbortController()
   const current = ++generation
   loading.value = true
   error.value = null
   try {
-    const [profileResult, runResult] = await Promise.all([getNewSubingProfiles(), getNewSubingRuns()])
+    const [profileResult, runResult] = await Promise.all([getNewSubingProfiles(controller.signal), getNewSubingRuns(controller.signal)])
     if (current !== generation) return
     profiles.value = profileResult
     runs.value = runResult.runs
@@ -77,6 +82,10 @@ async function loadCatalog() {
 }
 
 async function selectRun() {
+  controller.abort(); controller = new AbortController()
+  const signal = controller.signal
+  resultHash.value = null
+  const kind = pageKind.value
   const current = ++generation
   const run = latest.value
   const token = selectionToken(run?.run_id ?? '', current)
@@ -92,19 +101,19 @@ async function selectRun() {
   if (!run) { loading.value = false; return }
   loading.value = true
   try {
-    const [newDetail, decisions, trades, equity] = await Promise.all([
-      getNewSubingRun(run.run_id), getNewSubingPage(run.run_id, 'decisions'),
-      getNewSubingPage(run.run_id, 'trades'), getNewSubingPage(run.run_id, 'equity'),
+    const [newDetail, first] = await Promise.all([
+      getNewSubingRun(run.run_id, signal), getNewSubingPage(run.run_id, kind, null, { signal }),
     ])
     if (token !== selectionToken(latest.value?.run_id ?? '', generation)) return
-    if ([decisions, trades, equity].some(page => page.run_id !== run.run_id || page.sha256 !== decisions.sha256)) throw new Error('研究结果身份不一致')
+    if (first.run_id !== run.run_id || newDetail.metadata.run_id !== run.run_id || newDetail.sha256 !== first.sha256) throw new Error('研究结果身份不一致')
+    resultHash.value = first.sha256
     detail.value = newDetail
-    pages.value = { decisions, trades, equity }
+    pages.value = { ...pages.value, [kind]: first }
     curveLoading.value = true
     try {
-      const fullCurve = await getNewSubingEquityCurve(run.run_id, decisions.sha256)
+      const fullCurve = await getNewSubingEquityCurve(run.run_id, first.sha256, signal)
       if (token !== selectionToken(latest.value?.run_id ?? '', generation)) return
-      if (fullCurve.run_id !== run.run_id || fullCurve.sha256 !== decisions.sha256) throw new Error('研究结果身份不一致')
+      if (fullCurve.run_id !== run.run_id || fullCurve.sha256 !== first.sha256) throw new Error('研究结果身份不一致')
       curveData.value = fullCurve
     } catch {
       if (current === generation) curveError.value = '完整权益曲线无法核验或读取；下方冻结摘要及明细不受影响。'
@@ -127,12 +136,12 @@ async function nextPage() {
   const runId = detail.value?.metadata.run_id
   const kind = pageKind.value
   const cursor = pages.value[kind]?.next_cursor
-  if (!runId || !cursor || pageLoading.value) return
+  if (!runId || !cursor || pageLoading.value || tableCapped.value) return
   const token = selectionToken(runId, generation)
   pageLoading.value = true
   pageError.value = null
   try {
-    const next = await getNewSubingPage(runId, kind, cursor)
+    const next = await getNewSubingPage(runId, kind, cursor, { signal: controller.signal, sha256: resultHash.value ?? undefined })
     if (token !== selectionToken(detail.value?.metadata.run_id ?? '', generation)) return
     pages.value = { ...pages.value, [kind]: appendResearchPage(pages.value[kind]!, next) }
   } catch {
@@ -141,6 +150,29 @@ async function nextPage() {
     if (token === selectionToken(detail.value?.metadata.run_id ?? '', generation)) pageLoading.value = false
   }
 }
+
+async function ensureTable() {
+  const runId = detail.value?.metadata.run_id
+  const sha256 = resultHash.value
+  const kind = pageKind.value
+  if (!runId || !sha256 || pages.value[kind] || pageLoading.value) return
+  const current = generation
+  pageLoading.value = true; pageError.value = null
+  try {
+    const first = await getNewSubingPage(runId, kind, null, { signal: controller.signal, sha256 })
+    if (current === generation) {
+      if (first.run_id !== runId || first.sha256 !== sha256) throw new Error('研究结果身份不一致')
+      pages.value = { ...pages.value, [kind]: first }
+    }
+  } catch { if (current === generation) pageError.value = '明细读取失败，可重试；冻结摘要不受影响。' }
+  finally {
+    if (current === generation) {
+      pageLoading.value = false
+      if (kind !== pageKind.value) void ensureTable()
+    }
+  }
+}
+watch([pageKind, detail], () => { void ensureTable() })
 
 function formatCell(value: unknown, field?: string): string {
   if (['action', 'side', 'status'].includes(field ?? '') && typeof value === 'string') return actionLabels[value] ?? value
@@ -160,7 +192,7 @@ function resetVisit() {
   saveVisit()
 }
 watch([selectedVersion, selectedCapital, selectedProduct, selectedScenario, pageKind, actionFilter, query], saveVisit)
-onBeforeUnmount(() => { saveVisit(); mounted = false; generation++ })
+onBeforeUnmount(() => { saveVisit(); mounted = false; generation++; controller.abort() })
 onMounted(async () => { await loadCatalog(); await nextTick(); if (mounted && typeof window !== 'undefined') window.scrollTo(0, initialVisit.scroll) })
 </script>
 
@@ -206,9 +238,11 @@ onMounted(async () => { await loadCatalog(); await nextTick(); if (mounted && ty
         <div v-if="pageKind === 'decisions'" class="filters"><label>动作 <select v-model="actionFilter"><option v-for="action in ['ALL', 'SETUP', 'ADD_SETUP', 'SETUP_INVALIDATED', 'OPEN', 'ADD', 'REDUCE', 'REDUCE_SKIPPED', 'CLEAR', 'CANCEL', 'REJECT', 'INTERRUPTED']" :key="action" :value="action">{{ actionLabels[action] }}</option></select></label><label>已加载记录搜索 <input v-model="query" placeholder="原因或事实依据" /></label></div>
         <p v-if="!visibleItems.length" class="empty">{{ detail.metadata.status === 'COMPLETED' ? '已加载记录中没有匹配项。' : '证据不足，记录不可评价。' }}</p>
         <div v-else class="table-wrap"><table><thead><tr><th v-for="field in fields" :key="field">{{ fieldLabels[field] ?? field }}</th></tr></thead><tbody><tr v-for="(item, index) in visibleItems" :key="index"><td v-for="field in fields" :key="field"><details v-if="field === 'facts'"><summary>查看事实</summary><pre>{{ formatCell(item[field]) }}</pre></details><span v-else>{{ formatCell(item[field], field) }}</span></td></tr></tbody></table></div>
-        <button v-if="pages[pageKind]?.next_cursor" class="more" :disabled="pageLoading" @click="nextPage">{{ pageLoading ? '读取中…' : '加载更多' }}</button>
+        <button v-if="pages[pageKind]?.next_cursor && !tableCapped" class="more" :disabled="pageLoading" @click="nextPage">{{ pageLoading ? '读取中…' : '加载更多' }}</button>
         <p v-if="pageError" role="alert" class="notice">{{ pageError }}</p>
-        <p class="muted">已加载 {{ pages[pageKind]?.items.length ?? 0 }} 条{{ pages[pageKind]?.next_cursor ? '，仍有更多记录' : '，已读取全部记录' }}。每次加载最多 50 条；筛选仅作用于已加载记录，完整权益曲线独立读取。</p>
+        <p v-if="tableCapped" role="status">已达到本页 1000 条显示上限，尚未读取完整历史；完整权益与摘要不受影响。</p>
+        <button v-if="pageError && !pages[pageKind]" @click="ensureTable">重试明细</button>
+        <p class="muted">已加载 {{ pages[pageKind]?.items.length ?? 0 }} 条{{ pages[pageKind]?.next_cursor ? '，仍有更多记录' : pages[pageKind] ? '，已读取全部记录' : '，尚未读取该类明细' }}。每次加载最多 50 条；筛选仅作用于已加载记录，完整权益曲线独立读取。</p>
       </section>
     </div>
   </PageShell>

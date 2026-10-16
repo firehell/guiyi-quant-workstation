@@ -65,7 +65,7 @@ for (const [width,height] of dimensions) {
       if(url.pathname.endsWith('/runs'))return route.fulfill({json:{runs:[meta(1),meta(2)]}})
       if(url.pathname.endsWith('/equity-curve')){curveRequests++;return route.fulfill({json:{run_id:id,sha256:'f'.repeat(64),items:curve,total:100,sampled:true,sampling_version:'exact_extrema_boundaries_v1',since:'2026-01-01',through:'2026-09-03',status:'COMPLETED'}})}
       if(/\/(decisions|trades|equity)$/.test(url.pathname))return route.fulfill({json:{run_id:id,sha256:'f'.repeat(64),items:[{at:'2026-01-01T07:00:00Z',equity:'100000',action:'OPEN',side:'LONG'}],next_cursor:url.searchParams.has('cursor')?null:'next'}})
-      return route.fulfill({json:{metadata:meta(v),summary:{status:'COMPLETED',account_return_pct:'0.2',max_drawdown_pct:'0.001',final_equity:'100200',closed_trades:1},diagnostics:{}}})
+      return route.fulfill({json:{sha256:'f'.repeat(64),metadata:meta(v),summary:{status:'COMPLETED',account_return_pct:'0.2',max_drawdown_pct:'0.001',final_equity:'100200',closed_trades:1},diagnostics:{}}})
     })
     await page.goto('/research/new-subing')
     for(const version of ['new_subing_v2','new_subing_v1']){

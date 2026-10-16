@@ -10,26 +10,28 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
   let generation = 0
   let controller = new AbortController()
   let symbol = ''
+  const capped = ref(false)
   const pages = createReferencePageState<SubingReferenceResponse['items'][number]>(item => item.reference_trade_id)
   async function refresh(nextSymbol: string, query: SubingReferenceQuery = {}) {
     controller.abort(); controller = new AbortController()
     const signal = controller.signal
     const current = ++generation
     symbol = nextSymbol.toLowerCase(); const expected = symbol
-    pages.reset(); data.value = null; error.value = null; loading.value = true
+    pages.reset(); capped.value = false; data.value = null; error.value = null; loading.value = true
     try {
       const result = normalizeSubingReference(await fetch(expected, query, signal), expected)
       if (query.frequency && result.frequency !== query.frequency || query.since && result.performance_since !== query.since || query.through && result.performance_through !== query.through || query.as_of && Date.parse(result.as_of) !== Date.parse(query.as_of)) throw new Error('identity')
       if (current === generation) {
         pages.first(referenceIdentity(result), result.items, result.next_before)
-        data.value = result
+        capped.value = pages.capped
+        data.value = { ...result, items: pages.items }
       }
     } catch (reason) { if (current === generation) error.value = referenceReadError(reason) }
     finally { if (current === generation) loading.value = false }
   }
   async function loadMore() {
     const previous = data.value
-    if (!previous?.next_before || loading.value) return
+    if (capped.value || !previous?.next_before || loading.value) return
     const current = generation; const expected = symbol; const signal = controller.signal
     loading.value = true; error.value = null
     try {
@@ -37,12 +39,13 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
       if (current !== generation) return
       if (referenceIdentity(result) !== referenceIdentity(previous) || JSON.stringify(result.summary) !== JSON.stringify(previous.summary) || JSON.stringify(result.signals) !== JSON.stringify(previous.signals) || JSON.stringify(result.indicators) !== JSON.stringify(previous.indicators)) throw new Error('snapshot')
       const items = pages.append(referenceIdentity(result), previous.next_before, result.items, result.next_before)
+      capped.value = pages.capped
       data.value = { ...result, items, next_before: pages.cursor }
-    } catch { if (current === generation) { pages.reset(); data.value = null; error.value = '历史参考快照已变化或分页不可用，请重新读取。' } }
+    } catch { if (current === generation) { pages.reset(); capped.value = false; data.value = null; error.value = '历史参考快照已变化或分页不可用，请重新读取。' } }
     finally { if (current === generation) loading.value = false }
   }
-  function dispose() { generation += 1; controller.abort(); loading.value = false; pages.reset(); data.value = null }
-  return { data, loading, error, refresh, loadMore, dispose }
+  function dispose() { generation += 1; controller.abort(); loading.value = false; pages.reset(); capped.value = false; data.value = null }
+  return { capped, data, loading, error, refresh, loadMore, dispose }
 }
 
 function referenceIdentity(value: SubingReferenceResponse): string {

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.new_subing_research.store import ResultStoreError, equity_curve, list_results, page_result, read_result
+from app.new_subing_research.store import ResultStoreError, equity_curve, list_results, page_result, read_result_detail
 
 router = APIRouter(prefix="/api/v1/research/new-subing", tags=["new-subing-research"])
 _RUN = re.compile(r"[0-9a-f]{64}\Z")
@@ -35,7 +35,7 @@ def _read(run_id: str) -> dict:
     if root is None:
         raise HTTPException(status_code=404, detail={"code": "RESULT_NOT_FOUND"})
     try:
-        return read_result(root, run_id)
+        return read_result_detail(root, run_id)
     except ResultStoreError as exc:
         raise _fail(exc) from exc
 
@@ -70,8 +70,7 @@ def runs() -> dict:
 
 @router.get("/runs/{run_id}")
 def run_detail(run_id: str) -> dict:
-    packet = _read(run_id)
-    return {"metadata": packet["metadata"], "summary": packet["summary"], "diagnostics": packet["diagnostics"]}
+    return _read(run_id)
 
 
 def _page(run_id: str, kind: str, limit: int, cursor: str | None) -> dict:

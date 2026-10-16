@@ -38,6 +38,7 @@ export interface NewSubingProfiles {
   auto_order: false
 }
 export interface NewSubingRunDetail {
+  sha256: string
   metadata: NewSubingMetadata
   summary: Record<string, unknown> & { status: string }
   diagnostics: Record<string, unknown>

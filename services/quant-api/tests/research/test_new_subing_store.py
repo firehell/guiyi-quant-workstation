@@ -271,3 +271,18 @@ def test_curve_refuses_invalid_time_values_or_order(tmp_path, rows):
     frozen = publish_result(tmp_path, payload)
     with pytest.raises(ResultStoreError, match='CURVE_FACTS_INVALID'):
         equity_curve(tmp_path, frozen['metadata']['run_id'])
+
+
+def test_list_reads_index_once_but_verifies_each_packet(tmp_path, monkeypatch):
+    from app.new_subing_research import store
+    publish_result(tmp_path, packet())
+    publish_result(tmp_path, v2_packet())
+    original = store._read_file
+    reads = []
+    def counted(path):
+        reads.append(path.name)
+        return original(path)
+    monkeypatch.setattr(store, "_read_file", counted)
+    assert len(list_results(tmp_path)) == 2
+    assert reads.count("index.json") == 1
+    assert len(reads) == 3

@@ -56,6 +56,7 @@ def test_readonly_api_lists_detail_and_paginates(tmp_path, monkeypatch):
     assert "decisions" not in detail
     assert detail["summary"]["final_equity"] == "100010"
     first = client.get(f"/api/v1/research/new-subing/runs/{run_id}/decisions?limit=1").json()
+    assert detail["sha256"] == first["sha256"]
     assert first["next_cursor"]
     second = client.get(f"/api/v1/research/new-subing/runs/{run_id}/decisions", params={"cursor": first["next_cursor"], "limit": 1}).json()
     assert len(second["items"]) == 1

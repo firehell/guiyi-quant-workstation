@@ -265,7 +265,7 @@ def list_results(root: Path) -> list[dict[str, Any]]:
         return []
     index = _index(root)
     # Verify listed packet before exposing even its summary metadata.
-    return [read_result(root, entry["metadata"]["run_id"])["metadata"] for entry in index["runs"]]
+    return [_read_indexed_entry(root, entry)[0]["metadata"] for entry in index["runs"]]
 
 
 def _read_entry(root: Path, run_id: str) -> tuple[dict[str, Any], str]:
@@ -277,6 +277,12 @@ def _read_entry(root: Path, run_id: str) -> tuple[dict[str, Any], str]:
     entry = next((e for e in _index(root)["runs"] if e["metadata"]["run_id"] == run_id), None)
     if entry is None:
         raise ResultStoreError("RESULT_NOT_FOUND")
+    return _read_indexed_entry(root, entry)
+
+
+def _read_indexed_entry(root: Path, entry: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Reuse only this request's validated index; verify every packet byte."""
+    run_id = entry["metadata"]["run_id"]
     raw = _read_file(root / entry["file"])
     if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
         raise ResultStoreError("RESULT_CORRUPT")
@@ -289,6 +295,12 @@ def _read_entry(root: Path, run_id: str) -> tuple[dict[str, Any], str]:
 
 def read_result(root: Path, run_id: str) -> dict[str, Any]:
     return _read_entry(root, run_id)[0]
+
+
+def read_result_detail(root: Path, run_id: str) -> dict[str, Any]:
+    packet, sha = _read_entry(root, run_id)
+    return {"metadata": packet["metadata"], "summary": packet["summary"],
+            "diagnostics": packet["diagnostics"], "sha256": sha}
 
 
 def page_result(root: Path, run_id: str, kind: str, *, limit: int = 50, cursor: str | None = None) -> dict[str, Any]:

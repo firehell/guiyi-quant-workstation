@@ -20,7 +20,18 @@ test('saved Newow pages tolerate identical overlap and stop at the display cap',
   assert.deepEqual(state.append('snapshot-a', 'older', [{ id: 'new', value: 1 }, { id: 'old', value: 2 }], 'next'), [
     { id: 'new', value: 1 }, { id: 'old', value: 2 },
   ])
-  assert.equal(state.cursor, null)
+  assert.equal(state.cursor, 'next')
+  assert.equal(state.capped, true)
+  assert.throws(() => state.append('snapshot-a', 'next', [], null), /PRESENTATION_BUDGET_EXCEEDED/)
   state.first('snapshot-a', [{ id: 'new', value: 1 }], 'older')
   assert.throws(() => state.append('snapshot-a', 'older', [{ id: 'new', value: 3 }], null), /SNAPSHOT_CONFLICT/)
+})
+
+ test('oversized first page remains visibly capped with its real server cursor', () => {
+  const state = createReferencePageState<{ id: string }>(row => row.id, 2)
+  assert.equal(state.first('s', [{id:'1'},{id:'2'},{id:'3'}], null).length, 2)
+  assert.equal(state.capped, true)
+  assert.equal(state.cursor, null)
+  state.reset()
+  assert.equal(state.capped, false)
 })
