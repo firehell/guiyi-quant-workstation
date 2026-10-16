@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
 import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
 import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
@@ -23,6 +24,8 @@ import {
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type LineData,
+  type CandlestickData,
+  type HistogramData,
   type LogicalRange,
   type MouseEventParams,
   type SeriesMarker,
@@ -362,6 +365,10 @@ function renderReferencePrices(): void {
   }))
 }
 
+const candleWriter = createPriceSeriesWriter<CandlestickData<Time>>()
+const volumeWriter = createPriceSeriesWriter<HistogramData<Time>>()
+const anchorWriter = createPriceSeriesWriter<{ time: Time }>()
+
 function renderModel(value: NewowProductChartModel | null): void {
   processOverlays.value = []
   cycleCountOverlays.value = []
@@ -378,9 +385,9 @@ function renderModel(value: NewowProductChartModel | null): void {
     }
     // Keep only the price facts while switching strategy, never its old indicators or signals.
     if (!props.strategySwitching) {
-      candles.setData([])
-      volume?.setData([])
-      auxiliaryAnchor?.setData([])
+      candleWriter.write(candles, [], 'cleared')
+      if (volume) volumeWriter.write(volume, [], 'cleared')
+      if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, [], 'cleared')
     }
     band.setData([])
     dualBackground.setData([])
@@ -419,13 +426,14 @@ function renderModel(value: NewowProductChartModel | null): void {
   )
   const resetViewport = previousModel !== null && !retainsPreviousAxis
   rendering = true
-  candles.setData(value.bars.map((bar) => ({
+  const priceIdentity = `${value.identity.product}:${value.identity.frequency}:${value.identity.strategy}`
+  candleWriter.write(candles, value.bars.map((bar) => ({
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
-  })))
+  })), priceIdentity)
   const volumeColors = newowVolumeColors(value, 'rgba(255,59,48,0.6)', 'rgba(52,199,89,0.6)')
-  volume?.setData(value.bars.map((bar, index) => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: volumeColors[index] })))
-  auxiliaryAnchor?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })))
+  if (volume) volumeWriter.write(volume, value.bars.map((bar, index) => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: volumeColors[index] })), priceIdentity)
+  if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
   const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')
   band.setData(showStructure.value ? comparisonActive.value ? trendModel?.bandAreas ?? [] : value.bandAreas : [])
   dualBackground.setData(comparisonActive.value && showStructure.value && comparisonBackground.value
