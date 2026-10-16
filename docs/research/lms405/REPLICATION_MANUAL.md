@@ -270,3 +270,14 @@ scripts/research/lms405_validation_package.py \
 新增固定样本脚本`scripts/research/lms405_jm_may_case.py`仅复用已有几何与日盘核验函数，绑定输入CSV哈希，无行情resolver、订单、信号公式或生产写入。未核实历史修订的文章不能晋升为事前证据。定时研究任务`lms-4-0-5`已按用户要求删除，继续读取时Mac锁屏，解锁前只处理离线材料。
 
 本轮验证：`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/lms405` 为58 passed；新增脚本ruff通过；固定数据复算、拒绝覆盖及哈希不符拒绝均通过；CSV/本地文档引用、定向secret scan和diff检查通过。独立Review复算数值0差异，并要求收窄5月20日极值证据归属；修正后复核允许研究范围集成develop。原截图未获独立网页核验仍保留风险，不宣称原版复刻完成。
+
+
+## 2026-10-17：解锁后继续图解取证与5m局部对照
+
+Chrome恢复后沿G09找到3月10日ibar图，但周期和版本仍不明。进一步搜索BBB，取得7月22日焦煤5m图、早盘双持及午盘恢复材料。详见[信号链报告](evidence/SIGNAL_CHAIN_JULY22.md)、[H01–H12索引](evidence/signal-chain-20261017.csv)和[机器几何输出](evidence/jm2509-july22-geometry.json)。12条记录含E24复读，新增唯一来源11条，不改变旧冻结报告。
+
+本地只读MDS取得JM2509两个交易日138根5m。09:10严格内包、09:15跌破其低点与作者图形相容；候选顶部本地1035、作者1034.5，差0.5。作者图时间、版本和逐根OHLC未知，合格原版信号仍0，未算匹配率或收益。脚本`lms405_july22_geometry.py`是固定样本几何审计，不是信号识别器；未修改核心策略、active、Runtime、Canonical或数据库。
+
+另保存方法约束：VPLUS为BBB精简版；M盘整单循环试错；趋势中提前保护和指定阻力附近不加仓；高频锁定的人工控制。均保留场景及版本范围，不补造环境、区域、keybar和次数阈值。
+
+本批冻结数值、CLI确定性、拒绝覆盖/输入变更、CSV/引用、Ruff、secret与diff验证通过。独立Review离线重算通过，允许研究范围集成；原网页未独立复读，行情CSV仅保留本机output、未随Git分发，边界已明示。E09原理论引用复查仍为作者设置不可查看（120002）。这不是公式识别成功或完整复刻结论。

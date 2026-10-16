@@ -1,0 +1,81 @@
+{
+  "study": "JM2509_JULY22_ALIGNMENT_HYPOTHESIS_V1",
+  "input_sha256": "71c668cc3874cfdcb1c52b47c26615a89ed455977bfb5c80883a9e18b3cb91b3",
+  "bar_count": 138,
+  "source_url": "https://weibo.com/1885745060/PCeX7pZ6t",
+  "source_period": "5m explicitly stated in source text",
+  "source_bar_time": null,
+  "version_405_confirmed_for_this_chart": false,
+  "alignment": "PROVISIONAL_VISUAL_SEQUENCE_ONLY",
+  "original_ibar_formula_identified": false,
+  "original_bbb_formula_identified": false,
+  "author_ohlc_per_bar": null,
+  "author_signal_prediction": null,
+  "eligible_golden_signal_samples": 0,
+  "execution": null,
+  "return": null,
+  "development_evidence": true,
+  "bars": [
+    {
+      "bar_end_shanghai": "2025-07-22T09:05:00+08:00",
+      "open": "1032",
+      "high": "1033",
+      "low": "1023.5",
+      "close": "1027",
+      "bar_end_strictly_before_displayed_publication": true
+    },
+    {
+      "bar_end_shanghai": "2025-07-22T09:10:00+08:00",
+      "open": "1026.5",
+      "high": "1031",
+      "low": "1026.5",
+      "close": "1029.5",
+      "bar_end_strictly_before_displayed_publication": true
+    },
+    {
+      "bar_end_shanghai": "2025-07-22T09:15:00+08:00",
+      "open": "1029.5",
+      "high": "1.03E+3",
+      "low": "1013.5",
+      "close": "1016",
+      "bar_end_strictly_before_displayed_publication": true
+    },
+    {
+      "bar_end_shanghai": "2025-07-22T09:20:00+08:00",
+      "open": "1016",
+      "high": "1021",
+      "low": "1016",
+      "close": "1.02E+3",
+      "bar_end_strictly_before_displayed_publication": true
+    },
+    {
+      "bar_end_shanghai": "2025-07-22T09:25:00+08:00",
+      "open": "1.02E+3",
+      "high": "1.02E+3",
+      "low": "1011",
+      "close": "1016",
+      "bar_end_strictly_before_displayed_publication": false
+    }
+  ],
+  "local_geometry_only": {
+    "0910_strict_inside_0905": true,
+    "0915_low_below_0910_low": true,
+    "0915_close_below_0910_low": true,
+    "hypothetical_level": "1026.5",
+    "intrabar_cross_time": null
+  },
+  "provisional_peak_comparison": {
+    "local_bar_end": "2025-07-21T23:00:00+08:00",
+    "local_high": "1035",
+    "source_image_high_label": "1034.5",
+    "local_minus_image": "0.500000000000000000",
+    "alignment_confirmed": false
+  },
+  "limitations": [
+    "No source time axis or individual OHLC; no unique alignment proof",
+    "Public VPLUS is a simplified BBB relative, not identical",
+    "Publication time does not prove historical content immutability",
+    "No inferred fill from average position price",
+    "09:25 bar completion relative to same-minute post is unknown"
+  ]
+}
