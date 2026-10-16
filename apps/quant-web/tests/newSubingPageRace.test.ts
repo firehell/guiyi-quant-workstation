@@ -15,7 +15,7 @@ export function getNewSubingRuns(){return Promise.resolve({runs:[meta('AL'),meta
 export function getNewSubingRun(id){return Promise.resolve({sha256:id,metadata:meta(id.startsWith('R')?'RB':'AL',id.includes('1000000')?'1000000':'100000'),summary:{status:'COMPLETED'},diagnostics:{}})}
 export function getNewSubingPage(id,kind,cursor,options){
   reads.push({id,kind,cursor,signal:options?.signal});
-  if(cursor)return new Promise(resolve=>pending.push({id,kind,cursor,resolve}));
+  if(cursor)return new Promise((resolve,reject)=>pending.push({id,kind,cursor,resolve,reject}));
   return Promise.resolve({items:[{reason:id.startsWith('A')?'AL-FIRST':'RB-FIRST'}],next_cursor:'more-'+id,run_id:id,sha256:id});
 }
 `).toString('base64')}`
@@ -124,5 +124,20 @@ test('metric cards wrap exact fallback values rather than clipping them', () => 
   assert.equal(signal.aborted, true)
   state.pageKind = 'trades'; await settle()
   assert.ok(api.reads.some(row => row.kind === 'trades'))
+  app.unmount()
+})
+
+for (const outcome of ['resolve', 'reject']) test(`switching unread table during pagination resumes after ${outcome}`, async () => {
+  const Page = await component(); Page.render = () => h('div')
+  const app = renderer().createApp(Page); app.mount({}); await settle()
+  const state = (app as any)._instance.setupState
+  const more = state.nextPage()
+  const old = api.pending.at(-1)
+  state.pageKind = 'equity'; await settle()
+  assert.equal(state.pages.equity, null)
+  if (outcome === 'resolve') old.resolve({items:[],next_cursor:null,run_id:old.id,sha256:old.id})
+  else old.reject(Error('offline'))
+  await more; await settle()
+  assert.ok(state.pages.equity, 'current unread tab must load after the shared slot is released')
   app.unmount()
 })

@@ -1,5 +1,17 @@
 # 测试与验证命令
 
+## 八批看盘接口与资源回归
+
+所有测试串行；Node512MiB，类型/build768MiB，浏览器`--workers=1`。完整Web使用`pnpm -C apps/quant-web test`，build包含类型、能力生成和bundle拓扑校验。实际受影响后端集合与结果见[八批验收记录](docs/tasks/watch-eight-batches.md)。
+
+```bash
+NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web test
+NODE_OPTIONS=--max-old-space-size=768 pnpm -C apps/quant-web build
+NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/ui-unification.spec.mjs e2e/market-runtime.spec.mjs e2e/market-home-cache.spec.mjs e2e/hide-continuous.spec.mjs e2e/chart-first-loading.spec.mjs e2e/newow-chart-panes.spec.mjs e2e/subing-reference.spec.mjs e2e/reference-split.spec.mjs --workers=1
+```
+
+真实只读测试仅对已独立启动并核对身份的开发预览，设置`REAL_DEVELOP=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5176 PLAYWRIGHT_SKIP_WEBSERVER=1`，串行运行`chart-first-readonly.spec.mjs`、`multi-product-readonly.spec.mjs`和`watch-resource-readonly.spec.mjs`。完整参考对比可通过`REAL_REFERENCE_PRODUCT=jm|rb`选择固定样本；来源不可验证必须报告失败/待验，不跳过身份校验或改收益断言。
+
 ## Web 隐藏主连
 
 旧主连链接与偏好在请求前迁移到真实主力；页面无主连入口，底层 API 和数据能力保留。

@@ -1375,7 +1375,7 @@ test('merges an older chart cursor page atomically without changing the fixed re
   state.dispose()
 })
 
-test('bounds cumulative chart and reference pages and stops exposing an older cursor at the cap', async () => {
+test('bounds chart pages and preserves the real reference cursor with an explicit display cap', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
   await nextTick()
@@ -1397,7 +1397,10 @@ test('bounds cumulative chart and reference pages and stops exposing an older cu
   pending[3]!.resolve(bulkReference(pending[3]!.request, 200, 200, 'must-not-survive'))
   await referencePage
   assert.equal(state.sections.reference.data.value?.section === 'reference' && state.sections.reference.data.value.value?.items.length, 300)
-  assert.equal(state.sections.reference.data.value?.section === 'reference' && state.sections.reference.data.value.value?.next_before, null)
+  assert.equal(state.sections.reference.data.value?.section === 'reference' && state.sections.reference.data.value.value?.next_before, 'must-not-survive')
+  assert.equal(state.referenceCapped.value, true)
+  await state.loadNextReferencePage()
+  assert.equal(pending.length, 4)
   state.dispose()
 })
 

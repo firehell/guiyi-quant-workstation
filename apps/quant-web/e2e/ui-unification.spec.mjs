@@ -82,9 +82,9 @@ for (const [width,height] of dimensions) {
   })
 }
 
-for (const width of [1440,390]) {
+for (const [width,height] of dimensions.filter(([width]) => [1440,390].includes(width))) {
   test(`four experiment strategies share the curve and keep model identity ${width}`,async({page})=>{
-    await page.setViewportSize({width,height:900});await newowFixtures(page)
+    await page.setViewportSize({width,height});await newowFixtures(page)
     await page.route('**/api/v1/market/newow/experiments?**',route=>{
       const q=Object.fromEntries(new URL(route.request().url()).searchParams),dates=Array.from({length:12},(_,i)=>`2026-08-${String(i+1).padStart(2,'0')}T07:00:00Z`)
       const model=(ideal)=>({model_version:ideal?'newow_base_oscillation_ideal_v3379_v1':'newow_oscillation_experiment_ordinary_v3379_v1',hindsight:ideal,page_parity:true,executable:false,dates,equity:dates.map((_,i)=>i===11?'1':'0'),summary:{trade_count:1,cum_return_percentage_points:'1',accuracy_pct:'100',max_drawdown_percentage_points:'0'},trades:[{segment_id:'exp',physical_contract:'RB2605',entry_bar_end:dates[0],exit_bar_end:dates[11],entry_reference_price:'100',exit_reference_price:'101',return_percentage_points:'1',force_close:false,stop_loss:false,confirm_exit:false}]})

@@ -1,15 +1,18 @@
 import { expect, test } from '@playwright/test'
 
+const product = process.env.REAL_REFERENCE_PRODUCT ?? 'jm'
+if (!['jm', 'rb'].includes(product)) throw new Error('Read-only reference sample must be JM or RB')
+
 test.skip(process.env.REAL_DEVELOP !== '1', 'Requires this task independent development preview')
 
 test('real selected reference parts preserve complete metrics and keep page bodies separate', async ({ page, request }) => {
   test.setTimeout(90000)
   const chart = await request.get('/api/v1/market/newow/strategy-detail', { params: {
-    product: 'jm', strategy: 'oscillation', frequency: '1d', section: 'chart', resolve_current: true,
+    product, strategy: 'oscillation', frequency: '1d', section: 'chart', resolve_current: true,
   } })
   expect(chart.status()).toBe(200)
   const accepted = await chart.json()
-  const common = { product: 'jm', strategy: 'oscillation', frequency: '1d', section: 'reference',
+  const common = { product, strategy: 'oscillation', frequency: '1d', section: 'reference',
     as_of: accepted.meta.as_of, snapshot_token: accepted.meta.snapshot_token }
   const legacyResponse = await request.get('/api/v1/market/newow/strategy-detail', { params: common })
   expect(legacyResponse.status()).toBe(200)
@@ -49,7 +52,7 @@ test('real selected reference parts preserve complete metrics and keep page bodi
     if (url.pathname.endsWith('/newow/strategy-detail') && url.searchParams.get('section') === 'reference') panelRequests.push(url.searchParams.get('reference_part'))
   })
   page.on('pageerror', error => errors.push(error.message))
-  await page.goto('/market/chart?view=newow&symbol=jm&strategy=oscillation&series_kind=actual_dominant&frequency=1d')
+  await page.goto(`/market/chart?view=newow&symbol=${product}&strategy=oscillation&series_kind=actual_dominant&frequency=1d`)
   await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible({ timeout: 20000 })
   const reference = page.getByRole('region', { name: 'Newow 参考与解释', exact: true })
   await reference.scrollIntoViewIfNeeded()

@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 
 from fastapi import Request
-from starlette.responses import JSONResponse
+from starlette.responses import Response
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "services/quant-api/app/market_data/newow/capability_contracts.json"
@@ -43,7 +43,7 @@ def test_real_backend_capabilities_pass_the_actual_web_validator():
     for state in scenarios:
         request = Request({"type": "http", "state": state, "headers": []})
         result = newow_product_capabilities(request)
-        payload = (json.loads(result.body) if isinstance(result, JSONResponse)
+        payload = (json.loads(result.body) if isinstance(result, Response)
                    else result.model_dump(mode="json", exclude_none=True))
         cases.append({"payload": payload, "valid": True})
         for mutation in [

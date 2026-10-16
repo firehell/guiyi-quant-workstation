@@ -100,6 +100,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   let referenceWindow: { since: string; through: string } | null = null
   let referenceFingerprint: string | null = null
   const referencePages = createReferencePageState<NewowReferenceValue['items'][number]>(item => item.reference_trade_id, MAX_ACCUMULATED_REFERENCE_TRADES, true)
+  const referenceCapped = computed(() => resources.reference.data.value !== null && referencePages.capped)
   let referencePageLimit: number | null = null
 
   const identityKey = computed(() => {
@@ -343,7 +344,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   async function loadNextReferencePage(): Promise<void> {
-    if (fusionRecoveryActive.value) return
+    if (referencePages.capped || fusionRecoveryActive.value) return
     const current = resources.reference.data.value
     if (current?.section !== 'reference' || current.value === null || current.value.next_before === null || referenceWindow === null) return
     const common = requestCommon('reference')
@@ -802,6 +803,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     sections: resources,
     fusionRecoveryActive: readonly(fusionRecoveryActive),
     referenceChartCompatible: readonly(referenceChartCompatible),
+    referenceCapped,
     loadChart, loadNextChartPage, loadAuxiliary, loadReference, recoverFusionSnapshotConflict, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
   }
 

@@ -147,7 +147,10 @@ async function nextPage() {
   } catch {
     if (token === selectionToken(detail.value?.metadata.run_id ?? '', generation)) pageError.value = '更多记录读取失败，已加载记录保留。'
   } finally {
-    if (token === selectionToken(detail.value?.metadata.run_id ?? '', generation)) pageLoading.value = false
+    if (token === selectionToken(detail.value?.metadata.run_id ?? '', generation)) {
+      pageLoading.value = false
+      if (kind !== pageKind.value) void ensureTable()
+    }
   }
 }
 
