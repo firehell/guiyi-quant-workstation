@@ -300,3 +300,27 @@ def materialize_fusion_warm_seed(identity: StreamIdentity, bases: tuple[Material
         'base_proofs': [deepcopy(b.proof) for b in sorted(bases, key=lambda s: s.identity.strategy_code)],
         'reference_reset': 'FLAT', 'natural_capture': False, 'first_seen': False}
     return _result(identity, checkpoint, FUSION_SCHEMA, proof, original_binding)
+
+
+def load_verified_warm_source(source_loader, session, source_id, *, lock, new_health):
+    """Validate one freshly materialized source; conflict evidence stays caller-owned."""
+    WARM_VERSION = VERSION
+    seed = source_loader(session, source_id, lock=lock)
+    require(isinstance(seed, MaterializedWarmSeed), "ORIGINAL_CONFLICT_WARM_SEED_UNVERIFIED")
+    require(seed.identity.stream_id == source_id and seed.proof.get('version') == WARM_VERSION
+            and seed.binding.get('kind') == WARM_VERSION
+            and isinstance(seed.binding.get('original_source_binding'), dict), "ORIGINAL_CONFLICT_WARM_SEED_UNVERIFIED")
+    reconstructed = _result(seed.identity, seed.checkpoint, seed.schema, seed.proof, seed.binding['original_source_binding'])
+    require(seed == reconstructed, "ORIGINAL_CONFLICT_WARM_SEED_UNVERIFIED")
+    stage, status = ('final_observation', 'WARM_SEED_VERIFIED') if new_health == 'READY' else ('provisional_canonical', 'PENDING_WARMUP')
+    proofs = seed.proof.get('base_proofs') if seed.schema == 'newow_dual_fusion_reference_v1' else [seed.proof]
+    require(seed.proof.get('stage') == stage and seed.proof.get('status') == status
+            and isinstance(proofs, list) and len(proofs) == (3 if seed.schema == 'newow_dual_fusion_reference_v1' else 1),
+            "ORIGINAL_CONFLICT_WARM_SEED_STAGE_INVALID")
+    for proof in proofs:
+        require(proof.get('version') == WARM_VERSION and proof.get('stage') == stage and proof.get('status') == status,
+                "ORIGINAL_CONFLICT_WARM_SEED_STAGE_INVALID")
+        if new_health == 'READY':
+            require(proof.get('interval_authority', {}).get('remaining_endpoints_before_start') == [],
+                    "ORIGINAL_CONFLICT_WARM_SEED_FRONTIER_INCOMPLETE")
+    return seed.identity, seed.checkpoint, seed.schema, seed.manifest, seed.binding

@@ -83,24 +83,27 @@ redis.call('SET', KEYS[1], cjson.encode(state), 'EX', ARGV[2])
 return 1
 """
 
-COMMIT_OBSERVATIONS = r"""-- live-observation-commit-v1
--- KEYS: source cursor, source stream, completed stream, completed identities, bar zsets.
+COMMIT_OBSERVATIONS = r"""-- live-observation-commit-v2
+-- KEYS: source cursor, source stream, completed stream, completed identities, bar zsets, source registration.
 local ok,plan=pcall(cjson.decode,ARGV[3])
 if not ok or type(plan)~='table' or string.sub(ARGV[3],1,1)~='[' then return -4 end
 local ttl=tonumber(ARGV[4]); local limit=tonumber(ARGV[5])
-if not ttl or ttl~=259200 or not limit or limit~=120000 then return -4 end
+if not ttl or ttl~=259200 or not limit or limit~=120000 or #KEYS<5 or not ARGV[6] then return -4 end
 for i,k in ipairs(KEYS) do
  local t=redis.call('TYPE',k).ok
- local expected=i==1 and 'string' or ((i==2 or i==3) and 'stream' or (i==4 and 'hash' or 'zset'))
+ local expected=(i==1 or i==#KEYS) and 'string' or ((i==2 or i==3) and 'stream' or (i==4 and 'hash' or 'zset'))
  if t~='none' and t~=expected then return -4 end
 end
+local registered=redis.call('GET',KEYS[#KEYS])
+if not registered then return -6 end
+if registered~=ARGV[6] then return -5 end
 if redis.call('GET',KEYS[1])~=ARGV[1] then return -2 end
 if ARGV[2]~=ARGV[1] and #redis.call('XRANGE',KEYS[2],ARGV[2],ARGV[2])~=1 then return -2 end
 local additions=0
 local identities={}
 for _,item in ipairs(plan) do
  if type(item)~='table' or type(item.key_index)~='number' or item.key_index~=math.floor(item.key_index)
-    or item.key_index<5 or item.key_index>#KEYS or type(item.score)~='number'
+    or item.key_index<5 or item.key_index>=#KEYS or type(item.score)~='number'
     or item.score~=item.score or item.score<=0 or item.score==math.huge
     or item.score~=math.floor(item.score) or item.score>9007199254740991
     or type(item.payload)~='string' or #item.payload==0

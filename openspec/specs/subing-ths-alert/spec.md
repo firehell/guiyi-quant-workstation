@@ -658,6 +658,7 @@ only a canonical/wakeup hint. Missing cursor, expired partition, conflicting typ
 Market window, or unknown commit SHALL block continuation rather than skip an input.
 This journal is a transient input buffer, not a transport retry queue or historical
 replay source; the no retry/backfill contracts above remain in force.
+A successful day transition SHALL retain the existing proven terminal cursor at least as long as the old journal remains retained at that transition, without changing its position or reconstructing a missing cursor. Producers SHALL atomically reject stale registered-day writes before any journal, identity, cursor, Bar, Pub/Sub or TTL mutation. A drained empty Live tick MAY return a write-free no-op only after proving a real newer registered cursor; missing or regressed authority SHALL still fail closed.
 
 Alert SHALL reuse a single immutable Market window between rules for the same
 completed trigger, while checking current physical ownership and recovery revision

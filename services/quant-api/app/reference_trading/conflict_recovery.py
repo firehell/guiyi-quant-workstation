@@ -163,3 +163,39 @@ class ConflictRevisionRecovery:
                 return results
         except SQLAlchemyError as error:
             raise RepositoryConflict('CONFLICT_RECOVERY_COMMIT_OUTCOME_UNKNOWN') from error
+
+
+class FinalWarmConflictRevisionRecovery(ConflictRevisionRecovery):
+    """Capture-mismatch admission with a complete, freshly proved warm interval.
+
+    Reuse atomic future flat activation, but retain a distinct plan identity.
+    Original-observation diagnostics never establish capture reconciliation.
+    """
+    plan_version = 'reference_capture_final_warm_recovery_v1'
+    boundary_key = 'capture_final_warm_conflict_boundary_v1'
+    manifest_key = 'capture_final_warm_conflict_recovery_v1'
+
+    def __init__(self, factory, *, source_loader, verify_source, assert_fenced):
+        if not callable(source_loader):
+            raise ValueError('CONFLICT_RECOVERY_FINAL_WARM_LOADER_REQUIRED')
+        super().__init__(factory, verify_source=verify_source, assert_fenced=assert_fenced)
+        self.source_loader = source_loader
+
+    def _source(self, session, source_id, *, lock):
+        from app.reference_trading.original_conflict_warm_seed import load_verified_warm_source
+        return load_verified_warm_source(self.source_loader, session, source_id,
+            lock=lock, new_health='READY')
+
+    def _freeze(self, session, source_ids, *, start, expiry, lock=False):
+        if not source_ids or len(source_ids) != 4:
+            raise RepositoryConflict('CONFLICT_RECOVERY_FINAL_WARM_SCOPE_INVALID')
+        plan, data = super()._freeze(session, source_ids, start=start, expiry=expiry, lock=lock)
+        if ({item[0].strategy_code for item in data} != {
+                'newow_trend', 'newow_oscillation', 'newow_main_rise', 'newow_dual_fusion'}
+                or any(item[0].frequency != '60m' for item in data)):
+            raise RepositoryConflict('CONFLICT_RECOVERY_FINAL_WARM_SCOPE_INVALID')
+        for _, checkpoint, _, manifest, *_ in data:
+            if (manifest['proof'].get('recording_start') != start.isoformat()
+                    or checkpoint.reference_state.recording_start != start):
+                raise RepositoryConflict('CONFLICT_RECOVERY_WARM_SEED_START_MISMATCH')
+        return plan, data

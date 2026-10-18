@@ -255,11 +255,16 @@ def test_actual_weekly_state_never_changes_operational_overall(tmp_path, monkeyp
     from tests.test_runtime_health import FakeRedis, _session_factory
     path = tmp_path / "status.json"
     monkeypatch.setattr(runtime_health, "runtime_heartbeat_identity", lambda: IDENTITY)
+    monkeypatch.setattr(runtime_health, "resolve_service_binding", lambda _service: None)
+    monkeypatch.setattr(runtime_health, "PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("GUIYI_RUNTIME_COMMIT", raising=False)
     monkeypatch.setattr(runtime_health, "load_operational_products", lambda: ("au",))
     with _session_factory()() as session:
         if state != "missed":
             _run(_manager(session), path)
             payload = json.loads(path.read_text())
+            for key in ("findings_complete", "partial_finding_count", "failed_symbol", "error_stage", "error_type"):
+                payload.pop(key, None)
             payload["status"] = {"stuck": "running", "stale": "passed", "invalid": "passed"}.get(state, state)
             if state in {"running", "stuck"}:
                 payload["finished_at"] = None

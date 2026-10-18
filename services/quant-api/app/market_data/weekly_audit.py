@@ -160,6 +160,8 @@ def _new_payload(
         "current_symbol": None, "completed": 0, "total": len(products),
         "through": None, "finding_count": 0, "findings": [], "error_code": None,
         "provider_requests": 0, "data_writes": 0,
+        "findings_complete": False, "partial_finding_count": 0,
+        "failed_symbol": None, "error_stage": None, "error_type": None,
     }
 
 
@@ -212,6 +214,17 @@ def _has_scheduled_attempt(
         raise RuntimeError("WEEKLY_AUDIT_FAILED") from None
 
 
+def _safe_error_type(exc: Exception) -> str:
+    # Never persist exception text, arbitrary class names, SQL or tracebacks.
+    from sqlalchemy.exc import SQLAlchemyError
+
+    for kind, label in ((TimeoutError, "TIMEOUT"), (OSError, "IO_ERROR"),
+                        (SQLAlchemyError, "DATABASE_ERROR"), (ValueError, "VALIDATION_ERROR")):
+        if isinstance(exc, kind):
+            return label
+    return "AUDIT_ERROR"
+
+
 def _run_owned_audit(
     manager: HistoricalDataManager, *, status_path: Path, products: tuple[str, ...],
     now: Callable[[], datetime], payload: dict[str, Any],
@@ -220,8 +233,9 @@ def _run_owned_audit(
     _atomic_write_status(status_path, payload)
     try:
         lease = manager.catalog.acquire_maintenance_lock()
-    except Exception:
+    except Exception as exc:
         payload.update(status="failed", error_code="WEEKLY_AUDIT_FAILED",
+                       error_stage="maintenance_lock", error_type=_safe_error_type(exc),
                        finished_at=_local_timestamp(now()).isoformat(), updated_at=_local_timestamp(now()).isoformat())
         _atomic_write_status(status_path, payload)
         return payload
@@ -230,13 +244,17 @@ def _run_owned_audit(
         _atomic_write_status(status_path, payload)
         return payload
     try:
+        stage = "audit"
         def observe(event: AuditProgressEvent) -> None:
+            if event.state == "completed" and type(event.finding_count) is int:
+                payload["partial_finding_count"] += event.finding_count
             payload.update(current_symbol=event.symbol, completed=event.completed,
                            updated_at=_local_timestamp(now()).isoformat())
             _atomic_write_status(status_path, payload)
         try:
             with readonly_transaction(manager.catalog.session):
                 result = manager.audit(AuditRequest(products), observer=observe)
+            stage = "result_validation"
             if result.provider_requests or result.applied or result.action != "audit":
                 raise ValueError
             findings = _findings(result.as_payload()["findings"], products)
@@ -244,9 +262,12 @@ def _run_owned_audit(
                 raise ValueError
             payload.update(status="findings" if findings else "passed", findings=findings,
                            finding_count=len(findings), through=result.through.isoformat() if result.through else None,
-                           completed=len(products), current_symbol=None)
-        except Exception:
-            payload.update(status="failed", error_code="WEEKLY_AUDIT_FAILED", current_symbol=None)
+                           completed=len(products), current_symbol=None,
+                           findings_complete=True, partial_finding_count=len(findings))
+        except Exception as exc:
+            payload.update(status="failed", error_code="WEEKLY_AUDIT_FAILED",
+                           failed_symbol=payload["current_symbol"], current_symbol=None,
+                           error_stage=stage, error_type=_safe_error_type(exc))
         payload.update(finished_at=_local_timestamp(now()).isoformat(), updated_at=_local_timestamp(now()).isoformat())
         _atomic_write_status(status_path, payload)
         return payload
@@ -328,6 +349,23 @@ def weekly_audit_health(
                 or (status == "passed" and count != 0) or (status == "findings" and count == 0)
                 or (raw.get("error_code") != ("WEEKLY_AUDIT_FAILED" if status == "failed" else None))):
             raise ValueError
+        diagnostic_keys = {"findings_complete", "partial_finding_count", "failed_symbol", "error_stage", "error_type"}
+        diagnostics = {}
+        if diagnostic_keys.intersection(raw):
+            if not diagnostic_keys.issubset(raw):
+                raise ValueError
+            complete, partial = raw["findings_complete"], raw["partial_finding_count"]
+            symbol, stage, kind = raw["failed_symbol"], raw["error_stage"], raw["error_type"]
+            if (type(complete) is not bool or type(partial) is not int or partial < 0
+                    or symbol not in (None, *products)
+                    or (complete != (status in {"passed", "findings"}))
+                    or (complete and partial != count)
+                    or (status != "failed" and any(v is not None for v in (symbol, stage, kind)))
+                    or (status == "failed" and (stage not in {"maintenance_lock", "audit", "result_validation"}
+                        or kind not in {"TIMEOUT", "IO_ERROR", "DATABASE_ERROR", "VALIDATION_ERROR", "AUDIT_ERROR"}))
+                    or (stage == "maintenance_lock" and symbol is not None)):
+                raise ValueError
+            diagnostics = {key: raw[key] for key in diagnostic_keys}
         if now - datetime.fromisoformat(updated) > (timedelta(hours=2) if status == "running" else timedelta(days=8)):
             status = "stuck" if status == "running" else "stale"
         started_value = datetime.fromisoformat(started)
@@ -340,6 +378,6 @@ def weekly_audit_health(
             return empty
         return {**empty, "status": status, "finding_count": count, "started_at": started,
                 "updated_at": updated, "finished_at": finished, "completed": completed,
-                "total": total, "current_symbol": raw.get("current_symbol"), "through": through}
+                "total": total, "current_symbol": raw.get("current_symbol"), "through": through, **diagnostics}
     except (OSError, ValueError, TypeError, KeyError):
         return {**empty, "status": "invalid"}
