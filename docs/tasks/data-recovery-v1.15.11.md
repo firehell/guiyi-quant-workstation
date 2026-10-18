@@ -21,3 +21,7 @@
 weekly audit原来吞异常且零finding易误读。补齐findings_complete、partial_finding_count、failed_symbol、error_stage及安全分类error_type；旧schema读取兼容。定向56+126测试通过，Ruff/secret/diff通过，OpenSpec strict11通过；独立Review无Confirmed Issue。旧I单品种审计44.29秒通过，原19/60失败技术原因尚未复现，不虚报修复历史失败。
 
 额外定位historical refresh 240 blocked：177 H1 SOURCE_CHANGED为旧冻结plan与当前输入漂移，3 LH scope drift，60 D1 fusion为saved基础manifest与新鲜输入不符。独立只读A复现十项trend/osc公共lineage相同，但SavedFusionSources保存的base在四项输入/Session/rank1不符；不移除边界或源校验。恢复须native fresh advance/COW基础资产后再fusion，并保留旧refresh前像。当前active revision中original-conflict typed凭据为0；旧output49产品计数不可当当前已完成。新archive seal只读验证672个H1原始观察/60品种完整hash、length、tail、原始字节，未导入或replay。任何新Transfer仍须实际四writer与Canonical fence及apply内重新核验。
+
+## 当前冲突入口复核
+
+53个受影响H1组均有当前active原生Capture mismatch（450条，均位于三个base，fusion依赖整组）。旧49产品OriginalTransfer key保留在inactive revisions，native防重复不限定revision，不能据active typed0重复插入。生产控制与资产操作尚未开始，已在执行前纠正准备方案。新增独立版本reference_capture_final_warm_recovery_v1，只沿用现有capture mismatch admission和完整四策略组，复用已验证的final materialized warm seed与原子future-flat revision；不新增OriginalTransfer、Capture/Reconciliation、action/trade/Event/通知或ACK。新旧typed源校验共用原有验证，无公式/收益/Scope/受众变化。测试先观察功能缺失RED，再观察单route误入场RED，修正后新旧恢复/warm/fusion/历史增量53项通过；待独立Review和现场完整审计后才执行。
