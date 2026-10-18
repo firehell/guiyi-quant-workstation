@@ -9,7 +9,7 @@
 120路D1/W1计算输入有效，110 READY，10路因物理段有效预热不足仍warming，不伪造补暖。
 发布候选代码测试、真实隔离PG/Redis验证及独立Review通过；冷切换caller105项复验通过。
 v1.15.11已正式发布：PR#459已合并，main/tag peeled为9d72e3fbdd1e3d7ca011c075bcfd46fbff6e9ad1，GitHub Release非draft/prerelease。正式绑定/十项配置已统一为v1.15.11/gen20/schema0052，运行根为.worktrees/release-v1.15.11；六项常驻新PID双轮一致、身份/loaded/cwd/heartbeat通过，四日历空闲。API8000及Web5173实际返回1.15.11，Web index与该发布dist逐字一致。独立只读new-runtime-acceptance-002核验输入和旧DB事实不变、七新字段全NULL、720 READY/pending Capture0。原start十effect均committed，但最终即时owner检查失败；原记录保留，不重跑启动/迁移，由独立验收完成切换读回。
-完整reference HTTP健康读取超时，未计通过；runtime health仍degraded：Alert110 ok/226 lagging/75 pending/10 warming_up，十项与已确认物理段预热不足一致。新exact tag manual60审计未执行，weekly为missed；自然Bar/Event/通知送达未证实，不声明RUNTIME_READY。旧v7/v10本地树未清理，Git发布历史保留。
+新exact tag原生manual全历史审计21:33–22:54实际exit0：60/60、through10/16、findings_complete=true，finding/partial/provider/data_writes全0，weekly读回passed。审计通过后，归档验证及部署锁内原生零引用复核通过，旧v7/v10本地发布树已非force移除，仅保留v11现役发布树；Git tag/Release历史及数据证据保留。清理后API/Web代理200/version1.15.11，十运行身份matched，DB/Redis/Live/盘后ok。reference同代码隔离只读profile38.502秒，720 READY/pending Capture0、240端点调用零异常；端点阶段5.878秒，其余32.624秒尚未细分，不能认定端点读取是主要瓶颈，HTTP性能仍TIMEOUT_NOT_ACCEPTED。runtime总体仍degraded：Alert110 ok/226 lagging/75 pending/10 warming_up，十项与已确认物理段预热不足一致；自然Bar/Event/通知送达未证实，不声明RUNTIME_READY。
 详见[恢复与发布记录](docs/tasks/data-recovery-v1.15.11.md)。
 
 ## 10/16 v1.15.10 已发布，Runtime切换阻断
