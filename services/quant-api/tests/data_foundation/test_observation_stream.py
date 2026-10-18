@@ -117,10 +117,11 @@ def test_conflict_rolls_back_all_completed_writes_and_cursor(isolated_redis):
     plan = [{'key_index': i, 'score': score, 'payload': 'new', 'identity': str(i),
              'envelope': event.to_json(), 'channel': event.channel}
             for i, score in ((5, 1), (6, 2))]
+    keys.append(source.registration_key('live'))
     assert isolated_redis.eval(COMMIT_OBSERVATIONS, len(keys), *keys,
-                               '0-0', identifier, json.dumps(plan), 259200, 120000) == -1
+                               '0-0', identifier, json.dumps(plan), 259200, 120000, day.isoformat()) == -1
     assert source.cursor('live', day) == '0-0'
-    assert isolated_redis.exists(keys[-2]) == 0
+    assert isolated_redis.exists(keys[4]) == 0
     assert completed.tail(day) == '0-0'
 
 
@@ -246,10 +247,11 @@ def test_lua_validates_entire_plan_before_first_mutation(isolated_redis):
              'envelope': event.to_json(), 'channel': event.channel},
             {'key_index': 6, 'score': 2, 'payload': 'new', 'identity': 'b',
              'envelope': event.to_json(), 'channel': False}]
+    keys.append(source.registration_key('live'))
     assert isolated_redis.eval(COMMIT_OBSERVATIONS, len(keys), *keys,
-                               '0-0', identifier, json.dumps(plan), 259200, 120000) == -4
+                               '0-0', identifier, json.dumps(plan), 259200, 120000, day.isoformat()) == -4
     assert source.cursor('live', day) == '0-0'
-    assert isolated_redis.exists(keys[-2]) == 0
+    assert isolated_redis.exists(keys[4]) == 0
     assert completed.tail(day) == '0-0'
 
 
@@ -432,3 +434,152 @@ def test_rqdata_client_close_exception_retains_listener_and_rejects_verified_clo
         provider.close_verified()
     assert provider._listener is client.listener
     assert not provider._closed
+
+
+@pytest.mark.parametrize("kind,consumer", [("source", "live"), ("completed", "alert"), ("completed", "reference")])
+def test_day_transition_retains_proven_old_tail_cursor_until_old_journal_expires(isolated_redis, kind, consumer):
+    from datetime import timedelta
+
+    day = date(2026, 10, 9)
+    stream = ObservationStream(isolated_redis, kind=kind)
+    stream.initialize(consumer, day, cursor='0-0')
+    event = ObservationEnvelope('ttl', day, datetime(2026, 10, 9, tzinfo=UTC),
+                                'live:bar:rb:1m', {}, True)
+    tail = stream.append(event)
+    stream.ack(consumer, day, expected_cursor='0-0', next_id=tail)
+    # Journal retention can outlast its last ACK, as seen in production.
+    isolated_redis.pexpire(stream.cursor_key(consumer, day), 2000)
+    isolated_redis.pexpire(stream.key(day), 20000)
+    stream.initialize_new_day(consumer, day + timedelta(days=1))
+    assert isolated_redis.get(stream.cursor_key(consumer, day)) == tail
+    assert isolated_redis.pttl(stream.cursor_key(consumer, day)) >= isolated_redis.pttl(stream.key(day))
+    assert stream.read(consumer, day) == ()
+
+
+def test_day_transition_never_reconstructs_a_missing_old_cursor(isolated_redis):
+    from datetime import timedelta
+    day = date(2026, 10, 9)
+    stream = ObservationStream(isolated_redis, kind='completed')
+    stream.initialize('alert', day, cursor='0-0')
+    isolated_redis.delete(stream.cursor_key('alert', day))
+    with pytest.raises(ValueError, match='OBSERVATION_CURSOR_MISSING'):
+        stream.initialize_new_day('alert', day + timedelta(days=1))
+    assert stream.registered_day('alert') == day
+    assert not isolated_redis.exists(stream.cursor_key('alert', day + timedelta(days=1)))
+
+
+@pytest.mark.parametrize('long_key', ['journal', 'cursor'])
+def test_day_transition_does_not_shorten_existing_retention(isolated_redis, long_key):
+    from datetime import timedelta
+    from app.market_data.observation_stream import TTL_SECONDS
+    day = date(2026, 10, 9)
+    stream = ObservationStream(isolated_redis, kind='source')
+    stream.initialize('live', day, cursor='0-0')
+    event = ObservationEnvelope('ttl', day, datetime(2026, 10, 9, tzinfo=UTC),
+                                'live:bar:rb:1m', {}, True)
+    tail = stream.append(event)
+    stream.ack('live', day, expected_cursor='0-0', next_id=tail)
+    key = stream.key(day) if long_key == 'journal' else stream.cursor_key('live', day)
+    duration = TTL_SECONDS * 1000 + 60000
+    isolated_redis.pexpire(key, duration)
+    stream.initialize_new_day('live', day + timedelta(days=1))
+    assert isolated_redis.pttl(stream.cursor_key('live', day)) > duration - 10000
+    assert isolated_redis.get(stream.cursor_key('live', day)) == tail
+
+
+def test_day_transition_refuses_unbounded_old_journal_before_any_mutation(isolated_redis):
+    from datetime import timedelta
+    day = date(2026, 10, 9)
+    stream = ObservationStream(isolated_redis, kind='source')
+    stream.initialize('live', day, cursor='0-0')
+    event = ObservationEnvelope('ttl', day, datetime(2026, 10, 9, tzinfo=UTC),
+                                'live:bar:rb:1m', {}, True)
+    tail = stream.append(event)
+    stream.ack('live', day, expected_cursor='0-0', next_id=tail)
+    isolated_redis.persist(stream.key(day))
+    old_cursor_ttl = isolated_redis.pttl(stream.cursor_key('live', day))
+    with pytest.raises(ValueError, match='OBSERVATION_DAY_BASELINE_UNPROVEN'):
+        stream.initialize_new_day('live', day + timedelta(days=1))
+    assert stream.registered_day('live') == day
+    assert not isolated_redis.exists(stream.cursor_key('live', day + timedelta(days=1)))
+    assert isolated_redis.get(stream.cursor_key('live', day)) == tail
+    assert isolated_redis.pttl(stream.cursor_key('live', day)) <= old_cursor_ttl
+
+
+@pytest.mark.parametrize('kind,consumer', [('source', 'live'), ('completed', 'alert')])
+def test_stale_append_after_day_transition_cannot_extend_old_journal(isolated_redis, kind, consumer):
+    from datetime import timedelta
+    from dataclasses import replace
+    day = date(2026, 10, 9)
+    stream = ObservationStream(isolated_redis, kind=kind)
+    stream.initialize(consumer, day, cursor='0-0')
+    event = ObservationEnvelope('before', day, datetime(2026, 10, 9, tzinfo=UTC),
+                                'live:bar:rb:1m', {}, True)
+    tail = stream.append(event)
+    stream.ack(consumer, day, expected_cursor='0-0', next_id=tail)
+    stream.initialize_new_day(consumer, day + timedelta(days=1))
+    isolated_redis.pexpire(stream.key(day), 20000)
+    before = isolated_redis.dump(stream.key(day))
+    with pytest.raises(ValueError, match='OBSERVATION_DAY_CHANGED'):
+        stream.append(replace(event, observation_id='late'))
+    assert isolated_redis.dump(stream.key(day)) == before
+    assert isolated_redis.pttl(stream.key(day)) <= 20000
+
+
+def test_stale_empty_live_commit_after_rollover_is_atomic_noop(isolated_redis):
+    from datetime import timedelta
+    from app.market_data.live_recovery_scripts import COMMIT_OBSERVATIONS
+    day = date(2026, 10, 9)
+    source = ObservationStream(isolated_redis, kind='source')
+    completed = ObservationStream(isolated_redis, kind='completed')
+    source.initialize('live', day, cursor='0-0')
+    for consumer in ('alert', 'reference'):
+        completed.initialize(consumer, day, cursor='0-0')
+    event = ObservationEnvelope('before', day, datetime(2026, 10, 9, tzinfo=UTC),
+                                'live:bar:rb:1m', {}, True)
+    source_tail = source.append(event)
+    source.ack('live', day, expected_cursor='0-0', next_id=source_tail)
+    completed_tail = completed.append(event)
+    for consumer in ('alert', 'reference'):
+        completed.ack(consumer, day, expected_cursor='0-0', next_id=completed_tail)
+    source.initialize_new_day('live', day + timedelta(days=1))
+    for consumer in ('alert', 'reference'):
+        completed.initialize_new_day(consumer, day + timedelta(days=1))
+    keys = [source.cursor_key('live', day), source.key(day), completed.key(day),
+            completed.identity_key(day)]
+    for key in keys:
+        isolated_redis.pexpire(key, 20000)
+    before = {key: (isolated_redis.dump(key), isolated_redis.pttl(key)) for key in keys}
+    keys.append(source.registration_key('live'))
+    assert isolated_redis.eval(COMMIT_OBSERVATIONS, len(keys), *keys,
+                               source_tail, source_tail, '[]', 259200, 120000, day.isoformat()) == -5
+    assert all(isolated_redis.dump(key) == payload and isolated_redis.pttl(key) <= ttl
+               for key, (payload, ttl) in before.items())
+
+
+@pytest.mark.parametrize('missing_new_cursor', [False, True])
+def test_live_empty_rollover_race_requires_a_real_new_cursor(isolated_redis, missing_new_cursor):
+    from datetime import timedelta
+    from app.market_data.market_feed import DurableLiveMarketService, StreamLiveProvider
+    from app.market_data.live_market import RedisLiveStore
+    from tests.data_foundation.test_live_market import FakeDominants, FakePhases
+    day = date(2026, 10, 9)
+    source = ObservationStream(isolated_redis, kind='source')
+    source.initialize('live', day, cursor='0-0')
+    provider = StreamLiveProvider(source)
+    provider.select_day(day)
+    service = DurableLiveMarketService(source_provider=provider,
+        dominant_source=FakeDominants({}), phase_resolver=FakePhases({}),
+        store=RedisLiveStore(isolated_redis), operational_products=('rb',))
+    source.initialize_new_day('live', day + timedelta(days=1))
+    isolated_redis.pexpire(source.cursor_key('live', day), 20000)
+    if missing_new_cursor:
+        isolated_redis.delete(source.cursor_key('live', day + timedelta(days=1)))
+        with pytest.raises(ValueError, match='OBSERVATION_CURSOR_MISSING'):
+            service._commit((), completed_keys=set(), confirmed_at=datetime(2026, 10, 10, tzinfo=UTC))
+    else:
+        service._commit((), completed_keys=set(), confirmed_at=datetime(2026, 10, 10, tzinfo=UTC))
+    assert isolated_redis.get(source.cursor_key('live', day)) == '0-0'
+    assert isolated_redis.pttl(source.cursor_key('live', day)) <= 20000
+    assert not isolated_redis.exists('live:observations:completed:' + str(day))
+    assert not provider.records and not provider.events

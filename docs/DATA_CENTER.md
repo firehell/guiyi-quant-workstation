@@ -904,6 +904,8 @@ D1/W1 继续既有 Canonical 与持久捕获；恢复下载保留 recovery 身�
 两类 Stream 按交易日分区，三天保留、每日每类 120,000 条上限；Lua mutation 前验证键类型、身份、内容、容量及 cursor。
 不静默 trim 未消费条目。相同身份内容幂等，冲突/过期/进度缺失/提交未知显式阻断。跨日先排空旧注册分区，再由 Feed
 在新空分区推进注册日；不能从最新一根假装恢复。source 中未完成的 future preview 不阻止前面已确认的连续 cursor 前缀。
+成功 NEW_DAY 只延长已证明到达旧尾部的现有 cursor 保留期，至少覆盖当时旧 journal 的剩余寿命及新一轮三天保留，且不缩短既有 TTL；不重建缺失 cursor、不改 ID 或 ACK。无期限旧 journal 显式阻断换日。
+APPEND 与 Live completed 原子提交在任何 mutation 前复核注册日，已换日的旧事务不得追加内容、发布消息或延长旧 journal/identities/cursor TTL。已完全排空、无待写项且不推进 cursor 的旧日空 Live tick，仅在新注册日及其真实 cursor 复核通过后作为无写入 NOOP；其余身份或游标缺失仍 fail-closed。
 重启排旧分区前，Live 从既有 Calendar/Session 权威入口恢复该日 Session 缓存；合法末 Bar 仍按原始接收时间
 和原有 60 秒 Session-end arrival grace 校验，不使用当前墙钟窗口替代旧日窗口，也不扩大宽限。
 Feed 在闭市启动也只使用当前 Calendar 证明的交易日；先证明旧注册消费者到达真实尾部及目标分区无孤儿内容，

@@ -12,11 +12,15 @@ DAILY_LIMIT = 120000
 _ID = re.compile(r'^[0-9]+-[0-9]+$')
 _NAME = re.compile(r'^[a-zA-Z0-9_.:-]{1,128}$')
 
-APPEND = r"""-- observation-append-v1
+APPEND = r"""-- observation-append-v2
 for i,k in ipairs(KEYS) do
  local t=redis.call('TYPE',k).ok
- local expected=i==1 and 'stream' or 'hash'
+ local expected=i==1 and 'stream' or (i==2 and 'hash' or 'string')
  if t~='none' and t~=expected then return {-4} end
+end
+for i=3,#KEYS do
+ local registered=redis.call('GET',KEYS[i])
+ if registered and registered~=ARGV[6] then return {-5} end
 end
 local old=redis.call('HGET',KEYS[2],ARGV[1])
 if old then
@@ -41,7 +45,7 @@ if ARGV[1]~='0-0' and #redis.call('XRANGE',KEYS[2],ARGV[1],ARGV[1])~=1 then retu
 redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2])
 redis.call('SET',KEYS[3],ARGV[3]); return 1
 """
-NEW_DAY = r"""-- observation-new-day-v1
+NEW_DAY = r"""-- observation-new-day-v2
 for i,k in ipairs(KEYS) do
  local t=redis.call('TYPE',k).ok
  local expected=(i==3 or i==5) and 'stream' or 'string'
@@ -53,6 +57,12 @@ local last=redis.call('XREVRANGE',KEYS[3],'+','-','COUNT',1)
 local tail=#last==0 and '0-0' or last[1][1]
 if tail~=ARGV[2] then return -2 end
 if redis.call('EXISTS',KEYS[4])~=0 or redis.call('XLEN',KEYS[5])~=0 then return -3 end
+-- Retain the proven terminal cursor while its old journal remains readable.
+-- Never reconstruct a missing cursor, alter its ID or acknowledge any new row.
+local journal_ttl=redis.call('PTTL',KEYS[3])
+if journal_ttl==-1 then return -5 end
+local keep=math.max(tonumber(ARGV[3])*1000,journal_ttl,redis.call('PTTL',KEYS[2]))
+redis.call('PEXPIRE',KEYS[2],keep)
 redis.call('SET',KEYS[4],'0-0','EX',ARGV[3])
 redis.call('SET',KEYS[1],ARGV[4]); return 1
 """
@@ -225,12 +235,16 @@ class ObservationStream:
             content.pop('source_observed_at')
             content.pop('raw_received_at')
         fingerprint = json.dumps(content, sort_keys=True, separators=(',', ':'), allow_nan=False)
-        result = self.redis.eval(APPEND, 2, self.key(event.trading_day), self.identity_key(event.trading_day),
-                                 event.observation_id, event.to_json(), TTL_SECONDS, DAILY_LIMIT, fingerprint)
+        consumers = ('live',) if self.kind == 'source' else ('alert', 'reference')
+        keys = [self.key(event.trading_day), self.identity_key(event.trading_day),
+                *(self.registration_key(consumer) for consumer in consumers)]
+        result = self.redis.eval(APPEND, len(keys), *keys,
+                                 event.observation_id, event.to_json(), TTL_SECONDS, DAILY_LIMIT,
+                                 fingerprint, event.trading_day.isoformat())
         code = int(result[0])
         if code < 0:
             raise ValueError({-1: 'OBSERVATION_CONTENT_CONFLICT', -2: 'OBSERVATION_CAPACITY_EXCEEDED',
-                              -4: 'OBSERVATION_KEY_TYPE_INVALID'}[code])
+                              -4: 'OBSERVATION_KEY_TYPE_INVALID', -5: 'OBSERVATION_DAY_CHANGED'}[code])
         return _text(result[1])
 
     def ack(self, consumer: str, day: date, *, expected_cursor: str, next_id: str) -> None:

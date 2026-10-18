@@ -149,6 +149,7 @@ def _run_owned_live_poll_results(monkeypatch, results):
 
 def test_live_poll_failure_proof_preserves_existing_fixed_codes_and_recovers(monkeypatch):
     from app import runtime_entry
+    assert {'OBSERVATION_DAY_CHANGED', 'OBSERVATION_CONSUMER_UNREGISTERED'} <= runtime_entry._LIVE_POLL_FAILURE_CODES
     for code in sorted(runtime_entry._LIVE_POLL_FAILURE_CODES):
         snapshots = _run_owned_live_poll_results(monkeypatch, [code, None])
         assert snapshots == [
