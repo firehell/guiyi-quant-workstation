@@ -673,6 +673,21 @@ For each missing physical-contract W1 endpoint, read-only audit MUST use the exi
 - **WHEN** another week in the same month lacks a complete proof, or its D1 source is incomplete or physically invalid
 - **THEN** audit SHALL retain the missing-W1 finding and SHALL NOT download, mutate, or waive the month
 
+
+### Requirement: Incomplete audit diagnostics remain safe and explicit
+A newly written weekly audit status MUST distinguish complete findings from interrupted progress using
+`findings_complete` and a nonnegative `partial_finding_count`. Failures MUST retain the last observed product
+as `failed_symbol` and a fixed `error_stage` plus allowlisted `error_type`; exception messages, SQL and
+tracebacks MUST NOT be persisted or returned. The last observed product is a location hint, not proof of
+corrupt market data. Health MUST validate the complete optional diagnostic group and preserve compatibility
+with older statuses without it. Failed or incomplete runs MUST NOT become passed.
+
+#### Scenario: Audit stops after earlier findings
+- **WHEN** a later product raises an exception after completed products reported findings
+- **THEN** status remains failed with incomplete findings, retains the partial count and safe location,
+  releases the maintenance lease and performs no repair, provider request or automatic retry.
+
+
 ## Requirement: Closed observation services preserve verified after-market cleanup
 
 After successful terminal cleanup, Market Feed and durable Live MAY report
@@ -756,17 +771,3 @@ cross-day `select_day` that could clear them.
 - **WHEN** the Feed's existing Calendar/Session authority selects a new trading day and all prior consumers are drained
 - **THEN** only the Feed performs the existing next-day snapshot and journal initialization
 - **AND** consumers retain their existing no-replay and cursor-proof contracts
-
-
-### Requirement: Incomplete audit diagnostics remain safe and explicit
-A newly written weekly audit status MUST distinguish complete findings from interrupted progress using
-`findings_complete` and a nonnegative `partial_finding_count`. Failures MUST retain the last observed product
-as `failed_symbol` and a fixed `error_stage` plus allowlisted `error_type`; exception messages, SQL and
-tracebacks MUST NOT be persisted or returned. The last observed product is a location hint, not proof of
-corrupt market data. Health MUST validate the complete optional diagnostic group and preserve compatibility
-with older statuses without it. Failed or incomplete runs MUST NOT become passed.
-
-#### Scenario: Audit stops after earlier findings
-- **WHEN** a later product raises an exception after completed products reported findings
-- **THEN** status remains failed with incomplete findings, retains the partial count and safe location,
-  releases the maintenance lease and performs no repair, provider request or automatic retry.
