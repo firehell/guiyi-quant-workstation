@@ -102,6 +102,11 @@ class RuntimeWeeklyAuditHealth(BaseModel):
     total: int | None = None
     current_symbol: str | None = None
 
+    findings_complete: bool | None = None
+    partial_finding_count: int | None = None
+    failed_symbol: str | None = None
+    error_stage: Literal["maintenance_lock", "audit", "result_validation"] | None = None
+
 
 class RuntimeAfterMarketInterruption(BaseModel):
     """Administrative closeout evidence at the recorded observation time only."""
