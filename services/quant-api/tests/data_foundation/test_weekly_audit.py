@@ -77,6 +77,7 @@ def test_weekly_result_and_health_identity_age_and_progress(tmp_path, session):
         acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None)), audit=audit)
     result = run_weekly_audit(manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW)
     assert result["status"] == "passed" and result["completed"] == 1
+    assert result["findings_complete"] is True and result["partial_finding_count"] == 0
     assert result["findings"] == [] and result["readonly"] is True
     assert weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW)["status"] == "passed"
     assert weekly_audit_health(path, identity={**IDENTITY, "runtime_commit": "b" * 40}, products=("au",), now=NOW)["status"] == "invalid"
@@ -337,3 +338,66 @@ def test_weekly_detects_interior_metadata_hole_without_rank1(tmp_path, gap):
                    for item in result["findings"])
     finally:
         generator.close()
+
+
+def test_failed_audit_preserves_location_and_partial_count_without_exception_text(tmp_path, session):
+    from app.market_data.weekly_audit import run_weekly_audit
+    released = []
+    def audit(request, *, observer):
+        observer(AuditProgressEvent("completed", 1, 2, "au", 3))
+        observer(AuditProgressEvent("started", 1, 2, "i", None))
+        raise ValueError("secret-credential SQL private-address")
+    manager = SimpleNamespace(catalog=SimpleNamespace(session=session,
+        acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: released.append(True))), audit=audit)
+    path = tmp_path / "status.json"
+    result = run_weekly_audit(manager, status_path=path, products=("au", "i"),
+                              identity=IDENTITY, now=lambda: NOW)
+    assert result["status"] == "failed"
+    assert result["failed_symbol"] == "i"
+    assert result["error_stage"] == "audit"
+    assert result["error_type"] == "VALIDATION_ERROR"
+    assert result["partial_finding_count"] == 3
+    assert result["findings_complete"] is False
+    assert result["finding_count"] == 0 and result["findings"] == []
+    assert "secret-credential" not in path.read_text()
+    assert released == [True] and not session.in_transaction()
+
+
+def test_failed_audit_lock_is_sanitized_and_incomplete(tmp_path, session):
+    from app.market_data.weekly_audit import run_weekly_audit
+    def acquire():
+        raise OSError("secret-credential")
+    manager = SimpleNamespace(catalog=SimpleNamespace(session=session, acquire_maintenance_lock=acquire))
+    result = run_weekly_audit(manager, status_path=tmp_path / "status.json", products=("au",),
+                              identity=IDENTITY, now=lambda: NOW)
+    assert result["error_stage"] == "maintenance_lock"
+    assert result["error_type"] == "IO_ERROR"
+    assert result["failed_symbol"] is None
+    assert result["findings_complete"] is False
+
+
+@pytest.mark.parametrize("field,value", [("error_type", "secret-text"), ("partial_finding_count", -1),
+    ("findings_complete", False), ("failed_symbol", "bad"), ("error_stage", "arbitrary")])
+def test_health_rejects_invalid_diagnostics(tmp_path, session, field, value):
+    from app.market_data.weekly_audit import run_weekly_audit, weekly_audit_health
+    manager = SimpleNamespace(catalog=SimpleNamespace(session=session,
+        acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None)),
+        audit=lambda *args, **kwargs: MaintenanceResult("audit", "passed", NOW.date(), 0, 0, 0, 0, 0))
+    path = tmp_path / "status.json"
+    result = run_weekly_audit(manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW)
+    result[field] = value
+    path.write_text(json.dumps(result))
+    assert weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW)["status"] == "invalid"
+
+
+def test_failed_health_exposes_safe_diagnostics(tmp_path, session):
+    from app.market_data.weekly_audit import run_weekly_audit, weekly_audit_health
+    def audit(*args, **kwargs):
+        raise TimeoutError("private")
+    manager = SimpleNamespace(catalog=SimpleNamespace(session=session,
+        acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None)), audit=audit)
+    path = tmp_path / "status.json"
+    run_weekly_audit(manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW)
+    health = weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW)
+    assert health["status"] == "failed" and health["error_type"] == "TIMEOUT"
+    assert health["findings_complete"] is False and health["partial_finding_count"] == 0
