@@ -1,21 +1,22 @@
 # 当前状态
 
-## 10/18 v1.15.11 已发布，正式切换进行中
+## 10/18 v1.15.11 已发布并完成正式运行切换
 
 包含v1.15.10及本轮数据审计、Reference完整预热冲突恢复和旧日写入/游标TTL修复。
 历史修复49个scope、919个目标分区完成；PF/PK/PL typed质量和周线闭包完成，更新后原生完整审计60/60通过，七周期postplan均零目标，截至10/16。
 720路historical资产全部核验，212路forward冲突全部恢复；旧观察、Capture/Reconciliation、历史收据和通知事实保留，不重放、不补发。
-四个现役gen19 writer已恢复原PID，新鲜heartbeat及恢复前后完整输入/数据库事实一致；Reference720 READY、pending Capture0。
+切换前四个gen19 writer已恢复原PID，新鲜heartbeat及恢复前后完整输入/数据库事实一致；Reference720 READY、pending Capture0。
 120路D1/W1计算输入有效，110 READY，10路因物理段有效预热不足仍warming，不伪造补暖。
 发布候选代码测试、真实隔离PG/Redis验证及独立Review通过；冷切换caller105项复验通过。
-v1.15.11已正式发布：PR#459已合并，main/tag peeled为9d72e3fbdd1e3d7ca011c075bcfd46fbff6e9ad1，GitHub Release非draft/prerelease。当前正式Runtime仍v1.15.7/gen19/schema0051，切换计划正在生成；自然Bar/Event/通知送达不由闭市恢复推导。
+v1.15.11已正式发布：PR#459已合并，main/tag peeled为9d72e3fbdd1e3d7ca011c075bcfd46fbff6e9ad1，GitHub Release非draft/prerelease。正式绑定/十项配置已统一为v1.15.11/gen20/schema0052，运行根为.worktrees/release-v1.15.11；六项常驻新PID双轮一致、身份/loaded/cwd/heartbeat通过，四日历空闲。API8000及Web5173实际返回1.15.11，Web index与该发布dist逐字一致。独立只读new-runtime-acceptance-002核验输入和旧DB事实不变、七新字段全NULL、720 READY/pending Capture0。原start十effect均committed，但最终即时owner检查失败；原记录保留，不重跑启动/迁移，由独立验收完成切换读回。
+完整reference HTTP健康读取超时，未计通过；runtime health仍degraded：Alert110 ok/226 lagging/75 pending/10 warming_up，十项与已确认物理段预热不足一致。新exact tag manual60审计未执行，weekly为missed；自然Bar/Event/通知送达未证实，不声明RUNTIME_READY。旧v7/v10本地树未清理，Git发布历史保留。
 详见[恢复与发布记录](docs/tasks/data-recovery-v1.15.11.md)。
 
 ## 10/16 v1.15.10 已发布，Runtime切换阻断
 
 v1.15.10已发布：tag peeled/main为79c6ed573234ec6737e860f197498738a51c7c7d，PR #458合并，GitHub Release非draft/prerelease；develop已同步。
 已汇总已验收develop、版本准备和已发布main，完成完整Web1133 passed/3 skipped、发布相关后端185 passed、build/type/topology、OpenSpec11及secret零发现。
-现役仍为v1.15.7/gen19/schema0051。当前Reference720启用中508 READY、212 DATA_CONFLICT、pending0；完整就绪Gate失败。
+10/16当时现役为v1.15.7/gen19/schema0051，Reference720启用中508 READY、212 DATA_CONFLICT、pending0；当时完整就绪Gate失败，10/18恢复与切换结果见上。
 未drain、未迁移、未切换；发布与Runtime独立记录。见[发布汇总](docs/tasks/release-all-v1.15.10.md)。
 
 ## 10/16 八批看盘优化工程验收

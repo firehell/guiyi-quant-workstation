@@ -51,3 +51,15 @@ weekly audit原来吞异常且零finding易误读。补齐findings_complete、pa
 收尾001在任何intent之前因TASK新Alert ORM读取旧schema0051停止，目录仅保存真实cycle样本；未取消三条控制。002改用exact v7旧schema读取。实际只读完整snapshot又定位现有PG哈希源总量2,280,614,746字节，超原2GiB预算；保持完整查询/PG端大字段哈希、20万行及128MiB摘要上限，仅将有限source预算调整3GiB。完整旧schema快照实际通过：12类表，reference720 READY/pending0；cold105测试1.15秒全部通过，随后唯一restoration002执行中。
 
 restoration002实际exit0：四个原gen19 owner全部恢复，原PID不变；Alert/Live/Feed保存各自新鲜业务heartbeat，Reference保存前后真实cycle单次样本。全部720 active READY、pending Capture0、全部journal游标tail；恢复前后完整12类数据库事实及Live/journal快照相等。旧004/continuation/早停001日志原样保留，不补造其完成状态；新独立closeout仅恢复控制、不重跑资产。当前允许进入统一v11发布与冷切换，正式版本/Runtime身份在实际操作后另记。
+
+## 10/18 统一发布和正式切换实际结果
+
+用户本轮优先四项已完成。PR#459已合并；v1.15.11 main/tag peeled精确9d72e3fbdd1e3d7ca011c075bcfd46fbff6e9ad1，annotated tag object adb752fd2f6a5b23b75e8c2772d37d7da9c639d8，GitHub Release正式非draft/prerelease（2026-10-18T12:39:38Z）。候选detached至该tag，合并树与已验证候选逐文件相同；包含v1.15.10，不混入develop无关研究。
+
+精确冷切换plan hash10a4698b3613185602207a8546ca3edd188b326e106050054ae7ff457b2ea076；drain、stop、migration、install分别实际COMPLETED。十旧服务缺席及旧PID退出后，原子0051→0052只加七可空字段，旧事实hash不变、全部新字段NULL；十项配置与CAS绑定统一gen20。start六常驻+四日历的十effect均committed，但最终即时owner检查失败DELIVERY_SWITCH_FINAL_OWNER_NOT_FRESH，原attempt保持stopped_no_retry，不补造completed，不重启或重复migration。
+
+独立只读acceptance001通过完整DB/输入、原生Reference、heartbeat、API/Web版本，但重型reference HTTP健康读取TimeoutError，未计通过。独立acceptance002（output/data-recovery-v11511-20261018/new-runtime-acceptance-002）实际exit0：RUNTIME_SWITCH_VERIFIED_READBACK，绑定已观察新六PID Live46139/Alert46146/Reference46152/API46159/Web46171/Feed46458，双轮同PID、owner新鲜、exact root/tag/commit/gen20、loaded/cwd、十配置及绑定通过；三业务heartbeat新鲜、60品种CLOSED，Feed pending/subscription0，四日历idle。完整输入及旧数据库事实与停领前一致，schema0052、七字段NULL、720 READY/pending Capture0；API8000和Web5173代理health200/version1.15.11，实际Web index与发布dist逐字相同。该独立结果只证明切换，不改写原start失败日志。
+
+最后验证：cold caller pytest -q output/release-v11511-20261018：105 passed in1.15s；最终候选diff --check通过，发布树与候选业务代码相同，正式服务只读回读通过。高风险实现、恢复、迁移、调用器与独立验收已独立Review。
+
+剩余明确区分：reference完整HTTP健康超时仍TIMEOUT_NOT_ACCEPTED；runtime总体degraded，Alert110ok/226lagging/75pending/10evaluation_failed，十项error_type均evaluation_warming_up（BZ/EC/PD/PF/PG/PL/PR/PX W1及RS D1/W1），不造数补暖；exact新运行版本manual全60审计未执行、weekly missed；自然Bar/Event/送达未证实，RUNTIME_READY不成立。本地旧v7/v10树未清理，待后续审计与归档完整性修正、原生retention零引用证明后清理；不删除Git tag/Release历史。
