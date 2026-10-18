@@ -546,6 +546,36 @@ requirements are unaffected by this source-only maintenance protocol.
 - **AND** neither original becomes a Capture, Reconciliation, strategy calculation or notification
 - **AND** removal of any original's route receipts prevents recovery admission
 
+### Requirement: Final warm recovery from existing capture mismatches
+
+`reference_capture_final_warm_recovery_v1` MAY renew only the complete enabled H1 group of
+trend, oscillation, main-rise and dual-fusion streams after native active-revision Capture
+Reconciliation mismatch evidence is present. Fusion need not fabricate its own Capture when
+its base routes establish the group conflict. Original-observation diagnostics, including
+receipts on retired revisions, SHALL NOT establish this admission and SHALL NOT be reinserted.
+
+The source loader SHALL freshly materialize and hash-validate `original_conflict_warm_seed_v1`
+for every source on planning and applying. Only final_observation / WARM_SEED_VERIFIED is
+admitted; each base interval must prove no remaining completed endpoint before the exact
+future recording start. Provisional, incomplete, untyped, changed-binding and altered seeds
+SHALL fail closed. The future recording start in every source manifest and flat checkpoint
+must equal the recovery plan boundary.
+
+The existing stopped-writer, Canonical maintenance, fresh source verification, locked complete
+preimage and atomic flat-revision protocol SHALL remain in force. All original Capture,
+Reconciliation, typed diagnostics and old revisions remain preserved. Recovery emits no
+new Capture, Reconciliation, action, trade, notification, journal replay or ACK. Unknown
+outcomes retain the exact attempt and park state; this source-only path changes no Runtime
+promotion or trading-stage policy.
+
+#### Scenario: A captured group is warmed without repeating old original transfers
+
+- **GIVEN** three base routes have current Capture mismatches and the complete four-route group has final independently verified warm seeds
+- **AND** old OriginalTransfer keys remain on retired revisions
+- **WHEN** the frozen final-warm capture recovery is applied
+- **THEN** all four future-start flat revisions activate atomically using the verified strategy state
+- **AND** existing Capture and Reconciliation rows remain unchanged and no OriginalTransfer receipt is inserted
+
 ### Requirement: Independently verified conflict warm seeds and pending boundaries
 
 `original_conflict_warm_seed_v1` MAY reuse an immutable Historical checkpoint only after a fresh read
