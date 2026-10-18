@@ -824,11 +824,20 @@ class DurableLiveMarketService(LiveMarketService):
                          'channel': channel, 'envelope': serialized_envelope})
         if hasattr(self, 'assert_owned'):
             self.assert_owned()
+        keys.append(stream.registration_key(source.consumer))
         result = stream.redis.eval(COMMIT_OBSERVATIONS, len(keys), *keys, old, next_id,
-                                   _compact_json(plan), TTL_SECONDS, DAILY_LIMIT)
+                                   _compact_json(plan), TTL_SECONDS, DAILY_LIMIT, source.day.isoformat())
+        if result == -5 and not plan and next_id == old:
+            # A fully drained old-day tick may race Feed's atomic day rollover.
+            # The Lua guard made no changes; a real newer cursor proves a no-op.
+            current_day = stream.registered_day(source.consumer)
+            if current_day > source.day:
+                stream.cursor(source.consumer, current_day)
+                return
         if result != 1:
             raise ValueError({-1: 'OBSERVATION_CONTENT_CONFLICT', -2: 'OBSERVATION_CURSOR_DRIFT',
-                              -3: 'OBSERVATION_CAPACITY_EXCEEDED', -4: 'OBSERVATION_KEY_TYPE_INVALID'}.get(
+                              -3: 'OBSERVATION_CAPACITY_EXCEEDED', -4: 'OBSERVATION_KEY_TYPE_INVALID',
+                              -5: 'OBSERVATION_DAY_CHANGED', -6: 'OBSERVATION_CONSUMER_UNREGISTERED'}.get(
                                   result, 'OBSERVATION_COMMIT_UNKNOWN'))
         while source.records and tuple(map(int, source.records[0][0].split('-'))) <= tuple(map(int, next_id.split('-'))):
             source.records.popleft()
