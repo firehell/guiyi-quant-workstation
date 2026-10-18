@@ -1,5 +1,16 @@
 # 当前状态
 
+## 10/18 v1.15.11 已发布，正式切换进行中
+
+包含v1.15.10及本轮数据审计、Reference完整预热冲突恢复和旧日写入/游标TTL修复。
+历史修复49个scope、919个目标分区完成；PF/PK/PL typed质量和周线闭包完成，更新后原生完整审计60/60通过，七周期postplan均零目标，截至10/16。
+720路historical资产全部核验，212路forward冲突全部恢复；旧观察、Capture/Reconciliation、历史收据和通知事实保留，不重放、不补发。
+四个现役gen19 writer已恢复原PID，新鲜heartbeat及恢复前后完整输入/数据库事实一致；Reference720 READY、pending Capture0。
+120路D1/W1计算输入有效，110 READY，10路因物理段有效预热不足仍warming，不伪造补暖。
+发布候选代码测试、真实隔离PG/Redis验证及独立Review通过；冷切换caller105项复验通过。
+v1.15.11已正式发布：PR#459已合并，main/tag peeled为9d72e3fbdd1e3d7ca011c075bcfd46fbff6e9ad1，GitHub Release非draft/prerelease。当前正式Runtime仍v1.15.7/gen19/schema0051，切换计划正在生成；自然Bar/Event/通知送达不由闭市恢复推导。
+详见[恢复与发布记录](docs/tasks/data-recovery-v1.15.11.md)。
+
 ## 10/16 v1.15.10 已发布，Runtime切换阻断
 
 v1.15.10已发布：tag peeled/main为79c6ed573234ec6737e860f197498738a51c7c7d，PR #458合并，GitHub Release非draft/prerelease；develop已同步。
