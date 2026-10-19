@@ -7,6 +7,7 @@ from app.reference_trading.recording_scope import LIVE_FREQUENCIES, FREQUENCIES
 from datetime import UTC, date, datetime
 
 from sqlalchemy import and_, case, func, select
+from types import SimpleNamespace
 
 from app.db.readonly import readonly_transaction
 from app.reference_trading.models import (
@@ -127,21 +128,36 @@ class ForwardReferenceHealth:
             starts = {stream.stream_id: stream.recording_start for stream in streams}
             from app.reference_trading.original_conflict import original_conflict_evidence, PENDING_MANIFEST, PREFIX
             typed_rows, pending_warmup_ids = [], set()
-            for batch in session.scalars(select(b).outerjoin(
+            # Project only health inputs in SQL. Replay checkpoints and full
+            # historical evidence/manifests can be hundreds of MB per request.
+            pending_key = (b.dependency_manifest.op("?")(PENDING_MANIFEST)
+                           if session.get_bind().dialect.name == "postgresql"
+                           else func.json_type(b.dependency_manifest,
+                                               '$."' + PENDING_MANIFEST + '"').is_not(None))
+            rows = session.execute(select(
+                b.batch_id, b.stream_id, b.batch_key, b.kind, b.payload_hash, b.observed_at,
+                case((b.kind == "seed_seal", pending_key), else_=False).label("pending_warmup"),
+                case((b.kind == "diagnostic", b.source_evidence),
+                     else_=None).label("diagnostic_evidence"),
+                case((b.kind == "calculation", b.source_evidence["presentation_v1"]),
+                     else_=None).label("presentation"),
+            ).outerjoin(
                 latest, (b.stream_id == latest.c.stream_id) & (b.seq == latest.c.seq),
             ).join(s, active).where(
                 b.stream_id.in_(ids),
                 latest.c.seq.is_not(None) | (b.kind == "seed_seal")
                 | ((b.kind == "diagnostic") & b.batch_key.like(PREFIX + "%")),
-            )):
+            ))
+            for row in rows.mappings():
+                batch = SimpleNamespace(**row, source_evidence=row["diagnostic_evidence"])
                 if batch.kind == "diagnostic":
                     typed_rows.append(batch)
                     continue
                 if batch.kind == "seed_seal":
-                    if PENDING_MANIFEST in batch.dependency_manifest:
+                    if batch.pending_warmup:
                         pending_warmup_ids.add(batch.stream_id)
                     continue
-                presentation = batch.source_evidence.get("presentation_v1")
+                presentation = batch.presentation
                 if presentation is not None:
                     points = require_envelope(presentation)
                     state_point = next((

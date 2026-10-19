@@ -196,3 +196,35 @@ def test_retired_conflict_does_not_poison_current_group(old_enabled):
     assert rows[identity.stream_id]['reconciliation_mismatch_count'] == 1
     assert rows['current-group']['status'] == ('DATA_CONFLICT' if old_enabled else 'READY')
     assert rows['current-group']['reconciliation_mismatch_count'] == 0
+
+
+def test_health_does_not_fetch_unused_batch_checkpoint_or_projection_payloads():
+    """Health must not deserialize replay payloads just to inspect latest state."""
+    from sqlalchemy import event
+    factory, _identity, _revision, _activation = _active()
+    engine = factory.kw['bind']
+    statements = []
+
+    def counted(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().upper().startswith('SELECT'):
+            statements.append(statement.split('FROM')[0])
+
+    event.listen(engine, 'before_cursor_execute', counted)
+    try:
+        ForwardReferenceHealth(factory).read()
+    finally:
+        event.remove(engine, 'before_cursor_execute', counted)
+    assert not any('reference_batches.checkpoint_text' in sql for sql in statements)
+    assert not any('reference_batches.projected_action_pks' in sql for sql in statements)
+    assert not any('reference_batches.seed_chunk_text' in sql for sql in statements)
+
+
+@pytest.mark.parametrize('value', [None, {}, {'plan': 'pending'}])
+def test_health_pending_warmup_is_key_presence_even_with_json_null(value):
+    from app.reference_trading.models import ReferenceBatch
+    from app.reference_trading.original_conflict import PENDING_MANIFEST
+    factory, _identity, revision, _activation = _active()
+    with factory.begin() as session:
+        seed = session.query(ReferenceBatch).filter_by(revision_id=revision, kind='seed_seal').one()
+        seed.dependency_manifest = {**seed.dependency_manifest, PENDING_MANIFEST: value}
+    assert ForwardReferenceHealth(factory).read()['streams'][0]['status'] == 'PENDING_WARMUP'
