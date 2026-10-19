@@ -1,5 +1,10 @@
 # 当前状态
 
+## 10/19 健康接口修复候选与自然链路复核
+
+健康读取因完整批次JSON反序列化耗时，已修正为必要字段SQL投影，源码4619db48e；同一生产只读快照完整结果相等，40.47秒→6.53秒，隔离真实HTTP200/7.04秒。161项定向测试通过（1 skipped）、独立Review及secret/Ruff通过。v1.15.12隔离候选4be0a70dc另有177测试（1 skipped）及Web构建通过，尚未发布/切换，正式仍v1.15.11。reference合同指纹改变，原生混合交接不兼容，不能dirty修改现役树。
+今天自然Live/Alert处理至15:00，249 Event有source ID，HTDY12条provider accepted、1 failed/unknown、8 expired；SuBing183静默/45expired，无手机ACK。17:25–17:30 Reference旧16日journal cursor缺失导致启动失败、今日cursor落后；Alert也反复启动且421项coverage未恢复（361lagging/60waitingCanonical）。不补cursor、不重放/重发；仍未通过进程连续性或RUNTIME_READY。具体证据与下一步见[性能与自然链路记录](docs/tasks/reference-health-timeout-20261019.md)。
+
 ## 10/18 v1.15.11 已发布并完成正式运行切换
 
 包含v1.15.10及本轮数据审计、Reference完整预热冲突恢复和旧日写入/游标TTL修复。
