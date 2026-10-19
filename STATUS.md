@@ -1,9 +1,12 @@
 # 当前状态
 
-## 10/19 健康接口修复候选与自然链路复核
+## 10/19 v1.15.12 已发布、正式切换及旧目录清理完成
 
-健康读取因完整批次JSON反序列化耗时，已修正为必要字段SQL投影，源码4619db48e；同一生产只读快照完整结果相等，40.47秒→6.53秒，隔离真实HTTP200/7.04秒。161项定向测试通过（1 skipped）、独立Review及secret/Ruff通过。v1.15.12隔离候选4be0a70dc另有177测试（1 skipped）及Web构建通过，尚未发布/切换，正式仍v1.15.11。reference合同指纹改变，原生混合交接不兼容，不能dirty修改现役树。
-今天自然Live/Alert处理至15:00，249 Event有source ID，HTDY12条provider accepted、1 failed/unknown、8 expired；SuBing183静默/45expired，无手机ACK。17:25–17:30 Reference旧16日journal cursor缺失导致启动失败、今日cursor落后；Alert也反复启动且421项coverage未恢复（361lagging/60waitingCanonical）。不补cursor、不重放/重发；仍未通过进程连续性或RUNTIME_READY。具体证据与下一步见[性能与自然链路记录](docs/tasks/reference-health-timeout-20261019.md)。
+健康读取已改为必要字段SQL投影，源码4619db48e；PR460已合并并发布v1.15.12，main/tag peeled为13c86b7351b8977b8bca96e17feb2399f181a159。161项定向测试（1 skipped）、候选177项（1 skipped）、构建及独立Review通过。正式绑定/十项配置现已统一v1.15.12/gen21/schema20261015_0052，运行根.worktrees/release-v1.15.12；六常驻PID双轮一致、四calendar空闲，API8000和Web5173实际返回1.15.12，Web index与exact发布dist一致。
+独立验收RUNTIME_SWITCH_VERIFIED_READBACK：同一生产RR/READ ONLY快照旧/新完整health相等，43.398秒→7.736秒；正式Reference健康HTTP200/8.584秒，与新鲜原生health完整逐字一致。当前720 enabled、540 READY/180 DATA_CONFLICT、pending Capture0，真实degraded保持；不声明RUNTIME_READY。start十项effect均一次committed，最后即时owner采样停止记录保留，未重跑启动，由独立验收完成读回。
+历史进度边界已修正并经212测试及独立Review：固定派生disabled historical_replay身份仅允许5个原生checkpoint进度字段单调推进，旧payload身份/链字段、现役forward、Scope、公式和其他受保护事实保持；启动后的合法历史推进与reconciliation追加分别验证，不要求自然业务静止。第一轮失败attempt及原Feed精确cancel恢复证据保留。新attempt002完整plan、sealed drain、安装与独立验收见output/release-v11512-20261019-attempt002。
+今天自然Live/Alert处理至15:00，249 Event来源逐条核实，HTDY12条provider accepted、1 failed/unknown、8 expired；SuBing183静默/45 expired，无手机ACK。18:05主更新60品种passed、720分区发布，旧16日journal自然到期后原生恢复；覆盖状态仍需新自然观察，PR/SF历史零值与10项预热不足保持。新v12自然Bar/Event与手机实际送达尚未证实，不重放或补发。
+旧v11目录已完成精确归档校验、部署锁内fresh零引用复核及非force移除；清理receipt COMPLETE，本地只保留v1.15.12正式发布运行树，Git tag/Release历史和数据保留。清理工具的私有配置导入顺序和瞬时owner采样边界已修正，51项/45项回归及独立Review通过，失败attempt冻结保留。删除后NEW_ONLY_FINAL_READBACK_VERIFIED：唯一正式运行树v1.15.12，六PID双轮一致、四calendar空闲；API/Web返回1.15.12，Reference直连HTTP200/8.404秒、Web代理HTTP200/8.965秒，分别与原生新鲜health逐字一致。具体事实见[性能与自然链路记录](docs/tasks/reference-health-timeout-20261019.md)。
 
 ## 10/18 v1.15.11 已发布并完成正式运行切换
 
