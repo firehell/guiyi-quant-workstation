@@ -51,3 +51,36 @@ weekly audit原来吞异常且零finding易误读。补齐findings_complete、pa
 收尾001在任何intent之前因TASK新Alert ORM读取旧schema0051停止，目录仅保存真实cycle样本；未取消三条控制。002改用exact v7旧schema读取。实际只读完整snapshot又定位现有PG哈希源总量2,280,614,746字节，超原2GiB预算；保持完整查询/PG端大字段哈希、20万行及128MiB摘要上限，仅将有限source预算调整3GiB。完整旧schema快照实际通过：12类表，reference720 READY/pending0；cold105测试1.15秒全部通过，随后唯一restoration002执行中。
 
 restoration002实际exit0：四个原gen19 owner全部恢复，原PID不变；Alert/Live/Feed保存各自新鲜业务heartbeat，Reference保存前后真实cycle单次样本。全部720 active READY、pending Capture0、全部journal游标tail；恢复前后完整12类数据库事实及Live/journal快照相等。旧004/continuation/早停001日志原样保留，不补造其完成状态；新独立closeout仅恢复控制、不重跑资产。当前允许进入统一v11发布与冷切换，正式版本/Runtime身份在实际操作后另记。
+
+## 10/18 统一发布和正式切换实际结果
+
+用户本轮优先四项已完成。PR#459已合并；v1.15.11 main/tag peeled精确9d72e3fbdd1e3d7ca011c075bcfd46fbff6e9ad1，annotated tag object adb752fd2f6a5b23b75e8c2772d37d7da9c639d8，GitHub Release正式非draft/prerelease（2026-10-18T12:39:38Z）。候选detached至该tag，合并树与已验证候选逐文件相同；包含v1.15.10，不混入develop无关研究。
+
+精确冷切换plan hash10a4698b3613185602207a8546ca3edd188b326e106050054ae7ff457b2ea076；drain、stop、migration、install分别实际COMPLETED。十旧服务缺席及旧PID退出后，原子0051→0052只加七可空字段，旧事实hash不变、全部新字段NULL；十项配置与CAS绑定统一gen20。start六常驻+四日历的十effect均committed，但最终即时owner检查失败DELIVERY_SWITCH_FINAL_OWNER_NOT_FRESH，原attempt保持stopped_no_retry，不补造completed，不重启或重复migration。
+
+独立只读acceptance001通过完整DB/输入、原生Reference、heartbeat、API/Web版本，但重型reference HTTP健康读取TimeoutError，未计通过。独立acceptance002（output/data-recovery-v11511-20261018/new-runtime-acceptance-002）实际exit0：RUNTIME_SWITCH_VERIFIED_READBACK，绑定已观察新六PID Live46139/Alert46146/Reference46152/API46159/Web46171/Feed46458，双轮同PID、owner新鲜、exact root/tag/commit/gen20、loaded/cwd、十配置及绑定通过；三业务heartbeat新鲜、60品种CLOSED，Feed pending/subscription0，四日历idle。完整输入及旧数据库事实与停领前一致，schema0052、七字段NULL、720 READY/pending Capture0；API8000和Web5173代理health200/version1.15.11，实际Web index与发布dist逐字相同。该独立结果只证明切换，不改写原start失败日志。
+
+最后验证：cold caller pytest -q output/release-v11511-20261018：105 passed in1.15s；最终候选diff --check通过，发布树与候选业务代码相同，正式服务只读回读通过。高风险实现、恢复、迁移、调用器与独立验收已独立Review。
+
+剩余明确区分：reference完整HTTP健康超时仍TIMEOUT_NOT_ACCEPTED；runtime总体degraded，Alert110ok/226lagging/75pending/10evaluation_failed，十项error_type均evaluation_warming_up（BZ/EC/PD/PF/PG/PL/PR/PX W1及RS D1/W1），不造数补暖；exact新运行版本manual全60审计未执行、weekly missed；自然Bar/Event/送达未证实，RUNTIME_READY不成立。本地旧v7/v10树未清理，待后续审计与归档完整性修正、原生retention零引用证明后清理；不删除Git tag/Release历史。
+
+## 新版本全量审计与清理准备
+
+10/18 21:33:11，使用真实已安装weekly-audit plist/environment并核对binding/tag身份后，从exact v11原生manual入口启动60品种全历史只读审计；报告位于新树.run/weekly-audit-status.json，runtime_root/commit为新v11/9d72e3fbdd。首次缺少launchd注入身份的直接调用在扫描前CLI ValueError停止，日志保留；不把它计作运行中或完成审计。当前完整审计运行中，未计passed。
+
+期间静态排查确认reference健康接口每次串行180个Canonical MDS query_page和60个H1 Session endpoint，包含inactive forward streams，无请求总deadline/阶段计时；逐SQL timeout不能界定HTTP总时间。未在全量审计期间重复重型HTTP/SQL；已准备审计后单次隔离同代码phase profile，不改正式源码、不作为HTTP性能或自然业务证据。
+
+新鲜runtime health：DB/Redis/Live/盘后ok，weekly running；Alert处理状态ok/error null，覆盖110ok/226lagging/75pending/10evaluation_warming_up。十warmup对应已证实的真实物理段不足；lagging/pending需下一自然completed observation验收，不回放旧输入。provider_accepted是10/17北京时间00:00旧发送记录，手机ack为空，仍有历史transport_failed，不推导新版本/手机送达。
+
+旧v7/v10原生retention只读扫描均eligible且无binding/plist/loaded/PID/cwd引用。精确v2-plan-002已冻结；源manifest保存递归path/type/mode/mtime_ns/内容hash/linktarget，两棵树必要运行证据已归档0600并逐成员验证。归档前后及删除前重核源内容，未知ignored内容拒绝；只丢弃已识别可重建venv/node_modules/dist/caches，不丢owner文件。删除在deployment guard下再核对每树exact commit/tag/native引用，nonforce worktree remove；apply机器门槛强制本次新v11 manual60/完整/零finding及partial/零provider和写入/through16实际passed。22项归档/拒绝门槛测试通过0.07s，独立Review已关闭此前Confirmed Issue；尚未执行删除。
+
+
+## 最终审计、接口计时与旧目录清理结果
+
+10/18 22:54:43原生新v11 manual审计实际exit0，60/60、operational_full_history、through2026-10-16、findings_complete=true，finding/partial/provider/data_writes均0。耗时81.54分钟。原报告逐字复制至output/release-v11511-20261018/manual-weekly-audit-v11511-final.json，SHA256 e5a13ddaf4f593b9e8823ba5e2bf498bd5e1504e344ca7f8a300777eb96ff55c；独立Review核验范围、身份与原生删除admission通过。
+
+随后唯一reference-health-phase-profile-001实际exit0、complete=true：同正式health代码隔离只读调用38.5016秒，720 enabled/READY、pending_capture0，240端点调用零异常。180次Canonical合计3.979秒，含60次Session的完整端点阶段5.878秒；成功SQL5293次共10.956秒（与端点阶段重叠，不能直接累加/相减）。端点阶段外32.624秒尚未细分，不能把180次端点读取认定为主要瓶颈，也不能指定某条SQL为根因。独立Review确认该结论；本次不是HTTP请求，不代替HTTP性能验收，未改正式源码。
+
+按v2-plan-002及archives-002，在部署锁内再次检查exact tag/commit、源manifest、归档内容、原生引用与审计通过条件后，release-retention-v2-apply-001实际exit0/COMPLETE：仅非force移除.worktrees/release-v1.15.7与release-v1.15.10，本地正式发布树计数1，现役v11保持。必要旧运行证据保存在retired-release-evidence-v2-002；Git发布历史、行情、数据库、旧Capture/Event/通知事实未删除。新树367个symlink及4个venv/editable配置检查未引用旧树。清理前22项归档/审计门槛测试通过；接口profile两项测试通过，独立Review无未关闭Confirmed Issue。
+
+22:59清理后只读readback保存output/release-v11511-20261018/post-retention-runtime-readback.json：API /health及Web /api/health均200/version1.15.11，十运行身份matched，DB/Redis/Live/盘后ok、weekly passed；Alert处理状态ok/error null，整体仍degraded，未制造新Event或补发。首次请求Web /health返回SPA HTML而JSON解析失败，保留该诊断记录并使用正确代理路由完成读回。自然completed Bar/Event与手机送达仍待真实业务，不新增监控任务，不宣称RUNTIME_READY。

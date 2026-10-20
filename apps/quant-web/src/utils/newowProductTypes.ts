@@ -251,8 +251,8 @@ function normalizeSectionValue(section: NewowProductSection, payload: unknown, m
 
 function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartValue {
   const source = record(payload, 'chart.value')
-  const value = exactRecord({ next_older_window: null, price_reference: null, ...source }, 'chart.value', [
-    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'bars', 'frames', 'actions', 'hints',
+  const value = exactRecord({ next_older_window: null, price_reference: null, caution_events: [], ...source }, 'chart.value', [
+    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'caution_events', 'bars', 'frames', 'actions', 'hints',
     'trend_channel', 'price_reference', 'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
   ])
   const chartFrom = day(value.chart_from, 'chart_from')
@@ -286,7 +286,18 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   const allowed = exactStringArray(value.allowed_uses, ['product_chart', 'reference_input'] as const, 'chart.allowed_uses')
   const older = nullableText(value.next_older_window, 'chart.next_older_window')
   if (older !== null && (older.length > 256 || meta.snapshot_token === null || value.next_before !== null)) throw new Error('older window requires an exhausted snapshot window')
+    const cautionEvents = array(value.caution_events ?? [], 'chart.caution_events').map(raw => {
+    const e=record(raw,'caution_event'); const at=instant(e.bar_end,'caution.bar_end')
+    const bar=bars.find(b=>Date.parse(b.bar_end)===Date.parse(at))
+    if (!bar || (e.physical_contract!==bar.physical_contract || e.segment_id!==bar.segment_id || e.calculation_segment_id!==bar.calculation_segment_id)) throw new Error('caution owner conflict')
+    requireNotAfter(at,meta.as_of,'caution.bar_end','as_of'); requireNotAfter(instant(e.as_of,'caution.as_of'),meta.as_of,'caution.as_of','as_of')
+    if (e.confirmed_at!==null) {const confirmed=instant(e.confirmed_at,'caution.confirmed_at');requireNotAfter(at,confirmed,'peak','confirmation');requireNotAfter(confirmed,String(e.as_of),'confirmation','event.as_of')}
+    requireNotAfter(at,String(e.as_of),'peak','event.as_of'); day(e.peak_day,'peak_day');text(e.formula_version,'caution.formula_version')
+    boolean(e.tentative,'caution.tentative'); requireExact(e.repainting,true,'caution.repainting'); requireExact(e.executable,false,'caution.executable')
+    return {...e,bar_end:bar!.bar_end} as unknown as import('../types/newowProduct').NewowCautionEvent
+  })
   return {
+    caution_events: cautionEvents,
     chart_from: chartFrom, chart_through: chartThrough, page_identity: sha256(value.page_identity, 'chart.page_identity'), price_unavailable_days: priceUnavailableDays,
     bars, frames, trend_channel: trendChannel, price_reference: priceReference, actions, hints, diagnostics: stringArray(value.diagnostics, 'chart.diagnostics'),
     next_before: nullableText(value.next_before, 'chart.next_before'), repainting: false,
@@ -760,12 +771,16 @@ function normalizeAuxiliaryData(payload: unknown, component: NewowAuxiliaryValue
     return result
   }
   if (component === 'zhaoyao_mirror') {
-    const value = exactRecord(payload, field, ['entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'peaks', 'caution', 'repainting', 'formal_signal_eligible', 'formula_version'])
+    const value = exactRecord({tentative:[],confirmation_index:[],last_bar_fresh_peak:false,candidate_peak_index:null,...record(payload,field)}, field, ['entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'peaks', 'caution', 'tentative', 'confirmation_index', 'last_bar_fresh_peak', 'candidate_peak_index', 'repainting', 'formal_signal_eligible', 'formula_version'])
     requireExact(value.repainting, true, `${field}.repainting`); requireExact(value.formal_signal_eligible, false, `${field}.formal_signal_eligible`)
     const result: NewowZhaoyaoMirrorData = {
       entry: finiteArray(value.entry, `${field}.entry`), wash: finiteArray(value.wash, `${field}.wash`),
       distribution: finiteArray(value.distribution, `${field}.distribution`), markup: finiteArray(value.markup, `${field}.markup`),
       exit: finiteArray(value.exit, `${field}.exit`), inducement: finiteArray(value.inducement, `${field}.inducement`),
+      tentative: value.tentative === undefined ? [] : integerArray(value.tentative, `${field}.tentative`),
+      confirmation_index: value.confirmation_index === undefined ? [] : integerArray(value.confirmation_index, `${field}.confirmation_index`),
+      last_bar_fresh_peak: value.last_bar_fresh_peak === undefined ? false : boolean(value.last_bar_fresh_peak, `${field}.last_bar_fresh_peak`),
+      candidate_peak_index: value.candidate_peak_index == null ? null : integer(value.candidate_peak_index, `${field}.candidate_peak_index`),
       peaks: integerArray(value.peaks, `${field}.peaks`), caution: integerArray(value.caution, `${field}.caution`),
       repainting: true, formal_signal_eligible: false, formula_version: text(value.formula_version, `${field}.formula_version`),
     }
@@ -1127,14 +1142,21 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
       if (Date.parse(String(previous.bar_end))>=Date.parse(String(current.bar_end))) throw new Error('previous close order')
     }
   }
-  const path = value.daily_weekly_path === undefined ? undefined : normalizeDailyWeeklyPath(value.daily_weekly_path,meta,cd)
+  if(cd.care_input!==undefined) {
+    const c=record(cd.care_input,'care_input');literal(c.status,['ready','unavailable'],'care.status')
+    const size=integer(c.window_size,'care.window');if(size<0||size>66)throw new Error('care window invalid')
+    if(c.status==='ready'){boolean(c.value,'care.value');requireNotAfter(instant(c.bar_end,'care.bar_end'),meta.as_of,'care.bar_end','as_of');text(c.physical_contract,'care.contract');text(c.calculation_segment_id,'care.segment')}
+    else requireExact(c.value,null,'care.unavailable')
+    requireExact(c.contribution,c.value===true?-3:0,'care.contribution');requireExact(record(cd.deductions,'deductions').care,c.contribution,'care.deduction')
+  }
+  const path = value.daily_weekly_path === undefined ? undefined : normalizeDailyWeeklyPath(value.daily_weekly_path,meta,cd,value.prices)
   return { ...value, ...(path === undefined ? {} : {daily_weekly_path:path}) } as unknown as import('../types/newowDecisionV2').NewowDecisionV2
 }
 
-function normalizeDailyWeeklyPath(payload: unknown, meta: NewowProductMeta, cd: Record<string, unknown>): import('../types/newowDecisionV2').DailyWeeklyPath {
+function normalizeDailyWeeklyPath(payload: unknown, meta: NewowProductMeta, cd: Record<string, unknown>, prices?: unknown): import('../types/newowDecisionV2').DailyWeeklyPath {
   const field = 'daily_weekly_path'
-  const value = exactRecord(payload, field, ['version','as_of','page_parity','executable','source_note','periods'])
-  requireExact(value.version,'guiyi_daily_weekly_path_v2',`${field}.version`)
+  const value = exactRecord({history:null,...record(payload,field)}, field, ['version','as_of','page_parity','executable','source_note','periods','history'])
+  literal(value.version,['guiyi_daily_weekly_path_v2','guiyi_daily_weekly_path_v3'],`${field}.version`)
   sameInstant(value.as_of,meta.as_of,`${field}.as_of`)
   requireExact(value.page_parity,true,`${field}.page_parity`)
   requireExact(value.executable,false,`${field}.executable`)
@@ -1190,7 +1212,7 @@ function normalizeDailyWeeklyPath(payload: unknown, meta: NewowProductMeta, cd: 
     if (status!=='unavailable') exactStringArray(versions,EXPECTED_FORMULAS.trend,`${name}.formula_versions`)
     return {frequency,state,status,cost,current,target,reason:row.reason as string|null,formula_versions:versions}
   })
-  return {version:'guiyi_daily_weekly_path_v2',as_of:meta.as_of,page_parity:true,executable:false,source_note:value.source_note as string,periods}
+  return {version:value.version as string,as_of:meta.as_of,page_parity:true,executable:false,source_note:value.source_note as string,periods,...(value.history == null ? {} : {history:normalizeHistoricalPath(value.history,meta,prices,cd)})}
 }
 
 
@@ -1229,4 +1251,33 @@ function normalizeHoldingCurve(payload: unknown, cutoff: string): import('./newo
   })
   requireOrderedUnique(points,p=>p.bar_end,'holding.points')
   return {model_version:'newow_reference_marked_curve_v1',page_parity:true,executable:false,points}
+}
+
+function normalizeHistoricalPath(payload:unknown,meta:NewowProductMeta,prices:unknown,cd:Record<string,unknown>): import('../types/newowDecisionV2').HistoricalPath {
+  const v=record(payload,'path.history')
+  const cutoffDay=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(meta.as_of))
+  requireExact(v.version,'newow_historical_path_v3402_v1','path.history.version')
+  literal(v.status,['ready','unavailable'],'path.history.status')
+  requireExact(v.page_parity,true,'path.history.parity');requireExact(v.executable,false,'path.history.executable')
+  boolean(v.holding,'path.holding')
+  if(v.axis_dates!==undefined)array(v.axis_dates,'axis_dates').forEach(d=>day(d,'axis_date'))
+  for(const key of ['current','target','cost']) if(v[key]!==null && Number(decimal(v[key],`path.${key}`))<=0) throw new Error('invalid path price')
+  for(const key of ['buys','sells']) {
+    const points=array(v[key],key).map(raw=>record(raw,key))
+    for(const p of points){day(p.date,'path.date');if(String(p.date)>cutoffDay)throw new Error('future historical point');if(Number(decimal(p.price,'path.price'))<=0)throw new Error('path price invalid')}
+    if(points.some((p,i)=>i>0 && String(points[i-1]!.date)>String(p.date)))throw new Error('path date order')
+  }
+  if(v.status==='ready' && (array(v.buys,'buys').length<2 || array(v.sells,'sells').length<1 || v.current===null || !v.source))throw new Error('path samples/source missing')
+  for(const raw of array(v.background,'path.background')) {const b=record(raw,'background');day(b.start,'background.start');day(b.end,'background.end');if(String(b.start)>String(b.end) || String(b.end)>cutoffDay)throw new Error('background date order');literal(b.state,['hold','flat'],'background.state')}
+  if(v.source) {
+    const s=record(v.source,'path.source');requireNotAfter(instant(s.bar_end,'path.bar_end'),meta.as_of,'bar_end','as_of');sameInstant(s.as_of,meta.as_of,'path.as_of')
+    for(const k of ['physical_contract','segment_id','calculation_segment_id'])text(s[k],`path.${k}`)
+    literal(s.strategy,['trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4'],'path.strategy')
+    const role=`trend_${meta.identity.frequency==='1w'?'week':meta.identity.frequency==='60m'?'m60':'day'}`
+    const fact=array(cd.facts,'facts').map(f=>record(f,'fact')).find(f=>f.role===role)
+    if(fact?.physical_contract){requireExact(s.physical_contract,fact.physical_contract,'path.fact_owner');requireExact(s.segment_id,fact.segment_id,'path.fact_segment')}
+    if(prices){const current=record(record(prices,'prices').current_price,'current');requireExact(s.physical_contract,current.physical_contract,'path.owner');requireExact(s.segment_id,current.segment_id,'path.segment');requireExact(s.calculation_segment_id,current.calculation_segment_id,'path.calculation_segment')}
+  }
+  if(v.eta!==null) {const e=record(v.eta,'path.eta');literal(e.status,['ready','unavailable'],'eta.status');if(e.status==='ready'){day(e.date,'eta.date');for(const k of ['base','remain','elapsed','ratio','samples']) {if(finiteNumber(e[k],`eta.${k}`)<0)throw new Error('negative ETA field')}boolean(e.date_limited,'eta.date_limited');boolean(e.overdue,'eta.overdue')}}
+  return v as unknown as import('../types/newowDecisionV2').HistoricalPath
 }

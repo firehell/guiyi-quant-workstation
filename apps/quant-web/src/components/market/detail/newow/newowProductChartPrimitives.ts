@@ -316,7 +316,7 @@ const AUXILIARY_SERIES_LABELS = {
   ],
   zhaoyao_mirror: [
     ['entry', '进场'], ['wash', '洗盘'], ['distribution', '派发'], ['markup', '拉升'],
-    ['exit', '离场'], ['inducement', '诱多'], ['peaks', '峰值'], ['caution', '风险'],
+    ['exit', '离场'], ['inducement', '诱多'], ['peaks', '峰值'], ['caution', '风险'], ['tentative', '暂定峰'],
   ],
   cup_handle: [],
 } as const

@@ -34,6 +34,7 @@ export interface MarketDetailIdentity {
   seriesKind: DetailSeriesKind
   contract?: string
   frequency: MarketFrequency
+  homeContext?: import('../utils/newowHomeContext.ts').NewowHomeContext
   focusBarEnd?: string
 }
 
@@ -48,6 +49,7 @@ export type MarketDetailRouteErrorCode =
   | 'DETAIL_FREQUENCY_INVALID'
   | 'DETAIL_CONTRACT_REQUIRED'
   | 'DETAIL_FOCUS_INVALID'
+  | 'DETAIL_HOME_CONTEXT_INVALID'
   | 'DETAIL_OVERLAY_INVALID'
 
 export type MarketDetailRouteResult =

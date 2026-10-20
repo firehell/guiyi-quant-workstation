@@ -33,7 +33,7 @@ export interface HomePeriodFact {
   target_space_percent?: string | null
   absorb_space_percent?: string | null
   main_force_control?: { status: string; label: string | null; formula_version: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean }
-  row_hints?: { status: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean; items: Array<{ kind: 'caution' | 'reduce'; peak_day?: string; event_day: string; j_value?: string; reference_price?: string; formula_version: string }> } | null
+  row_hints?: { status: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean; items: Array<{ kind: 'caution' | 'reduce'; event_bar_end?: string; tentative?: boolean; confirmed_day?: string | null; peak_day?: string; event_day: string; j_value?: string; reference_price?: string; formula_version: string }> } | null
   page_performance?: { status: string; reason_code?: string; version?: string; strategy?: HomeStrategy; frequency?: HomePeriod; as_of?: string; input_sha256?: string; source_evidence_sha256?: string | null; since?: string | null; through?: string | null; cum_return_percent?: string; trade_count?: number; page_parity?: boolean; executable?: boolean }
   display_as_of?: string
   display_projection_version?: 'newow_home_display_v1'
@@ -266,6 +266,7 @@ export function homeRowHints(day?: HomePeriodFact) {
   if (day?.status !== 'ready' || !day.bar_end || !day.physical_contract || !day.calculation_segment_id || !hints || hints.status !== 'ready' || hints.page_parity !== true || hints.executable !== false || hints.bar_end !== day.bar_end || hints.physical_contract !== day.physical_contract || hints.calculation_segment_id !== day.calculation_segment_id || !Array.isArray(hints.items)) return []
   return hints.items.filter(item => item.formula_version && /^\d{4}-\d{2}-\d{2}$/.test(item.event_day) && item.event_day <= day.bar_end!.slice(0, 10) && (item.kind === 'caution' ? /^\d{4}-\d{2}-\d{2}$/.test(item.peak_day ?? '') && item.peak_day! <= item.event_day : item.kind === 'reduce' && Number.isFinite(Number(item.j_value)) && Number(item.reference_price) > 0)).map(item => ({
     label: item.kind === 'caution' ? '小心' : '减仓',
-    title: item.kind === 'caution' ? `高位波峰（${item.peak_day}）已于 ${item.event_day} 确认 · 页面参考提示` : `J值（${Number(item.j_value).toFixed(1)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`,
+    focusBarEnd: item.kind === 'caution' ? item.event_bar_end : undefined,
+    title: item.kind === 'caution' ? item.tentative ? `当天暂定峰（${item.event_day}），尚未回落5%确认 · 回看会变化，非交易信号` : `波峰（${item.peak_day}）事件 ${item.event_day}${item.confirmed_day ? ` · 确认于 ${item.confirmed_day}` : " · 历史回看"} · 页面参考提示` : `J值（${Number(item.j_value).toFixed(1)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`,
   }))
 }

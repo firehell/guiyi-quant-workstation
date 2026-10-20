@@ -177,10 +177,15 @@ export function useNewowReferenceParts(
     if (window) requestedWindow.value = window
     void load()
   }
+  let previousDisplayOwner = ''
   function reset() {
     clear()
     requestedWindow.value = null
-    mode.value = initialMode(fusion.value)
+    if (!chart.value) return
+    const owner = JSON.stringify([chart.value.meta.identity.product, chart.value.meta.identity.frequency])
+    const keepIdeal = owner === previousDisplayOwner && mode.value.includes('page_ideal')
+    previousDisplayOwner = owner
+    mode.value = keepIdeal ? (fusion.value ? 'fusion_page_ideal' : 'page_ideal') : initialMode(fusion.value)
     if (visible.value) void load()
   }
   watch(proof, reset, { immediate: true, flush: 'sync' })

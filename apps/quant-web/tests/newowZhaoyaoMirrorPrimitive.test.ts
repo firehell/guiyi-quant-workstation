@@ -44,15 +44,15 @@ test('joins split physical segments by global index in one detached mirror row s
     { key: 'caution', points: [{ index: 2, time: 'c' as never, value: 50 }] },
   ]
   assert.deepEqual(buildNewowZhaoyaoMirrorData(series), [
-    { time: 'a', entry: 1, wash: 0, distribution: 0, markup: 4, exit: 0, inducement: 0, caution: 0 },
-    { time: 'c', entry: 3, wash: 0, distribution: 0, markup: 0, exit: 0, inducement: 0, caution: 50 },
+    { time: 'a', entry: 1, wash: 0, distribution: 0, markup: 4, exit: 0, inducement: 0, caution: 0, tentative: 0 },
+    { time: 'c', entry: 3, wash: 0, distribution: 0, markup: 0, exit: 0, inducement: 0, caution: 50, tentative: 0 },
   ])
 })
 
 const rows: NewowZhaoyaoMirrorDatum[] = [
-  { time: 'a' as never, entry: 10, wash: 5, distribution: 8, markup: 20, exit: 7, inducement: 100, caution: 0 },
-  { time: 'b' as never, entry: 4, wash: 3, distribution: 4, markup: 10, exit: 2, inducement: 5, caution: 50 },
-  { time: 'c' as never, entry: 999, wash: 0, distribution: 999, markup: 0, exit: 0, inducement: 0, caution: 0 },
+  { time: 'a' as never, entry: 10, wash: 5, distribution: 8, markup: 20, exit: 7, inducement: 100, caution: 0, tentative: 0 },
+  { time: 'b' as never, entry: 4, wash: 3, distribution: 4, markup: 10, exit: 2, inducement: 5, caution: 50, tentative: 0 },
+  { time: 'c' as never, entry: 999, wash: 0, distribution: 999, markup: 0, exit: 0, inducement: 0, caution: 0, tentative: 0 },
 ]
 
 test('projects the frozen six classes with original colors, layering and 48/52 split', () => {
@@ -79,7 +79,7 @@ test('visible-window scaling ignores offscreen values and keeps dashed stems/cau
   const caution = commands.items.find(item => item.kind === 'caution')!
   assert.ok(Math.abs(entry.fromY - 26.8) < 1e-9)
   assert.deepEqual(exit.dash, [2, 2]); assert.deepEqual(inducement.dash, [2, 2])
-  assert.equal(caution.text, '小 心'); assert.deepEqual(caution.dash, [3, 3])
+  assert.equal(caution.text, '小心'); assert.deepEqual(caution.dash, [3, 3])
   assert.equal(commands.items.some(item => item.x === -20 || item.x === 120), false)
 })
 
@@ -92,4 +92,11 @@ test('mirror zero and upward bars remain below an overlaid toolbar', () => {
     assert.equal(item.toY, result.zeroY)
   }
   assert.ok(result.items.some(item => item.kind === 'caution' && item.fromY >= 128))
+})
+
+test('fresh peak is a separate hollow marker while the last caution stays zero',()=>{
+  const data=buildNewowZhaoyaoMirrorData([{key:'caution',points:[{index:0,time:'a' as never,value:0}]},{key:'tentative',points:[{index:0,time:'a' as never,value:50}]}])
+  const marker=buildNewowZhaoyaoMirrorCommands(data,100,200,()=>50).items.find(x=>x.kind==='caution')!
+  assert.equal(data[0]!.caution,0);assert.equal(marker.hollow,true);assert.equal(marker.text,'小心')
+  assert.ok(marker.fromY>=12)
 })

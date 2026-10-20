@@ -166,7 +166,7 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 | J 风险 | `main_rise × 1w/1d/60m`，Hint only | `newow_main_rise_j_reduce_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；不推导减仓比例 |
 | 4/7/11 | `main_rise × 1w/1d/60m`，结构 Hint | `newow_magic11_page_v1` | `ACTIVE_CODE_VERIFIED` | 按物理区段重置；不得产生独立 Action |
 | 主力控盘副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_main_force_control_page_v1` | `ACTIVE_CODE_VERIFIED` | 必须报告公式 warming 与已验证 repaint 属性；“主力”不证明真实持仓或席位 |
-| 主力照妖镜副图 | 三策略 × `1w/1d/60m`，retrospective only | `newow_zhaoyao_mirror_repainting_page_v1` | `ACTIVE_CODE_VERIFIED` | `repainting=true / formal_signal_eligible=false`；不进入 Hint、Action、ReferenceTrade、收益或历史 as-of 事实 |
+| 主力照妖镜副图 | 三策略 × `1w/1d/60m`，retrospective only | `newow_zhaoyao_mirror_repainting_page_v2` | `ACTIVE_CODE_VERIFIED` | `repainting=true / formal_signal_eligible=false`；不进入 Hint、Action、ReferenceTrade、收益或历史 as-of 事实 |
 | 涨跌动能副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_up_down_energy_page_v1` | `ACTIVE_CODE_VERIFIED` | 短区段 warming/unavailable；不得跨合约借值，且必须报告已验证 repaint 属性 |
 | 杯柄 | `trend × 1d`；`1w/60m = NOT_APPLICABLE` | `newow_cup_handle_v1`，`page_parity=false` | `ACTIVE_CODE_VERIFIED`（clean-room） | 只显示 confirmed D1 witness；`pivot_at` 不是首次可知时间 |
 | 目标/吸筹显示选择 | 三策略共享 `1w/1d/60m` context | `newow_target_absorb_display_selection_page_v2` | `RESEARCH_EVIDENCE_ONLY` | 实现前必须核对日/周选择、周线覆盖、昨收、clamp 与 warm-up；输出来源周期、来源 `bar_end` 与 `as_of`，只读展示不等于交易目标或真实吸筹 |
@@ -1608,6 +1608,43 @@ market payloads, credentials or internal paths, and SHALL NOT change response fa
 - **AND** it SHALL reject pages or curves from a different result identity
 
 
+### Requirement: Read-only experiment transport binds reference pages to verified input
+
+The four public experiments SHALL expose `newow_experiment_detail_v2` with completed-only input identity,
+formula/profile/quality versions, actual last Bar and trading day, source revision, input hash and an opaque
+process-local snapshot token. This transport version SHALL NOT change any kernel, reference price or return.
+A panel SHALL include the complete selected-window curves and summaries but at most three recent reference
+records per model and calculation segment. Historical records SHALL use the same read admission, snapshot
+cache budgets and cursor identity rules as the product service; each request revalidates current inputs.
+No database, Runtime, notification or account write is permitted.
+
+#### Scenario: Historical page is requested from an experiment panel
+- **WHEN** a client supplies a panel token, calculation segment and ordinary or theoretical mode
+- **THEN** the endpoint returns at most the requested limit (default 50, maximum 200), newest first
+- **AND** the next cursor binds the input result, window, segment and mode, and records retain their physical owner.
+
+#### Scenario: Token expires or its verified source changes
+- **WHEN** a token has expired, been evicted, or no longer matches current verified source facts
+- **THEN** the request fails with a snapshot conflict instead of mixing a new page with the old panel
+- **AND** conditional responses include the token generation, so a newly acquired token cannot produce an old 304.
+
+### Requirement: Home event navigation preserves its originating context
+
+A ready home card SHALL attach its product/strategy/frequency, cutoff, input hash and physical calculation
+owner to a detail link. An unavailable card SHALL NOT manufacture such context. The detail SHALL validate
+this hint against the requested identity and compare it with the actual chart; a changed context SHALL be
+shown explicitly without treating the old home event as a current signal. Existing validated home snapshot
+reuse SHALL remain the only reuse path; route hints SHALL NOT become a market data authority.
+
+#### Scenario: Data updates between home and detail
+- **WHEN** the detail chart proves a different cutoff, input hash or physical calculation owner
+- **THEN** the page identifies the update and preserves historical event positioning separately from current state.
+
+Preview quotes and incomplete Bars SHALL remain separate from completed strategy inputs, multi-period
+facts, reference trade projection and returns. Night-session trading day and actual per-role Bar cutoff
+SHALL remain explicit; interface consistency SHALL NOT flatten them into one fictitious timestamp.
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
@@ -1617,3 +1654,14 @@ The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default 
 Minute candidate builds may pin a verified input only while holding the authoritative Canonical maintenance lease; no input cache survives lease release or interruption. `newow_product_reader_intraday_v3` stores full input hash/count and an exact frozen source-evidence hash instead of repeating every Bar fingerprint in each batch. Source evidence is obtained through MDS and verifies Catalog-selected Canonical file bytes, quality/coverage metadata, physical contract lifecycle, rank1 ownership and Calendar/Session facts. A saved result is rejected when that evidence or frozen scope changes. Compact hashes do not constitute append-only proof; changed source/cutoff requires an explicit rebuild. Historical page queries validate the saved scope and may read necessary initial-holding facts before the record window, but cannot extend the snapshot cutoff or through day.
 
 Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading_day and a deterministic result revision independently of the limited record list. This changes delivery completeness only; fusion action order, source-price priority, pairing, terminal OPEN semantics and reference model remain unchanged. Page reference remains non-executable.
+
+
+## 2026-10-20 小心事件与历史路径展示增量
+
+照妖镜 v2 保留六柱、close 5% ZigZag、历史 caution 和末根置零原式，新增末根 fresh、候选峰、独立 tentative 数组与确认下标。主图小心是独立的 `repainting=true / executable=false` 图层，不写入 Action、ReferenceTrade 或收益。峰时间、确认时间、计算截止不可混用；首页按峰事件/末根 fresh 的最近两根日K显示，跨计算段清空。
+
+`newow_cdv2_care_v3402_v1` 适配器从当前周期同 owner、同 calculation segment 的 completed 前缀取最多66个下标，caution===50 则 care=true；末根 fresh 不直接触发 care，tent 继续关闭。来源不足输出 unavailable/null，不能当作已验证 false。care 仅影响解释分数与参考强度上限，不改变策略动作、账户仓位或正式风控。
+
+`guiyi_daily_weekly_path_v3` 的 active 图为 `newow_historical_path_v3402_v1` 历史买卖双线、预测区、周状态背景和 ETA，原 periods 只保留来源事实，不再渲染阶段示意。使用完整普通页面参考投影及物理/质量段内样本，forceClose 不生成真实卖点；缺样本、日历或周状态明确不可用，不跨段拼线。ETA 保留原式日期数组限幅并披露，不外推未来交易日，不作为执行预测。股票私有 target/cost 不反推；期货价格仍使用公开标识的 Canonical 通道。
+
+现有 explanation GET 在 `decision_v2=true` 时可附 `path_strategy=trend|oscillation|main_rise|fusion|osc-test|osc-test2|osc-test3|osc-test4`，参数加入缓存身份。该参数只选择普通页面路径的交易来源，不改变 CDV2 背景公式；主升浪周背景使用自身信号，实验使用震荡背景，融合缺独立周背景时明确不可用。理论收益/范围页签与此普通路径独立，不能标成理论路径。所有历史日期采用上海日，instant 按真实时刻比较。

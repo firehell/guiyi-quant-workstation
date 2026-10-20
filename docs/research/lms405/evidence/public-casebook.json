@@ -1,0 +1,192 @@
+{
+  "schema_version": "lms405-public-casebook-v0.1",
+  "recorded_at": "2026-10-17T00:07:23.077387+00:00",
+  "source_kind": "MANUALLY_EXTRACTED_CURRENT_VISIBLE_TEXT",
+  "historical_immutability_verified": false,
+  "sample_kind": "DEVELOPMENT_PUBLIC_SUBSETS",
+  "cases": [
+    {
+      "id": "JM2701_20260831_PROTECTION",
+      "contract": "JM2701",
+      "source": "https://weibo.com/1885745060/RfUgudQ5d",
+      "available_at": "2026-10-17T00:07:23.077387+00:00",
+      "version_405": true,
+      "actions": [
+        "LOCK"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "SUPER_FAT_TAIL",
+          "DOWNGRADED_PERIOD_ALLOWED",
+          "BEAR_VPLUS_CONFIRMED",
+          "SIGNAL_LOCATION_ALLOWED"
+        ],
+        [
+          "CASE_APPLIES",
+          "GAP_EXCEPTION_APPLIES",
+          "NO_TIME_FOR_VPLUS",
+          "EMERGENCY_ZONE_ALLOWED"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "1",
+        "short": "0"
+      },
+      "action": {
+        "kind": "LOCK",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "该合约、时段、需求和案例仍适用；研究安全约束，非作者公式",
+        "SUPER_FAT_TAIL": "作者所指的当次超级肥尾环境",
+        "DOWNGRADED_PERIOD_ALLOWED": "当次允许下移的周期，原文未披露具体周期",
+        "BEAR_VPLUS_CONFIRMED": "作者规则确认的空头VPLUS，非自制内包判定",
+        "SIGNAL_LOCATION_ALLOWED": "与提前保护位置的匹配有效，非固定触及假设",
+        "GAP_EXCEPTION_APPLIES": "原文所指的某些特殊GAP情形成立，非任意缺口",
+        "NO_TIME_FOR_VPLUS": "该特殊情形确实来不及生成信号",
+        "EMERGENCY_ZONE_ALLOWED": "有该情形下可用的区间许可，非默认沿用普通信号区"
+      },
+      "missing": [
+        "PRIVATE_ZONE_FORMULA",
+        "ORIGINAL_SIGNAL_FORMULA",
+        "PERIOD_SWITCH",
+        "GAP_EXCEPTION_FORMULA",
+        "HISTORICAL_CONTENT_VERSION"
+      ]
+    },
+    {
+      "id": "OI2605_20251217_RECOVER_SHORT",
+      "contract": "OI2605",
+      "source": "https://weibo.com/1885745060/QiRHvgfga",
+      "available_at": "2026-10-17T00:07:23.077387+00:00",
+      "version_405": null,
+      "actions": [
+        "UNLOCK_SHORT"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "PRESSURE_9010_9043",
+          "FRESH_BREAK_8969"
+        ]
+      ],
+      "precedence": [
+        [
+          "PRESSURE_9010_9043",
+          "FRESH_BREAK_8969"
+        ]
+      ],
+      "initial_unit_position": {
+        "long": "1",
+        "short": "1"
+      },
+      "action": {
+        "kind": "UNLOCK_SHORT",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "当次需求、时段及恢复步骤适用，不能从双持自行推断",
+        "PRESSURE_9010_9043": "作者口径的完全压制，不补成一根收盘",
+        "FRESH_BREAK_8969": "完全压制之后重新发生的破位，不用更早破位代替"
+      },
+      "missing": [
+        "VERSION_IDENTITY",
+        "PRESSURE_FORMULA",
+        "NEW_BREAK_CONFIRMATION",
+        "MANUAL_STEP",
+        "ACTION_TIMESTAMPS"
+      ]
+    },
+    {
+      "id": "JM2601_20251028_LONG_ELIGIBILITY",
+      "contract": "JM2601",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405226775914610782",
+      "available_at": "2026-10-17T00:07:23.077387+00:00",
+      "version_405": null,
+      "actions": [
+        "REENTER_LONG",
+        "UNLOCK_LONG"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "BREAK_AND_STAND_1255_5_1265",
+          "LONG_SIGNAL_PERMISSION",
+          "DIRECTIONAL_RESTORATION_PERMISSION"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "0",
+        "short": "0"
+      },
+      "action": {
+        "kind": "REENTER_LONG",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "文章所说下一交易阶段及该需求适用",
+        "BREAK_AND_STAND_1255_5_1265": "当次突破站稳，确认算法未知",
+        "LONG_SIGNAL_PERMISSION": "按原文整体信号框架允许的多向信号，非空间单独开仓",
+        "DIRECTIONAL_RESTORATION_PERMISSION": "具体恢复步骤已确认；回补可能来自空仓重进或锁定恢复，不能互相替代"
+      },
+      "missing": [
+        "VERSION_IDENTITY",
+        "STAND_FIRM_FORMULA",
+        "SIGNAL_FORMULA",
+        "REENTER_VS_UNLOCK",
+        "ACTION_TIMESTAMPS"
+      ]
+    },
+    {
+      "id": "RB2601_20251028_IGNORED_PINBAR",
+      "contract": "RB2601",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405226775914610782",
+      "available_at": "2026-10-17T00:07:23.077387+00:00",
+      "version_405": null,
+      "actions": [
+        "LOCK"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "LONG_TAIL_PINBAR",
+          "AUTHOR_ACCEPTED_CONTEXT"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "1",
+        "short": "0"
+      },
+      "action": {
+        "kind": "LOCK",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "只指图中这一次示例；非所有pinbar",
+        "LONG_TAIL_PINBAR": "图中影线至少实体3倍的局部形态，其他完整定义未知",
+        "AUTHOR_ACCEPTED_CONTEXT": "作者是否接受该图对应上下文；图明确说此前无波动率而不考虑"
+      },
+      "disclosed_conditions": [
+        {
+          "name": "AUTHOR_ACCEPTED_CONTEXT",
+          "value": false,
+          "observed_at": "2026-10-17T00:07:23.077387+00:00",
+          "known_at": "2026-10-17T00:07:23.077387+00:00",
+          "source": "https://weibo.com/ttarticle/p/show?id=2309405226775914610782#RB-chart-1",
+          "time_kind": "RESEARCH_READING_TIME_NOT_AUTHOR_BAR_TIME"
+        }
+      ],
+      "missing": [
+        "VERSION_IDENTITY",
+        "AUTHOR_BAR_TIME",
+        "PERIOD",
+        "COMPLETE_PINBAR_FORMULA",
+        "VOLATILITY_FORMULA"
+      ]
+    }
+  ]
+}

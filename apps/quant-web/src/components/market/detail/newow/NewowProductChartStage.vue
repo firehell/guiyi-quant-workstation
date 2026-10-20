@@ -131,6 +131,7 @@ const referencePriceLines = new Map<string, IPriceLine>()
 const stageRoot = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
 const fullscreenError = ref<string | null>(null)
+const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean}>>([])
 const volumeTop = ref(0)
 const auxiliaryTop = ref(0)
 const actionOverlayTop = ref(0)
@@ -514,6 +515,7 @@ function renderMarkers(value: NewowProductChartModel | null): void {
 }
 
 function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
+  cautionOverlays.value = []
   attackOverlays.value = []
   processOverlays.value = []
   cycleCountOverlays.value = []
@@ -538,6 +540,15 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   actionOverlayHeight.value = height
   actionOverlayLeft.value = container.value.offsetLeft
   actionOverlayWidth.value = width
+  cautionOverlays.value = []
+  for (const event of props.response?.value?.caution_events ?? []) {
+    const bar=value.bars.find(bar=>bar.barEnd===event.bar_end)
+    if (!bar) continue
+    const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay))
+    const y=priceToCoordinate.call(candles,bar.close)
+    if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
+      cautionOverlays.value.push({x,y:Math.max(3,y-22),key:bar.barEnd,tentative:event.tentative})
+  }
   if (showHints.value && !comparisonActive.value) {
     cycleCountOverlays.value = (value.cycleCounts ?? []).flatMap(({ bar, color }) => {
       const x = timeToCoordinate.call(scale, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay))
@@ -607,6 +618,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   const breakout = newowOscillationBreakout(value)
   const breakoutY = breakout ? priceToCoordinate.call(candles, breakout.price) : null
   const reserved = breakoutY === null ? [] : [{ left: Math.max(0, width - 110), top: breakoutY - 22, width: 110, height: 44 }]
+  reserved.push(...cautionOverlays.value.map(p=>({left:p.x-22,top:p.y,width:44,height:20})))
   const actionById = new Map(value.actions.map(action => [action.id, action]))
   positionedActions.value = layoutNiuwaReferenceCallouts(buildNewowActionCallouts(value).flatMap(callout => {
     const action = actionById.get(callout.id)
@@ -841,6 +853,9 @@ defineExpose({ revealSignal, scrollToLatest })
       @wheel="scheduleActionProjection"
       @dblclick="scheduleActionProjection"
     />
+    <div class="newow-caution-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
+      <span v-for="item in cautionOverlays" :key="item.key" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" title="主力照妖镜历史回看小心提示，会重绘，非交易信号">小心</span>
+    </div>
     <div v-if="showHints && (processOverlays.length || cycleCountOverlays.length)" class="newow-process-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="主图过程提示，非成交">
       <i v-for="item in cycleCountOverlays" :key="item.barEnd" class="newow-cycle-count" :data-cycle-count-bar="item.barEnd" :style="{ left: `${item.x}px`, top: `${item.top}px`, height: `${item.height}px`, background: item.color }" />
       <span v-for="item in processOverlays" :key="item.id" :data-process-hint-id="item.id" :data-hint-kind="item.kind" :data-anchor-price="item.anchorPrice" :class="{ below: item.below, cycle: item.cycle }" :style="{ left: `${item.x}px`, top: `${item.y}px`, color: item.color }">{{ item.text }}</span>
@@ -954,6 +969,8 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-product-chart-stage__volume-score header { display:flex; justify-content:space-between; align-items:center; }.newow-product-chart-stage__volume-score button { min-height:28px; }
 .newow-product-chart-stage__volume-score p,.newow-product-chart-stage__volume-score small { color:var(--gy-text-muted); line-height:1.7; margin:6px 0; }
 .newow-product-chart-stage__volume-score dl { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:8px 0; }.newow-product-chart-stage__volume-score dt { color:#98a2b3; }.newow-product-chart-stage__volume-score dd { margin:4px 0; color:#b77900; }.newow-product-chart-stage__volume-score article { border-top:1px solid #f2f4f7; padding-top:8px; }
+.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay span{position:absolute;transform:translateX(-50%);border-radius:8px;padding:1px 6px;background:#00ff00;color:#111;font-size:11px;line-height:16px;white-space:nowrap}
+.newow-caution-overlay .tentative{background:transparent;border:1px dashed #00b800;color:#008800}
 </style>
 
 <style scoped>

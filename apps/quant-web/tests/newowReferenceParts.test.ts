@@ -215,3 +215,21 @@ test('explicit history accumulation stops at 300 without treating the cap as ser
   assert.equal(requests.filter(item => item.part === 'history').length, 6)
   scope.stop()
 })
+
+test('ideal tab survives strategy switches but never crosses product or period identity', () => {
+ const raw=buildNewowFixtureEnvelopeForTest('chart','trend','1d')
+ const chart=ref<any>({meta:raw.meta,section:'chart',...raw.chart}),scope=effectScope(),fusion=ref(false)
+ const state=scope.run(()=>useNewowReferenceParts(chart,ref(false),fusion))!
+ try {
+  state.select('page_ideal')
+  const previous=chart.value;chart.value=null;assert.equal(state.mode.value,'page_ideal')
+  chart.value={...previous,meta:{...previous.meta,identity:{...previous.meta.identity,strategy:'oscillation'},snapshot_token:'next-strategy'}}
+  assert.equal(state.mode.value,'page_ideal');assert.equal(state.overview.value,null)
+  fusion.value=true;assert.equal(state.mode.value,'fusion_page_ideal')
+  chart.value={...chart.value,meta:{...chart.value.meta,identity:{...chart.value.meta.identity,product:'jm'}}}
+  assert.equal(state.mode.value,'fusion_page_ordinary')
+  state.select('fusion_page_ideal')
+  chart.value={...chart.value,meta:{...chart.value.meta,identity:{...chart.value.meta.identity,frequency:'1w'}}}
+  assert.equal(state.mode.value,'fusion_page_ordinary')
+ }finally{scope.stop()}
+})

@@ -365,7 +365,9 @@ class NewowExperimentService:
         if not chart:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         ready = segments[-1]["readiness"]["status"] == "READY"
+        from .product_service import _fingerprint
         return dict(
+            data_revision_identity=_fingerprint(read, product_identity),
             schema_version="newow_experiment_detail_v1",
             product=query.product,
             frequency=query.frequency.value,

@@ -32,6 +32,7 @@ from guiyi_quant.newow.product_adapters import (
 )
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 
+from .home_cards import project_caution_events
 from .page_performance_adapter import project_page_performance
 from .product_macd import MACD_CACHE_IDENTITY, calculate_macd_display
 from guiyi_quant.newow.product_contracts import (
@@ -160,8 +161,11 @@ class ProductServiceQuery:
     include_fusion: bool = False
     fusion_before: str | None = None
     decision_v2: bool = False
+    path_strategy: str | None = None
 
     def __post_init__(self) -> None:
+        if self.path_strategy is not None and (not self.decision_v2 or self.path_strategy not in ('trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4')):
+            raise ValueError('NEWOW_SECTION_PARAMETER_INVALID')
         if self.decision_v2 and (self.section != "explanation" or self.frequency not in ("1d", "1w", "60m")):
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.fusion_before is not None and not self.include_fusion:
@@ -259,6 +263,7 @@ class ChartSectionValue:
     next_older_window: str | None = None
     price_unavailable_days: tuple[tuple[date, str, str], ...] = ()
     home_summary: dict[str, object] | None = None
+    caution_events: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1309,7 +1314,7 @@ class NewowProductService:
             request.reference_mode.value if request.reference_mode else None,
             request.include_fusion,
             request.fusion_before,
-            request.decision_v2,
+            request.decision_v2, request.path_strategy,
         )
 
     def _page_identity(
@@ -1396,7 +1401,7 @@ class NewowProductService:
                 )
             )
         elif request.section is ProductSection.EXPLANATION:
-            deliveries[request.section] = self._explanation(read, identity, decision_v2=request.decision_v2, cancelled=cancelled)
+            deliveries[request.section] = self._explanation(read, identity, decision_v2=request.decision_v2, path_strategy=request.path_strategy, cancelled=cancelled)
         else:
             deliveries[request.section] = self._comparator(read, identity)
         self._check_cancelled(cancelled)
@@ -1524,6 +1529,11 @@ class NewowProductService:
              anchor.bar.bar.physical_contract, anchor.bar.bar.bar_end),
             lambda: project_home_inputs(replay, anchor),
         ) if anchor is not None else None
+        visible_caution_owners = {
+            (f.bar.bar.bar_end.isoformat(), f.bar.bar.physical_contract,
+             f.bar.bar.segment_id, f.bar.calculation_segment_id)
+            for f in selected
+        }
         return SectionDelivery(
             "delivered",
             status,
@@ -1536,6 +1546,8 @@ class NewowProductService:
                 page_identity,
                 channel if identity.strategy is ProductStrategy.TREND else None,
                 price_reference,
+                caution_events=tuple(e for e in project_caution_events(replay)
+                    if (e["bar_end"], e["physical_contract"], e["segment_id"], e["calculation_segment_id"]) in visible_caution_owners),
                 home_summary=project_home_summary(replay, anchor, status, price_reference, shared_home),
                 price_unavailable_days=tuple(
                     (gap.trading_day, gap.physical_contract, gap.segment_id)
@@ -1743,7 +1755,7 @@ class NewowProductService:
         return replace(value, items=items, next_before=next_before)
 
     def _explanation(
-        self, read: ProductReadSet, identity: ProductIdentity, *, decision_v2: bool = False,
+        self, read: ProductReadSet, identity: ProductIdentity, *, decision_v2: bool = False, path_strategy: str | None = None,
         cancelled: Callable[[], bool] | None = None,
     ) -> SectionDelivery:
         trend = {
@@ -1797,7 +1809,15 @@ class NewowProductService:
                 main_bars, lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(main_frequency, ()),
                 data_interruptions=read.data_interruptions_by_frequency.get(main_frequency, ()), cancelled=cancelled,
             ) if main_bars and main_frequency not in INTRADAY_PRODUCT_FREQUENCIES else None
-            addon = build_decision_v2(trend, oscillation, main, read, identity)
+            main_paths = {}
+            if path_strategy == 'main_rise':
+                for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY):
+                    bars = read.bars_by_frequency.get(freq, ())
+                    if bars:
+                        main_paths[freq] = self._replay_strategy(build_product_identity(identity.product, ProductStrategy.MAIN_RISE, freq,
+                            input_quality_policy=read.input_quality_policies_by_frequency.get(freq, InputQualityPolicy.V1)), bars,
+                            lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(freq,()), data_interruptions=read.data_interruptions_by_frequency.get(freq,()), cancelled=cancelled)
+            addon = build_decision_v2(trend, oscillation, main, read, identity, path_strategy=path_strategy, main_paths=main_paths)
             for replays, strategy in ((trend, ProductStrategy.TREND), (oscillation, ProductStrategy.OSCILLATION)):
                 for frequency in LEGACY_PRODUCT_FREQUENCIES:
                     if frequency not in replays:

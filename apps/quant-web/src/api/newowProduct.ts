@@ -364,7 +364,7 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     if (request.historyLimit !== undefined) common.history_limit = request.historyLimit
     if (request.historyBefore !== undefined) common.history_before = request.historyBefore
   }
-  if (request.section === 'explanation' && request.decisionV2) common.decision_v2 = true
+  if (request.section === 'explanation' && request.decisionV2) { common.decision_v2 = true; if (request.pathStrategy) common.path_strategy = request.pathStrategy }
   if (request.snapshotToken !== undefined) common.snapshot_token = request.snapshotToken
   return common
 }
@@ -380,10 +380,10 @@ async function defaultRequest(path: string, config: ProductRequestConfig): Promi
   return request.get<never, unknown>(path, config)
 }
 
-function classifyTransportError(error: unknown): NewowProductRequestError {
+export function classifyTransportError(error: unknown): NewowProductRequestError {
   if (isAbort(error)) return new NewowProductRequestError('NEWOW_REQUEST_CANCELLED', 'cancelled')
   const detail = httpDetail(error)
-  if (detail?.status === 429 && detail.code === 'NEWOW_RESOURCE_BUSY') return new NewowProductRequestError(detail.code, 'busy')
+  if (detail && [429,503].includes(detail.status) && ['NEWOW_RESOURCE_BUSY','NEWOW_SERVICE_BUSY'].includes(detail?.code ?? '')) return new NewowProductRequestError(detail.code, 'busy')
   if (detail?.status === 429 && detail.code === 'NEWOW_REQUEST_CANCELLED') return new NewowProductRequestError(detail.code, 'cancelled')
   if (detail?.status === 409 && UNAVAILABLE_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'unavailable', detail.diagnostic)
   if (detail?.status === 409 && CONFLICT_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'conflict')

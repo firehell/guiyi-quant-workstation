@@ -1,30 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { dailyWeeklyPathGeometry } from '../src/utils/newowDailyWeeklyPath.ts'
-
-const price = (raw: string) => ({ raw }) as any
-const period = (frequency: '1d' | '1w' | '60m', cost: string | null, target: string | null, state = 'hold') => ({ frequency, state, status:'ready' as const, cost:cost ? price(cost) : null, current:price('110'), target:target ? price(target) : null, reason:null })
-
-test('daily and weekly path use one price scale, distinct cost, state-specific path on one scale', () => {
-  const view = dailyWeeklyPathGeometry([period('1w','90','160'),period('1d','101','125')])
-  assert.equal(view[0].label,'周线')
-  assert.ok(view[0].cost!.y > view[1].cost!.y)
-  assert.equal(view[0].current!.y,view[1].current!.y)
-  assert.ok(view[0].target!.y < view[1].target!.y)
-  assert.equal(view[0].active,true)
-})
-test('flat and missing values never fabricate cost, target or price movement', () => {
-  const view = dailyWeeklyPathGeometry([period('1d',null,null,'wait')])
-  assert.equal(view[0].cost,null)
-  assert.equal(view[0].target,null)
-  assert.equal(view[0].active,false)
-  assert.equal(view[0].current!.y,200)
-})
-test('nonfinite or nonpositive display values are unavailable', () => {
-  const view = dailyWeeklyPathGeometry([period('1d','NaN','0')])
-  assert.equal(view[0].cost,null)
-  assert.equal(view[0].target,null)
-})
 
 import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts'
@@ -76,18 +51,41 @@ test('runtime normalizer rejects path identity, source category, future and pre-
   }
 })
 
-test('hourly path keeps distinct cost and target on shared current scale', () => {
-  const view = dailyWeeklyPathGeometry([period('1w','90','160'),period('1d','101','125'),period('60m','105','119')])
-  assert.equal(view[2].label,'60分')
-  assert.equal(view[2].current!.y,view[0].current!.y)
-  assert.notEqual(view[2].cost!.y,view[1].cost!.y)
-  assert.equal(view[2].stateLabel,'持有')
+import { historicalPathGeometry } from '../src/utils/newowDailyWeeklyPath.ts'
+function historyWire(){
+  const raw=pathWire(),p=raw.explanation.value.decision_v2.daily_weekly_path
+  p.version='guiyi_daily_weekly_path_v3'
+  p.history={version:'newow_historical_path_v3402_v1',status:'ready',reason:null,holding:true,current:'110',target:'125',cost:'100',page_parity:true,executable:false,
+    buys:[{date:'2026-08-01',price:'100'},{date:'2026-08-15',price:'105'}],sells:[{date:'2026-08-08',price:'120'}],background:[],eta:null,
+    source:{physical_contract:'RB2701',segment_id:'owner',calculation_segment_id:'1d-calc',bar_end:NEWOW_AS_OF,as_of:NEWOW_AS_OF,strategy:'trend',price_source:'canonical_channel',background_status:'unavailable'}}
+  return raw
+}
+test('new history rejects invalid prices, owner, sample, order and future points',()=>{
+  normalizeNewowProductResponse(historyWire(),pathRequest)
+  for(const mutate of [(h:any)=>h.current='bad',(h:any)=>h.source.physical_contract='OTHER',(h:any)=>h.buys=[],(h:any)=>h.buys.reverse(),(h:any)=>h.buys[1].date='2099-01-01']){
+    const raw=historyWire();mutate(raw.explanation.value.decision_v2.daily_weekly_path.history)
+    assert.throws(()=>normalizeNewowProductResponse(raw,pathRequest))
+  }
+})
+test('history geometry has bounded labels, hollow points and separate buy/sell paths',()=>{
+  const h=historyWire().explanation.value.decision_v2.daily_weekly_path.history
+  for(const width of [480,1200]){
+    const g=historicalPathGeometry(h,width)
+    assert.equal(g.buy.length,2);assert.equal(g.sell.length,1)
+    assert.ok(g.segments.some(s=>s.holding));assert.ok(g.segments.some(s=>!s.holding))
+    assert.ok(g.labels.every(l=>Number.isFinite(l.y)&&l.x>=45&&l.x<=width-100))
+    assert.ok(!g.envelope.includes('NaN'))
+  }
 })
 
-test('clear and flat line styles do not invent costs', () => {
-  const view = dailyWeeklyPathGeometry([period('60m','105','119','sell'),period('60m',null,'119','wait')])
-  assert.equal(view[0].dash,'7 5')
-  assert.equal(view[0].stateLabel,'清仓')
-  assert.equal(view[1].cost,null)
-  assert.equal(view[1].dash,'2 5')
+test('Shanghai historical dates accept an overnight UTC cutoff without admitting tomorrow',()=>{
+  const asOf='2026-09-03T17:00:00Z',raw=JSON.parse(JSON.stringify(historyWire()).replaceAll(NEWOW_AS_OF,asOf))
+  raw.meta.as_of=asOf;raw.meta.read_at='2026-09-03T17:01:00Z'
+  const d=raw.explanation.value.decision_v2
+  d.cdv2.as_of=asOf;d.daily_weekly_path.as_of=asOf
+  const h=d.daily_weekly_path.history;h.source.as_of=asOf
+  h.buys[1].date='2026-09-04';h.background=[{start:'2026-09-03',end:'2026-09-04',state:'hold'}]
+  normalizeNewowProductResponse(structuredClone(raw),{...pathRequest,asOf})
+  h.buys[1].date='2026-09-05'
+  assert.throws(()=>normalizeNewowProductResponse(raw,{...pathRequest,asOf}))
 })

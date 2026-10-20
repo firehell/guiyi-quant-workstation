@@ -24,6 +24,7 @@ export interface NewowZhaoyaoMirrorDatum {
   readonly exit: number
   readonly inducement: number
   readonly caution: number
+  readonly tentative?: number
 }
 
 interface MirrorSourceSeries {
@@ -33,15 +34,15 @@ interface MirrorSourceSeries {
 
 /** Joins server-owned split series without collapsing repeated keys from later physical segments. */
 export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[]): NewowZhaoyaoMirrorDatum[] {
-  type MutableRow = { time: Time; entry: number; wash: number; distribution: number; markup: number; exit: number; inducement: number; caution: number }
+  type MutableRow = { time: Time; entry: number; wash: number; distribution: number; markup: number; exit: number; inducement: number; caution: number; tentative: number }
   const rows = new Map<number, MutableRow>()
-  const allowed = new Set(['entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'caution'])
+  const allowed = new Set(['entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'caution', 'tentative'])
   for (const source of series) {
     if (!allowed.has(source.key)) continue
     for (const point of source.points) {
       let row = rows.get(point.index)
       if (!row) {
-        row = { time: point.time, entry: 0, wash: 0, distribution: 0, markup: 0, exit: 0, inducement: 0, caution: 0 }
+        row = { time: point.time, entry: 0, wash: 0, distribution: 0, markup: 0, exit: 0, inducement: 0, caution: 0, tentative: 0 }
         rows.set(point.index, row)
       }
       row[source.key as keyof Omit<MutableRow, 'time'>] = point.value
@@ -60,6 +61,7 @@ export interface NewowZhaoyaoMirrorDrawItem {
   readonly toY: number
   readonly dash?: readonly number[]
   readonly text?: string
+  readonly hollow?: boolean
 }
 export interface NewowZhaoyaoMirrorCommands {
   readonly zeroY: number
@@ -98,8 +100,8 @@ export function buildNewowZhaoyaoMirrorCommands(
     if (row.exit > 0) items.push({ kind: 'exit', color: NEWOW_ZHAOYAO_MIRROR_STYLE.exit, x, fromY: up(row.exit), toY: zeroY, dash: [2, 2] })
     if (row.inducement > 0) items.push({ kind: 'inducement', color: NEWOW_ZHAOYAO_MIRROR_STYLE.inducement, x, fromY: zeroY, toY: down(row.inducement), dash: [2, 2] })
   }
-  for (const { row, x } of visible) if (row.caution === 50) {
-    items.push({ kind: 'caution', color: NEWOW_ZHAOYAO_MIRROR_STYLE.caution, x, fromY: padTop + 2, toY: zeroY, dash: [3, 3], text: '小 心' })
+  for (const { row, x } of visible) if (row.caution === 50 || row.tentative === 50) {
+    items.push({ kind: 'caution', color: NEWOW_ZHAOYAO_MIRROR_STYLE.caution, x, fromY: padTop + 12, toY: zeroY, dash: row.tentative === 50 ? [1, 3] : [3, 3], text: '小心', hollow: row.tentative === 50 })
   }
   return { zeroY, barWidth, items }
 }
@@ -137,7 +139,7 @@ function drawItem(context: CanvasRenderingContext2D, item: NewowZhaoyaoMirrorDra
     context.fillRect(item.x! - item.width! / 2, item.fromY, item.width!, item.toY - item.fromY)
   } else if (item.kind === 'caution') {
     const apexY = item.fromY
-    context.beginPath(); context.moveTo(item.x!, apexY); context.lineTo(item.x! - 6, apexY + 10); context.lineTo(item.x! + 6, apexY + 10); context.closePath(); context.fill()
+    context.beginPath(); context.moveTo(item.x!, apexY); context.lineTo(item.x! - 6, apexY + 10); context.lineTo(item.x! + 6, apexY + 10); context.closePath(); if (item.hollow) { context.setLineDash([]); context.stroke() } else context.fill(); context.setLineDash(item.dash ? [...item.dash] : [])
     context.font = 'bold 10px -apple-system, sans-serif'; context.textAlign = 'center'; context.textBaseline = 'bottom'; context.fillText(item.text!, item.x!, apexY - 3)
     context.beginPath(); context.moveTo(item.x!, apexY + 10); context.lineTo(item.x!, item.toY); context.stroke()
   } else {

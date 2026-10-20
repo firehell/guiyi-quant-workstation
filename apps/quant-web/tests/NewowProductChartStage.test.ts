@@ -926,3 +926,18 @@ function nodeOperations() {
 
 type MutableChartResponse = Mutable<NewowProductSectionResponse<'chart'>>
 type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? Mutable<U>[] : T[K] extends object ? Mutable<T[K]> : T[K] }
+
+test('independent caution layer survives auxiliary selection and clears on strategy switch',async()=>{
+  const Stage=await loadComponent(),response=ref(chartResponse()),switching=ref(false)
+  const b=response.value.value!.bars[0]!
+  response.value.value!.caution_events=[{bar_end:b.bar_end,peak_day:b.trading_day,confirmed_at:null,as_of:b.bar_end,tentative:true,physical_contract:b.physical_contract,segment_id:b.segment_id,calculation_segment_id:b.calculation_segment_id,formula_version:'newow_zhaoyao_mirror_repainting_page_v2',repainting:true,executable:false}]
+  const scale={width:()=>500,timeToCoordinate:()=>210,fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>null,scrollToRealTime(){},subscribeVisibleLogicalRangeChange(){},unsubscribeVisibleLogicalRangeChange(){}}
+  const fakeChart={addSeries:()=>({setData(){},createPriceLine(){},attachPrimitive(){},detachPrimitive(){},priceToCoordinate:(price:number)=>price*2}),removeSeries(){},panes:()=>[400,100,100].map(height=>({getHeight:()=>height,setStretchFactor(){}})),timeScale:()=>scale,subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
+  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response:response.value,strategy:'oscillation',selectedSignalId:null,strategySwitching:switching.value})}))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart));const root=element('root');app.mount(root);await nextTick();await nextTick()
+  const layer=()=>findNode(root,n=>n.props.class==='newow-caution-overlay')!
+  assert.match(textContent(layer()),/小心/)
+  switching.value=true;await nextTick();await nextTick()
+  assert.doesNotMatch(textContent(layer()),/小心/)
+  app.unmount()
+})

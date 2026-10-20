@@ -1,20 +1,36 @@
 # 当前状态
 
-## 10/18 v1.15.11 数据恢复完成，统一发布候选
+## 10/20 v1.15.13 发布候选验证完成
+
+候选基于develop a821448b5，汇总牛哇care/暂定峰生命周期/历史路径、视觉交互和只读接口统一，以及既有L.M.S研究文档；11个未提交布局文件排除并保留。发布预检修复重叠物理预热前缀的小心事件owner污染，保留完整前缀计算，仅发射eligible锚点并按四项身份匹配；独立Review及修复复审通过。
+后端/工程418 passed，完整Web1143 passed/1 skipped，类型/build/topology、OpenSpec strict11、secret/diff通过。健康测试从旧硬编码改读唯一APP_VERSION，候选版本1.15.13。main/tag/GitHub Release尚待执行；结果不预写。
+本次仅发布，不切换Runtime。现场十项服务身份仍为v1.15.12/gen21/13c86b735，API/Web可读；完整Runtime健康degraded（db/redis/after_market ok，live/alert degraded），不声明RUNTIME_READY，不重放或补发。现役v12发布树有引用继续保留。
+
+## 10/19 v1.15.12 已发布、正式切换及旧目录清理完成
+
+健康读取已改为必要字段SQL投影，源码4619db48e；PR460已合并并发布v1.15.12，main/tag peeled为13c86b7351b8977b8bca96e17feb2399f181a159。161项定向测试（1 skipped）、候选177项（1 skipped）、构建及独立Review通过。正式绑定/十项配置现已统一v1.15.12/gen21/schema20261015_0052，运行根.worktrees/release-v1.15.12；六常驻PID双轮一致、四calendar空闲，API8000和Web5173实际返回1.15.12，Web index与exact发布dist一致。
+独立验收RUNTIME_SWITCH_VERIFIED_READBACK：同一生产RR/READ ONLY快照旧/新完整health相等，43.398秒→7.736秒；正式Reference健康HTTP200/8.584秒，与新鲜原生health完整逐字一致。当前720 enabled、540 READY/180 DATA_CONFLICT、pending Capture0，真实degraded保持；不声明RUNTIME_READY。start十项effect均一次committed，最后即时owner采样停止记录保留，未重跑启动，由独立验收完成读回。
+历史进度边界已修正并经212测试及独立Review：固定派生disabled historical_replay身份仅允许5个原生checkpoint进度字段单调推进，旧payload身份/链字段、现役forward、Scope、公式和其他受保护事实保持；启动后的合法历史推进与reconciliation追加分别验证，不要求自然业务静止。第一轮失败attempt及原Feed精确cancel恢复证据保留。新attempt002完整plan、sealed drain、安装与独立验收见output/release-v11512-20261019-attempt002。
+今天自然Live/Alert处理至15:00，249 Event来源逐条核实，HTDY12条provider accepted、1 failed/unknown、8 expired；SuBing183静默/45 expired，无手机ACK。18:05主更新60品种passed、720分区发布，旧16日journal自然到期后原生恢复；覆盖状态仍需新自然观察，PR/SF历史零值与10项预热不足保持。新v12自然Bar/Event与手机实际送达尚未证实，不重放或补发。
+旧v11目录已完成精确归档校验、部署锁内fresh零引用复核及非force移除；清理receipt COMPLETE，本地只保留v1.15.12正式发布运行树，Git tag/Release历史和数据保留。清理工具的私有配置导入顺序和瞬时owner采样边界已修正，51项/45项回归及独立Review通过，失败attempt冻结保留。删除后NEW_ONLY_FINAL_READBACK_VERIFIED：唯一正式运行树v1.15.12，六PID双轮一致、四calendar空闲；API/Web返回1.15.12，Reference直连HTTP200/8.404秒、Web代理HTTP200/8.965秒，分别与原生新鲜health逐字一致。具体事实见[性能与自然链路记录](docs/tasks/reference-health-timeout-20261019.md)。
+
+## 10/18 v1.15.11 已发布并完成正式运行切换
 
 包含v1.15.10及本轮数据审计、Reference完整预热冲突恢复和旧日写入/游标TTL修复。
 历史修复49个scope、919个目标分区完成；PF/PK/PL typed质量和周线闭包完成，更新后原生完整审计60/60通过，七周期postplan均零目标，截至10/16。
 720路historical资产全部核验，212路forward冲突全部恢复；旧观察、Capture/Reconciliation、历史收据和通知事实保留，不重放、不补发。
-四个现役gen19 writer已恢复原PID，新鲜heartbeat及恢复前后完整输入/数据库事实一致；Reference720 READY、pending Capture0。
+切换前四个gen19 writer已恢复原PID，新鲜heartbeat及恢复前后完整输入/数据库事实一致；Reference720 READY、pending Capture0。
 120路D1/W1计算输入有效，110 READY，10路因物理段有效预热不足仍warming，不伪造补暖。
 发布候选代码测试、真实隔离PG/Redis验证及独立Review通过；冷切换caller105项复验通过。
-当前正式Runtime仍v1.15.7/gen19/schema0051，v1.15.11 main/tag/Release及切换尚待实际执行；自然Bar/Event/通知送达不由闭市恢复推导。
+v1.15.11已正式发布：PR#459已合并，main/tag peeled为9d72e3fbdd1e3d7ca011c075bcfd46fbff6e9ad1，GitHub Release非draft/prerelease。正式绑定/十项配置已统一为v1.15.11/gen20/schema0052，运行根为.worktrees/release-v1.15.11；六项常驻新PID双轮一致、身份/loaded/cwd/heartbeat通过，四日历空闲。API8000及Web5173实际返回1.15.11，Web index与该发布dist逐字一致。独立只读new-runtime-acceptance-002核验输入和旧DB事实不变、七新字段全NULL、720 READY/pending Capture0。原start十effect均committed，但最终即时owner检查失败；原记录保留，不重跑启动/迁移，由独立验收完成切换读回。
+新exact tag原生manual全历史审计21:33–22:54实际exit0：60/60、through10/16、findings_complete=true，finding/partial/provider/data_writes全0，weekly读回passed。审计通过后，归档验证及部署锁内原生零引用复核通过，旧v7/v10本地发布树已非force移除，仅保留v11现役发布树；Git tag/Release历史及数据证据保留。清理后API/Web代理200/version1.15.11，十运行身份matched，DB/Redis/Live/盘后ok。reference同代码隔离只读profile38.502秒，720 READY/pending Capture0、240端点调用零异常；端点阶段5.878秒，其余32.624秒尚未细分，不能认定端点读取是主要瓶颈，HTTP性能仍TIMEOUT_NOT_ACCEPTED。runtime总体仍degraded：Alert110 ok/226 lagging/75 pending/10 warming_up，十项与已确认物理段预热不足一致；自然Bar/Event/通知送达未证实，不声明RUNTIME_READY。
 详见[恢复与发布记录](docs/tasks/data-recovery-v1.15.11.md)。
 
-## 10/16 v1.15.10 发布候选与切换阻断
+## 10/16 v1.15.10 已发布，Runtime切换阻断
 
+v1.15.10已发布：tag peeled/main为79c6ed573234ec6737e860f197498738a51c7c7d，PR #458合并，GitHub Release非draft/prerelease；develop已同步。
 已汇总已验收develop、版本准备和已发布main，完成完整Web1133 passed/3 skipped、发布相关后端185 passed、build/type/topology、OpenSpec11及secret零发现。
-现役仍为v1.15.7/gen19/schema0051。当前Reference720启用中508 READY、212 DATA_CONFLICT、pending0；完整就绪Gate失败。
+10/16当时现役为v1.15.7/gen19/schema0051，Reference720启用中508 READY、212 DATA_CONFLICT、pending0；当时完整就绪Gate失败，10/18恢复与切换结果见上。
 未drain、未迁移、未切换；发布与Runtime独立记录。见[发布汇总](docs/tasks/release-all-v1.15.10.md)。
 
 ## 10/16 八批看盘优化工程验收

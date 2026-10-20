@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { MAX_ACCUMULATED_REFERENCE_TRADES } from '@/utils/newowReferenceParts'
 import PerformancePanel from '../../../performance/PerformancePanel.vue'
 import ReturnCurveSvg from '../../../charts/ReturnCurveSvg.vue'
 import { returnCurveLayout } from '@/utils/returnCurveLayout'
@@ -9,7 +10,7 @@ import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonch
 import {newowReferencePoints,newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
 import {createChart,CandlestickSeries,LineSeries,createSeriesMarkers,type IChartApi,type UTCTimestamp,type ISeriesMarkersPluginApi,type Time,type IPriceLine} from 'lightweight-charts'
-import {getNewowExperiment} from '@/api/newowExperiments'
+import {getNewowExperiment,getNewowExperimentHistory} from '@/api/newowExperiments'
 import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
 import {formatPerformancePercent} from '@/utils/marketDisplay'
 import {pagePerformanceAnnualized} from '@/utils/newowPagePerformance'
@@ -28,11 +29,32 @@ const chartBars=computed(()=>{const segment=visibleSegments.value[0];return data
 const chartMarkers=computed(()=>{const segment=visibleSegments.value[0];return data.value?.segments.length&&!segment?[]:(data.value?.markers??[]).filter(m=>!segment||m.segment_id===segment.segment_id)})
 watch([data,selectedSegment],()=>{const segment=visibleSegments.value[0];emit('context',data.value?{asOf:data.value.as_of,physicalContract:segment?.physical_contract??null,segmentId:segment?.segment_id??null,latestState:segment?.latest_state??null}:null)})
 watch(data,()=>{selectedSegment.value=null})
-const recordCount=ref(3)
+const recordCount=ref(3),historyRows=ref<Record<string,unknown>[]>([]),historyStarted=ref(false),historyLoading=ref(false),historyError=ref(''),historyBefore=ref<string|null>(null)
+let historyController:AbortController|null=null,historyGeneration=0
+function resetHistory(){historyGeneration++;historyController?.abort();historyRows.value=[];historyStarted.value=false;historyLoading.value=false;historyError.value='';historyBefore.value=null}
+onBeforeUnmount(resetHistory)
+async function moreRecords(){
+ const panel=data.value,segment=visibleSegments.value[0];if(!panel||!segment||historyLoading.value)return
+ if(historyRows.value.length>recordCount.value){recordCount.value=historyRows.value.length;return}
+ if(historyStarted.value&&!historyBefore.value){recordCount.value=historyRows.value.length;return}
+ if(historyRows.value.length>=MAX_ACCUMULATED_REFERENCE_TRADES){historyError.value='已达到单页记录上限，请缩小统计窗口。';return}
+ const own=++historyGeneration;historyController?.abort();historyController=new AbortController();historyLoading.value=true;historyError.value=''
+ try{
+  const page=await getNewowExperimentHistory({product:props.product,frequency:props.frequency,kind:props.kind,as_of:panel.as_of,...experimentRangeParams(panel.as_of,range.value),snapshot_token:panel.meta.snapshot_token,reference_part:'history',reference_mode:mode.value,segment_id:segment.segment_id,...(historyStarted.value&&historyBefore.value?{history_before:historyBefore.value}:{}),history_limit:Math.min(50,MAX_ACCUMULATED_REFERENCE_TRADES-historyRows.value.length)},panel,historyController.signal)
+  if(own!==historyGeneration)return
+  historyRows.value=historyStarted.value?[...historyRows.value,...page.items]:page.items;historyStarted.value=true;historyBefore.value=page.next_before;recordCount.value=historyRows.value.length
+ }catch(failure){if(own===historyGeneration){
+  const classification=failure instanceof Error && 'classification' in failure ? failure.classification : null
+  if(classification==='conflict'||classification==='response_invalid'){resetHistory();data.value=null;error.value='快照已变化或响应校验失败，旧结果已清除，请重试当前实验。'}
+  else historyError.value='历史记录暂时读取失败，请重试。'
+ }}finally{if(own===historyGeneration)historyLoading.value=false}
+}
 watch([data,selectedSegment],()=>{recordCount.value=3})
 const mode=ref<'ordinary'|'theoretical'>('ordinary')
+watch([data,selectedSegment,mode],resetHistory)
 watch(mode,()=>{recordCount.value=3})
-watch(()=>[props.product,props.frequency,props.kind].join(':'),()=>{mode.value='ordinary'})
+watch(()=>[props.product,props.frequency].join(':'),()=>{mode.value='ordinary'})
+function selectRange(next: ExperimentRange | 'ideal') { mode.value = next === 'ideal' ? 'theoretical' : 'ordinary'; range.value = next === 'ideal' ? 'all' : next }
 const curvePlot=computed(()=>{
  const segment=visibleSegments.value[0],model=segment?.[mode.value]
  const dates=Array.isArray(model?.dates)?model.dates as string[]:[]
@@ -100,6 +122,8 @@ const date=(v:unknown)=>typeof v==='string'?formatChartTimeInShanghai(time(v)):'
 const annualized=(model:Record<string,unknown>|null)=>pagePerformanceAnnualized(model&&Array.isArray(model.dates)&&Array.isArray(model.equity)?{dates:model.dates as string[],equity:model.equity as string[]}:null)
 const annualizedText=(model:Record<string,unknown>|null)=>{const value=annualized(model);return value===null?'--':newowReferencePercent(String(value))}
 const summary=(model:Record<string,unknown>|null)=>model?.summary as Record<string,unknown>|undefined
+const totalRecords=(model:Record<string,unknown>|null)=>Number(model?.total_count??allRecords(model).length)
+const records=(model:Record<string,unknown>|null)=>historyStarted.value?historyRows.value:allRecords(model).slice().reverse()
 const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trades)?model.trades as Record<string,unknown>[]:[]
 </script>
 <template>
@@ -113,7 +137,7 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <div v-for="item in callouts" :key="item.callout.id" class="experiment-callout" :class="{'is-compact':item.compact}" :style="{left:`${item.left}px`,top:`${item.top}px`,width:`${item.width}px`,height:`${item.height}px`}" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :title="`${item.callout.title} ${newowReferencePrice(item.callout.price)} · ${item.callout.time} · ${item.callout.physicalContract}`"><template v-if="!item.compact"><strong>{{item.callout.title}}</strong><span>{{newowReferencePrice(item.callout.price)}}</span></template><template v-else>{{item.callout.above?'▽':'△'}}</template></div></div></div>
 <slot name="chart-auxiliary" />
 <PerformancePanel kind="页面参考" :since="data?.window?.since" :through="data?.window?.through" :cutoff="data?.as_of" :version="data?.formula_version" :loading="loading" :error="error" description="实验策略 · 按合约计算段统计 · 零费用与滑点 · 非可执行收益"><header class="newow-reference__returns-heading"><span class="newow-reference__annualized" title="当前模式及合约段的页面曲线自然日年化">年化 {{annualizedText(visibleSegments[0]?.[mode] ?? null)}}</span></header>
-<div class="newow-reference__presets experiment-mode" aria-label="页面统计快捷窗口"><button v-for="r in [{id:'3m',label:'近3月'},{id:'1y',label:'近1年'},{id:'3y',label:'近3年'},{id:'year',label:'今年'}]" :key="r.id" type="button" :aria-pressed="range===r.id" @click="range=r.id as ExperimentRange">{{r.label}}</button><button type="button" class="newow-reference__ideal" :aria-pressed="mode==='theoretical'" @click="mode=mode==='ordinary'?'theoretical':'ordinary'">理论值</button><button type="button" :aria-pressed="range==='all'" @click="range='all'">全部</button></div>
+<div class="newow-reference__presets experiment-mode" aria-label="页面统计快捷窗口"><button v-for="r in [{id:'3m',label:'近3月'},{id:'1y',label:'近1年'},{id:'3y',label:'近3年'},{id:'year',label:'今年'}]" :key="r.id" type="button" :aria-pressed="mode==='ordinary' && range===r.id" @click="selectRange(r.id as ExperimentRange)">{{r.label}}</button><button type="button" class="newow-reference__ideal" :aria-pressed="mode==='theoretical'" @click="selectRange('ideal')">理论值</button><button type="button" :aria-pressed="mode==='ordinary' && range==='all'" @click="selectRange('all')">全部</button></div>
 <template v-if="data"><label class="experiment-contract">合约计算段 <select v-model="selectedSegment"><option :value="null">当前计算段 · {{data.segments.at(-1)?.physical_contract}}</option><option v-for="s in data.segments.slice(0,-1)" :key="s.segment_id" :value="s.segment_id">{{s.physical_contract}} · {{date(s.statistics_window?.through)}}</option></select></label></template>
 <ReturnCurveSvg :plot="curvePlot" label="实验策略页面参考曲线" area zero-line />
 <template v-if="data"><section v-for="segment in visibleSegments" :key="segment.segment_id" class="experiment-segment"><p class="experiment-segment-status">{{segment.physical_contract}}<span v-if="segment.status==='ROLLOVER_INTERRUPTED'"> · 换月中断</span><span v-else-if="segment.status==='DATA_CONFLICT'"> · 数据中断</span></p>
@@ -121,8 +145,8 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <section class="newow-reference__summary"><dl class="newow-reference__metrics" data-testid="experiment-summary"><div><dt>累计参考收益（百分点）</dt><dd :data-direction="Number(summary(model)?.cum_return_percentage_points)>=0?'up':'down'">{{newowReferencePoints(summary(model)?.cum_return_percentage_points as string | undefined)}}</dd></div><div><dt>胜率</dt><dd>{{pct(summary(model)?.accuracy_pct,false)}}</dd></div><div><dt>年化收益 <span title="按当前曲线首末净值比及上海日历跨度折算365日复合年化；页面参考，不代表可执行收益。">ⓘ</span></dt><dd>{{annualizedText(model)}}</dd></div><div><dt>{{mode==='ordinary'?'页面曲线回撤（百分点）':'单笔最大亏损（百分点）'}}</dt><dd class="newow-reference__drawdown">{{newowReferencePoints(summary(model)?.max_drawdown_percentage_points as string | undefined)}}</dd></div></dl></section>
 <header class="experiment-records-heading"><strong>历史参考记录</strong><span>历史页面参考，仅供参考，不作为实时买卖提示</span></header>
 <p v-if="!allRecords(model).length">当前口径暂无页面估值交易。</p>
-<article v-for="(trade,i) in allRecords(model).slice().reverse().slice(0,recordCount)" :key="`${segment.segment_id}:${trade.entry_bar_end}:${trade.exit_bar_end}:${i}`" class="newow-reference__card" :data-page-force-close="trade.force_close"><header><strong class="experiment-badge">{{trade.force_close?'持仓参考中':marketFrequencyLabel(frequency as import('@/types/market').MarketFrequency)}}</strong><strong :data-direction="Number(trade.return_percentage_points)>=0?'up':'down'">{{trade.force_close?'参考浮动':'盈亏'}} {{newowReferencePercent(trade.return_percentage_points as string)}}</strong></header><p class="experiment-record-line"><span><b class="experiment-buy">建仓参考</b> <strong>{{newowReferencePrice(trade.entry_reference_price as string)}}</strong></span><time :datetime="trade.entry_bar_end as string">{{date(trade.entry_bar_end)}}</time></p><p class="experiment-record-line"><span><b class="experiment-sell">{{trade.force_close?'参考估值':trade.stop_loss?'止损清仓':trade.confirm_exit?'确认清仓':'清仓参考'}}</b>  <strong>{{newowReferencePrice(trade.exit_reference_price as string)}}</strong></span><time :datetime="trade.exit_bar_end as string">{{date(trade.exit_bar_end)}}</time></p></article>
-<p class="experiment-record-count">共 {{allRecords(model).length}} 笔页面参考记录，{{`已加载 ${Math.min(recordCount, allRecords(model).length)} 笔`}}</p><button v-if="recordCount<allRecords(model).length" class="experiment-show-all" type="button" @click="recordCount+=50">加载更多参考记录</button><button v-else-if="recordCount>3 && allRecords(model).length>3" class="experiment-show-all" type="button" @click="recordCount=3">收起</button>
+<article v-for="(trade,i) in records(model).slice(0,recordCount)" :key="`${segment.segment_id}:${trade.entry_bar_end}:${trade.exit_bar_end}:${i}`" class="newow-reference__card" :data-page-force-close="trade.force_close"><header><strong class="experiment-badge">{{trade.force_close?'持仓参考中':marketFrequencyLabel(frequency as import('@/types/market').MarketFrequency)}}</strong><strong :data-direction="Number(trade.return_percentage_points)>=0?'up':'down'">{{trade.force_close?'参考浮动':'盈亏'}} {{newowReferencePercent(trade.return_percentage_points as string)}}</strong></header><p class="experiment-record-line"><span><b class="experiment-buy">建仓参考</b> <strong>{{newowReferencePrice(trade.entry_reference_price as string)}}</strong></span><time :datetime="trade.entry_bar_end as string">{{date(trade.entry_bar_end)}}</time></p><p class="experiment-record-line"><span><b class="experiment-sell">{{trade.force_close?'参考估值':trade.stop_loss?'止损清仓':trade.confirm_exit?'确认清仓':'清仓参考'}}</b>  <strong>{{newowReferencePrice(trade.exit_reference_price as string)}}</strong></span><time :datetime="trade.exit_bar_end as string">{{date(trade.exit_bar_end)}}</time></p></article>
+<p v-if="historyError" role="alert">{{historyError}}</p><p class="experiment-record-count">共 {{totalRecords(model)}} 笔页面参考记录，{{`已加载 ${Math.min(recordCount, records(model).length)} 笔`}}</p><button v-if="recordCount<totalRecords(model)" class="experiment-show-all" type="button" :disabled="historyLoading" @click="moreRecords">加载更多参考记录</button><button v-else-if="recordCount>3 && totalRecords(model)>3" class="experiment-show-all" type="button" @click="recordCount=3">收起</button>
 </template></section></template>
 </PerformancePanel><slot name="path" />
 <details v-if="data" class="experiment-basis"><summary>详情与口径</summary><p>{{option.description}}。跳空止损参考价取止损价与开盘价较低者；测试2目标参考价取锁定目标与开盘价较高者。普通统计保留末根收盘强制平仓；理论统计为基础震荡回看理想模型，与四测试独立，按合约计算。</p><p>页面参考 · 零手续费与滑点。黄线 HHV10、蓝线 LLV10；不代表可执行收益。</p><p v-if="data.window">统计窗口 {{data.window.since}} 至 {{data.window.through}} · 主图最多显示最近2000根</p><p>截至 {{date(data.as_of)}} · {{data.formula_version}}</p><p v-for="segment in visibleSegments" :key="segment.segment_id">{{segment.latest_state?.holding?'持有':'空仓'}} · 建仓参考价 {{newowReferencePrice(segment.latest_state?.entry_reference_price)}} · {{kind==='osc-test4'?'12%':'7%'}}止损 {{newowReferencePrice(segment.latest_state?.stop_reference_price)}}<template v-if="kind==='osc-test2'"> · 锁定目标 {{newowReferencePrice(segment.latest_state?.locked_target)}}</template><template v-if="kind==='osc-test4'"> · 确认参考价 {{newowReferencePrice(segment.latest_state?.confirm_reference)}}</template></p></details>

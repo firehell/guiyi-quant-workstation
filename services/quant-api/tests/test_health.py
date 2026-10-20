@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.version import APP_VERSION
 
 
 def test_health_endpoint_returns_ok() -> None:
@@ -12,7 +13,7 @@ def test_health_endpoint_returns_ok() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "guiyi-quant-api"
-    assert payload["version"] == "1.10.13"
+    assert payload["version"] == APP_VERSION
     assert payload.get("readonly") is True
 
 
@@ -25,7 +26,7 @@ def test_api_health_endpoint_returns_full_payload() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "guiyi-quant-api"
-    assert payload["version"] == "1.10.13"
+    assert payload["version"] == APP_VERSION
     assert payload.get("readonly") is True
 
 

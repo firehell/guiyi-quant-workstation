@@ -1,0 +1,211 @@
+{
+  "study": "LMS405_PUBLIC_CONDITIONS_V0_1",
+  "casebook_sha256": "03f48ddf200ec984f8594adc07a10c1c57389ba552edb1e5695c955ea97bd001",
+  "input_kind": "SOURCE_CONDITIONS_WITHOUT_MARKET_SIGNAL_LABELS",
+  "historical_immutability_verified": false,
+  "author_signal_success_rate": null,
+  "eligible_golden_signal_samples": 0,
+  "holdout_samples": 0,
+  "executable": false,
+  "fill": null,
+  "performance": null,
+  "cases": [
+    {
+      "case_id": "JM2701_20260831_PROTECTION",
+      "source": "https://weibo.com/1885745060/RfUgudQ5d",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "PRIVATE_ZONE_FORMULA",
+        "ORIGINAL_SIGNAL_FORMULA",
+        "PERIOD_SWITCH",
+        "GAP_EXCEPTION_FORMULA",
+        "HISTORICAL_CONTENT_VERSION"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "LOCK",
+        "sources": [
+          "https://weibo.com/1885745060/RfUgudQ5d"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "JM2701_20260831_PROTECTION",
+        "as_of": "2026-10-17T00:07:24.077387+00:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "SUPER_FAT_TAIL": null,
+              "DOWNGRADED_PERIOD_ALLOWED": null,
+              "BEAR_VPLUS_CONFIRMED": null,
+              "SIGNAL_LOCATION_ALLOWED": null
+            },
+            "value": null
+          },
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "GAP_EXCEPTION_APPLIES": null,
+              "NO_TIME_FOR_VPLUS": null,
+              "EMERGENCY_ZONE_ALLOWED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    },
+    {
+      "case_id": "OI2605_20251217_RECOVER_SHORT",
+      "source": "https://weibo.com/1885745060/QiRHvgfga",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "VERSION_IDENTITY",
+        "PRESSURE_FORMULA",
+        "NEW_BREAK_CONFIRMATION",
+        "MANUAL_STEP",
+        "ACTION_TIMESTAMPS"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_SHORT",
+        "sources": [
+          "https://weibo.com/1885745060/QiRHvgfga"
+        ],
+        "unknown": [
+          "case_version_405",
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "OI2605_20251217_RECOVER_SHORT",
+        "as_of": "2026-10-17T00:07:24.077387+00:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "PRESSURE_9010_9043": null,
+              "FRESH_BREAK_8969": null,
+              "ORDER:PRESSURE_9010_9043<FRESH_BREAK_8969": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    },
+    {
+      "case_id": "JM2601_20251028_LONG_ELIGIBILITY",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405226775914610782",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "VERSION_IDENTITY",
+        "STAND_FIRM_FORMULA",
+        "SIGNAL_FORMULA",
+        "REENTER_VS_UNLOCK",
+        "ACTION_TIMESTAMPS"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "REENTER_LONG",
+        "sources": [
+          "https://weibo.com/ttarticle/p/show?id=2309405226775914610782"
+        ],
+        "unknown": [
+          "case_version_405",
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "JM2601_20251028_LONG_ELIGIBILITY",
+        "as_of": "2026-10-17T00:07:24.077387+00:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "BREAK_AND_STAND_1255_5_1265": null,
+              "LONG_SIGNAL_PERMISSION": null,
+              "DIRECTIONAL_RESTORATION_PERMISSION": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    },
+    {
+      "case_id": "RB2601_20251028_IGNORED_PINBAR",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405226775914610782",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 1,
+      "missing_original_facts": [
+        "VERSION_IDENTITY",
+        "AUTHOR_BAR_TIME",
+        "PERIOD",
+        "COMPLETE_PINBAR_FORMULA",
+        "VOLATILITY_FORMULA"
+      ],
+      "assessment": {
+        "status": "NOT_PERMITTED",
+        "requested_action": "LOCK",
+        "sources": [
+          "https://weibo.com/ttarticle/p/show?id=2309405226775914610782"
+        ],
+        "unknown": [
+          "case_version_405"
+        ],
+        "failed": [
+          "public_route"
+        ],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "RB2601_20251028_IGNORED_PINBAR",
+        "as_of": "2026-10-17T00:07:24.077387+00:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "LONG_TAIL_PINBAR": null,
+              "AUTHOR_ACCEPTED_CONTEXT": false
+            },
+            "value": false
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    }
+  ]
+}
