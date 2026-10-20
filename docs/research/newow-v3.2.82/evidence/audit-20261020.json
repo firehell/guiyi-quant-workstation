@@ -2,14 +2,14 @@
   "schema": "newow_public_audit_evidence_v1",
   "observed_on": "2026-10-20 Asia/Shanghai",
   "develop_commit": "abf45510a55310832c06d216966049998240ce39",
-  "public_version": "3.4.01",
+  "public_version": "3.4.02",
   "scope_excludes": [
     "push",
     "screener",
     "month_k",
     "time_sharing_chart"
   ],
-  "browser_visual_status": "TOOL_BLOCKED",
+  "browser_visual_status": "NATIVE_CHROME_SAMPLED_PASS_NOT_PIXEL_PARITY",
   "comparison_basis": "committed develop; 11 pre-existing dirty Web paths excluded",
   "sources": [
     {
@@ -338,5 +338,137 @@
     "Read-only endpoint success does not prove private algorithm parity or all symbols.",
     "Source and witness summaries retained; third-party full code and raw market responses remain outside Git.",
     "Synthetic witnesses are formula/adapter boundary checks, not investment or OOS evidence."
-  ]
+  ],
+  "initial_public_version": "3.4.01",
+  "initial_browser_visual_status": "TOOL_BLOCKED",
+  "followup": {
+    "documentation_baseline_commit": "eb2f7e85404039e3ea5786532aac2d00d2824f7f",
+    "product_code_baseline_unchanged": true,
+    "sources": [
+      {
+        "file": "api-config.js",
+        "url": "https://www.v8848.cn/api-config.js?v=3.4.02",
+        "exit": 0,
+        "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+      },
+      {
+        "file": "api-shim.js",
+        "url": "https://www.v8848.cn/api-shim.js?v=3.4.02",
+        "exit": 0,
+        "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+      },
+      {
+        "file": "composite-decision-v2.js",
+        "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.4.02",
+        "exit": 0,
+        "sha256": "522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2"
+      },
+      {
+        "file": "trend-reversal-core.js",
+        "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.4.02",
+        "exit": 0,
+        "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80"
+      },
+      {
+        "file": "position_kernel.js",
+        "url": "https://www.v8848.cn/position_kernel.js?v=1.0.0",
+        "exit": 0,
+        "sha256": "31e133d5288ed2b9f89ec084384871e5907afb8cb30acc2cee6629ee882e754d"
+      },
+      {
+        "file": "strategy-calc.js",
+        "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.02",
+        "exit": 0,
+        "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+      },
+      {
+        "file": "index.html",
+        "url": "https://www.v8848.cn/index.html",
+        "exit": 0,
+        "sha256": "66a59752da076ba186783ca0d312a62dba23dfbce1924a9bb6a2d79de6fb5ba3"
+      },
+      {
+        "file": "stock_detail.html",
+        "url": "https://www.v8848.cn/stock_detail.html",
+        "exit": 0,
+        "sha256": "b70db4da24a22bd07d15322ccc289807701cdce6e110fbbad8e84472629b7e6a"
+      }
+    ],
+    "core_declarations_unchanged": 24,
+    "core_fixture_cases_equal": 9,
+    "cdv2_cases_equal": 729,
+    "clean_develop_web_tests": {
+      "passed": 239,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ui_samples": {
+      "symbols": [
+        "688702.SH",
+        "002747.SZ"
+      ],
+      "main_rise_minute_periods_loaded": [
+        5,
+        15,
+        30
+      ],
+      "test_menu": [
+        "test1",
+        "test2",
+        "test3",
+        "test4",
+        "main_rise"
+      ],
+      "auxiliary_tabs_loaded": [
+        "mirror",
+        "momentum",
+        "control",
+        "trend_reversal"
+      ],
+      "historical_solid_and_latest_outlined_caution_seen": true,
+      "channel_focus_select_and_outside_close": true,
+      "state_11_help_seen": true,
+      "ai_six_combinations_and_adopt_seen": true,
+      "ideal_is_range_tab_not_toggle": true,
+      "path_history_lines_background_eta_seen": true,
+      "eta_sample": {
+        "remaining_trading_days": 1.1,
+        "displayed_date": "10-19",
+        "sample_count": 11,
+        "base": 18.5,
+        "remaining_ratio_display": "6%",
+        "elapsed": 10.0
+      },
+      "weekly_osc_surfaces": {
+        "chart_target": 452.26,
+        "card_target": 312.99
+      },
+      "analysis_link": {
+        "url": "https://www.v8848.cn/strategy_analysis.html?code=002747.SZ",
+        "observed_content": "homepage_not_report",
+        "returned_to_detail": true
+      }
+    },
+    "v3402_delta": {
+      "gray_withdrawn_caution": "source-confirmed; daily latest 3 dates; depends on historical messages; not exercised; push out of scope",
+      "core_care_and_dingA_changed": false
+    },
+    "not_covered": [
+      "paired local-original pixel comparison",
+      "narrow viewport and touch",
+      "persistent preference changes",
+      "separate composite card live numeric readback",
+      "gray withdrawn caution historical message path",
+      "all symbols and all combinations"
+    ],
+    "retention": "No full AX tree, private browser metadata, screenshot binaries or message contents retained in Git; observations summarized only.",
+    "document_checks": {
+      "engineering_tests_passed": 29,
+      "secret_findings": 0,
+      "diff_check": "passed",
+      "single_active_manual_anchor": true,
+      "local_link_targets": "passed",
+      "frozen_source_api_hashes_verified": 23
+    }
+  }
 }
