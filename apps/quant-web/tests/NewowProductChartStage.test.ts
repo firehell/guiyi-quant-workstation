@@ -39,6 +39,38 @@ test('empty main chart legend follows the selected strategy instead of defaultin
   }
 })
 
+test('chart controls render locally by default and move to an explicit target without duplication', async () => {
+  const Stage = await loadComponent(), target = ref<string | undefined>(undefined)
+  const root = element('root'), portal = element('portal')
+  const fakeChart = {
+    addSeries: () => ({ setData() {} }), removeSeries() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer({ ...nodeOperations(), querySelector: (selector:string) => selector === '#chart-controls' ? portal : null }).createApp(defineComponent({
+    setup: () => () => h(Stage, { response:null, strategy:'trend', selectedSignalId:null, channelControlsTarget:target.value }, {
+      'main-controls': () => h('button', { 'data-testid':'host-control' }, '宿主操作'),
+    }),
+  }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(root); await nextTick()
+  const controls = (node:TestNode) => findNode(node,n=>n.props['aria-label']==='图表参考叠加')
+  assert.ok(controls(root))
+  assert.equal(controls(portal),undefined)
+  const tools = findNode(root,n=>n.type==='details'&&n.props.class==='newow-product-chart-stage__tools')!
+  assert.ok(tools)
+  assert.equal(Boolean(tools.props.open),false,'tools are initially folded')
+  assert.ok(findNode(tools,n=>n.props['data-testid']==='host-control'))
+  target.value='#chart-controls'; await nextTick()
+  assert.equal(controls(root),undefined)
+  assert.ok(controls(portal))
+  target.value=undefined; await nextTick()
+  assert.ok(controls(root))
+  assert.equal(controls(portal),undefined)
+  app.unmount()
+  assert.equal(controls(portal),undefined)
+})
+
 test('trend A/B boundaries render as lightweight one-pixel lines above the columns', async () => {
   const Stage = await loadComponent()
   const response = chartResponse()
@@ -604,6 +636,8 @@ test('same chart instance restores identity-specific layers and viewport across 
   response.value = strategyResponse('trend'); await nextTick(); await nextTick()
   assert.deepEqual(range, { from: 10, to: 20 })
   assert.equal(actions().props['aria-pressed'], false)
+  ;(actions().props.onClick as () => void)(); await nextTick()
+  assert.equal(actions().props['aria-pressed'], true, 'restored hidden layers remain recoverable through the folded tools')
   app.unmount()
 })
 
@@ -915,7 +949,7 @@ function textContent(node: TestNode): string { return `${node.text}${node.childr
 function nodeOperations() {
   return {
     patchProp(node: TestNode, key: string, _previous: unknown, next: unknown) { node.props[key] = next },
-    insert(child: TestNode, parent: TestNode, anchor: TestNode | null = null) { child.parent = parent; const index = anchor === null ? -1 : parent.children.indexOf(anchor); if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child) },
+    insert(child: TestNode, parent: TestNode, anchor: TestNode | null = null) { if (child.parent) child.parent.children = child.parent.children.filter(node => node !== child); child.parent = parent; const index = anchor === null ? -1 : parent.children.indexOf(anchor); if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child) },
     remove(child: TestNode) { if (child.parent === null) return; child.parent.children = child.parent.children.filter((item) => item !== child); child.parent = null },
     createElement: (type: string) => element(type),
     createText(text: string) { const node = element('#text'); node.text = text; return node }, createComment(text: string) { const node = element('#comment'); node.text = text; return node },

@@ -304,12 +304,19 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
         :newow-frequencies="newowOpenFrequencies"
+        :newow-frequency-in-workspace="workspaceVisible && routeResult.identity.view === 'newow' && !!newowCapabilities.capabilities.value && newowFrequencyOpen"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
         @ai-analysis="aiOpen = true"
-      />
-      <button type="button" class="gy-reset-display" @click="resetDisplayPreferences">重置页面显示</button>
+      >
+        <template #display-controls>
+          <details class="market-detail-page__display-controls">
+            <summary>显示设置</summary>
+            <button type="button" class="gy-reset-display" @click="resetDisplayPreferences">重置页面显示</button>
+          </details>
+        </template>
+      </MarketDetailViewNav>
       <NewowAiAnalysisDialog v-if="isNewowView" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
         <section
@@ -333,6 +340,8 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :identity="routeResult.identity"
             :capabilities="newowCapabilities.capabilities.value"
             :price-preview="detailPricePreview"
+            strategy-menu-target="#newow-strategy-test-anchor"
+            channel-controls-target="#newow-channel-controls"
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
@@ -342,7 +351,17 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @refresh-current="dailyQuote.refresh(); newowCapabilities.load(true)"
             @analysis-as-of="aiAsOf = $event"
             @select-identity="selectIdentity"
-          />
+          >
+            <template #chart-frequency>
+              <div class="newow-chart-frequency" role="group" aria-label="图表周期">
+                <button v-for="frequency in newowOpenFrequencies" :key="frequency" type="button"
+                  :class="{ 'is-active': routeResult.identity.frequency === frequency }"
+                  :aria-pressed="routeResult.identity.frequency === frequency"
+                  @click="selectIdentity({ ...routeResult.identity, frequency, focusBarEnd: undefined })"
+                >{{ frequency === '1d' ? '日线' : frequency === '1w' ? '周线' : frequency.replace('m', '分钟') }}</button>
+              </div>
+            </template>
+          </NewowProductWorkspace>
           <template v-else-if="routeResult.identity.view === 'newow'">
           <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview" />
           <MarketDetailUnavailable
@@ -411,9 +430,13 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 </template>
 
 <style scoped>
-.newow-chart-frequency { display:flex; gap:2px; padding:3px; border-radius:8px; background:#eeeeef; }
-.newow-chart-frequency button { border:0; border-radius:6px; padding:6px 12px; color:#777; background:transparent; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
-.newow-chart-frequency button.is-active { color:#333; background:var(--gy-bg-panel); box-shadow:0 1px 3px #00000012; }
+.market-detail-page__display-controls { position:relative; color:var(--gy-text-muted); font-size:12px; }
+.market-detail-page__display-controls summary { cursor:pointer; white-space:nowrap; }
+.market-detail-page__display-controls .gy-reset-display { position:absolute; right:0; top:100%; z-index:10; white-space:nowrap; box-shadow:0 3px 12px #0002; }
+.newow-chart-frequency { display:flex; align-items:center; gap:0; padding:2px; border-radius:6px; background:#eeeeef; }
+.unified-detail-light .newow-chart-frequency button { min-height:22px; height:22px; border:0; border-radius:4px; padding:0 8px; color:#666; background:transparent; font-size:11px; line-height:22px; font-weight:500; cursor:pointer; white-space:nowrap; }
+.newow-chart-frequency button:hover { color:#333; }
+.newow-chart-frequency button.is-active { color:#222; background:#fff; box-shadow:0 1px 3px #00000012; }
 
 .market-detail-page {
   position: relative;

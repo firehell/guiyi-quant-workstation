@@ -42,9 +42,9 @@ function analyze() { open.value = false; emit('analyze') }
 <style scoped>
 .visual-overlay-controls{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--gy-text-muted)}
 .donchian-toggle{position:relative;display:inline-flex;align-items:center;gap:4px;margin-left:12px}
-.donchian-dot{width:8px;height:8px;padding:0;border:0;border-radius:50%;background:var(--gy-text-muted);cursor:pointer}
+.visual-overlay-controls .donchian-dot{min-height:8px!important;width:8px;height:8px;padding:0;border:0;border-radius:50%;background:var(--gy-text-muted);cursor:pointer}
 .donchian-dot[aria-pressed="true"]{background:#34c759}
-.donchian-label{padding:0;border:0;background:transparent;color:var(--gy-text-muted);font-size:12px;cursor:pointer}
+.visual-overlay-controls .donchian-label{min-height:24px!important;padding:0;border:0;background:transparent;color:var(--gy-text-muted);font-size:12px;cursor:pointer}
 .donchian-popup{position:fixed;z-index:30;box-sizing:border-box;width:302px;max-width:calc(100vw - 32px);padding:8px 10px;border:1px solid #3a3a3c;border-radius:8px;background:var(--gy-bg-panel);color:var(--gy-text-primary);box-shadow:0 4px 16px #0008}
 .donchian-fields{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.donchian-fields label{display:flex;align-items:center;gap:6px}
 input{width:42px;padding:2px 4px;border:1px solid #3a3a3c;border-radius:4px;background:#2c2c2e;color:#fff;text-align:center;font-size:11px}

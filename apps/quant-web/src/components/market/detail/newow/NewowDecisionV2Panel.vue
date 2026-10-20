@@ -155,7 +155,7 @@ const chipColor = (axis: string, period: string) => {
 </template>
 
 <style scoped>
-.decision-v2 { margin:8px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:var(--gy-text-primary); }
+.decision-v2 { margin:3px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:var(--gy-text-primary); }
 .decision-v2__header { display:flex; align-items:center; gap:6px; padding:9px 14px; }
 button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid var(--gy-accent); outline-offset:2px; } button:disabled { cursor:wait; opacity:.5; }
 .decision-v2__toggle { display:flex; align-items:center; gap:7px; flex:1; min-width:0; border:0; padding:0; background:transparent; color:inherit; text-align:left; flex-wrap:wrap; }
@@ -205,7 +205,7 @@ p { margin:0; font-size:12px; line-height:1.55; color:var(--gy-text-muted); }
 </style>
 
 <style scoped>
-.decision-v2__header { padding:12px 14px; min-height:44px; box-sizing:border-box; }
+.decision-v2__header { padding:7px 14px; min-height:44px; box-sizing:border-box; }
 .decision-v2__toggle { flex-wrap:nowrap; min-height:24px; }
 .decision-v2__action { margin-left:auto; font-size:20px; font-weight:700; color:#ff3b30; }
 .decision-v2__action.flat { color:#20c64a; }

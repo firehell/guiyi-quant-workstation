@@ -1,9 +1,9 @@
 # 当前状态
 
-## 10/20 v1.15.13 发布候选验证完成
+## 10/20 v1.15.13 已发布，正式运行仍为 v1.15.12
 
 候选基于develop a821448b5，汇总牛哇care/暂定峰生命周期/历史路径、视觉交互和只读接口统一，以及既有L.M.S研究文档；11个未提交布局文件排除并保留。发布预检修复重叠物理预热前缀的小心事件owner污染，保留完整前缀计算，仅发射eligible锚点并按四项身份匹配；独立Review及修复复审通过。
-后端/工程418 passed，完整Web1143 passed/1 skipped，类型/build/topology、OpenSpec strict11、secret/diff通过。健康测试从旧硬编码改读唯一APP_VERSION，候选版本1.15.13。main/tag/GitHub Release尚待执行；结果不预写。
+后端/工程418 passed，完整Web1143 passed/1 skipped，类型/build/topology、OpenSpec strict11、secret/diff通过。健康测试从旧硬编码改读唯一APP_VERSION，候选版本1.15.13。PR461已合并，main及annotated tag peeled均为26eef925642736c499e9ce9fb51baa1059f9b648；GitHub Release v1.15.13为非draft/非prerelease，targetCommitish为该精确commit。合并树与已验证候选完全相同；新发布树.worktrees/release-v1.15.13已固定到tag，develop已同步，原11个dirty文件字节未变。
 本次仅发布，不切换Runtime。现场十项服务身份仍为v1.15.12/gen21/13c86b735，API/Web可读；完整Runtime健康degraded（db/redis/after_market ok，live/alert degraded），不声明RUNTIME_READY，不重放或补发。现役v12发布树有引用继续保留。
 
 ## 10/19 v1.15.12 已发布、正式切换及旧目录清理完成
