@@ -18,6 +18,14 @@
 - Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
 - Web 不显示模糊的“全历史策略效果”、账户收益、模拟或真实持仓、订单、成交或已退役策略事件。Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，不属于这些账户/执行事实。
 
+## 期货双向策略独立研究
+
+详情页显式 `strategy_model=futures_bidir_v1` 切换归一自有期货研究；未带参数的旧链接仍为牛哇原版。
+趋势、震荡、双策略、主升浪及测试1～4名称不变，模型、公式、参考交易与10万元分层研究账户独立。
+首轮JM/RB/AL/TA六周期，缺资金保留独立参考、缺行情/执行事实分别披露；周线test3无更高级别标不适用。
+API只读SHA索引冻结结果，GET不回测、下载或写生产；页面明确历史截止而非当前账户持仓。
+本能力不接入持续Paper、Scope、Runtime、通知或Broker；合同见[期货双向研究](docs/NEWOW_FUTURES_STRATEGY.md)。
+
 ## 新苏冰策略独立研究
 
 修正版 `new_subing_v2` 使用独立[阶段/分层合同](docs/NEW_SUBING_STRATEGY_V2.md)，保留V1规则与结果。

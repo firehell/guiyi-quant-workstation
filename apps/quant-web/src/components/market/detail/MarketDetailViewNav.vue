@@ -9,6 +9,7 @@ import {
   type MarketDetailViewRestore,
   type NewowStrategy,
 } from '@/types/marketDetail'
+import { switchFuturesModel } from '@/utils/newowFutures'
 import { resolveViewSwitchIdentity } from '@/utils/marketDetailRoute'
 
 const props = withDefaults(defineProps<{
@@ -42,6 +43,12 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
   { value: 'subing', label: '苏冰预警' },
   { value: 'free', label: '自由看盘' },
 ]
+const isFutures = computed(() => props.identity.strategyModel === 'futures_bidir_v1')
+const futuresTests = [{value:'osc-test',label:'测试'}, {value:'osc-test2',label:'测试2'}, {value:'osc-test3',label:'测试3'}, {value:'osc-test4',label:'测试4'}] as const
+function chooseTest(choice: MarketDetailIdentity['newowTest'] | 'main_rise') {
+  emit('select', { ...props.identity, strategy: choice === 'main_rise' ? 'main_rise' : 'oscillation', newowMode: undefined,
+    newowTest: choice === 'main_rise' ? undefined : choice, homeContext: undefined, focusBarEnd: undefined })
+}
 const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'newow'
   ? props.identity.newowMode === 'dual' ? 'dual' : props.identity.strategy ?? 'trend'
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
@@ -65,9 +72,9 @@ function chooseView(view: AnalysisChoice) {
     const preferredFrequency = props.identity.view === 'newow'
       ? props.identity.frequency
       : (restored.frequency === '1m' || props.newowFrequencies.includes(restored.frequency)) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
-    const frequency = view === 'main_rise' && ['5m', '15m', '30m'].includes(preferredFrequency) ? '1d' : preferredFrequency
+    const frequency = !isFutures.value && view === 'main_rise' && ['5m', '15m', '30m'].includes(preferredFrequency) ? '1d' : preferredFrequency
     emit('select', {
-      view: 'newow', symbol: props.identity.symbol, strategy: view === 'dual' ? 'trend' : view,
+      view: 'newow', symbol: props.identity.symbol, ...(isFutures.value ? { strategyModel: 'futures_bidir_v1' as const } : {}), strategy: view === 'dual' ? 'trend' : view,
       ...(view === 'dual' ? { newowMode: 'dual' as const } : {}),
       seriesKind: 'actual_dominant', frequency,
     })
@@ -124,8 +131,10 @@ function periodLabel(value: MarketFrequency) {
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
       <span v-if="view.value === 'dual'" id="newow-strategy-test-anchor" />
-      <button v-if="view.value === 'dual' && identity.view === 'newow'" type="button" class="detail-view-nav__ai" @click="emit('ai-analysis')">AI分析</button></template>
+      <button v-if="view.value === 'dual' && identity.view === 'newow' && !isFutures" type="button" class="detail-view-nav__ai" @click="emit('ai-analysis')">AI分析</button></template>
       <span v-if="identity.view === 'newow'" id="newow-channel-controls" />
+      <button v-if="identity.view === 'newow'" type="button" role="switch" :aria-checked="isFutures" class="detail-view-nav__model" data-testid="futures-model-switch" @click="emit('select',switchFuturesModel(identity,!isFutures))">期货双向 {{ isFutures ? '开' : '关' }}</button>
+      <details v-if="isFutures" class="detail-view-nav__tests"><summary aria-label="牛哇T策略">T</summary><div aria-label="T策略选项"><button v-for="option in futuresTests" :key="option.value" type="button" :aria-pressed="identity.newowTest===option.value" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" :aria-pressed="identity.strategy === 'main_rise'" @click="chooseTest('main_rise')">主升浪</button></div></details>
       <slot name="display-controls" />
     </div>
 
@@ -164,6 +173,9 @@ function periodLabel(value: MarketFrequency) {
 </template>
 
 <style scoped>
+.detail-view-nav__tests { display:flex; white-space:nowrap; }
+.detail-view-nav__tests summary { cursor:pointer; padding:8px; }
+.detail-view-nav__model[aria-checked=true] { background:#fff0ce; border-color:#d8ad56; }
 .detail-view-nav { display: grid; gap: var(--gy-space-2); padding: var(--gy-space-2) 0; border-bottom: 1px solid var(--gy-border-subtle); }
 .detail-view-nav__views,
 .detail-view-nav__group { display: flex; align-items: center; gap: var(--gy-space-1); overflow-x: auto; }

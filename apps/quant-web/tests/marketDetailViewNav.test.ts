@@ -69,3 +69,22 @@ test('Newow navigation restores frequency choices whenever the workspace does no
   assert.ok(controls(), 'other analysis views always retain their frequency controls')
   app.unmount()
 })
+
+test('futures navigation preserves mode and period for eight variants and disables original AI', async () => {
+  const Nav=(await import(await compileCurveComponent(new URL('../src/components/market/detail/MarketDetailViewNav.vue',import.meta.url)))).default
+  const identity=ref<any>({view:'newow',symbol:'jm',strategy:'main_rise',strategyModel:'futures_bidir_v1',seriesKind:'actual_dominant',frequency:'5m'})
+  const root=element('root'),selected:any[]=[]
+  const app=createRenderer(nodeOperations()).createApp({render:()=>h(Nav,{identity:identity.value,restore:{newow:{strategy:'trend',frequency:'1d'}},newowFrequencies:['1w','1d','60m','30m','15m','5m'],onSelect:(value:any)=>{selected.push(value);identity.value=value}})})
+  app.mount(root)
+  const button=(label:string)=>findNode(root,n=>n.type==='button'&&nodeText(n)===label)!
+  assert.equal(findNode(root,n=>n.type==='button'&&nodeText(n)==='AI分析'),undefined)
+  for(const label of ['趋势策略','震荡策略','双策略','主升浪','测试','测试2','测试3','测试4']){
+    ;(button(label).props.onClick as Function)();await nextTick()
+    assert.equal(selected.at(-1).strategyModel,'futures_bidir_v1',label);assert.equal(selected.at(-1).frequency,'5m',label)
+  }
+  assert.equal(selected.at(-1).newowTest,'osc-test4')
+  const toggle=findNode(root,n=>n.props['data-testid']==='futures-model-switch')!
+  ;(toggle.props.onClick as Function)();await nextTick()
+  assert.equal(selected.at(-1).strategyModel,undefined);assert.equal(selected.at(-1).frequency,'5m');assert.equal(selected.at(-1).newowTest,'osc-test4')
+  app.unmount()
+})

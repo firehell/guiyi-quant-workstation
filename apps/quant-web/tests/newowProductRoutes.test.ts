@@ -13,6 +13,7 @@ import {
   resolveViewSwitchIdentity,
   serializeMarketDetailIdentity,
 } from '../src/utils/marketDetailRoute.ts'
+import { originalNewowCombinationSupported } from '../src/utils/newowFutures.ts'
 import { marketHomeUnifiedProductChartQuery } from '../src/utils/marketHomeRoutes.ts'
 
 function storage(initial: Record<string, string> = {}) {
@@ -36,7 +37,9 @@ test('Newow accepts only its three strategies and independent completed periods'
   for (const strategy of ['trend', 'oscillation', 'main_rise'] as const) {
     for (const frequency of ['1w', '1d', '5m', '15m', '30m', '60m'] as const) {
       if (strategy === 'main_rise' && ['5m', '15m', '30m'].includes(frequency)) {
-        assert.equal(parseMarketDetailRoute({ symbol: 'rb', view: 'newow', strategy, frequency }).kind, 'invalid')
+        const route = parseMarketDetailRoute({ symbol: 'rb', view: 'newow', strategy, frequency })
+        assert.equal(route.kind, 'valid')
+        if (route.kind === 'valid') assert.equal(originalNewowCombinationSupported(route.identity), false, 'retained URL must remain an unopened original workspace')
         continue
       }
       assert.deepEqual(parseMarketDetailRoute({
