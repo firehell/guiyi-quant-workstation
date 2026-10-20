@@ -89,3 +89,33 @@
 .newow-reference__trade-point { opacity:0; }
 .newow-reference__trade-point:hover,.newow-reference__trade-point:focus { opacity:1; }
 .newow-reference__tooltip { position:absolute; right:32px; top:4px; padding:4px 8px; border:1px solid var(--gy-border); border-radius:4px; background:var(--gy-bg-panel); color:var(--gy-text-secondary); font-size:11px; pointer-events:none; }
+
+.newow-reference__period { background:#ff9500; color:#fff; }
+.newow-reference__period.is-open { background:#ff3b30; color:#fff; }
+.newow-reference__entry,.newow-reference__record-return[data-direction="up"],.newow-reference__inline-return[data-direction="up"] { color:#ff3b30; }
+.newow-reference__exit,.newow-reference__record-return[data-direction="down"],.newow-reference__inline-return[data-direction="down"] { color:#00c936; }
+.newow-reference__record-line { font-size:14px; font-weight:400; }
+
+.newow-reference :deep(.newow-reference__performance) { border:0; border-radius:0; padding:16px 14px 0; gap:8px; }
+.newow-reference__returns-heading { padding:0; justify-content:space-between; flex-wrap:wrap; }
+.newow-reference__returns-heading h3 { font-size:14px; line-height:22px; }
+.newow-reference__returns-heading .newow-reference__annualized { color:#ff9500; }
+.newow-reference__returns-heading button { min-height:24px; padding:0; border:0; color:#888; font-size:12px; background:transparent; }
+.newow-reference__presets { justify-content:center; margin:4px 0 8px; }
+.newow-reference__presets button { min-height:26px; height:26px; padding:0 14px; border-color:#e9e9ed; border-radius:16px; font-size:12px; }
+.newow-reference__presets button[aria-pressed="true"] { color:#fff; border-color:#1c1c1e; background:#1c1c1e; }
+.newow-reference__presets button:nth-child(5):not([aria-pressed="true"]) { color:#ff9500; }
+.newow-reference__curve { min-height:170px; }
+.newow-reference__summary .newow-reference__metrics { margin:0; }
+.newow-reference__metrics dd[data-direction="up"] { color:#ff3b30; }
+.newow-reference__metrics dd.newow-reference__drawdown { color:#00c936; }
+.newow-reference__records-heading { border-top:1px solid #f3f3f5; padding-top:14px; margin-top:4px; }
+
+.newow-reference__waiting .newow-reference__period.is-waiting { background:#007aff; color:#fff; }
+.newow-reference__waiting .newow-reference__record-top { margin-bottom:4px; }
+
+.newow-reference__record-count { padding:8px 0 0; text-align:center; font-size:12px; color:#888; }
+.newow-reference__view-all { display:flex; align-items:center; justify-content:center; min-height:82px; padding:14px; box-sizing:border-box; border:1px solid #ff9500; border-radius:10px; background:#f7a719; }
+.newow-reference__view-all button { min-height:34px; padding:0 32px; border:1.5px solid #fff; border-radius:20px; color:#fff; background:transparent; font-size:13px; font-weight:600; cursor:pointer; }
+.newow-reference__view-all button:hover:not(:disabled) { background:#ffffff20; }
+.newow-reference__view-all button:disabled { opacity:.65; cursor:wait; }

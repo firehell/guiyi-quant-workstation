@@ -1,5 +1,12 @@
 # 当前状态
 
+## 10/20 v1.15.14 布局已提交发布，Runtime 切换准入阻塞
+
+此前11个未提交布局文件已核对、修复并消费为最终提交6ea2d6da5；保留紧凑布局并恢复来源审计、报价时点、独立止损开关、折叠图表工具、刷新、显示重置及全屏控件。周期位于图表附近且失败态可切换，Teleport默认本地、正式页面显式指定目标。最终8个Web源码、2个测试及版本文件进入发布，其余3个原布局文件恢复既有完整行为。
+定向180 passed，完整Web1145 passed/1 skipped，类型/build/topology、Runtime工程62 passed、secret scan零发现及diff通过；浏览器固定样本验证工具/图层与全屏回落，无控制台错误。PR462已合并，main及annotated tag v1.15.14 peeled为b0f74f979a975de01b6e2ffa1167430d59a364e3，GitHub Release非draft/非prerelease且target一致；发布树clean detached，develop已同步，原布局dirty已收敛。
+用户已交办Runtime切换；all10 cold调用器独立Review与冻结commit后的188项离线测试通过。但现场只读plan等待owner就绪超时，未生成plan、未创建mutation attempt，未执行drain/stop/install/start。Live原PID5519/gen21锁存OBSERVATION_SUBSCRIPTION_MISSING；Reference原PID5532/gen21为scan、blocked180 REFERENCE_CANONICAL_MISMATCH、pending112。Feed虽有当日current CLOSED_CLEANED及cursor追尾，不能替代Live/Reference准入；未放宽Gate、未重启、补跑、重放或发送通知。
+正式运行仍v1.15.12/gen21/13c86b735，六常驻PID与十项绑定未切换；不声明v14 Runtime已上线或RUNTIME_READY。切换准备及失败只读日志见output/release-v11514-20261020-attempt001，旧发布树仍有现役或待验收引用继续保留。下一步应先定位并修复Live订阅锁存与Reference Canonical不一致，再重新生成精确切换计划；旧失败记录保留。
+
 ## 10/20 v1.15.13 已发布，正式运行仍为 v1.15.12
 
 候选基于develop a821448b5，汇总牛哇care/暂定峰生命周期/历史路径、视觉交互和只读接口统一，以及既有L.M.S研究文档；11个未提交布局文件排除并保留。发布预检修复重叠物理预热前缀的小心事件owner污染，保留完整前缀计算，仅发射eligible锚点并按四项身份匹配；独立Review及修复复审通过。

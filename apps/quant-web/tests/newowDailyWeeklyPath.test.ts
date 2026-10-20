@@ -89,3 +89,12 @@ test('Shanghai historical dates accept an overnight UTC cutoff without admitting
   h.buys[1].date='2026-09-05'
   assert.throws(()=>normalizeNewowProductResponse(raw,{...pathRequest,asOf}))
 })
+
+test('history presentation formats long prices and supplies finite price-axis ticks',()=>{
+ const h=historyWire().explanation.value.decision_v2.daily_weekly_path.history
+ h.buys[0].price='100.000000000000000000'
+ const g=historicalPathGeometry(h,900)
+ assert.ok(g.labels.some(l=>l.text==='建 100.00'))
+ assert.equal(g.yTicks.length,4)
+ assert.ok(g.yTicks.every(t=>Number.isFinite(t.y)&&!t.label.includes('000000')))
+})

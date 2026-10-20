@@ -310,7 +310,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @contract-cleared="selectContractCleared"
         @ai-analysis="aiOpen = true"
       >
-        <template #display-controls>
+        <template v-if="!isNewowView" #display-controls>
           <details class="market-detail-page__display-controls">
             <summary>显示设置</summary>
             <button type="button" class="gy-reset-display" @click="resetDisplayPreferences">重置页面显示</button>
@@ -348,7 +348,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @daily-snapshot-pending="newowDailyPending = $event"
             @daily-chart="newowDailyChart = $event"
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
-            @refresh-current="dailyQuote.refresh(); newowCapabilities.load(true)"
             @analysis-as-of="aiAsOf = $event"
             @select-identity="selectIdentity"
           >

@@ -46,7 +46,7 @@ function integer(value: number | null): string {
     <div class="quote-header__primary">
       <div class="quote-header__price" :class="`quote-header__price--${direction}`">
         <strong>{{ price(header.close) }}</strong>
-        <span>{{ header.change === null ? `${changeBasis} —` : `${changeBasis} ${header.change >= 0 ? '+' : ''}${price(header.change)}` }}</span>
+        <span :title="newow ? changeBasis : undefined">{{ newow ? (header.change === null ? '—' : `${header.change >= 0 ? '+' : ''}${price(header.change)}`) : header.change === null ? `${changeBasis} —` : `${changeBasis} ${header.change >= 0 ? '+' : ''}${price(header.change)}` }}</span>
         <span>{{ header.pct === null ? '比例 —' : `${header.pct >= 0 ? '+' : ''}${number(header.pct)}%` }}</span>
       </div>
       <span class="quote-header__status" :class="`quote-header__status--${header.afterMarketFailed ? 'stale' : header.freshness}`">
@@ -55,7 +55,7 @@ function integer(value: number | null): string {
       </span>
     </div>
     <div class="quote-header__meta">
-      <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · {{ newow ? '非实时 · ' : '' }}截至 {{ asOfText }}</p>
+      <p v-if="!newow" class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · 截至 {{ asOfText }}</p>
       <div class="quote-header__facts-row">
         <p v-if="!newow" class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
         <div v-if="newow" class="quote-header__newow-facts">

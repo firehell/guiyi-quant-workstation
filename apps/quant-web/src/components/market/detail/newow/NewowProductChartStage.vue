@@ -85,9 +85,10 @@ const props = withDefaults(defineProps<{
   focusRequestId?: number
   loading?: boolean
   strategySwitching?: boolean
+  showTools?: boolean
   hasMoreBefore?: boolean
   channelControlsTarget?: string
-}>(), { loading: false, hasMoreBefore: false, focusRequestId: 0 })
+}>(), { showTools: true, loading: false, hasMoreBefore: false, focusRequestId: 0 })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -240,7 +241,7 @@ function renderVisualOverlays(): void {
   const bars = value.bars.filter((_,i) => !range || (i >= Math.ceil(range.from) && i <= Math.floor(range.to)))
   retainedStop = retainBuildStop(retainedStop, `${identityKey(value)}:${comparisonActive.value ? 'dual' : 'single'}`, anchorModel.actions.map(a => { const b = anchorModel.bars.find(b => b.barEnd === a.barEnd && b.physicalContract === a.physicalContract && b.segmentId === a.segmentId); return { time:a.barEnd, owner:b ? owner(b) : '', price:a.referencePrice, action:a.kind } }),bars.map(b => ({time:b.barEnd,owner:owner(b)})))
   const price = retainedStopPrice(retainedStop, 0.07)
-  if (visualOverlays.value.stop && price !== null) visualStopLine = candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
+  if (price !== null) visualStopLine = candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
 }
 const mainLines = new Map<string, ISeriesApi<'Line'>>()
 
@@ -828,8 +829,9 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
       <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ newowReferencePrice(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
       <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ newowReferencePrice(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
       <div class="newow-product-chart-stage__reference-controls">
+        <slot name="frequency-controls" />
         <slot name="reference-controls" />
-        <details class="newow-product-chart-stage__tools">
+        <details v-if="showTools" class="newow-product-chart-stage__tools">
           <summary>图表工具</summary>
           <div class="newow-product-chart-stage__tools-body">
             <slot name="main-controls" />
@@ -927,7 +929,7 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
       <small>有效震荡动作中任一总分≥4，量柱变黄。仅作页面解释，非成交或执行确认。</small>
     </section>
     <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
-    <p v-if="auxiliaryPresentation.message || fullscreenError" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
+    <p v-if="fullscreenError || (auxiliaryPresentation.message && auxiliaryPresentation.message !== '当前可计算')" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">{{ strategySwitching ? '正在切换策略，更新指标与信号…' : '正在读取 Newow 主图…' }}</p>
     <p v-else-if="response?.value === null" class="newow-product-chart-stage__status" role="status">当前组合主图不可用。</p>
     <p v-else-if="model?.bars.length === 0" class="newow-product-chart-stage__status" role="status">当前窗口没有已完成 Bar。</p>

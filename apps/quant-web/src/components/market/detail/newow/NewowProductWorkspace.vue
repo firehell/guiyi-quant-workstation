@@ -21,7 +21,6 @@ import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { sharedChartForOwner, sharedDecisionForOwner, type NewowDisplayOwner } from '@/utils/newowSharedPresentation'
-import NewowPriceSources from './NewowPriceSources.vue'
 import { chartPriceSources } from '@/utils/newowPriceSources'
 import NewowSharedAuxiliaryStage from './NewowSharedAuxiliaryStage.vue'
 import NewowProductChartStage from './NewowProductChartStage.vue'
@@ -44,7 +43,7 @@ import { newowMenuIdentity } from '@/utils/newowStrategyMenu'
 import {EXPERIMENT_OPTIONS,type ExperimentKind} from '@/utils/newowExperiments'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities; pricePreview: PricePreviewState; strategyMenuTarget?: string; channelControlsTarget?: string }>()
-const emit = defineEmits<{ 'select-identity': [identity: MarketDetailIdentity]; 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'daily-chart': [chart: NewowProductSectionResponse<'chart'> | null]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': []; 'analysis-as-of': [asOf: string | null] }>()
+const emit = defineEmits<{ 'select-identity': [identity: MarketDetailIdentity]; 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'daily-chart': [chart: NewowProductSectionResponse<'chart'> | null]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'analysis-as-of': [asOf: string | null] }>()
 const experimentKind=ref<ExperimentKind|null>(null)
 const experimentContext = ref<(NewowDisplayOwner & { latestState: import('@/utils/newowExperiments').ExperimentSegment['latest_state'] | null }) | null>(null)
 const identity = computed(() => experimentKind.value ? { ...props.identity, strategy: 'oscillation' as const, newowMode: undefined } : props.identity)
@@ -396,7 +395,7 @@ async function returnToReferenceTrade(): Promise<void> {
   record.scrollIntoView({ behavior: 'smooth', block: 'center' })
   record.focus({ preventScroll: true })
 }
-function refreshCurrent(): void { pricePreview.refresh(); loader.refreshCurrent(); emit('refresh-current') }
+function retryChart(): void { loader.refreshCurrent() }
 
 
 watch(selectedAuxiliary, value => rememberNewowUiPreferences(identityKey.value, { auxiliary: value }))
@@ -499,17 +498,15 @@ onBeforeUnmount(() => {
     <p v-if="homeContextNotice" role="status">{{homeContextNotice}}</p>
     <DetailPricePreview v-if="chartResponse === null" :identity="identity" :preview="pricePreview" />
     <template v-if="experimentKind && chartResponse">
-      <NewowDecisionV2Panel v-if="experimentSharedChart" :response="experimentSharedChart" display-strategy="oscillation" :path-strategy="experimentKind" background-label="震荡背景" :expected-owner="experimentDisplayOwner" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
+      <NewowDecisionV2Panel :show-price-sources="false" v-if="experimentSharedChart" :response="experimentSharedChart" display-strategy="oscillation" :path-strategy="experimentKind" background-label="震荡背景" :expected-owner="experimentDisplayOwner" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
       <p v-else role="status">震荡背景不可用或正在读取 · 仅显示同一截止时间与合约段的背景事实</p>
     </template>
     <template v-else-if="!experimentKind">
-      <NewowDecisionV2Panel v-if="chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise')" :response="chartResponse" :chart-sources="chartPriceSources(chartResponse, summary)" :display-strategy="dualMode ? 'dual' : selectedStrategy" :main-rise-background="selectedStrategy === 'main_rise'" :background-label="selectedStrategy === 'main_rise' ? '趋势日周背景' : undefined" :current-state="selectedStrategy === 'main_rise' ? describeNewowState(summary.status.state, summary.status.historical) : undefined" :expected-owner="selectedStrategy === 'main_rise' ? mainRiseOwner : undefined" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
+      <NewowDecisionV2Panel :show-price-sources="false" v-if="chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise')" :response="chartResponse" :chart-sources="chartPriceSources(chartResponse, summary)" :display-strategy="dualMode ? 'dual' : selectedStrategy" :main-rise-background="selectedStrategy === 'main_rise'" :background-label="selectedStrategy === 'main_rise' ? '趋势日周背景' : undefined" :current-state="selectedStrategy === 'main_rise' ? describeNewowState(summary.status.state, summary.status.historical) : undefined" :expected-owner="selectedStrategy === 'main_rise' ? mainRiseOwner : undefined" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
       <div v-else-if="strategySwitching" class="newow-product-workspace__decision-loading" role="status">正在更新策略概览…</div>
-      <NewowPriceSources v-if="!(chartResponse?.value && (loader.currentChartWindow.value || selectedStrategy === 'main_rise'))" label="目标／吸筹来源" :rows="chartPriceSources(chartResponse, summary)" />
     </template>
-    <div class="newow-product-workspace__toolbar">
+    <div v-if="experimentKind || chartResponse === null" class="newow-product-workspace__toolbar">
       <slot name="chart-frequency" />
-      <button type="button" :disabled="loader.sections.chart.state.value === 'loading'" @click="refreshCurrent">刷新当前数据</button>
     </div>
     <NewowExperimentPanel @analyze-channel="openDialog('comparator')" @context="experimentContext=$event" v-if="experimentKind && chartResponse" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null">
       <template #overview>
@@ -523,15 +520,17 @@ onBeforeUnmount(() => {
       <template #path><NewowDailyWeeklyPath :decision="experimentSharedChart ? experimentDecision : null" :loading="pathContext.loading" :error="experimentSharedChart ? pathContext.error : '同一合约段的震荡背景不可用'" /></template>
     </NewowExperimentPanel>
     <template v-else-if="!experimentKind">
-    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新当前" :can-recover="true" :can-return-market="false" @recover="refreshCurrent" />
-    <div v-if="chartResponse !== null" ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :channel-controls-target="channelControlsTarget" :response="chartResponse" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartStatsPrimary.complete.value ? chartStatsPrimary.trades.value : referenceParts.chartCompatible.value ? referenceParts.trades.value : []" :reference-trades-complete="comparisonEnabled && comparison.response.value ? chartReferenceStatsComplete : primaryReferenceComplete" :reference-stats-loading="chartReferenceStatsLoading" :reference-stats-error="chartReferenceStatsError" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="chartStatsPartner.complete.value ? chartStatsPartner.trades.value : []" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @load-reference-stats="loadChartReferenceStats" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
+    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="重试加载" :can-recover="true" :can-return-market="false" @recover="retryChart" />
+    <NewowDailyWeeklyPath :key="identityKey" :decision="pathContext.decision" :loading="pathContext.loading" :error="pathContext.error" />
+    <div v-if="chartResponse !== null" ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :show-tools="false" :channel-controls-target="channelControlsTarget" :response="chartResponse" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartStatsPrimary.complete.value ? chartStatsPrimary.trades.value : referenceParts.chartCompatible.value ? referenceParts.trades.value : []" :reference-trades-complete="comparisonEnabled && comparison.response.value ? chartReferenceStatsComplete : primaryReferenceComplete" :reference-stats-loading="chartReferenceStatsLoading" :reference-stats-error="chartReferenceStatsError" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="chartStatsPartner.complete.value ? chartStatsPartner.trades.value : []" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @load-reference-stats="loadChartReferenceStats" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
+    <template #frequency-controls><div class="newow-product-workspace__toolbar"><slot name="chart-frequency" /></div></template>
     <template #main-controls><div class="newow-product-workspace__comparison-controls"><button v-if="selectedStrategy === 'main_rise'" @click="openDialog('magic11')">11周期 · 解读</button><button v-if="!dualMode" type="button" :disabled="selectedStrategy === 'main_rise'" :title="selectedStrategy === 'main_rise' ? '双策略对照由趋势与震荡组成，请切换到其中一个策略' : '读取相同时间与物理合约的另一策略，不合并收益'" :aria-pressed="comparisonEnabled && selectedStrategy !== 'main_rise'" @click="comparisonSelected = !comparisonSelected">双策略对照</button><span v-if="comparisonEnabled && selectedStrategy !== 'main_rise' && comparison.state.value !== 'ready'" role="status">{{ newowUiStateLabel(comparison.state.value) }} · {{ dualMode ? '下方统计为独立融合参考模型' : '参考统计仍属于 ' + newowDisplayLabel(selectedStrategy) }}</span><span v-if="comparison.referenceError.value" role="status">{{ comparison.referenceError.value }}</span><span v-if="comparison.error.value" role="status">{{ comparison.error.value }} <button @click="comparison.reload">重试对照</button></span></div></template>
     <template #auxiliary-controls>
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">
       <div class="newow-product-workspace__auxiliary-controls">
         <div class="newow-product-workspace__auxiliary-tabs">
           <button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" @click="toggleAuxiliary(option.id)">{{ option.label }}</button>
-          <details><summary>详情与口径</summary><button v-if="identity.strategy === 'trend' && identity.frequency === '1d'" @click="openDialog('cup_handle')">杯柄说明</button><button :disabled="!chartModel?.bars.length" @click="openDialog('patterns')">形态识别</button><button v-if="patternSelection" @click="patternSelection=null">清除形态</button><button @click="openDialog('formula')">公式速查</button></details>
+          <button type="button" @click="openDialog('formula')">公式速查</button>
         </div>
       </div>
       <div class="newow-product-workspace__auxiliary-legend-row">
@@ -567,7 +566,7 @@ onBeforeUnmount(() => {
       <span v-else-if="loader.dailyLoading.value">正在加载{{ identity.frequency === '1w' ? '周线' : '日线' }}…</span>
       <template v-else-if="loader.dailyError.value">
         <span>{{ newowErrorDisplay(loader.dailyError.value) }}</span>
-        <button type="button" @click="refreshCurrent">重试加载</button>
+        <button type="button" @click="retryChart">重试加载</button>
       </template>
       <span v-else-if="loader.dailySnapshot.value?.freshness === 'pending_update'">{{ loader.dailySnapshot.value.expected_trading_day }} 日线待更新，当前显示截至 {{ loader.dailySnapshot.value.available_trading_day }} 的完整日线</span>
       <span v-else-if="loader.weeklySnapshot.value?.freshness === 'pending_update'">{{ loader.weeklySnapshot.value.expected_period_end }} 周线待发布，当前显示截至 {{ loader.weeklySnapshot.value.available_period_end }} 的完整周线</span>
@@ -576,7 +575,6 @@ onBeforeUnmount(() => {
       <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
       <NewowReferencePartsPanel :key="identityKey" :state="referenceParts" :chart="chartResponse" :fusion="dualMode" :selected-signal-id="selectedSignalId" @locate="locateReferenceTrade" />
     </section>
-    <NewowDailyWeeklyPath :key="identityKey" :decision="pathContext.decision" :loading="pathContext.loading" :error="pathContext.error" />
     </template>
     <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle' || dialogKind === 'formula'" :variant="isNiuwaIndicatorDialog ? 'niuwa-indicator' : undefined" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
       <p v-if="!isNiuwaIndicatorDialog">{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(comparisonSelection?.strategy ?? identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : dialogKind === 'hint' ? selectedHint?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
