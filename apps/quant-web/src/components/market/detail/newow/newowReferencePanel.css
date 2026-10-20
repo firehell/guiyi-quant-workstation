@@ -89,3 +89,9 @@
 .newow-reference__trade-point { opacity:0; }
 .newow-reference__trade-point:hover,.newow-reference__trade-point:focus { opacity:1; }
 .newow-reference__tooltip { position:absolute; right:32px; top:4px; padding:4px 8px; border:1px solid var(--gy-border); border-radius:4px; background:var(--gy-bg-panel); color:var(--gy-text-secondary); font-size:11px; pointer-events:none; }
+
+.newow-reference__period { background:#ff9500; color:#fff; }
+.newow-reference__period.is-open { background:#ff3b30; color:#fff; }
+.newow-reference__entry,.newow-reference__record-return[data-direction="up"],.newow-reference__inline-return[data-direction="up"] { color:#ff3b30; }
+.newow-reference__exit,.newow-reference__record-return[data-direction="down"],.newow-reference__inline-return[data-direction="down"] { color:#00c936; }
+.newow-reference__record-line { font-size:14px; font-weight:400; }

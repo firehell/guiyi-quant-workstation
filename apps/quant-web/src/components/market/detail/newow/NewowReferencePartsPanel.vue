@@ -86,6 +86,22 @@ function key(row: NewowReferenceRecord) {
   return 'reference_trade_id' in row ? row.reference_trade_id
     : JSON.stringify([row.buyDate, row.buyPrice, row.sellDate, row.sellPrice, row.pct, row.segment_id])
 }
+function card(row: NewowReferenceRecord) {
+  const trade = 'reference_trade_id' in row
+  const entryDate = trade ? row.entry_bar_end : row.buyDate
+  const exitDate = trade ? row.exit_bar_end ?? '' : row.sellDate
+  const open = trade ? row.status === 'OPEN' : row.forceClose
+  const shortDate = (value: string) => value ? formatBeijingInstant(value).slice(5, 10) : '—'
+  const crossYear = entryDate.slice(0, 4) !== exitDate.slice(0, 4)
+  const date = (value: string) => crossYear && value ? formatBeijingInstant(value).slice(0, 10) : shortDate(value)
+  return { entryDate, exitDate, start:date(entryDate), end:open ? '至估值日' : date(exitDate), exitDay:date(exitDate), open,
+    interrupted:trade && row.status !== 'CLOSED' && row.status !== 'OPEN',
+    label:open ? '持仓参考中' : (({'1d':'日K','1w':'周K'} as Record<string, string>)[props.chart?.meta.identity.frequency ?? ''] ?? props.chart?.meta.identity.frequency ?? '参考'),
+    entryPrice:trade ? row.entry_reference_price : row.buyPrice,
+    exitPrice:trade ? row.status === 'CLOSED' ? row.exit_reference_price : row.mark_reference_price : row.sellPrice,
+    pct:trade ? row.status === 'CLOSED' ? row.reference_return_pct : row.mark_change_pct : row.pct,
+    identity:trade ? row.physical_contract : row.segment_id }
+}
 function isTrade(row: NewowReferenceRecord): row is NewowReferenceTrade {
   return 'reference_trade_id' in row && typeof row.reference_trade_id === 'string'
 }
@@ -146,7 +162,7 @@ const waiting = computed(() => {
     <nav class="performance-modes" aria-label="收益事实类型">
       <button v-for="entry in ([['page','页面参考收益'],['holding','含浮动参考'],['closed','已完成参考交易']] as const)" :key="entry[0]" type="button" :aria-pressed="fact === entry[0]" @click="setFact(entry[0])">{{ entry[1] }}</button>
     </nav>
-    <PerformancePanel :kind="fact === 'page' ? '页面参考收益' : fact === 'holding' ? '含浮动参考' : '已完成参考交易'" :since="overview?.performance_since" :through="overview?.performance_through" :cutoff="overview?.reference_cutoff" :version="curve?.model_version ?? chart?.meta.reference_model_version" description="页面历史参考 · 零费用与滑点 · 不代表账户或可执行收益">
+    <PerformancePanel :show-details="false" :kind="fact === 'page' ? '页面参考收益' : fact === 'holding' ? '含浮动参考' : '已完成参考交易'" :since="overview?.performance_since" :through="overview?.performance_through" :cutoff="overview?.reference_cutoff" :version="curve?.model_version ?? chart?.meta.reference_model_version" description="页面历史参考 · 零费用与滑点 · 不代表账户或可执行收益">
       <header class="newow-reference__returns-heading"><strong>参考统计</strong><span class="newow-reference__annualized" title="按完整参考曲线的首末值和自然日跨度折算；跨合约段年化不相加。">{{ pageMode ? '页面参考年化' : '参考年化' }} {{ annualLabel }}{{ pageMode && segmentAnnuals.length > 1 ? ` · ${segmentAnnuals.length}个合约段汇总` : '' }}</span><button type="button" @click="analysisOpen = true">收益分析 ›</button></header>
       <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
         <button v-for="entry in ([['three_months','近3月'],['one_year','近1年'],['three_years','近3年'],['ytd','今年'],['ideal','理论值'],['all','全部']] as const)" :key="entry[0]" type="button" :disabled="state.loading.value || !anchor" :aria-pressed="preset === entry[0]" @click="usePreset(entry[0])">{{ entry[1] }}</button>
@@ -176,15 +192,19 @@ const waiting = computed(() => {
       <p v-if="state.historyError.value" role="alert">{{ state.historyError.value }} <button type="button" @click="history ? state.loadMore() : state.loadHistory()">重试</button></p>
       <p v-else-if="state.historyLoading.value && !history" role="status">正在读取历史参考记录…</p>
       <article v-for="row in records" :id="isTrade(row) ? `reference-trade-${row.reference_trade_id}` : undefined" :key="key(row)" :ref="element => { if (element && isTrade(row)) recordElements.set(row.reference_trade_id, element as HTMLElement) }" tabindex="-1" class="newow-reference__card" :class="{ 'fusion-selected': highlighted === key(row) }" :data-reference-category="category(row)" :data-reference-initial="isTrade(row) && row.statistics_membership === 'initial_before_window' ? 'true' : undefined">
-        <template v-if="'reference_trade_id' in row">
-          <header class="newow-reference__record-top"><strong>{{ row.status === 'CLOSED' ? '已完成' : row.status === 'OPEN' ? '未清仓' : '中断' }}</strong><span>{{ row.physical_contract }} · {{ formatBeijingInstant(row.entry_bar_end) }} → {{ row.exit_bar_end ? formatBeijingInstant(row.exit_bar_end) : '尚未清仓' }}</span><b class="newow-reference__record-return" :data-direction="referencePercentDisplay(row.status === 'CLOSED' ? row.reference_return_pct : row.mark_change_pct).direction">{{ referencePercentDisplay(row.status === 'CLOSED' ? row.reference_return_pct : row.mark_change_pct).text }}</b></header>
-          <p>建仓参考 {{ newowReferencePrice(row.entry_reference_price) }} · {{ row.status === 'CLOSED' ? '清仓参考' : '标记参考' }} {{ newowReferencePrice(row.status === 'CLOSED' ? row.exit_reference_price : row.mark_reference_price) }}</p>
-          <p v-if="row.statistics_membership === 'initial_before_window'">期初已有参考交易，不计入本窗口新建仓统计。</p>
-          <p v-if="row.status !== 'CLOSED' && row.status !== 'OPEN'">{{ interruptionLabel(row.interruption_reason) }}；中断浮动不计入已完成收益。</p>
-          <button v-if="!fusion" type="button" @click="emit('locate', row as NewowReferenceTrade, 'entry')">定位建仓</button>
-          <button v-if="!fusion && row.exit_bar_end" type="button" @click="emit('locate', row as NewowReferenceTrade, 'exit')">定位清仓</button>
+        <header class="newow-reference__record-top">
+          <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': card(row).open }">{{ card(row).label }}</strong><span :title="card(row).identity">{{ card(row).start }} → {{ card(row).end }}</span></div>
+          <b class="newow-reference__record-return" :data-direction="referencePercentDisplay(card(row).pct).direction">{{ card(row).open ? '参考浮动' : '盈亏' }} {{ referencePercentDisplay(card(row).pct).text }}</b>
+        </header>
+        <div class="newow-reference__record-line"><span><b class="newow-reference__entry">建仓</b> 参考 <strong>{{ newowReferencePrice(card(row).entryPrice) }}</strong></span><time :title="card(row).entryDate">{{ card(row).start }}</time></div>
+        <div class="newow-reference__record-line"><span><b :class="card(row).open ? 'newow-reference__valuation' : 'newow-reference__exit'">{{ card(row).open ? '估值' : card(row).interrupted ? '中断' : '清仓' }}</b> 参考 <strong>{{ newowReferencePrice(card(row).exitPrice) }}</strong><b class="newow-reference__inline-return" :data-direction="referencePercentDisplay(card(row).pct).direction">{{ referencePercentDisplay(card(row).pct).text }}</b></span><time :title="card(row).exitDate">{{ card(row).exitDay }}</time></div>
+        <template v-if="isTrade(row)">
+          <p v-if="row.statistics_membership === 'initial_before_window'" class="newow-reference__interruption">期初已有参考交易，不计入本窗口新建仓统计。</p>
+          <p v-if="row.status !== 'CLOSED' && row.status !== 'OPEN'" class="newow-reference__interruption">{{ interruptionLabel(row.interruption_reason) }}；中断浮动不计入已完成收益。</p>
+          <button v-if="!fusion" type="button" @click="emit('locate', row, 'entry')">定位建仓</button>
+          <button v-if="!fusion && row.exit_bar_end" type="button" @click="emit('locate', row, 'exit')">定位清仓</button>
         </template>
-        <template v-else><header class="newow-reference__record-top"><strong>{{ row.forceClose ? '持仓参考中' : '页面参考交易' }}</strong><span>{{ formatBeijingInstant(row.buyDate) }} → {{ row.forceClose ? '至估值日' : formatBeijingInstant(row.sellDate) }}</span><b>{{ referencePercentDisplay(row.pct).text }}</b></header><p>建仓参考 {{ newowReferencePrice(row.buyPrice) }} · {{ row.forceClose ? '参考估值' : '清仓参考' }} {{ newowReferencePrice(row.sellPrice) }} · {{ row.segment_id }}</p><p v-if="row.buyBarIsLive">末根新建仓的页面估值投影；不代表真实成交。</p></template>
+        <p v-else-if="row.buyBarIsLive" class="newow-reference__interruption">末根新建仓的页面估值投影；不代表真实成交。</p>
       </article>
       <p v-if="!records.length && !state.historyLoading.value && !state.historyError.value">当前窗口暂无参考记录。</p>
       <p v-if="overview && records.length">{{ history ? `已加载 ${state.historyRows.value.length} 条` : `最近 ${overview.recent_items.length} 条预览` }}{{ history?.next_before && !state.historyCapped.value ? ' · 可继续加载' : '' }} · 总数未提供</p>
@@ -198,4 +218,4 @@ const waiting = computed(() => {
   </section>
 </template>
 <style scoped src="./newowReferencePanel.css"></style>
-<style scoped>.newow-reference__curve{min-height:170px}.newow-reference__card{margin:10px 0}.newow-reference__record-top{display:flex;gap:12px;flex-wrap:wrap}.newow-reference__record-top b{margin-left:auto}.fusion-selected{outline:2px solid #ff9500}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left}</style>
+<style scoped>.newow-reference__curve{min-height:170px}.newow-reference__card{margin:0}.fusion-selected{outline:2px solid #ff9500}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left}</style>

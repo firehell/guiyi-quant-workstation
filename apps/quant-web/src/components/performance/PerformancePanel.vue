@@ -2,8 +2,8 @@
 withDefaults(defineProps<{
   title?: string; kind: string; since?: string | null; through?: string | null
   cutoff?: string | null; version?: string | null; coverage?: string | null
-  description?: string; loading?: boolean; error?: string | null
-}>(), { title:'收益与参考记录' })
+  showDetails?: boolean; description?: string; loading?: boolean; error?: string | null
+}>(), { title:'收益与参考记录', showDetails:true })
 </script>
 <template>
   <section class="performance-panel" :aria-label="`${kind}收益面板`" :aria-busy="loading" data-performance-version="guiyi_performance_presentation_v1">
@@ -16,7 +16,7 @@ withDefaults(defineProps<{
     <slot />
     <div v-if="$slots.metrics" class="performance-panel__metrics"><slot name="metrics" /></div>
     <div v-if="$slots.records" class="performance-panel__records"><slot name="records" /></div>
-    <details v-if="$slots.details || cutoff || version" class="performance-panel__details"><summary>统计口径与来源</summary><slot name="details" /><p v-if="cutoff">来源截止 {{ cutoff }}</p><p v-if="version" class="performance-panel__version">计算版本 {{ version }}</p></details>
+    <details v-if="showDetails && ($slots.details || cutoff || version)" class="performance-panel__details"><summary>统计口径与来源</summary><slot name="details" /><p v-if="cutoff">来源截止 {{ cutoff }}</p><p v-if="version" class="performance-panel__version">计算版本 {{ version }}</p></details>
   </section>
 </template>
 <style scoped>
