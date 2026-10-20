@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createRenderer, h } from 'vue'
+import { createRenderer, h, nextTick, ref } from 'vue'
 import { compileCurveComponent } from './helpers/compileCurveComponent.ts'
 
 interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string; style: Record<string,unknown> }
@@ -46,4 +46,26 @@ test('every detail view uses the same frequency labels and exact supported choic
     assert.equal(selected.at(-1).symbol,'jm')
     app.unmount()
   }
+})
+
+test('Newow navigation restores frequency choices whenever the workspace does not own them', async () => {
+  const Nav = (await import(await compileCurveComponent(new URL('../src/components/market/detail/MarketDetailViewNav.vue', import.meta.url)))).default
+  const inWorkspace = ref(true), view = ref('newow'), selected: any[] = [], root = element('root')
+  const app = createRenderer(nodeOperations()).createApp({ render: () => h(Nav, {
+    identity: { view:view.value, symbol:'jm', strategy:'trend', seriesKind:'actual_dominant', frequency:'1d' },
+    restore: { newow:{ strategy:'trend', frequency:'1d' } },
+    newowFrequencies:['60m','1d','1w'], seriesKinds:['actual_dominant'], newowFrequencyInWorkspace:inWorkspace.value,
+    onSelect:(value:any)=>selected.push(value),
+  }) })
+  app.mount(root)
+  const controls = () => findNode(root,n=>n.props['aria-label']==='周期')
+  assert.equal(controls(), undefined)
+  inWorkspace.value = false; await nextTick()
+  const hour = findNode(controls()!,n=>n.type==='button'&&nodeText(n)==='60分钟')!
+  ;(hour.props.onClick as Function)()
+  assert.equal(selected.at(-1).frequency,'60m')
+  assert.equal(selected.at(-1).symbol,'jm')
+  inWorkspace.value = true; view.value = 'free'; await nextTick()
+  assert.ok(controls(), 'other analysis views always retain their frequency controls')
+  app.unmount()
 })

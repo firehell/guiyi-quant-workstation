@@ -86,6 +86,7 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   strategySwitching?: boolean
   hasMoreBefore?: boolean
+  channelControlsTarget?: string
 }>(), { loading: false, hasMoreBefore: false, focusRequestId: 0 })
 
 const emit = defineEmits<{
@@ -111,6 +112,7 @@ function actionTitle(callout: KlineReferenceCallout, strategy = props.strategy) 
 function actionWidth(callout: KlineReferenceCallout, strategy = props.strategy): number {
   return Math.max(ACTION_LABEL_BOX.width, Math.min(180, Math.max(actionTitle(callout, strategy).length, actionDisplay(callout, strategy).text.length) * 7 + 14))
 }
+const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean}>>([])
 const visualOverlays = ref(readVisualOverlayPreferences())
 watch(visualOverlays, value => { saveVisualOverlayPreferences(value); renderVisualOverlays() })
 const cursorRows = ref<string[]>([])
@@ -131,7 +133,6 @@ const referencePriceLines = new Map<string, IPriceLine>()
 const stageRoot = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
 const fullscreenError = ref<string | null>(null)
-const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean}>>([])
 const volumeTop = ref(0)
 const auxiliaryTop = ref(0)
 const actionOverlayTop = ref(0)
@@ -804,7 +805,7 @@ async function toggleFullscreen(): Promise<void> {
   } catch { fullscreenError.value = '无法进入图表全屏。' }
 }
 
-defineExpose({ revealSignal, scrollToLatest })
+defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
 </script>
 
 <template>
@@ -826,21 +827,43 @@ defineExpose({ revealSignal, scrollToLatest })
     <div class="newow-product-chart-stage__reference-prices" aria-label="主图参考价格">
       <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ newowReferencePrice(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
       <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ newowReferencePrice(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
-      <div class="newow-product-chart-stage__reference-controls"><slot name="reference-controls" /></div>
+      <div class="newow-product-chart-stage__reference-controls">
+        <slot name="reference-controls" />
+        <details class="newow-product-chart-stage__tools">
+          <summary>图表工具</summary>
+          <div class="newow-product-chart-stage__tools-body">
+            <slot name="main-controls" />
+            <div v-if="!comparisonActive" class="newow-product-chart-stage__legend" aria-label="Newow 主图图例">
+              <button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button>
+              <details v-if="showHints && model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details>
+            </div>
+            <div class="newow-product-chart-stage__controls">
+              <template v-if="comparisonActive"><button type="button" :aria-pressed="detailLabels" @click="detailLabels = true">详</button><button type="button" :aria-pressed="!detailLabels" @click="detailLabels = false">简</button></template>
+              <button v-else type="button" :aria-pressed="!detailLabels" @click="detailLabels = !detailLabels">{{ detailLabels ? '简洁标记' : '详细标记' }}</button>
+              <details class="newow-product-chart-stage__layers">
+                <summary>图层</summary>
+                <button type="button" :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button>
+                <button type="button" :aria-pressed="showActions" @click="showActions = !showActions">建仓 / 清仓</button>
+                <button v-if="!comparisonActive" type="button" :aria-pressed="showHints" @click="showHints = !showHints">过程提示</button>
+                <template v-else>
+                  <button type="button" :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button>
+                  <button type="button" :aria-pressed="oscillationTrack" @click="oscillationTrack = !oscillationTrack">震荡标记</button>
+                  <button type="button" :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button>
+                </template>
+              </details>
+              <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
+              <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
+              <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
+            </div>
+            <p v-if="!comparisonActive && referenceTradesComplete === false" class="newow-product-chart-stage__reference-record-status" role="status">单笔参考收益仅显示已核对记录；未显示收益不代表没有交易。下方参考记录可按需加载。</p>
+          </div>
+        </details>
+      </div>
     </div>
-    <p v-if="!comparisonActive && referenceTradesComplete === false" class="newow-product-chart-stage__reference-record-status" role="status">单笔参考收益仅显示已核对记录；未显示收益不代表没有交易。下方参考记录可按需加载。</p>
-    <div v-if="comparisonActive" class="newow-product-chart-stage__dual-summary" aria-label="双策略本视图摘要" :title="referenceTradesComplete === false ? '历史记录按需分页，未证明覆盖全部图表信号；仅显示已核对单笔。' : `统计仅含已绘制清仓标签对应的 ${comparisonStats.samples} 笔已完成参考交易，不含融合配对收益`">主导：{{ comparisonDominant === 'trend' ? '趋势' : comparisonDominant === 'oscillation' ? '震荡' : '—' }} · 上=趋势 下=震荡 · 本视图 {{ comparisonStats.count }} 个信号 · <template v-if="referenceTradesComplete !== false">平均盈亏 {{ comparisonStats.average }} · 胜率 {{ comparisonStats.winRate }} · 最大 {{ comparisonStats.maximum }}</template><template v-else>参考收益需完整记录，当前不显示统计 <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">{{ referenceStatsLoading ? '正在核对完整记录…' : '读取完整参考统计' }}</button><span v-if="referenceStatsError" role="alert">{{ referenceStatsError }}</span></template> · 背景深色=趋势蓝带<div class="newow-product-chart-stage__dual-controls"><slot name="main-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /><button :aria-pressed="detailLabels" @click="detailLabels = true">详</button><button :aria-pressed="!detailLabels" @click="detailLabels = false">简</button><details><summary>图层</summary><div class="newow-product-chart-stage__dual-layer-menu"><button :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button><button :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button><button :aria-pressed="oscillationTrack" @click="oscillationTrack = !oscillationTrack">震荡标记</button><button :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button><button :aria-pressed="showActions" @click="showActions = !showActions">建仓 / 清仓</button></div></details><button v-if="hasMoreBefore" :disabled="loading" @click="emit('loadEarlier')">加载更早</button><button v-if="!followLatest" @click="scrollToLatest">最新</button><button :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">全屏</button></div></div>
-    <div v-if="!comparisonActive" class="newow-product-chart-stage__toolbar">
-    <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button><details v-if="showHints && model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details></div>
-    <div class="newow-product-chart-stage__controls"><slot name="main-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" />
-      <button type="button" :aria-pressed="!detailLabels" @click="detailLabels = !detailLabels">{{ detailLabels ? '简洁标记' : '详细标记' }}</button>
-      <details class="newow-product-chart-stage__layers"><summary>图层</summary><button type="button" :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button><button type="button" :aria-pressed="showActions" @click="showActions = !showActions">建仓 / 清仓</button><button type="button" :aria-pressed="showHints" @click="showHints = !showHints">过程提示</button></details>
-
-      <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
-      <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
-      <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
-    </div>
-    </div>
+    <div v-if="comparisonActive" class="newow-product-chart-stage__dual-summary" aria-label="双策略本视图摘要" :title="referenceTradesComplete === false ? '历史记录按需分页，未证明覆盖全部图表信号；仅显示已核对单笔。' : `统计仅含已绘制清仓标签对应的 ${comparisonStats.samples} 笔已完成参考交易，不含融合配对收益`">主导：{{ comparisonDominant === 'trend' ? '趋势' : comparisonDominant === 'oscillation' ? '震荡' : '—' }} · 上=趋势 下=震荡 · 本视图 {{ comparisonStats.count }} 个信号 · <template v-if="referenceTradesComplete !== false">平均盈亏 {{ comparisonStats.average }} · 胜率 {{ comparisonStats.winRate }} · 最大 {{ comparisonStats.maximum }}</template><template v-else>参考收益需完整记录，当前不显示统计 <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">{{ referenceStatsLoading ? '正在核对完整记录…' : '读取完整参考统计' }}</button><span v-if="referenceStatsError" role="alert">{{ referenceStatsError }}</span></template> · 背景深色=趋势蓝带</div>
+    <Teleport defer :to="channelControlsTarget ?? 'body'" :disabled="!channelControlsTarget || fullscreen">
+      <NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" />
+    </Teleport>
     <details v-if="response?.value?.price_unavailable_days.length" class="newow-product-chart-stage__quality-gaps" data-testid="newow-chart-price-gaps">
       <summary>日线来源价格不可用 {{ response.value.price_unavailable_days.length }} 日；指标已分段重算</summary>
       <ul><li v-for="gap in response.value.price_unavailable_days" :key="`${gap.segment_id}:${gap.trading_day}`">{{ gap.trading_day }} · {{ gap.physical_contract }} · 无可用开高低价；未生成 K 线或交易信号</li></ul>
@@ -912,8 +935,12 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
+.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay span{position:absolute;transform:translateX(-50%);border-radius:8px;padding:1px 6px;background:#00ff00;color:#111;font-size:11px;line-height:16px;white-space:nowrap}
+
 .newow-product-chart-stage__reference-prices { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; padding:5px 12px; border-bottom:1px solid #eef0f3; background:#fafafa; font-size:11px; font-weight:600; }
-.newow-product-chart-stage__reference-controls { margin-left:auto; }
+.newow-product-chart-stage__reference-controls { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.newow-product-chart-stage__tools > summary { min-height:22px; padding:0 6px; line-height:22px; cursor:pointer; white-space:nowrap; }
+.newow-product-chart-stage__tools-body { position:absolute; right:0; top:100%; width:min(560px,calc(100vw - 48px)); padding:8px; border:1px solid var(--gy-border); border-radius:6px; background:var(--gy-bg-panel); box-shadow:0 4px 14px #0002; font-weight:400; }
 .newow-product-chart-stage__reference-prices .is-target { color:#ff6935; }
 .newow-product-chart-stage__reference-prices .is-absorb { color:#34c759; }
 .newow-product-chart-stage__reference-prices small { font-weight:400; }
@@ -969,8 +996,6 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-product-chart-stage__volume-score header { display:flex; justify-content:space-between; align-items:center; }.newow-product-chart-stage__volume-score button { min-height:28px; }
 .newow-product-chart-stage__volume-score p,.newow-product-chart-stage__volume-score small { color:var(--gy-text-muted); line-height:1.7; margin:6px 0; }
 .newow-product-chart-stage__volume-score dl { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:8px 0; }.newow-product-chart-stage__volume-score dt { color:#98a2b3; }.newow-product-chart-stage__volume-score dd { margin:4px 0; color:#b77900; }.newow-product-chart-stage__volume-score article { border-top:1px solid #f2f4f7; padding-top:8px; }
-.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay span{position:absolute;transform:translateX(-50%);border-radius:8px;padding:1px 6px;background:#00ff00;color:#111;font-size:11px;line-height:16px;white-space:nowrap}
-.newow-caution-overlay .tentative{background:transparent;border:1px dashed #00b800;color:#008800}
 </style>
 
 <style scoped>
@@ -984,4 +1009,8 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-attack-overlay .ZLGJ_BUY { background:#f00; border:1px solid white; }
 .newow-attack-overlay .ZLGJ_SELL { background:#0f0; border:1px solid white; }
 .newow-attack-overlay .OSCILLATION_J { color:#34c759; text-align:center; font:600 10px -apple-system,sans-serif; }
+</style>
+
+<style scoped>
+.newow-caution-overlay .tentative { background:transparent; border:1px dashed #00b800; color:#008800; }
 </style>

@@ -26,7 +26,6 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
    <span class="newow-status-card__tag" :data-state="card.day.state">日:{{ card.day.label }}</span>
    <span v-if="strategy==='oscillation'" class="newow-status-card__tag" :data-state="card.hour.state">时:{{ card.hour.label }}</span>
    <span class="newow-status-card__risk"><i aria-hidden="true" />{{ card.riskLabel }}</span>
-   <span class="newow-status-card__exposure">建议仓位 {{ card.exposure }} <small>参考强度</small></span>
    <span class="newow-status-card__arrow" aria-hidden="true" :class="{collapsed}">▾</span>
   </button>
   <div v-show="!collapsed" :id="bodyId" class="newow-status-card__body">
@@ -60,32 +59,30 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
  </section>
 </template>
 <style scoped>
-.newow-status-card { margin:8px 0 12px; border-left:4px solid var(--status-color); background:var(--gy-bg-panel); box-shadow:0 2px 8px #0000000a; color:var(--gy-text-primary); }
-.newow-status-card__header { width:100%; display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:12px 14px 6px; background:transparent; border:0; text-align:left; cursor:pointer; color:inherit; font:inherit; }
-.newow-status-card__header strong { font-size:14px; font-weight:600; }
-.newow-status-card__tag { font-size:12px; font-weight:600; padding:2px 7px; border-radius:4px; color:white; line-height:1.3; background:#c7c7cc; }
+.newow-status-card { margin:3px 0 4px; border-left:3px solid var(--status-color); background:var(--gy-bg-panel); box-shadow:0 2px 8px #0000000a; color:var(--gy-text-primary); }
+.newow-status-card__header { width:100%; display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:10px 14px 4px; background:transparent; border:0; text-align:left; cursor:pointer; color:inherit; font:inherit; }
+.newow-status-card__header strong { font-size:13px; font-weight:600; }
+.newow-status-card__tag { font-size:12px; font-weight:600; padding:1px 5px; border-radius:4px; color:white; line-height:1.3; background:#c7c7cc; }
 .newow-status-card__tag[data-state=buy],.newow-status-card__tag[data-state=hold] { background:#ff3b30; }
 .newow-status-card__tag[data-state=sell] { background:#34c759; }
 .newow-status-card__tag[data-state=wait] { background:var(--gy-accent); }
-.newow-status-card__risk { color:var(--status-color); font-size:13px; font-weight:500; display:flex; gap:5px; align-items:center; }
-.newow-status-card__risk i { width:9px; height:9px; background:var(--status-color); border-radius:50%; }
-.newow-status-card__exposure { font-size:12px; color:var(--gy-text-muted); margin-left:2px; }
-.newow-status-card__exposure small { font-size:10px; }
+.newow-status-card__risk { color:var(--status-color); font-size:12px; font-weight:500; display:flex; gap:5px; align-items:center; }
+.newow-status-card__risk i { width:8px; height:8px; background:var(--status-color); border-radius:50%; }
 .newow-status-card__arrow { font-size:11px; color:var(--gy-text-muted); transition:transform .2s; margin-left:4px; }
 .newow-status-card__arrow.collapsed { transform:rotate(-90deg); }
-.newow-status-card__body { padding:0 14px 10px; display:flex; flex-direction:column; gap:6px; }
+.newow-status-card__body { padding:0 14px 10px; display:flex; flex-direction:column; gap:4px; }
 p { margin:0; font-size:12px; color:var(--gy-text-muted); line-height:1.5; }
 .newow-status-card__advice { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.newow-status-card__prices { display:flex; align-items:center; gap:6px; height:28px; color:var(--gy-text-muted); font-size:13px; }
+.newow-status-card__prices { display:flex; align-items:center; gap:6px; height:24px; color:var(--gy-text-muted); font-size:12px; }
 .newow-status-card__prices>span { white-space:nowrap; } .newow-status-card__prices b { color:var(--gy-text-primary); font-weight:600; }
 .newow-status-card__track { flex:1; min-width:30px; height:5px; background:var(--gy-border); border-radius:3px; position:relative; }
 .newow-status-card__track i { display:block; height:100%; border-radius:3px; background:linear-gradient(90deg,var(--status-color),color-mix(in srgb,var(--status-color) 87%,white)); }
 .newow-status-card__track em { position:absolute; top:50%; transform:translate(-50%,-50%); width:16px; height:16px; border-radius:50%; background:var(--gy-bg-panel); box-shadow:0 1px 4px #00000026; }
-.newow-status-card__statistics { display:flex; justify-content:space-between; color:#aeaeb2; font-size:13px; }
+.newow-status-card__statistics { display:flex; justify-content:space-between; color:#aeaeb2; font-size:12px; }
 .newow-status-card__statistics b { color:var(--status-color); font-weight:600; }
 .newow-status-card[data-risk=cautious] .newow-status-card__statistics b { color:#ff3b30; }
 .newow-status-card[data-risk=warning] .newow-status-card__statistics b { color:#34c759; }
-.newow-status-card__explanation { border:0; border-top:1px solid #0000000f; padding:7px 0 0; background:transparent; display:flex; align-items:flex-start; text-align:left; cursor:pointer; font:inherit; font-size:13px; color:var(--gy-text-muted); gap:6px; min-width:0; }
+.newow-status-card__explanation { border:0; border-top:1px solid #0000000f; padding:7px 0 0; background:transparent; display:flex; align-items:flex-start; text-align:left; cursor:pointer; font:inherit; font-size:12px; color:var(--gy-text-muted); gap:6px; min-width:0; }
 .newow-status-card__explanation>span:first-child { flex-shrink:0; color:#aeaeb2; }
 .newow-status-card__text { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .expanded .newow-status-card__text { white-space:normal; overflow:visible; }

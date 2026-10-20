@@ -18,10 +18,12 @@ const props = withDefaults(defineProps<{
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
   newowFrequencies: readonly MarketFrequency[]
+  newowFrequencyInWorkspace?: boolean
 }>(), {
   seriesKinds: () => ['actual_dominant', 'contract'],
   frequencies: () => MARKET_FREQUENCIES,
   products: () => [],
+  newowFrequencyInWorkspace: false,
 })
 
 const emit = defineEmits<{
@@ -45,7 +47,7 @@ const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'new
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
 const seriesLabels: Record<DetailSeriesKind, string> = { actual_dominant: '真实主力', contract: '指定合约' }
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
-const showFrequencyControls = computed(() => props.identity.view === 'newow' || props.identity.view === 'subing' || showSeriesControls.value)
+const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInWorkspace) || props.identity.view === 'subing' || showSeriesControls.value)
 const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : props.identity.view === 'subing' ? ['5m', '15m', '30m', '60m', '1d', '1w'] as MarketFrequency[] : props.frequencies)
 const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind): kind is 'actual_dominant' => kind === 'actual_dominant'))
 const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
@@ -121,8 +123,10 @@ function periodLabel(value: MarketFrequency) {
         :class="{ 'is-active': activeChoice === view.value }"
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
-      <span v-if="view.value === 'dual' && identity.view === 'newow'" id="newow-strategy-test-anchor" />
+      <span v-if="view.value === 'dual'" id="newow-strategy-test-anchor" />
       <button v-if="view.value === 'dual' && identity.view === 'newow'" type="button" class="detail-view-nav__ai" @click="emit('ai-analysis')">✨AI分析</button></template>
+      <span v-if="identity.view === 'newow'" id="newow-channel-controls" />
+      <slot name="display-controls" />
     </div>
 
     <div v-if="showSeriesControls || showFrequencyControls" class="detail-view-nav__controls">
