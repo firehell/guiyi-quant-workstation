@@ -15,7 +15,7 @@ import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; pathStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true })
+const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; pathStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; showPriceSources?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true, showPriceSources: true })
 const emit = defineEmits<{ 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
 const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.asOf : props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
@@ -150,7 +150,7 @@ const chipColor = (axis: string, period: string) => {
     <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
   </section>
   <div data-testid="status-card-surface"><NewowStatusCard :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
-  <NewowPriceSources :rows="[...(chartSources ?? []), ...decisionPriceSources(prices)]" label="目标／吸筹来源" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
+  <NewowPriceSources v-if="showPriceSources" :rows="[...(chartSources ?? []), ...decisionPriceSources(prices)]" label="目标／吸筹来源" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
   <NewowDailyWeeklyPath v-if="showPath !== false" :decision="result" :loading="loading" :error="error" />
 </template>
 

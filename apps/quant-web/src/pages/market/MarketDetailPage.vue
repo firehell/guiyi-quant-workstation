@@ -310,7 +310,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @contract-cleared="selectContractCleared"
         @ai-analysis="aiOpen = true"
       >
-        <template #display-controls>
+        <template v-if="!isNewowView" #display-controls>
           <details class="market-detail-page__display-controls">
             <summary>显示设置</summary>
             <button type="button" class="gy-reset-display" @click="resetDisplayPreferences">重置页面显示</button>

@@ -764,7 +764,7 @@ test('oscillation breakout is an orange native price line and is revoked on stra
   app.unmount()
 })
 
-test('stop reference toggle defaults off, uses accepted BUILD, and revokes on owner loading or empty viewport', async () => {
+test('stop reference is always visible, uses accepted BUILD, and revokes on owner loading or empty viewport', async () => {
  const Stage=await loadComponent()
  const response=ref<MutableChartResponse|null>(chartResponse()),loading=ref(false),switching=ref(false),strategy=ref('oscillation'),partner=ref<MutableChartResponse|null>(null)
  const active=new Set<Record<string,unknown>>()
@@ -774,9 +774,7 @@ test('stop reference toggle defaults off, uses accepted BUILD, and revokes on ow
  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart))
  const root=element('root');app.mount(root);await nextTick()
  const stops=()=>[...active].filter(l=>String(l.title).startsWith('止损价'))
- assert.equal(stops().length,0)
- const toggle=findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
- ;(toggle.props.onClick as ()=>void)();await nextTick()
+ assert.equal(findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线'),undefined)
  assert.deepEqual(stops().map(l=>[Number(Number(l.price).toFixed(8)),l.color,l.lineStyle]),[[83.7,'#3B82F6',2]])
  response.value=prependBar(chartResponse());await nextTick()
  range={from:0,to:0};changed(range)
@@ -786,10 +784,6 @@ test('stop reference toggle defaults off, uses accepted BUILD, and revokes on ow
  loading.value=false;await nextTick();assert.equal(stops().length,1)
  const trend=strategyResponse('trend');trend.value!.actions[0]!.reference_price='200';partner.value=trend;await nextTick()
  assert.equal(Number(Number(stops()[0]!.price).toFixed(8)),83.7,'dual anchor stays oscillation BUILD despite trend BUILD at 200')
- const dualToggle=()=>findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
- assert.ok(dualToggle(),'dual exposes direct overlay controls')
- ;(dualToggle().props.onClick as ()=>void)();await nextTick();assert.equal(stops().length,0)
- ;(dualToggle().props.onClick as ()=>void)();await nextTick();assert.equal(stops().length,1)
  switching.value=true;await nextTick();assert.equal(stops().length,0,'strategy switching alone clears old stop')
  switching.value=false;await nextTick();assert.equal(stops().length,1)
  response.value!.status.status='warming';await nextTick();assert.equal(stops().length,0,'status invalidation without changing value clears stop')
@@ -812,8 +806,7 @@ test('dual stop maps a longer oscillation window to primary visible time and own
  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart))
  const root=element('root');app.mount(root);await nextTick()
  assert.equal(findNode(root,n=>n.props['data-testid']==='newow-product-chart-stage')!.props['data-comparison-active'],true)
- const toggle=findNode(root,n=>n.type==='button'&&textContent(n)==='止损参考线')!
- ;(toggle.props.onClick as ()=>void)();await nextTick()
+
  const stops=[...active].filter(l=>String(l.title).startsWith('止损价'))
  assert.equal(stops.length,1,'oscillation BUILD on primary visible first bar remains accepted despite an extra earlier partner bar')
  assert.equal(Number(Number(stops[0]!.price).toFixed(8)),83.7)

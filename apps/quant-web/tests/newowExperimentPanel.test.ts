@@ -51,9 +51,7 @@ test('experiment graph keeps HHV10 facts and renders independent saved overlays 
  app.mount(root);await flush()
  const bars=Array.from({length:20},(_,i)=>({bar_end:`2026-09-${String(i+1).padStart(2,'0')}T07:00:00Z`,trading_day:'2026-09-01',physical_contract:'RB2701',segment_id:'a',open:'100',high:String(110+i),low:'90',close:'105',channel_high:'888',channel_low:'777'}))
  mock.calls[base].resolve({bars,markers:[{bar_end:bars[1]!.bar_end,physical_contract:'RB2701',segment_id:'a',action:'BUILD',reference_price:'100',score:1}],segments:[],readiness:{status:'READY'},formula_version:'test',as_of:'2026-10-08T07:00:00Z'});await flush()
- assert.equal(chartMock.prices.size,0)
- const stop=findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='止损参考线')!
- ;(stop.props.onClick as ()=>void)();await flush()
+ assert.equal(findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='止损参考线'),undefined)
  assert.deepEqual([...chartMock.prices].map((x:any)=>[x.price,x.color,x.title]),[[88,'#3B82F6','止损价（−12%）']])
  const channel=findNode(root,n=>n.type==='button'&&n.props['aria-label']==='唐奇安通道')!
  ;(channel.props.onClick as ()=>void)();await flush()

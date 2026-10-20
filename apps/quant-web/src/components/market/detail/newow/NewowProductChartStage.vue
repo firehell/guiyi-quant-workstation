@@ -240,7 +240,7 @@ function renderVisualOverlays(): void {
   const bars = value.bars.filter((_,i) => !range || (i >= Math.ceil(range.from) && i <= Math.floor(range.to)))
   retainedStop = retainBuildStop(retainedStop, `${identityKey(value)}:${comparisonActive.value ? 'dual' : 'single'}`, anchorModel.actions.map(a => { const b = anchorModel.bars.find(b => b.barEnd === a.barEnd && b.physicalContract === a.physicalContract && b.segmentId === a.segmentId); return { time:a.barEnd, owner:b ? owner(b) : '', price:a.referencePrice, action:a.kind } }),bars.map(b => ({time:b.barEnd,owner:owner(b)})))
   const price = retainedStopPrice(retainedStop, 0.07)
-  if (visualOverlays.value.stop && price !== null) visualStopLine = candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
+  if (price !== null) visualStopLine = candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
 }
 const mainLines = new Map<string, ISeriesApi<'Line'>>()
 
@@ -828,6 +828,7 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
       <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ newowReferencePrice(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
       <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ newowReferencePrice(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
       <div class="newow-product-chart-stage__reference-controls">
+        <slot name="frequency-controls" />
         <slot name="reference-controls" />
         <details class="newow-product-chart-stage__tools">
           <summary>图表工具</summary>

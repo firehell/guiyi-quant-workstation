@@ -36,7 +36,6 @@ function analyze() { open.value = false; emit('analyze') }
         <button class="analyze" @click="analyze">分析最佳目标价/吸筹价周期</button>
       </div>
     </div>
-    <button class="stop-toggle" :aria-pressed="modelValue.stop" @click="emit('update:modelValue', { ...modelValue, stop: !modelValue.stop })">止损参考线</button>
   </div>
 </template>
 <style scoped>
@@ -50,6 +49,5 @@ function analyze() { open.value = false; emit('analyze') }
 input{width:42px;padding:2px 4px;border:1px solid #3a3a3c;border-radius:4px;background:#2c2c2e;color:#fff;text-align:center;font-size:11px}
 .apply,.close{padding:2px 8px;border:0;border-radius:4px;color:white;background:#0a84ff;cursor:pointer}.close{background:#3a3a3c}
 .analyze{width:100%;margin-top:8px;padding:4px 8px;background:#ff9500;color:var(--gy-bg-panel);border:0;border-radius:4px;font-size:10px;cursor:pointer}
-.stop-toggle{padding:6px;border:1px solid #ddd;border-radius:4px;background:var(--gy-bg-panel);color:var(--gy-text-muted);font-size:12px}.stop-toggle[aria-pressed="true"]{color:#2563eb;border-color:#2563eb}
 p{margin:6px 0;color:#b42318}
 </style>

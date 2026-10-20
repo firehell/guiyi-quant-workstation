@@ -91,7 +91,7 @@ function renderVisual(){
  const pct=props.kind==='osc-test4'?0.12:0.07
  retainedStop=retainBuildStop(retainedStop, `${props.product}:${props.frequency}:${props.kind}`, chartMarkers.value.map(m=>({time:m.bar_end,owner:`${m.physical_contract}:${m.segment_id}`,price:m.reference_price,action:m.action})),visible.map(b=>({time:b.bar_end,owner:`${b.physical_contract}:${b.segment_id}`})))
  const price=retainedStopPrice(retainedStop,pct)
- if(visualOverlays.value.stop&&price!==null)stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
+ if(price!==null)stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
 }
 const callouts=shallowRef<PositionedCallout[]>([])
 function projectCallouts(){
