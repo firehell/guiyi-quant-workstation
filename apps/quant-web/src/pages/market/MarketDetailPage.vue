@@ -348,7 +348,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @daily-snapshot-pending="newowDailyPending = $event"
             @daily-chart="newowDailyChart = $event"
             @weekly-quote-context="newowWeeklyQuoteContext = $event"
-            @refresh-current="dailyQuote.refresh(); newowCapabilities.load(true)"
             @analysis-as-of="aiAsOf = $event"
             @select-identity="selectIdentity"
           >

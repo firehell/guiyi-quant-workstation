@@ -85,9 +85,10 @@ const props = withDefaults(defineProps<{
   focusRequestId?: number
   loading?: boolean
   strategySwitching?: boolean
+  showTools?: boolean
   hasMoreBefore?: boolean
   channelControlsTarget?: string
-}>(), { loading: false, hasMoreBefore: false, focusRequestId: 0 })
+}>(), { showTools: true, loading: false, hasMoreBefore: false, focusRequestId: 0 })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -830,7 +831,7 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
       <div class="newow-product-chart-stage__reference-controls">
         <slot name="frequency-controls" />
         <slot name="reference-controls" />
-        <details class="newow-product-chart-stage__tools">
+        <details v-if="showTools" class="newow-product-chart-stage__tools">
           <summary>图表工具</summary>
           <div class="newow-product-chart-stage__tools-body">
             <slot name="main-controls" />
