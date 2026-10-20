@@ -46,7 +46,7 @@ function integer(value: number | null): string {
     <div class="quote-header__primary">
       <div class="quote-header__price" :class="`quote-header__price--${direction}`">
         <strong>{{ price(header.close) }}</strong>
-        <span>{{ header.change === null ? `${changeBasis} —` : `${changeBasis} ${header.change >= 0 ? '+' : ''}${price(header.change)}` }}</span>
+        <span :title="newow ? changeBasis : undefined">{{ newow ? (header.change === null ? '—' : `${header.change >= 0 ? '+' : ''}${price(header.change)}`) : header.change === null ? `${changeBasis} —` : `${changeBasis} ${header.change >= 0 ? '+' : ''}${price(header.change)}` }}</span>
         <span>{{ header.pct === null ? '比例 —' : `${header.pct >= 0 ? '+' : ''}${number(header.pct)}%` }}</span>
       </div>
       <span class="quote-header__status" :class="`quote-header__status--${header.afterMarketFailed ? 'stale' : header.freshness}`">

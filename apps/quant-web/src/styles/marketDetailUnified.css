@@ -87,3 +87,7 @@
 .unified-detail-light .detail-view-nav .detail-view-nav__views .visual-overlay-controls button.stop-toggle[aria-pressed="true"] {
   border-color:#2563eb; color:#2563eb; background:#eff6ff;
 }
+
+.unified-detail-light .quote-header--newow .quote-header__price { align-items:baseline; gap:0 6px; flex-wrap:nowrap; }
+.unified-detail-light .quote-header--newow .quote-header__price strong { flex-basis:auto; font-family:inherit; font-size:34px; font-weight:700; line-height:1; }
+.unified-detail-light .quote-header--newow .quote-header__price span { padding:0; border-radius:0; background:none; font-size:13px; font-weight:400; white-space:nowrap; }
