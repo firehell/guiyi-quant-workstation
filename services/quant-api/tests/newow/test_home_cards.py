@@ -180,7 +180,7 @@ def test_home_j_hint_uses_previous_hint_not_main_rise_clear():
     assert project_home_j_hint([item(None, False), item(90, True)]) is None
 
 
-def test_row_caution_uses_confirmation_window_and_current_owner():
+def test_row_caution_uses_peak_event_window_and_current_owner():
     from types import SimpleNamespace
     from tests.newow.test_oscillation_channel import golden_bars
     from app.market_data.newow.home_cards import project_row_hints
@@ -191,12 +191,12 @@ def test_row_caution_uses_confirmation_window_and_current_owner():
     def project(count, ready=True):
         replay = SimpleNamespace(identity=SimpleNamespace(frequency=SimpleNamespace(value='1d')), frames=frames[:count])
         return project_row_hints(replay, frames[count-1], ready)
-    assert not [item for item in project(22)['items'] if item['kind'] == 'caution']
-    caution = [item for item in project(23)['items'] if item['kind'] == 'caution'][0]
-    assert caution['peak_day'] == bars[20].trading_day
-    assert caution['event_day'] == bars[22].trading_day
-    assert any(item['kind'] == 'caution' for item in project(24)['items'])
-    assert not any(item['kind'] == 'caution' for item in project(25)['items'])
+    hint = [item for item in project(22)['items'] if item['kind']=='caution'][0]
+    assert hint['peak_day'] == bars[20].trading_day
+    assert hint['event_day'] == bars[20].trading_day
+    assert hint['confirmed_day'] is None
+    assert not any(item['kind']=='caution' for item in project(23)['items'])
+    assert not any(item['kind']=='caution' for item in project(24)['items'])
     assert project(23, False) is None
     foreign = replace(bars[-1], physical_contract='OTHER')
     anchor = SimpleNamespace(bar=SimpleNamespace(bar=foreign, calculation_segment_id='other'))

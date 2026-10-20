@@ -7,6 +7,7 @@ from guiyi_quant.newow.cross_period_prices import (
     PriceSource,
     select_cross_period_prices,
 )
+from guiyi_quant.newow.subplots import calculate_zhaoyao_mirror, mirror_care
 from guiyi_quant.newow.daily_weekly_path import build_daily_weekly_path
 from guiyi_quant.newow.product_contracts import (
     ProductFrequency,
@@ -28,7 +29,16 @@ SIGNALS = {
 }
 
 
-def build_decision_v2(trend, oscillation, main_rise, read, identity):
+def build_decision_v2(
+    trend,
+    oscillation,
+    main_rise,
+    read,
+    identity,
+    *,
+    path_strategy=None,
+    main_paths=None,
+):
     cutoff = read.as_of
     current_frames = [
         f
@@ -166,6 +176,21 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
         else []
     )
     j_reduce = any(h.kind == "J" for f in recent[-3:] for h in f.hints)
+    mirror_frames = [
+        f
+        for f in current_frames
+        if anchor
+        and f.bar.bar.observation_eligible
+        and f.bar.bar.bar_end <= cutoff
+        and (f.bar.bar.physical_contract, f.bar.bar.segment_id) == owner
+        and f.bar.calculation_segment_id == anchor.bar.calculation_segment_id
+    ]
+    mirror = (
+        calculate_zhaoyao_mirror(tuple(f.bar.bar for f in mirror_frames))
+        if mirror_frames
+        else None
+    )
+    care = mirror_care(mirror.caution) if mirror else False
     cdv2 = compute_cdv2(
         states["trend"],
         states["oscillation"],
@@ -173,6 +198,7 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
         cross=cross,
         volatility=volatility,
         j_reduce=j_reduce,
+        care=care,
     )
     cdv2.update(
         {
@@ -185,8 +211,23 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
                 "j_reduce": f"main_rise_{identity.frequency.value}_last_3_completed_bars"
                 if main_rise
                 else "unavailable",
-                "care": "explicitly_disabled",
+                "care": "zhaoyao_last_66_completed_bars" if mirror else "unavailable",
                 "tent": "explicitly_disabled",
+            },
+            "adapter_version": "newow_cdv2_care_v3402_v1",
+            "care_input": {
+                "status": "ready" if mirror else "unavailable",
+                "value": care if mirror else None,
+                "window_size": min(66, len(mirror_frames)),
+                "bar_end": mirror_frames[-1].bar.bar.bar_end.isoformat()
+                if mirror
+                else None,
+                "physical_contract": owner[0] if owner else None,
+                "calculation_segment_id": anchor.bar.calculation_segment_id
+                if anchor
+                else None,
+                "contribution": -3 if care else 0,
+                "formula_version": mirror.formula_version if mirror else None,
             },
             "missing_roles": [f["role"] for f in facts if f["status"] != "ready"],
         }
@@ -212,7 +253,13 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
                 category,
             )
 
-        current_bar = anchor.bar if identity.frequency is ProductFrequency.HOURLY else daily[-1].bar if daily else anchor.bar
+        current_bar = (
+            anchor.bar
+            if identity.frequency is ProductFrequency.HOURLY
+            else daily[-1].bar
+            if daily
+            else anchor.bar
+        )
         current = price_fact(
             current_bar.bar.close, current_bar, "canonical_completed_close"
         )
@@ -233,7 +280,11 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             else None
         )
         channels = {}
-        for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY):
+        for freq in (
+            ProductFrequency.DAILY,
+            ProductFrequency.WEEKLY,
+            ProductFrequency.HOURLY,
+        ):
             prefix = prefixes.get(("trend", freq), [])
             if not prefix:
                 continue
@@ -260,7 +311,11 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
             previous_close=prev,
             daily_signal=states["trend"]["day"],
             weekly_signal=states["trend"]["week"],
-            period="week" if identity.frequency is ProductFrequency.WEEKLY else "best_available" if identity.frequency is ProductFrequency.HOURLY else "day",
+            period="week"
+            if identity.frequency is ProductFrequency.WEEKLY
+            else "best_available"
+            if identity.frequency is ProductFrequency.HOURLY
+            else "day",
             target_daily=day[0],
             cost_daily=day[1],
             target_weekly=week[0],
@@ -276,13 +331,94 @@ def build_decision_v2(trend, oscillation, main_rise, read, identity):
         as_of=cutoff,
         current=path_current,
         periods={
-            freq.value: (states["trend"][PERIODS[freq]],
-                         prefixes.get(("trend", freq), []),
-                         channels.get(freq, (None, None))[0])
-            for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY)
+            freq.value: (
+                states["trend"][PERIODS[freq]],
+                prefixes.get(("trend", freq), []),
+                channels.get(freq, (None, None))[0],
+            )
+            for freq in (
+                ProductFrequency.DAILY,
+                ProductFrequency.WEEKLY,
+                ProductFrequency.HOURLY,
+            )
         },
     )
+    from .historical_path import project_historical_path
+
+    path_strategy = path_strategy or identity.strategy.value
+    selected = (
+        (main_paths or {})
+        if path_strategy == "main_rise"
+        else oscillation
+        if path_strategy == "oscillation" or path_strategy.startswith("osc-test")
+        else trend
+    )
+    selected_replay = selected.get(identity.frequency)
+    if path_strategy == "main_rise" and selected_replay is None:
+        selected_replay = main_rise
+
+    def valid_path_context(replay, frequency):
+        if replay is None:
+            return None
+        fs = [
+            f
+            for f in replay.frames
+            if f.bar.bar.observation_eligible and f.bar.bar.bar_end <= cutoff
+        ]
+        return (
+            replay
+            if fs
+            and not interrupted_tail(fs[-1], frequency)
+            and fs[-1].availability.status is FeatureRuntimeStatus.READY
+            else None
+        )
+
+    selected_replay = valid_path_context(selected_replay, identity.frequency)
+    paths["history"] = project_historical_path(
+        replay=selected_replay,
+        daily=valid_path_context(
+            selected.get(ProductFrequency.DAILY), ProductFrequency.DAILY
+        ),
+        weekly=valid_path_context(
+            selected.get(ProductFrequency.WEEKLY), ProductFrequency.WEEKLY
+        ),
+        cutoff=cutoff,
+        prices=prices if anchor else None,
+        frequency=identity.frequency.value,
+        price_overrides={
+            "target": next(
+                (
+                    str(p.value)
+                    for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+                    if (p := channels.get(freq, (None, None))[0]) is not None
+                ),
+                None,
+            ),
+            "cost": next(
+                (
+                    str(p.value)
+                    for freq in (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+                    if (p := channels.get(freq, (None, None))[1]) is not None
+                ),
+                None,
+            ),
+        },
+        strategy=path_strategy,
+        fusion_peer=valid_path_context(
+            oscillation.get(identity.frequency), identity.frequency
+        )
+        if path_strategy == "fusion"
+        else None,
+        fusion_weekly=valid_path_context(
+            oscillation.get(ProductFrequency.WEEKLY), ProductFrequency.WEEKLY
+        )
+        if path_strategy == "fusion"
+        else None,
+    )
+    paths["version"] = "guiyi_daily_weekly_path_v3"
     for row in paths["periods"]:
         replay = trend.get(ProductFrequency(row["frequency"]))
-        row["formula_versions"] = list(replay.identity.formula_versions) if replay else []
+        row["formula_versions"] = (
+            list(replay.identity.formula_versions) if replay else []
+        )
     return {"cdv2": cdv2, "prices": prices, "daily_weekly_path": paths}

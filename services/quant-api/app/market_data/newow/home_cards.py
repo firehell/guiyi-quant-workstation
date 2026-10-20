@@ -98,7 +98,7 @@ def project_home_performance(result):
 
 
 def project_row_hints(replay, anchor, ready):
-    """Public home icon window: confirmation/action on the latest two D1 bars."""
+    """Public home icon window: peak event/action on the latest two D1 bars."""
     if not ready or replay.identity.frequency.value != '1d':
         return None
     bars = tuple(frame.bar.bar for frame in replay.frames
@@ -109,16 +109,22 @@ def project_row_hints(replay, anchor, ready):
         return None
     mirror = calculate_zhaoyao_mirror(bars)
     hints = []
-    if mirror and mirror.confirmed_peak_events:
-        peak, confirmed = mirror.confirmed_peak_events[-1]
-        if len(bars) - confirmed <= 2:
-            hints.append({'kind': 'caution', 'peak_day': bars[peak].trading_day,
-                          'event_day': bars[confirmed].trading_day,
+    if mirror:
+        event = len(bars)-1 if mirror.last_bar_fresh_peak else next(
+            (i for i in range(len(bars)-1, -1, -1) if mirror.caution[i] == 50), -1)
+        if event >= 0 and len(bars)-event <= 2:
+            confirmed = dict(mirror.confirmed_peak_events).get(event)
+            hints.append({'kind': 'caution', 'peak_day': bars[event].trading_day,
+                          'event_day': bars[event].trading_day,
+                          'event_bar_end': bars[event].bar_end.isoformat(),
+                          'confirmed_day': bars[confirmed].trading_day if confirmed is not None else None,
+                          'tentative': mirror.last_bar_fresh_peak,
                           'formula_version': mirror.formula_version})
     series = calculate_main_rise_series(bars)
     event = project_home_j_hint(series)
     if event is not None and len(bars) - event <= 2:
         hints.append({'kind': 'reduce', 'event_day': bars[event].trading_day,
+                          'event_bar_end': bars[event].bar_end.isoformat(),
                       'j_value': str(series[event].j_value), 'reference_price': str(bars[event].high),
                       'formula_version': 'newow_home_j_hint_page_v1'})
     return {'status': 'ready', 'bar_end': bars[-1].bar_end,
@@ -141,3 +147,26 @@ def project_home_j_hint(series):
             latest = index
         previous_hint = hint
     return latest
+
+
+def project_caution_events(replay):
+    """Independent chart layer, bounded by calculation owner; not strategy markers."""
+    from itertools import groupby
+    events=[]
+    for owner, group in groupby(replay.frames, key=lambda f: (f.bar.bar.physical_contract, f.bar.bar.segment_id, f.bar.calculation_segment_id)):
+        frames=tuple(group)
+        bars=tuple(f.bar.bar for f in frames)
+        mirror=calculate_zhaoyao_mirror(bars)
+        if mirror is None:
+            continue
+        for i in range(len(bars)):
+            tentative=mirror.tentative[i]==50
+            if mirror.caution[i]!=50 and not tentative:
+                continue
+            confirmed=mirror.confirmation_index[i]
+            events.append(dict(bar_end=bars[i].bar_end.isoformat(),peak_day=bars[i].trading_day.isoformat(),
+                confirmed_at=bars[confirmed].bar_end.isoformat() if confirmed>=0 else None,
+                as_of=bars[-1].bar_end.isoformat(),tentative=tentative,
+                physical_contract=owner[0],segment_id=owner[1],calculation_segment_id=owner[2],
+                formula_version=mirror.formula_version,repainting=True,executable=False))
+    return tuple(events)

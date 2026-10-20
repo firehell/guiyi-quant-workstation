@@ -166,7 +166,7 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 | J 风险 | `main_rise × 1w/1d/60m`，Hint only | `newow_main_rise_j_reduce_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；不推导减仓比例 |
 | 4/7/11 | `main_rise × 1w/1d/60m`，结构 Hint | `newow_magic11_page_v1` | `ACTIVE_CODE_VERIFIED` | 按物理区段重置；不得产生独立 Action |
 | 主力控盘副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_main_force_control_page_v1` | `ACTIVE_CODE_VERIFIED` | 必须报告公式 warming 与已验证 repaint 属性；“主力”不证明真实持仓或席位 |
-| 主力照妖镜副图 | 三策略 × `1w/1d/60m`，retrospective only | `newow_zhaoyao_mirror_repainting_page_v1` | `ACTIVE_CODE_VERIFIED` | `repainting=true / formal_signal_eligible=false`；不进入 Hint、Action、ReferenceTrade、收益或历史 as-of 事实 |
+| 主力照妖镜副图 | 三策略 × `1w/1d/60m`，retrospective only | `newow_zhaoyao_mirror_repainting_page_v2` | `ACTIVE_CODE_VERIFIED` | `repainting=true / formal_signal_eligible=false`；不进入 Hint、Action、ReferenceTrade、收益或历史 as-of 事实 |
 | 涨跌动能副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_up_down_energy_page_v1` | `ACTIVE_CODE_VERIFIED` | 短区段 warming/unavailable；不得跨合约借值，且必须报告已验证 repaint 属性 |
 | 杯柄 | `trend × 1d`；`1w/60m = NOT_APPLICABLE` | `newow_cup_handle_v1`，`page_parity=false` | `ACTIVE_CODE_VERIFIED`（clean-room） | 只显示 confirmed D1 witness；`pivot_at` 不是首次可知时间 |
 | 目标/吸筹显示选择 | 三策略共享 `1w/1d/60m` context | `newow_target_absorb_display_selection_page_v2` | `RESEARCH_EVIDENCE_ONLY` | 实现前必须核对日/周选择、周线覆盖、昨收、clamp 与 warm-up；输出来源周期、来源 `bar_end` 与 `as_of`，只读展示不等于交易目标或真实吸筹 |
@@ -1617,3 +1617,14 @@ The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default 
 Minute candidate builds may pin a verified input only while holding the authoritative Canonical maintenance lease; no input cache survives lease release or interruption. `newow_product_reader_intraday_v3` stores full input hash/count and an exact frozen source-evidence hash instead of repeating every Bar fingerprint in each batch. Source evidence is obtained through MDS and verifies Catalog-selected Canonical file bytes, quality/coverage metadata, physical contract lifecycle, rank1 ownership and Calendar/Session facts. A saved result is rejected when that evidence or frozen scope changes. Compact hashes do not constitute append-only proof; changed source/cutoff requires an explicit rebuild. Historical page queries validate the saved scope and may read necessary initial-holding facts before the record window, but cannot extend the snapshot cutoff or through day.
 
 Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading_day and a deterministic result revision independently of the limited record list. This changes delivery completeness only; fusion action order, source-price priority, pairing, terminal OPEN semantics and reference model remain unchanged. Page reference remains non-executable.
+
+
+## 2026-10-20 小心事件与历史路径展示增量
+
+照妖镜 v2 保留六柱、close 5% ZigZag、历史 caution 和末根置零原式，新增末根 fresh、候选峰、独立 tentative 数组与确认下标。主图小心是独立的 `repainting=true / executable=false` 图层，不写入 Action、ReferenceTrade 或收益。峰时间、确认时间、计算截止不可混用；首页按峰事件/末根 fresh 的最近两根日K显示，跨计算段清空。
+
+`newow_cdv2_care_v3402_v1` 适配器从当前周期同 owner、同 calculation segment 的 completed 前缀取最多66个下标，caution===50 则 care=true；末根 fresh 不直接触发 care，tent 继续关闭。来源不足输出 unavailable/null，不能当作已验证 false。care 仅影响解释分数与参考强度上限，不改变策略动作、账户仓位或正式风控。
+
+`guiyi_daily_weekly_path_v3` 的 active 图为 `newow_historical_path_v3402_v1` 历史买卖双线、预测区、周状态背景和 ETA，原 periods 只保留来源事实，不再渲染阶段示意。使用完整普通页面参考投影及物理/质量段内样本，forceClose 不生成真实卖点；缺样本、日历或周状态明确不可用，不跨段拼线。ETA 保留原式日期数组限幅并披露，不外推未来交易日，不作为执行预测。股票私有 target/cost 不反推；期货价格仍使用公开标识的 Canonical 通道。
+
+现有 explanation GET 在 `decision_v2=true` 时可附 `path_strategy=trend|oscillation|main_rise|fusion|osc-test|osc-test2|osc-test3|osc-test4`，参数加入缓存身份。该参数只选择普通页面路径的交易来源，不改变 CDV2 背景公式；主升浪周背景使用自身信号，实验使用震荡背景，融合缺独立周背景时明确不可用。理论收益/范围页签与此普通路径独立，不能标成理论路径。所有历史日期采用上海日，instant 按真实时刻比较。

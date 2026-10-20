@@ -27,6 +27,8 @@ export interface CrossPeriodPrices {
   source_note: string
 }
 export interface Cdv2 {
+  adapter_version?: string
+  care_input?: {status:string;value:boolean|null;window_size:number;bar_end:string|null;physical_contract:string|null;calculation_segment_id:string|null;contribution:number;formula_version:string|null}
   period_conflict?: {version: string; hit: boolean; code: 'XP1'|null; week_state: string; day_state: string}
   formula_version: string
   as_of: string
@@ -72,10 +74,29 @@ export interface DailyWeeklyPathPeriod {
   formula_versions?: string[]
 }
 export interface DailyWeeklyPath {
+  history?: HistoricalPath
   version: string
   as_of: string
   page_parity: true
   executable: false
   source_note: string
   periods: DailyWeeklyPathPeriod[]
+}
+
+export interface HistoricalPath {
+  version: 'newow_historical_path_v3402_v1'
+  status: 'ready' | 'unavailable'
+  reason: string | null
+  axis_dates?: string[]
+  buys: Array<{date:string;price:string}>
+  sells: Array<{date:string;price:string}>
+  background: Array<{start:string;end:string;state:'hold'|'flat'}>
+  holding: boolean
+  current: string | null
+  target: string | null
+  cost: string | null
+  eta: null | {status:'ready'|'unavailable';reason:string|null;base?:number;remain?:number;elapsed?:number;ratio?:number;samples?:number;overdue?:boolean;date?:string;date_limited?:boolean;unit?:string;from_price?:string;to_price?:string}
+  source?: {physical_contract:string;segment_id:string;calculation_segment_id:string;bar_end:string;as_of:string;strategy:string;price_source:string;background_status:string}
+  page_parity:true
+  executable:false
 }

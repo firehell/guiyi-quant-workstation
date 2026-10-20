@@ -195,7 +195,10 @@ export interface NewowProductHint {
   readonly sequence: number | null
 }
 
+export interface NewowCautionEvent { bar_end: string; peak_day: string; confirmed_at: string | null; as_of: string; tentative: boolean; physical_contract: string; segment_id: string; calculation_segment_id: string; formula_version: string; repainting: true; executable: false }
+
 export interface NewowChartValue {
+  readonly caution_events?: readonly NewowCautionEvent[]
   readonly chart_from: string
   readonly chart_through: string
   readonly page_identity: string
@@ -420,6 +423,10 @@ export interface NewowZhaoyaoMirrorData {
   readonly inducement: readonly number[]
   readonly peaks: readonly number[]
   readonly caution: readonly number[]
+  readonly tentative?: readonly number[]
+  readonly confirmation_index?: readonly number[]
+  readonly last_bar_fresh_peak?: boolean
+  readonly candidate_peak_index?: number | null
   readonly repainting: true
   readonly formal_signal_eligible: false
   readonly formula_version: string
@@ -804,7 +811,7 @@ export type NewowProductRequest =
   | (NewowRequestCommon & { readonly section: 'chart'; readonly resolveCurrent?: boolean; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
   | (NewowRequestCommon & { readonly section: 'reference'; readonly includeFusion?: boolean; readonly fusionBefore?: string; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
-  | (NewowRequestCommon & { readonly section: 'explanation'; readonly decisionV2?: boolean })
+  | (NewowRequestCommon & { readonly section: 'explanation'; readonly decisionV2?: boolean; readonly pathStrategy?: string })
   | (NewowRequestCommon & { readonly section: 'comparator' })
 
 export type NewowResourceLifecycle =

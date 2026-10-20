@@ -498,7 +498,7 @@ onBeforeUnmount(() => {
     <NewowExperimentPanel @analyze-channel="openDialog('comparator')" @context="experimentContext=$event" v-if="experimentKind && chartResponse" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null">
       <template #frequency><slot name="chart-frequency" /></template>
       <template #overview>
-        <NewowDecisionV2Panel v-if="experimentSharedChart" :response="experimentSharedChart" display-strategy="oscillation" background-label="震荡背景" :expected-owner="experimentDisplayOwner" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
+        <NewowDecisionV2Panel v-if="experimentSharedChart" :response="experimentSharedChart" display-strategy="oscillation" :path-strategy="experimentKind ?? undefined" background-label="震荡背景" :expected-owner="experimentDisplayOwner" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
         <p v-else role="status">震荡背景不可用或正在读取 · 仅显示同一截止时间与合约段的背景事实</p>
         <div class="newow-product-workspace__comparison-controls" aria-label="震荡背景参考价格"><span>目标 {{ newowReferencePrice(experimentDecision?.prices?.shared.target?.display_value ?? experimentDecision?.prices?.shared.target?.raw) }}</span><span>吸筹 {{ newowReferencePrice(experimentDecision?.prices?.shared.absorb?.display_value ?? experimentDecision?.prices?.shared.absorb?.raw) }}</span><span>当前测试 {{ experimentContext?.latestState ? (experimentContext.latestState.holding ? '持有' : '空仓') : '不可用' }}</span></div>
       </template>

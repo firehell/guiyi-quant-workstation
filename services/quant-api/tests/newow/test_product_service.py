@@ -2020,7 +2020,7 @@ def test_hourly_decision_never_replays_main_rise_and_uses_hourly_readiness(produ
     assert any(f["role"] == "trend_m60" and f["status"] == "ready" for f in cd["facts"])
     assert result.explanation.status.status is FeatureRuntimeStatus.READY
     path = result.explanation.value.decision_v2["daily_weekly_path"]
-    assert path["version"] == "guiyi_daily_weekly_path_v2"
+    assert path["version"] == "guiyi_daily_weekly_path_v3"
     assert [row["frequency"] for row in path["periods"]] == ["1w", "1d", "60m"]
     hour = path["periods"][2]
     assert hour["state"] == next(f["state"] for f in cd["facts"] if f["role"] == "trend_m60")
@@ -2214,3 +2214,16 @@ def test_cancelled_kernel_leader_does_not_cancel_active_outer_follower(product_c
     assert isinstance(results["leader"], (NewowComputationCancelled, NewowProductServiceError))
     assert not isinstance(results["follower"], BaseException)
     assert results["follower"].chart.value is not None
+
+
+@pytest.mark.parametrize('path_strategy',['trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4'])
+def test_path_strategy_is_explicit_and_does_not_change_composite_kernel(product_cases,path_strategy):
+    service, reader, _, clear = _service(product_cases)
+    base = service.query(ProductServiceQuery('rb','trend','1d',section='explanation',decision_v2=True,as_of=clear.bar_end))
+    selected = service.query(ProductServiceQuery('rb','trend','1d',section='explanation',decision_v2=True,path_strategy=path_strategy,as_of=clear.bar_end))
+    a=base.explanation.value.decision_v2; b=selected.explanation.value.decision_v2
+    assert a['cdv2']==b['cdv2']
+    history=b['daily_weekly_path']['history']
+    if history.get('source'):
+        assert history['source']['strategy']==path_strategy
+    assert not history['executable']

@@ -15,7 +15,7 @@ import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHome
 
 type Row = MarketHomeLiveDisplayRow<MarketHomeRow>
 const props = defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection }>()
-const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod]; sort: [sort: MarketHomeSort] }>()
+const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod, focusBarEnd?: string]; sort: [sort: MarketHomeSort] }>()
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
 const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value }, peekNewowHomeCards)
 const admittedProducts = shallowRef(new Set<string>())
@@ -144,7 +144,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
     <slot name="status" />
     <article v-for="row in rows" :key="row.symbol" :ref="value => observeRow(row.symbol, value)" class="strategy-list-item">
       <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded.has(row.symbol)" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
-        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><span v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title">{{ hint.label }}</span></span></small></span></div>
+        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" @click.stop="emit('chart',row.symbol,strategy,'1d',hint.focusBarEnd)">{{ hint.label }}</button></span></small></span></div>
         <div class="list-price" :class="priceTone(row)"><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
         <div class="list-change"><span :class="priceTone(row)">{{ change(row) }}</span></div>
         <div class="list-reference"><strong :class="reference(row.symbol).label === '目标' ? 'target' : reference(row.symbol).label === '吸筹' ? 'absorb' : 'pending'" :title="`${reference(row.symbol).label} · 页面参考价格，非成交成本`">{{ reference(row.symbol).text }}</strong></div>

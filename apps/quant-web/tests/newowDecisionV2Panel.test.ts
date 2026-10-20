@@ -185,28 +185,20 @@ test('daily weekly path reuses decision snapshot and folds independently with ex
   app.mount(root)
   const payload = output() as any
   const price = (raw: string, frequency: string, category: string) => ({ raw,frequency,source_category:category,bar_end:'2026-09-24T07:00:00Z',physical_contract:'JM2701',segment_id:'owner',calculation_segment_id:frequency+'-calc',source_identity:'source' })
-  payload.value.decision_v2.daily_weekly_path = {version:'guiyi_daily_weekly_path_v2',page_parity:true,executable:false,periods:[
-    {frequency:'1w',state:'hold',status:'ready',cost:{...price('90','1w','canonical_strategy_build'),entry_marker_id:'weekly-entry'},current:price('110','1d','canonical_completed_close'),target:price('160','1w','canonical_channel'),reason:null},
-    {frequency:'1d',state:'wait',status:'partial',cost:null,current:price('110','1d','canonical_completed_close'),target:null,reason:'FLAT_NO_OPEN_ENTRY'},
-    {frequency:'60m',state:'sell',status:'ready',cost:{...price('105','60m','canonical_strategy_build'),entry_marker_id:'hourly-entry'},current:price('110','1d','canonical_completed_close'),target:price('119','60m','canonical_channel'),reason:null},
-  ]}
+  payload.value.decision_v2.daily_weekly_path = {version:'guiyi_daily_weekly_path_v3',page_parity:true,executable:false,periods:[],history:{version:'newow_historical_path_v3402_v1',status:'ready',reason:null,holding:true,current:'110',target:'120',cost:'100',buys:[{date:'2026-09-01',price:'100'},{date:'2026-09-15',price:'105'}],sells:[{date:'2026-09-05',price:'120'}],background:[{start:'2026-09-01',end:'2026-09-24',state:'hold'}],eta:{status:'ready',reason:null,base:5,remain:2.5,elapsed:10,samples:2,ratio:0.5,date:'2026-09-24',date_limited:true,overdue:true,unit:'个交易日'},source:{as_of:'2026-09-24T07:00:00Z'}}}
   mock.calls[before].resolve(payload)
   await nextTick(); await nextTick()
-  const section = findNode(root,n=>n.props['aria-label']==='周日60分路径示意图')!
+  const section = findNode(root,n=>n.props['aria-label']==='历史波段路径：页面参考，不可执行')!
   const toggle = findNode(section,n=>n.type==='button')!
   assert.equal(toggle.props['aria-expanded'],false)
   ;(toggle.props.onClick as Function)()
   await nextTick()
   assert.equal(toggle.props['aria-expanded'],true)
   assert.equal(mock.calls.length,before+1)
-  assert.match(nodeText(section),/周线 \[持有\].*日线 \[空仓\].*60分 \[清仓\]/)
-  assert.match(nodeText(section),/周线成本 90/)
-  assert.match(nodeText(section),/BUILD weekly-entry/)
-  assert.match(nodeText(section),/空仓，无当前建仓成本/)
-  const solid = findNodes(section,n=>n.type==='path' && Number(n.props['stroke-width'])===2.5 && !n.props['stroke-dasharray'])
-  const dashed = findNodes(section,n=>n.type==='path' && n.props['stroke-dasharray']==='7 5')
-  assert.equal(solid.length,2)
-  assert.equal(dashed.length,2)
+  assert.match(nodeText(section),/约 2.5 个交易日/)
+  assert.match(nodeText(section),/日期受历史序列限制/)
+  assert.ok(findNodes(section,n=>n.type==='line').length>=2)
+  assert.equal(findNodes(section,n=>n.type==='polygon').length,1)
   app.unmount()
 })
 
@@ -305,7 +297,7 @@ test('basis toggles drive composite action and status stance from one completed 
  mock.calls[before].resolve(payload);await nextTick();await nextTick()
  ;(findNode(root,n=>n.props['aria-label']==='日线口径')!.props.onClick as Function)();await nextTick()
  assert.match(nodeText(root),/积极做多/);assert.equal(findNode(root,n=>n.props.class==='decision-v2__interpretation'),undefined)
- settings.value={...settings.value,displayStrategy:'dual'};await nextTick()
+ settings.value={...settings.value,displayStrategy:'dual'};await nextTick(); mock.calls.at(-1)!.resolve(payload);await nextTick();await nextTick()
  assert.match(nodeText(root),/所选口径不可用/);app.unmount()
  })
 
@@ -332,7 +324,7 @@ test('both cards stay visible without settings and collapsing does not reload fa
 test('relocated path shares decision generation and clears when switching or unmounting',async()=>{
  const Panel=await component('newow/NewowDecisionV2Panel'),root=element('root'),before=mock.calls.length,response=ref(input('rb')),contexts:any[]=[]
  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:response.value,showPath:false,onPathContext:(v:any)=>contexts.push(v)})}));app.mount(root)
- assert.equal(findNode(root,n=>n.props['aria-label']==='周日60分路径示意图'),undefined)
+ assert.equal(findNode(root,n=>n.props['aria-label']==='历史波段路径：页面参考，不可执行'),undefined)
  mock.calls[before].resolve(output());await nextTick();await nextTick()
  assert.equal(contexts.at(-1).decision.cdv2.total,78);assert.equal(contexts.at(-1).loading,false)
  response.value=input('cu');await nextTick()

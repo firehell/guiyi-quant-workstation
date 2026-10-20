@@ -1,80 +1,45 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue'
-import type { NewowDecisionV2, DecisionPriceSource } from '@/types/newowDecisionV2'
-import { dailyWeeklyPathGeometry } from '@/utils/newowDailyWeeklyPath'
-import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
-const props = defineProps<{ decision: NewowDecisionV2 | null; loading: boolean; error: string }>()
-const expanded = ref(false), bodyId = useId()
-const data = computed(() => props.decision?.daily_weekly_path)
-const paths = computed(() => dailyWeeklyPathGeometry(data.value?.periods ?? []))
-const ticks = computed(() => {
-  const values = (data.value?.periods ?? []).flatMap(period => [period.cost, period.current, period.target]).filter(source => source !== null).map(source => Number(source!.raw)).filter(value => Number.isFinite(value) && value > 0)
-  if (!values.length) return []
-  const min = Math.min(...values), max = Math.max(...values)
-  return Array.from({ length:4 }, (_, index) => ({ y:50 + index * 290 / 3, value:(max - index * (max - min) / 3).toFixed(2) }))
-})
-const price = (p: DecisionPriceSource | null) => p ? formatMarketDecimal(p.raw) : '—'
-const reasons: Record<string,string> = { PERIOD_CONTEXT_UNAVAILABLE:'周期数据不足', FLAT_NO_OPEN_ENTRY:'空仓，无当前建仓成本', OPEN_ENTRY_UNAVAILABLE:'当前建仓身份或价格缺失', TARGET_UNAVAILABLE:'同周期目标缺失' }
+import { computed, ref, useId, onMounted, onBeforeUnmount } from 'vue'
+import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
+import { historicalPathGeometry } from '@/utils/newowDailyWeeklyPath'
+const props=defineProps<{decision:NewowDecisionV2|null;loading:boolean;error:string}>()
+const expanded=ref(false),host=ref<HTMLElement|null>(null),width=ref(480),id=useId()
+const data=computed(()=>props.decision?.daily_weekly_path?.history)
+const graph=computed(()=>data.value?.status==='ready'?historicalPathGeometry(data.value,width.value):null)
+let observer:ResizeObserver|null=null
+onMounted(()=>{if(typeof ResizeObserver==='undefined')return;observer=new ResizeObserver(()=>{width.value=Math.max(480,Math.min(1200,(host.value?.clientWidth??504)-24))});if(host.value)observer.observe(host.value)})
+onBeforeUnmount(()=>observer?.disconnect())
+const reasons:Record<string,string>={TRADE_SAMPLES_MISSING:'至少需要两个建仓点和一个真实清仓点',CURRENT_CONTEXT_UNAVAILABLE:'当前合约段或价格未就绪',CALENDAR_MISSING:'同合约交易日序列缺失',SAMPLES_MISSING:'历史区间样本不足两笔',PRICE_OR_START_MISSING:'起点或目标价格缺失'}
+const eta=computed(()=>data.value?.eta)
 </script>
-
 <template>
-  <section class="period-path" aria-label="周日60分路径示意图">
-    <button class="period-path__toggle" type="button" :aria-expanded="expanded" :aria-controls="bodyId" @click="expanded = !expanded">
-      <strong>多周期嵌套波段路径</strong><b>{{ expanded ? '收起 ⌃' : '展开 ⌄' }}</b>
-    </button>
-    <div v-show="expanded" :id="bodyId" class="period-path__body">
-      <p v-if="loading" role="status">读取同一快照的周日60分路径…</p>
-      <p v-else-if="error" role="alert">路径数据读取失败，请刷新综合决策。</p>
-      <p v-else-if="!data">周日60分路径数据不可用。</p>
+  <section ref="host" class="period-path" aria-label="历史波段路径：页面参考，不可执行">
+    <button class="period-path__toggle" :aria-expanded="expanded" :aria-controls="id" @click="expanded=!expanded"><strong>多周期嵌套波段路径</strong><span>{{expanded?'收起 ⌃':'展开 ⌄'}}</span></button>
+    <div v-show="expanded" :id="id" class="period-path__body">
+      <p v-if="loading" role="status">读取同一截止的历史路径…</p>
+      <p v-else-if="error" role="alert">路径读取失败，请刷新。</p>
+      <p v-else-if="!data || !graph" role="status">{{reasons[data?.reason??'']??'历史路径数据不足'}}</p>
       <template v-else>
-        <div class="period-path__overview"><span>现价 <b>{{ price(data.periods.find(period => period.current)?.current ?? null) }}</b></span><span v-for="period in data.periods" :key="period.frequency">{{ period.frequency === '1w' ? '周线' : period.frequency === '60m' ? '60分' : '日线' }} 成本 <b>{{ price(period.cost) }}</b> → 目标 <b>{{ price(period.target) }}</b></span></div>
-        <p>路径快照 {{ formatBeijingInstant(data.as_of) }}</p>
-        <div class="period-path__canvas">
-          <svg viewBox="0 0 760 380" role="img" aria-label="周日60分参考成本、现价与目标的价格示意">
-            <rect x="471.8" y="50" width="243.2" height="290" fill="#edeef4" />
-            <g v-for="tick in ticks" :key="tick.y"><path :d="`M75 ${tick.y} H715`" stroke="#dedfe7" /><text x="66" :y="tick.y + 5" text-anchor="end" class="period-path__axis">{{ tick.value }}</text></g>
-            <path d="M471.8 50 V340" stroke="#999ba6" stroke-dasharray="6 5" fill="none" />
-            <text x="471.8" y="32" text-anchor="middle" class="period-path__axis period-path__now">现在</text>
-            <text x="75" y="366" class="period-path__axis">过去（成本 → 现在）</text><text x="715" y="366" text-anchor="end" class="period-path__axis">目标示意区（非预测）</text>
-            <g v-for="(path,index) in paths" :key="path.frequency" :stroke="path.color" :fill="path.color">
-              <path v-if="path.cost && path.current && path.target" :d="`M${path.cost.x} ${path.cost.y} L${path.current.x} ${path.current.y}`" fill="none" stroke-width="2.5" :stroke-dasharray="path.dash" />
-              <path v-if="path.cost && path.current && path.target" :d="`M${path.current.x} ${path.current.y} L${path.target.x} ${path.target.y}`" fill="none" stroke-width="2.5" :stroke-dasharray="path.dash" />
-              <template v-for="(point,key) in { cost:path.cost, current:path.current, target:path.target }" :key="key"><circle v-if="point" :cx="point.x" :cy="point.y" :r="key === 'current' ? 5 : 4" fill="white" stroke-width="2" /></template>
-              <text v-if="path.cost" :x="path.cost.x + 6" :y="path.cost.y + (index === 0 ? -10 : index === 1 ? 20 : 40)" stroke="none">{{ path.label }}成本 {{ price(data.periods[index]!.cost) }}</text>
-              <text v-if="path.target" text-anchor="end" :x="path.target.x - 6" :y="path.target.y + (index === 0 ? -10 : index === 1 ? 20 : 40)" stroke="none">目标 {{ price(data.periods[index]!.target) }} {{ `[${path.stateLabel}]` }}</text>
-            </g>
-          </svg>
-        </div>
-        <div class="period-path__legend"><span v-for="path in paths" :key="path.frequency" :style="{ color:path.color }">━ {{ path.label }} {{ `[${path.stateLabel}]` }}</span><small>○ BUILD参考成本　━ 实线＝建仓/持有；虚线＝清仓；点线＝空仓</small></div>
-        <details class="period-path__sources"><summary>路径口径与数据来源</summary>
-        <div class="period-path__values"><article v-for="period in data.periods" :key="period.frequency"><strong>{{ period.frequency === '1w' ? '周线' : period.frequency === '60m' ? '60分' : '日线' }}</strong><span>成本 {{ price(period.cost) }}</span><span>现价 {{ price(period.current) }}</span><span>目标 {{ price(period.target) }}</span><small v-if="period.reason">{{ reasons[period.reason] ?? '输入不足' }}</small></article></div>
-        <p>清仓状态的成本只来自准确关联的历史 BUILD，不表示当前持仓。页面路径仅连接参考价格，横轴为阶段示意，不是预测时间或价格保证；缺建仓身份不绘制过去或目标路径。无止损事实时不补画止损。</p>
-        <details class="period-path__sources"><summary>周日60分独立价格来源</summary><div v-for="period in data.periods" :key="period.frequency"><strong>{{ period.frequency === '1w' ? '周线' : period.frequency === '60m' ? '60分' : '日线' }}</strong><p v-for="(source,key) in {cost:period.cost,current:period.current,target:period.target}" :key="key">{{ {cost:'建仓成本',current:'现价',target:'目标'}[key] }}：{{ source ? `${price(source)} · ${source.frequency} · ${formatBeijingInstant(source.bar_end)} · ${source.physical_contract} / ${source.segment_id} · ${source.source_category}` : '来源缺失' }}<span v-if="key === 'cost' && period.cost"> · BUILD {{ period.cost.entry_marker_id }}</span></p><small>{{ period.formula_versions?.join(' / ') }}</small></div><p>目标为同周期 HHV10 通道，是期货适配，不冒充牛哇私有价格；不参与策略评分或收益。</p></details>
-        </details>
+        <p class="legend"><span class="buy">○ 建仓价</span><span class="sell">□ 清仓价</span><span v-if="data.background.length">琥珀：周持有 · 灰：周空仓</span></p>
+        <div class="canvas"><svg :viewBox="`0 0 ${width} 320`" role="img" aria-label="历史买卖双线与参考路径">
+          <defs><linearGradient :id="id+'fill'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e9e8f" stop-opacity=".2"/><stop offset="1" stop-color="#1f5fa9" stop-opacity=".05"/></linearGradient></defs>
+          <rect v-for="(b,i) in graph.background" :key="'bg'+i" :x="b.x" y="32" :width="b.width" height="240" :fill="b.state==='hold'?'#ff950e':'#8e8e93'" opacity=".08"/>
+          <polygon :points="graph.envelope" :fill="`url(#${id}fill)`"/>
+          <line v-for="(s,i) in graph.segments" :key="'segment'+i" :x1="s.x1" :y1="s.y1" :x2="s.x2" :y2="s.y2" :stroke="s.color" :stroke-width="s.holding?1.8:1.2" :stroke-dasharray="s.holding?undefined:'2 3'" :opacity="s.holding?1:.45"/><text v-for="(l,i) in graph.labels" :key="'label'+i" :x="l.x" :y="l.y">{{l.text}}</text>
+          <g v-for="(p,i) in graph.buy" :key="'buy'+i"><circle :cx="p.x" :cy="p.y" r="3.5" class="buy-point"/><title>{{p.date}} 建仓 {{p.price}}</title></g>
+          <g v-for="(p,i) in graph.sell" :key="'sell'+i"><rect :x="p.x-3" :y="p.y-3" width="6" height="6" class="sell-point"/><title>{{p.date}} 清仓 {{p.price}}</title></g>
+          <g v-if="graph.forecast"><line v-for="(p,i) in [graph.buy.at(-1),graph.sell.at(-1)]" :key="'future'+i" :x1="p?.x" :y1="p?.y" :x2="graph.forecast.x" :y2="graph.forecast.y" :stroke="i?'#2e9e8f':'#1f5fa9'" :stroke-dasharray="data.holding?undefined:'2 3'" opacity=".6"/><text :x="graph.forecast.x" :y="graph.forecast.y-10" text-anchor="end">参考 {{graph.forecast.price}}</text></g>
+          <g v-if="graph.current"><line x1="44" :y1="graph.current.y" :x2="width-40" :y2="graph.current.y" stroke="#8e8e93" stroke-dasharray="2 4"/><circle :cx="graph.current.x" :cy="graph.current.y" r="4" fill="#ff950e"/><text x="46" :y="Math.max(18,graph.current.y-8)">现价 {{data.current}}</text></g>
+          <text v-for="(t,i) in graph.ticks" :key="'tick'+i" :x="t.x" y="300" text-anchor="middle">{{t.date}}</text>
+        </svg></div>
+        <p v-if="eta?.status==='ready'"><strong>{{eta.overdue?'已到预测期 · ':''}}</strong>约 {{eta.remain?.toFixed(1)}} {{eta.unit}}后（{{eta.date}}前后）；历史 {{eta.samples}} 笔均 {{eta.base?.toFixed(1)}} {{eta.unit}} × 剩余 {{((eta.ratio??0)*100).toFixed(0)}}%；本段已用 {{eta.elapsed?.toFixed(1)}} {{eta.unit}}。</p>
+        <p v-else>时间估算不可用：{{reasons[eta?.reason??'']??'样本或交易日序列不足'}}</p>
+        <p v-if="eta?.date_limited" class="limitation">日期受历史序列限制：原式不会外推未来交易日，显示日期不代表未来可达时间。</p>
+        <details><summary>来源与口径</summary><p>{{data.source?.physical_contract}} · {{data.source?.calculation_segment_id}} · 截止 {{data.source?.as_of}}</p><p>历史双线及 ETA 为牛哇页面原式；目标/吸筹来自归一 Canonical 通道，非牛哇私有价格。零成本页面参考，不可执行，不改变策略、收益或账户。</p><p v-if="!data.background.length">缺少同段周信号，不绘制周状态背景。</p></details>
       </template>
     </div>
   </section>
 </template>
-
 <style scoped>
-.period-path { margin:8px 0; background:#f8f9fd; border:1px solid #ff950055; border-radius:8px; overflow:hidden; color:var(--gy-text-primary); }
-.period-path__toggle { width:100%; display:flex; align-items:center; gap:10px; padding:12px 14px; border:0; background:transparent; color:#b86b00; font:inherit; cursor:pointer; text-align:left; }
-.period-path__toggle strong { font-size:14px; } .period-path__toggle span { color:var(--gy-text-muted); font-size:11px; } .period-path__toggle b { margin-left:auto; color:#ff9500; font-size:12px; font-weight:500; }
-.period-path__toggle:focus-visible { outline:2px solid var(--gy-accent); outline-offset:-2px; }
-.period-path__body { padding:0 14px 12px; } .period-path__legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; } .period-path__legend small { color:var(--gy-text-muted); margin-left:auto; }
-.period-path__canvas { overflow-x:auto; margin:10px 0; } svg { width:100%; max-width:1000px; display:block; margin:0 auto; } svg text { font-size:11px; } .period-path__axis { fill:var(--gy-text-muted); }
-.period-path__values { display:grid; grid-template-columns:1fr 1fr; gap:8px; } article { display:flex; flex-wrap:wrap; gap:8px; padding:8px 10px; border-radius:6px; background:#f7f7f9; font-size:12px; } article small { flex-basis:100%; color:#94611b; }
-p { color:var(--gy-text-muted); font-size:11px; line-height:1.6; margin:7px 0 0; } .period-path__sources { font-size:11px; color:var(--gy-text-muted); margin-top:8px; overflow-wrap:anywhere; } summary { cursor:pointer; } .period-path__sources strong { display:block; margin-top:8px; } .period-path__sources small { font-size:10px; }
-@media(max-width:600px) { .period-path__values { grid-template-columns:1fr; } .period-path__toggle { flex-wrap:wrap; } .period-path__legend small { flex-basis:100%; margin-left:0; } }
-</style>
-
-<style scoped>
-.period-path__toggle { padding:12px 14px; border-bottom:1px solid #ff950022; }
-.period-path__overview { display:flex; flex-wrap:wrap; gap:10px; padding-top:8px; color:var(--gy-text-muted); font-size:11px; }
-.period-path__overview b { color:#24262d; }
-.period-path__legend { border-top:1px solid var(--gy-border); padding-top:7px; gap:10px; font-size:10px; }
-svg text { font-size:14px; font-weight:600; }
-svg .period-path__axis { font-weight:400; font-size:14px; }
-svg .period-path__now { font-weight:700; }
-.period-path__canvas { overflow:visible; }
+.period-path{margin:8px 0;background:var(--gy-bg-panel);border:1px solid #ff950055;border-radius:8px;color:var(--gy-text-primary);min-width:0}.period-path__toggle{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px;border:0;background:transparent;color:inherit;cursor:pointer}.period-path__body{padding:0 12px 12px}.canvas{overflow-x:auto}svg{width:100%;min-width:480px;display:block}svg text{font-size:11px;fill:var(--gy-text-primary)}.legend{display:flex;gap:14px;flex-wrap:wrap}.buy{color:#1f5fa9}.sell{color:#2e9e8f}.buy-line,.sell-line{fill:none;stroke-width:1.8}.buy-line{stroke:#1f5fa9}.sell-line{stroke:#2e9e8f}.buy-point{fill:var(--gy-bg-panel);stroke:#1f5fa9}.sell-point{fill:var(--gy-bg-panel);stroke:#2e9e8f}p,summary{font-size:12px;line-height:1.6}.limitation{color:#996000}
 </style>

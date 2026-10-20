@@ -14,7 +14,7 @@ import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true })
+const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; pathStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true })
 const emit = defineEmits<{ 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
 const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.asOf : props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
@@ -32,7 +32,7 @@ const bodyId = useId(), evidenceId = useId()
 watch([result, loading, error], () => emit('path-context', { decision: result.value, loading: loading.value, error: error.value }), { flush: 'sync' })
 function toggleCard() { collapsed.value = !collapsed.value }
 let generation = 0, controller: AbortController | null = null
-watch(() => [visible.value, props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value, props.expectedOwner?.physicalContract, props.expectedOwner?.segmentId, props.expectedOwner?.calculationSegmentId, props.expectedOwner?.frequency].join('|'), () => {
+watch(() => [visible.value, props.pathStrategy, props.displayStrategy, props.response.meta.identity.product, props.response.meta.identity.strategy, props.response.meta.identity.frequency, props.response.meta.as_of, props.response.meta.snapshot_token, decisionAsOf.value, props.expectedOwner?.physicalContract, props.expectedOwner?.segmentId, props.expectedOwner?.calculationSegmentId, props.expectedOwner?.frequency].join('|'), () => {
   generation++; controller?.abort(); result.value = null; loading.value = false; error.value = ''; evidenceExpanded.value = false; collapsed.value = true
   if (visible.value) void load()
 }, { immediate: true })
@@ -42,7 +42,7 @@ async function load() {
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
   try {
     const asOf = decisionAsOf.value
-    const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, asOf, ...(!context.value.background && asOf === props.response.meta.as_of && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal })
+    const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, pathStrategy: props.pathStrategy ?? (props.displayStrategy === 'dual' ? 'fusion' : props.displayStrategy), asOf, ...(!context.value.background && asOf === props.response.meta.as_of && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal })
     if (next.section !== 'explanation' || !next.value?.decision_v2) throw new Error('missing decision')
     if (props.expectedOwner && previewInstant(props.expectedOwner.asOf) !== previewInstant(props.response.meta.as_of)) throw new Error('shared cutoff mismatch')
     if (props.expectedOwner && !sharedDecisionForOwner(next.value.decision_v2, props.expectedOwner, props.mainRiseBackground ? 'trend' : 'oscillation')) throw new Error('shared owner mismatch')
@@ -61,7 +61,7 @@ const prices = computed(() => result.value?.prices)
 const priceSnapshotNote = computed(() => prices.value && previewInstant(prices.value.as_of) !== previewInstant(props.response.meta.as_of) ? `共享／状态卡价格截至 ${formatBeijingInstant(prices.value.as_of)}，与主图截止不同；不替代主图通道价格。` : undefined)
 const dailyWeeklyFacts = computed(() => ['trend_week', 'trend_day', 'oscillation_week', 'oscillation_day', 'trend_m60', 'oscillation_m60'].map(role => ({ role, fact: cd.value?.facts.find(f => f.role === role) })))
 const missingDailyWeekly = computed(() => cd.value?.missing_roles ?? [])
-const deductions: Record<string, string> = { j_reduce: 'J 减仓', care: 'care', tent: 'tent' }
+const deductions: Record<string, string> = { j_reduce: 'J 减仓', care: '小心', tent: '暂定峰（关闭）' }
 const bias = (axis: 'trend' | 'oscillation') => {
   const value = axis === 'trend' ? cd.value?.trend_bias : cd.value?.oscillation_bias
   return ({ bullish: { label: '看多', color: '#ff3b30' }, bearish: { label: '看空', color: '#34c759' }, cautious: { label: '偏空', color: '#ff9500' }, warning: { label: '偏多', color: '#ff6b35' } } as Record<string, { label: string; color: string }>)[value ?? ''] ?? { label: '未明确', color: '#8e8e93' }
@@ -131,6 +131,7 @@ const chipColor = (axis: string, period: string) => {
             <p>信号年龄为距最近一次策略动作的已完成 K 线数；0根表示本周期当前 Bar 发生动作，日K与周K分别计龄。</p>
             <div class="decision-v2__scroll"><table><thead><tr><th>策略周期</th><th>状态</th><th>信号年龄</th><th>Bar / 合约</th><th>来源</th></tr></thead><tbody><tr v-for="item in dailyWeeklyFacts" :key="item.role"><td>{{ decisionRoleLabel(item.role) }}</td><td>{{ decisionFactState(item.fact) }}</td><td>{{ decisionFactAge(item.fact) }}</td><td>{{ item.fact?.bar_end ? formatBeijingInstant(item.fact.bar_end) : '—' }} / {{ item.fact?.physical_contract || '—' }}</td><td>{{ decisionFactReason(item.fact) }}</td></tr></tbody></table></div>
             <p>额外扣分 {{ cd.cert_extra }}：<span v-for="(score,key) in cd.deductions" :key="key">{{ deductions[key] ?? key }} {{ score }}（{{ cd.extra_sources[key] }}） </span></p>
+            <p v-if="cd.care_input">小心来源：{{ cd.care_input.status==='ready' ? `最近 ${cd.care_input.window_size} 根已完成K线 · ${cd.care_input.physical_contract} · 截至 ${cd.care_input.bar_end}` : '当前计算段来源不足，不作为已验证的无事件' }}</p>
             <p>确定性轴上限 {{ cd.certainty_cap }}% · 共振轴上限 {{ cd.resonance_cap }}% → 参考强度上限 {{ cd.reference_exposure_cap }}%</p>
             <small>{{ cd.formula_version }}{{ copy ? ' · ' + copy.version : '' }}</small>
           </details>

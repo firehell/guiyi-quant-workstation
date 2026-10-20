@@ -92,14 +92,14 @@ function openProduct(item: MarketHomeRow) {
 }
 
 function openNewowEvent(event: NewowMessage) { rememberPageState(); void router.push({ name: 'market-chart', query: newowMessageChartQuery(event) }) }
-function openCardChart(symbol: string, strategy: 'trend' | 'oscillation', frequency: '1d' | '1w') {
+function openCardChart(symbol: string, strategy: 'trend' | 'oscillation', frequency: '1d' | '1w', focusBarEnd?: string) {
   if (newowCapabilities.state.value !== 'ready' || !newowCapabilities.openFrequenciesFor(symbol).includes(frequency)) {
     navigationError.value = newowCapabilities.error.value ?? '当前品种尚未开放此周期。'
     return
   }
   rememberPageState()
   navigationError.value = null
-  void router.push({ name: 'market-chart', query: marketHomeUnifiedProductChartQuery(symbol, frequency, strategy) })
+  void router.push({ name: 'market-chart', query: {...marketHomeUnifiedProductChartQuery(symbol, frequency, strategy),...(focusBarEnd ? {focus_bar_end:focusBarEnd} : {})} })
 }
 function openEvent(event: AlertEvent) { rememberPageState(); void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
 function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {

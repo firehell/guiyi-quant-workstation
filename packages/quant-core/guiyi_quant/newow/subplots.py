@@ -9,7 +9,7 @@ from .models import NewowDailyBar
 
 
 MAIN_FORCE_CONTROL_FORMULA_VERSION = "newow_main_force_control_page_v1"
-ZHAOYAO_MIRROR_FORMULA_VERSION = "newow_zhaoyao_mirror_repainting_page_v1"
+ZHAOYAO_MIRROR_FORMULA_VERSION = "newow_zhaoyao_mirror_repainting_page_v2"
 UP_DOWN_ENERGY_FORMULA_VERSION = "newow_up_down_energy_page_v1"
 
 
@@ -44,6 +44,10 @@ class ZhaoyaoMirrorResult:
     formal_signal_eligible: bool = False
     formula_version: str = ZHAOYAO_MIRROR_FORMULA_VERSION
     confirmed_peak_events: tuple[tuple[int, int], ...] = ()
+    last_bar_fresh_peak: bool = False
+    candidate_peak_index: int | None = None
+    tentative: tuple[int, ...] = ()
+    confirmation_index: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +247,12 @@ def calculate_zhaoyao_mirror(
         50 if (value == 2 if index == 0 else value > ding[index - 1]) else 0
         for index, value in enumerate(ding)
     ]
+    fresh = ding[-1] == 2 and (size == 1 or ding[-2] == 0)
+    tentative = [0] * size
+    tentative[-1] = 50 if fresh else 0
+    confirmations = [-1] * size
+    for peak, confirmed in confirmed_peak_events:
+        confirmations[peak] = confirmed
     caution[-1] = 0
     return ZhaoyaoMirrorResult(
         tuple(entry),
@@ -254,6 +264,10 @@ def calculate_zhaoyao_mirror(
         tuple(peaks),
         tuple(caution),
         confirmed_peak_events=tuple(confirmed_peak_events),
+        last_bar_fresh_peak=fresh,
+        candidate_peak_index=candidate_peak if trend >= 0 else None,
+        tentative=tuple(tentative),
+        confirmation_index=tuple(confirmations),
     )
 
 
@@ -320,3 +334,8 @@ def calculate_up_down_energy(
         tuple(var3),
         tuple(ma120),
     )
+
+
+def mirror_care(caution) -> bool:
+    """Public inclusive last-65..last window; fresh peak never enters this array."""
+    return any(value == 50 for value in caution[-66:])

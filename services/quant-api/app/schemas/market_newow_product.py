@@ -188,6 +188,7 @@ class ChartPriceUnavailableDayOut(_Out):
 
 
 class ChartValueOut(_Out):
+    caution_events: list[dict[str, Any]] = Field(default_factory=list)
     chart_from: date
     chart_through: date
     page_identity: str
@@ -551,6 +552,10 @@ class ZhaoyaoMirrorDataOut(_Out):
     inducement: list[float]
     peaks: list[int]
     caution: list[int]
+    last_bar_fresh_peak: bool = False
+    candidate_peak_index: int | None = None
+    tentative: list[int] = Field(default_factory=list)
+    confirmation_index: list[int] = Field(default_factory=list)
     repainting: Literal[True]
     formal_signal_eligible: Literal[False]
     formula_version: str

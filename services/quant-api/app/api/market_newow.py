@@ -156,6 +156,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "include_fusion",
         "fusion_before",
         "decision_v2",
+        "path_strategy",
         "resolve_current",
     }
 )
@@ -828,6 +829,7 @@ def newow_strategy_detail(
     include_fusion: bool = Query(False),
     fusion_before: str | None = Query(None, min_length=1, max_length=2048),
     decision_v2: bool = Query(False),
+    path_strategy: Literal["trend","oscillation","main_rise","fusion","osc-test","osc-test2","osc-test3","osc-test4"] | None = Query(None),
     resolve_current: bool = Query(False),
     session: Session = Depends(get_db),
 ) -> NewowProductResponse:
@@ -907,6 +909,7 @@ def newow_strategy_detail(
                 "fusion_closed", "fusion_holding", "fusion_theoretical"
             } else fusion_before),
             decision_v2=decision_v2,
+            path_strategy=path_strategy,
         )
         policy = _input_quality_policy(request, product, frequency)
         historical_intraday = (getattr(request.state, "candidate_preview_as_of", None) is None
