@@ -2227,3 +2227,17 @@ def test_path_strategy_is_explicit_and_does_not_change_composite_kernel(product_
     if history.get('source'):
         assert history['source']['strategy']==path_strategy
     assert not history['executable']
+
+
+def test_chart_caution_selection_binds_complete_owner_not_just_time(product_cases, monkeypatch):
+    from app.market_data.newow import product_service as module
+    service,reader,build,clear=_service(product_cases,'1d')
+    def events(replay):
+        f=next(f for f in replay.frames if f.bar.bar.bar_end==build.bar_end)
+        b=f.bar.bar
+        good=dict(bar_end=b.bar_end.isoformat(),physical_contract=b.physical_contract,segment_id=b.segment_id,calculation_segment_id=f.bar.calculation_segment_id,tentative=True)
+        return (good,{**good,'physical_contract':'FOREIGN'},{**good,'segment_id':'foreign'},{**good,'calculation_segment_id':'foreign'})
+    monkeypatch.setattr(module,'project_caution_events',events)
+    result=service.query(ProductServiceQuery('rb','trend','1d',section='chart',since=build.trading_day,through=clear.trading_day,as_of=clear.bar_end+timedelta(microseconds=1)))
+    assert len(result.chart.value.caution_events)==1
+    assert result.chart.value.caution_events[0]['physical_contract']!='FOREIGN'

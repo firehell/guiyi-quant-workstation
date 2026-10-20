@@ -160,6 +160,8 @@ def project_caution_events(replay):
         if mirror is None:
             continue
         for i in range(len(bars)):
+            if not bars[i].observation_eligible:
+                continue
             tentative=mirror.tentative[i]==50
             if mirror.caution[i]!=50 and not tentative:
                 continue

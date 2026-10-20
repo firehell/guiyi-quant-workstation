@@ -1,5 +1,11 @@
 # 当前状态
 
+## 10/20 v1.15.13 发布候选验证完成
+
+候选基于develop a821448b5，汇总牛哇care/暂定峰生命周期/历史路径、视觉交互和只读接口统一，以及既有L.M.S研究文档；11个未提交布局文件排除并保留。发布预检修复重叠物理预热前缀的小心事件owner污染，保留完整前缀计算，仅发射eligible锚点并按四项身份匹配；独立Review及修复复审通过。
+后端/工程418 passed，完整Web1143 passed/1 skipped，类型/build/topology、OpenSpec strict11、secret/diff通过。健康测试从旧硬编码改读唯一APP_VERSION，候选版本1.15.13。main/tag/GitHub Release尚待执行；结果不预写。
+本次仅发布，不切换Runtime。现场十项服务身份仍为v1.15.12/gen21/13c86b735，API/Web可读；完整Runtime健康degraded（db/redis/after_market ok，live/alert degraded），不声明RUNTIME_READY，不重放或补发。现役v12发布树有引用继续保留。
+
 ## 10/19 v1.15.12 已发布、正式切换及旧目录清理完成
 
 健康读取已改为必要字段SQL投影，源码4619db48e；PR460已合并并发布v1.15.12，main/tag peeled为13c86b7351b8977b8bca96e17feb2399f181a159。161项定向测试（1 skipped）、候选177项（1 skipped）、构建及独立Review通过。正式绑定/十项配置现已统一v1.15.12/gen21/schema20261015_0052，运行根.worktrees/release-v1.15.12；六常驻PID双轮一致、四calendar空闲，API8000和Web5173实际返回1.15.12，Web index与exact发布dist一致。

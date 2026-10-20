@@ -3030,3 +3030,6 @@ T菜单实际仅测试1–4及主升浪；AI分析弹窗显示六组合并可采
 - 行情报价、预览、completed正式策略、多周期各自截止和页面参考收益保留独立身份；未新增个人管理写入、数据修复、推送、选股、月K、分时或Runtime切换。
 
 本轮工程验收：后端与工程269 passed；完整Web1143 passed、1 skipped；类型/生产构建/拓扑通过，OpenSpec strict11通过，secret scan零发现。独立Review确认的两项P2已按RED→GREEN修正：history不再占主图优先级；409身份冲突或响应校验失败清除旧panel/分页，显示明确重试入口，避免重复旧token。其他暂时失败保留已验证内容。新增API wrapper集成测试验证请求去重、单消费者取消不取消其他读取、新访问重新验证及history优先级。仅证明工程与固定输入合同，不代表真实行情新版本数值验收、发布或Runtime就绪。
+
+
+2026-10-20发布候选补充：小心事件保持完整物理前缀计算，但仅输出observation_eligible锚点；主图按时间、physical_contract、segment_id、calculation_segment_id完整身份筛选，避免换月预热前缀共享时间戳导致foreign-owner事件污染和整图校验失败。公式不变。两项新增回归实际RED→GREEN，分别覆盖重叠非可见合约与同时间合约/物理段/计算段三类不匹配。

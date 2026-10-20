@@ -1529,6 +1529,11 @@ class NewowProductService:
              anchor.bar.bar.physical_contract, anchor.bar.bar.bar_end),
             lambda: project_home_inputs(replay, anchor),
         ) if anchor is not None else None
+        visible_caution_owners = {
+            (f.bar.bar.bar_end.isoformat(), f.bar.bar.physical_contract,
+             f.bar.bar.segment_id, f.bar.calculation_segment_id)
+            for f in selected
+        }
         return SectionDelivery(
             "delivered",
             status,
@@ -1541,7 +1546,8 @@ class NewowProductService:
                 page_identity,
                 channel if identity.strategy is ProductStrategy.TREND else None,
                 price_reference,
-                caution_events=tuple(e for e in project_caution_events(replay) if e["bar_end"] in {f.bar.bar.bar_end.isoformat() for f in selected}),
+                caution_events=tuple(e for e in project_caution_events(replay)
+                    if (e["bar_end"], e["physical_contract"], e["segment_id"], e["calculation_segment_id"]) in visible_caution_owners),
                 home_summary=project_home_summary(replay, anchor, status, price_reference, shared_home),
                 price_unavailable_days=tuple(
                     (gap.trading_day, gap.physical_contract, gap.segment_id)

@@ -125,3 +125,15 @@ def test_nearby_peak_is_absorbed_without_forcing_fresh_event():
     assert value.caution[-1] == 0
     assert not value.last_bar_fresh_peak
     assert sum(value.caution[20:]) == 50
+
+
+def test_overlapping_foreign_warmup_peaks_are_not_observation_events():
+    from app.market_data.newow.home_cards import project_caution_events
+    source=bars([100]*20+[110,120,119,114])
+    frames=[]
+    for contract,eligible in [('RB2605',True),('RB2610',False)]:
+        for b in source:
+            frames.append(SimpleNamespace(bar=SimpleNamespace(bar=replace(b,physical_contract=contract,segment_id=contract,observation_eligible=eligible),calculation_segment_id=contract+'-calc')))
+    events=project_caution_events(SimpleNamespace(frames=tuple(frames)))
+    assert events
+    assert all(e['physical_contract']=='RB2605' for e in events)
