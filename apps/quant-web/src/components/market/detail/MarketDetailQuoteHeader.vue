@@ -55,7 +55,7 @@ function integer(value: number | null): string {
       </span>
     </div>
     <div class="quote-header__meta">
-      <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · {{ newow ? '非实时 · ' : '' }}截至 {{ asOfText }}</p>
+      <p v-if="!newow" class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · 截至 {{ asOfText }}</p>
       <div class="quote-header__facts-row">
         <p v-if="!newow" class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
         <div v-if="newow" class="quote-header__newow-facts">
