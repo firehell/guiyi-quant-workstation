@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { readNewowBasis, saveNewowBasis } from '@/utils/newowDecisionPreferences'
 import { deriveBasisDecision } from '@/utils/newowBasisDecision'
 import { previewInstant } from '@/utils/candidatePreviewInstant'
 import { historicalAnalysisAsOf } from '@/api/newowAiAnalysis'
@@ -51,7 +52,12 @@ async function load() {
     if (token === generation) error.value = failure instanceof NewowProductRequestError && failure.classification === 'busy' ? '图表仍在计算，请稍后重试综合解释。' : '综合解释读取失败或输入快照不一致，请刷新后重试。'
   } finally { if (token === generation) loading.value = false }
 }
-const basis = ref<'week'|'day'>('week')
+const basis = ref(readNewowBasis())
+watch(basis, saveNewowBasis)
+function refreshBasis() { if (document.visibilityState === 'visible') basis.value = readNewowBasis() }
+function syncBasis(event: StorageEvent) { if (event.key === null || event.key === 'guiyi.newow.decision-basis.v1') refreshBasis() }
+onMounted(() => { if (typeof document !== 'undefined') document.addEventListener('visibilitychange', refreshBasis); if (typeof window !== 'undefined') window.addEventListener('storage', syncBasis) })
+onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', refreshBasis); if (typeof window !== 'undefined') window.removeEventListener('storage', syncBasis) })
 const displayStrategy = computed(() => props.displayStrategy ?? props.response.meta.identity.strategy)
 const basisDecision = computed(() => displayStrategy.value === 'dual' && (!props.dominantReady || props.dominantAsOf !== result.value?.cdv2.as_of) ? null : deriveBasisDecision(result.value,displayStrategy.value,basis.value,props.dominant ?? null))
 const cd = computed(() => result.value?.cdv2)

@@ -6,9 +6,10 @@ const props=defineProps<{decision:NewowDecisionV2|null;loading:boolean;error:str
 const expanded=ref(false),host=ref<HTMLElement|null>(null),width=ref(480),id=useId()
 const data=computed(()=>props.decision?.daily_weekly_path?.history)
 const graph=computed(()=>data.value?.status==='ready'?historicalPathGeometry(data.value,width.value):null)
-let observer:ResizeObserver|null=null
-onMounted(()=>{if(typeof ResizeObserver==='undefined')return;observer=new ResizeObserver(()=>{width.value=Math.max(480,Math.min(1200,(host.value?.clientWidth??504)-24))});if(host.value)observer.observe(host.value)})
-onBeforeUnmount(()=>observer?.disconnect())
+let observer:ResizeObserver|null=null, resizeTimer:ReturnType<typeof setTimeout>|undefined
+function measure() { width.value=Math.max(480,Math.min(1200,(host.value?.clientWidth??504)-24)) }
+onMounted(()=>{measure();if(typeof ResizeObserver==='undefined')return;observer=new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(measure,200)});if(host.value)observer.observe(host.value)})
+onBeforeUnmount(()=>{observer?.disconnect();clearTimeout(resizeTimer)})
 const reasons:Record<string,string>={TRADE_SAMPLES_MISSING:'至少需要两个建仓点和一个真实清仓点',CURRENT_CONTEXT_UNAVAILABLE:'当前合约段或价格未就绪',CALENDAR_MISSING:'同合约交易日序列缺失',SAMPLES_MISSING:'历史区间样本不足两笔',PRICE_OR_START_MISSING:'起点或目标价格缺失'}
 const eta=computed(()=>data.value?.eta)
 </script>
@@ -41,5 +42,5 @@ const eta=computed(()=>data.value?.eta)
   </section>
 </template>
 <style scoped>
-.period-path{margin:8px 0;background:var(--gy-bg-panel);border:1px solid #ff950055;border-radius:8px;color:var(--gy-text-primary);min-width:0}.period-path__toggle{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px;border:0;background:transparent;color:inherit;cursor:pointer}.period-path__body{padding:0 12px 12px}.canvas{overflow-x:auto}svg{width:100%;min-width:480px;display:block}svg text{font-size:11px;fill:var(--gy-text-primary)}.legend{display:flex;gap:14px;flex-wrap:wrap}.buy{color:#1f5fa9}.sell{color:#2e9e8f}.buy-line,.sell-line{fill:none;stroke-width:1.8}.buy-line{stroke:#1f5fa9}.sell-line{stroke:#2e9e8f}.buy-point{fill:var(--gy-bg-panel);stroke:#1f5fa9}.sell-point{fill:var(--gy-bg-panel);stroke:#2e9e8f}p,summary{font-size:12px;line-height:1.6}.limitation{color:#996000}
+.period-path{margin:8px 0;background:var(--gy-bg-panel);border:1px solid #ff950055;border-radius:8px;color:var(--gy-text-primary);min-width:0}.period-path__toggle{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px;border:0;background:transparent;color:inherit;cursor:pointer}.period-path__body{padding:0 12px 12px}.canvas{min-width:0}svg{width:100%;height:auto;display:block}svg text{font-size:11px;fill:var(--gy-text-primary)}.legend{display:flex;gap:14px;flex-wrap:wrap}.buy{color:#1f5fa9}.sell{color:#2e9e8f}.buy-line,.sell-line{fill:none;stroke-width:1.8}.buy-line{stroke:#1f5fa9}.sell-line{stroke:#2e9e8f}.buy-point{fill:var(--gy-bg-panel);stroke:#1f5fa9}.sell-point{fill:var(--gy-bg-panel);stroke:#2e9e8f}p,summary{font-size:12px;line-height:1.6}.limitation{color:#996000}
 </style>

@@ -32,12 +32,13 @@ export function historicalPathGeometry(path: import('../types/newowDecisionV2.ts
   const envelopeDates=[...new Set([...dates,...(to?[forecastDate]:[])])].sort()
   const labels:Array<{x:number;y:number;text:string}> = []
   for(const p of [...buy.slice(-2),...sell.slice(-2)]) {
+    const lx=Math.max(45,Math.min(width-100,p.x))
     let ly=p.y-9
     for(const offset of [0,-14,14,-28,28,-42,42,-56,56,-70,70]) {
       const candidate=Math.max(16,Math.min(280,p.y-9+offset))
-      if(!labels.some(q=>Math.abs(q.x-p.x)<95&&Math.abs(q.y-candidate)<13)){ly=candidate;break}
+      if(!labels.some(q=>Math.abs(q.x-lx)<95&&Math.abs(q.y-candidate)<13)){ly=candidate;break}
     }
-    labels.push({x:Math.max(45,Math.min(width-100,p.x)),y:ly,text:p.price})
+    labels.push({x:lx,y:ly,text:p.price})
   }
   const envelope=[...envelopeDates.map(d=>`${x(d)},${Math.min(interp(extBuy,d),interp(extSell,d))}`),...[...envelopeDates].reverse().map(d=>`${x(d)},${Math.max(interp(extBuy,d),interp(extSell,d))}`)].join(' ')
   return {width,buy,sell,envelope,labels,segments:[...segments(buy,'#1f5fa9'),...segments(sell,'#2e9e8f')],current:path.current ? {x:x(last),y:y(path.current)}:null,
