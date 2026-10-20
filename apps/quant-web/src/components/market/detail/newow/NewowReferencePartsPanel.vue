@@ -213,12 +213,12 @@ const historyCards = computed(() => records.value.filter(row => !waitingRecord.v
         <p v-else-if="row.buyBarIsLive" class="newow-reference__interruption">末根新建仓的页面估值投影；不代表真实成交。</p>
       </article>
       <p v-if="!records.length && !state.historyLoading.value && !state.historyError.value">当前窗口暂无参考记录。</p>
-      <p v-if="overview && records.length">{{ history ? `已加载 ${state.historyRows.value.length} 条` : `最近 ${overview.recent_items.length} 条预览` }}{{ history?.next_before && !state.historyCapped.value ? ' · 可继续加载' : '' }} · 总数未提供</p>
+      <p v-if="overview && records.length" class="newow-reference__record-count">{{ history ? `已展示 ${state.historyRows.value.length} 笔参考记录` : `仅展示最近 ${overview.recent_items.length} 笔参考记录` }}</p>
       <p v-if="state.historyCapped.value" role="status">已达显示上限，最多显示 300 条；当前不能据此认定完整历史或完整统计。</p>
-      <button v-if="overview && !history" type="button" :disabled="state.historyLoading.value" @click="state.loadHistory()">查看完整历史记录</button>
-      <button v-if="history?.next_before && !state.historyCapped.value" type="button" :disabled="state.historyLoading.value" @click="state.loadMore()">加载更多历史参考记录</button>
+      <div v-if="(!history && records.length) || (history?.next_before && !state.historyCapped.value)" class="newow-reference__view-all">
+        <button type="button" :disabled="state.historyLoading.value" @click="history ? state.loadMore() : state.loadHistory()">{{ state.historyLoading.value ? '加载中…' : history ? '查看更多' : '查看全部' }}</button>
+      </div>
       <details v-if="fusion && overview?.fusion_groups"><summary>三组独立统计与融合配对规则</summary><table><thead><tr><th>模型</th><th>已完成</th><th>累计收益百分点</th><th>未清仓</th><th>中断</th></tr></thead><tbody><tr v-for="group in overview.fusion_groups" :key="String(group.model)"><th>{{ groupName(group.model) }}</th><td>{{ group.closed_count }}</td><td>{{ display(group.sum_return_percentage_points as string | null) }}</td><td>{{ group.open_count }}</td><td>{{ group.interrupted_count }}</td></tr></tbody></table><p>融合配对按固定策略合同计算；期初已有、未清仓浮动和中断不计入已完成累计。</p></details>
-      <p v-if="pageMode" class="newow-reference__state">页面参考收益仅用于展示，不等于因果回测或模型账户收益。</p>
     </PerformancePanel>
     <NewowDetailDialog v-if="analysisOpen" :open="analysisOpen" title="收益分析" :identity-key="`${chart?.meta.snapshot_token}:${state.mode.value}`" @close="analysisOpen = false">    <nav class="performance-modes" aria-label="收益事实类型">
       <button v-for="entry in ([['page','页面参考收益'],['holding','含浮动参考'],['closed','已完成参考交易']] as const)" :key="entry[0]" type="button" :aria-pressed="fact === entry[0]" @click="setFact(entry[0])">{{ entry[1] }}</button>

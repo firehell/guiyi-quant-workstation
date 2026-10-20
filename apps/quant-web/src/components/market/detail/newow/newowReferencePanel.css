@@ -113,3 +113,9 @@
 
 .newow-reference__waiting .newow-reference__period.is-waiting { background:#007aff; color:#fff; }
 .newow-reference__waiting .newow-reference__record-top { margin-bottom:4px; }
+
+.newow-reference__record-count { padding:8px 0 0; text-align:center; font-size:12px; color:#888; }
+.newow-reference__view-all { display:flex; align-items:center; justify-content:center; min-height:82px; padding:14px; box-sizing:border-box; border:1px solid #ff9500; border-radius:10px; background:#f7a719; }
+.newow-reference__view-all button { min-height:34px; padding:0 32px; border:1.5px solid #fff; border-radius:20px; color:#fff; background:transparent; font-size:13px; font-weight:600; cursor:pointer; }
+.newow-reference__view-all button:hover:not(:disabled) { background:#ffffff20; }
+.newow-reference__view-all button:disabled { opacity:.65; cursor:wait; }
