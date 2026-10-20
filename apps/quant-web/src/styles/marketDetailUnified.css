@@ -89,5 +89,10 @@
 }
 
 .unified-detail-light .quote-header--newow .quote-header__price { align-items:baseline; gap:0 6px; flex-wrap:nowrap; }
-.unified-detail-light .quote-header--newow .quote-header__price strong { flex-basis:auto; font-family:inherit; font-size:34px; font-weight:700; line-height:1; }
-.unified-detail-light .quote-header--newow .quote-header__price span { padding:0; border-radius:0; background:none; font-size:13px; font-weight:400; white-space:nowrap; }
+.unified-detail-light .quote-header--newow .quote-header__price strong { flex-basis:auto; font-family:Arial, sans-serif; font-size:34px; font-weight:700; line-height:1; }
+.unified-detail-light .quote-header--newow .quote-header__price span { padding:0; border-radius:0; background:none; font-family:Arial, sans-serif; font-size:14px; font-weight:400; white-space:nowrap; }
+
+.unified-detail-light .quote-header--newow .quote-header__price--up strong,
+.unified-detail-light .quote-header--newow .quote-header__price--up span { color:#ff3b30; }
+.unified-detail-light .quote-header--newow .quote-header__price--down strong,
+.unified-detail-light .quote-header--newow .quote-header__price--down span { color:#34c759; }
