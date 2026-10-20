@@ -169,10 +169,7 @@ def _no_float(value: Any) -> None:
             _no_float(item)
 
 
-def _validate(packet: dict, *, published: bool = False) -> None:
-    if type(packet.get('schema_version')) is not int or packet['schema_version'] != 1:
-        raise ResultStoreError('RESULT_SCHEMA_INVALID')
-    meta = packet.get('metadata')
+def _validate_metadata(meta: Any, *, published: bool = False) -> None:
     if not isinstance(meta, dict):
         raise ResultStoreError('RESULT_SCHEMA_INVALID')
     try:
@@ -190,6 +187,22 @@ def _validate(packet: dict, *, published: bool = False) -> None:
                               (meta[key] is None and meta['status'] in NULLABLE_HASH_STATUSES))
         if published:
             valid = valid and _sha(meta['run_id'])
+        if 'generated_at' in meta:
+            valid = valid and _aware(meta['generated_at'])
+        if not valid:
+            raise ValueError()
+        _no_float(meta)
+    except (KeyError, ValueError, TypeError, InvalidOperation, RecursionError) as exc:
+        raise ResultStoreError('RESULT_SCHEMA_INVALID') from exc
+
+
+def _validate(packet: dict, *, published: bool = False) -> None:
+    if type(packet.get('schema_version')) is not int or packet['schema_version'] != 1:
+        raise ResultStoreError('RESULT_SCHEMA_INVALID')
+    meta = packet.get('metadata')
+    _validate_metadata(meta, published=published)
+    try:
+        valid = True
         summary, reference, chart = packet['summary'], packet['reference'], packet['chart']
         valid = valid and isinstance(summary, dict) and summary.get('status') == meta['status']
         valid = valid and isinstance(reference, dict) and isinstance(reference['summary'], dict)
@@ -199,8 +212,6 @@ def _validate(packet: dict, *, published: bool = False) -> None:
         valid = valid and all(_rows(packet[key]) for key in ('decisions', 'fills', 'trades', 'equity'))
         valid = valid and isinstance(packet['diagnostics'], dict)
         valid = valid and _curve_valid(packet['equity']) and _curve_valid(reference['equity'])
-        if 'generated_at' in meta:
-            valid = valid and _aware(meta['generated_at'])
         if reference['summary'].get('executable', False) is not False:
             valid = False
         if summary.get('initial_cash', '100000') != '100000':
@@ -246,6 +257,12 @@ def _index(directory: int) -> dict:
         if (not _sha(run_id) or run_id in seen or not _sha(entry.get('sha256'))
                 or entry.get('file') != f'{run_id}.json' or entry['metadata'].get('run_id') != run_id):
             raise ResultStoreError('INDEX_CORRUPT')
+        try:
+            _validate_metadata(entry['metadata'], published=True)
+            if _identity({'metadata': entry['metadata']}) != run_id:
+                raise ResultStoreError('RESULT_ID_MISMATCH')
+        except ResultStoreError as exc:
+            raise ResultStoreError('INDEX_CORRUPT') from exc
         seen.add(run_id)
     return index
 
@@ -351,4 +368,44 @@ def list_results(root: Path) -> list[dict]:
     except ResultStoreError as exc:
         if str(exc) == 'RESULT_NOT_FOUND' and not Path(root).exists():
             return []
+        raise
+
+
+def _recency(entry: dict) -> tuple:
+    meta = entry['metadata']
+    return (datetime.fromisoformat(meta.get('generated_at', meta['as_of'])),
+            datetime.fromisoformat(meta['as_of']), entry['run_id'])
+
+
+def latest_packet(root: Path, *, product: str, strategy: str, frequency: str,
+                  scenario: str, expected_sha256: str | None = None) -> dict:
+    """Select an exact cell from the validated index, then verify only its full packet."""
+    with _directory(root) as directory:
+        matches = [entry for entry in _index(directory)['runs']
+                   if all(entry['metadata'][key] == value for key, value in (
+                       ('product', product), ('strategy', strategy), ('frequency', frequency),
+                       ('scenario', scenario))) ]
+        if not matches:
+            raise ResultStoreError('RESULT_NOT_FOUND')
+        selected = max(matches, key=_recency)
+        if expected_sha256 is not None and selected['sha256'] != expected_sha256:
+            raise ResultStoreError('RESULT_HASH_MISMATCH')
+        return _verified(directory, selected)
+
+
+def list_result_page(root: Path, *, offset: int = 0, limit: int = 50) -> dict:
+    """Validate the index and the requested page; unrequested packet bodies are untouched."""
+    if type(offset) is not int or type(limit) is not int or not 0 <= offset <= MAX_RUNS or not 1 <= limit <= 200:
+        raise ResultStoreError('PAGE_INVALID')
+    try:
+        with _directory(root) as directory:
+            entries = sorted(_index(directory)['runs'], key=_recency, reverse=True)
+            packets = [_verified(directory, entry) for entry in entries[offset:offset + limit]]
+            return {'runs': [{'run_id': packet['run_id'], 'sha256': packet['sha256'],
+                              'metadata': packet['metadata'], 'summary': packet['summary']}
+                             for packet in packets],
+                    'total': len(entries), 'offset': offset, 'limit': limit}
+    except ResultStoreError as exc:
+        if str(exc) == 'RESULT_NOT_FOUND' and not Path(root).exists():
+            return {'runs': [], 'total': 0, 'offset': offset, 'limit': limit}
         raise

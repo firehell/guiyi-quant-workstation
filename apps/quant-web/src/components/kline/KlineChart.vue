@@ -42,6 +42,7 @@ import {
   type KlineValuePoint,
 } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import { referencePriceLevelSegments } from '@/utils/referencePriceLevels'
 import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitive'
 
 const props = withDefaults(defineProps<{
@@ -125,6 +126,8 @@ watch(() => [props.referenceCallouts, props.referenceSelection], () => {
   positionedSelection.value = []
   scheduleReferenceCallouts()
 }, { deep: true })
+let referenceLevelSeries: ISeriesApi<'Line'>[] = []
+const referenceTargetSegments = ref(0), referenceStopSegments = ref(0)
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
@@ -382,12 +385,12 @@ function scrollToLatest(): void {
   }
 }
 
-function revealTime(iso: string): boolean {
+function revealTime(iso: string, exact = false): boolean {
   if (!chart || !props.bars.length) return false
   const parsed = Date.parse(iso)
   if (!Number.isFinite(parsed)) return false
   const targetDay = iso.slice(0, 10)
-  const index = isDaily()
+  const index = isDaily() && !exact
     ? renderedBars.findIndex((bar) => (bar.trading_day ?? bar.time.slice(0, 10)) === targetDay)
     : renderedBars.findIndex((bar) => Date.parse(bar.time) === parsed)
   if (index < 0) return false
@@ -483,6 +486,16 @@ function renderDerivedSeries(): void {
     derivedData.macd.dif = values('dif')
     derivedData.macd.dea = values('dea')
     derivedData.macd.histogram = values('macd')
+  }
+  referenceLevelSeries.forEach(series => chart!.removeSeries(series))
+  referenceLevelSeries = []
+  const levels = referencePriceLevelSegments(renderedBars, props.referenceIndicators ?? [])
+  referenceTargetSegments.value = levels.filter(level => level.kind === 'target').length
+  referenceStopSegments.value = levels.filter(level => level.kind === 'stop').length
+  for (const level of levels) {
+    const line = chart.addSeries(LineSeries, { color: level.kind === 'target' ? '#b28a36' : '#cc6262', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 }, 0)
+    line.setData(chartValues(level.points))
+    referenceLevelSeries.push(line)
   }
   const theme = resolveChartTheme()
 
@@ -643,6 +656,8 @@ defineExpose({
     class="kline-shell"
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
+    :data-reference-target-segments="referenceTargetSegments"
+    :data-reference-stop-segments="referenceStopSegments"
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-marker-count="mergedDisplayMarkers().length"
     :data-rendered-research-marker-count="researchMarkers.length"

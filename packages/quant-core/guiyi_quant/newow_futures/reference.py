@@ -112,6 +112,7 @@ def _run_reference(profile, bars_by_frequency, minute_bars, *, prepared, ticks):
 
     def close(bar: Bar, reason: str, *, interrupted: bool = False) -> None:
         nonlocal position, layers, entry, closed_return, round_realized, round_notional, cooldown
+        nonlocal last_reason
         if position is None or entry is None:
             return
         price = bar.close
@@ -128,6 +129,7 @@ def _run_reference(profile, bars_by_frequency, minute_bars, *, prepared, ticks):
             action("CLOSE", bar, reason, price)
             closed_return += pct
         position, layers, entry = None, [], None
+        last_reason = reason
         round_realized, round_notional = D(0), D(0)
         cooldown = bar.confirmed_at
 

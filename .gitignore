@@ -161,3 +161,8 @@ secrets/
 /output/newow-v1150-release-20261011/
 
 /output/newow-v1151-recovery-20261011/
+
+# Local frozen futures research packets and provider evidence; never source assets.
+/output/newow-futures-bidir-v1-20261020/
+/output/newow-futures-bidir-v1-20261020-evidence/
+/output/newow-futures-bidir-v1-20261021/

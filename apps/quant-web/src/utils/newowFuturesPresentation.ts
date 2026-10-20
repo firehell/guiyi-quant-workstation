@@ -43,9 +43,9 @@ export function validateFuturesCurve(curve:FuturesCurve,runId:string,sha256:stri
   if(curve.run_id!==runId||curve.sha256!==sha256||curve.kind!==kind||!Array.isArray(curve.points)||curve.points.length>2000||!Number.isInteger(curve.total_points)||curve.total_points<curve.points.length||typeof curve.sampled!=='boolean'
     ||(!curve.sampled&&curve.status==='COMPLETED'&&curve.total_points!==curve.points.length)||!['COMPLETED','CURVE_BOUNDARY_BUDGET_EXCEEDED'].includes(curve.status))throw new Error('RESULT_CURVE_IDENTITY_MISMATCH')
   let previous=-Infinity
-  for(const point of curve.points){const time=Date.parse(point.at);if(!Number.isFinite(time)||time<=previous||time>Date.parse(asOf)||!/(?:Z|[+-]\d\d:\d\d)$/.test(point.at)||typeof point.value!=='string'||!Number.isFinite(Number(point.value)))throw new Error('RESULT_CURVE_INVALID');previous=time}
+  for(const point of curve.points){const time=Date.parse(point.at);if(!Number.isFinite(time)||time<=previous||time>Date.parse(asOf)||!/(?:Z|[+-]\d\d:\d\d)$/.test(point.at)||(point.value!==null&&(typeof point.value!=='string'||!/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/.test(point.value)||!Number.isFinite(Number(point.value)))))throw new Error('RESULT_CURVE_INVALID');previous=time}
   return curve
 }
-export function futuresCurvePoints(curve:FuturesCurve){return curve.points.map(point=>({value:Number(point.value),date:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai'}).format(new Date(point.at)),position:Date.parse(point.at),segment:point.physical_contract??'frozen-account'}))}
+export function futuresCurvePoints(curve:FuturesCurve){return curve.points.map(point=>({value:point.value===null?null:Number(point.value),date:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai'}).format(new Date(point.at)),position:Date.parse(point.at),segment:point.physical_contract??'frozen-account'}))}
 
 export const futuresAsOfLabel=(kind:unknown)=>kind==='publication_time_only'?'生成时间':'截至'

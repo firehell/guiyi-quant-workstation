@@ -11,7 +11,9 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from guiyi_quant.newow_futures.contracts import FREQUENCIES, MODEL, PRODUCTS, Profile, Variant, profile_payload
-from app.newow_futures_research.store import PARTS, ResultStoreError, list_results, read_packet
+from app.newow_futures_research.store import (
+    PARTS, ResultStoreError, latest_packet, list_result_page, read_packet,
+)
 
 router = APIRouter(prefix='/api/v1/research/newow-futures', tags=['newow-futures-research'])
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -20,7 +22,7 @@ Hash = Annotated[str | None, Query(pattern=r'^[0-9a-f]{64}$')]
 
 def _root() -> Path:
     value = os.getenv('GUIYI_NEWOW_FUTURES_RESULTS_ROOT')
-    return Path(value) if value else PROJECT_ROOT / 'output' / 'newow-futures-bidir-v1-20261020'
+    return Path(value) if value else PROJECT_ROOT / 'output' / 'newow-futures-bidir-v1-20261021'
 
 
 def _fail(exc: ResultStoreError) -> HTTPException:
@@ -41,12 +43,6 @@ def _packet(run_id: str, sha256: str | None = None) -> dict:
 
 def _preview(rows: list) -> list:
     return rows if len(rows) <= 100 else rows[:50] + rows[-50:]
-
-
-def _recency(row: dict) -> tuple:
-    meta = row['metadata']
-    return (datetime.fromisoformat(meta.get('generated_at', meta['as_of'])),
-            datetime.fromisoformat(meta['as_of']), row['run_id'])
 
 
 def _bounded(value):
@@ -121,11 +117,9 @@ def profiles() -> dict:
 @router.get('/runs')
 def runs(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0, le=4096)) -> dict:
     try:
-        results = list_results(_root())
+        return list_result_page(_root(), limit=limit, offset=offset)
     except ResultStoreError as exc:
         raise _fail(exc) from exc
-    results.sort(key=_recency, reverse=True)
-    return {'runs': results[offset:offset + limit], 'total': len(results), 'offset': offset, 'limit': limit}
 
 
 @router.get('/snapshot')
@@ -139,13 +133,9 @@ def snapshot(product: str = Query(max_length=10), strategy: str = Query(max_leng
             'baseline', 'double_commission', 'double_slippage'}:
         raise HTTPException(status_code=422, detail={'code': 'RESEARCH_QUERY_INVALID'})
     try:
-        entries = list_results(_root())
-        matches = [entry for entry in entries if all(entry['metadata'][key] == value for key, value in (
-            ('product', product), ('strategy', strategy), ('frequency', frequency), ('scenario', scenario)))]
-        if not matches:
-            raise ResultStoreError('RESULT_NOT_FOUND')
-        latest = max(matches, key=_recency)
-        return _detail(_packet(latest['run_id'], sha256))
+        packet = latest_packet(_root(), product=product, strategy=strategy, frequency=frequency,
+                               scenario=scenario, expected_sha256=sha256)
+        return _detail(packet)
     except ResultStoreError as exc:
         raise _fail(exc) from exc
 

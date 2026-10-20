@@ -73,6 +73,8 @@ def test_real_engine_reference_closed_trade_keeps_its_opened_unit_quantity():
     result = run(bars, (*executions, ExecutionBar(close_bar, old.facts)), ticks)
     trade = result["reference"]["trades"][-1]
     assert trade["status"] == "CLOSED" and trade["qty"] == 1
+    assert result["reference"]["snapshot"]["side"] == "FLAT"
+    assert result["reference"]["snapshot"]["reason"] == "PROTECTIVE_CLOSE"
 
 
 def test_real_engine_interrupted_reference_trade_preserves_old_contract_units():

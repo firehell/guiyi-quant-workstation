@@ -1,7 +1,7 @@
 import type { FuturesSnapshot, FrozenRecord } from '../types/newowFutures.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
 import type { BarData, KlineMarker } from '../types/market.ts'
-import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
+import type { KlineReferenceCallout, KlineReferenceIndicator } from '../types/referenceCallout.ts'
 import { futuresAction, futuresStateLabel, futuresNumber, futuresTime } from './newowFuturesPresentation.ts'
 import { futuresVariant } from './newowFutures.ts'
 const instant = (value: unknown): value is string => typeof value === 'string' && /(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value))
@@ -103,4 +103,18 @@ export function createFuturesSnapshotResource(fetch: (identity: MarketDetailIden
     },
     dispose() { owner?.abort() },
   }
+}
+
+/** Frame prices remain server facts; no target/stop or strategy is computed here. */
+export function futuresReferenceIndicators(packet: FuturesSnapshot, target: boolean, stop: boolean): KlineReferenceIndicator[] {
+  return packet.chart.bars.flatMap(bar => {
+    const frame = packet.chart.frames.find(frame => (frame.bar_end ?? frame.at) === bar.bar_end)
+    if (!frame || !['LONG','SHORT'].includes(String(frame.side))
+      || (frame.physical_contract && frame.physical_contract !== bar.physical_contract)
+      || (frame.owner_segment_id && frame.owner_segment_id !== bar.owner_segment_id)) return []
+    return [{ bar_end: String(bar.bar_end), physical_contract: String(bar.physical_contract), segment_id: String(bar.owner_segment_id), owner_segment_id: String(bar.owner_segment_id),
+      reference_side: frame.side as 'LONG' | 'SHORT', dif: null, dea: null, macd: null, ema21: null,
+      target_reference_price: target && typeof frame.target_reference_price === 'string' ? frame.target_reference_price : null,
+      stop_reference_price: stop && typeof frame.stop_reference_price === 'string' ? frame.stop_reference_price : null }]
+  })
 }

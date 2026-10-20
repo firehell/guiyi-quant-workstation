@@ -127,3 +127,65 @@ def test_generation_time_breaks_same_data_cutoff_tie(client, tmp_path):
     result = publish_packet(tmp_path, late)
     latest = client.get(PREFIX + '/snapshot?product=jm&strategy=trend&frequency=5m').json()
     assert latest['run_id'] == result['run_id']
+
+
+def test_snapshot_reads_only_selected_packet_and_verifies_hash(client, tmp_path, monkeypatch):
+    import app.newow_futures_research.store as store
+    wanted = publish_packet(tmp_path, packet())
+    other = packet()
+    other['metadata']['product'] = 'RB'
+    unrelated = publish_packet(tmp_path, other)
+    # A damaged unrelated packet must not force a complete-matrix read on every GET.
+    (tmp_path / f"{unrelated['run_id']}.json").write_text('{}')
+    opened = []
+    original = store._read
+
+    def traced(directory, name, *args):
+        opened.append(name)
+        return original(directory, name, *args)
+
+    monkeypatch.setattr(store, '_read', traced)
+    response = client.get(PREFIX + '/snapshot?product=jm&strategy=trend&frequency=5m')
+    assert response.status_code == 200
+    assert response.json()['sha256'] == wanted['sha256']
+    assert opened == ['index.json', f"{wanted['run_id']}.json"]
+    (tmp_path / f"{wanted['run_id']}.json").write_text('{}')
+    failed = client.get(PREFIX + '/snapshot?product=jm&strategy=trend&frequency=5m')
+    assert failed.status_code == 409
+    assert failed.json()['detail']['code'] == 'RESULT_HASH_MISMATCH'
+
+
+def test_run_listing_verifies_only_selected_page(client, tmp_path, monkeypatch):
+    import app.newow_futures_research.store as store
+    earlier = publish_packet(tmp_path, packet())
+    late = packet()
+    late['metadata']['as_of'] = '2026-10-20T11:00:00+08:00'
+    latest = publish_packet(tmp_path, late)
+    (tmp_path / f"{earlier['run_id']}.json").write_text('{}')
+    opened = []
+    original = store._read
+
+    def traced(directory, name, *args):
+        opened.append(name)
+        return original(directory, name, *args)
+
+    monkeypatch.setattr(store, '_read', traced)
+    response = client.get(PREFIX + '/runs?limit=1')
+    assert response.status_code == 200
+    assert response.json()['total'] == 2
+    assert response.json()['runs'][0]['run_id'] == latest['run_id']
+    assert opened == ['index.json', f"{latest['run_id']}.json"]
+    assert client.get(PREFIX + '/runs?offset=1&limit=1').status_code == 409
+
+
+@pytest.mark.parametrize('key,value', [('generated_at', 'invalid'), ('product', ['JM']),
+                                      ('profile_id', 'mismatch'), ('scenario', 'unknown')])
+def test_index_selection_rejects_invalid_metadata_and_identity(client, tmp_path, key, value):
+    import json
+    publish_packet(tmp_path, packet())
+    index_path = tmp_path / 'index.json'
+    index = json.loads(index_path.read_text())
+    index['runs'][0]['metadata'][key] = value
+    index_path.write_text(json.dumps(index))
+    assert client.get(PREFIX + '/snapshot?product=jm&strategy=trend&frequency=5m').status_code == 409
+    assert client.get(PREFIX + '/runs?limit=1').status_code == 409

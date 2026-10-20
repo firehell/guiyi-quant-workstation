@@ -14,4 +14,4 @@ export interface FuturesSnapshot {
 export type FuturesPart = 'decisions' | 'fills' | 'trades' | 'equity' | 'reference-trades'
 export interface FuturesPage { run_id: string; sha256: string; part: FuturesPart; items: FrozenRecord[]; total: number; offset: number; limit: number; next_offset: number | null }
 export type FuturesCurveKind = 'equity' | 'reference-equity'
-export interface FuturesCurve { run_id:string; sha256:string; kind:FuturesCurveKind; points:Array<{at:string;value:string;physical_contract?:string}>; total_points:number; status:'COMPLETED'|'CURVE_BOUNDARY_BUDGET_EXCEEDED'; sampled:boolean }
+export interface FuturesCurve { run_id:string; sha256:string; kind:FuturesCurveKind; points:Array<{at:string;value:string|null;physical_contract?:string}>; total_points:number; status:'COMPLETED'|'CURVE_BOUNDARY_BUDGET_EXCEEDED'; sampled:boolean }

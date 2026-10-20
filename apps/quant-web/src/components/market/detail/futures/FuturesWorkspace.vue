@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
 import FrozenFields from './FrozenFields.vue'
@@ -9,10 +9,15 @@ import type { DetailPricePreview as PricePreview } from '@/composables/useDetail
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { FuturesSnapshot, FuturesPart, FuturesPage } from '@/types/newowFutures'
 import { getFuturesSnapshot, getFuturesPart } from '@/api/newowFutures'
-import { createFuturesSnapshotResource, futuresChartBars, futuresChartMarkers, futuresChartCallouts } from '@/utils/newowFuturesSnapshot'
+import { createFuturesSnapshotResource, futuresChartBars, futuresChartMarkers, futuresChartCallouts, futuresReferenceIndicators } from '@/utils/newowFuturesSnapshot'
+import { futuresRecordKey, locateFuturesRecord, type FuturesLocateEndpoint } from '@/utils/newowFuturesLocate'
+import type { FrozenRecord } from '@/types/newowFutures'
 import { futuresVariant } from '@/utils/newowFutures'
 import { futuresStrategyLabel, futuresAsOfLabel, futuresStateLabel, futuresFrequencyLabel, futuresTime, futuresNumber, futuresStatus, futuresReason, knownFuturesReason, futuresTradeColumns, type FuturesColumn } from '@/utils/newowFuturesPresentation'
 const props=defineProps<{identity:MarketDetailIdentity;pricePreview:PricePreview}>()
+const chart=ref<InstanceType<typeof KlineChart>|null>(null),chartRegion=ref<HTMLElement|null>(null)
+const selectedRecordKey=ref<string|null>(null), locateNotice=ref<string|null>(null)
+const chartSelection=ref<Array<{time:string;physicalContract:string}>>([])
 const packet=shallowRef<FuturesSnapshot|null>(null),loading=ref(false),error=ref<string|null>(null)
 const sourceKey=computed(()=>[props.identity.symbol,props.identity.frequency,futuresVariant(props.identity),props.identity.strategyModel].join(':'))
 const resource=createFuturesSnapshotResource(getFuturesSnapshot,(value,pending,problem)=>{packet.value=value;loading.value=pending;error.value=problem})
@@ -20,6 +25,8 @@ watch(sourceKey,()=>{void resource.load({...props.identity})},{immediate:true,fl
 const bars=computed(()=>packet.value ? futuresChartBars(packet.value):[])
 const callouts=computed(()=>packet.value ? futuresChartCallouts(packet.value):[])
 const markers=computed(()=>packet.value ? futuresChartMarkers(packet.value).filter(marker=>!callouts.value.some(callout=>callout.id===marker.id)):[])
+const showTarget=ref(true), showStop=ref(true)
+const referenceIndicators=computed(()=>packet.value?futuresReferenceIndicators(packet.value,showTarget.value,showStop.value):[])
 const snapshot=computed(()=>packet.value?.reference.snapshot)
 const diagnostics=computed(()=>packet.value && !Array.isArray(packet.value.diagnostics) ? packet.value.diagnostics : {})
 const fundingText=computed(()=>{
@@ -54,6 +61,17 @@ async function loadPage(offset=0){
   }catch{if(!owner.signal.aborted)pageError.value='记录读取失败或结果身份不一致'}
   finally{if(!owner.signal.aborted)pageLoading.value=false}
 }
+watch(packet,()=>{chartSelection.value=[];selectedRecordKey.value=null;locateNotice.value=null},{flush:'sync'})
+async function locateRecord(row:FrozenRecord,endpoint:FuturesLocateEndpoint,source:FuturesPart|'reference-actions'){
+  const current=packet.value;if(!current)return
+  const result=locateFuturesRecord(current,row,endpoint,source)
+  locateNotice.value=result.message;selectedRecordKey.value=futuresRecordKey(row);chartSelection.value=[]
+  if(result.kind!=='located')return
+  await nextTick();if(packet.value!==current)return
+  if(!chart.value?.revealTime(result.barEnd,true)){locateNotice.value='无法定位到对应冻结Bar，未改变图表位置';return}
+  chartSelection.value=[{time:result.barEnd,physicalContract:result.physicalContract}]
+  chartRegion.value?.scrollIntoView({behavior:'smooth',block:'center'})
+}
 watch([packet,part],()=>{void loadPage()},{flush:'sync'})
 const recordParts:ReadonlyArray<{value:FuturesPart;label:string}>=[{value:'reference-trades',label:'独立参考交易'},{value:'trades',label:'10万模型账户交易'},{value:'fills',label:'模拟成交'},{value:'decisions',label:'决策与拒绝'},{value:'equity',label:'模型账户权益'}]
 const columns=computed(()=>futuresTradeColumns(part.value))
@@ -72,18 +90,20 @@ onBeforeUnmount(()=>{resource.dispose();pageOwner?.abort()})
         <dl class="futures-workspace__metrics"><div><dt>参考入场价</dt><dd>{{ futuresNumber(snapshot?.entry_reference_price) }}</dd></div><div><dt>参考保护价</dt><dd>{{ futuresNumber(snapshot?.stop_reference_price) }}</dd></div><div><dt>参考目标价</dt><dd>{{ futuresNumber(snapshot?.target_reference_price) }}</dd></div><div><dt>周期升级</dt><dd>{{ snapshot?.upgrades ?? '—' }}<small>次</small></dd></div></dl>
         <p class="futures-workspace__note">{{ snapshot?.reason ? futuresReason(snapshot.reason) : '参考状态未知' }}。以上为冻结的策略参考状态。</p>
       </section>
-      <KlineChart v-if="bars.length" :key="`${packet.run_id}:${packet.sha256}`" :bars="bars" :research-markers="markers" :reference-callouts="callouts" series-kind="actual_dominant" :period="identity.frequency" :visible-main-indicators="[]" :marker-selection-enabled="false" :range-detector-source-identity="`${packet.run_id}:${packet.sha256}:futures_bidir_v1`"/>
+      <div v-if="bars.length" class="futures-workspace__record-tabs" role="group" aria-label="参考线显示"><button type="button" :aria-pressed="showTarget" @click="showTarget=!showTarget">目标参考线</button><button type="button" :aria-pressed="showStop" @click="showStop=!showStop">保护参考线</button></div>
+      <div v-if="bars.length" ref="chartRegion"><KlineChart ref="chart" :key="`${packet.run_id}:${packet.sha256}`" :bars="bars" :research-markers="markers" :reference-callouts="callouts" :reference-indicators="referenceIndicators" :reference-selection="chartSelection" series-kind="actual_dominant" :period="identity.frequency" :visible-main-indicators="[]" :marker-selection-enabled="false" :range-detector-source-identity="`${packet.run_id}:${packet.sha256}:futures_bidir_v1`"/></div>
       <p v-else role="status">该结果没有可验证的历史图表数据。</p>
       <div class="futures-workspace__summaries">
         <section aria-label="独立参考收益"><h3>独立参考交易</h3><p class="futures-workspace__note">完成信号收盘价 · 零手续费 / 零滑点 · 仅作参考</p><dl class="futures-workspace__metrics"><div v-for="metric in referenceMetrics" :key="metric.label"><dt>{{ metric.label }}</dt><dd>{{ metric.value }}<small>{{ metric.unit }}</small></dd></div></dl><FuturesCurvePanel :packet="packet" kind="reference-equity"/></section>
         <section aria-label="10万模型账户收益"><h3>10万元模型账户</h3><p class="futures-workspace__note">{{ futuresStatus(packet.summary.status) }} · 按模拟成交、成本与资金约束计账</p><dl class="futures-workspace__metrics"><div v-for="metric in accountMetrics" :key="metric.label"><dt>{{ metric.label }}</dt><dd>{{ metric.value }}<small>{{ metric.unit }}</small></dd></div></dl><FuturesCurvePanel :packet="packet" kind="equity"/></section>
       </div>
+      <p v-if="locateNotice" role="status" data-testid="futures-locate-notice">{{ locateNotice }}</p>
       <p class="futures-workspace__funding">{{ fundingText }}</p>
-      <details><summary>策略参考动作 · 最近50条</summary><FuturesRecordsTable :items="packet.reference.actions.slice(-50)" :columns="actionColumns"/></details>
+      <details><summary>策略参考动作 · 最近50条</summary><FuturesRecordsTable :items="packet.reference.actions.slice(-50)" :columns="actionColumns" :locatable="true" :selected-key="selectedRecordKey" @locate="(row,endpoint)=>locateRecord(row,endpoint,'reference-actions')"/></details>
       <section id="futures-records" aria-label="期货双向研究记录">
         <h3>历史记录</h3><div class="futures-workspace__record-tabs"><button v-for="option in recordParts" :key="option.value" type="button" :aria-pressed="part===option.value" @click="part=option.value">{{ option.label }}</button></div>
         <p v-if="pageLoading" role="status">正在读取记录…</p><p v-else-if="pageError" role="alert">{{ pageError }} <button @click="loadPage()">重试</button></p>
-        <template v-else-if="page"><p class="futures-workspace__note">共 {{ page.total }} 条 · 当前 {{ page.offset + (page.items.length ? 1 : 0) }}–{{ page.offset + page.items.length }} 条</p><FuturesRecordsTable :items="page.items" :columns="columns"/>
+        <template v-else-if="page"><p class="futures-workspace__note">共 {{ page.total }} 条 · 当前 {{ page.offset + (page.items.length ? 1 : 0) }}–{{ page.offset + page.items.length }} 条</p><FuturesRecordsTable :items="page.items" :columns="columns" :locatable="true" :selected-key="selectedRecordKey" @locate="(row,endpoint)=>locateRecord(row,endpoint,part)"/>
           <div class="futures-workspace__pagination"><button type="button" :disabled="page.offset===0" @click="loadPage(Math.max(0,page.offset-50))">上一页</button><button type="button" :disabled="page.next_offset===null" @click="page.next_offset!==null && loadPage(page.next_offset)">下一页</button></div>
         </template>
       </section>

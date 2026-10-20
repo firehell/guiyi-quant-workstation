@@ -30,3 +30,12 @@ test('publication time without known inputs is not labeled as a market cutoff',a
   assert.equal(futuresAsOfLabel('publication_time_only'),'生成时间')
   assert.equal(futuresAsOfLabel('verified_completed_input'),'截至')
 })
+
+test('explicit frozen curve gaps stay null and split geometry instead of becoming zero',async()=>{
+  const {returnCurveLayout}=await import('../src/utils/returnCurveLayout.ts')
+  const curve={run_id:'run',sha256:'a'.repeat(64),kind:'equity' as const,total_points:3,sampled:false,status:'COMPLETED' as const,points:[{at:'2026-10-17T15:00:00+08:00',value:'100000'},{at:'2026-10-18T15:00:00+08:00',value:null},{at:'2026-10-19T15:00:00+08:00',value:'101000'}]}
+  validateFuturesCurve(curve,'run','a'.repeat(64),'equity','2026-10-19T15:00:00+08:00')
+  const points=futuresCurvePoints(curve);assert.equal(points[1]!.value,null)
+  assert.equal(returnCurveLayout(points,{headroom:1.05,areaBaseline:'bottom',valueUnit:'currency'}).segments.length,2)
+  for(const value of ['',false,0,'NaN','Infinity'])assert.throws(()=>validateFuturesCurve({...curve,points:[{...curve.points[0]!,value}]} as any,'run','a'.repeat(64),'equity','2026-10-19T15:00:00+08:00'))
+})
