@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newowWaitingReference } from '@/utils/newowWaitingReference'
 import { computed, nextTick, ref, watch } from 'vue'
 import PerformancePanel from '../../../performance/PerformancePanel.vue'
 import ReturnCurveSvg from '../../../charts/ReturnCurveSvg.vue'
@@ -155,6 +156,8 @@ const waiting = computed(() => {
     && frame.status.evidence_status === 'ACTIVE_CODE_VERIFIED' && frame.main_state === 'FLAT'
     && Date.parse(bar.bar_end) <= Date.parse(props.chart!.meta.as_of) ? bar : null
 })
+const waitingRecord = computed(() => waiting.value ? newowWaitingReference(records.value, waiting.value) : null)
+const historyCards = computed(() => records.value.filter(row => !waitingRecord.value || key(row) !== key(waitingRecord.value)))
 </script>
 
 <template>
@@ -184,10 +187,17 @@ const waiting = computed(() => {
       </dl><p v-if="metrics.closed_count === 0">{{ pageMode ? '暂无页面参考交易或期末估值' : '暂无已完成参考交易' }}；统计指标不是 0%。</p></section>
       <p v-else-if="curve" role="status">完整统计暂不可用，不能从采样曲线推算收益或回撤。</p>
       <header class="newow-reference__records-heading"><h3>历史参考记录</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
-      <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting"><header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header><p>状态时间 {{ formatBeijingInstant(waiting.bar_end) }} · 截至所示已完成 Bar，仅作页面参考。</p></article>
+      <article v-if="waiting" :id="waitingRecord && isTrade(waitingRecord) ? `reference-trade-${waitingRecord.reference_trade_id}` : undefined" :ref="element => { if (element && waitingRecord && isTrade(waitingRecord)) recordElements.set(waitingRecord.reference_trade_id, element as HTMLElement) }" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
+        <header class="newow-reference__record-top"><div class="newow-reference__record-meta"><strong class="newow-reference__period is-waiting">空仓等待中</strong><span :title="formatBeijingInstant(waiting.bar_end)">{{ waitingRecord ? card(waitingRecord).exitDate.slice(0, 10) + ' → 至今' : '策略空仓 · ' + waiting.physical_contract }}</span></div><b v-if="waitingRecord" class="newow-reference__record-return" :data-direction="referencePercentDisplay(card(waitingRecord).pct).direction">盈亏 {{ referencePercentDisplay(card(waitingRecord).pct).text }}</b></header>
+        <template v-if="waitingRecord">
+          <div class="newow-reference__record-line"><span><b class="newow-reference__entry">建仓</b> 参考 <strong>{{ newowReferencePrice(card(waitingRecord).entryPrice) }}</strong></span><time :title="card(waitingRecord).entryDate">{{ card(waitingRecord).start }}</time></div>
+          <div class="newow-reference__record-line"><span><b class="newow-reference__exit">清仓</b> 参考 <strong>{{ newowReferencePrice(card(waitingRecord).exitPrice) }}</strong><b class="newow-reference__inline-return" :data-direction="referencePercentDisplay(card(waitingRecord).pct).direction">{{ referencePercentDisplay(card(waitingRecord).pct).text }}</b></span><time :title="card(waitingRecord).exitDate">{{ card(waitingRecord).exitDay }}</time></div>
+        </template>
+        <p v-else class="newow-reference__interruption">当前合约段暂无已核对的完成记录 · 截至 {{ formatBeijingInstant(waiting.bar_end) }}</p>
+      </article>
       <p v-if="state.historyError.value" role="alert">{{ state.historyError.value }} <button type="button" @click="history ? state.loadMore() : state.loadHistory()">重试</button></p>
       <p v-else-if="state.historyLoading.value && !history" role="status">正在读取历史参考记录…</p>
-      <article v-for="row in records" :id="isTrade(row) ? `reference-trade-${row.reference_trade_id}` : undefined" :key="key(row)" :ref="element => { if (element && isTrade(row)) recordElements.set(row.reference_trade_id, element as HTMLElement) }" tabindex="-1" class="newow-reference__card" :class="{ 'fusion-selected': highlighted === key(row) }" :data-reference-category="category(row)" :data-reference-initial="isTrade(row) && row.statistics_membership === 'initial_before_window' ? 'true' : undefined">
+      <article v-for="row in historyCards" :id="isTrade(row) ? `reference-trade-${row.reference_trade_id}` : undefined" :key="key(row)" :ref="element => { if (element && isTrade(row)) recordElements.set(row.reference_trade_id, element as HTMLElement) }" tabindex="-1" class="newow-reference__card" :class="{ 'fusion-selected': highlighted === key(row) }" :data-reference-category="category(row)" :data-reference-initial="isTrade(row) && row.statistics_membership === 'initial_before_window' ? 'true' : undefined">
         <header class="newow-reference__record-top">
           <div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': card(row).open }">{{ card(row).label }}</strong><span :title="card(row).identity">{{ card(row).start }} → {{ card(row).end }}</span></div>
           <b class="newow-reference__record-return" :data-direction="referencePercentDisplay(card(row).pct).direction">{{ card(row).open ? '参考浮动' : '盈亏' }} {{ referencePercentDisplay(card(row).pct).text }}</b>

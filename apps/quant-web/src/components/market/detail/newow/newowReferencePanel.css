@@ -110,3 +110,6 @@
 .newow-reference__metrics dd[data-direction="up"] { color:#ff3b30; }
 .newow-reference__metrics dd.newow-reference__drawdown { color:#00c936; }
 .newow-reference__records-heading { border-top:1px solid #f3f3f5; padding-top:14px; margin-top:4px; }
+
+.newow-reference__waiting .newow-reference__period.is-waiting { background:#007aff; color:#fff; }
+.newow-reference__waiting .newow-reference__record-top { margin-bottom:4px; }
