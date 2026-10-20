@@ -89,26 +89,25 @@ const chipColor = (axis: string, period: string) => {
       </button>
     </div>
     <p v-if="loading" v-show="!collapsed" class="decision-v2__message" role="status">正在读取同一快照的已完成日周小时策略…</p>
-    <div v-if="cd" v-show="!collapsed" class="decision-v2__period-choice" aria-label="页面决策口径"><button type="button" aria-label="周线口径" :aria-pressed="basis==='week'" @click="basis='week'">周线口径</button><button type="button" aria-label="日线口径" :aria-pressed="basis==='day'" @click="basis='day'">日线口径</button><span>{{ basis==='week' ? '周线定方向 · 日线定执行' : '日线定方向 · 60分定执行' }}</span></div>
+
     <p v-if="error" v-show="!collapsed" class="decision-v2__message" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
     <div v-show="!collapsed" :id="bodyId" class="decision-v2__body">
       <template v-if="cd && view">
         <p class="decision-v2__headline">{{ dailyWeeklyFacts.filter(item => item.role.startsWith('trend')).map(item => `${item.role.endsWith('week') ? '周' : item.role.endsWith('m60') ? '60分' : '日'} ${decisionFactState(item.fact)}`).join(' / ') }}</p>
-        <section v-if="basisDecision" class="decision-v2__first-action" :data-level="basisDecision.strength==='tip'?'warn':basisDecision.strength" aria-label="口径行动原则"><b>{{ basisDecision.strengthName }}</b><strong>{{ basisDecision.strengthText }}</strong></section><p v-if="basisDecision">{{ basisDecision.reason }}</p><p v-else>所选口径不可用，当前保留原综合依据；不补造周期状态。</p><p v-if="basisDecision?.conflict" role="status">周期冲突 · {{ basisDecision.dirFull }}看多，{{ basisDecision.execFull }}回调</p><p v-if="cd.period_conflict?.code==='XP1'" role="status">XP1 · 趋势周线向上、日线向下；独立周期提示</p>
+    <div v-if="cd" v-show="!collapsed" class="decision-v2__period-choice" aria-label="页面决策口径"><button type="button" aria-label="周线口径" :aria-pressed="basis==='week'" @click="basis='week'">周线主<span v-if="basis==='week'"> 当前</span></button><button type="button" aria-label="日线口径" :aria-pressed="basis==='day'" @click="basis='day'">日线主<span v-if="basis==='day'"> 当前</span><span v-else> · 短线</span></button><span>{{ basis==='week' ? '周线定方向 · 日线定执行' : '日线定方向 · 60分定执行' }}</span></div>
+        <p v-if="basisDecision">{{ basisDecision.reason }}</p><p v-else>所选口径不可用，当前保留原综合依据；不补造周期状态。</p>
+        <section v-if="basisDecision" class="decision-v2__first-action" :data-level="basisDecision.strength==='tip'?'warn':basisDecision.strength" aria-label="口径行动原则"><b>{{ basisDecision.strengthName }}</b><strong>{{ basisDecision.strengthText }}</strong></section><p v-if="basisDecision?.conflict" role="status">周期冲突 · {{ basisDecision.dirFull }}看多，{{ basisDecision.execFull }}回调</p><p v-if="cd.period_conflict?.code==='XP1'" role="status">XP1 · 趋势周线向上、日线向下；独立周期提示</p>
         <p v-if="!basisDecision" class="decision-v2__interpretation">{{ view.direction.text }}</p>
         <section v-if="copy && !basisDecision" class="decision-v2__first-action" :data-level="copy.first_action.level" aria-label="第一行动原则">
           <b>{{ { ok:'遵守', warn:'提示', violate:'警示', unknown:'待确认' }[copy.first_action.level] }}</b>
           <div><strong>{{ copy.first_action.title }}</strong></div>
         </section>
         <p v-if="missingDailyWeekly.length" class="decision-v2__missing">日周小时输入不可用：{{ missingDailyWeekly.map(decisionRoleLabel).join('、') }}；缺失不当作空仓，不使用其他周期替代。</p>
-        <section v-if="view.mismatch" class="decision-v2__mismatch" aria-label="错配期提示" :style="{ '--mismatch-color': view.mismatch.color }">
-          <div><strong>{{ view.mismatch.name }}</strong><b>{{ {MM1:'趋势日线仍持股 · 震荡已转空',MM2:'趋势日线仍空仓 · 震荡已建仓',MM3:'趋势已转空 · 震荡仍持股',MM4:'趋势已转多 · 震荡仍空仓'}[cd.mismatch as 'MM1'|'MM2'|'MM3'|'MM4'] }}</b></div>
-          <p><b>{{ view.mismatch.ageLabel }}</b> {{ view.mismatch.detail }}</p>
-        </section>
+
         <button type="button" class="decision-v2__detail-toggle" :aria-label="evidenceExpanded ? '收起综合依据' : '展开综合依据'" :aria-expanded="evidenceExpanded" :aria-controls="evidenceId" @click="evidenceExpanded = !evidenceExpanded">{{ evidenceExpanded ? '收起依据' : '展开依据' }} <span aria-hidden="true">{{ evidenceExpanded ? '▴' : '▾' }}</span></button>
         <div v-show="evidenceExpanded" :id="evidenceId" class="decision-v2__evidence">
           <div class="decision-v2__fact-line"><strong>可靠性档位</strong><span class="decision-v2__badge">{{ view.tier.label }}</span></div>
-          <div class="decision-v2__fact-line"><strong>建议仓位（跨策略综合上限）</strong><span>{{ view.exposure }} · 页面参考强度</span></div>
+
           <div class="decision-v2__fact-line"><strong>共振级别</strong><span class="decision-v2__tag" :style="{ color: view.resonance.color }">{{ view.resonance.name }} {{ cd.resonance }}</span><span v-if="view.mismatch" class="decision-v2__tag decision-v2__tag--mismatch">{{ view.mismatch.name }}</span></div>
         <div class="decision-v2__scores" aria-label="综合决策五项评分">
           <div v-for="score in view.scores" :key="score.key" class="decision-v2__score"><b :style="{ color: score.color }">{{ score.value ?? '—' }}</b><small>{{ score.label }}</small></div>
@@ -121,17 +120,21 @@ const chipColor = (axis: string, period: string) => {
           <section class="decision-v2__states" aria-label="日周小时策略状态与信号年龄">
             <div v-for="axis in (['trend', 'oscillation'] as const)" :key="axis" class="decision-v2__column">
               <header><strong>{{ axis === 'trend' ? '趋势策略' : '震荡策略' }}</strong><b :style="{ color: bias(axis).color }">{{ bias(axis).label }}</b></header>
-              <article v-for="item in dailyWeeklyFacts.filter(item => item.role.startsWith(axis))" :key="item.role" :style="{ color: chipColor(axis, item.role.endsWith('week') ? 'week' : item.role.endsWith('m60') ? 'm60' : 'day') }">
-                <strong>{{ decisionRoleLabel(item.role) }}</strong><b>{{ decisionFactState(item.fact) }}</b><span>{{ decisionFactAge(item.fact) }}</span>
+              <article v-for="item in dailyWeeklyFacts.filter(item => item.role.startsWith(axis))" :key="item.role" :title="`${decisionRoleLabel(item.role)} · ${decisionFactAge(item.fact)}`" :style="{ color: chipColor(axis, item.role.endsWith('week') ? 'week' : item.role.endsWith('m60') ? 'm60' : 'day') }">
+                <strong>{{ decisionRoleLabel(item.role) }}</strong><b>{{ decisionFactState(item.fact) }}</b><span class="decision-v2__chip-age">{{ decisionFactAge(item.fact) }}</span>
               </article>
             </div>
           </section>
-          <div class="decision-v2__direction" :style="{ borderLeftColor: view.direction.color }"><strong>原周日趋势背景</strong><p :style="{ color: view.direction.color }">{{ view.direction.text }}</p></div>
+          <div class="decision-v2__direction" :style="{ borderLeftColor: view.direction.color }"><strong>方向</strong><p :style="{ color: view.direction.color }">{{ view.direction.text }}</p></div>
         <div class="decision-v2__resonance" aria-label="共振与错配依据" :style="{ '--resonance-color': view.resonance.color }">
           <strong>{{ view.resonance.name }}</strong><span class="decision-v2__dots" aria-hidden="true">{{ view.resonance.dots }}</span><p>{{ view.resonance.description }}</p>
         </div>
-          <details class="decision-v2__proof"><summary>数据来源、信号计龄与参考强度</summary>
-                      <p>沿用原版权重，日周小时共同参与；缺失不补分、不归一化。确定性表示信号明确性，不是胜率。</p>
+        <section v-if="view.mismatch" class="decision-v2__mismatch" aria-label="错配期提示" :style="{ '--mismatch-color': view.mismatch.color }">
+          <div><strong>{{ view.mismatch.name }}</strong><b>{{ {MM1:'趋势日线仍持股 · 震荡已转空',MM2:'趋势日线仍空仓 · 震荡已建仓',MM3:'趋势已转空 · 震荡仍持股',MM4:'趋势已转多 · 震荡仍空仓'}[cd.mismatch as 'MM1'|'MM2'|'MM3'|'MM4'] }}</b></div>
+          <p><b>{{ view.mismatch.ageLabel }}</b> {{ view.mismatch.detail }}</p>
+        </section>
+          <details class="decision-v2__proof"><summary>数据来源、信号计龄与参考强度</summary>    <p class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
+                      <p>建议仓位（跨策略综合上限）：{{ view.exposure }} · 页面参考强度，不代表账户持仓。</p><p>沿用原版权重，日周小时共同参与；缺失不补分、不归一化。确定性表示信号明确性，不是胜率。</p>
           <p>错配依据：{{ decisionMismatchReason(cd) }}</p>
             <p v-if="copy && !basisDecision">{{ copy.first_action.detail }}</p>
             <p>信号年龄为距最近一次策略动作的已完成 K 线数；0根表示本周期当前 Bar 发生动作，日K与周K分别计龄。</p>
@@ -147,7 +150,7 @@ const chipColor = (axis: string, period: string) => {
       </template>
       <details v-show="evidenceExpanded" class="decision-v2__proof"><summary>更新综合数据</summary><button type="button" class="decision-v2__refresh" aria-label="刷新综合决策" :disabled="loading" @click="load">刷新综合决策</button></details>
     </div>
-    <p v-if="!collapsed && evidenceExpanded" class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
+
   </section>
   <div data-testid="status-card-surface"><NewowStatusCard :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
   <NewowPriceSources v-if="showPriceSources" :rows="[...(chartSources ?? []), ...decisionPriceSources(prices)]" label="目标／吸筹来源" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
@@ -227,4 +230,35 @@ p { margin:0; font-size:12px; line-height:1.55; color:var(--gy-text-muted); }
 .decision-v2__period-choice { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px;color:var(--gy-text-muted) }
 .decision-v2__period-choice button { border:1px solid #ddd;border-radius:5px;background:white;color:inherit;padding:5px 9px;cursor:pointer }
 .decision-v2__period-choice button[aria-pressed=true] { border-color:#ff9500;color:#ff9500;background:#ff950010 }
+</style>
+
+<style scoped>
+.decision-v2 { background:#f8f9fd; }
+.decision-v2__header { min-height:32px; padding:4px 14px; }
+.decision-v2__body { gap:6px; padding:0 14px 10px; }
+.decision-v2__toggle>strong { font-size:13px; }
+.decision-v2__action { font-size:20px; }
+.decision-v2__headline { padding:2px 0 0; font-size:16px; line-height:24px; }
+.decision-v2__period-choice { margin:0 0 3px; gap:7px; font-size:10px; }
+.decision-v2__period-choice button { min-height:22px; padding:1px 8px; border-radius:5px; background:#f0f1f8; border-color:#dddfea; color:#333; font-size:11px; line-height:18px; }
+.decision-v2__period-choice button[aria-pressed=true] { background:#0780ff; border-color:#0780ff; color:white; box-shadow:inset 0 0 0 2px #fff9; }
+.decision-v2__period-choice>span { color:#888; }
+.decision-v2__first-action { padding:6px 10px; border-radius:6px; align-items:center; min-height:26px; }
+.decision-v2__first-action>b { padding:1px 5px; border-radius:3px; font-size:10px; }
+.decision-v2__first-action strong { font-size:12px; }
+.decision-v2__fact-line { font-size:12px; gap:8px; }
+.decision-v2__badge { padding:2px 6px; border-radius:3px; font-size:11px; }
+.decision-v2__scores { padding:8px 0 6px; }
+.decision-v2__score b { font-family:Arial,sans-serif; font-size:18px; line-height:21px; }
+.decision-v2__score small { font-size:10px; }
+.decision-v2__volatility { padding:5px 9px; gap:8px; font-size:11px; }
+.decision-v2__column { padding:6px 9px; }
+.decision-v2__column header { margin-bottom:3px; font-size:11px; }
+.decision-v2__column article { background:transparent; margin:0 6px 0 0; padding:0; gap:3px; font-size:10px; }
+.decision-v2__column article .decision-v2__chip-age { display:none; }
+.decision-v2__direction,.decision-v2__resonance { padding:6px 8px; gap:7px; }
+.decision-v2__direction strong,.decision-v2__resonance strong { font-size:11px; }
+.decision-v2__direction p,.decision-v2__resonance p { font-size:11px; }
+.decision-v2__mismatch { padding:6px 8px; }
+
 </style>
