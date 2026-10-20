@@ -954,16 +954,25 @@ def newow_experiments(
     through: date | None = Query(None),
     chart_limit: int = Query(500, ge=11, le=2000),
     all_history: bool = Query(False),
+    snapshot_token: str | None = Query(None, min_length=1, max_length=256),
+    reference_part: Literal['panel', 'history'] = Query('panel'),
+    reference_mode: Literal['ordinary', 'theoretical'] = Query('ordinary'),
+    segment_id: str | None = Query(None, min_length=1, max_length=256),
+    history_before: str | None = Query(None, min_length=1, max_length=2048),
+    history_limit: int = Query(50, ge=1, le=200),
     session: Session = Depends(get_db),
 ):
     """Public experiments, calculated read-only from existing completed inputs."""
     from app.market_data.newow.experiments import ExperimentQuery, NewowExperimentService
     from guiyi_quant.newow.oscillation_experiments import ExperimentKind
-    allowed = {"product", "frequency", "kind", "as_of", "from", "through", "chart_limit", "all_history"}
+    allowed = {"product", "frequency", "kind", "as_of", "from", "through", "chart_limit", "all_history", "snapshot_token", "reference_part", "reference_mode", "segment_id", "history_before", "history_limit"}
     if (set(request.query_params) - allowed
         or any(len(request.query_params.getlist(key)) != 1 for key in request.query_params)
         or (as_of is not None and (as_of.utcoffset() is None or as_of.astimezone(UTC) > datetime.now(UTC)))):
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    if ((reference_part == 'history' and (not snapshot_token or not segment_id))
+        or (reference_part == 'panel' and (segment_id is not None or history_before is not None))):
+        raise HTTPException(status_code=422, detail={'code':'NEWOW_INVALID_QUERY'})
     product = _normalize_public_product(product)
     try:
         _enforce_product_frequency(request, product, frequency)
@@ -985,11 +994,16 @@ def newow_experiments(
             build_market_data_service(session), build_database_coverage_source(session),
             load_active_products(), policy,
         ).reader(cancelled=cancelled)
-        with _PRODUCT_GATE.acquire(cancelled, priority=3 if all_history else 0):
+        with _PRODUCT_GATE.acquire(cancelled, priority=3 if all_history or reference_part == "history" else 0):
             result = NewowExperimentService(reader, cancelled=cancelled).query(ExperimentQuery(
                 product, ProductFrequency(frequency), ExperimentKind(kind), as_of, from_, through, chart_limit, all_history,
             ))
-        return result
+        from app.market_data.newow.experiment_transport import experiment_response
+        payload = experiment_response(result, _PRODUCT_CACHE, snapshot_token=snapshot_token,
+            part=reference_part, mode=reference_mode, segment_id=segment_id,
+            before=history_before, limit=history_limit)
+        payload['meta']['read_at'] = datetime.now(UTC).isoformat()
+        return conditional_json(request, payload, volatile=frozenset({'read_at'}))
     except HTTPException:
         raise
     except SQLAlchemyError:

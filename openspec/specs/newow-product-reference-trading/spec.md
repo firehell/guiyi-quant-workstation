@@ -1608,6 +1608,43 @@ market payloads, credentials or internal paths, and SHALL NOT change response fa
 - **AND** it SHALL reject pages or curves from a different result identity
 
 
+### Requirement: Read-only experiment transport binds reference pages to verified input
+
+The four public experiments SHALL expose `newow_experiment_detail_v2` with completed-only input identity,
+formula/profile/quality versions, actual last Bar and trading day, source revision, input hash and an opaque
+process-local snapshot token. This transport version SHALL NOT change any kernel, reference price or return.
+A panel SHALL include the complete selected-window curves and summaries but at most three recent reference
+records per model and calculation segment. Historical records SHALL use the same read admission, snapshot
+cache budgets and cursor identity rules as the product service; each request revalidates current inputs.
+No database, Runtime, notification or account write is permitted.
+
+#### Scenario: Historical page is requested from an experiment panel
+- **WHEN** a client supplies a panel token, calculation segment and ordinary or theoretical mode
+- **THEN** the endpoint returns at most the requested limit (default 50, maximum 200), newest first
+- **AND** the next cursor binds the input result, window, segment and mode, and records retain their physical owner.
+
+#### Scenario: Token expires or its verified source changes
+- **WHEN** a token has expired, been evicted, or no longer matches current verified source facts
+- **THEN** the request fails with a snapshot conflict instead of mixing a new page with the old panel
+- **AND** conditional responses include the token generation, so a newly acquired token cannot produce an old 304.
+
+### Requirement: Home event navigation preserves its originating context
+
+A ready home card SHALL attach its product/strategy/frequency, cutoff, input hash and physical calculation
+owner to a detail link. An unavailable card SHALL NOT manufacture such context. The detail SHALL validate
+this hint against the requested identity and compare it with the actual chart; a changed context SHALL be
+shown explicitly without treating the old home event as a current signal. Existing validated home snapshot
+reuse SHALL remain the only reuse path; route hints SHALL NOT become a market data authority.
+
+#### Scenario: Data updates between home and detail
+- **WHEN** the detail chart proves a different cutoff, input hash or physical calculation owner
+- **THEN** the page identifies the update and preserves historical event positioning separately from current state.
+
+Preview quotes and incomplete Bars SHALL remain separate from completed strategy inputs, multi-period
+facts, reference trade projection and returns. Night-session trading day and actual per-role Bar cutoff
+SHALL remain explicit; interface consistency SHALL NOT flatten them into one fictitious timestamp.
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

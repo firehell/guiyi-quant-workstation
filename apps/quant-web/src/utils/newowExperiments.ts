@@ -11,6 +11,12 @@ export interface ExperimentRequest {
     frequency: string;
     kind: ExperimentKind;
     as_of: string;
+    snapshot_token?: string;
+    reference_part?: 'panel' | 'history';
+    reference_mode?: 'ordinary' | 'theoretical';
+    segment_id?: string;
+    history_before?: string;
+    history_limit?: number;
     chart_limit?: number;
     from?: string;
     through?: string;
@@ -63,7 +69,16 @@ export interface ExperimentSegment {
     theoretical: Record<string, unknown> | null;
 }
 export interface ExperimentDetail extends ExperimentRequest {
-    schema_version: 'newow_experiment_detail_v1';
+    schema_version: 'newow_experiment_detail_v2';
+    meta: {
+      identity: {product:string;frequency:string;kind:ExperimentKind;strategy:ExperimentKind;series_kind:'actual_dominant';as_of:string;formula_version:string;profile_id:string;input_policy_version:string};
+      as_of:string; read_at:string; input_content_sha256:string; data_revision_identity:string|null;
+      snapshot_token:string; result_hash:string; completed_only:true; executable:false; auto_order:false;
+      last_completed_bar_end:string|null; last_trading_day:string|null;
+    };
+    input_snapshot_hash:string;
+    profile_id:string;
+    input_policy_version:string;
     window?: {
         since: string;
         through: string;
@@ -86,7 +101,7 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
         throw new Error('实验数据身份或数值不一致');
     };
     if (!v
-                || v.schema_version !== 'newow_experiment_detail_v1'
+                || v.schema_version !== 'newow_experiment_detail_v2'
                 || v.page_parity !== true
                 || v.executable !== false
                 || v.formula_version !== `newow_${request.kind.replace('-', '_')}_page_v3379_v1`
@@ -102,6 +117,18 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
                 || !Array.isArray(v.markers)
                 || !Array.isArray(v.segments))
         fail();
+    const meta=v.meta, id=meta?.identity;
+    if (!meta || !id || id.product!==v.product || id.frequency!==v.frequency || id.kind!==v.kind || id.strategy!==v.kind
+      || v.profile_id!=='guiyi_newow_experiment_completed_physical_v1' || typeof v.input_policy_version!=='string' || !v.input_policy_version
+      || id.series_kind!=='actual_dominant' || id.formula_version!==v.formula_version || id.profile_id!==v.profile_id
+      || id.input_policy_version!==v.input_policy_version || id.as_of!==v.as_of || meta.as_of!==v.as_of
+      || meta.input_content_sha256!==v.input_snapshot_hash || !/^[a-f0-9]{64}$/.test(meta.input_content_sha256)
+      || !/^[a-f0-9]{64}$/.test(meta.result_hash) || !/^[a-f0-9]{64}$/.test(meta.data_revision_identity??'')
+      || typeof meta.snapshot_token!=='string' || !meta.snapshot_token || meta.snapshot_token.length>256
+      || meta.completed_only!==true || meta.executable!==false || meta.auto_order!==false
+      || previewInstant(meta.read_at)===null || previewInstant(meta.read_at)!<previewInstant(meta.as_of)!
+      || (request.snapshot_token!==undefined && meta.snapshot_token!==request.snapshot_token)
+      || meta.last_completed_bar_end!==v.bars.at(-1)?.bar_end || meta.last_trading_day!==v.bars.at(-1)?.trading_day) fail();
     const cutoff = previewInstant(v.as_of)!;
     const segments = new Map<string, string>();
     for (const s of v.segments) {
@@ -139,7 +166,8 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
                 || !Array.isArray(m.equity)
                 || m.dates.length !== m.equity.length
                 || !m.equity.every(decimal)
-                || !Array.isArray(m.trades))
+                || !Array.isArray(m.trades)
+                || !Number.isInteger(m.total_count) || m.total_count < m.trades.length)
                 fail();
             let last: bigint | null = null;
             for (const date of m.dates) {
@@ -248,4 +276,23 @@ export function experimentVisibleSegments(detail: ExperimentDetail | null, selec
 
 export function experimentMarkerLabel(marker: ExperimentMarker) {
     return marker.action === 'BUILD' ? '建仓' : marker.stop_loss ? '止损清仓' : marker.confirm_exit ? '确认清仓' : '清仓'
+}
+
+export interface ExperimentHistory {
+ schema_version:'newow_experiment_history_v1';meta:ExperimentDetail['meta'];segment_id:string;physical_contract:string;
+ reference_mode:'ordinary'|'theoretical';items:Record<string,unknown>[];total_count:number;next_before:string|null;
+}
+export function normalizeExperimentHistory(raw:unknown, panel:ExperimentDetail, request:ExperimentRequest):ExperimentHistory {
+ const page=raw as ExperimentHistory, segment=panel.segments.find(s=>s.segment_id===request.segment_id), mode=request.reference_mode??'ordinary';
+ const fail=()=>{throw new Error('实验历史快照或记录不一致')};
+ if(!page || page.schema_version!=='newow_experiment_history_v1' || !segment || !segment[mode]
+   || page.segment_id!==segment.segment_id || page.physical_contract!==segment.physical_contract || page.reference_mode!==mode
+   || !page.meta || Object.entries(panel.meta).some(([key,value])=>key!=='read_at'&&key!=='identity'&&page.meta[key as keyof typeof page.meta]!==value)
+   || Object.entries(panel.meta.identity).some(([key,value])=>page.meta?.identity?.[key as keyof typeof page.meta.identity]!==value)
+   || !Array.isArray(page.items) || page.items.length>(request.history_limit??50) || !Number.isInteger(page.total_count)
+   || page.total_count!==segment[mode]!.total_count || (page.next_before!==null && (typeof page.next_before!=='string'||!page.next_before||page.next_before.length>2048)))fail();
+ normalizeExperiment({...panel,meta:page.meta,segments:panel.segments.map(s=>s.segment_id===segment!.segment_id?{...s,[mode]:{...s[mode],trades:[...page.items].reverse()}}:s)},request);
+ const seen=new Set<string>();let previous:bigint|null=null;
+ for(const row of page.items){const time=previewInstant(row.exit_bar_end as string)!;const key=JSON.stringify([row.entry_bar_end,row.exit_bar_end]);if(seen.has(key)||(previous!==null&&time>previous))fail();seen.add(key);previous=time}
+ return page;
 }

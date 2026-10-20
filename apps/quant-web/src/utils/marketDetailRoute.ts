@@ -1,3 +1,4 @@
+import { parseHomeContext } from './newowHomeContext.ts'
 import { MARKET_FREQUENCIES, type AlertEvent, type MarketFrequency } from '../types/market.ts'
 import {
   MARKET_DETAIL_VIEWS,
@@ -98,6 +99,11 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   }
   if (query.contract !== undefined) return invalid('DETAIL_SERIES_KIND_INVALID', symbol, recoveryFor(viewValue, symbol))
   const result = valid(viewValue, symbol, seriesKind, frequency, undefined, query.focus_bar_end, strategy ?? undefined)
+  if (result.kind === 'valid' && query.home_context !== undefined) {
+    const context = viewValue === 'newow' ? parseHomeContext(query.home_context,result.identity) : null
+    if (!context) return invalid('DETAIL_HOME_CONTEXT_INVALID',symbol,recoveryFor(viewValue,symbol))
+    result.identity.homeContext=context
+  }
   if (result.kind === 'valid' && query.newow_mode === 'dual') result.identity.newowMode = 'dual'
   return result
 }
@@ -115,6 +121,7 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,
     focus_bar_end: focusBarEnd,
+    ...(identity.view==='newow' && parseHomeContext(identity.homeContext,identity) ? {home_context:JSON.stringify(identity.homeContext)} : {}),
   }
 }
 

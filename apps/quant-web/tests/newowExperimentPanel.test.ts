@@ -6,7 +6,7 @@ import {resolve} from 'node:path'
 import {compileScript,parse} from '@vue/compiler-sfc'
 import ts from 'typescript'
 import {createRenderer,defineComponent,h,nextTick,ref} from 'vue'
-const mockUrl=`data:text/javascript;base64,${Buffer.from(`export const calls=[];export function getNewowExperiment(request,signal){return new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))}`).toString('base64')}`
+const mockUrl=`data:text/javascript;base64,${Buffer.from(`export const calls=[],history=[];export function getNewowExperimentHistory(request,panel,signal){return new Promise((resolve,reject)=>history.push({request,panel,signal,resolve,reject}))};export function getNewowExperiment(request,signal){return new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))}`).toString('base64')}`
 const mock=await import(mockUrl)
 const chartUrl=`data:text/javascript;base64,${Buffer.from(`export const prices=new Set(),series=[];export const CandlestickSeries={type:'Candlestick'},LineSeries={type:'Line'};export function createSeriesMarkers(){return {setMarkers(){}}};export function createChart(){return {addSeries(definition,options){const record={definition,options,data:[]};series.push(record);return {setData(data){record.data=data},priceToCoordinate(price){return 220-price/2},createPriceLine(options){const line={...options};prices.add(line);return line},removePriceLine(line){prices.delete(line)}}},removeSeries(){},timeScale(){return {fitContent(){},timeToCoordinate(t){return (t%200)+100},getVisibleLogicalRange(){return null},subscribeVisibleLogicalRangeChange(){}}},applyOptions(){},remove(){prices.clear()}}}`).toString('base64')}`
 const chartMock=await import(chartUrl)
@@ -89,7 +89,7 @@ test('experiment presentation keeps model and contract identity while toggling c
  const model=(price:string)=>({dates:['2025-09-01T07:00:00Z','2026-09-01T07:00:00Z'],equity:['0','10'],summary:{cum_return_percentage_points:'10',accuracy_pct:'100',max_drawdown_percentage_points:'0',trade_count:5},trades:Array.from({length:5},(_,i)=>({entry_bar_end:`2026-09-${String(i+1).padStart(2,'0')}T07:00:00Z`,exit_bar_end:`2026-09-${String(i+2).padStart(2,'0')}T07:00:00Z`,entry_reference_price:price,exit_reference_price:'110.125',return_percentage_points:'10',stop_loss:false,confirm_exit:false,force_close:false}))})
  const segment=(id:string,contract:string,status:string,price:string)=>({segment_id:id,physical_contract:contract,status,readiness:{status:'READY'},latest_state:{holding:true,entry_reference_price:price,stop_reference_price:'90',locked_target:null,confirm_reference:null},ordinary:model(price),theoretical:model('200.125')})
  const bars=['old','current'].map((id,i)=>({bar_end:`2026-09-0${i+1}T07:00:00Z`,trading_day:'2026-09-01',physical_contract:i?'RB2701':'RB2610',segment_id:id,open:'100',high:'120',low:'90',close:'110',channel_high:'120',channel_low:'90'}))
- const response={as_of:'2026-10-08T07:00:00Z',formula_version:'unchanged-experiment',readiness:{status:'READY'},segments:[segment('old','RB2610','ROLLOVER_INTERRUPTED','300.125'),segment('current','RB2701','CURRENT','100.125')],bars,markers:bars.map((b,i)=>({marker_id:b.segment_id,...b,action:i?'BUILD':'CLEAR',reference_price:'100.125',score:6,stop_loss:false,confirm_exit:false}))};mock.calls[base].resolve(response);await flush()
+ const response={meta:{snapshot_token:'test'},as_of:'2026-10-08T07:00:00Z',formula_version:'unchanged-experiment',readiness:{status:'READY'},segments:[segment('old','RB2610','ROLLOVER_INTERRUPTED','300.125'),segment('current','RB2701','CURRENT','100.125')],bars,markers:bars.map((b,i)=>({marker_id:b.segment_id,...b,action:i?'BUILD':'CLEAR',reference_price:'100.125',score:6,stop_loss:false,confirm_exit:false}))};mock.calls[base].resolve(response);await flush()
  const cards=()=>findNodes(root,n=>n.props.class==='newow-reference__card')
  assert.equal(cards().length,3);assert.match(nodeText(cards()[0]!),/100.13/)
  assert.equal(contexts.at(-1).segmentId,'current');assert.equal(contexts.at(-1).physicalContract,'RB2701')
@@ -98,7 +98,7 @@ test('experiment presentation keeps model and contract identity while toggling c
  const callout=findNode(root,n=>n.props['data-action-id']==='current')!;assert.ok(callout);assert.match(nodeText(callout),/建仓 100.13/)
  assert.equal(findNode(root,n=>n.props['data-action-id']==='old'),undefined)
  const click=async(label:string)=>{const button=findNode(root,n=>n.type==='button'&&nodeText(n).trim()===label)!;assert.ok(button,label);(button.props.onClick as ()=>void)();await flush()}
- await click('加载更多参考记录');assert.equal(cards().length,5)
+ await click('加载更多参考记录');assert.equal(cards().length,3);mock.history.at(-1).resolve({items:[...response.segments[1].ordinary.trades].reverse(),next_before:null});await flush();assert.equal(cards().length,5)
  await click('收起');assert.equal(cards().length,3)
  await click('理论值');assert.equal(cards().length,0);mock.calls[base+1].resolve(response);await flush();assert.equal(cards().length,3);assert.match(nodeText(cards()[0]!),/200.13/)
  await click('理论值');assert.equal(mock.calls.length,base+2,'repeated theoretical tab click does not reload or exit')
@@ -108,6 +108,26 @@ test('experiment presentation keeps model and contract identity while toggling c
  await click('理论值');assert.match(nodeText(cards()[0]!),/200.13/)
  await click('全部');assert.match(nodeText(cards()[0]!),/300.13/)
  assert.ok(findNode(root,n=>n.type==='details'&&nodeText(n).includes('详情与口径')))
- kind.value='osc-test4';await flush();assert.equal(contexts.at(-1),null);assert.equal(cards().length,0)
+ await click('加载更多参考记录');const pendingHistory=mock.history.at(-1)
+ kind.value='osc-test4';await flush();assert.equal(pendingHistory.signal.aborted,true);assert.equal(contexts.at(-1),null);assert.equal(cards().length,0)
+ pendingHistory.resolve({items:[...response.segments[0].ordinary.trades].reverse(),next_before:null});await flush();assert.equal(cards().length,0,'late old-owner history cannot populate new experiment')
  app.unmount();assert.equal(contexts.at(-1),null)
+})
+
+test('snapshot conflict clears experiment panel and exposes explicit fresh retry',async()=>{
+ globalThis.ResizeObserver=class{observe(){}disconnect(){}} as any
+ const Panel=await component(),root=element('root'),base=mock.calls.length
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{product:'rb',frequency:'1d',kind:'osc-test',asOf:'2026-10-08T07:00:00Z'})}))
+ app.mount(root);await flush()
+ const trade={entry_bar_end:'2026-09-01T07:00:00Z',exit_bar_end:'2026-09-02T07:00:00Z',entry_reference_price:'100',exit_reference_price:'110',return_percentage_points:'10',force_close:false,stop_loss:false,confirm_exit:false}
+ const model={dates:[],equity:[],summary:{cum_return_percentage_points:'10',accuracy_pct:'100',max_drawdown_percentage_points:'0',trade_count:5},total_count:5,trades:[trade,trade,trade]}
+ mock.calls[base].resolve({meta:{snapshot_token:'old'},segments:[{segment_id:'owner',physical_contract:'RB2701',status:'CURRENT',ordinary:model,theoretical:model}],bars:[],markers:[],readiness:{status:'READY'},formula_version:'test',as_of:'2026-10-08T07:00:00Z'});await flush()
+ const more=findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='加载更多参考记录')!;(more.props.onClick as ()=>void)();await flush()
+ mock.history.at(-1).reject(Object.assign(new Error('changed'),{classification:'conflict',code:'NEWOW_SNAPSHOT_GENERATION_CONFLICT'}));await flush()
+ assert.equal(findNodes(root,n=>n.props.class==='newow-reference__card').length,0)
+ assert.match(nodeText(root),/快照已变化/)
+ const retry=findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='重试')!;assert.ok(retry);(retry.props.onClick as ()=>void)();await flush()
+ assert.equal(mock.calls.length,base+2,'only explicit retry starts a fresh panel request')
+ assert.equal(mock.calls.at(-1).request.snapshot_token,undefined)
+ app.unmount()
 })

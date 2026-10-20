@@ -3016,3 +3016,17 @@ T菜单实际仅测试1–4及主升浪；AI分析弹窗显示六组合并可采
 - 原站未提供可验证内容的收益分析页、推送撤回灰标和错误图例不新增或照搬；推送、选股、月K、分时继续排除。
 
 验收在干净HEAD加本轮改动的隔离副本进行，避免混入在途布局修改。固定样本浏览器实测自动聚焦/全选/外部关闭，1080px和360px路径容器均无内部横向溢出；样本截图不是实时行情数值验收。
+
+### 2026-10-20 只读接口合同统一
+
+沿用牛哇首页批量摘要、详情按需读取和报价独立更新的组织方式，不复制其股票行情源或报价重建正式末根K线。
+
+- 主策略继续使用`strategy-detail`的section、snapshot_token、独立图表/参考游标；首页12品种有界批量、ETag、收益延迟读取、取消/缓存/优先级及日周上下文复用均沿用既有实现，不重复建设。
+- 四实验`experiments`响应升级`newow_experiment_detail_v2`：新增meta中的策略/公式/profile/质量身份、请求截止、实际末根/交易日、read_at、输入hash、source revision、快照令牌与完整结果hash。`completed_only=true`，`executable=false`，`auto_order=false`。
+- 默认panel保留完整窗口曲线、摘要及分段状态，各模型只发最近3条记录，并返回`total_count`。历史调用同一路由，参数`reference_part=history`、`snapshot_token`、`reference_mode=ordinary|theoretical`、`segment_id`及可选`history_before/history_limit`，默认50、最多200；返回`newow_experiment_history_v1`、倒序items和next_before。窗口、模式、计算段及完整结果绑定游标，不跨段配对；正式取价/收益公式不变。
+- 实验复用现有SnapshotCache和执行Gate，不增加缓存预算。历史页仍重新验证Canonical输入，未承诺分页能避免完整计算。失效/修订返回409；参数错误422；保留既有过载429及暂不可用503分类，不为凑统一而改变已有HTTP合同。ETag忽略read_at但包含令牌代际，不返回导致旧身份继续存活的304。
+- Web历史懒加载，切换品种/周期/实验/模式/段时取消旧分页，迟到响应不覆盖新选择；累计上限复用主参考记录限制。普通/理论不混合，错误仅提示重新刷新，不自动掩盖冲突。
+- 首页详情链接附带home_context（截止、输入hash、物理合约与计算段）；详情验证链接身份，和主图不同则显示数据已更新。链接不成为行情权威，仍通过现有reader和snapshot读取，不用旧峰定位冒充当前信号。
+- 行情报价、预览、completed正式策略、多周期各自截止和页面参考收益保留独立身份；未新增个人管理写入、数据修复、推送、选股、月K、分时或Runtime切换。
+
+本轮工程验收：后端与工程269 passed；完整Web1143 passed、1 skipped；类型/生产构建/拓扑通过，OpenSpec strict11通过，secret scan零发现。独立Review确认的两项P2已按RED→GREEN修正：history不再占主图优先级；409身份冲突或响应校验失败清除旧panel/分页，显示明确重试入口，避免重复旧token。其他暂时失败保留已验证内容。新增API wrapper集成测试验证请求去重、单消费者取消不取消其他读取、新访问重新验证及history优先级。仅证明工程与固定输入合同，不代表真实行情新版本数值验收、发布或Runtime就绪。
