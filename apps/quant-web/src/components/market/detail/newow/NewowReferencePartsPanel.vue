@@ -31,7 +31,7 @@ const history = computed(() => props.state.history.value?.value?.reference_part 
 const anchor = computed(() => overview.value?.actual_available_through ?? '')
 const floor = ref<string | null>(null)
 watch(() => props.chart?.meta.snapshot_token, () => { floor.value = null; selectedId.value = null; ideal.value = props.state.mode.value.includes('page_ideal'); preset.value = ideal.value ? 'ideal' : 'all'; fact.value = 'page' })
-watch(overview, value => { if (value && floor.value === null) floor.value = value.performance_since })
+watch(overview, value => { if (value && floor.value === null) floor.value = value.performance_since }, { immediate: true })
 watch(() => props.state.mode.value, () => { selectedId.value = null; selectedPoint.value = null; analysisOpen.value = false })
 watch(curve, () => { selectedId.value = null; selectedPoint.value = null })
 
@@ -159,11 +159,8 @@ const waiting = computed(() => {
 
 <template>
   <section class="newow-reference" aria-label="策略收益与参考记录" :aria-busy="state.loading.value">
-    <nav class="performance-modes" aria-label="收益事实类型">
-      <button v-for="entry in ([['page','页面参考收益'],['holding','含浮动参考'],['closed','已完成参考交易']] as const)" :key="entry[0]" type="button" :aria-pressed="fact === entry[0]" @click="setFact(entry[0])">{{ entry[1] }}</button>
-    </nav>
-    <PerformancePanel :show-details="false" :kind="fact === 'page' ? '页面参考收益' : fact === 'holding' ? '含浮动参考' : '已完成参考交易'" :since="overview?.performance_since" :through="overview?.performance_through" :cutoff="overview?.reference_cutoff" :version="curve?.model_version ?? chart?.meta.reference_model_version" description="页面历史参考 · 零费用与滑点 · 不代表账户或可执行收益">
-      <header class="newow-reference__returns-heading"><strong>参考统计</strong><span class="newow-reference__annualized" title="按完整参考曲线的首末值和自然日跨度折算；跨合约段年化不相加。">{{ pageMode ? '页面参考年化' : '参考年化' }} {{ annualLabel }}{{ pageMode && segmentAnnuals.length > 1 ? ` · ${segmentAnnuals.length}个合约段汇总` : '' }}</span><button type="button" @click="analysisOpen = true">收益分析 ›</button></header>
+    <PerformancePanel class="newow-reference__performance" :show-details="false" :kind="fact === 'page' ? '页面参考收益' : fact === 'holding' ? '含浮动参考' : '已完成参考交易'">
+      <template #header><header class="newow-reference__returns-heading"><h3>{{ pageMode ? '策略参考收益走势' : fact === 'holding' ? '含浮动参考收益走势' : '已完成参考收益走势' }}<span class="newow-reference__annualized" title="页面参考年化；按完整曲线和自然日跨度折算，跨合约段不相加年化。">年化{{ annualLabel }}</span></h3><button type="button" @click="analysisOpen = true">收益分析 ›</button></header></template>
       <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
         <button v-for="entry in ([['three_months','近3月'],['one_year','近1年'],['three_years','近3年'],['ytd','今年'],['ideal','理论值'],['all','全部']] as const)" :key="entry[0]" type="button" :disabled="state.loading.value || !anchor" :aria-pressed="preset === entry[0]" @click="usePreset(entry[0])">{{ entry[1] }}</button>
       </div>
@@ -171,20 +168,19 @@ const waiting = computed(() => {
       <p v-if="state.error.value" role="alert">{{ state.error.value }} <button type="button" @click="retry">重试</button></p>
       <p v-else-if="state.loading.value && !curve" role="status">正在读取参考曲线…</p>
       <p v-if="overview?.history_coverage === 'PARTIAL'" role="status">历史覆盖不完整；仅统计有效区段，中断不计入已完成收益。</p>
-      <details v-if="pageMode" class="page-performance__disclosure"><summary>详情与口径</summary><p>页面乐观收益 · 零手续费、零滑点；{{ ideal ? '理论值采用回看最优参考价' : '普通值包含末根估值平仓' }}，不代表模拟账户或可执行收益。</p><p>页面参考年化由完整曲线首末值和自然日跨度计算；跨合约段汇总不相加各段年化，不补齐换月成交。</p></details>
+
       <section class="newow-reference__curve" :class="{ 'page-performance': fact === 'page' }" :aria-label="fact === 'page' ? '页面估值收益曲线' : fact === 'holding' ? '逐 Bar 持有过程' : '已完成参考交易累计收益曲线'">
-        <p v-if="fact === 'page'">累计参考收益 {{ newowReferencePoints(shownReturn) }} · 页面估值参考</p>
         <ReturnCurveSvg v-if="curve && !plot.message" :plot="plot" :label="fact === 'page' ? '页面收益曲线，区段中断处断线' : '参考收益曲线，点击查看读数或定位交易记录'" area :zero-line="fact !== 'page'" @click="clickCurve" @select="selectCurveIndex" />
         <p v-else role="status">{{ plot.message ?? '当前模式暂无可绘制的参考曲线。' }}</p>
         <p v-if="curve?.sampled" role="status">曲线显示 {{ curve.points.length }} / {{ curve.total_points }} 个保留采样点；下方统计由完整结果计算。</p>
         <p v-if="selectedPoint" aria-live="polite">{{ selectedPoint.trading_day }} · {{ display(selectedPoint.value) }} 百分点<span v-if="selectedPoint.physical_contract"> · {{ selectedPoint.physical_contract }}</span></p>
       </section>
-      <details v-if="pageMode && segmentAnnuals.length > 1" class="page-performance__segment-annuals"><summary>各合约段年化 · 不跨段计算</summary><p v-for="(segment, index) in segmentAnnuals" :key="segmentField(segment, 'segment_id') ?? index" :title="segmentField(segment, 'segment_id') ?? undefined">合约段 {{ index + 1 }} · {{ segmentField(segment, 'since')?.slice(5, 10) }} → {{ segmentField(segment, 'through')?.slice(5, 10) }} · 年化 {{ segmentField(segment, 'annualized_pct') == null ? '--' : `${Number(segmentField(segment, 'annualized_pct')).toFixed(2)}%` }}</p></details>
+
       <section v-if="metrics" class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要"><dl class="newow-reference__metrics">
-        <div><dt>{{ pageMode ? '页面累计参考收益' : fact === 'holding' ? '含浮动参考收益（百分点）' : '已完成参考收益（百分点）' }}</dt><dd :data-direction="referencePercentDisplay(shownReturn).direction">{{ pageMode ? newowReferencePoints(shownReturn) : referencePercentDisplay(shownReturn).text }}</dd></div>
-        <div><dt>{{ pageMode ? '页面参考胜率（含期末估值）' : '已完成交易胜率' }}</dt><dd>{{ shownWinRate == null ? '—' : `${display(shownWinRate)}%` }}</dd></div>
-        <div><dt>{{ drawdownLabel }}</dt><dd>{{ drawdownText }}</dd></div>
-        <div><dt>{{ pageMode ? '页面参考次数（含期末估值）' : '已完成交易数' }}</dt><dd>{{ metrics.closed_count }}</dd></div>
+        <div><dt>{{ pageMode ? '累计参考收益' : fact === 'holding' ? '含浮动参考收益' : '已完成参考收益' }}</dt><dd :data-direction="referencePercentDisplay(shownReturn).direction">{{ pageMode ? newowReferencePoints(shownReturn) : referencePercentDisplay(shownReturn).text }}</dd></div>
+        <div><dt>{{ pageMode ? '参考胜率' : '已完成交易胜率' }}</dt><dd>{{ shownWinRate == null ? '—' : `${display(shownWinRate)}%` }}</dd></div>
+        <div><dt :title="drawdownLabel">{{ pageMode ? '页面回撤' : '参考权益回撤' }}</dt><dd class="newow-reference__drawdown">{{ drawdownText }}</dd></div>
+        <div><dt>{{ pageMode ? '参考次数' : '已完成交易数' }}</dt><dd>{{ metrics.closed_count }}</dd></div>
       </dl><p v-if="metrics.closed_count === 0">{{ pageMode ? '暂无页面参考交易或期末估值' : '暂无已完成参考交易' }}；统计指标不是 0%。</p></section>
       <p v-else-if="curve" role="status">完整统计暂不可用，不能从采样曲线推算收益或回撤。</p>
       <header class="newow-reference__records-heading"><h3>历史参考记录</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
@@ -214,7 +210,10 @@ const waiting = computed(() => {
       <details v-if="fusion && overview?.fusion_groups"><summary>三组独立统计与融合配对规则</summary><table><thead><tr><th>模型</th><th>已完成</th><th>累计收益百分点</th><th>未清仓</th><th>中断</th></tr></thead><tbody><tr v-for="group in overview.fusion_groups" :key="String(group.model)"><th>{{ groupName(group.model) }}</th><td>{{ group.closed_count }}</td><td>{{ display(group.sum_return_percentage_points as string | null) }}</td><td>{{ group.open_count }}</td><td>{{ group.interrupted_count }}</td></tr></tbody></table><p>融合配对按固定策略合同计算；期初已有、未清仓浮动和中断不计入已完成累计。</p></details>
       <p v-if="pageMode" class="newow-reference__state">页面参考收益仅用于展示，不等于因果回测或模型账户收益。</p>
     </PerformancePanel>
-    <NewowDetailDialog v-if="analysisOpen" :open="analysisOpen" title="收益分析" :identity-key="`${chart?.meta.snapshot_token}:${state.mode.value}`" @close="analysisOpen = false"><p>{{ overview?.performance_since }} 至 {{ overview?.performance_through }} · {{ chart?.meta.identity.product.toUpperCase() }} · {{ chart?.meta.identity.frequency }}</p><p>收益、胜率、回撤与年化来自完整参考投影。曲线可能采样，不能用采样点重算统计。</p><p>零费用、零滑点的页面参考，不代表账户收益或可执行收益。</p></NewowDetailDialog>
+    <NewowDetailDialog v-if="analysisOpen" :open="analysisOpen" title="收益分析" :identity-key="`${chart?.meta.snapshot_token}:${state.mode.value}`" @close="analysisOpen = false">    <nav class="performance-modes" aria-label="收益事实类型">
+      <button v-for="entry in ([['page','页面参考收益'],['holding','含浮动参考'],['closed','已完成参考交易']] as const)" :key="entry[0]" type="button" :aria-pressed="fact === entry[0]" @click="setFact(entry[0])">{{ entry[1] }}</button>
+    </nav>
+      <details v-if="pageMode" class="page-performance__disclosure"><summary>详情与口径</summary><p>页面乐观收益 · 零手续费、零滑点；{{ ideal ? '理论值采用回看最优参考价' : '普通值包含末根估值平仓' }}，不代表模拟账户或可执行收益。</p><p>页面参考年化由完整曲线首末值和自然日跨度计算；跨合约段汇总不相加各段年化，不补齐换月成交。</p></details>      <details v-if="pageMode && segmentAnnuals.length > 1" class="page-performance__segment-annuals"><summary>各合约段年化 · 不跨段计算</summary><p v-for="(segment, index) in segmentAnnuals" :key="segmentField(segment, 'segment_id') ?? index" :title="segmentField(segment, 'segment_id') ?? undefined">合约段 {{ index + 1 }} · {{ segmentField(segment, 'since')?.slice(5, 10) }} → {{ segmentField(segment, 'through')?.slice(5, 10) }} · 年化 {{ segmentField(segment, 'annualized_pct') == null ? '--' : `${Number(segmentField(segment, 'annualized_pct')).toFixed(2)}%` }}</p></details><p>页面收益为累计百分点；页面胜率和次数包含期末估值。{{ drawdownLabel }}。合约段年化不相加，换月中断处保留断线。</p><p>{{ overview?.performance_since }} 至 {{ overview?.performance_through }} · {{ chart?.meta.identity.product.toUpperCase() }} · {{ chart?.meta.identity.frequency }}</p><p>收益、胜率、回撤与年化来自完整参考投影。曲线可能采样，不能用采样点重算统计。</p><p>零费用、零滑点的页面参考，不代表账户收益或可执行收益。</p></NewowDetailDialog>
   </section>
 </template>
 <style scoped src="./newowReferencePanel.css"></style>

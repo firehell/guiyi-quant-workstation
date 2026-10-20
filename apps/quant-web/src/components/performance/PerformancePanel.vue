@@ -7,7 +7,7 @@ withDefaults(defineProps<{
 </script>
 <template>
   <section class="performance-panel" :aria-label="`${kind}收益面板`" :aria-busy="loading" data-performance-version="guiyi_performance_presentation_v1">
-    <header class="performance-panel__header"><h2>{{ title }}</h2><span class="performance-panel__kind">{{ kind }}</span></header>
+    <slot name="header"><header class="performance-panel__header"><h2>{{ title }}</h2><span class="performance-panel__kind">{{ kind }}</span></header></slot>
     <div v-if="$slots.controls" class="performance-panel__controls"><slot name="controls" /></div>
     <p v-if="description" class="performance-panel__description">{{ description }}</p>
     <p v-if="since || through" class="performance-panel__window">统计窗口 {{ since ?? '未提供' }} → {{ through ?? '未提供' }}<span v-if="coverage"> · {{ coverage }}</span></p>
