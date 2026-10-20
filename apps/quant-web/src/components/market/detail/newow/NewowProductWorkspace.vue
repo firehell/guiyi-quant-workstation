@@ -529,7 +529,7 @@ onBeforeUnmount(() => {
       <div class="newow-product-workspace__auxiliary-controls">
         <div class="newow-product-workspace__auxiliary-tabs">
           <button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" @click="toggleAuxiliary(option.id)">{{ option.label }}</button>
-          <details><summary>详情与口径</summary><button v-if="identity.strategy === 'trend' && identity.frequency === '1d'" @click="openDialog('cup_handle')">杯柄说明</button><button :disabled="!chartModel?.bars.length" @click="openDialog('patterns')">形态识别</button><button v-if="patternSelection" @click="patternSelection=null">清除形态</button><button @click="openDialog('formula')">公式速查</button></details>
+          <button type="button" @click="openDialog('formula')">公式速查</button>
         </div>
       </div>
       <div class="newow-product-workspace__auxiliary-legend-row">
