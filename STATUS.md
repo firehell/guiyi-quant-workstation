@@ -1,5 +1,11 @@
 # 当前状态
 
+## 10/21 正式运行已统一 v1.15.16 / gen22
+
+按owner交办执行实际恢复与all10冷切换，正式十项binding、installed/loaded配置与六常驻进程已统一为v1.15.16/gen22/c559eb7a594dea5189c7a630b010a284032e89f4，运行根.worktrees/release-v1.15.16，schema20261015_0052不变；四calendar空闲。API8000返回1.15.16，Web5173 index与exact发布dist逐字一致，研究API/Web代理与冻结snapshot身份一致，576格研究结果可读。
+原Live/Feed恢复失败attempt与旧Feed观察缺口未知保留，没有重放、回填、补发或扩大Scope。冷切换drain/stop/install完成，start十effect各一次committed；最终即时owner采样失败记录保留，未重跑启动。最终独立版本读回VERSION_CONVERGENCE_VERIFIED通过：十项正式身份一致、六PID双轮稳定、API/Web与冻结研究可读、journal/Live原像保持。完整业务数据库验收仍未通过，版本一致不等于RUNTIME_READY。
+Reference完整矩阵仍720 enabled/480 READY/200 DATA_CONFLICT/40 OBSERVATION_LAGGING/pending Capture0；固定时点720行完整health与切换前逐字一致。既有disabled历史candidate按原生重建计划继续推进，原caller未覆盖此进度而拒绝，未修改冻结caller或把失败attempt改绿；对初始三条候选已完成完整旧表哈希复原与batch链解释；后续持续推进的全部候选尚未完成整体验收，保留其断言失败，不宣称全部不可变事实核验通过。新版本自然Bar/Event、盘后业务及手机实际送达待验收；未启用Paper/Shadow/Broker/订单。离线caller191、Runtime54+19测试与exact树build通过；详见[正式运行收敛记录](docs/tasks/runtime-unify-v1.15.16.md)。
+
 ## 10/21 v1.15.16 期货双向研究与L.M.S证据已发布
 
 本轮发布范围为已集成develop的期货双向研究/详情页模式，以及L.M.S 4.0.5 JM2605时间线、周期还原和价格核验文档。原版牛哇保持默认；冻结研究不是正式策略晋升，OOS_NOT_PROVEN及资金不足、换月/数据中断等状态保留。冻结大文件留在本地显式结果根，不随Git发布。
