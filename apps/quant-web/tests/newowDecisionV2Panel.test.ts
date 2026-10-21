@@ -3,12 +3,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { compileScript, parse } from '@vue/compiler-sfc'
+import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
-const mockUrl = `data:text/javascript;base64,${Buffer.from(`export class NewowProductRequestError extends Error { constructor(code,classification) { super(code); this.classification=classification; } } export const calls=[]; export function getNewowProductSection(request, options) { return new Promise((resolve, reject) => calls.push({request, options, resolve, reject})); }`).toString('base64')}`
+const mockUrl = `data:text/javascript;base64,${Buffer.from(`export class NewowProductRequestError extends Error { constructor(code,classification,diagnostic=null) { super(diagnostic ? diagnostic.message : code); this.code=code; this.classification=classification; this.diagnostic=diagnostic; } } export const calls=[]; export function getNewowProductSection(request, options) { return new Promise((resolve, reject) => calls.push({request, options, resolve, reject})); }`).toString('base64')}`
 const mock = await import(mockUrl)
 async function componentUrl(name: string): Promise<string> {
   const source = readFileSync(new URL(`../src/components/market/detail/${name}.vue`, import.meta.url), 'utf8')
@@ -396,5 +396,69 @@ test('one source disclosure contains both main chart and decision price evidence
  assert.match(nodeText(disclosures[0]),/主图当前周期通道 · 目标/)
  assert.match(nodeText(disclosures[0]),/跨周期共享选择 · 目标/)
  assert.match(nodeText(disclosures[0]),/状态卡价格 · 吸筹/)
+ app.unmount()
+})
+
+for (const frequency of ['1d', '1w']) {
+ test(`pending ${frequency} snapshot shows dated decisions and partial roles without a current claim`, async () => {
+  const Panel = await component('newow/NewowDecisionV2Panel'), root = element('root'), before = mock.calls.length
+  const cutoff = '2026-10-20T07:00:00.000001Z'
+  const response = { ...input('fu'), snapshotContext: { frequency, as_of: cutoff, freshness: 'pending_update' } }
+  response.meta = { ...response.meta, as_of: cutoff, identity: { ...response.meta.identity, frequency } }
+  const contexts: any[] = []
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({setup: () => () => h(Panel, {
+    response, historical: true, onPathContext: value => contexts.push(value),
+  })}))
+  app.mount(root)
+  assert.equal(mock.calls[before].request.asOf, cutoff, 'verified cutoff must not fall back to a frozen research date')
+  assert.equal(mock.calls[before].request.snapshotToken, 'fu-snapshot')
+  const notice = findNode(root, n => n.props['aria-label'] === '判断快照时间')!
+  assert.ok(notice, 'snapshot date must remain visible while the decision is collapsed')
+  assert.match(nodeText(notice), /历史快照.*2026-10-20/)
+  const value = output()
+  value.value.decision_v2.cdv2.as_of = cutoff
+  mock.calls[before].resolve(value)
+  await nextTick(); await nextTick()
+  assert.ok(findNode(root, n => n.props['aria-label'] === '日周状态摘要'))
+  assert.match(nodeText(root), /60分钟趋势.*状态不可用/)
+  assert.match(nodeText(root), /日线趋势.*持有/)
+  assert.deepEqual(contexts.at(-1).decision, value.value.decision_v2)
+  app.unmount()
+ })
+}
+
+test('missing physical warmup is explained as data unavailability rather than a snapshot conflict', async () => {
+ const Panel=await component('newow/NewowDecisionV2Panel'), root=element('root')
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{response:input('fu')})}))
+ app.mount(root)
+ const message='同合约预热历史缺失（fu · FU2701 · 1d），缺失 190 根。请检查数据。'
+ mock.calls.at(-1).reject(new mock.NewowProductRequestError('NEWOW_DATA_UNAVAILABLE','unavailable',{message}))
+ await nextTick(); await nextTick()
+ assert.match(nodeText(root), /同合约预热历史缺失.*FU2701.*190/)
+ assert.doesNotMatch(nodeText(root), /快照不一致/)
+ assert.ok(findNode(root,n=>n.props['aria-label']==='日周状态摘要'))
+ app.unmount()
+})
+
+test('workspace mounts the real decision and status cards for a verified pending historical chart', async () => {
+ const source=readFileSync(new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue',import.meta.url),'utf8')
+ const tag=source.match(/<NewowDecisionV2Panel[^>]*:response="chartResponse"[^>]*\/>/)?.[0]
+ assert.ok(tag)
+ const compiled=compileTemplate({source:tag,filename:'workspace-decision.vue',id:'workspace-decision'})
+ assert.deepEqual(compiled.errors,[])
+ const code=compiled.code.replace(/from ["']vue["']/g,`from '${import.meta.resolve('vue')}'`)
+ const {render}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+ const Panel=await component('newow/NewowDecisionV2Panel'),root=element('root'),before=mock.calls.length
+ const response={...input('fu'),value:{bars:[]},snapshotContext:{frequency:'1d',freshness:'pending_update'}}
+ const context={chartResponse:response,loader:{currentChartWindow:{value:false},historicalChartWindow:{value:true}},
+  selectedStrategy:'trend',dualMode:false,summary:{},chartPriceSources:()=>[],mainRiseOwner:null,
+  decisionDominant:null,decisionDominantReady:false,capabilities:{latest_completed_frequencies:['1d']},pathContext:null}
+ const app=createRenderer(nodeOperations()).createApp({render:()=>render(context,[])})
+ app.component('NewowDecisionV2Panel',Panel);app.mount(root)
+ assert.equal(mock.calls.length,before+1,'publication lag must not prevent the dependent decision read')
+ assert.match(nodeText(root),/历史快照判断/)
+ assert.ok(findNode(root,n=>n.props['aria-label']==='日周状态摘要'))
+ mock.calls[before].resolve(output());await nextTick();await nextTick()
+ assert.match(nodeText(root),/周:持有.*日:持有/)
  app.unmount()
 })
