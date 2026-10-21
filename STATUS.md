@@ -1,10 +1,10 @@
 # 当前状态
 
-## 10/21 v1.15.16 发布候选验证通过
+## 10/21 v1.15.16 期货双向研究与L.M.S证据已发布
 
 本轮发布范围为已集成develop的期货双向研究/详情页模式，以及L.M.S 4.0.5 JM2605时间线、周期还原和价格核验文档。原版牛哇保持默认；冻结研究不是正式策略晋升，OOS_NOT_PROVEN及资金不足、换月/数据中断等状态保留。冻结大文件留在本地显式结果根，不随Git发布。
 本轮候选实跑：期货研究定向179 passed，版本/健康/canonical24 passed，完整Web1165 passed/3 skipped，浏览器4 passed；uv lock离线校验、类型/build/topology、secret零发现及diff检查通过。数值实现沿用此前独立Review及全量核验，本轮只更新应用版本和发布记录。
-本次只发布main/tag/GitHub Release，不切换Runtime，不启用持续Paper、通知、Shadow、Broker或订单。发布最终身份以远端main、annotated tag peeled和GitHub Release精确读回为准；原正式Runtime及其未完成自然验收边界保持。
+本次只发布main/tag/GitHub Release，不切换Runtime，不启用持续Paper、通知、Shadow、Broker或订单。发布PR464已合并；远端main与annotated tag v1.15.16 peeled均为c559eb7a594dea5189c7a630b010a284032e89f4，合并树与验证候选81e200703c一致。GitHub Release非draft/非prerelease，target为同一精确commit，现场远端读回通过。证据CSV统一LF并核对解析内容不变。原正式Runtime及其未完成自然验收边界保持。
 
 ## 10/21 期货双向研究与详情页开关已集成 develop
 
