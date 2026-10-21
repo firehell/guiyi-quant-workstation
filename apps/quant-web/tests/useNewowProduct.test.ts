@@ -72,6 +72,52 @@ test('default W1 waits for one complete-week cutoff before loading panels', asyn
   state.dispose()
 })
 
+// Cover the fused current-resolution path used by production.
+for (const frequency of ['1d', '1w'] as const) {
+  test(`fused ${frequency} pending update retains verified chart and pins dependent panels`, async () => {
+    const pending: Pending[] = []
+    const state = useNewowProduct({ identity: ref(newowIdentity('trend', frequency)), now: () => AS_OF, fetchSection: controlled(pending) })
+    await nextTick()
+    const load = state.loadChart({ chartLimit: 500, ...{ resolveCurrent: true } })
+    const request = pending.at(-1)!.request
+    const cutoff = '2026-08-14T07:00:00.000001Z'
+    const chart = normalizedChart({ ...request, asOf: cutoff, resolveCurrent: false })
+    const snapshotContext = {
+      schema_version: frequency === '1d' ? 'newow_daily_snapshot_v1' : 'newow_weekly_snapshot_v1',
+      product: 'jm', strategy: 'trend', frequency, series_kind: 'actual_dominant',
+      requested_at: AS_OF, as_of: cutoff, freshness: 'pending_update',
+      ...(frequency === '1d'
+        ? { expected_trading_day: '2026-08-15', available_trading_day: '2026-08-14' }
+        : { expected_period_end: AS_OF, available_period_end: cutoff, current_context: { status: 'unknown', physical_contract: null } }),
+    } as NonNullable<NewowProductSectionResponse['snapshotContext']>
+    pending.at(-1)!.resolve({ ...chart, snapshotContext, value: { ...chart.value!, next_before: 'older' } })
+    await load
+    assert.equal(state.sections.chart.state.value, 'ready')
+    assert.equal(state.sections.chart.error.value, null)
+    assert.equal(state.sections.chart.data.value?.meta.as_of, cutoff)
+    assert.equal(state.currentChartWindow.value, false)
+    assert.equal(state.historicalChartWindow.value, true)
+    assert.equal((frequency === '1d' ? state.dailySnapshot : state.weeklySnapshot).value?.freshness, 'pending_update')
+    for (const start of [() => state.loadReference(), () => state.loadAuxiliary('macd'), () => state.loadExplanation()]) {
+      const loaded = start()
+      const panel = pending.at(-1)!
+      assert.equal(panel.request.asOf, cutoff)
+      assert.equal(panel.request.snapshotToken, chart.meta.snapshot_token)
+      panel.resolve(normalizedStatus(panel.request, chart.meta.snapshot_token))
+      await loaded
+    }
+    const pageLoad = state.loadNextChartPage()
+    const page = pending.at(-1)!
+    page.resolve(normalizedChart(page.request))
+    await pageLoad
+    assert.deepEqual(state.sections.chart.data.value?.snapshotContext, snapshotContext, 'paging must retain the verified quote cutoff')
+    pending[0]!.resolve(normalizedChart(pending[0]!.request))
+    await flush()
+    assert.equal(state.sections.chart.data.value?.meta.as_of, cutoff)
+    state.dispose()
+  })
+}
+
 test('weekly snapshot client rejects a mismatched cutoff', async () => {
   const identity = { product: 'rb', strategy: 'trend' as const, frequency: '1w' as const, seriesKind: 'actual_dominant' as const }
   const payload = { schema_version: 'newow_weekly_snapshot_v1', product: 'rb', strategy: 'trend', frequency: '1w', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_period_end: '2026-09-18T07:00:00.000001Z', available_period_end: '2026-09-11T07:00:00.000001Z', as_of: '2026-09-11T07:00:00.000001Z', freshness: 'pending_update', current_context: { status: 'unknown', physical_contract: null } }

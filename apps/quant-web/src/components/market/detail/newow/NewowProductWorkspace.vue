@@ -413,7 +413,10 @@ watch(loader.historicalSnapshot, async () => {
 }, { flush: 'sync' })
 watch(chartResponse, value => emit('analysis-as-of', value?.meta.as_of ?? null), { immediate: true, flush: 'sync' })
 watch([chartResponse, loader.currentChartWindow], ([value, current]) => {
-  emit('daily-chart', current && value?.meta.identity.strategy === props.identity.strategy ? value : null)
+  // A resolved completed snapshot can supply a dated quote even while publication
+  // is pending. Keep current-signal provenance separate from quote availability.
+  const resolved = current || value?.snapshotContext?.freshness === 'pending_update'
+  emit('daily-chart', resolved && value?.meta.identity.strategy === props.identity.strategy ? value : null)
 }, { immediate: true, flush: 'sync' })
 watch(loader.dailySnapshot, snapshot => {
   if (snapshot === null && strategySwitching.value) return
