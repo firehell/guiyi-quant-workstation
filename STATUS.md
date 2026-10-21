@@ -1,5 +1,10 @@
 # 当前状态
 
+## 10/21 苏冰前四步输入修复完成，20路独立重算通过
+
+owner交办的四品种16路分钟预热、PR/PX/SF/ZN四路日线和十路warming核实已完成。AL2612/FU2701/ZN2612/PX2612真实修复43个月1m输入（320025根），重建172个月5/15/30/60m派生；PX/ZN D1另补22个月407端点。PR39/SF1/PX21条原零收盘价经三次新鲜来源逐值核对后，按既有NonpositiveCloseFact合同替换9质量分区，保留时间/七数值及其他Bar。
+原生warmup75测试、quality/rewarm46测试通过；独立只读验收REPAIR_INPUTS_VERIFIED：16分钟+4日线内核valid/ready，20份分钟后验计划零缺口，61facts与旧Bar及旧文件逐值/哈希核对通过；独立Review无阻塞。十路输入完整但有效段不足，继续真实warming，不伪造READY。正式十项身份仍v1.15.16/gen22/c559eb7a5，应用源码/配置未变，无发布或重启。没有手工Event/重放/补发，整体health仍degraded，自然Runtime确认PENDING_NEXT_NATURAL_TRIGGER；Reference问题不在本轮。详见[输入修复记录](docs/tasks/subing-input-repair-20261021.md)。
+
 ## 10/21 正式运行已统一 v1.15.16 / gen22
 
 按owner交办执行实际恢复与all10冷切换，正式十项binding、installed/loaded配置与六常驻进程已统一为v1.15.16/gen22/c559eb7a594dea5189c7a630b010a284032e89f4，运行根.worktrees/release-v1.15.16，schema20261015_0052不变；四calendar空闲。API8000返回1.15.16，Web5173 index与exact发布dist逐字一致，研究API/Web代理与冻结snapshot身份一致，576格研究结果可读。
