@@ -1,5 +1,10 @@
 # 当前状态
 
+## 10/22 凌晨 Reference 第六步部分恢复
+
+按owner定时交办续接：原240路H1历史种子全部完成并独立核对READY/active、checkpoint与manifest摘要，截至10/21 15:00。第五步40路缺口与2601条旧积压已恢复正常消费。前向冲突累计116/212恢复（本轮新增28），旧18352批次/5721核对/611动作逐条无缺失改写。原生定向测试48 passed/6 skipped，独立Review与精确收据读回通过。
+剩96冲突：23夜盘组92路需完整普通原件warm authority；现有v1要求actual repair plan/readback，不能伪造或把Live改称Canonical；PG4路owner边界未证明。直接改未来起点会遗漏夜盘kernel输入，已由原生端点复现并阻止。凌晨新28路未来09:00起点不代表首晨自然验收。正式应用仍v1.15.16/gen22，无公式/Scope/Rule/通知/交易阶段变化；不声明第六步完成或全局RUNTIME_READY。详见[第五六步恢复记录](docs/tasks/reference-recovery-20261021.md)。
+
 ## 10/21 FU2701 日线预热缺口已修复
 
 按owner交办，仅FU2701上市日至2026-10-21的1d物理预热完成：10次RQData请求、10个月分区发布、191根权威日线，0质量事实；后验原生计划零目标，旧文件哈希保持。独立Review通过。开发API8002新鲜60m综合判断HTTP200，日线与60m的趋势/震荡事实均ready；周线两项仍unavailable，不声明全周期完整。开发日线页面已读至10/21、当前合约FU2701。未改公式、应用源码或Runtime配置，未重启、发布、重放或通知；自然业务与送达验收仍独立。详见[日线修复记录](docs/tasks/fu-daily-warmup-20261021.md)。
