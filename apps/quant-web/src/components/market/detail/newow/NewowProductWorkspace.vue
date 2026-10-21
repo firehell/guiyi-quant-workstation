@@ -44,7 +44,7 @@ import {EXPERIMENT_OPTIONS,type ExperimentKind} from '@/utils/newowExperiments'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities; pricePreview: PricePreviewState; strategyMenuTarget?: string; channelControlsTarget?: string }>()
 const emit = defineEmits<{ 'select-identity': [identity: MarketDetailIdentity]; 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'daily-snapshot-pending': [pending: boolean]; 'daily-chart': [chart: NewowProductSectionResponse<'chart'> | null]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'analysis-as-of': [asOf: string | null] }>()
-const experimentKind=ref<ExperimentKind|null>(null)
+const experimentKind=ref<ExperimentKind|null>(props.identity.newowTest ?? null)
 const experimentContext = ref<(NewowDisplayOwner & { latestState: import('@/utils/newowExperiments').ExperimentSegment['latest_state'] | null }) | null>(null)
 const identity = computed(() => experimentKind.value ? { ...props.identity, strategy: 'oscillation' as const, newowMode: undefined } : props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency, ...(experimentKind.value ? [experimentKind.value] : [])].join(':'))
@@ -63,11 +63,11 @@ const menuChoice = computed<ExperimentKind | 'main_rise' | null>({
       emit('select-identity', newowMenuIdentity(props.identity, 'main_rise'))
     } else {
       experimentKind.value = choice
-      if (choice === null && props.identity.strategy === 'main_rise') emit('select-identity', newowMenuIdentity(props.identity, 'oscillation'))
+      emit('select-identity', { ...props.identity, strategy: 'oscillation', newowMode: undefined, newowTest: choice ?? undefined, focusBarEnd: undefined, homeContext: undefined })
     }
   },
 })
-watch([()=>[props.identity.view,props.identity.symbol,props.identity.strategy,props.identity.frequency].join(':'),()=>props.identity.newowMode],()=>{experimentKind.value=null},{flush:'sync'})
+watch([()=>[props.identity.view,props.identity.symbol,props.identity.strategy,props.identity.frequency].join(':'),()=>props.identity.newowMode,()=>props.identity.newowTest],()=>{experimentKind.value=props.identity.newowTest ?? null},{flush:'sync'})
 const dualMode = computed(() => !experimentKind.value && props.identity.newowMode === 'dual')
 const selectedStrategy = computed(() => identity.value.strategy as NewowProductStrategy)
 const strategySwitching = ref(false)

@@ -1,5 +1,25 @@
 # 当前状态
 
+## 10/21 v1.15.16 发布候选验证通过
+
+本轮发布范围为已集成develop的期货双向研究/详情页模式，以及L.M.S 4.0.5 JM2605时间线、周期还原和价格核验文档。原版牛哇保持默认；冻结研究不是正式策略晋升，OOS_NOT_PROVEN及资金不足、换月/数据中断等状态保留。冻结大文件留在本地显式结果根，不随Git发布。
+本轮候选实跑：期货研究定向179 passed，版本/健康/canonical24 passed，完整Web1165 passed/3 skipped，浏览器4 passed；uv lock离线校验、类型/build/topology、secret零发现及diff检查通过。数值实现沿用此前独立Review及全量核验，本轮只更新应用版本和发布记录。
+本次只发布main/tag/GitHub Release，不切换Runtime，不启用持续Paper、通知、Shadow、Broker或订单。发布最终身份以远端main、annotated tag peeled和GitHub Release精确读回为准；原正式Runtime及其未完成自然验收边界保持。
+
+## 10/21 期货双向研究与详情页开关已集成 develop
+
+已推送并集成develop 757c09ae37；数值实现冻结5ad16d06b。保留牛哇默认原版，新增独立futures_bidir_v1内核、参考投影、10万元分层研究账户、冻结结果只读API及详情页开关；八策略名称和六周期入口保持，主图动作/目标保护线、方向、持有周期、参考与账户收益及记录分别切换。
+JM/RB/AL/TA × 六周期 × 八策略 × 三成本场景576格全部落盘并独立核验：260完整、225资金不足、73换月中断、6预热不足、12不适用。基线192格中88个完整账户为12正/69负/7零；不证明普遍盈利或OOS。TA另有3格参考路径DATA_INTERRUPTED，保留未知收益。中断不拼成完整年度收益，资金拒绝不吞并参考交易。
+全量104411条模拟Fill的费用/现金/层级PnL/整数仓位/tick及strict-later核对通过；首轮332重叠格数值逐字一致，仅59处参考快照原因修正。后端及原版回归445 passed，Web1165 passed/3 skipped，build/type/topology、secret零发现及独立Review通过；实际5183/8004八策略/六周期、往返刷新、旧响应隔离、精确定位/窗外提示及最终真实价格逐项读回通过。
+本次止于develop，未发布main/tag、切换Runtime、启用持续Paper/通知/Shadow/Broker或订单。冻结主图最近2000根，窗外历史记录明确不可定位；全窗记录和曲线独立保留。实际统计、身份、文件与命令入口见[首轮研究记录](docs/research/newow-futures-bidir-v1-20261021.md)。原版发布与Runtime事实继续见下方既有记录。
+
+## 10/20 v1.15.15 牛哇详情页优化已发布，Runtime 未切换
+
+本轮已提交报价行、综合决策、周期与路径工具、公式入口、参考收益区、历史/空仓参考卡片和查看全部交互优化；保持后端公式、行情身份、收益计算及账户边界。止损参考线固定显示，路径样本不足继续明确不可估算，空仓卡片仅引用同物理/计算段已配对完成记录。
+完整Web1146 passed/3 skipped；最终候选12项版本/参考记录测试、6项健康接口测试、类型/build/topology、uv lock及secret scan零发现通过；独立Review无阻塞项，夜盘卡片日期统一北京时间。真实浏览器验证窗口/口径切换、点位读数、公式弹窗和历史加载。
+发布PR463已合并；main与annotated tag v1.15.15 peeled为741acd060985a1d158d2472f69799659754c32d9，合并树与已验证候选e83cd7522一致。GitHub Release非draft/非prerelease且target为同一commit，远端main/tag精确读回通过。
+本次仅发布版本，没有Runtime promotion、数据写入或通知发送。正式运行仍v1.15.12/gen21/13c86b735；v14记录中的Live订阅锁存与Reference Canonical一致性阻塞保留，不声明RUNTIME_READY。
+
 ## 10/20 v1.15.14 布局已提交发布，Runtime 切换准入阻塞
 
 此前11个未提交布局文件已核对、修复并消费为最终提交6ea2d6da5；保留紧凑布局并恢复来源审计、报价时点、独立止损开关、折叠图表工具、刷新、显示重置及全屏控件。周期位于图表附近且失败态可切换，Teleport默认本地、正式页面显式指定目标。最终8个Web源码、2个测试及版本文件进入发布，其余3个原布局文件恢复既有完整行为。

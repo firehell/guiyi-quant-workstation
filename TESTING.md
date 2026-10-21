@@ -1,5 +1,19 @@
 # 测试与验证命令
 
+## 期货双向研究
+
+纯内核/账户、输入/采集边界、冻结结果与只读API定向验证（fixture不冒充真实行情）：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/newow_futures services/quant-api/tests/research/test_newow_futures_inputs.py services/quant-api/tests/research/test_newow_futures_runner.py services/quant-api/tests/research/test_newow_futures_store.py services/quant-api/tests/research/test_newow_futures_api.py
+NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web test
+NODE_OPTIONS=--max-old-space-size=768 pnpm -C apps/quant-web build
+```
+
+实际研究只用已冻结代码、精确窗口与Catalog前像；先运行独立执行事实脚本的plan/apply，再以显式facts目录运行
+`scripts/research/newow_futures.py`，结果写任务output，不创建生产账本或启用Runtime。
+真实数据、采集与矩阵状态见[任务记录](docs/tasks/newow-futures-bidir-v1.md)，规则见[canonical](docs/NEWOW_FUTURES_STRATEGY.md)。
+
 ## 八批看盘接口与资源回归
 
 所有测试串行；Node512MiB，类型/build768MiB，浏览器`--workers=1`。完整Web使用`pnpm -C apps/quant-web test`，build包含类型、能力生成和bundle拓扑校验。实际受影响后端集合与结果见[八批验收记录](docs/tasks/watch-eight-batches.md)。

@@ -8,6 +8,7 @@
 |---|---|---|
 | 行情事实 | HistoricalDataManager 维护；MarketDataService 读取 Canonical/Catalog/rank1 | 策略、参考交易、账户 |
 | 策略计算 | quant-core 纯内核；Newow/SuBing/HTDY adapter 绑定输入身份 | Web 状态、DB/Redis、通知 |
+| 期货双向研究 | 独立newow_futures纯规则/参考/分层模型；MDS输入、单次facts采集及CLI冻结结果；SHA索引只读API交付详情页显式模式 | 改写牛哇parity、生产账户/账本、持续Paper/Runtime、通知、Broker |
 | 参考交易 | 纯投影；统一 ReferenceTrading 的历史重算/前向观察仓储与查询 | Order、Fill、Position、PnL |
 | API/Web | app.main 的注册路由；Market 两条页面路由和统一详情控制器 | 重新算公式、配对交易或自选行情事实 |
 | Runtime/Alert | runtime_entry 与既有监督服务；Event 持久化后 one-shot transport | 自行扩大 Scope、重放通知或晋升策略 |

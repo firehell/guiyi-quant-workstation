@@ -1,0 +1,9 @@
+source_id,url,published_shanghai,edit_marker,version_scope,image_position,observed_summary,limitation
+L01,https://weibo.com/1885745060/QqgVHeN12,2026-02-04 15:08,未见,混合1.0/4.0.5,0023CoqUgy1i9yk7ecnmmj50ii0cxtgr2.jpg,JM2605多44今0持仓均1167；空44今44开仓均1221.95；多开仓均待复核,双持在夜盘前已经显示
+L02,https://weibo.com/1885745060/Qqk2WAWQM,2026-02-04 23:04,已编辑,混合日志正文提4.0.5,0023CoqUgy1i9yxxf7vrfj50kh0ep4922.jpg,JM2605多44今0；空44今0开仓均1221.95；两腿持仓均1199,标题交易日2月5日不等于发布日；双持快照
+L03,https://weibo.com/1885745060/QqoCVlNU1,2026-02-05 10:44,未见,混合1.0/4.0.5,0023CoqUgy1i9zi5qqci3j50kf0asjz02.jpg,JM2605空44今0开仓均1221.95持仓均1199；多未列UNKNOWN,与恢复空向相容但不能确认唯一动作
+L04,https://weibo.com/1885745060/QqeUidoCh,2026-02-04 09:59,已编辑,混合1.0/4.0.5,0023CoqUgy1i9yb90udbgj50k60crwnj2.jpg,JM2605多44今0开仓均1155持仓均1167；空未列UNKNOWN,原多腿快照；不是入场成交证据
+L05,https://weibo.com/1885745060/Qqfzih6VV,2026-02-04 11:40,已编辑,混合多版本,0023CoqUgy1i9ye6pgopdj50kc0di7dv2.jpg,JM2605多44今0开仓均1155持仓均1167；空未列UNKNOWN,同早盘显示；账户连续性未证实
+L06,https://weibo.com/1885745060/Qqf99BaCr,2026-02-04 10:36,未见,未直接标4.0.5,,A1211.5–1224.5；B1226–1243.5；C1207.5–1211.5；D1190.5–1201.5；附近空头VPLUS保护,不能用17:30的新区域覆盖此时区域
+L07,https://weibo.com/1885745060/Qqfwwrk3x,2026-02-04 11:33,未见,未直接标4.0.5,70662fa4gy1i9ye05borrj20gj06vgmv.jpg,称A完成并引用L08；图片是文字截图不是K线,部分数字模糊不恢复；无周期时间轴
+L08,https://weibo.com/1885745060/Qo2zuf5Xc,2026-01-20 22:54,已编辑,未直接标4.0.5,,A完成后C/D特征前推至A/C；B完成后前推至A/B,完成阈值与第二组有序映射未知；没有区域生成公式
