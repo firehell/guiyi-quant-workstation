@@ -62,6 +62,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core:. /V
 
 独立Review确认并修复了初版空仓跨owner仍继续运行的问题。代码Review与独立214项回归通过；005最终代码/输入SHA与result_hash、6笔费用和3回合毛净PnL也独立复核通过，无剩余Confirmed Issue，允许集成develop。
 
+集成时develop另有四统一日线研究提交858627112；在隔离任务工作区合并后，连同其23项相关测试共237 passed。四份数值依赖SHA与005仍完全相同，未重复伪造新的数值验收。主工作区其他任务的未提交Reference改动不在本次提交或清理范围内。
+
 ## 验收与下一步
 
 阶段B允许集成develop，不发布、不切运行副本、不启用持续Paper。430日执行事实缺失与11个换月退出输入缺口保持；本轮未补数据、未做阶段C成本压力或阶段D独立验证。唯一最小下一步是按冻结规则开展阶段C成本压力及失败原因研究，继续把中断账户和独立owner诊断分开。
