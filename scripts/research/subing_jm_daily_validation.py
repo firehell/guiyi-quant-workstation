@@ -97,8 +97,11 @@ def validate_account(events, *, expected=None, factory=lambda size: DailyModel()
                 raise ValueError('JM_DUPLICATE_PARITY_FAILED')
             duplicates += 1
             stream = type(stream).restore(json.loads(json.dumps(before)))
-            if digest(stream.result()) != cuts[n]:
+            if stream.checkpoint() != before or digest(stream.result()) != cuts[n]:
                 raise ValueError('JM_RESTART_PARITY_FAILED')
+            stream.apply(e)
+            if stream.checkpoint() != before:
+                raise ValueError('JM_RESTART_DUPLICATE_PARITY_FAILED')
             restores += 1
     if stream.result() != result:
         raise ValueError('JM_RESTART_SUFFIX_PARITY_FAILED')

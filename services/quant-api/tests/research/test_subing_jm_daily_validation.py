@@ -35,6 +35,19 @@ def test_empty_account_is_not_a_validation_pass():
         validate_account(())
 
 
+@pytest.mark.parametrize('attribute,value', [('seen', {}), ('day_start_equity', 1)])
+def test_restart_validator_detects_lost_internal_risk_or_deduplication_state(attribute, value):
+    class DamagedRestoreModel(DailyModel):
+        @classmethod
+        def restore(cls, checkpoint):
+            model = super().restore(checkpoint)
+            setattr(model, attribute, value)
+            return model
+
+    with pytest.raises(ValueError, match='RESTART'):
+        validate_account(events(), factory=lambda size: DamagedRestoreModel())
+
+
 def test_prefix_validator_detects_a_model_which_uses_future_batch_length():
     class LeakyModel(DailyModel):
         def __init__(self, size):
