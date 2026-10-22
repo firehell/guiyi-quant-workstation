@@ -784,6 +784,31 @@ are authorized by either repair entry.
 - **WHEN** no complete natural H1 has closed the new-day prefix gap
 - **THEN** that gap remains unproven and the repair does not claim full natural readiness
 
+### Requirement: Pristine L reset uses retained originals for preactivation warm-up
+
+Only the complete four-route L H1 group with the pristine October 22 empty-reset
+seed MAY use `reference_retired_original_warmup_v1`. The active revision SHALL
+contain only its seed chunk and seal, retain the explicit 15:00 interruption,
+empty kernel and 22:55 future-FLAT boundary, and have no captures or actions.
+A separate atomic revision SHALL warm native product kernels using the retained
+October 23 trading-day 22:00 and 23:00 completed H1 originals. Authoritative
+endpoints, each original ID/index/content, contract/owner, metadata and frontier
+SHALL be re-read before admission. Missing or changed evidence fails closed.
+
+This operation SHALL preserve old conflict and empty-reset revisions and all
+immutable facts. It SHALL NOT fabricate a reconciliation conflict, missing gap,
+natural capture or first-seen time; no journal replay, ACK, cursor change,
+notification or reference trade is created. The new checkpoint uses a future
+FLAT boundary and typed original provenance; health remains OBSERVATION_LAGGING
+until a subsequent actual Session H1 is consumed normally. Existing strategy
+availability/warming semantics and formulas remain unchanged.
+
+#### Scenario: An existing pre-start original must warm the kernel
+- **GIVEN** the pristine L reset starts after the retained 22:00 original
+- **WHEN** both 22:00 and 23:00 originals and the complete frontier are proved
+- **THEN** the dedicated atomic warm revision preserves future FLAT and original times
+- **AND** subsequent natural acceptance remains pending, without manufacturing a missing gap
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL
