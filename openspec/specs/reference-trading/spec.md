@@ -746,6 +746,44 @@ or unavailable strategy facts SHALL remain unchanged and disclosed.
 - **AND** no old-contract indicator state, reference position, Capture or notification is carried forward
 
 
+### Requirement: October 22 retired-day absence is sealed by native day advancement
+
+The explicit October 22 repair MAY use `RETIRED_DAY_ABSENCE_V1` only for H1
+checkpoints no earlier than October 21 15:00 Asia/Shanghai and missing completed
+endpoints through October 22 15:00. Source Live and completed Alert/Reference
+registration keys SHALL actually exist and equal October 23. Native monotonic
+NEW_DAY and pre-write APPEND/COMMIT registration checks seal the retired day;
+wall-clock silence or expiration of arrival grace alone is insufficient.
+
+Both source and completed October 21/22 journals and identity indexes SHALL
+exist, be fully read and match original IDs, payloads and native content
+fingerprints. Their old consumers SHALL be at tails. A saved target H1 after the
+checkpoint blocks absence, even when acknowledged. Missing keys, invalid indexes,
+changed rank1/Session endpoints, missing cleanup evidence or lost writer fences
+SHALL fail closed. Plans bind exact Runtime, checkpoint, receipt and source proof,
+reuse the native one-shot interruption calculation, and preserve old facts and
+unknown provider buffers. No October 23 endpoint is admitted by this proof.
+
+For the complete four-route L H1 conflict group only,
+`reference_retired_day_conflict_reset_v1` MAY atomically retire the conflicted
+revision and create an independent future FLAT revision. Its native product or
+fusion kernel SHALL be empty, with an explicit retired-day interruption watermark
+and provenance; it SHALL NOT be represented as a historical or retained warm seed.
+Old DATA_CONFLICT evidence remains unchanged. Health remains
+OBSERVATION_LAGGING; the open October 23 gap and subsequent natural warm-up remain
+separate acceptance conditions. No maintenance replay, cursor changes or notices
+are authorized by either repair entry.
+
+#### Scenario: Retired-day source keys expired
+- **GIVEN** a retired day's journal or identity index no longer exists
+- **WHEN** the task attempts to prove absence
+- **THEN** it fails closed instead of treating expiration as an empty observation day
+
+#### Scenario: A new day still has an open gap
+- **GIVEN** the October 22 interruption is committed and October 23 is active
+- **WHEN** no complete natural H1 has closed the new-day prefix gap
+- **THEN** that gap remains unproven and the repair does not claim full natural readiness
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL
