@@ -1,5 +1,11 @@
 # 当前状态
 
+## 10/22 夜间三项数据修复已执行，64路自然H1验收待发生
+
+按owner交办恢复Live/Feed、补齐AL2612/PG2612/PS2612/SI2612 D1并修复原240路H1异常。22:00–23:00的45夜盘品种source/completed各2700根自然1m，权威端点缺失0；旧原始观察缺口与Feed buffer未知保留。D1实际44次来源请求/44个月分区，AL204/PS205/SI205有效Bar；PG190有效+5条既有零OHL质量事实，四品种SuBing输入只读valid/ready，未发Event或通知。
+H1完成236旧日中断及L4原子冲突重置；首caller因22/23点真实原件已齐而拒绝多余night-prefix gap，安全停止记录保留。独立新continuation用两根真实L原件暖机并建立23:45未来FLAT，完整读回后恢复原Reference PID29965/gen22。23:13正式720路为656 READY/64 OBSERVATION_LAGGING，来源不可用/冲突/pending Capture均0，四日journal全追尾；176夜路正常消费者实际计算至23:00，原件身份与原始时间验证通过。
+剩64路为15无夜盘品种60路+L4，权威下一H1均10/23 10:00；另88夜路震荡/融合availability仍真实warming，不冒充全指标ready。旧20108批次/6129核对/645动作无缺失改写。新暖机21定向、exact v16兼容8项、Ruff/OpenSpec/diff/secret及独立Review通过。正式仍v1.15.16/gen22，无Scope/Rule/公式/交易阶段变更，不宣称第三项自然验收或全局RUNTIME_READY。详见[三项修复记录](docs/tasks/data-three-repair-20261022.md)。
+
 ## 10/22 Reference 遗留冲突修复完成，晨盘自然验收待发生
 
 按owner指定顺序完成92夜盘原件暖机与PG四路换主力边界。正常原件使用独立retained证明，不伪造repair收据；PG以权威PG2611→PG2612相邻rank1边界和两根真实新合约H1执行原生kernel reset，未继承旧合约指标/参考仓位。PG震荡仍真实NEWOW_OSCILLATION_WARMING，趋势/主升浪availability ready原样保留。
