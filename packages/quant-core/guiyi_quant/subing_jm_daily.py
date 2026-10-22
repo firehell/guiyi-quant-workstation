@@ -36,6 +36,27 @@ def digest(value):
     return sha256(json.dumps(wire(value), sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
+def entry_risk(side, price, stop, facts, equity, *, slippage_ticks=1):
+    """One authority for admission and its numerical explanation; baseline unchanged."""
+    with localcontext(Context(prec=28)):
+        values = {'equity': equity, 'risk_budget': equity*D('.02'), 'price': price,
+                  'stop': stop, 'estimated_risk': None, 'reason': None}
+        if stop <= 0 or (price-stop)*side <= 0:
+            return {**values, 'reason': 'STOP_NOT_PROTECTIVE'}
+        fee = facts.fees.amount('open', price, facts.multiplier)
+        exit_price = max(facts.tick_size, stop-side*slippage_ticks*facts.tick_size)
+        close_fee = max(facts.fees.amount('close', exit_price, facts.multiplier),
+                        facts.fees.amount('close_today', exit_price, facts.multiplier))
+        slip_cost = slippage_ticks*facts.tick_size*facts.multiplier
+        risk = abs(price-stop)*facts.multiplier + fee + close_fee + slip_cost
+        ratio = facts.long_margin_ratio if side == 1 else facts.short_margin_ratio
+        margin = max(price, facts.prev_settlement)*facts.multiplier*ratio
+        reason = ('TRADE_RISK_EXCEEDED' if risk > values['risk_budget'] else
+                  'INSUFFICIENT_MARGIN' if margin+fee > equity else None)
+        return {**values, 'estimated_risk': risk, 'open_fee': fee, 'estimated_close_fee': close_fee,
+                'exit_slippage_cost': slip_cost, 'required_margin': margin, 'reason': reason}
+
+
 @dataclass(frozen=True)
 class Event:
     kind: str
@@ -110,6 +131,8 @@ class Pending:
 
 
 class DailyModel:
+    slippage_ticks = 1
+
     def __init__(self):
         self.cash = D('100000')
         self.total_fees = D(0)
@@ -168,20 +191,8 @@ class DailyModel:
             self._queue_close(at, 'DAILY_LOSS_HALT')
 
     def _risk_reason(self, side, price, stop, facts):
-        if stop <= 0 or (price-stop)*side <= 0:
-            return 'STOP_NOT_PROTECTIVE'
-        fee = facts.fees.amount('open', price, facts.multiplier)
-        exit_price = max(facts.tick_size, stop-side*facts.tick_size)
-        close_fee = max(facts.fees.amount('close', exit_price, facts.multiplier),
-                        facts.fees.amount('close_today', exit_price, facts.multiplier))
-        risk = abs(price-stop)*facts.multiplier + fee + close_fee + facts.tick_size*facts.multiplier
-        if risk > self.equity*D('.02'):
-            return 'TRADE_RISK_EXCEEDED'
-        ratio = facts.long_margin_ratio if side == 1 else facts.short_margin_ratio
-        margin = max(price, facts.prev_settlement)*facts.multiplier*ratio
-        if margin+fee > self.equity:
-            return 'INSUFFICIENT_MARGIN'
-        return None
+        return entry_risk(side, price, stop, facts, self.equity,
+                          slippage_ticks=self.slippage_ticks)['reason']
 
     def _fill(self, event):
         b, f, order = event.bar, event.facts, self.pending
@@ -189,7 +200,7 @@ class DailyModel:
         if not order or b.physical_contract != order.contract or start <= order.at:
             return
         buy = order.side == (1 if order.action == 'OPEN' else -1)
-        raw = b.open + f.tick_size*(1 if buy else -1)
+        raw = b.open + self.slippage_ticks*f.tick_size*(1 if buy else -1)
         price = (raw/f.tick_size).to_integral_value(rounding=ROUND_CEILING if buy else ROUND_FLOOR)*f.tick_size
         blocked = ('ZERO_VOLUME' if b.volume <= 0 else
                    'LIMIT_BLOCKED' if (buy and (b.open >= f.limit_up or price > f.limit_up))
@@ -315,7 +326,7 @@ class DailyModel:
                     self._record(b.bar_end, 'REJECT', 'DAILY_LOSS_HALT')
                 elif self.last_flat_at is None or b.bar_end > self.last_flat_at:
                     stop = self._stop(event.ema, event.cross, self.last_facts.tick_size)
-                    price = b.close+event.cross*self.last_facts.tick_size
+                    price = b.close+event.cross*self.slippage_ticks*self.last_facts.tick_size
                     reason = self._risk_reason(event.cross, price, stop, self.last_facts)
                     if reason:
                         self._record(b.bar_end, 'REJECT', reason)
