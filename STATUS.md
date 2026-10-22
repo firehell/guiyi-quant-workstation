@@ -1,5 +1,11 @@
 # 当前状态
 
+## 10/22 Reference 遗留冲突修复完成，晨盘自然验收待发生
+
+按owner指定顺序完成92夜盘原件暖机与PG四路换主力边界。正常原件使用独立retained证明，不伪造repair收据；PG以权威PG2611→PG2612相邻rank1边界和两根真实新合约H1执行原生kernel reset，未继承旧合约指标/参考仓位。PG震荡仍真实NEWOW_OSCILLATION_WARMING，趋势/主升浪availability ready原样保留。
+08:30完整读回720 READY、冲突/滞后/pending Capture均0；累计212冲突与40gap精确收据通过，旧18352批次/5721核对/611动作逐条无缺失改写。Reference与本次attempt前像同PID62430/gen22 active，四日source/completed消费者全追尾，无有效维护drain；heartbeat ready在cycle/scan采样间变化，last_success=null/pending_keys112保留，不替代完整业务health或新自然H1证据。148定向测试通过/6跳过，Ruff/OpenSpec strict/diff及独立Review通过；exact v16隔离checkpoint消费、commit/restart/fusion兼容验证通过，fixture非自然证据。
+维护源码33bcd5ae7/db236c39d已集成develop；正式常驻仍v1.15.16/gen22，无公式/Scope/Rule/通知/交易阶段变更。新恢复96路未来起点10/22 09:00，首晨自然H1尚未发生；不以即时恢复证明自然业务或全局RUNTIME_READY。详见[恢复记录](docs/tasks/reference-recovery-20261021.md)。
+
 ## 10/22 凌晨 Reference 第六步部分恢复
 
 按owner定时交办续接：原240路H1历史种子全部完成并独立核对READY/active、checkpoint与manifest摘要，截至10/21 15:00。第五步40路缺口与2601条旧积压已恢复正常消费。前向冲突累计116/212恢复（本轮新增28），旧18352批次/5721核对/611动作逐条无缺失改写。原生定向测试48 passed/6 skipped，独立Review与精确收据读回通过。

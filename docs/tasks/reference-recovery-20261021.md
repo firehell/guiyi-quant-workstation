@@ -1,6 +1,6 @@
 # 10/21 Reference 第五、六步恢复
 
-状态：执行中，完成结论以末次现场验收为准。
+状态：修复与即时现场验收完成；未来起点后的自然H1业务验收仍待发生。
 
 ## 范围与原像
 
@@ -71,3 +71,27 @@ owner交办完成Reference积压及H1冲突/滞后恢复。正式Runtime为v1.15
 旧18352批次、5721核对、611动作逐条比较missing=0/changed=0；新增事实独立保留。凌晨新增28路未来起点为22日09:00，首个自然H1尚未发生，不声明自然验收通过。第六步仍PARTIAL，不声明全局RUNTIME_READY。
 
 03:14最终完整health读回624 READY/96 DATA_CONFLICT、pending Capture0；source/completed四天全部消费者追尾。Reference仍同PID52242/gen22 active，通知worker存活，无自有drain；owner ready=false与pending_keys112如实保留，不能用blocked_count短暂0代替完整矩阵。原生历史后台已恢复alive=true。
+
+## 10/22 夜盘证据路径及PG边界已修复
+
+按owner“先补齐夜盘暖机证据路径，再处理PG边界”执行。维护代码33bcd5ae7新增独立retained来源、正常原件journal/index/完整Session证明，共享原生kernel和原子FLAT恢复；旧v1 recovery收据要求保持严格。默认loader仍拒绝owner变化。PG后续db236c39d新增独立retained_rank1_owner_transition_v1，证明相邻交易日rank1、旧Session末端完整与新owner生效，再走原生rollover reset，不继承旧合约指标或参考仓位。
+
+新测试先复现缺失能力、未来边界矛盾和空新段错误后修复。最终实际命令：
+
+`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=../..:../../packages/quant-core .venv/bin/python -m pytest tests/reference_trading/test_retained_conflict_warm_seed.py tests/reference_trading/test_retained_observation_authority.py tests/reference_trading/test_retained_warm_loader.py tests/reference_trading/test_retained_owner_transition.py tests/reference_trading/test_original_conflict_warm_seed.py tests/reference_trading/test_final_warm_conflict_recovery.py tests/reference_trading/test_conflict_recovery.py tests/reference_trading/test_newow_bootstrap.py tests/reference_trading/test_newow_forward.py tests/reference_trading/test_newow_fusion_forward.py tests/reference_trading/test_bounded_recovery.py -q`
+
+在develop services/quant-api实际148 passed/6 skipped；Ruff、git diff --check通过。新增canonical起初放在旧二级Requirement之后导致解析区错误，已移到主Requirements区，`openspec validate reference-trading --strict`实际通过，不隐藏首次失败。
+
+真实只读materialize先M四路通过；全产品单cache首次遇原生REFERENCE_INPUT_LEASE_PRODUCT_CONFLICT，报告保留，未修改生产。改为逐产品独立native components后，night2共23产品92/92通过。Reference v16 exact c559eb7a5独立进程/SQLite加载真实M及PG各四路seed，fixture wake实际evaluate/capture commit、重新加载checkpoint/restart去重及SavedForwardFusionSources/fusion commit均通过；fixture不算自然证据。
+
+08:15–08:22 forward-attempt-4按冻结代码hash、新鲜计划、Reference/部署/PG锁与真实clock expiry执行92路，逐组完整checkpoint/schema/manifest/boundary/digest后像通过，正常取消自有drain。原始时间、Capture、核对、动作和旧版本保留，无replay/手工ACK/通知/provider。该attempt前像Reference已经是PID62430/gen22（08:15:37），此次前后PID不变，不把早先52242推定为全天未重启。四日游标均保留追尾证据。
+
+PG权威rank1：10/21 PG2611，10/22 PG2612；旧source精确到21日15:00，新交易日22:00/23:00两根真实H1均为PG2612。显式transition只读四路通过，独立内核对照三base均等于空state只输入PG2612两根且不等于继承PG2611，恰好一次rollover。真实availability：trend/mainrise ready，oscillation warming/NEWOW_OSCILLATION_WARMING，原样保留。08:29:52新forward-attempt-5四路原子恢复成功，deferred0，完整后像读回通过并取消自有drain，PID仍62430。
+
+08:30最终原生读回：720 READY、DATA_CONFLICT0、OBSERVATION_LAGGING0、pending Capture0；累计212冲突+40gap精确收据核验通过。Reference62430/gen22 active/ready=true，历史后台恢复alive=true，source/completed四日各消费者全部tail。last_success=null/pending_keys112缓存原样记录，不把它们等同于新的自然H1成功。
+
+最终旧18352batch、5721reconciliation、611action全文逐条missing0/changed0；新增边界/事实单列。独立92 seed重算与PG最终复核见output/reference-recovery-20261021/independent-*。正式常驻运行仍v1.15.16/gen22；维护实现和develop集成不冒充新应用发布，不改公式/Rule/Scope/audience/auto_order。
+
+本次两项修复完成；新96路起点为10/22 09:00（凌晨28路同起点），首个自然晨盘H1尚未发生。Reference即时健康与未来自然业务、盘后Live→Canonical及手机送达分别验收，不声明全局RUNTIME_READY；唯一下一步为首个自然H1独立验收。
+
+最终独立复核已通过：PG4新seed反变换hash与冻结proof逐条一致，三base一次真实transition、两步新合约输入；累计212conflict+40gap与旧事实全部通过。08:30本代理heartbeat采样ready=true，独立cycle/scan采样ready=false；完整业务health均720 READY，last_success=null/pending_keys112原样保留，不用单一heartbeat标志代替自然验收。独立最终结论见independent-final-recovery-review.md。
