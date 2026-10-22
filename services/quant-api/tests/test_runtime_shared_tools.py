@@ -7,6 +7,20 @@ from app.private_settings import PrivateSettingsError, load_private_readonly_set
 from app.runtime_identity import file_snapshot
 
 
+def test_readonly_settings_discard_existing_futures_results_root_without_dependency_expansion(tmp_path):
+    path = tmp_path / 'private.env'
+    path.write_text(f'DATABASE_URL=sqlite:///fixture\nGUIYI_CANONICAL_DATA_ROOT={tmp_path}\n'
+                    'GUIYI_NEWOW_FUTURES_RESULTS_ROOT=/unused/research\n')
+    path.chmod(0o600)
+    settings, _ = load_private_readonly_settings(path)
+    assert 'GUIYI_NEWOW_FUTURES_RESULTS_ROOT' not in settings
+    path.write_text('GUIYI_NEWOW_FUTURES_RESULTS_ROOT=/unused/research\n'
+                    'DATABASE_URL=$GUIYI_NEWOW_FUTURES_RESULTS_ROOT\n'
+                    f'GUIYI_CANONICAL_DATA_ROOT={tmp_path}\n')
+    with pytest.raises(PrivateSettingsError):
+        load_private_readonly_settings(path)
+
+
 @pytest.mark.parametrize('defect', ['symlink', 'hardlink', 'permissions', 'directory', 'oversize'])
 def test_private_settings_reject_unsafe_files_without_disclosing_contents(tmp_path, defect):
     path = tmp_path / 'private.env'
