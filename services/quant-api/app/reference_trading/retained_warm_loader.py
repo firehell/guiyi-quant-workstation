@@ -64,6 +64,13 @@ class RetainedWarmSourceLoader:
         self.assert_fenced, self.capability_ready = assert_fenced, capability_ready
         self.authority = ForwardMarketAuthority(market)
 
+    def _interval_owner(self, identity, checkpoint, saved):
+        return (
+            checkpoint.physical_contract,
+            checkpoint.owner_segment_id,
+            checkpoint.calculation_segment_id,
+        ), None
+
     def __call__(self, session, source_id, *, lock=False):
         self.assert_fenced()
         identity, cp, schema, saved, binding = NewowForwardBootstrap(
@@ -109,14 +116,19 @@ class RetainedWarmSourceLoader:
             datetime.fromisoformat(saved["query_as_of"]),
         )
         snapshot = self.reader.plan_stream(request)
+        interval_owner, transition = self._interval_owner(identity, cp, saved)
         # Prove full suffix through the future boundary using the baseline's actual
         # physical contract. A different current owner cannot make this pass.
         ends = self.authority.expected_endpoints(
             identity,
-            cp.physical_contract,
+            interval_owner[0],
             self.day,
             cp.computed_through,
             self.start - timedelta(microseconds=1),
+        )
+        require(
+            transition is None or bool(ends),
+            "RETAINED_OWNER_TRANSITION_NEW_INPUT_REQUIRED",
         )
         originals = read_retained_interval(
             self.journal,
@@ -160,6 +172,11 @@ class RetainedWarmSourceLoader:
         }
         inputs, proofs = [], {}
         previous = cp.computed_through
+        previous_owner = (
+            cp.physical_contract,
+            cp.owner_segment_id,
+            cp.calculation_segment_id,
+        )
         for original, original_proof in originals:
             capture = capture_newow_envelope(
                 original,
@@ -180,12 +197,7 @@ class RetainedWarmSourceLoader:
                 source["calculation_segment_id"],
             )
             require(
-                owner
-                == (
-                    cp.physical_contract,
-                    cp.owner_segment_id,
-                    cp.calculation_segment_id,
-                ),
+                owner == interval_owner,
                 "WARM_SEED_OWNER_BOUNDARY_REQUIRED",
             )
             raw = payload["bar"]
@@ -223,16 +235,19 @@ class RetainedWarmSourceLoader:
                 "owner_sha256": _hash(owner),
                 "session_sha256": _hash(metadata),
                 "quality_sha256": _hash({"validated_capture": capture.input_payload}),
-                "rollover": False,
+                "rollover": owner != previous_owner,
             }
+            if transition is not None:
+                proof["owner_transition"] = transition
             inputs.append(replace(item, source_proof=proof))
             proofs[capture.bar_end] = proof
             previous = capture.bar_end
+            previous_owner = owner
         cutoff = previous
         require(
             not self.authority.expected_endpoints(
                 identity,
-                cp.physical_contract,
+                interval_owner[0],
                 self.day,
                 cutoff,
                 self.start - timedelta(microseconds=1),
@@ -300,5 +315,33 @@ class RetainedWarmSourceLoader:
             ),
             "WARM_SEED_BASELINE_DRIFT",
         )
+        require(
+            self._interval_owner(identity, cp, saved) == (interval_owner, transition),
+            "WARM_SEED_OWNER_TRANSITION_DRIFT",
+        )
         self.assert_fenced()
         return result
+
+
+class Rank1TransitionRetainedWarmSourceLoader(RetainedWarmSourceLoader):
+    """Opt-in transition proof; the ordinary retained loader remains strict."""
+
+    def _interval_owner(self, identity, checkpoint, saved):
+        from app.reference_trading.retained_owner_transition import (
+            prove_rank1_owner_transition,
+        )
+
+        transition = prove_rank1_owner_transition(
+            self.market,
+            self.authority,
+            identity,
+            checkpoint,
+            previous_day=date.fromisoformat(saved["query_through"]),
+            trading_day=self.day,
+            knowledge_at=self.known,
+        )
+        return (
+            transition.contract,
+            transition.owner_segment_id,
+            transition.calculation_segment_id,
+        ), transition.proof

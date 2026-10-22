@@ -151,3 +151,43 @@ def test_retained_recovery_has_separate_admission_and_atomic_four_route_identity
         )
         == result
     )
+
+
+def test_retained_rollover_uses_only_new_contract_kernel_state():
+    from guiyi_quant.newow.product_adapters import replay_step, seed_replay_state
+
+    _, _, _, _, _, identity, _ = fixture()
+    baseline, _, _, _, _, _, _ = fixture()
+    inputs, run = retained_fixture()
+    changed = []
+    for index, item in enumerate(inputs):
+        product = replace(
+            item.product_bar,
+            bar=replace(
+                item.product_bar.bar,
+                physical_contract="RB2705",
+                segment_id="next-owner",
+            ),
+            calculation_segment_id="next-calc",
+        )
+        item = replace(item, product_bar=product)
+        changed.append(
+            replace(
+                item,
+                source_proof={
+                    **item.source_proof,
+                    **warm._input_facts(item),
+                    "rollover": index == 0,
+                },
+            )
+        )
+    seed = run(tuple(changed))
+    expected = seed_replay_state()
+    inherited = baseline.checkpoint.strategy_state
+    for item in changed:
+        expected, _, _ = replay_step(identity, expected, item.product_bar)
+        inherited, _, _ = replay_step(identity, inherited, item.product_bar)
+    assert seed.checkpoint.strategy_state == expected
+    assert seed.checkpoint.strategy_state != inherited
+    assert len(seed.proof["rollovers"]) == 1
+    assert seed.proof["rollovers"][0]["next"] == ["RB2705", "next-owner", "next-calc"]

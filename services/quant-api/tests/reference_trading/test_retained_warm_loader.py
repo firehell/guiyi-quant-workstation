@@ -128,3 +128,21 @@ def test_concrete_loader_rejects_source_gaps_owner_changes_and_drift(
         loader.reader.revalidate = lambda *a, **kw: False
     with pytest.raises(RepositoryConflict):
         loader(None, baseline.identity.stream_id)
+
+
+def test_explicit_transition_cannot_claim_success_without_a_new_contract_input(
+    monkeypatch,
+):
+    loader, baseline, _, events, _ = setup(monkeypatch)
+    loader._interval_owner = lambda *args: (
+        (
+            baseline.checkpoint.physical_contract,
+            baseline.checkpoint.owner_segment_id,
+            baseline.checkpoint.calculation_segment_id,
+        ),
+        {"version": "retained_rank1_owner_transition_v1"},
+    )
+    loader.authority.expected_endpoints = lambda *args: ()
+    events.clear()
+    with pytest.raises(RepositoryConflict, match="TRANSITION_NEW_INPUT_REQUIRED"):
+        loader(None, baseline.identity.stream_id)

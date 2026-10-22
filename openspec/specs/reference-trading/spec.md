@@ -673,6 +673,79 @@ changes to previously read facts, or unavailable sources becoming available SHAL
 - **WHEN** a source fails on an initial read
 - **THEN** successful sources remain readable with explicit partial coverage and no false completeness claim.
 
+### Requirement: Normal retained observation conflict warm provenance
+
+`retained_conflict_warm_seed_v1` SHALL be a distinct source identity from
+`original_conflict_warm_seed_v1`. It MAY warm an unchanged Historical baseline with
+normal, retained, completed Live originals, without claiming a provider repair or
+fabricating repair plan/readback hashes. The existing v1 repair proof requirements
+remain unchanged. `reference_capture_retained_warm_recovery_v1` SHALL use the same
+complete four-route mismatch admission, locked fresh source revalidation, atomic
+future FLAT activation and unknown-outcome recovery conditions as final-warm recovery.
+
+The concrete read-only authority SHALL bind each original's exact completed-journal
+key, trading day, stream ID, observation ID, original envelope bytes and identity-index
+bytes. Index ID and payload must match the retained row; when the native index format
+includes content, its canonical completed content must match too. Original received,
+observed and confirmed times SHALL be preserved, with bar end no later than confirmation
+and confirmation no later than knowledge time. Duplicate, missing, changed, unconfirmed,
+wrong-contract, wrong-period or unexpected originals SHALL fail closed.
+
+A fresh MDS Session/owner authority SHALL prove the complete ordered interval from the
+baseline watermark through every warm input and no remaining endpoint before the exact
+future start. A future exclusive start does not permit future inputs: every input must
+already be confirmed at knowledge time. The original baseline query and all existing
+formula, quality, physical and checkpoint proofs remain mandatory. Normal retained input
+provenance and interval readback hashes SHALL never be labelled repair receipts. The
+same strategy kernel advances state; source facts are not republished as Canonical.
+
+The initial retained loader SHALL reject physical/owner/calculation changes and require
+an independently proved rollover path; choosing the current contract to bypass an old
+checkpoint mismatch is forbidden. Fusion SHALL bind three base seeds of the same retained
+version and complete input chain. Warm materialization creates no Capture, action, trade,
+notification or journal ACK. Maintenance writes only the newly approved independent FLAT
+revision and its existing activation/boundary facts; old immutable facts remain unchanged.
+
+#### Scenario: A normal retained night prefix warms a conflict without a fake repair
+- **GIVEN** an exact Historical seed and a complete, confirmed night prefix retained with matching native journal indexes
+- **WHEN** fresh Session, owner, baseline and repeated original readback proofs all pass
+- **THEN** the retained seed advances the existing kernel to the night frontier and remains future-start FLAT
+- **AND** no repair receipt is fabricated and no original is replayed to the normal consumer
+
+#### Scenario: A retained original or its index changes during warm verification
+- **GIVEN** a candidate retained warm interval
+- **WHEN** an original is missing, duplicated, altered or disagrees with its native index on fresh readback
+- **THEN** no new revision is activated and the failure evidence is preserved
+
+
+### Requirement: Explicit retained rank1 owner transition
+
+`retained_rank1_owner_transition_v1` MAY admit exactly one adjacent authoritative
+rank1 physical-contract transition through a separate opt-in retained warm loader.
+The ordinary retained loader SHALL continue rejecting owner changes. The proof SHALL
+bind the previous authoritative trading day, old rank1 effective end, new rank1
+start, both Session windows and owner/calculation identities. The baseline must be
+exactly the old day's final completed endpoint with no omitted old-owner tail;
+nonadjacent, changed old-contract or unproven mapping cases SHALL fail closed.
+
+The new physical contract SHALL be chosen only from that independently proved new
+rank1 segment. Complete retained originals and expected endpoints SHALL be checked
+under the new day owner, and every input must match it. The first input SHALL take
+the existing kernel's explicit rollover branch with seed_replay_state; later inputs
+continue only this new state. Old-contract indicator state and reference positions
+SHALL NOT carry into the new contract. The warm proof SHALL retain exactly one old/
+new owner transition and a final no-remaining-endpoints proof. A new FLAT revision
+means reference consumption recovery only; the new physical segment's actual WARMING
+or unavailable strategy facts SHALL remain unchanged and disclosed.
+
+#### Scenario: A complete night prefix follows an authoritative rank1 rollover
+- **GIVEN** a Historical checkpoint at the previous rank1 contract's exact final endpoint
+- **AND** authoritative adjacent-day rank1/Session evidence and complete new-contract originals
+- **WHEN** the opt-in transition loader warms the existing kernel
+- **THEN** the result equals a fresh kernel fed only the new-contract inputs
+- **AND** no old-contract indicator state, reference position, Capture or notification is carried forward
+
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL
@@ -720,47 +793,3 @@ wall time. It is interrupted evidence, never natural observation. Saved original
 require durable replay with original confirmed/raw times; missing observations
 cannot be given original first-seen times. These task-local proofs SHALL NOT
 authorize automatic failover, new Scope, notification replay or formula/return changes.
-
-### Requirement: Normal retained observation conflict warm provenance
-
-`retained_conflict_warm_seed_v1` SHALL be a distinct source identity from
-`original_conflict_warm_seed_v1`. It MAY warm an unchanged Historical baseline with
-normal, retained, completed Live originals, without claiming a provider repair or
-fabricating repair plan/readback hashes. The existing v1 repair proof requirements
-remain unchanged. `reference_capture_retained_warm_recovery_v1` SHALL use the same
-complete four-route mismatch admission, locked fresh source revalidation, atomic
-future FLAT activation and unknown-outcome recovery conditions as final-warm recovery.
-
-The concrete read-only authority SHALL bind each original's exact completed-journal
-key, trading day, stream ID, observation ID, original envelope bytes and identity-index
-bytes. Index ID and payload must match the retained row; when the native index format
-includes content, its canonical completed content must match too. Original received,
-observed and confirmed times SHALL be preserved, with bar end no later than confirmation
-and confirmation no later than knowledge time. Duplicate, missing, changed, unconfirmed,
-wrong-contract, wrong-period or unexpected originals SHALL fail closed.
-
-A fresh MDS Session/owner authority SHALL prove the complete ordered interval from the
-baseline watermark through every warm input and no remaining endpoint before the exact
-future start. A future exclusive start does not permit future inputs: every input must
-already be confirmed at knowledge time. The original baseline query and all existing
-formula, quality, physical and checkpoint proofs remain mandatory. Normal retained input
-provenance and interval readback hashes SHALL never be labelled repair receipts. The
-same strategy kernel advances state; source facts are not republished as Canonical.
-
-The initial retained loader SHALL reject physical/owner/calculation changes and require
-an independently proved rollover path; choosing the current contract to bypass an old
-checkpoint mismatch is forbidden. Fusion SHALL bind three base seeds of the same retained
-version and complete input chain. Warm materialization creates no Capture, action, trade,
-notification or journal ACK. Maintenance writes only the newly approved independent FLAT
-revision and its existing activation/boundary facts; old immutable facts remain unchanged.
-
-#### Scenario: A normal retained night prefix warms a conflict without a fake repair
-- **GIVEN** an exact Historical seed and a complete, confirmed night prefix retained with matching native journal indexes
-- **WHEN** fresh Session, owner, baseline and repeated original readback proofs all pass
-- **THEN** the retained seed advances the existing kernel to the night frontier and remains future-start FLAT
-- **AND** no repair receipt is fabricated and no original is replayed to the normal consumer
-
-#### Scenario: A retained original or its index changes during warm verification
-- **GIVEN** a candidate retained warm interval
-- **WHEN** an original is missing, duplicated, altered or disagrees with its native index on fresh readback
-- **THEN** no new revision is activated and the failure evidence is preserved
