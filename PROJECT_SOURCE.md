@@ -1,6 +1,6 @@
 # 归一量化稳定产品面
 
-更新时间：2026-09-27
+更新时间：2026-10-23
 
 归一量化是本地、单用户的国内期货研究工作站。稳定产品边界允许可信行情、Market Web、Newow 只读策略与参考交易、通用指标、HTDY/苏冰研究观察、Alert 与人工判断，以及独立 CLI 的 JM 本地 Paper 试点；当前不提供自动交易、实盘下单、Broker 账户管理、SaaS、多用户权限或 AI 自动晋升。所有图表、参考交易和通知都是研究观察，`auto_order=false`。Paper 模型订单、成交和账本不接入现有页面事实；合同见 [Paper 试点](docs/PAPER_PILOT.md)。具体代码、Release 与 Runtime 是否已经具备这些能力，仍以代码、测试和 `STATUS.md` 为准。
 
@@ -11,7 +11,7 @@
 - Market 页面为 `/market` 与 `/market/chart`；独立历史研究入口为 `/research/new-subing`。
 - Web 隐藏主连入口，仅保留真实主力及已有指定合约。旧 `series_kind=continuous` 链接在请求前迁移为真实主力，保留品种、视图与合法周期，清除旧合约及记录定位，替换地址并提示；旧显示偏好只迁移序列。不匹配当前序列的统计不展示。底层 continuous API、行情与内部研究能力保留。
 - Market 首页分为市场与消息 Tab，以独立 bulk 只读资源展示 Runtime health、active completed D1/W1 generic overview、operational completed 1m 报价与 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
-- 首页采用白色全宽卡片列表、期货板块本地筛选与三态排序菜单；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率不能解释为做多。
+- 首页采用白色全宽卡片列表、期货板块本地筛选与三态排序菜单；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。趋势/震荡摘要、日周图标、目标/吸筹与展开后的普通参考收益来自版本化持久投影，首页交互不回放策略；源更新后预计算，缺失/失败保留明确状态。增仓率不能解释为做多。
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页；原研究观察折叠入口移除。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。

@@ -1,3 +1,4 @@
+import { homeProjection } from './fixtures/home-projection.mjs'
 import { expect, test } from '@playwright/test'
 import { mockMarketDetail, installDetailFakeWebSocket } from './market-detail.helpers.mjs'
 import { lightHomeOverview, lightHomeOverviewWithUnavailablePrice } from './fixtures/market-home-light.mjs'
@@ -124,16 +125,12 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
       requests.push(url.pathname)
       return route.fulfill({ json: dailyCapabilities() })
     }
-    if (url.pathname === '/api/v1/market/newow/home-card-display-cache') return route.fulfill({ json: { schema_version: 'newow_home_display_cache_v1', stale: true, executable: false, items: [] } })
-    if (url.pathname === '/api/v1/market/newow/home-cards') {
-      const products = (url.searchParams.get('products') ?? '').split(',').filter(Boolean)
-      return route.fulfill({ json: {
-        schema_version: 'newow_home_cards_v2', requested_at: '2026-09-02T03:00:00Z',
-        items: products.map(product => ({ product, strategies: {
+    if (url.pathname === '/api/v1/market/newow/home-projection') {
+      const products = lightHomeOverview().items.map(item => item.symbol)
+      return route.fulfill({ json: homeProjection(products.map(product => ({ product, strategies: {
           trend: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } },
           oscillation: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } },
-        } })),
-      } })
+        } })), '2026-09-02T03:00:00Z') })
     }
     if (url.pathname === '/api/v1/reference-trading/newow/messages') return route.fulfill({ json: { items: [], truncated: false } })
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
@@ -434,7 +431,7 @@ test('sector counts use authority and filtering toggles locally with keyboard ro
   await precious.click()
   await expect(page.locator('.strategy-list-item')).toHaveCount(60)
   expectHomeReads(requests)
-  const cardReads = requests.all.filter(item => item.url.pathname.endsWith('/home-cards')).map(item => item.url.searchParams.get('products'))
+  const cardReads = requests.all.filter(item => item.url.pathname.endsWith('/home-projection')).map(item => item.url.pathname)
   expect(cardReads.length).toBeGreaterThan(0)
   expect(new Set(cardReads).size).toBe(cardReads.length)
   await page.getByRole('button', { name: '白银展开策略摘要' }).press('Enter')
@@ -739,23 +736,15 @@ test('messages disclose partial source coverage and expose all supported frequen
 })
 
 
-test('server historical cache displays while verified cards remain pending', async ({ page }) => {
+test('missing projections display computing without requesting strategy computation', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests)
-  await page.route('**/api/v1/market/newow/home-card-display-cache', route => route.fulfill({ json: {
-    schema_version: 'newow_home_display_cache_v1', stale: true, executable: false,
-    items: [{ product: 'ag', saved_at: '2026-10-23T07:00:00Z', card: { product: 'ag', strategies: Object.fromEntries(['trend', 'oscillation'].map(strategy => [strategy, Object.fromEntries(['1d', '1w'].map(period => [period, { status: 'warming', state: null }]))])) } }],
-  } }))
-  let release
-  const blocked = new Promise(resolve => { release = resolve })
-  await page.route('**/api/v1/market/newow/home-cards?*', async route => {
-    await blocked
-    await route.fallback()
+  await page.route('**/api/v1/market/newow/home-projection', route => {
+    const value = homeProjection(lightHomeOverview().items.map(item => ({ product: item.symbol, strategies: Object.fromEntries(['trend','oscillation'].map(strategy => [strategy, Object.fromEntries(['1d','1w'].map(period => [period, {status:'unavailable',state:null}]))])) })))
+    for (const item of value.items) { item.projection_status = 'missing'; item.computed_at = null; item.period_status = {'1d':'missing','1w':'missing'} }
+    return route.fulfill({json:value})
   })
-  try {
-    await page.goto('/market')
-    const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
-    await expect(row).toContainText('策略历史快照，正在重新验证')
-    await expect(row).not.toContainText('策略读取失败')
-  } finally { release() }
+  await page.goto('/market')
+  await expect(page.locator('.strategy-list-item').first()).toContainText('计算中')
+  expect(requests.all.some(item => /home-cards|home-card-performance|home-card-display-cache/.test(item.url.pathname))).toBe(false)
 })

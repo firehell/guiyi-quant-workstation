@@ -6,7 +6,7 @@ import os
 from dataclasses import asdict
 from datetime import UTC, date, datetime
 import re
-from typing import Literal, cast
+from typing import Literal
 from collections.abc import Callable
 
 from anyio import from_thread
@@ -87,7 +87,6 @@ from app.market_data.newow.product_service import (
     AuxiliaryComponent,
 )
 from app.market_data.newow.resource_gate import HeavyResourceGate
-from app.market_data.newow.home_display_cache import HomeDisplayCache
 from app.market_data.newow.snapshot_cache import SnapshotCache
 from app.market_data.operational_universe import (
     ActiveUniverseError,
@@ -584,138 +583,19 @@ def newow_historical_snapshot(
         raise HTTPException(status_code=status, detail=detail) from exc
 
 
-_HOME_DISPLAY_CACHE = HomeDisplayCache()
-
-
-@router.get('/home-card-display-cache')
-def newow_home_card_display_cache(request: Request):
-    """Last successful display only: no DB, resolver, token or current-fact claim."""
+@router.get('/home-projection')
+def newow_home_projection(request: Request):
+    """Read a persisted display projection. Never build on an HTTP request."""
     if request.query_params:
         raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
     if getattr(request.state, 'candidate_preview_as_of', None) is not None:
-        return {**_HOME_DISPLAY_CACHE.read(), 'items': []}
-    return _HOME_DISPLAY_CACHE.read()
-
-
-@router.get("/home-cards")
-def newow_home_cards(request: Request, products: str = Query(...), session: Session = Depends(get_db)):
-    """Bounded D1/W1 facts; a failed period never suppresses another product."""
-    if set(request.query_params) != {'products'} or len(request.query_params.getlist('products')) != 1:
-        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
-    names = products.split(',')
-    if not 1 <= len(names) <= 12 or len(set(names)) != len(names):
-        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
-    names = [_normalize_public_product(name) for name in names]
-    if len(set(names)) != len(names):
-        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
-    now = getattr(request.state, 'candidate_preview_as_of', None) or datetime.now(UTC)
-
-    def cancelled():
-        try:
-            return from_thread.run(request.is_disconnected)
-        except RuntimeError:
-            return False
-
-    def unavailable(exc, product, frequency):
-        _, detail = public_product_error(exc, context={'symbol': product, 'frequency': frequency})
-        return {'status': 'unavailable', 'state': None, 'reason_code': detail.get('code', 'NEWOW_DATA_UNAVAILABLE')}
-
-    items = []
-    for product in names:
-        strategies: dict[str, dict[str, dict[str, object]]] = {
-            strategy: {} for strategy in ('trend', 'oscillation')
-        }
-        for frequency in ('1d', '1w'):
-            if cancelled():
-                raise HTTPException(409, detail={'code': 'NEWOW_REQUEST_CANCELLED'})
-            try:
-                _enforce_product_frequency(request, product, frequency)
-                policy = _input_quality_policy(request, product, frequency)
-                home_services: list[NewowProductService] = []
-                resolver = (_build_daily_resolver if frequency == '1d' else _build_weekly_resolver)(session, cancelled, lambda: now, policy, home_services=home_services)
-                snapshot, trend_result = resolver.resolve_with_chart(product, ProductStrategy.TREND, ProductFrequency(frequency))
-                # One pinned request lifecycle; never reuse unchecked inputs
-                # between HTTP requests or different authority generations.
-                # The resolver already validated this exact prefix. Reuse its
-                # request-local service, retaining its deadline and cancellation.
-                service = home_services[-1] if home_services else _build_product_service(session, cancelled, policy, reuse_read_inputs=True)
-            except Exception as exc:
-                for strategy in strategies:
-                    strategies[strategy][frequency] = unavailable(exc, product, frequency)
-                continue
-            for strategy in strategies:
-                try:
-                    _require_strategy_frequency(request, strategy, frequency)
-                    # The resolver already produced this exact trend chart under the
-                    # current request authority. Reuse it rather than rereading it.
-                    result = trend_result if strategy == 'trend' else service.query(ProductServiceQuery(product, ProductStrategy(strategy), ProductFrequency(frequency), as_of=snapshot.as_of))
-                    summary = result.chart.value.home_summary if result.chart.value else None
-                    if summary is None:
-                        strategies[strategy][frequency] = {'status': 'warming', 'state': None, 'reason_code': 'NEWOW_CHART_WARMING'}
-                    else:
-                        strategies[strategy][frequency] = {**summary, 'display_as_of': now, 'as_of': result.meta.as_of,
-                            'freshness': snapshot.freshness, 'formula_versions': result.meta.identity.formula_versions,
-                            'input_sha256': result.meta.input_content_sha256, 'snapshot_token': result.meta.snapshot_token,
-                            'data_revision_identity': result.meta.data_revision_identity,
-                            'snapshot_context': {**cast(dict[str, object], _json_value(snapshot)), 'strategy': strategy,
-                                'schema_version': 'newow_daily_snapshot_v1' if frequency == '1d' else 'newow_weekly_snapshot_v1',
-                                'series_kind': 'actual_dominant'}}
-                except Exception as exc:
-                    strategies[strategy][frequency] = unavailable(exc, product, frequency)
-        items.append({'product': product, 'strategies': strategies})
-    payload = _json_value({'schema_version': 'newow_home_cards_v2', 'requested_at': now, 'items': items})
-    if getattr(request.state, 'candidate_preview_as_of', None) is None:
-        for item in payload['items']:
-            _HOME_DISPLAY_CACHE.put(item, payload['requested_at'])
-    # Keep snapshot_token in the validator: expiry/eviction must send a new
-    # body, otherwise a 304 could leave lazy performance with a dead owner.
-    healthy = all(period.get('status') != 'unavailable'
-                  and isinstance(period.get('snapshot_token'), str)
-                  and _PRODUCT_CACHE.fact_key_for_token(period['snapshot_token']) is not None
-                  for item in items for strategy in item['strategies'].values()
-                  for period in strategy.values())
-    return conditional_json(request, payload,
-        volatile=frozenset({'requested_at', 'display_as_of', 'read_at'}),
-        allow_not_modified=healthy)
-
-
-@router.get('/home-card-performance')
-def newow_home_card_performance(
-    request: Request, product: str = Query(...),
-    strategy: Literal['trend', 'oscillation'] = Query(...),
-    as_of: datetime = Query(...), snapshot_token: str = Query(..., min_length=1, max_length=256),
-    session: Session = Depends(get_db),
-):
-    """Lazy ordinary page statistics bound to the displayed daily snapshot."""
-    allowed = {'product', 'strategy', 'as_of', 'snapshot_token'}
-    if set(request.query_params) != allowed or any(len(request.query_params.getlist(key)) != 1 for key in allowed) or as_of.tzinfo is None:
-        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
-    product = _normalize_public_product(product)
-
-    def cancelled():
-        try:
-            return from_thread.run(request.is_disconnected)
-        except RuntimeError:
-            return False
-
+        raise HTTPException(503, detail={'code': 'HOME_PROJECTION_PREVIEW_UNAVAILABLE'})
+    from app.market_data.newow.home_projection_composition import build_home_projection
     try:
-        _enforce_product_frequency(request, product, '1d')
-        _require_strategy_frequency(request, strategy, '1d')
-        policy = _input_quality_policy(request, product, '1d')
-        service = _build_product_service(session, cancelled, policy)
-        result = service.query(ProductServiceQuery(
-            product, ProductStrategy(strategy), ProductFrequency.DAILY,
-            section=ProductSection.REFERENCE, as_of=as_of, snapshot_token=snapshot_token, history_limit=1,
-        ))
-        from app.market_data.newow.home_cards import project_home_performance
-        return JSONResponse(_json_value({
-            'schema_version': 'newow_home_performance_v1', 'product': product,
-            'strategy': strategy, 'snapshot_token': result.meta.snapshot_token,
-            'as_of': result.meta.as_of, 'performance': project_home_performance(result),
-        }))
+        payload = build_home_projection().read()
+        return conditional_json(request, payload, volatile=frozenset({'requested_at'}))
     except Exception as exc:
-        status, detail = public_product_error(exc, context={'symbol': product, 'frequency': '1d'})
-        raise HTTPException(status, detail=detail) from exc
+        raise HTTPException(503, detail={'code': 'HOME_PROJECTION_UNAVAILABLE'}) from exc
 
 
 @router.get("/daily-snapshot", response_model=NewowDailySnapshotResponse)

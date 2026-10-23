@@ -29,6 +29,7 @@ def test_home_overview_is_one_bulk_typed_response(monkeypatch) -> None:
     assert response.status_code == 200
     assert projection.calls == 1
     assert response.json() == {
+        "projection_status": "ready",
         "status": "ready",
         "target_as_of": "2025-02-11",
         "data_as_of": "2025-02-11",
@@ -191,7 +192,7 @@ def _snapshot() -> MarketHomeOverviewSnapshot:
     )
 
 
-def test_conditional_overview_freshly_checks_inputs_and_preserves_failure(monkeypatch):
+def test_conditional_overview_rechecks_projection_and_preserves_failure(monkeypatch):
     from types import SimpleNamespace
     snapshot = [_snapshot()]
     reads = []
@@ -199,9 +200,10 @@ def test_conditional_overview_freshly_checks_inputs_and_preserves_failure(monkey
         reads.append(True)
         if isinstance(snapshot[0], Exception):
             raise snapshot[0]
-        return snapshot[0]
+        return market_home_response(snapshot[0])
     projection = _FakeProjection(market_home_response(snapshot[0]))
-    projection.service = SimpleNamespace(snapshot=checked)
+    projection.read = checked
+    projection.service = SimpleNamespace(snapshot=lambda: (_ for _ in ()).throw(AssertionError('GET cannot calculate')))
     monkeypatch.setattr("app.api.market.build_market_home_projection", lambda _session: projection)
     client = TestClient(app)
     path = "/api/v1/market/research/home-overview"
@@ -210,7 +212,7 @@ def test_conditional_overview_freshly_checks_inputs_and_preserves_failure(monkey
     assert {value.strip() for value in first.headers["access-control-expose-headers"].split(",")} == {"ETag", "Server-Timing"}
     headers = {"If-None-Match": first.headers["etag"]}
     same = client.get(path, headers=headers)
-    assert same.status_code == 304 and same.content == b"" and len(reads) == 1
+    assert same.status_code == 304 and same.content == b"" and len(reads) == 2
     from dataclasses import replace
     item = replace(snapshot[0].items[0], close=Decimal("111"))
     snapshot[0] = replace(snapshot[0], items=(item,))
@@ -219,7 +221,7 @@ def test_conditional_overview_freshly_checks_inputs_and_preserves_failure(monkey
     assert corrected.headers["etag"] != first.headers["etag"]
     snapshot[0] = MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR")
     assert client.get(path, headers=headers).status_code == 409
-    assert len(reads) == 3 and projection.calls == 1
+    assert len(reads) == 4 and projection.calls == 0
 
 
 def test_directory_conditional_request_rechecks_current_owner(monkeypatch):

@@ -142,9 +142,7 @@ RETIRED_MODULE_ATTRIBUTES = {
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 ACTIVE_MARKET_ROUTE_OWNERS = {
-    ("GET", "/api/v1/market/newow/home-card-display-cache", "app.api.market_newow:newow_home_card_display_cache"),
-    ("GET", "/api/v1/market/newow/home-cards", "app.api.market_newow:newow_home_cards"),
-    ("GET", "/api/v1/market/newow/home-card-performance", "app.api.market_newow:newow_home_card_performance"),
+    ("GET", "/api/v1/market/newow/home-projection", "app.api.market_newow:newow_home_projection"),
     ("GET", "/api/v1/market/newow/experiments", "app.api.market_newow:newow_experiments"),
     (
         "WEBSOCKET",
@@ -303,7 +301,7 @@ def test_public_entrypoints_are_exact() -> None:
     main_module = importlib.import_module("app.guiyi_cli.main")
     parser = main_module.build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
-    assert set(domain_action.choices) == {"data", "runtime", "reference"}
+    assert set(domain_action.choices) == {"data", "runtime", "reference", "home"}
 
 
 def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:

@@ -1942,3 +1942,26 @@ PYTHONPATH=services/quant-api:services/quant-api/tests:packages/quant-core \
 `guiyi_alert_isolated_test`），显式设置 `GUIYI_ALERT_ISOLATED_TEST_URL` 后运行交接及集成两文件。
 测试在随机 schema 建表并仅清理自身 schema；无该变量的 PostgreSQL skip 不算验证通过。
 不能指向生产 5432，不能以此测试触发真实通知、RQData、Canonical 或 Runtime 切换。
+
+
+## 首页持久预计算投影
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_home_projection.py services/quant-api/tests/newow/test_home_projection_versions.py services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/data_foundation/test_after_market.py
+node --test apps/quant-web/tests/newowHomeProjection.test.ts apps/quant-web/tests/newowHomeList.test.ts apps/quant-web/tests/marketHomePersistence.test.ts
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-home.spec.mjs e2e/newow-home-cards.spec.mjs e2e/market-home-cache.spec.mjs
+```
+
+真实构建仅执行显式 `guiyi home build --output <开发派生文件>`，默认operational全集，可指定
+`--products a,ag`。只读现有源，写派生文件，不下载/修复。开发API使用同一
+`GUIYI_HOME_PROJECTION_PATH`，与正式默认 `.derived/newow-home.json` 隔离。
+性能分开测量首次读取、批量读取P95、浏览器生产首屏与板块切换；fixture不代替真实60品种读回。
+
+真实生产构建浏览器性能验收（先构建并在5185启动本轮生产预览）：
+
+```sh
+HOME_PROJECTION_REAL=1 PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5185 pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/home-projection-readonly.spec.mjs
+```
+
+该测试使用实际60品种、空浏览器存储及二次reload，分别记录首屏、浏览器缓存恢复、本地板块切换、
+API请求时间与JS错误；不把API耗时当作首屏。截图/JSON保存在Playwright测试结果目录。

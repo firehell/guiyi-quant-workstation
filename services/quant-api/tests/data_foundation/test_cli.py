@@ -1285,7 +1285,7 @@ def test_root_parser_exposes_only_active_domains() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
 
-    assert set(domain_action.choices) == {"data", "reference", "runtime"}
+    assert set(domain_action.choices) == {"data", "reference", "runtime", "home"}
 
 
 def test_data_cli_omits_retired_member_rank_parser_dispatch_and_factory() -> None:
@@ -1327,3 +1327,22 @@ def test_runtime_live_runs_only_the_injected_foreground_service() -> None:
         "status": "ok",
         "foreground": True,
     }
+
+
+@pytest.mark.parametrize("overview_status,expected", [("ready", "passed"), ("failed", "partial")])
+def test_home_build_writes_only_selected_projection_and_reports_overview(monkeypatch, tmp_path, overview_status, expected):
+    from app.market_data.newow import home_projection_composition
+    calls = []
+    fake = SimpleNamespace(build=lambda products: calls.append(products) or {
+        "overview_status": overview_status,
+        "items": [{"product": "a", "projection_status": "ready"}, {"product": "ag", "projection_status": "missing"}],
+    })
+    monkeypatch.setattr(home_projection_composition, "build_home_projection", lambda **kwargs: calls.append(kwargs) or fake)
+    output = tmp_path / "dev.json"
+    stdout, stderr = io.StringIO(), io.StringIO()
+    code = main(["home", "build", "--products", "a", "--output", str(output)], stdout=stdout, stderr=stderr)
+    result = json.loads(stdout.getvalue())
+    assert result["status"] == expected and result["readonly"] is False
+    assert result["overview_status"] == overview_status and result["selected_count"] == 1
+    assert calls == [{"output_path": str(output)}, ["a"]]
+    assert code == (0 if expected == "passed" else 1)

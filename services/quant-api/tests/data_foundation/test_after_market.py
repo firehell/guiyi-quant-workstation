@@ -2392,3 +2392,20 @@ def test_unknown_commit_remains_primary_when_manager_evidence_is_invalid(tmp_pat
     assert status["last_run"]["historical_publications"] == [_capacity_publication()]
     assert "PUBLICATION_EVIDENCE_INVALID" in caplog.text
     assert live.cleaned == []
+
+
+@pytest.mark.parametrize('fail_projection', [False, True])
+def test_home_strategy_projection_runs_only_after_cleanup_and_cannot_retry_maintenance(tmp_path, fail_projection):
+    updater, manager, _, sleeps, notices, live_store = _updater(tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[_result('passed')])
+    calls = []
+    def project():
+        assert live_store.cleaned == [date(2026, 8, 10)]
+        assert _status(updater.status_path)['last_run']['status'] == 'passed'
+        calls.append('projection')
+        if fail_projection:
+            raise RuntimeError('private error')
+    updater.home_strategy_projection_refresh = project
+    assert updater.run().status == 'passed'
+    assert calls == ['projection']
+    assert len(manager.calls) == 1
+    assert sleeps == [] and notices == []

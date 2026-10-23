@@ -26,7 +26,7 @@ dominant summary MUST 只读取一次。该 service MUST NOT 建立 provider、R
 D1 predecessor 使 target-day 变动率不可计算的情况。
 
 `GET /api/v1/market/research/home-overview` SHALL 先读取 exact-identity derived projection；projection
-缺失、损坏或 identity 不匹配时，MUST 回退上述 authoritative compute。HTTP endpoint 本身 MUST NOT
+缺失、损坏或 identity 不匹配时，MUST 返回lastgood及独立projection_status；完全无结果时明确不可用。HTTP endpoint 本身 MUST NOT
 创建、更新、失效或修复 projection。
 
 #### Scenario: A valid projection exists
@@ -38,7 +38,7 @@ D1 predecessor 使 target-day 变动率不可计算的情况。
 #### Scenario: Projection is absent or invalid
 
 - **WHEN** projection 不存在、损坏、超限、来自 symlink、schema 不兼容或 identity 不匹配
-- **THEN** endpoint 忽略 projection 并调用现有 authoritative compute；该 fallback 不执行任何写入
+- **THEN** endpoint 返回lastgood及独立过期/失败状态；完全无结果时明确不可用，不调用 authoritative compute，不执行任何写入
 
 #### Scenario: A complete active universe is computed
 
@@ -99,70 +99,16 @@ without rewriting production data or projection files from HTTP reads.
 
 ### Requirement: Market Home derived projection is removable and never authoritative
 
-Projection SHALL 固定存放在 active Canonical root 下：
+首页概览和策略摘要 SHALL 使用同一 `newow_home_projection_v1` 持久资产，其文件安全、
+构建与版本校验合同见下文。旧 `.derived/market-home-overview.json` 不再作为首页active读入口；
+旧数据维护路径的legacy失效清理不改变新资产的lastgood语义。删除派生文件后，只能由显式构建或
+后续部署的盘后成功节点恢复，不得由HTTP请求重算。
 
-```text
-<canonical_root>/.derived/market-home-overview.json
-```
+#### Scenario: Source changes without rebuilding
 
-该文件 MUST NOT 被视为 Canonical Bar、Catalog row、MainContractMap 或策略事实。文件删除后，
-系统 MUST 能完全依赖 authoritative compute 返回同一 HTTP contract。
-
-Projection envelope MUST 使用 schema version 3，并绑定统计口径版本；schema 2 的旧统计缓存 MUST 被拒绝并重算。
-
-- timezone-aware `generated_at`；
-- `target_as_of`；
-- 对 active product 顺序与 taxonomy `name/sector` 的 deterministic SHA-256 digest；
-- strict `MarketHomeOverviewResponse` payload。
-
-`payload.target_as_of` 与 `payload.data_as_of` MUST 等于 envelope target day。文件 MUST 为普通文件，
-不得通过 symlink 读取或写出 Canonical root 的 `.derived` 边界；文件大小 MUST 大于 0 且不超过 2 MiB。
-v1 或其他 schema version 的 envelope MUST 作为 projection miss；`MarketHomeProjection.read()` MUST
-只回退 authoritative compute，且不得因该 fallback 写入或升级旧文件。
-
-Natural after-market refresh MUST default closed. The factory MAY compose a refresh callback only
-when the owner-created local activation marker contains the exact enabled value; no API request,
-test, release identity or Runtime promotion implicitly enables it. When enabled, refresh MUST hold
-the same maintenance lease as authoritative apply across compute, final identity check and publish.
-
-#### Scenario: Projection is atomically refreshed
-
-- **WHEN** after-market core maintenance 已完成 Canonical publication、`canonical_updated`、rank1/Live
-  reconciliation 与 cleanup，activation marker 已启用且 maintenance lease 可得
-- **THEN** projection writer uses a trusted same-directory descriptor, writes and fsyncs the temporary
-  file, atomically replaces the current file, and fsyncs the directory before releasing the lease
-
-#### Scenario: Projection refresh is not enabled
-
-- **WHEN** the activation marker is absent, malformed, or disabled
-- **THEN** after-market MUST NOT compose or call a projection refresh callback and MUST NOT create a
-  production projection
-
-#### Scenario: Projection refresh fails after core maintenance
-
-- **WHEN** projection compute、serialization 或 atomic publish 失败
-- **THEN** after-market 仅记录安全 warning，不 retry、不发送 projection-specific notification，且已成功的
-  core maintenance 结论保持成功；因为旧 projection 已在 mutation 前失效，overview API 自动回退现场 compute
-
-### Requirement: Authoritative apply paths invalidate projection before mutation
-
-任何正式 `guiyi data update --apply`、`guiyi data refresh --apply` 与自然 after-market apply MUST 在
-`HistoricalDataManager` 已取得其 authoritative apply maintenance lease 后、任何 metadata/Canonical mutation 前失效
-shared projection。Dry-run、audit 与 provider readiness 未通过的 after-market MUST NOT 为此触碰 projection。
-
-Projection invalidation failure MUST 在任何 manager apply mutation 前 fail closed，禁止让 metadata/Canonical 已变化但旧
-projection 仍可被读取。人工 apply 成功后无需同步重建 projection；在下一次自然 after-market refresh 之前，
-overview API 可以使用 authoritative compute fallback。
-
-#### Scenario: Manual refresh rewrites same trading day
-
-- **WHEN** 用户授权 `data refresh --apply` 重写了与旧 projection 相同的 target day
-- **THEN** 旧 projection 已在 manager action 前删除，因此日期未变化也不能误命中旧结果
-
-#### Scenario: Apply invalidation cannot be completed
-
-- **WHEN** projection 文件或 `.derived` 边界无法安全失效
-- **THEN** manager apply MUST NOT 开始任何真实行情/metadata mutation
+- **WHEN** 源数据或配置修订后尚未完成新的构建
+- **THEN** 策略摘要标记stale并保留旧值；概览接口返回lastgood及projection_status，冷启动浏览器亦可展示历史快照
+- **AND** GET不得读取历史Parquet或执行策略/概览计算
 
 ### Requirement: Overview preserves generic market authority and transparent degradation
 
@@ -279,53 +225,60 @@ overview authority，卡片仅为真实参与行情品种生成；目录不得�
 - **AND** 所有价格绑定同物理合约、owner、计算段及输入身份，参考成本仅来自有效BUILD；预热或缺事实不补造状态、价格或成本
 - **AND** 策略事实保留page_parity=true、executable=false，不代表成交、真实仓位或因果收益；报价截止与策略截止独立显示
 
-#### Scenario: A user sorts or filters the available futures locally
+#### Scenario: A user sorts, filters, scrolls or expands the homepage
 
-- **WHEN** 用户点击默认、价格、涨跌幅、成交量或持仓量排序按钮或板块筛选
-- **THEN** 保留既有本地排序、缺值末尾和稳定symbol规则；按钮支持键盘操作，刷新及返回恢复有效偏好
-- **AND** 策略读取集合仅来自当前板块筛选后的行，并保留页面排序顺序；板块、排序或authority变化取消旧generation，旧响应不得覆盖新集合；趋势/震荡切换复用同一已接受双策略快照，不重新读取
+- **WHEN** 用户切换板块、排序、滚动或展开/收起卡片
+- **THEN** 本地展示同一份全operational品种的双策略日周投影，不新增策略计算请求
+- **AND** 日线普通页面收益已包含在投影中；没有按品种加载队列、视口准入或展开收益请求
+- **AND** 刷新与返回保留偏好、已展开卡片、截止时间，晚到响应不能覆盖新代次
 
-#### Scenario: A user scrolls to additional strategy rows
+### Requirement: Home strategy facts are built after source publication and read as one projection
 
-- **WHEN** 首次进入首页或滚动到新的品种行
-- **THEN** 初始仅提交前8行，后续通过视口观察增量入队；离屏未读取的行标记待查看，不伪装为已确认或正在读取
-- **AND** 同一authority内增量入队不取消已开始请求、不重复已入队品种；新可见行取得下一空闲slot，保持至多两并发
-- **AND** 没有视口观察能力时仅提交前8行，由用户显式读取更多；不得自动启动全60品种重算
-- **AND** 运行健康独立读取，不阻塞报价显示、行情刷新完成或后续策略刷新；旧策略保留仍明确标注其事实截止和刷新失败
+`GET /api/v1/market/newow/home-projection` SHALL 返回 `newow_home_projection_v1`，覆盖服务端
+operational集合，包含趋势/震荡D1/W1摘要、控盘/提示、目标/吸筹及普通日线页面参考收益。
+响应保留生成时间、逐品种computed_at、逐周期源版本、原始as_of/bar_end/输入/公式身份，
+以及 `ready/updating/stale/failed/missing` 投影状态，标记page_parity=true、executable=false。
+同一资产一并保存原有generic overview，旧overview HTTP协议只读该资产，新增独立projection_status区分传输成功与源有效性；概览失败保留旧值并标记failed，不阻断其他品种构建。
+GET不接受客户端品种/周期范围，不读取Parquet、不回放策略、不调用构建，不因缺失触发下载或修复。
+支持ETag；ready只表示持久投影完整且版本与Catalog匹配，不替代Runtime或底层存储健康验收。
 
-#### Scenario: One strategy request fails during refresh
+投影 SHALL 存于共享Canonical根旁的 `.derived/newow-home.json`；显式开发路径通过
+`GUIYI_HOME_PROJECTION_PATH` 隔离。最多60品种/2MiB，无PostgreSQL迁移或Redis权威。
+严格校验文件类型、大小、schema与内容hash，拒绝符号链接；文件锁排除并发构建，临时文件+fsync+
+原子替换发布。进程重启直接恢复，崩溃遗留building只有持锁时才表示仍运行，旧结果不得改称最新。
 
-- **WHEN** 卡片或某周期读取失败
-- **THEN** 周期独立失败，不隐藏其他品种；刷新失败保留已接受策略快照并明确标注，首次失败不造数
-- **AND** loader至多两并发、可取消，旧generation响应不得覆盖新快照；不修改策略参数或行情事实
+版本 SHALL 包含品种/合约/映射、Calendar/Session、Dataset/Partition及质量元数据、coverage起点、
+公式/profile/输入质量/展示和参考模型版本、目标日。配置身份包含universe六文件（含active顺序、taxonomy和history floor）及概览metric policy。Catalog使用全部相关行的有序id/xmin/ctid指纹，
+不使用max时间或行数推断未修改；仅当PostgreSQL完整MVCC snapshot可见性与配置均相同、时钟未回退且尚未跨权威Session收盘或午夜边界时复用指纹。
+指纹只在同一数据库连续生命周期内使用；数据库恢复/重建需清除并重建派生投影。
+构建时仍经唯一行情入口校验完整物理输入，指纹不成为行情或Fill权威。
 
-#### Scenario: A full desktop or narrow viewport displays fixture participants
+`guiyi home build [--products a,ag] [--output PATH]` SHALL 显式初始化/恢复投影；仅写派生数据，
+不下载或修复源数据。每个变化的周期使用原resolver/策略/参考计算，未变周期复用；周线只用已完成周。
+每个品种发布前后复核所有源身份，源变化或任一周期失败不得把旧/新周期拼成已确认综合结果；
+保留该品种上一完整代次并独立标明失败，其他品种继续。
+派生结果不得保留snapshot token/context；详情仍独立校验，可携带原有非授权home_context用于差异提示。
 
-- **WHEN** 使用受控60品种fixture验收桌面及390px布局
-- **THEN** 全部卡片纵向可达且无横向溢出；展开、收起、独立周期切换与数据失败均可访问
-- **AND** 参与/总数、缺失和过期状态仍由各自authority提供；fixture不代表生产或原站逐像素验收
+盘后行情发布、核对和清理成功且成功状态已持久化后 SHALL 尝试刷新首页投影；派生失败或中断不改写
+行情维护成功，不触发下载重试、通知、Scope或交易。构建取消预算每周期最多600秒；不新增常驻任务。
 
-### Requirement: Home summaries and lazy reference performance have separate read contracts
+前端 SHALL 一次读取全部摘要，本地缓存先显示并标为历史待验证，当前结果或HTTP错误独立覆盖/标记；
+缺失显示计算中，更新失败保留旧结果。仅在非ready且页面可见/市场激活时每10秒前台轮询，最多30次；
+隐藏、离开或切换消息时停止轮询。报价沿用独立completed 1m链，不触发策略或收益计算。
+旧home-cards/home-card-performance/home-card-display-cache及其临时缓存/按品种队列 SHALL 退出active入口。
+candidate preview不得读取正式持久投影，也不得通过旧入口回退。
 
-`/api/v1/market/newow/home-cards` SHALL 使用 `newow_home_cards_v2`，只读取日周策略摘要、参考价格、控盘、提示和快照上下文，不计算历史参考收益。同一请求内同权威输入的行情与策略无关指标可共享，但跨请求仍验证权威身份、质量与完整预热。快照解析与摘要查询复用同一请求内已验证的service及其取消/截止条件；Calendar/Session批量验证结果保留于该请求，不逐日重查，不跨请求或事务缓存行情权威。
+#### Scenario: A source correction invalidates a projection
 
-`/api/v1/market/newow/home-card-performance` SHALL 为只读接口，要求品种、趋势或震荡策略、带时区截止时间及对应快照 token；返回 `newow_home_performance_v1` 的精简日线页面参考收益、交易数、统计区间和来源身份，不返回曲线或交易明细。快照冲突 MUST 显式拒绝，不能拼接当前摘要和旧收益。
+- **WHEN** 相同行数的数据修订、质量变化、换主力、Session或公式改变
+- **THEN** 旧投影显式stale，源版本变化的周期由显式构建或盘后节点重建
+- **AND** GET、刷新、板块和展开不得调用策略回放，也不得因文件缺失同步重建
 
-前端 SHALL 在品种展开时立即显示摘要，再独立补载趋势和震荡收益；未展开不请求收益，重复展开或进行中请求去重，失败不阻塞其他卡片。详情仍按分区读取完整图表、参考交易、解释与辅助指标，摘要不可作为图表缓存；可复用已验证的对应日周快照上下文。
+#### Scenario: A rebuild fails or a prior process was interrupted
 
-资源存储 SHALL 仅限当前浏览器会话，最多120项、32 MiB、5分钟有效期，按最久未使用淘汰，命中不延长有效期。身份 MUST 包含品种、周期、物理合约、策略/公式版本、数据修订、快照 token、窗口及 schema。离开页面只解除订阅，不取消其他订阅共享的读取；主动刷新、参与集合或权威身份变化须失效对应资源并隔离代次。收益快照冲突至多触发一次该品种摘要恢复，不重取全量集合。
-
-策略状态、页面参考收益与未来账户订单/成交/持仓/净收益 MUST 保持独立身份。页面结果继续标记 `page_parity=true`、`executable=false`；分钟报价不触发日周重算，页面读取不得触发订单或重建账户持仓。未来账户投影由 Ledger 与账户事件驱动，本轮不新增账户接口。
-
-#### Scenario: A user expands and revisits a strategy summary
-
-- **WHEN** 用户展开、收起并再次展开同一快照，或从详情返回首页
-- **THEN** 未过期结果与进行中请求复用；摘要立即显示，收益加载/失败独立展示；详情图表仍须有自己的完整响应
-
-#### Scenario: A refreshed authority rejects an old performance owner
-
-- **WHEN** 主动刷新、权威身份变化或收益接口拒绝旧 token
-- **THEN** 新旧代次隔离，失败仅保留并标记旧快照，旧请求不能覆盖新状态；token 冲突只恢复受影响品种，恢复失败不循环重试
+- **WHEN** 重建失败、超时、并发冲突或未完成进程退出
+- **THEN** 保留最后成功事实及原始截止；失败不显示ready，其他品种可独立完成
+- **AND** 损坏/缺失文件不伪造事实；锁释放后的building标为失败，允许显式幂等恢复
 
 ### Requirement: Home quotes use a separate completed minute authority
 

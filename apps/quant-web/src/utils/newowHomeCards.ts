@@ -45,10 +45,7 @@ export interface HomePeriodFact {
 }
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
 export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[]; restored?: boolean }
-export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string }
-
-/** Fresh session aliases include the complete accepted overview authority. */
-export function homeCardSessionKey(products: readonly string[], authority: string) { return `home:${products.join(',')}:${authority}` }
+export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string; projectionStatus?: import('./newowHomeProjection.ts').ProjectionStatus }
 
 export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
 export const homeStateIcons = { BUILD: '▲', HOLD: '✓', CLEAR: '↘', FLAT: '○' } as const
@@ -118,6 +115,11 @@ export function homeCompositeDisplay(day?: HomePeriodFact, week?: HomePeriodFact
 }
 
 export function homeDeliveryNotice(delivery?: CardDelivery) {
+  if (delivery?.projectionStatus === 'missing') return delivery.card ? '摘要待重建，保留历史快照' : '计算中… 尚无已发布摘要'
+  if (delivery?.projectionStatus === 'updating') return delivery.card ? '摘要更新中，保留上次结果' : '计算中…'
+  if (delivery?.projectionStatus === 'failed') return delivery.card ? '摘要更新失败，保留上次结果' : '摘要计算失败'
+  if (delivery?.projectionStatus === 'stale' && !delivery.loading) return '历史策略摘要，等待数据更新'
+
   if (delivery?.stale) return delivery.loading ? delivery.savedAt ? '策略历史快照，正在重新验证' : '策略刷新中，保留上次快照' : delivery.failed ? '策略刷新失败，保留上次快照' : '策略历史快照，等待重新验证'
   if (delivery?.failed) return '策略读取失败，可刷新重试'
   return delivery?.loading || !delivery ? '策略读取中' : null
@@ -149,106 +151,6 @@ export function normalizeHomeCards(value: unknown, products: readonly string[]):
 export function homeCardsReloadIdentity(overview: { target_as_of: string; items: readonly { symbol: string }[] } | null | undefined) {
   return overview ? JSON.stringify([overview.target_as_of, [...overview.items].sort((a, b) => a.symbol.localeCompare(b.symbol))]) : ''
 }
-
-/** Two workers; late/cancelled generations cannot replace a newer snapshot. */
-export function createHomeCardLoader(fetch: (products: string[], signal: AbortSignal) => Promise<HomeCardsResponse>, publish: (items: Record<string, CardDelivery>) => void, cached?: (product: string) => HomeCardsResponse | undefined) {
-  let generation = 0
-  let controller: AbortController | null = null
-  let items: Record<string, CardDelivery> = {}
-  const revisions = new Map<string, number>()
-  const displaySnapshots = new Map<string, HomeCardsResponse>()
-  type Queue = { generation: number; signal: AbortSignal; products: string[]; workers: Set<Promise<void>> }
-  let queue: Queue | null = null
-  function addProducts(products: readonly string[]) {
-    if (!queue) return
-    for (const product of products) {
-      if (items[product]) continue
-      const snapshot = cached?.(product) ?? displaySnapshots.get(product), card = snapshot?.items.find(item => item.product === product)
-      const validated = card && !snapshot?.restored
-      items[product] = card ? { card, loading: !validated, stale: !validated, failed: false, savedAt: snapshot?.requested_at } : { card: null, loading: true, stale: false, failed: false }
-      if (!card || !validated) queue.products.push(product)
-    }
-    publish({ ...items })
-  }
-  function startWorkers(owner: Queue) {
-    while (owner.products.length && owner.workers.size < 2) {
-      const worker = (async () => {
-        while (owner.products.length && owner.generation === generation && !owner.signal.aborted) {
-          const product = owner.products.shift()!
-          const revision = (revisions.get(product) ?? 0) + 1
-          revisions.set(product, revision)
-          try {
-            const response = normalizeHomeCards(await fetch([product], owner.signal), [product])
-            if (owner.generation !== generation || owner.signal.aborted) return
-            if (revisions.get(product) !== revision) continue
-            items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
-          } catch {
-            if (owner.generation !== generation || owner.signal.aborted) return
-            if (revisions.get(product) !== revision) continue
-            items[product] = { card: items[product]?.card ?? null, loading: false, stale: Boolean(items[product]?.card), failed: true }
-          }
-          publish({ ...items })
-        }
-      })().finally(() => owner.workers.delete(worker))
-      owner.workers.add(worker)
-    }
-  }
-  return {
-    async load(products: readonly string[]) {
-      const current = ++generation
-      controller?.abort()
-      controller = new AbortController()
-      const previous = items
-      items = {}
-      queue = { generation: current, signal: controller.signal, products: [], workers: new Set() }
-      addProducts(products)
-      for (const product of products) {
-        if (items[product]?.loading && previous[product]?.card) items[product] = { ...items[product]!, card: previous[product]!.card, stale: true }
-      }
-      publish({ ...items })
-      startWorkers(queue)
-      await Promise.all([...queue.workers])
-    },
-    admit(products: readonly string[]) {
-      if (!queue || queue.signal.aborted) return
-      const newlyAdmitted = products.filter(product => !items[product])
-      addProducts(products)
-      // A newly visible row takes the next free slot; active reads finish.
-      queue.products = [...newlyAdmitted.filter(product => items[product]?.loading), ...queue.products.filter(product => !newlyAdmitted.includes(product))]
-      startWorkers(queue)
-    },
-    async reloadProduct(product: string) {
-      const current = generation, signal = controller?.signal
-      if (!signal || signal.aborted || !items[product]) return
-      const revision = (revisions.get(product) ?? 0) + 1
-      revisions.set(product, revision)
-      items[product] = { card: items[product]!.card, loading: true, stale: Boolean(items[product]!.card), failed: false }
-      publish({ ...items })
-      try {
-        const response = normalizeHomeCards(await fetch([product], signal), [product])
-        if (current !== generation || signal.aborted || revisions.get(product) !== revision) return
-        items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
-      } catch {
-        if (current !== generation || signal.aborted || revisions.get(product) !== revision) return
-        items[product] = { card: items[product]!.card, loading: false, stale: Boolean(items[product]!.card), failed: true }
-      }
-      publish({ ...items })
-    },
-    restoreDisplay(product: string, response: HomeCardsResponse) {
-      // A late display-cache response must never replace a current network result.
-      if (!response.restored) return
-      const normalized = { ...normalizeHomeCards(response, [product]), restored: true }
-      displaySnapshots.delete(product)
-      displaySnapshots.set(product, normalized)
-      while (displaySnapshots.size > 60) displaySnapshots.delete(displaySnapshots.keys().next().value!)
-      if (!items[product]?.loading || items[product]?.card) return
-      items[product] = { ...items[product]!, card: normalized.items[0]!, stale: true, savedAt: response.requested_at }
-      publish({ ...items })
-    },
-    dispose() { ++generation; controller?.abort(); displaySnapshots.clear() },
-  }
-}
-
 
 /** Presentation only: space uses the confirmed daily anchor, never live ticks. */
 export function homeCardSpace(day?: HomePeriodFact) {

@@ -335,7 +335,7 @@ def test_projection_refresh_activation_marker_rejects_symlink_parent(
     assert after_market._market_home_projection_refresh_enabled() is False
 
 
-def test_after_market_factory_only_composes_refresh_when_projection_is_enabled(
+def test_after_market_factory_uses_new_persistent_projection_not_legacy_marker(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -357,13 +357,15 @@ def test_after_market_factory_only_composes_refresh_when_projection_is_enabled(
     )
     assert disabled.market_home_projection_invalidate is not None
     assert disabled.market_home_projection_refresh is None
+    assert disabled.home_strategy_projection_refresh is not None
 
     marker.write_text("enabled\n", encoding="utf-8")
     enabled = after_market.build_after_market_updater(
         manager,
         failure_notification=False,
     )
-    assert enabled.market_home_projection_refresh is not None
+    assert enabled.market_home_projection_refresh is None
+    assert enabled.home_strategy_projection_refresh is not None
 
 
 def test_projection_refresh_requires_maintenance_lease(tmp_path) -> None:

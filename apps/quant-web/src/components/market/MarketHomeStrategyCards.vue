@@ -3,10 +3,11 @@ import { homeContext, type NewowHomeContext } from '@/utils/newowHomeContext'
 import NewowPriceSources from './detail/newow/NewowPriceSources.vue'
 import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { getHomeDisplayCache, configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards, invalidateHomeCard } from '@/api/newowHomeCards'
-import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
-import { createHomeCardViewport } from '@/utils/newowHomeViewport'
+import { onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { getNewowHomeProjection } from '@/api/newowHomeCards'
+import { homeSnapshotCache } from '@/api/homeSnapshotCache'
+import { normalizeHomeCards, type HomeCard } from '@/utils/newowHomeCards'
+import { homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import { marketHomeQualityNotice } from '@/utils/marketHomePresentation'
@@ -15,120 +16,73 @@ import type { MarketHomeLiveDisplayRow } from '@/utils/marketHomeLiveView'
 import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
 
 type Row = MarketHomeLiveDisplayRow<MarketHomeRow>
-const props = defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection }>()
+const props = defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection; active?: boolean }>()
 const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod, focusBarEnd?: string, context?: NewowHomeContext]; sort: [sort: MarketHomeSort] }>()
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
-const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value }, peekNewowHomeCards)
-const admittedProducts = shallowRef(new Set<string>())
-let loaderStarted = false
-const viewport = createHomeCardViewport((products) => {
-  admittedProducts.value = new Set(products)
-  if (!loaderStarted) { loaderStarted = true; void loader.load(products) }
-  else loader.admit(products)
-})
-function observeRow(symbol: string, value: unknown) { viewport.observe(symbol, value as Element | null) }
-
-const performanceDeliveries = shallowRef<Record<string, { owner: string; loading: boolean; failed: boolean; value?: HomePeriodFact['page_performance'] }>>({})
-const previousPerformanceDeliveries = shallowRef<typeof performanceDeliveries.value>({})
-const recoveredProducts = new Set<string>()
-const performanceController = new AbortController()
-const displayController = new AbortController()
-void getHomeDisplayCache(displayController.signal).then(values => {
-  for (const { product, response } of values) loader.restoreDisplay(product, response)
-}).catch(() => { /* Optional historical display cache never blocks current reads. */ })
-
-function performanceOwner(fact?: HomePeriodFact) { return JSON.stringify([fact?.as_of, fact?.snapshot_token, fact?.physical_contract, fact?.input_sha256, fact?.formula_versions, fact?.data_revision_identity]) }
-function ensurePerformance(symbol: string) {
-  const delivery = deliveries.value[symbol]
-  if (!delivery?.card || delivery.loading || delivery.stale) return
-  for (const choice of ['trend', 'oscillation'] as const) {
-    const day = delivery.card.strategies[choice]['1d'], key = `${symbol}:${choice}`, owner = performanceOwner(day)
-    if (day.status !== 'ready' || !day.snapshot_token || performanceDeliveries.value[key]?.owner === owner) continue
-    const entry = { owner, loading: true, failed: false }
-    performanceDeliveries.value = { ...performanceDeliveries.value, [key]: entry }
-    void getNewowHomePerformance(symbol, choice, day, performanceController.signal).then(value => {
-      if (performanceController.signal.aborted || performanceDeliveries.value[key] !== entry) return
-      performanceDeliveries.value = { ...performanceDeliveries.value, [key]: { owner, value, loading: false, failed: false } }
-    }).catch(error => {
-      if (performanceController.signal.aborted || performanceDeliveries.value[key] !== entry) return
-      performanceDeliveries.value = { ...performanceDeliveries.value, [key]: { owner, loading: false, failed: true } }
-      if (error?.code === 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' && !recoveredProducts.has(symbol)) {
-        recoveredProducts.add(symbol)
-        // Reacquire the entire product owner, never attach a new performance
-        // generation to old state/price facts. At most one recovery per refresh.
-        for (const choice of ['trend', 'oscillation'] as const) delete performanceDeliveries.value[`${symbol}:${choice}`]
-        void loader.reloadProduct(symbol)
-      }
-    })
+let generation = 0
+let controller: AbortController | null = null
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+let pollCount = 0
+function clearPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
+async function readProjection(resetPoll = true) {
+  const owner = ++generation
+  controller?.abort(); controller = new AbortController()
+  const signal = controller.signal
+  clearPoll()
+  if (resetPoll) pollCount = 0
+  for (const symbol of props.products) {
+    if (!deliveries.value[symbol]) {
+      const cached = homeSnapshotCache.peek<HomeCard>(`card:${symbol}`)
+      if (cached) try {
+        const response = normalizeHomeCards({ schema_version: 'newow_home_cards_v2', requested_at: new Date(cached.savedAt).toISOString(), items: [cached.value] }, [symbol])
+        deliveries.value[symbol] = { card: response.items[0]!, stale: true, loading: true, failed: false, savedAt: response.requested_at }
+      } catch { void homeSnapshotCache.discard(`card:${symbol}`) }
+    }
+  }
+  deliveries.value = Object.fromEntries(Object.entries(deliveries.value).map(([symbol, entry]) => [symbol, { ...entry, loading: true, stale: Boolean(entry.card) }]))
+  try {
+    const response = await getNewowHomeProjection(signal)
+    if (signal.aborted || owner !== generation) return
+    const next: Record<string, CardDelivery> = {}
+    for (const item of response.items) {
+      const hasSnapshot = item.computed_at !== null
+      const previous = deliveries.value[item.product]
+      next[item.product] = { card: hasSnapshot ? item : previous?.card ?? null, loading: false,
+        stale: item.projection_status !== 'ready', failed: item.projection_status === 'failed',
+        savedAt: item.computed_at ?? previous?.savedAt, projectionStatus: item.projection_status }
+      if (hasSnapshot) void homeSnapshotCache.put(`card:${item.product}`, item)
+    }
+    deliveries.value = next
+    if (response.items.some(item => item.projection_status !== 'ready') && pollCount++ < 30 && props.active !== false && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+      pollTimer = setTimeout(() => { void readProjection(false) }, 10_000)
+    }
+  } catch {
+    if (signal.aborted || owner !== generation) return
+    deliveries.value = Object.fromEntries(Object.entries(deliveries.value).map(([symbol, entry]) => [symbol, { ...entry, loading: false, stale: Boolean(entry.card), failed: true }]))
   }
 }
 const strategy = ref<HomeStrategy>('trend')
 const expanded = ref(new Set<string>())
-function toggleSummary(symbol: string) { const next = new Set(expanded.value); if (next.has(symbol)) next.delete(symbol); else next.add(symbol); expanded.value = next; if (next.has(symbol)) ensurePerformance(symbol) }
+function toggleSummary(symbol: string) { const next = new Set(expanded.value); if (next.has(symbol)) next.delete(symbol); else next.add(symbol); expanded.value = next }
 const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
 const periods = ['1d', '1w'] as const
 const sortOptions = [{ code: 'default', label: '默认' }, { code: 'close', label: '价格' }, { code: 'change', label: '涨跌幅' }, { code: 'volume', label: '成交量' }, { code: 'oi', label: '持仓量' }] as const
-const productKey = computed(() => props.products.join(','))
-function changedAuthorityProducts(before: string, after: string): string[] {
-  try {
-    const [oldDay, oldItems] = JSON.parse(before), [day, items] = JSON.parse(after)
-    if (oldDay !== day) return [...props.products]
-    const old = new Map<string, string>(oldItems.map((item: { symbol: string }) => [item.symbol, JSON.stringify(item)]))
-    return items.filter((item: { symbol: string }) => old.get(item.symbol) !== JSON.stringify(item)).map((item: { symbol: string }) => item.symbol)
-  } catch { return [...props.products] }
-}
-function reconcile(products: readonly string[] = viewport.visibleProducts(), force = false) {
-  for (const product of products) {
-    if (!force && deliveries.value[product]?.loading) continue
-    for (const choice of ['trend', 'oscillation'] as const) {
-      const key = `${product}:${choice}`
-      previousPerformanceDeliveries.value[key] = performanceDeliveries.value[key]!
-      delete performanceDeliveries.value[key]
-    }
-    invalidateHomeCard(product); void loader.reloadProduct(product)
-  }
-}
-watch([productKey, () => props.authority, () => props.refreshSequence], (_value, previous) => {
-  if (!props.authority) return
-  const forced = previous?.length === 3 && previous[2] !== props.refreshSequence
-  configureHomeCardAuthority(props.authority, false)
-  if (!previous?.[1]) { viewport.setProducts([...props.products]); return }
-  if (previous[0] !== productKey.value) viewport.setProducts([...props.products])
-  const changed = forced ? [...admittedProducts.value] : previous[1] !== props.authority ? changedAuthorityProducts(previous[1] as string, props.authority).filter(product => admittedProducts.value.has(product)) : []
-  if (previous[1] !== props.authority) {
-    recoveredProducts.clear()
-    performanceDeliveries.value = {}
-    previousPerformanceDeliveries.value = {}
-    void loader.load([...admittedProducts.value])
-  } else if (changed.length) { recoveredProducts.clear(); reconcile(changed, true) }
-}, { immediate: true })
-let reconcileTimer: ReturnType<typeof setInterval> | null = null
+watch([() => props.authority, () => props.refreshSequence], () => { if (props.authority) void readProjection() }, { immediate: true })
+watch(() => props.active, (active, previous) => { if (active === false) clearPoll(); else if (previous === false) void readProjection() })
+let wasHidden = false
 function visibilityChanged() {
-  if (reconcileTimer) { clearInterval(reconcileTimer); reconcileTimer = null }
-  if (document.visibilityState === 'visible') {
-    reconcile()
-    reconcileTimer = setInterval(() => { reconcile() }, 5 * 60_000)
-  }
+  if (document.visibilityState !== 'visible') { wasHidden = true; clearPoll() }
+  else if (wasHidden && props.active !== false) { wasHidden = false; void readProjection() }
 }
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', visibilityChanged)
-  if (document.visibilityState === 'visible') reconcileTimer = setInterval(() => { reconcile() }, 5 * 60_000)
-}
-watch(deliveries, () => { for (const symbol of expanded.value) ensurePerformance(symbol) })
-onBeforeUnmount(() => { if (reconcileTimer) clearInterval(reconcileTimer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged); viewport.dispose(); loader.dispose(); performanceController.abort(); displayController.abort() })
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibilityChanged)
+onBeforeUnmount(() => { ++generation; controller?.abort(); clearPoll(); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged) })
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
-function periodDisplay(symbol: string, period: HomePeriod) { return admittedProducts.value.has(symbol) ? homePeriodDisplay(fact(symbol, period)) : { label: '待查看', icon: '—', tone: 'pending' } }
+function periodDisplay(symbol: string, period: HomePeriod) { return homePeriodDisplay(fact(symbol, period)) }
 function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
 function composite(symbol: string) { return homeCompositeDisplay(fact(symbol, '1d'), fact(symbol, '1w')) }
 function space(symbol: string) { return homeCardSpace(fact(symbol, '1d')) }
-function performanceDelivery(symbol: string) {
-  const day = fact(symbol, '1d'), delivery = performanceDeliveries.value[`${symbol}:${strategy.value}`]
-  if (delivery?.owner === performanceOwner(day)) return delivery
-  const previous = previousPerformanceDeliveries.value[`${symbol}:${strategy.value}`]
-  return deliveries.value[symbol]?.stale && previous?.owner === performanceOwner(day) ? previous : undefined
-}
-function performance(symbol: string) { return homePagePerformance({ ...fact(symbol, '1d'), status: fact(symbol, '1d')?.status ?? 'unavailable', state: fact(symbol, '1d')?.state ?? null, page_performance: performanceDelivery(symbol)?.value }, strategy.value) }
-function performanceNotice(symbol: string) { return performanceDelivery(symbol)?.loading ? '参考收益读取中' : performanceDelivery(symbol)?.failed ? '参考收益读取失败，可刷新重试' : '参考收益待确认' }
+function performance(symbol: string) { return homePagePerformance(fact(symbol, '1d'), strategy.value) }
+function performanceNotice(symbol: string) { return deliveries.value[symbol]?.projectionStatus === 'updating' ? '计算中…' : '参考收益待确认' }
 function narrative(symbol: string) {
   const state = composite(symbol).state, referenceSpace = space(symbol)
   const signal = state === 'CLEAR' ? '清仓参考信号已出现' : state === 'BUILD' ? '建仓参考信号已出现' : state === 'HOLD' ? '持有观察' : state === 'FLAT' ? '空仓观察' : '日周综合状态待确认'
@@ -155,7 +109,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
   <section class="strategy-list" aria-label="品种日周策略列表">
     <div class="strategy-list-columns" aria-hidden="true"><span>品种</span><span>价格</span><span>涨跌幅</span><span>目标价</span><span>日</span><span>周</span><span>趋势</span></div>
     <slot name="status" />
-    <article v-for="row in rows" :key="row.symbol" :ref="value => observeRow(row.symbol, value)" class="strategy-list-item">
+    <article v-for="row in rows" :key="row.symbol" class="strategy-list-item">
       <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded.has(row.symbol)" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
         <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" @click.stop="openChart(row.symbol,'1d',hint.focusBarEnd)">{{ hint.label }}</button></span></small></span></div>
         <div class="list-price" :class="priceTone(row)"><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
@@ -166,8 +120,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
       </div>
       <p v-if="marketHomeQualityNotice(row.reason_codes)" class="list-quality-note" role="status">{{ marketHomeQualityNotice(row.reason_codes) }}</p>
       <div class="list-notices" role="status">
-        <span v-if="!admittedProducts.has(row.symbol)">滚动到此行后读取策略</span>
-        <span v-else-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}<template v-if="deliveries[row.symbol]?.stale && deliveries[row.symbol]?.savedAt"> · {{ formatBeijingInstant(deliveries[row.symbol]?.savedAt) }}</template></span>
+        <span v-if="homeDeliveryNotice(deliveries[row.symbol])" :title="homeDeliveryNotice(deliveries[row.symbol]) ?? undefined">{{ homeDeliveryNotice(deliveries[row.symbol]) }}<template v-if="deliveries[row.symbol]?.stale && deliveries[row.symbol]?.savedAt"> · {{ formatBeijingInstant(fact(row.symbol, '1d')?.bar_end ?? deliveries[row.symbol]?.savedAt) }}</template></span>
         <span v-if="pending(row.symbol)">等待最新周期更新</span>
         <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ periodDisplay(row.symbol, period).label }}</span>
       </div>
@@ -188,10 +141,10 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
           <div class="composite-footer"><div class="composite-tags"><span class="control-tag">{{ homeControlLabel(fact(row.symbol, '1d')) }}</span><span class="performance-tag" :title="performance(row.symbol) ? `页面普通参考收益 · ${performance(row.symbol)?.since} 至 ${performance(row.symbol)?.through} · 零手续费与滑点` : '日线页面参考收益暂不可用'">日线 <template v-if="performance(row.symbol)">{{ performance(row.symbol)?.trade_count ? formatMarketPercent(performance(row.symbol)?.cum_return_percent, 'percentage_points', false) : '—' }}（{{ performance(row.symbol)?.trade_count }} 笔参考交易）</template><template v-else>{{ performanceNotice(row.symbol) }}</template></span></div><strong v-if="space(row.symbol).value != null" :class="space(row.symbol).target ? 'composite-target' : 'space-down'">{{ space(row.symbol).label }} {{ formatMarketPercent(space(row.symbol).value, 'percentage_points', true) }}</strong><span v-else>空间待确认</span></div>
           <p class="composite-disclaimer">历史页面参考 · 零手续费与滑点 · 非可执行指令 <span>查看策略详情 →</span></p>
         </div>
+        <p class="composite-context">日线截至 {{ formatBeijingInstant(fact(row.symbol, '1d')?.bar_end) }} · 周线截至 {{ formatBeijingInstant(fact(row.symbol, '1w')?.bar_end) }}</p>
         <details class="composite-evidence" @click.stop @keydown.stop><summary>详情与口径</summary><p>日周综合 · {{ direction(row.symbol).label }}</p><p v-if="composite(row.symbol).reason" class="composite-reason" role="status">{{ composite(row.symbol).reason }}</p><NewowPriceSources :rows="homePriceSources(fact(row.symbol, '1d'))" /></details>
       </section>
     </article>
-    <button v-if="admittedProducts.size < products.length" type="button" class="strategy-load-more" @click="viewport.showMore">读取更多策略摘要（{{ products.length - admittedProducts.size }} 个待查看）</button>
   </section>
 </template>
 

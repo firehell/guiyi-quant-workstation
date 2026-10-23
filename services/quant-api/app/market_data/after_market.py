@@ -160,6 +160,7 @@ class AfterMarketUpdater:
         rqdata_factory: Callable[[], RQDataClient] | None = None,
         market_home_projection_invalidate: Callable[[], None] | None = None,
         market_home_projection_refresh: Callable[[], object] | None = None,
+        home_strategy_projection_refresh: Callable[[], object] | None = None,
         recovery_guard_factory: Callable[[], AbstractContextManager] | None = None,
         consumer_guard_factory: Callable[[], AbstractContextManager] | None = None,
         consumer_audit: Callable[[tuple[str, ...], date], Mapping[str, object]] | None = None,
@@ -178,6 +179,7 @@ class AfterMarketUpdater:
         self.now = now
         self.market_home_projection_invalidate = market_home_projection_invalidate
         self.market_home_projection_refresh = market_home_projection_refresh
+        self.home_strategy_projection_refresh = home_strategy_projection_refresh
         self.recovery_guard_factory = recovery_guard_factory or nullcontext
         self.consumer_guard_factory = consumer_guard_factory or self.recovery_guard_factory
         self.consumer_audit = consumer_audit
@@ -352,6 +354,9 @@ class AfterMarketUpdater:
                 self._refresh_market_home_projection()
                 result = AfterMarketResult("passed", trading_day, attempt, None)
                 self._write_status(result, started_at, products)
+                # Persist maintenance success before the heavier derived build.
+                # A projection failure/interruption cannot rewrite source success.
+                self._refresh_home_strategy_projection()
                 return result
             if attempt == 1 and error_code in {
                 "NEXT_TRADING_SESSION_NOT_READY",
@@ -680,6 +685,15 @@ class AfterMarketUpdater:
                 exception_type=type(exc).__name__,
             )
 
+    def _refresh_home_strategy_projection(self) -> None:
+        if self.home_strategy_projection_refresh is None:
+            return
+        try:
+            self.home_strategy_projection_refresh()
+        except Exception as exc:  # noqa: BLE001 - derived display failure is isolated
+            _diagnostic_warning('home_strategy_projection_refresh_failed exception_type=%s',
+                                type(exc).__name__, exception_type=type(exc).__name__)
+
     def _write_status(
         self,
         result: AfterMarketResult,
@@ -924,20 +938,9 @@ def build_after_market_updater(
         market_home_projection_path(manager.catalog.canonical_root)
     )
 
-    projection_refresh: Callable[[], object] | None = None
-    if _market_home_projection_refresh_enabled():
-
-        def refresh_market_home_projection() -> object | None:
-            from app.market_data.composition import build_market_home_projection
-
-            return _refresh_market_home_projection_with_lease(
-                manager,
-                lambda: build_market_home_projection(
-                    manager.catalog.session
-                ).refresh(),
-            )
-
-        projection_refresh = refresh_market_home_projection
+    def refresh_home_strategy_projection():
+        from app.market_data.newow.home_projection_composition import build_home_projection
+        return build_home_projection().build()
 
     notification_transport: NotificationTransport | None = None
     if failure_notification:
@@ -978,7 +981,8 @@ def build_after_market_updater(
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
         market_home_projection_invalidate=projection_store.invalidate,
-        market_home_projection_refresh=projection_refresh,
+        market_home_projection_refresh=None,
+        home_strategy_projection_refresh=refresh_home_strategy_projection,
         recovery_guard_factory=lambda: after_market_recovery_guard(wait=True),
         consumer_guard_factory=lambda: after_market_recovery_guard(wait=False),
         consumer_audit=audit_newow_consumers,

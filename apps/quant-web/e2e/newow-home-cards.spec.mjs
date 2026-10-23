@@ -1,3 +1,4 @@
+import { homeProjection } from './fixtures/home-projection.mjs'
 import { expect, test } from '@playwright/test'
 import { lightHomeOverview } from './fixtures/market-home-light.mjs'
 import { mockMarketDetail, installDetailFakeWebSocket } from './market-detail.helpers.mjs'
@@ -12,14 +13,14 @@ async function setup(page) {
   await page.route('**/api/runtime/health', r => r.fulfill({ json: { status:'ok', readonly:true, components:{} } }))
   await page.route('**/api/v1/market/research/home-overview', r => r.fulfill({ json: overview }))
   await page.route('**/api/v1/market/product-directory', r => r.fulfill({ json: {items:overview.items.map(x=>({product:x.symbol,product_name:x.product_name,exchange:x.exchange,sector:x.sector}))} }))
-  await page.route('**/api/v1/market/newow/home-cards?*', async route => {
-    const products = new URL(route.request().url()).searchParams.get('products').split(',')
+  await page.route('**/api/v1/market/newow/home-projection', async route => {
+    const products = overview.items.map(item => item.symbol)
     control.products.push(products); control.active++; control.maximum=Math.max(control.maximum,control.active)
     await new Promise(resolve=>setTimeout(resolve,5))
     control.active--
     if(control.fail) return route.fulfill({status:503,json:{detail:{code:'UNAVAILABLE'}}})
     const ready = (product,state) => ({status:'ready',state,as_of:'2026-09-04T07:00:00Z',bar_end:'2026-09-04T07:00:00Z',display_as_of:'2026-09-04T07:01:00Z',display_projection_version:'newow_home_display_v1',current_event:state==='BUILD'?{kind:'BUILD',bar_end:'2026-09-04T07:00:00Z',signal_id:`${product}-build`}:null,guard_ma10:'90',reference_current:'100',physical_contract:`${product.toUpperCase()}2611`,segment_id:'fixture-owner',calculation_segment_id:'fixture-calc',input_sha256:'a'.repeat(64),formula_versions:['fixture-v1'],page_parity:true,executable:false,target:'120',absorb:'90',reference_cost:'100',target_space_percent:'20'})
-    return route.fulfill({json:{schema_version:'newow_home_cards_v2',requested_at:'2026-09-04T07:01:00Z',items:products.map(product=>({product,strategies:{trend:{'1d':ready(product,'BUILD'),'1w':ready(product,'HOLD')},oscillation:{'1d':{status:'warming',state:null},'1w':{status:'unavailable',state:null}}}}))}})
+    return route.fulfill({json:homeProjection(products.map(product=>({product,strategies:{trend:{'1d':ready(product,'BUILD'),'1w':ready(product,'HOLD')},oscillation:{'1d':{status:'warming',state:null},'1w':{status:'unavailable',state:null}}}})))})
   })
   return control
 }
@@ -35,8 +36,8 @@ for(const width of [1440,390]) test(`60 strategy rows and independent period det
   await expect(summary.locator('[aria-current="step"]')).toContainText('建仓')
   await first.getByRole('button',{name:'豆一展开策略摘要'}).click();await expect(summary).toHaveCount(0)
   while(await page.getByRole('button',{name:/读取更多策略摘要/}).count()) await page.getByRole('button',{name:/读取更多策略摘要/}).click()
-  await expect.poll(()=>control.products.length).toBe(60)
-  expect(control.products.every(x=>x.length===1)).toBe(true);expect(new Set(control.products.flat()).size).toBe(60);expect(control.maximum).toBeLessThanOrEqual(2)
+  await expect.poll(()=>control.products.length).toBe(1)
+  expect(control.products.every(x=>x.length===60)).toBe(true);expect(new Set(control.products.flat()).size).toBe(60);expect(control.maximum).toBeLessThanOrEqual(2)
   await expect(rows.last().locator('[aria-label$="趋势周线持有"]')).toBeVisible()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);expect(control.errors).toEqual([])
 })
