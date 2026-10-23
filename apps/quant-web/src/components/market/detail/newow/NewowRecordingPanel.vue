@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getNewowRecordingMatrix, getNewowRecordingRecords, getReferencePoints, getReferenceStreams } from '@/api/referenceTrading'
 import type { NewowRecordingMatrix, NewowRecordingStrategy, NewowRecordingFrequency, ReferenceMode, ReferencePage, ReferencePoint, ReferenceStreamInfo } from '@/types/referenceTrading'
-import { newowRecordingWindow, newowRecordingIdentity, recordingPointLabel, recordingStateLabel, recordingItemStatus, recordingReconciliationLabel } from '@/utils/newowRecording'
+import { newowRecordingWindow, newowRecordingIdentity, recordingPointLabel, recordingStateLabel, recordingItemStatus, recordingReconciliationLabel, recordingHistoryStatusLabel } from '@/utils/newowRecording'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 const props = defineProps<{ product: string; strategy: string; frequency: string }>()
 const strategies = [{ value: 'trend', label: '趋势' }, { value: 'oscillation', label: '震荡' }, { value: 'main_rise', label: '主升浪' }, { value: 'dual_fusion', label: '双策略' }]
@@ -20,6 +20,7 @@ const actions = ref<ReferencePage<ReferencePoint> | null>(null)
 const states = ref<ReferencePage<ReferencePoint> | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const revisionFields: Record<string, string> = { open: '开盘价', high: '最高价', low: '最低价', close: '收盘价', volume: '成交量', turnover: '成交额', open_interest: '持仓量' }
 const window = ref(newowRecordingWindow())
 const products = computed(() => [...new Set([product.value, ...(matrix.value?.items.map(item => item.product.toLowerCase()) ?? [])])].sort())
 const rows = computed(() => matrix.value?.items.filter(item => item.product.toLowerCase() === product.value) ?? [])
@@ -108,6 +109,12 @@ onBeforeUnmount(() => { generation += 1; controller?.abort() })
         <tr v-for="row in rows" :key="`${row.strategy}:${row.frequency}`" :class="{ selected: row === selected }"><td><button type="button" @click="strategy = row.strategy; frequency = row.frequency">{{ strategies.find(item => item.value === row.strategy)?.label }} / {{ frequencies.find(item => item.value === row.frequency)?.label }}</button></td><td>{{ recordingItemStatus(row) }}</td><td>{{ formatBeijingInstant(row.historical_computed_through) }}</td><td>{{ formatBeijingInstant(row.observed_through) }}</td><td>{{ row.latest_state_source === 'historical_seed' ? '历史预热 · ' : '' }}{{ recordingStateLabel(row.latest_state) }}</td></tr>
       </tbody></table></div>
       <p v-if="selected">记录起点 {{ formatBeijingInstant(selected.recording_start) }} · 待处理捕获 {{ selected.pending_capture_count ?? '待核对' }} · 合约 {{ selected.latest_state?.physical_contract ?? '尚无观察记录' }} · 行情核对 {{ recordingReconciliationLabel(selected.latest_reconciliation_status) }}</p>
+      <p v-if="selected?.canonical_history">盘后历史：{{ recordingHistoryStatusLabel(selected.canonical_history.status) }} · 计算至 {{ formatBeijingInstant(selected.canonical_history.computed_through) }}。历史回放与实时参考记录分别保存。</p>
+      <details v-if="selected?.source_revision_count">
+        <summary>已确认 {{ selected.source_revision_count }} 次来源修订 · 实时参考结果保留</summary>
+        <p>以下为实时原值 → 盘后历史值。字段差异不能直接等同收益变化；切换“历史回放”查看独立重算结果。</p>
+        <ul><li v-for="revision in selected.source_revisions" :key="revision.capture_id">{{ formatBeijingInstant(revision.bar_end) }}：<span v-for="(difference, field) in revision.differences" :key="field">{{ revisionFields[field] ?? field }} {{ difference.observed }} → {{ difference.canonical }}；</span></li></ul>
+      </details>
       <p v-if="selected?.latest_state?.availability && typeof selected.latest_state.availability === 'object' && selected.latest_state.availability.reason_code">不可用原因：{{ selected.latest_state.availability.reason_code }}</p>
     </template>
     <template v-else><p>历史回放使用已保存历史快照，不代表当时实时捕获的观察事实。</p><label v-if="streams.length">历史版本 <select v-model="selectedStream" @change="chooseHistorical"><option value="">请选择一个历史版本</option><option v-for="stream in streams" :key="stream.stream_id" :value="stream.stream_id">{{ stream.formula_versions.join(' / ') }} · {{ stream.profile_id }} · {{ stream.stream_id }}</option></select></label><p v-else-if="!loading">所选组合尚无可读取的历史记录。</p></template>

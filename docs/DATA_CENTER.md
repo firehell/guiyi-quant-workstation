@@ -24,6 +24,11 @@ MarketDataService
 `continuous|contract`；主连的 `series_or_contract=MAIN`；`actual_dominant` 是查询模式，不是物理
 Dataset。
 
+RQData 实时分钟只聚合当时已收到的 tick，盘后历史按完整 tick 重新清洗，数值差异以盘后历史为准。
+Live 原件和 first-seen 参考计算保持原始身份；不得以盘后价格改写原观察或真实接收时间。
+H1 的已验证同身份数值修订通过 `rqdata_live_history_revision_v1` 追加证据，Canonical 历史独立复算；
+身份、端点、质量、未知值或哈希错误仍阻断。精确比较、幂等与展示合同见 reference-trading canonical。
+
 `1m` 的 `continuous/MAIN` 输入固定为 `{SYMBOL}88` 未平滑主力连续；`{SYMBOL}99` 持仓量加权指数
 不是可替代来源，任何空窗都必须显式失败。期货 `1d` 的事实固定为 RQData
 `futures.get_exchange_daily`：真实合约直接读取，`continuous/MAIN` 按每个交易日 rank1

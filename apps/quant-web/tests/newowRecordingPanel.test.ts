@@ -97,3 +97,20 @@ test('short minute props select their saved forward stream and display observed 
     app.unmount()
   }
 })
+
+test('source revisions show original values and an independent historical cutoff without replacing realtime records', async () => {
+  mock.setMatrix({items:[{product:'rb',strategy:'trend',frequency:'60m',stream_id:'forward',enabled:true,status:'READY',latest_state:null,
+    latest_reconciliation_status:'source_revised',source_revision_count:1,
+    source_revisions:[{capture_id:'captured',bar_end:'2026-10-23T07:00:00Z',differences:{volume:{observed:'752',canonical:'32860'}}}],
+    canonical_history:{stream_id:'historical',status:'CURRENT',computed_through:'2026-10-23T07:00:00Z'}}]})
+  const root=element('root'), app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{product:'RB',strategy:'trend',frequency:'60m'})}))
+  app.mount(root); await settle()
+  assert.equal(mock.calls[0].id,'forward')
+  const text=nodeText(root)
+  assert.match(text,/实时来源已被盘后历史修订/)
+  assert.match(text,/历史计算端点已追平，来源版本待验证/)
+  assert.match(text,/2026-10-23 15:00 北京时间/)
+  assert.match(text,/成交量.*752.*32860/)
+  assert.match(text,/不能直接等同收益变化/)
+  app.unmount()
+})

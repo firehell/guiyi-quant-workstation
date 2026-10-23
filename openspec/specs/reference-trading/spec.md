@@ -328,7 +328,7 @@ at activation remains FLAT; preheating does not import a historical OPEN or inve
 `latest_reconciliation_status` SHALL derive from the latest actual capture. Base captures
 read existing reconciliation records; dual captures derive status through both exact base
 capture stream/revision/hash/source-evidence identities. The reduction SHALL return
-pending, matched, mismatch or not_applicable without inventing a dual Canonical market hash.
+pending, matched, source_revised, mismatch or not_applicable without inventing a dual Canonical market hash.
 Bulk status reads SHALL share set-based queries across routes.
 
 #### Scenario: Complete configuration has no naturally observed Bar
@@ -472,7 +472,7 @@ fusion; bounded queue fairness and restart idempotence SHALL be verified.
 
 ### Requirement: Known-conflict observation isolation preserves each original
 
-A proven active-revision Canonical mismatch MAY isolate its complete enabled product/frequency
+An unexplained active-revision Canonical mismatch MAY isolate its complete enabled product/frequency
 routing group, including fusion, without blocking unrelated products. Before acknowledging a durable
 observation, the worker SHALL atomically persist one immutable diagnostic receipt per group route,
 including the full original envelope, journal day/id, exact active revisions and activation generations,
@@ -487,6 +487,51 @@ Unknown commits, incomplete groups and unrelated input failures SHALL NOT grant 
 - **THEN** the global journal may advance while the original conflict and captured data remain unchanged
 - **AND** health and the recording matrix report DATA_CONFLICT with no current strategy state for that group
 - **AND** restart finds the exact receipts rather than recomputing successful observations or inventing old processing times
+
+### Requirement: RQData Live and historical numeric source revisions remain separate facts
+
+`rqdata_live_history_revision_v1` SHALL preserve first-seen H1 observations and their existing
+reference computations, positions, actions and actual processing times. RQData documents that realtime
+minutes may omit late ticks and that post-market history is cleaned from the complete tick set; historical
+Canonical is authoritative for independent historical replay, not a replacement for a prior observation.
+
+Only the native MDS reader, after exact physical contract, rank1 owner/calculation segment, Session endpoint,
+immutable content and quality validation, MAY classify a finite valid same-endpoint numeric difference as a
+source revision. The classification SHALL bind the exact capture hash/revision/generation, original activation
+lineage, reconciliation id and both complete Bar hashes, pinned Canonical source revision, policy and actual
+field differences. Unknown values, identity changes, invalid prices, quality gaps, unverified provider or
+corrupt hashes SHALL remain unexplained conflicts. Fixed waiting periods or numeric tolerances SHALL NOT
+stand in for this evidence.
+
+The original comparison SHALL remain append-only `mismatch`; an idempotent versioned diagnostic in the same
+transaction records its qualified source revision. Guards, quarantine, health and fusion status SHALL share
+the same exact per-comparison resolver. A valid classification MAY project `source_revised`; it SHALL NOT
+waive another mismatch or any original-observation conflict. Same active-revision captures from an older
+generation require their own exact activation receipt and actual capture processing time within that receipt.
+
+Classification SHALL NOT fill a missing calculation, remove a quarantine, replay a journal, change a cursor,
+reset FLAT, alter an OPEN trade or send notifications. Any outstanding terminal quarantine continues to block
+normal computation until a separately verified recovery. If all actual computations already reach the expected
+endpoint and no pending/quarantine exists, classification alone requires no calculation or position reset.
+
+The independent disabled historical identity SHALL use the existing full Canonical planner and driver.
+An exact `P4_SOURCE_REVISION_REBUILD` invalidation MAY generate a fresh bounded native rebuild plan in the
+existing rest-window worker; unknown invalidations, inflight outcomes and blocked attempts SHALL NOT be
+automatically retried. Source token, complete prefix, budget, publication and resume checks remain mandatory.
+The UI SHALL distinguish preserved realtime results, individual changed fields and the independent historical
+cutoff/freshness. Field differences SHALL NOT be presented as an attributed profit change. Incomplete historical
+recalculation or comparison SHALL remain explicit.
+
+#### Scenario: A later cleaned minute changes H1 volume
+- **GIVEN** a valid retained H1 capture and same physical Canonical endpoint differ numerically
+- **WHEN** the native reader verifies both identities and appends exact revision evidence
+- **THEN** the old mismatch and realtime reference records remain unchanged
+- **AND** only that comparison projects source_revised and historical replay is recomputed independently
+
+#### Scenario: Another mismatch or quarantined original is not explained
+- **GIVEN** one comparison has valid source revision evidence
+- **WHEN** another comparison is unclassified or a terminal quarantine still lacks its calculation
+- **THEN** normal forward processing remains blocked without replay, reset or notification
 
 ### Requirement: Explicit conflict recovery creates an independent forward revision
 

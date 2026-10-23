@@ -48,7 +48,9 @@ def test_health_reports_all_720_streams_without_per_stream_queries():
         event.remove(engine, "before_cursor_execute", counted)
     assert result["enabled_count"] == 720
     assert len(result["streams"]) == 720
-    assert sum(statement.lstrip().upper().startswith("SELECT") for statement in statements) <= 7
+    # One additional set query exposes the independent Canonical history for all
+    # routes; it must never become a query per route.
+    assert sum(statement.lstrip().upper().startswith("SELECT") for statement in statements) <= 8
 
 
 def test_health_reads_endpoint_keys_once_and_exposes_seed_without_observation():
