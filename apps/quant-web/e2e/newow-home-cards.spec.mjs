@@ -45,8 +45,8 @@ for(const width of [1440,390]) test(`60 strategy rows and independent period det
 test('failed card refresh retains labelled accepted facts and recovers independently',async({page})=>{
  const control=await setup(page);await page.goto('/market')
  const rows=page.locator('.strategy-list-item');await expect(rows.first().locator('[aria-label="豆一趋势日线建仓"]')).toBeVisible()
- control.fail=true;await page.getByRole('button',{name:'刷新',exact:true}).click()
+ control.fail=true;await page.reload()
  await expect(rows.first()).toContainText('策略刷新失败，保留上次快照');await expect(rows.first().locator('[aria-label="豆一趋势日线建仓"]')).toBeVisible()
- control.fail=false;await page.getByRole('button',{name:'刷新',exact:true}).click()
+ control.fail=false;await page.reload()
  await expect(rows.first().getByText('策略刷新失败，保留上次快照')).toHaveCount(0);await expect(rows.first().locator('[aria-label="豆一趋势周线持有"]')).toBeVisible();expect(control.errors).toEqual([])
 })
