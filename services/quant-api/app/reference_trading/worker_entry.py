@@ -177,7 +177,8 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                 CompletedCanonicalReader, ScheduledCanonicalReconciliation,
             )
             reconciliation = ScheduledCanonicalReconciliation(
-                SessionLocal, CompletedCanonicalReader(market_data, authority.owner_segments),
+                SessionLocal, CompletedCanonicalReader(market_data, authority.owner_segments,
+                                                       source_revision_policy=True),
                 read_guard=canonical_guard,
             )
             worker = build_forward_reference_worker(

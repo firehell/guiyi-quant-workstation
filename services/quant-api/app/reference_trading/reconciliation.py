@@ -18,6 +18,7 @@ from app.reference_trading.repository import RepositoryConflict
 class CanonicalEvidence:
     source_revision: str
     source_sha256: str | None
+    revision_proof: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not self.source_revision or len(self.source_revision) > 128:
@@ -81,11 +82,21 @@ class ForwardReconciler:
                     or existing.canonical_sha256 != authoritative.source_sha256
                 ):
                     raise RepositoryConflict("RECONCILIATION_REVISION_CONFLICT")
-                return existing.status
-            session.add(ReferenceCaptureReconciliation(
+                comparison = existing
+            else:
+                comparison = ReferenceCaptureReconciliation(
                 reconciliation_id=uuid4().hex, capture_batch_id=capture_id,
                 source_revision=authoritative.source_revision,
                 status=status, captured_sha256=captured_hash,
                 canonical_sha256=authoritative.source_sha256, checked_at=now,
-            ))
+                )
+                session.add(comparison)
+                session.flush()
+            if status == "mismatch" and authoritative.revision_proof is not None:
+                from app.reference_trading.source_revisions import append_source_revision
+
+                capture = session.get(ReferenceBatch, capture_id)
+                append_source_revision(session, capture, comparison,
+                                       authoritative.revision_proof, now=now)
+                return "source_revised"
         return status

@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { getNewowRecordingMatrix } from '../src/api/referenceTrading.ts'
-import { recordingStatusLabel, recordingStateLabel, recordingPointLabel, newowRecordingWindow, recordingItemStatus } from '../src/utils/newowRecording.ts'
+import { recordingStatusLabel, recordingStateLabel, recordingPointLabel, newowRecordingWindow, recordingItemStatus, recordingReconciliationLabel, recordingHistoryStatusLabel } from '../src/utils/newowRecording.ts'
+
+test('source revision preserves the distinction from corrupt input and historical recomputation', () => {
+  assert.equal(recordingReconciliationLabel('source_revised'), '实时来源已被盘后历史修订')
+  assert.equal(recordingReconciliationLabel('mismatch'), '来源冲突')
+  assert.equal(recordingHistoryStatusLabel('REBUILD_REQUIRED'), '待按 Canonical 重算')
+  assert.equal(recordingHistoryStatusLabel('CURRENT'), '历史计算端点已追平，来源版本待验证')
+  assert.equal(recordingHistoryStatusLabel('UNVERIFIED'), '历史新鲜度尚未验证')
+})
 
 test('matrix read is explicit forward and validates version rather than inventing records', async () => {
   const response = { version: 'newow_recording_matrix_v1', recording_mode: 'forward_observation', expected_count: 720,
@@ -154,4 +162,18 @@ test('v4 accepts the expanded 1260-stream matrix and completed short-minute Live
     configured_count: 1260, enabled_count: 1260, observed_count: 0, seeded_count: 1260, items }
   assert.equal(await getNewowRecordingMatrix({ request: async () => response }), response)
   await assert.rejects(getNewowRecordingMatrix({ request: async () => ({ ...response, items: [{ ...items[0], expected_source: 'unconfirmed_live' }] }) }), /REFERENCE_RESPONSE_INVALID/)
+})
+
+test('matrix accepts a source revision without converting it to a matched comparison', async () => {
+  const item = { product:'rb', strategy:'trend', frequency:'60m', stream_id:'source', enabled:true,
+    status:'READY', latest_state:null, latest_state_source:'observed', computed_through:'2026-10-23T07:00:00Z',
+    observed_through:'2026-10-23T07:00:00Z', historical_computed_through:null, last_observed_at:'2026-10-23T07:00:03Z',
+    expected_through:'2026-10-23T07:00:00Z', expected_source:'completed_live', endpoint_status:'READY',
+    latest_reconciliation_status:'source_revised', source_revision_count:1,
+    source_revisions:[{capture_id:'capture',bar_end:'2026-10-23T07:00:00Z',policy_version:'rqdata_live_history_revision_v1',differences:{volume:{observed:'752',canonical:'32860'}},impact_status:'INDEPENDENT_HISTORY_REQUIRED'}] }
+  const response = {version:'newow_recording_matrix_v4',recording_mode:'forward_observation',expected_count:1,
+    configured_count:1,enabled_count:1,observed_count:1,seeded_count:0,items:[item]}
+  assert.equal(await getNewowRecordingMatrix({request:async()=>response}),response)
+  assert.equal(response.items[0].latest_reconciliation_status,'source_revised')
+  await assert.rejects(getNewowRecordingMatrix({request:async()=>({...response,items:[{...item,latest_reconciliation_status:'arbitrary-cleared'}]})}),/REFERENCE_RESPONSE_INVALID/)
 })
