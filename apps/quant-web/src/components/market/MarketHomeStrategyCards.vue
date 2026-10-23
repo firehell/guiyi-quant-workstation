@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { homeContext, type NewowHomeContext } from '@/utils/newowHomeContext'
-import NewowPriceSources from './detail/newow/NewowPriceSources.vue'
-import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getNewowHomeProjection } from '@/api/newowHomeCards'
 import { homeSnapshotCache } from '@/api/homeSnapshotCache'
 import { normalizeHomeCards, type HomeCard } from '@/utils/newowHomeCards'
-import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import { marketHomeQualityNotice } from '@/utils/marketHomePresentation'
@@ -78,7 +76,6 @@ if (typeof document !== 'undefined') document.addEventListener('visibilitychange
 onBeforeUnmount(() => { ++generation; controller?.abort(); clearPoll(); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged) })
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
 function periodDisplay(symbol: string, period: HomePeriod) { return homePeriodDisplay(fact(symbol, period)) }
-function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
 function composite(symbol: string) { return homeCompositeDisplay(fact(symbol, '1d'), fact(symbol, '1w')) }
 function space(symbol: string) { return homeCardSpace(fact(symbol, '1d')) }
 function performance(symbol: string) { return homePagePerformance(fact(symbol, '1d'), strategy.value) }
@@ -133,7 +130,6 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
           </div>
           <div class="composite-footer"><div class="composite-tags"><span class="control-tag">{{ homeControlLabel(fact(row.symbol, '1d')) }}</span><span class="performance-tag" :title="performance(row.symbol) ? `页面普通参考收益 · ${performance(row.symbol)?.trade_count} 笔参考交易 · ${performance(row.symbol)?.since} 至 ${performance(row.symbol)?.through} · 零手续费与滑点` : '日线页面参考收益暂不可用'"><template v-if="performance(row.symbol)">日线 {{ performance(row.symbol)?.trade_count ? formatMarketPercent(performance(row.symbol)?.cum_return_percent, 'percentage_points', false) : '—' }}</template><template v-else>{{ performanceNotice(row.symbol) }}</template></span></div><strong v-if="space(row.symbol).value != null" :class="space(row.symbol).target ? 'space-up' : 'space-down'">{{ space(row.symbol).target ? '距目标价' : '距吸筹价' }} {{ formatMarketPercent(space(row.symbol).value, 'percentage_points', true) }}</strong><span v-else>空间待确认</span></div>
         </div>
-        <details class="composite-evidence" @click.stop @keydown.stop><summary>日线截至 {{ formatBeijingInstant(fact(row.symbol, '1d')?.bar_end) }} · 周线截至 {{ formatBeijingInstant(fact(row.symbol, '1w')?.bar_end) }}</summary><p>历史页面参考 · 零手续费与滑点 · 非可执行指令</p><p v-if="performance(row.symbol)">日线 {{ performance(row.symbol)?.trade_count }} 笔参考交易 · {{ performance(row.symbol)?.since }} 至 {{ performance(row.symbol)?.through }}</p><p>日周综合 · {{ direction(row.symbol).label }}</p><p v-if="composite(row.symbol).reason" class="composite-reason" role="status">{{ composite(row.symbol).reason }}</p><NewowPriceSources :rows="homePriceSources(fact(row.symbol, '1d'))" /></details>
       </section>
     </article>
   </section>
@@ -184,6 +180,5 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 .composite-tags{display:flex;flex-wrap:wrap;gap:6px}.composite-tags>span{border-radius:10px;padding:1px 6px;font-size:10px;line-height:15px}
 .composite-tags>.control-tag{color:#ff9500;background:#fff3e6}.composite-tags>.performance-tag{color:#007aff;background:#eaf2ff}
 .composite-footer strong{font-size:13px;font-weight:600}.space-up{color:#ff3b30}.space-down{color:#34c759}
-.composite-evidence{font-size:10px;color:#8e8e93;padding:5px 2px 0;line-height:1.5}.composite-evidence>summary{cursor:pointer}.composite-evidence :deep(.price-sources){padding:4px 0}.composite-reason{color:#b88134;font-size:11px}
-@media(max-width:600px){.composite-card{padding:10px}.composite-heading strong{font-size:12px;line-height:18px}.composite-heading strong>.composite-price{font-size:15px}.composite-heading{gap:5px}.composite-signal{padding:2px 6px;font-size:10px}.composite-card .composite-context{font-size:10px}.composite-footer strong{font-size:12px}.composite-evidence>summary{overflow-wrap:anywhere}}
+@media(max-width:600px){.composite-card{padding:10px}.composite-heading strong{font-size:12px;line-height:18px}.composite-heading strong>.composite-price{font-size:15px}.composite-heading{gap:5px}.composite-signal{padding:2px 6px;font-size:10px}.composite-card .composite-context{font-size:10px}.composite-footer strong{font-size:12px}}
 </style>
