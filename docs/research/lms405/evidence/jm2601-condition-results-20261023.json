@@ -1,0 +1,111 @@
+{
+  "study": "LMS405_PUBLIC_CONDITIONS_V0_1",
+  "casebook_sha256": "3b40301cd3e98b4b633ef3500f87ae5ff852486759104d7aab92d42a2ed4a1f9",
+  "input_kind": "SOURCE_CONDITIONS_WITHOUT_MARKET_SIGNAL_LABELS",
+  "historical_immutability_verified": false,
+  "author_signal_success_rate": null,
+  "eligible_golden_signal_samples": 0,
+  "holdout_samples": 0,
+  "executable": false,
+  "fill": null,
+  "performance": null,
+  "cases": [
+    {
+      "case_id": "JM2601_20251127_RECOVER_SHORT",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405237640902607401",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "ORIGINAL_SIGNAL_FORMULA",
+        "BREAK_THRESHOLD",
+        "AUTHOR_PERIOD_AND_BAR_TIME",
+        "HISTORICAL_CONTENT_VERSION",
+        "OBSERVED_ORDER_AND_POSITION_CONTINUITY"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_SHORT",
+        "sources": [
+          "https://weibo.com/ttarticle/p/show?id=2309405237640902607401"
+        ],
+        "unknown": [
+          "case_version_405",
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "JM2601_20251127_RECOVER_SHORT",
+        "as_of": "2026-10-23T04:22:08+00:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "BREAK_1072_OBSERVED": null,
+              "AUTHOR_VPLUS_CONFIRMED": null,
+              "UNIDENTIFIED_EXECUTION_GATES_RESOLVED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    },
+    {
+      "case_id": "JM2601_20251201_GRAB_M_LONG",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405239099287535779",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "ORIGINAL_SIGNAL_FORMULA",
+        "PATTERN_CONFIRMATION",
+        "CROSS_PRODUCT_STRENGTH_FORMULA",
+        "AUTHOR_PERIOD_AND_BAR_TIME",
+        "M_END_EXIT",
+        "POSITION_AND_ORDER_PATH",
+        "HISTORICAL_CONTENT_VERSION"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_LONG",
+        "sources": [
+          "https://weibo.com/ttarticle/p/show?id=2309405239099287535779"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "JM2601_20251201_GRAB_M_LONG",
+        "as_of": "2026-10-23T04:22:08+00:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "PRIOR_PROTECTION_CONFIRMED": null,
+              "TWO_LOWS_ONE_HIGH_CONFIRMED": null,
+              "IRON_AND_REBAR_STRONG": null,
+              "TIMING_MATURE": null,
+              "UNIDENTIFIED_EXECUTION_GATES_RESOLVED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    }
+  ]
+}
