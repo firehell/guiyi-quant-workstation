@@ -306,3 +306,17 @@ test('period disclosure distinguishes a data conflict from an unconfirmed privat
   assert.equal(homePeriodReason({ status: 'ready', state: 'HOLD' }), null)
   assert.equal(homeTrendDisplay().label, '趋势来源待确认')
 })
+
+test('MA60 approximate trend uses precomputed D1 identity and preserves stale direction', () => {
+  const fact = ready('HOLD')
+  fact.independent_trend = {status:'ready',direction:'bull',frequency:'1d',formula_version:'guiyi_home_close_ma60_v1',bar_end:fact.bar_end!,physical_contract:fact.physical_contract!,segment_id:fact.segment_id!,calculation_segment_id:fact.calculation_segment_id!,parent_input_sha256:fact.input_sha256!,input_sha256:'window',close:'101',ma60:'100',sample_count:60,approximate:true,page_parity:false,executable:false}
+  assert.equal(homeTrendDisplay(fact).tone, 'up')
+  assert.match(homeTrendDisplay(fact).label, /MA60近似/)
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,direction:'bear'}}).tone,'down')
+  assert.match(homeTrendDisplay(fact, {stale:true} as any).title, /历史/)
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,physical_contract:'OTHER'}}).tone,'pending')
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,parent_input_sha256:'other'}}).tone,'pending')
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,formula_version:'unrecognized'}}).tone,'pending')
+  assert.match(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,status:'warming',direction:null,sample_count:59}}).label,/预热/)
+  assert.equal(homeTrendDisplay(fact).tone, 'up') // No quote input is accepted.
+})

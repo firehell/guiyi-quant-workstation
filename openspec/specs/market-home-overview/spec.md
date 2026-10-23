@@ -415,12 +415,23 @@ Existing unconditional derived-projection reads remain unchanged. An overview re
 - **WHEN** separate requests establish identical checked inputs concurrently
 - **THEN** calculation may be shared while both retain authority validation and cancellation boundaries
 
-### Requirement: Independent trend remains explicit when its formula is unknown
+### Requirement: Independent trend supports an explicitly identified approximation
 
-首页独立趋势不得用日周同向、涨跌幅或主升浪替代。公开trendMap的bull/bear映射已确认但生成规则未确认时，SHALL显示22px灰色描边时钟，提供“趋势来源待确认”的title及中文图像语义，不再复用“数据不足”的通用图标。不得制造有方向的期货趋势事实或将股票接口结果移植为期货输入。
+首页 SHALL 使用 owner 接受的 `guiyi_home_close_ma60_v1` 近似方向：同一物理合约、segment 和 calculation segment 截至确认 D1 锚点的最后60根已完成日线，Close × 60 >= 收盘价总和为 bull，否则 bear。只使用统一行情入口提供的有效连续输入，不跨物理/计算段补预热，不使用分钟报价、日周状态或主升浪代替。牛哇原始 trend 公式仍 UNKNOWN，本规则 SHALL 标记 approximate=true、page_parity=false、executable=false，不能表述为已确认的牛哇公式或交易信号。
 
-#### Scenario: No verified independent trend formula is available
+结果 SHALL 带独立公式版本、输入摘要、父输入关联、截止及物理/计算段身份，纳入持久投影和配置失效指纹；GET与前端交互只读。W1不生成第二套方向，趋势/震荡视角共用D1方向。正常显示22px红升/绿降折线及12%浅圆底，中文说明标注MA60近似与截止；历史快照可保留方向但必须标明历史状态。缺少字段/版本未知/身份不匹配保留待确认；不足60根显示预热中，不伪造空头。
 
-- **WHEN** 首页只有日周策略摘要而没有经验证的独立趋势生成规则
-- **THEN** 全部品种显示来源待确认，不因分钟报价、策略切换或日周状态改变而显示红升/绿降
-- **AND** 既有投影、行情链和GET不增加策略计算或来源请求
+#### Scenario: Approximate direction has sufficient confirmed input
+
+- **WHEN** 同一有效计算段具备60根已完成D1且锚点Close不低于MA60
+- **THEN** 两种首页策略视角均显示红色上升折线，说明标记MA60近似
+- **AND** 报价变化、排序、展开与板块切换均不重新计算该方向
+
+#### Scenario: Old or insufficient independent trend input
+
+- **WHEN** 投影尚无近似字段、公式版本未知或输入身份不匹配
+- **THEN** 显示待确认灰色时钟，不猜测方向
+- **WHEN** 换合约或计算段后不足60根有效D1
+- **THEN** 显示预热中及已有根数，不借用旧段数据
+- **WHEN** 公式版本变化
+- **THEN** 持久投影变为待更新，显式构建后发布新事实

@@ -24,6 +24,11 @@ def test_home_summary_uses_full_replay_even_with_one_visible_bar(product_cases):
         close = result.chart.value.bars[-1].bar.close
         assert summary['target_space_percent'] == (price.target.raw - close) / close * Decimal(100)
     assert summary['physical_contract'] == clear.physical_contract
+    independent = summary['independent_trend']
+    assert independent['bar_end'] == clear.bar_end
+    assert independent['physical_contract'] == clear.physical_contract
+    assert independent['page_parity'] is False
+    assert independent['approximate'] is True
 
 
 def test_home_summary_open_cost_is_eligible_build_price(product_cases):

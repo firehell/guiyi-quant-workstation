@@ -28,6 +28,9 @@ def test_catalog_identity_changes_for_same_count_quality_map_session_and_formula
         path.write_text('changed')
         assert module.catalog_versions(session, ('rb',)) != initial
         path.write_text(original)
+    monkeypatch.setattr(module, 'HOME_TREND_VERSION', 'changed')
+    assert module.catalog_versions(session, ('rb',)) != initial
+    monkeypatch.setattr(module, 'HOME_TREND_VERSION', 'guiyi_home_close_ma60_v1')
     monkeypatch.setattr(module, 'METRIC_POLICY_VERSION', 'changed')
     assert module.catalog_versions(session, ('rb',)) != initial
     monkeypatch.setattr(module, 'CAPABILITY_SCHEMA_VERSION', 'changed')

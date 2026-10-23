@@ -18,6 +18,7 @@ from app.market_data.composition import build_database_coverage_source, build_ma
 from app.market_data.operational_universe import load_active_products, load_operational_products
 from app.models import Instrument, Exchange, Contract, TradingCalendar, TradingSession, MainContractMap, MarketDataset, MarketPartition
 from guiyi_quant.newow.product_adapters import build_product_identity
+from guiyi_quant.newow.home_independent_trend import HOME_TREND_VERSION
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from app.market_data.market_home_overview import METRIC_POLICY_VERSION
 from .composition import NewowComposition
@@ -38,7 +39,7 @@ def configuration_identity():
              'active_products.txt', 'operational_products.txt',
              'retired_products.txt', 'product_sectors.csv')
     dependencies = {name: sha256((directory / name).read_bytes()).hexdigest() for name in files}
-    dependencies.update(capability=CAPABILITY_SCHEMA_VERSION, overview_policy=METRIC_POLICY_VERSION)
+    dependencies.update(capability=CAPABILITY_SCHEMA_VERSION, overview_policy=METRIC_POLICY_VERSION, home_trend=HOME_TREND_VERSION)
     return sha256(json.dumps(dependencies, sort_keys=True).encode()).hexdigest()
 
 
@@ -85,7 +86,7 @@ def catalog_versions(session, products):
             identities = [repr(build_product_identity(product, ProductStrategy(strategy), ProductFrequency(frequency), input_quality_policy=policy)) for strategy in STRATEGIES]
             deps = {**common, 'configuration': configuration, 'identities': identities,
                     'capability': CAPABILITY_SCHEMA_VERSION, 'projection': 'newow_home_projection_v1',
-                    'reference': 'ordinary-page-performance-v1'}
+                    'reference': 'ordinary-page-performance-v1', 'home_trend': HOME_TREND_VERSION}
             # Weekly source quality also depends on canonical D1 classification.
             for source_frequency in (('1d', '1w') if frequency == '1w' else ('1d',)):
                 for name in ('dataset', 'partition'):
@@ -153,6 +154,8 @@ def compute_period(session, product, frequency, now):
                            'freshness': snapshot.freshness, 'formula_versions': result.meta.identity.formula_versions,
                            'input_sha256': result.meta.input_content_sha256,
                            'data_revision_identity': result.meta.data_revision_identity}
+        if facts[strategy].get('independent_trend') is not None:
+            facts[strategy]['independent_trend']['parent_input_sha256'] = result.meta.input_content_sha256
         if frequency == '1d':
             reference = service.query(ProductServiceQuery(product, strategy, frequency,
                 section=ProductSection.REFERENCE, as_of=snapshot.as_of, snapshot_token=result.meta.snapshot_token, history_limit=1))

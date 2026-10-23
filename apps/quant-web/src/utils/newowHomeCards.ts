@@ -6,7 +6,26 @@ import { newowReferencePrice } from './newowPagePresentation.ts'
 export type HomeStrategy = 'trend' | 'oscillation'
 export type HomePeriod = '1d' | '1w'
 export type HomeState = 'BUILD' | 'HOLD' | 'CLEAR' | 'FLAT'
+export interface HomeIndependentTrend {
+  status: 'ready' | 'warming' | 'unavailable'
+  direction: 'bull' | 'bear' | null
+  formula_version: string
+  frequency: '1d'
+  bar_end: string
+  physical_contract: string
+  segment_id: string
+  calculation_segment_id: string
+  input_sha256: string | null
+  parent_input_sha256: string
+  close: string | null
+  ma60: string | null
+  sample_count: number
+  approximate: true
+  page_parity: false
+  executable: false
+}
 export interface HomePeriodFact {
+  independent_trend?: HomeIndependentTrend | null
   status: 'ready' | 'warming' | 'unavailable'
   state: HomeState | null
   reason_code?: string | null
@@ -80,8 +99,25 @@ export function homeDirectionDisplay(day?: HomePeriodFact, week?: HomePeriodFact
   return up(day.state) ? { label: '日周向上', tone: 'up' } : { label: '日周向下', tone: 'down' }
 }
 
-/** trendMap is an independent source fact; alignment cannot stand in for it. */
-export function homeTrendDisplay() { return { label: '趋势来源待确认', tone: 'pending' } as const }
+/** Display the owner's accepted approximation; never derive direction from live quotes. */
+export function homeTrendDisplay(day?: HomePeriodFact, delivery?: Pick<CardDelivery, 'stale' | 'failed' | 'projectionStatus'>): {label: string; title: string; tone: 'up' | 'down' | 'pending'} {
+  const pending = {label:'趋势来源待确认', title:'趋势待重建 · MA60近似规则', tone:'pending' as const}
+  const value = day?.independent_trend
+  if (!value || value.formula_version !== 'guiyi_home_close_ma60_v1' || value.frequency !== '1d'
+    || value.approximate !== true || value.page_parity !== false || value.executable !== false
+    || !value.input_sha256 || value.parent_input_sha256 !== day?.input_sha256
+    || !value.physical_contract || value.physical_contract !== day.physical_contract
+    || !value.segment_id || value.segment_id !== day.segment_id
+    || !value.calculation_segment_id || value.calculation_segment_id !== day.calculation_segment_id
+    || !value.bar_end || value.bar_end !== day.bar_end || previewInstant(value.bar_end) === null) return pending
+  if (value.status === 'warming') return {label:'趋势预热中',title:`MA60近似 · 已完成日线 ${value.sample_count}/60 根`,tone:'pending'}
+  if (value.status !== 'ready' || value.sample_count !== 60 || !['bull','bear'].includes(value.direction ?? '')
+    || comparePositiveDecimalText(value.close, value.ma60) === null) return pending
+  const stale = delivery?.stale || delivery?.failed || (delivery?.projectionStatus && delivery.projectionStatus !== 'ready')
+  const label = `趋势向${value.direction === 'bull' ? '上' : '下'}（MA60近似）`
+  return {label, tone:value.direction === 'bull' ? 'up' : 'down',
+    title:`${stale ? '历史结果 · ' : ''}${label} · 收盘价与60日均线比较 · 截至 ${value.bar_end} · ${value.physical_contract} · 非牛哇原公式`}
+}
 
 const identifiedHomeFact = (fact?: HomePeriodFact): fact is HomePeriodFact & { state: HomeState } => Boolean(
   fact?.status === 'ready' && fact.state && fact.physical_contract && fact.segment_id && fact.calculation_segment_id && fact.input_sha256 && fact.formula_versions?.length

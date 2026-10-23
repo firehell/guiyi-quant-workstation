@@ -1,6 +1,8 @@
 """Small display projection of an authenticated replay, never a strategy engine."""
 from decimal import Decimal
 
+from guiyi_quant.newow.home_independent_trend import calculate_home_trend
+
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 from guiyi_quant.newow.main_rise import calculate_main_rise_series
 from guiyi_quant.newow.subplots import calculate_zhaoyao_mirror
@@ -43,6 +45,7 @@ def project_home_summary(replay, anchor, status, prices, shared_inputs=None):
         'display_projection_version': 'newow_home_display_v1',
         'current_event': {'kind': current.kind.value, 'bar_end': current.bar_end, 'signal_id': current.signal_id} if current else None,
         'guard_ma10': ma10,
+        'independent_trend': calculate_home_trend(tuple(frame.bar for frame in replay.frames), anchor.bar),
         'state': anchor.main_state.value if ready else None,
         'status': status.status.value, 'reason_code': status.reason_code,
         'bar_end': bar.bar_end, 'physical_contract': bar.physical_contract,

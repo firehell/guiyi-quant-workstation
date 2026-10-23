@@ -73,3 +73,38 @@ test('real projected card matches compact desktop and mobile layout without comp
   expect(requests.filter(path=>path.endsWith('/home-projection')).length).toBe(reads)
   expect(requests.some(path=>/home-cards|home-card-performance/.test(path))).toBe(false)
 })
+
+test('real MA60 arrows match persisted D1 facts across strategy and sector switches', async ({page}, testInfo) => {
+  const calls=[]
+  page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/api/')) calls.push(new URL(r.url()).pathname)})
+  const response=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/newow/home-projection') && r.status()===200)
+  await page.goto('/market')
+  const payload=await (await response).json()
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
+  const expected=payload.items.filter(item=>item.strategies.trend['1d'].independent_trend?.status==='ready')
+  expect(expected.length).toBeGreaterThan(0)
+  for (const item of expected) {
+    const fact=item.strategies.trend['1d'].independent_trend
+    expect(fact.formula_version).toBe('guiyi_home_close_ma60_v1')
+    expect(fact.page_parity).toBe(false)
+    expect(fact.approximate).toBe(true)
+  }
+  const arrows=async()=>page.locator('.list-direction svg').evaluateAll(els=>els.map(el=>el.getAttribute('aria-label')))
+  await expect(page.locator('.independent-trend-icon')).toHaveCount(expected.length)
+  const original=await arrows(), before=calls.length
+  await page.getByRole('button',{name:'震荡',exact:true}).click()
+  expect(await arrows()).toEqual(original)
+  await page.getByRole('button',{name:'趋势',exact:true}).click()
+  await page.locator('.strategy-list-row').first().click()
+  expect(await arrows()).toEqual(original)
+  await page.getByRole('button',{name:/^贵金属/}).click()
+  await expect(page.locator('.strategy-list-item')).toHaveCount(4)
+  await page.getByRole('button',{name:/^全部/}).click()
+  expect(await arrows()).toEqual(original)
+  expect(calls.slice(before).some(p=>/home-projection|home-cards|signal\/compute/.test(p))).toBe(false)
+  for(const width of [1168,390]) {
+    await page.setViewportSize({width,height:900})
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true)
+    await page.screenshot({path:testInfo.outputPath(`ma60-home-${width}.png`)})
+  }
+})

@@ -89,6 +89,7 @@ function iconState(symbol: string, period: HomePeriod) { return ({ build: 'up', 
 const stages = [{ state: 'FLAT', label: '空仓', icon: 'neutral' }, { state: 'BUILD', label: '买入', icon: 'up' }, { state: 'HOLD', label: '持股', icon: 'aligned' }, { state: 'CLEAR', label: '卖出', icon: 'down' }] as const
 function openChart(symbol:string,period:HomePeriod,focus?:string){const context=homeContext(symbol,strategy.value,period,fact(symbol,period));if(context)emit('chart',symbol,strategy.value,period,focus,context);else if(focus)emit('chart',symbol,strategy.value,period,focus);else emit('chart',symbol,strategy.value,period)}
 function openSummary(row: Row) { openChart(row.symbol,'1d') }
+function trendDisplay(symbol: string) { return homeTrendDisplay(deliveries.value[symbol]?.card?.strategies.trend['1d'], deliveries.value[symbol]) }
 function pending(symbol: string) { return periods.some(period => fact(symbol, period)?.freshness === 'pending_update') }
 </script>
 
@@ -107,7 +108,16 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
         <div class="list-change"><span :class="priceTone(row)">{{ change(row) }}</span></div>
         <div class="list-reference"><strong :class="reference(row.symbol).label === '目标' ? 'target' : reference(row.symbol).label === '吸筹' ? 'absorb' : 'pending'" :title="`${reference(row.symbol).label} · 页面参考价格，非成交成本`">{{ reference(row.symbol).text }}</strong></div>
         <div class="list-periods"><span v-for="period in periods" :key="period" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}${periodLabel(period)}线${periodDisplay(row.symbol, period).label}`" :title="`${periodLabel(period)}线 · ${periodDisplay(row.symbol, period).label}`"><MarketStateIcon :state="iconState(row.symbol, period)" /></span></div>
-        <div class="list-direction" :title="homeTrendDisplay().label"><svg class="independent-trend-pending" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#C7C7CC" stroke-width="2" role="img" :aria-label="homeTrendDisplay().label"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="list-direction" :title="trendDisplay(row.symbol).title">
+          <svg v-if="trendDisplay(row.symbol).tone !== 'pending'" class="independent-trend-icon" viewBox="0 0 24 24" width="22" height="22" role="img" :aria-label="trendDisplay(row.symbol).label">
+            <circle cx="12" cy="12" r="11" :fill="trendDisplay(row.symbol).tone === 'up' ? 'rgba(255,59,48,0.12)' : 'rgba(52,199,89,0.12)'"/>
+            <g fill="none" :stroke="trendDisplay(row.symbol).tone === 'up' ? '#FF3B30' : '#34C759'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline :points="trendDisplay(row.symbol).tone === 'up' ? '6.5,15 10.5,11 12.5,13 17.5,8' : '6.5,9 10.5,13 12.5,11 17.5,16'"/>
+              <polyline :points="trendDisplay(row.symbol).tone === 'up' ? '13.5,8 17.5,8 17.5,12' : '13.5,16 17.5,16 17.5,12'"/>
+            </g>
+          </svg>
+          <svg v-else class="independent-trend-pending" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#C7C7CC" stroke-width="2" role="img" :aria-label="trendDisplay(row.symbol).label"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
       </div>
       <p v-if="marketHomeQualityNotice(row.reason_codes)" class="list-quality-note" role="status">{{ marketHomeQualityNotice(row.reason_codes) }}</p>
       <div class="list-notices" role="status">
