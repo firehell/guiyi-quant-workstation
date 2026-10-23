@@ -4,8 +4,8 @@ import NewowPriceSources from './detail/newow/NewowPriceSources.vue'
 import { homePriceSources } from '@/utils/newowPriceSources'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards, invalidateHomeCard } from '@/api/newowHomeCards'
-import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { getHomeDisplayCache, configureHomeCardAuthority, peekNewowHomeCards, getNewowHomePerformance, getNewowHomeCards, invalidateHomeCard } from '@/api/newowHomeCards'
+import { createHomeCardLoader, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homeDirectionDisplay, homePeriodDisplay, type HomePeriodFact, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { createHomeCardViewport } from '@/utils/newowHomeViewport'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
@@ -20,9 +20,10 @@ const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: H
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
 const loader = createHomeCardLoader(getNewowHomeCards, value => { deliveries.value = value }, peekNewowHomeCards)
 const admittedProducts = shallowRef(new Set<string>())
-const viewport = createHomeCardViewport((products, reset) => {
+let loaderStarted = false
+const viewport = createHomeCardViewport((products) => {
   admittedProducts.value = new Set(products)
-  if (reset) void loader.load(products)
+  if (!loaderStarted) { loaderStarted = true; void loader.load(products) }
   else loader.admit(products)
 })
 function observeRow(symbol: string, value: unknown) { viewport.observe(symbol, value as Element | null) }
@@ -31,6 +32,11 @@ const performanceDeliveries = shallowRef<Record<string, { owner: string; loading
 const previousPerformanceDeliveries = shallowRef<typeof performanceDeliveries.value>({})
 const recoveredProducts = new Set<string>()
 const performanceController = new AbortController()
+const displayController = new AbortController()
+void getHomeDisplayCache(displayController.signal).then(values => {
+  for (const { product, response } of values) loader.restoreDisplay(product, response)
+}).catch(() => { /* Optional historical display cache never blocks current reads. */ })
+
 function performanceOwner(fact?: HomePeriodFact) { return JSON.stringify([fact?.as_of, fact?.snapshot_token, fact?.physical_contract, fact?.input_sha256, fact?.formula_versions, fact?.data_revision_identity]) }
 function ensurePerformance(symbol: string) {
   const delivery = deliveries.value[symbol]
@@ -89,7 +95,12 @@ watch([productKey, () => props.authority, () => props.refreshSequence], (_value,
   if (!previous?.[1]) { viewport.setProducts([...props.products]); return }
   if (previous[0] !== productKey.value) viewport.setProducts([...props.products])
   const changed = forced ? [...admittedProducts.value] : previous[1] !== props.authority ? changedAuthorityProducts(previous[1] as string, props.authority).filter(product => admittedProducts.value.has(product)) : []
-  if (changed.length) { recoveredProducts.clear(); reconcile(changed, true) }
+  if (previous[1] !== props.authority) {
+    recoveredProducts.clear()
+    performanceDeliveries.value = {}
+    previousPerformanceDeliveries.value = {}
+    void loader.load([...admittedProducts.value])
+  } else if (changed.length) { recoveredProducts.clear(); reconcile(changed, true) }
 }, { immediate: true })
 let reconcileTimer: ReturnType<typeof setInterval> | null = null
 function visibilityChanged() {
@@ -104,7 +115,7 @@ if (typeof document !== 'undefined') {
   if (document.visibilityState === 'visible') reconcileTimer = setInterval(() => { reconcile() }, 5 * 60_000)
 }
 watch(deliveries, () => { for (const symbol of expanded.value) ensurePerformance(symbol) })
-onBeforeUnmount(() => { if (reconcileTimer) clearInterval(reconcileTimer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged); viewport.dispose(); loader.dispose(); performanceController.abort() })
+onBeforeUnmount(() => { if (reconcileTimer) clearInterval(reconcileTimer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged); viewport.dispose(); loader.dispose(); performanceController.abort(); displayController.abort() })
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
 function periodDisplay(symbol: string, period: HomePeriod) { return admittedProducts.value.has(symbol) ? homePeriodDisplay(fact(symbol, period)) : { label: '待查看', icon: '—', tone: 'pending' } }
 function direction(symbol: string) { return composite(symbol).state ? homeDirectionDisplay(fact(symbol, '1d'), fact(symbol, '1w')) : { label: '日周一致性不可用', tone: 'pending' } }
@@ -181,10 +192,6 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
       </section>
     </article>
     <button v-if="admittedProducts.size < products.length" type="button" class="strategy-load-more" @click="viewport.showMore">读取更多策略摘要（{{ products.length - admittedProducts.size }} 个待查看）</button>
-    <details class="list-details"><summary>详情与口径</summary><p v-if="liveStale && rows.some(row => row.liveQuote)">断线保留最新完成报价</p>
-      <div v-for="row in rows" :key="row.symbol"><strong>{{ row.product_name }} {{ row.symbol.toUpperCase() }}</strong><p>{{ row.liveQuote ? `最新完成行情 · ${formatBeijingInstant(row.liveQuote.barEnd)}` : `日线收盘报价 · ${row.data_as_of}` }} · {{ row.liveQuote?.physicalContract ?? row.actual_contract }}</p><p v-for="period in periods" :key="period">{{ periodLabel(period) }}线 · {{ periodDisplay(row.symbol, period).label }}<template v-if="homePeriodReason(fact(row.symbol, period))">（{{ homePeriodReason(fact(row.symbol, period)) }}）</template> · {{ fact(row.symbol, period)?.physical_contract ?? '合约待确认' }} · 截至 {{ formatBeijingInstant(fact(row.symbol, period)?.bar_end) }}<br>来源 {{ fact(row.symbol, period)?.source_identity ?? '—' }} · 计算段 {{ fact(row.symbol, period)?.calculation_segment_id ?? '—' }}</p></div>
-      <p>页面参考价格 · 非成交成本。趋势列依赖独立 trendMap 来源，未确认不代表已验证的日周策略公式不可用。</p>
-    </details>
   </section>
 </template>
 
@@ -202,7 +209,6 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 .list-periods{display:contents}.list-periods>span{display:flex;align-items:center;justify-content:center;border:0;padding:0;background:none;cursor:pointer}.list-direction{display:flex;justify-content:center}.list-direction :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px}
 .list-quality-note{margin:0;padding:0 12px 6px;color:var(--gy-text-secondary);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 .list-notices{position:absolute;left:12px;top:49px;max-width:calc(100% - 440px);display:flex;gap:5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:9px;color:#b88134;line-height:10px}.list-notices>span{overflow:hidden;text-overflow:ellipsis}
-.list-details{font-size:11px;color:var(--gy-text-muted);padding:10px 12px;line-height:1.6;overflow-wrap:anywhere}.list-details summary{cursor:pointer}.list-details p{margin:4px 0}.list-details>div{padding:8px 0;border-bottom:1px solid #f5f5f5}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}button:focus-visible,summary:focus-visible{outline:2px solid #ff6535;outline-offset:3px}
 @media(max-width:600px){.strategy-list-columns,.strategy-list-row{grid-template-columns:minmax(68px,1fr) 62px 54px 52px 28px 28px 28px;column-gap:3px;padding:0 10px}.strategy-list-row{height:60px}.product-name strong{font-size:13px}.list-price strong{font-size:13px}.list-change>span{font-size:10px;padding:3px}.list-reference strong{font-size:10px;padding:3px}.list-periods :deep(.market-state-icon){width:24px;height:24px;flex-basis:24px}.list-direction :deep(.market-state-icon){width:22px;height:22px;flex-basis:22px}.list-notices{left:10px;max-width:calc(100% - 268px);font-size:8px}.strategy-list-columns{font-size:10px}}
 .strategy-list-row{cursor:pointer}.strategy-list-row{transition:background .15s}.strategy-list-row:hover,.strategy-list-row[aria-expanded=true]{background:#f8f8fa}.strategy-list-row:active{background:#f8f8f8}.strategy-list-row:focus-visible,.composite-card:focus-visible{outline:2px solid #ff6535;outline-offset:-2px}

@@ -96,3 +96,22 @@ test('reconciliation tracks current visible rows rather than every previously ad
   assert.deepEqual(viewport.visibleProducts(), ['cu'])
   viewport.dispose()
 })
+
+
+test('sector changes retain completed cards and in-flight reads without duplicate requests', async () => {
+  const calls: Array<{ product: string; signal: AbortSignal; resolve: (value: ReturnType<typeof response>) => void }> = []
+  let items: Record<string, import('../src/utils/newowHomeCards.ts').CardDelivery> = {}
+  const loader = createHomeCardLoader((products, signal) => new Promise(resolve => calls.push({ product: products[0]!, signal, resolve })), value => { items = value })
+  const first = loader.load(['rb', 'cu'])
+  calls[0]!.resolve(response('rb')); await new Promise(resolve => setImmediate(resolve))
+  const card = items.rb!.card
+  loader.admit(['ag'])
+  loader.admit(['rb', 'cu'])
+  assert.equal(items.rb!.card, card)
+  assert.equal(items.rb!.loading, false)
+  assert.ok(calls.every(call => !call.signal.aborted))
+  assert.deepEqual(calls.map(call => call.product), ['rb', 'cu', 'ag'])
+  calls[1]!.resolve(response('cu')); calls[2]!.resolve(response('ag'))
+  await first
+  loader.dispose()
+})

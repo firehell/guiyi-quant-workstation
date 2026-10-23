@@ -15,6 +15,12 @@ from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, FeatureSta
 from app.market_data.newow.home_cards import project_home_summary
 
 
+def _snapshot_resolver(snapshot, service):
+    def resolve_with_chart(product, strategy, frequency):
+        return snapshot, service.query(ProductServiceQuery(product, strategy, frequency, as_of=snapshot.as_of))
+    return SimpleNamespace(resolve_with_chart=resolve_with_chart)
+
+
 def test_home_summary_uses_full_replay_even_with_one_visible_bar(product_cases):
     service, _, _, clear = _service(product_cases)
     result = service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end, chart_limit=1))
@@ -42,7 +48,7 @@ def test_home_summary_open_cost_is_eligible_build_price(product_cases):
 def test_batch_card_is_exact_projection_and_weekly_failure_is_isolated(monkeypatch, product_cases):
     service, _, _, clear = _service(product_cases)
     monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: service)
-    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_, **kwargs: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_, **kwargs: _snapshot_resolver(DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current'), service))
     def failed(*args, **kwargs):
         raise ValueError('NEWOW_WEEKLY_STALE')
     monkeypatch.setattr(market_newow, '_build_weekly_resolver', failed)
@@ -214,13 +220,13 @@ def test_home_never_reads_reference_history(monkeypatch, product_cases):
         return original(request)
     monkeypatch.setattr(service, 'query', query)
     monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: service)
-    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_, **kwargs: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
-    monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *_, **kwargs: SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')))
+    monkeypatch.setattr(market_newow, '_build_daily_resolver', lambda *_, **kwargs: _snapshot_resolver(DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current'), service))
+    monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *_, **kwargs: _snapshot_resolver(DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current'), service))
     app.dependency_overrides[get_db] = lambda: object()
     try:
         with TestClient(app) as client:
             assert client.get('/api/v1/market/newow/home-cards?products=rb').status_code == 200
-        assert calls == ['chart'] * 4
+        assert calls == ['chart'] * 3  # D1 trend + oscillation; W1 resolver fails closed.
     finally:
         app.dependency_overrides.clear()
 
@@ -276,10 +282,7 @@ def test_home_reuses_snapshot_validation_service(monkeypatch, product_cases):
     def resolver(*args, **kwargs):
         assert "home_services" in kwargs
         kwargs["home_services"].append(service)
-        def resolve(*args):
-            service.query(ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end))
-            return DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current')
-        return SimpleNamespace(resolve=resolve)
+        return _snapshot_resolver(DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current'), service)
     monkeypatch.setattr(market_newow, '_build_daily_resolver', resolver)
     monkeypatch.setattr(market_newow, '_build_weekly_resolver', lambda *args, **kwargs: (_ for _ in ()).throw(ValueError('NEWOW_WEEKLY_STALE')))
     monkeypatch.setattr(market_newow, '_build_product_service', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('must reuse verified service')))
@@ -304,7 +307,7 @@ def test_conditional_cards_keep_token_identity_and_never_hide_failed_read(monkey
         return result[0]
     monkeypatch.setattr(market_newow, '_build_product_service', lambda *_, **kwargs: SimpleNamespace(query=query))
     def resolver(*args, **kwargs):
-        return SimpleNamespace(resolve=lambda *args: DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current'))
+        return _snapshot_resolver(DailySnapshot('rb', ProductStrategy.TREND, ProductFrequency.DAILY, clear.bar_end, clear.trading_day, clear.trading_day, clear.bar_end, 'current'), SimpleNamespace(query=query))
     monkeypatch.setattr(market_newow, '_build_daily_resolver', resolver)
     monkeypatch.setattr(market_newow, '_build_weekly_resolver', resolver)
     app.dependency_overrides[get_db] = lambda: object()

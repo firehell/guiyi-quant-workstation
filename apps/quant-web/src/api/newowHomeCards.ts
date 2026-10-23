@@ -71,3 +71,16 @@ export async function getNewowHomePerformance(product: string, strategy: HomeStr
     return value.performance
   }, newowResourceIdentity, signal)
 }
+
+
+/** Fast historical display only. Current cards still use the verified reader. */
+export async function getHomeDisplayCache(signal: AbortSignal) {
+  const value = await request.get<never, { schema_version: string; stale: boolean; executable: boolean; items: Array<{ product: string; saved_at: string; card: unknown }> }>('/market/newow/home-card-display-cache', { signal, timeout: 3000 })
+  if (value.schema_version !== 'newow_home_display_cache_v1' || value.stale !== true || value.executable !== false || !Array.isArray(value.items) || value.items.length > 60) throw new Error('INVALID_HOME_DISPLAY_CACHE')
+  return value.items.map(item => {
+    const savedAt = Date.parse(item.saved_at)
+    if (!Number.isFinite(savedAt) || savedAt > Date.now() || Date.now() - savedAt > 7 * 86400_000) throw new Error('INVALID_HOME_DISPLAY_CACHE')
+    const response = normalizeHomeCards({ schema_version: 'newow_home_cards_v2', requested_at: item.saved_at, items: [item.card] }, [item.product])
+    return { product: item.product, response: { ...response, restored: true } }
+  })
+}

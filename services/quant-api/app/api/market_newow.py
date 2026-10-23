@@ -87,6 +87,7 @@ from app.market_data.newow.product_service import (
     AuxiliaryComponent,
 )
 from app.market_data.newow.resource_gate import HeavyResourceGate
+from app.market_data.newow.home_display_cache import HomeDisplayCache
 from app.market_data.newow.snapshot_cache import SnapshotCache
 from app.market_data.operational_universe import (
     ActiveUniverseError,
@@ -583,6 +584,19 @@ def newow_historical_snapshot(
         raise HTTPException(status_code=status, detail=detail) from exc
 
 
+_HOME_DISPLAY_CACHE = HomeDisplayCache()
+
+
+@router.get('/home-card-display-cache')
+def newow_home_card_display_cache(request: Request):
+    """Last successful display only: no DB, resolver, token or current-fact claim."""
+    if request.query_params:
+        raise HTTPException(422, detail={'code': 'NEWOW_INVALID_QUERY'})
+    if getattr(request.state, 'candidate_preview_as_of', None) is not None:
+        return {**_HOME_DISPLAY_CACHE.read(), 'items': []}
+    return _HOME_DISPLAY_CACHE.read()
+
+
 @router.get("/home-cards")
 def newow_home_cards(request: Request, products: str = Query(...), session: Session = Depends(get_db)):
     """Bounded D1/W1 facts; a failed period never suppresses another product."""
@@ -619,7 +633,7 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                 policy = _input_quality_policy(request, product, frequency)
                 home_services: list[NewowProductService] = []
                 resolver = (_build_daily_resolver if frequency == '1d' else _build_weekly_resolver)(session, cancelled, lambda: now, policy, home_services=home_services)
-                snapshot = resolver.resolve(product, ProductStrategy.TREND, ProductFrequency(frequency))
+                snapshot, trend_result = resolver.resolve_with_chart(product, ProductStrategy.TREND, ProductFrequency(frequency))
                 # One pinned request lifecycle; never reuse unchecked inputs
                 # between HTTP requests or different authority generations.
                 # The resolver already validated this exact prefix. Reuse its
@@ -632,7 +646,9 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
             for strategy in strategies:
                 try:
                     _require_strategy_frequency(request, strategy, frequency)
-                    result = service.query(ProductServiceQuery(product, ProductStrategy(strategy), ProductFrequency(frequency), as_of=snapshot.as_of))
+                    # The resolver already produced this exact trend chart under the
+                    # current request authority. Reuse it rather than rereading it.
+                    result = trend_result if strategy == 'trend' else service.query(ProductServiceQuery(product, ProductStrategy(strategy), ProductFrequency(frequency), as_of=snapshot.as_of))
                     summary = result.chart.value.home_summary if result.chart.value else None
                     if summary is None:
                         strategies[strategy][frequency] = {'status': 'warming', 'state': None, 'reason_code': 'NEWOW_CHART_WARMING'}
@@ -648,6 +664,9 @@ def newow_home_cards(request: Request, products: str = Query(...), session: Sess
                     strategies[strategy][frequency] = unavailable(exc, product, frequency)
         items.append({'product': product, 'strategies': strategies})
     payload = _json_value({'schema_version': 'newow_home_cards_v2', 'requested_at': now, 'items': items})
+    if getattr(request.state, 'candidate_preview_as_of', None) is None:
+        for item in payload['items']:
+            _HOME_DISPLAY_CACHE.put(item, payload['requested_at'])
     # Keep snapshot_token in the validator: expiry/eviction must send a new
     # body, otherwise a 304 could leave lazy performance with a dead owner.
     healthy = all(period.get('status') != 'unavailable'

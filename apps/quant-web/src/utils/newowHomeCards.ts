@@ -118,7 +118,7 @@ export function homeCompositeDisplay(day?: HomePeriodFact, week?: HomePeriodFact
 }
 
 export function homeDeliveryNotice(delivery?: CardDelivery) {
-  if (delivery?.stale) return delivery.loading ? delivery.savedAt ? '本地策略快照，正在重新验证' : '策略刷新中，保留上次快照' : delivery.failed ? '策略刷新失败，保留上次快照' : '本地策略快照，等待重新验证'
+  if (delivery?.stale) return delivery.loading ? delivery.savedAt ? '策略历史快照，正在重新验证' : '策略刷新中，保留上次快照' : delivery.failed ? '策略刷新失败，保留上次快照' : '策略历史快照，等待重新验证'
   if (delivery?.failed) return '策略读取失败，可刷新重试'
   return delivery?.loading || !delivery ? '策略读取中' : null
 }
@@ -156,13 +156,14 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
   let controller: AbortController | null = null
   let items: Record<string, CardDelivery> = {}
   const revisions = new Map<string, number>()
+  const displaySnapshots = new Map<string, HomeCardsResponse>()
   type Queue = { generation: number; signal: AbortSignal; products: string[]; workers: Set<Promise<void>> }
   let queue: Queue | null = null
   function addProducts(products: readonly string[]) {
     if (!queue) return
     for (const product of products) {
       if (items[product]) continue
-      const snapshot = cached?.(product), card = snapshot?.items.find(item => item.product === product)
+      const snapshot = cached?.(product) ?? displaySnapshots.get(product), card = snapshot?.items.find(item => item.product === product)
       const validated = card && !snapshot?.restored
       items[product] = card ? { card, loading: !validated, stale: !validated, failed: false, savedAt: snapshot?.requested_at } : { card: null, loading: true, stale: false, failed: false }
       if (!card || !validated) queue.products.push(product)
@@ -233,7 +234,18 @@ export function createHomeCardLoader(fetch: (products: string[], signal: AbortSi
       }
       publish({ ...items })
     },
-    dispose() { ++generation; controller?.abort() },
+    restoreDisplay(product: string, response: HomeCardsResponse) {
+      // A late display-cache response must never replace a current network result.
+      if (!response.restored) return
+      const normalized = { ...normalizeHomeCards(response, [product]), restored: true }
+      displaySnapshots.delete(product)
+      displaySnapshots.set(product, normalized)
+      while (displaySnapshots.size > 60) displaySnapshots.delete(displaySnapshots.keys().next().value!)
+      if (!items[product]?.loading || items[product]?.card) return
+      items[product] = { ...items[product]!, card: normalized.items[0]!, stale: true, savedAt: response.requested_at }
+      publish({ ...items })
+    },
+    dispose() { ++generation; controller?.abort(); displaySnapshots.clear() },
   }
 }
 

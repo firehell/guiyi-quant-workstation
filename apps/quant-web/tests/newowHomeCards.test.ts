@@ -131,3 +131,36 @@ test('a previously hidden product cannot reuse a fresh card alias from another a
   assert.equal(reads, 1)
   assert.ok(cache.peek(second))
 })
+
+
+test('server display cache fills pending rows immediately but never replaces verified results', async () => {
+  let items: Record<string, CardDelivery> = {}
+  let complete!: (value: HomeCardsResponse) => void
+  const loader = createHomeCardLoader(() => new Promise(resolve => { complete = resolve }), value => { items = value })
+  const pending = loader.load(['rb'])
+  loader.restoreDisplay('rb', { ...response(['rb']), restored: true })
+  assert.ok(items.rb!.card)
+  assert.equal(items.rb!.loading, true)
+  assert.equal(items.rb!.stale, true)
+  complete(response(['rb'])); await pending
+  const verified = items.rb!.card
+  loader.restoreDisplay('rb', { ...response(['rb']), restored: true })
+  assert.equal(items.rb!.card, verified)
+  assert.equal(items.rb!.stale, false)
+  loader.dispose()
+})
+
+
+test('early server display snapshots survive until overview and later sector admission', async () => {
+  let items: Record<string, CardDelivery> = {}
+  const loader = createHomeCardLoader(() => new Promise(() => {}), value => { items = value })
+  loader.restoreDisplay('rb', { ...response(['rb']), restored: true })
+  loader.restoreDisplay('cu', { ...response(['cu']), restored: true })
+  void loader.load(['rb'])
+  assert.ok(items.rb!.card)
+  assert.equal(items.rb!.stale, true)
+  loader.admit(['cu'])
+  assert.ok(items.cu!.card)
+  assert.equal(items.cu!.stale, true)
+  loader.dispose()
+})

@@ -124,6 +124,7 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
       requests.push(url.pathname)
       return route.fulfill({ json: dailyCapabilities() })
     }
+    if (url.pathname === '/api/v1/market/newow/home-card-display-cache') return route.fulfill({ json: { schema_version: 'newow_home_display_cache_v1', stale: true, executable: false, items: [] } })
     if (url.pathname === '/api/v1/market/newow/home-cards') {
       const products = (url.searchParams.get('products') ?? '').split(',').filter(Boolean)
       return route.fulfill({ json: {
@@ -254,7 +255,7 @@ test('one operational socket overlays same-contract 1m price and keeps stale val
   const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
   await expect(row.locator('.list-price')).toContainText('112.5')
   await expect(row.locator('.list-change')).toHaveText('+12.50%')
-  await expect(page.locator('.list-details')).toContainText('最新完成行情 · 2026-09-02 10:31')
+  await expect(page.locator('.list-details')).toHaveCount(0)
   await emitHomeLive(page, { type: 'quote', schema_version: 1, observed_at: '2026-09-02T02:32:01Z', item: liveItem({ bar_end: '2026-09-02T02:30:00Z', price: '99' }) })
   await expect(row.locator('.list-price')).toContainText('112.5')
   await page.evaluate(() => window.__marketDetailSockets.find((item) => new URL(item.url, location.href).pathname === '/api/v1/market/research/home-live/ws').onclose?.())
@@ -280,7 +281,6 @@ test('authority reset invalidates the overview identity before applying a new co
   await expect.poll(() => requests.filter((value) => value.endsWith?.('/home-overview')).length).toBe(2)
   const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
   await expect(row.locator('.list-price')).toContainText('120')
-  await expect(page.locator('.list-details')).toContainText('AG2701')
   await expect(row.locator('.list-change')).toHaveText('—')
 })
 
@@ -434,6 +434,9 @@ test('sector counts use authority and filtering toggles locally with keyboard ro
   await precious.click()
   await expect(page.locator('.strategy-list-item')).toHaveCount(60)
   expectHomeReads(requests)
+  const cardReads = requests.all.filter(item => item.url.pathname.endsWith('/home-cards')).map(item => item.url.searchParams.get('products'))
+  expect(cardReads.length).toBeGreaterThan(0)
+  expect(new Set(cardReads).size).toBe(cardReads.length)
   await page.getByRole('button', { name: '白银展开策略摘要' }).press('Enter')
   await page.getByRole('link', { name: '白银趋势策略详情' }).press('Enter')
   await expect(page).toHaveURL(/view=newow.*symbol=ag.*strategy=trend.*series_kind=actual_dominant.*frequency=1d/)
@@ -461,8 +464,8 @@ test('sort and sector survive refresh and browser back while absent sector recov
   await page.goBack()
   await expect(page.locator('.strategy-list-item')).toHaveCount(4)
   await expect(page.locator('.strategy-sort button').filter({ hasText: /价格 ↓/ })).toHaveAttribute('aria-pressed', 'true')
-  await expect.poll(() => requests.all.slice(returnRequestStart).filter(({ method, url }) => method === 'GET' && url.pathname === '/api/v1/market/newow/product-capabilities').length).toBe(1)
-  expectHomeReads(requests, 0, 1, 1)
+  await expect.poll(() => requests.all.slice(returnRequestStart).filter(({ method, url }) => method === 'GET' && url.pathname === '/api/v1/market/newow/product-capabilities').length).toBe(0)
+  expectHomeReads(requests, 0, 1, 0)
   await page.evaluate(() => {
     const key = 'guiyi.market-home.preferences.v1'
     const value = JSON.parse(localStorage.getItem(key))
@@ -500,8 +503,8 @@ test('restores the actual 60-row layout scroll position immediately after browse
     return Math.max(content?.scrollTop ?? 0, nested?.scrollTop ?? 0, document.scrollingElement?.scrollTop ?? 0)
   })).toBeGreaterThan(before - 10)
   await expect.poll(() => requests.filter(path => path === '/api/runtime/health').length).toBe(1)
-  await expect.poll(() => requests.all.slice(returnRequestStart).filter(({ method, url }) => method === 'GET' && url.pathname === '/api/v1/market/newow/product-capabilities').length).toBe(1)
-  expectHomeReads(requests, 0, 1, 1)
+  await expect.poll(() => requests.all.slice(returnRequestStart).filter(({ method, url }) => method === 'GET' && url.pathname === '/api/v1/market/newow/product-capabilities').length).toBe(0)
+  expectHomeReads(requests, 0, 1, 0)
 })
 
 test('invalid and blocked preferences fall back safely without hiding available rows', async ({ page }) => {
@@ -733,4 +736,26 @@ test('messages disclose partial source coverage and expose all supported frequen
   await expect(page.getByRole('button', { name: '60分钟', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: '重置', exact: true }).click()
   await expect(page.getByRole('button', { name: '5分钟', exact: true })).toBeEnabled()
+})
+
+
+test('server historical cache displays while verified cards remain pending', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests)
+  await page.route('**/api/v1/market/newow/home-card-display-cache', route => route.fulfill({ json: {
+    schema_version: 'newow_home_display_cache_v1', stale: true, executable: false,
+    items: [{ product: 'ag', saved_at: '2026-10-23T07:00:00Z', card: { product: 'ag', strategies: Object.fromEntries(['trend', 'oscillation'].map(strategy => [strategy, Object.fromEntries(['1d', '1w'].map(period => [period, { status: 'warming', state: null }]))])) } }],
+  } }))
+  let release
+  const blocked = new Promise(resolve => { release = resolve })
+  await page.route('**/api/v1/market/newow/home-cards?*', async route => {
+    await blocked
+    await route.fallback()
+  })
+  try {
+    await page.goto('/market')
+    const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
+    await expect(row).toContainText('策略历史快照，正在重新验证')
+    await expect(row).not.toContainText('策略读取失败')
+  } finally { release() }
 })

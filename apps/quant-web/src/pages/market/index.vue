@@ -190,7 +190,7 @@ onBeforeUnmount(() => {
   <div class="market-dashboard-page">
     <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @select-tab="selectTab" @open-view="openView" @refresh="refreshAll" />
     <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
-    <template v-if="activeTab === 'market'">
+    <div v-show="activeTab === 'market'" style="display: contents">
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
       <section class="market-home-main">
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>
@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
         <p v-if="!rows.length && home.overview.data.value" class="market-home-empty">当前{{ sector ? productSectorLabel(sector) : '快照' }}暂无可用品种。<span v-if="selectedSector">可用 {{ selectedSector.participant_count }} / 总数 {{ selectedSector.active_count }}；缺失品种不生成行情行。</span></p>
       </template>
       </section>
-    </template>
-    <MarketHomeMessages v-else :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" @open-newow="openNewowEvent" />
+    </div>
+    <MarketHomeMessages v-if="activeTab === 'messages'" :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" @open-newow="openNewowEvent" />
   </div>
 </template>

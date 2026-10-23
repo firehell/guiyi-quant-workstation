@@ -1665,3 +1665,14 @@ Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading
 `guiyi_daily_weekly_path_v3` 的 active 图为 `newow_historical_path_v3402_v1` 历史买卖双线、预测区、周状态背景和 ETA，原 periods 只保留来源事实，不再渲染阶段示意。使用完整普通页面参考投影及物理/质量段内样本，forceClose 不生成真实卖点；缺样本、日历或周状态明确不可用，不跨段拼线。ETA 保留原式日期数组限幅并披露，不外推未来交易日，不作为执行预测。股票私有 target/cost 不反推；期货价格仍使用公开标识的 Canonical 通道。
 
 现有 explanation GET 在 `decision_v2=true` 时可附 `path_strategy=trend|oscillation|main_rise|fusion|osc-test|osc-test2|osc-test3|osc-test4`，参数加入缓存身份。该参数只选择普通页面路径的交易来源，不改变 CDV2 背景公式；主升浪周背景使用自身信号，实验使用震荡背景，融合缺独立周背景时明确不可用。理论收益/范围页签与此普通路径独立，不能标成理论路径。所有历史日期采用上海日，instant 按真实时刻比较。
+
+
+### 首页历史展示缓存
+
+首页 MAY 通过只读 `GET /market/newow/home-card-display-cache` 在当前摘要计算前展示进程内上次成功摘要。
+该响应 SHALL 明确 `stale=true`、`executable=false`，逐品种保留保存时间及原始截止/输入/公式身份；
+不得携带 snapshot token、snapshot context 或页面收益，不得用于详情复用、当前事实认证、通知或交易。
+缓存最多60品种、10MiB、7天，进程重启清空；失败或不可用读取不得替换已有成功摘要。
+该入口不得读取数据库、重算策略或创建后台任务，candidate preview 不得读取正式展示缓存。
+浏览器 SHALL 标记历史快照待校验，并继续通过原 home-cards 完整校验；迟到缓存不得覆盖当前响应，
+缓存不可用不得阻塞正式读取。缓存命中及TTL均不证明当前映射、质量或输入仍然有效。
