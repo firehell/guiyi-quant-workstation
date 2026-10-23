@@ -1,5 +1,15 @@
 # 当前状态
 
+## 10/23 三项修复推进：周线已修，来源修订补丁已发布，Runtime待切换
+
+PR2612/SF2701 的 W1 矛盾质量区间已精确修复 15 周、6 个月分区；另八合约 W1 warmup 170 请求/170 发布通过，10 物理前缀及三策略独立读取通过。32 路 W1 lag 已自然追平。10/23 21:30 正式读回 540 READY/180 H1 DATA_CONFLICT/pending Capture 0；旧 2565 条自然 1m 原件无持久副本，保留缺口，不能用历史价格补造。
+
+按 owner 选定的双事实规则实现来源修订追加证据及独立 Canonical 历史展示。修复已集成 develop，v1.15.17 经 PR #465 发布，main/tag peeled commit `2459fa8659f0ae51640e430c20cbdcb263868f24`，发布树 `.worktrees/release-v1.15.17`；正式仍 v1.15.16/gen22，未切换。精确补丁 Reference 792 passed/81 skipped；新虚拟环境定向 74 passed/2 skipped；独立 PostgreSQL 两次测试及清理通过；Web 22 测与 build、OpenSpec、secret、独立 Review 通过。
+
+为避免旧冲突规则处理新夜盘 H1，Reference-worker PID27877/gen22 已唯一原生停驻，token `9a8ed93479bb469eb6397bcb23e9ab5f`，原 cursor `1792762446303-0` 保留。Feed/Live/Alert/API/Web 保持原 PID；21:39 自然 source 1755=45×39，Live/Alert 追尾，Reference 有意积压 270。只读候选分类 267 条比较全部可逐条证明，覆盖180路；无 quarantine/original terminal/pending，相关 checkpoint 均10/23 15:00，无恢复或 FLAT 需求。分类生产写入、独立历史重算、全品种 CLOSED 后精确冷切与新版本自然接续验收尚未完成，不声明 RUNTIME_READY。
+
+证据：`output/data-three-repair-20261023/`、`output/operational-audit-20261023/`；工程记录见 [来源修订修复](docs/tasks/reference-source-revision-20261023.md)。
+
 ## 10/22 夜间三项数据修复已执行，64路自然H1验收待发生
 
 按owner交办恢复Live/Feed、补齐AL2612/PG2612/PS2612/SI2612 D1并修复原240路H1异常。22:00–23:00的45夜盘品种source/completed各2700根自然1m，权威端点缺失0；旧原始观察缺口与Feed buffer未知保留。D1实际44次来源请求/44个月分区，AL204/PS205/SI205有效Bar；PG190有效+5条既有零OHL质量事实，四品种SuBing输入只读valid/ready，未发Event或通知。
