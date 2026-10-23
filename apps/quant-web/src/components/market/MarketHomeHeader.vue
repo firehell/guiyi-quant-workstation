@@ -24,8 +24,5 @@ function openProduct(option: ProductOption) {
       />
       <span v-if="directoryStatus === 'error' && options.length" role="alert">目录刷新失败，已保留上次选项。</span>
     </template>
-    <template #actions>
-      <button class="market-home-refresh" type="button" :disabled="loading" @click="$emit('refresh')">{{ loading ? '刷新中…' : '刷新' }}</button>
-    </template>
   </MarketNavigation>
 </template>
