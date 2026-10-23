@@ -9,13 +9,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
 
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, or_, select
+from sqlalchemy.orm import aliased
 
 from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
 from app.market_data.market_data_service import MarketDataError
 from app.reference_trading.contracts import manifest_sha256
 from app.reference_trading.forward_inputs import ForwardInputUnavailable, _bar_wire
 from app.reference_trading.models import (
+    ReferenceActivationReceipt,
     ReferenceBatch,
     ReferenceCaptureReconciliation,
     ReferenceStream,
@@ -28,9 +30,10 @@ from app.reference_trading.repository import RepositoryConflict
 class CompletedCanonicalReader:
     """Read exact physical completed content through MDS, with owner evidence."""
 
-    def __init__(self, market_data, owner_segments):
+    def __init__(self, market_data, owner_segments, *, source_revision_policy=False):
         self._market = market_data
         self._owner_segments = owner_segments
+        self._source_revision_policy = source_revision_policy
 
     def __call__(self, evidence):
         payload, proof = evidence["input_payload"], evidence["source_proof"]
@@ -45,7 +48,7 @@ class CompletedCanonicalReader:
 
         if raw.get("bar_end") != end.isoformat() or payload.get(
             "source_bar_sha256"
-        ) != proof.get("source_sha256"):
+        ) != proof.get("source_sha256") or manifest_sha256(raw) != proof.get("source_sha256"):
             raise RepositoryConflict("RECONCILIATION_CAPTURE_IDENTITY_CONFLICT")
         day = date.fromisoformat(raw["trading_day"])
         product, contract = payload["product"].lower(), payload["contract"]
@@ -109,7 +112,20 @@ class CompletedCanonicalReader:
                 comparable[key] = value
             else:
                 comparable[key] = authoritative
-        return CanonicalEvidence(revision, manifest_sha256(comparable))
+        revision_proof = None
+        if self._source_revision_policy and proof["frequency"] == "60m":
+            from app.reference_trading.source_revisions import build_revision_proof
+
+            try:
+                revision_proof = build_revision_proof(
+                    evidence, canonical, source,
+                    provider=self._market.catalog.contract_fact(product, contract).provider,
+                )
+            except RepositoryConflict:
+                # An unexplained/unknown difference remains the original strict
+                # mismatch. Failure to classify must never erase its blocker.
+                revision_proof = None
+        return CanonicalEvidence(revision, manifest_sha256(comparable), revision_proof)
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,18 +179,24 @@ def capture_reconciliation_statuses(session, capture_ids):
         else "not_applicable"
         for capture_id, row in all_rows.items()
     }
-    for record in session.scalars(
+    records = list(session.scalars(
         select(ReferenceCaptureReconciliation).where(
             ReferenceCaptureReconciliation.capture_batch_id.in_(tuple(all_rows))
         )
-    ):
+    ))
+    from app.reference_trading.source_revisions import resolved_mismatches
+
+    resolved = resolved_mismatches(session, [(r, all_rows[r.capture_batch_id])
+                                           for r in records if r.status == "mismatch"])
+    for record in records:
+        status = "source_revised" if record.reconciliation_id in resolved else record.status
         current = states[record.capture_batch_id]
         if (
-            record.status == "mismatch"
-            or record.status == "matched"
-            and current != "mismatch"
+            status == "mismatch"
+            or status == "source_revised" and current != "mismatch"
+            or status == "matched" and current not in {"mismatch", "source_revised"}
         ):
-            states[record.capture_batch_id] = record.status
+            states[record.capture_batch_id] = status
     for capture_id, sources in fusion.items():
         source_states = []
         for dep in sources:
@@ -194,6 +216,8 @@ def capture_reconciliation_statuses(session, capture_ids):
         states[capture_id] = (
             "mismatch"
             if "mismatch" in source_states
+            else "source_revised"
+            if "source_revised" in source_states and set(source_states) <= {"matched", "source_revised"}
             else "matched"
             if source_states == ["matched", "matched"]
             else "not_applicable"
@@ -233,6 +257,20 @@ class ScheduledCanonicalReconciliation:
         self._last = None
 
     @staticmethod
+    def _generation_allowed(session, capture, stream, proof):
+        generation = proof.get("generation")
+        if generation == stream.activation_generation:
+            return True
+        if type(generation) is not int or not 0 < generation < stream.activation_generation:
+            return False
+        receipts = session.scalars(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id == stream.stream_id,
+        )).all()
+        from app.reference_trading.source_revisions import activation_window_valid
+
+        return activation_window_valid(capture, stream, receipts)
+
+    @staticmethod
     def _scope_guard(session, capture):
         if capture is None:
             raise RepositoryConflict("CAPTURE_NOT_FOUND")
@@ -246,7 +284,7 @@ class ScheduledCanonicalReconciliation:
             stream is None
             or not stream.enabled
             or stream.active_revision_id != capture.revision_id
-            or stream.activation_generation != proof.get("generation")
+            or not ScheduledCanonicalReconciliation._generation_allowed(session, capture, stream, proof)
             or stream.frequency != proof.get("source_proof", {}).get("frequency")
             or stream.product.lower()
             != str(proof.get("input_payload", {}).get("product")).lower()
@@ -263,6 +301,18 @@ class ScheduledCanonicalReconciliation:
             return ReconciliationRound((), ())
         self._last = now
         with self._factory() as session:
+            from app.reference_trading.source_revisions import KEY, POLICY, PREFIX
+
+            classification = aliased(ReferenceBatch)
+            classified = exists(select(classification.batch_id).where(
+                classification.stream_id == ReferenceBatch.stream_id,
+                classification.revision_id == ReferenceBatch.revision_id,
+                classification.kind == "diagnostic",
+                classification.batch_key.like(PREFIX + "%"),
+                classification.source_evidence[KEY]["policy_version"].as_string() == POLICY,
+                classification.source_evidence[KEY]["reconciliation_id"].as_string()
+                == ReferenceCaptureReconciliation.reconciliation_id,
+            )).correlate(ReferenceBatch, ReferenceCaptureReconciliation)
             query = (
                 select(ReferenceBatch)
                 .join(
@@ -287,9 +337,8 @@ class ScheduledCanonicalReconciliation:
                         select(ReferenceCaptureReconciliation.reconciliation_id).where(
                             ReferenceCaptureReconciliation.capture_batch_id
                             == ReferenceBatch.batch_id,
-                            ReferenceCaptureReconciliation.status.in_(
-                                ("matched", "mismatch")
-                            ),
+                            or_(ReferenceCaptureReconciliation.status == "matched",
+                                and_(ReferenceCaptureReconciliation.status == "mismatch", classified)),
                         )
                     ),
                 )
@@ -306,7 +355,7 @@ class ScheduledCanonicalReconciliation:
             for row in rows:
                 stream = session.get(ReferenceStream, row.stream_id)
                 evidence = row.source_evidence["forward_capture_v1"]
-                if evidence.get("generation") == stream.activation_generation:
+                if self._generation_allowed(session, row, stream, evidence):
                     captures.append(row.batch_id)
             if rows:
                 self._after = rows[-1].batch_id

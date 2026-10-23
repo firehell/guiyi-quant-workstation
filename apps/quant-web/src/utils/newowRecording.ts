@@ -44,5 +44,9 @@ export function recordingItemStatus(item: { status: string; stream_id: string | 
 }
 
 export function recordingReconciliationLabel(status: unknown): string {
-  return ({ matched: '已匹配 Canonical', mismatch: '来源冲突', pending: '等待 Canonical 核对', not_applicable: '无需 Live 核对' } as Record<string, string>)[String(status)] ?? '待核对'
+  return ({ matched: '已匹配 Canonical', source_revised: '实时来源已被盘后历史修订', mismatch: '来源冲突', pending: '等待 Canonical 核对', not_applicable: '无需 Live 核对' } as Record<string, string>)[String(status)] ?? '待核对'
+}
+
+export function recordingHistoryStatusLabel(status: unknown): string {
+  return ({ CURRENT: '历史计算端点已追平，来源版本待验证', REBUILD_REQUIRED: '待按 Canonical 重算', LAGGING: '独立历史计算尚未追平', NOT_BUILT: '尚无独立历史结果', UNVERIFIED: '历史新鲜度尚未验证' } as Record<string, string>)[String(status)] ?? '历史状态待核对'
 }

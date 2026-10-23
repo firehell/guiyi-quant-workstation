@@ -87,6 +87,24 @@ def test_no_changed_endpoint_never_opens_full_input(tmp_path):
     assert not planner.requests and not service.calls
 
 
+def test_known_canonical_revision_invalidates_only_the_independent_history_and_uses_native_rebuild(tmp_path):
+    changed = replace(route(watermark=END), reason='CANONICAL_SOURCE_REVISION_CHANGED')
+    runner, planner, service = setup(tmp_path, [('completed', None, False)], (changed,))
+    runner.tick(now=END)
+    assert len(service.calls) == 1
+    assert service.calls[0][0] == 'rebuild'
+    assert planner.requests[0].operation == 'rebuild'
+    assert planner.requests[0].streams[0].identity.recording_mode.value == 'historical_replay'
+    assert not runner.state.read()['routes']
+
+
+def test_an_unknown_invalid_history_is_not_automatically_rebuilt(tmp_path):
+    runner, planner, service = setup(tmp_path, [], (replace(route(), reason='HISTORY_NOT_PUBLISHED'),))
+    runner.tick(now=END)
+    assert not service.calls and not planner.requests
+    assert next(iter(runner.state.read()['routes'].values()))['reason'] == 'HISTORY_NOT_PUBLISHED'
+
+
 def test_one_stream_per_tick_base_order_and_budget(tmp_path):
     routes = (route('main_rise'), route('oscillation'), route('trend'))
     runner, planner, service = setup(tmp_path, [('completed', None, False)] * 3, routes)
