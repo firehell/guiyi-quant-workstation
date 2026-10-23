@@ -177,7 +177,8 @@ class HistoricalRefresh:
             if prior and prior['status'] == 'blocked':
                 continue
             state['cursor'] = key
-            if (route.reason and not prior) or not _canonical_identity(identity) or route.since is None:
+            source_changed = route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED'
+            if (route.reason and not source_changed and not prior) or not _canonical_identity(identity) or route.since is None:
                 state['routes'][key] = {'status': 'blocked', 'reason': route.reason or 'SOURCE_IDENTITY_UNVERIFIED'}
                 self.state.write(state)
                 return
@@ -188,7 +189,7 @@ class HistoricalRefresh:
                 endpoint, trading_day = endpoints[endpoint_key]
                 if (endpoint.tzinfo is None or endpoint > now or type(trading_day) is not date):
                     raise ValueError('AUTHORITATIVE_ENDPOINT_UNAVAILABLE')
-                if not prior and route.computed_through is not None and endpoint <= route.computed_through:
+                if not prior and not source_changed and route.computed_through is not None and endpoint <= route.computed_through:
                     continue
                 if _strategy(identity) == 'dual_fusion':
                     base = [item for item in routes if item.identity.product == identity.product
@@ -277,7 +278,8 @@ class HistoricalRefresh:
                     plan, prior = replacement, None
             else:
                 plan = prepare(HistoricalReferenceRequest(
-                    'advance', (HistoricalStreamRequest(route.identity, route.since,
+                    'rebuild' if route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED' else 'advance',
+                    (HistoricalStreamRequest(route.identity, route.since,
                                                         trading_day, endpoint),), BUDGET,
                 ))
                 if plan.streams[0].target_completed_through != endpoint:
@@ -408,6 +410,7 @@ def build_historical_refresh(session_factory, *, state_path):
                 ReferenceStream.stream_id, ReferenceRevision.status,
                 ReferenceBatch.computed_through,
                 ReferenceBatch.dependency_manifest['query_since'].as_string(),
+                ReferenceRevision.invalid_reason,
             ).join(ReferenceRevision, (ReferenceRevision.stream_id == ReferenceStream.stream_id)
                    & (ReferenceRevision.revision_id == ReferenceStream.active_revision_id))
               .join(ReferenceBatch, ReferenceBatch.batch_id == ReferenceRevision.checkpoint_batch_id)
@@ -419,12 +422,15 @@ def build_historical_refresh(session_factory, *, state_path):
             if value is None or value[2] is None:
                 result.append(RefreshRoute(identity, None, None, 'HISTORY_SOURCE_MISSING'))
                 continue
-            status, watermark, since = value
+            status, watermark, since, invalid_reason = value
             # SQLite drops timezone metadata; PostgreSQL retains it.
             if watermark is not None and watermark.tzinfo is None:
                 watermark = watermark.replace(tzinfo=UTC)
-            result.append(RefreshRoute(identity, date.fromisoformat(since), watermark,
-                                       None if status == 'active' else 'HISTORY_NOT_PUBLISHED'))
+            reason = None if status == 'active' else (
+                'CANONICAL_SOURCE_REVISION_CHANGED'
+                if status == 'invalid' and invalid_reason == 'P4_SOURCE_REVISION_REBUILD'
+                else 'HISTORY_NOT_PUBLISHED')
+            result.append(RefreshRoute(identity, date.fromisoformat(since), watermark, reason))
         return result
 
     def endpoint(route, now):

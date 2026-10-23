@@ -145,8 +145,18 @@ def assert_source_allowed(session, stream_id):
         ).all()
         if original_conflict_evidence(session, routes):
             raise ForwardInputUnavailable("ORIGINAL_OBSERVATION_CANONICAL_CONFLICT")
-    if mismatch is not None:
+    from app.reference_trading.quarantine import mismatch_evidence
+
+    if mismatch is not None and mismatch_evidence(session, (stream_id,)):
         raise ForwardInputUnavailable("REFERENCE_CANONICAL_MISMATCH")
+    if stream is not None:
+        terminal = session.scalar(select(ReferenceBatch.batch_id).where(
+            ReferenceBatch.stream_id == stream_id,
+            ReferenceBatch.revision_id == stream.active_revision_id,
+            ReferenceBatch.kind == "diagnostic", ReferenceBatch.batch_key.like("quarantine:%"),
+        ).limit(1))
+        if terminal is not None:
+            raise ForwardInputUnavailable("REFERENCE_QUARANTINE_RECOVERY_REQUIRED")
     if stream is not None and stream.strategy_code == "newow_dual_fusion":
         for code in ("newow_trend", "newow_oscillation"):
             ids = session.scalars(

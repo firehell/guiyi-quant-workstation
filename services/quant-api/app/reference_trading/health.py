@@ -7,6 +7,7 @@ from app.reference_trading.recording_scope import LIVE_FREQUENCIES, FREQUENCIES
 from datetime import UTC, date, datetime
 
 from sqlalchemy import and_, case, func, select
+from sqlalchemy.orm import load_only
 from types import SimpleNamespace
 
 from app.db.readonly import readonly_transaction
@@ -61,6 +62,9 @@ class ForwardReferenceHealth:
             keys.update((product.lower(), frequency) for product in products
                         for frequency in FREQUENCIES)
             endpoints = self._endpoint_reader(session, tuple(sorted(keys)), self._now()) if self._endpoint_reader and keys else {}
+            from app.reference_trading.independent_history import read_independent_history
+
+            histories = read_independent_history(session, streams, endpoints) if streams else {}
             public_endpoints = [{"product": product, "frequency": frequency, **value}
                                 for (product, frequency), value in sorted(endpoints.items())]
             if not streams:
@@ -99,11 +103,22 @@ class ForwardReferenceHealth:
                 b.batch_key.like("forward:observation-gap:%"), b.seq <= s.latest_seq,
             ).group_by(b.stream_id)).all())
             r = ReferenceCaptureReconciliation
-            mismatches = dict(session.execute(select(
-                b.stream_id, func.count(r.reconciliation_id),
-            ).join(r, r.capture_batch_id == b.batch_id).join(s, active).where(
+            comparison_rows = session.execute(select(r, b).options(load_only(
+                b.batch_id, b.stream_id, b.revision_id, b.source_evidence, b.payload_hash, b.kind, b.processed_at,
+            )).join(
+                b, r.capture_batch_id == b.batch_id).join(s, active).where(
                 b.stream_id.in_(ids), b.kind == "capture", r.status == "mismatch",
-            ).group_by(b.stream_id)).all())
+            )).all()
+            from collections import Counter
+            from app.reference_trading.source_revisions import resolved_mismatches
+
+            revised = resolved_mismatches(session, comparison_rows)
+            mismatches = Counter(capture.stream_id for comparison, capture in comparison_rows
+                                 if comparison.reconciliation_id not in revised)
+            source_revisions = {}
+            for comparison, capture in comparison_rows:
+                if comparison.reconciliation_id in revised:
+                    source_revisions.setdefault(capture.stream_id, []).append(revised[comparison.reconciliation_id])
             conflict_groups = {(stream.product.lower(), stream.frequency) for stream in streams
                                if stream.enabled and (mismatches.get(stream.stream_id, 0)
                                   or pending.get(stream.stream_id, (0, None, 0, None))[2])}
@@ -218,9 +233,19 @@ class ForwardReferenceHealth:
                     **endpoint,
                     "last_success": _iso(success),
                     "latest_reconciliation_status": reconciliation.get(capture_ids.get(stream.stream_id)),
+                    "canonical_history": histories.get(stream.stream_id),
                     "pending_capture_count": count,
                     "oldest_pending_observed_at": _iso(oldest),
                     "reconciliation_mismatch_count": mismatches.get(stream.stream_id, 0),
+                    "source_revision_count": len(source_revisions.get(stream.stream_id, ())),
+                    "source_revisions": [{"capture_id": fact["capture_id"],
+                                          "bar_end": fact["proof"]["observed_bar"]["bar_end"],
+                                          "policy_version": fact["policy_version"],
+                                          "differences": fact["proof"]["differences"],
+                                          "impact_status": "INDEPENDENT_HISTORY_REQUIRED"}
+                                         for fact in sorted(source_revisions.get(stream.stream_id, ()),
+                                                            key=lambda x: x["proof"]["observed_bar"]["bar_end"],
+                                                            reverse=True)[:20]],
                     "quarantined_observation_count": quarantine_count,
                     "original_conflict_terminal_count": original_conflict_counts.get(stream.stream_id, 0),
                     "last_quarantined_processed_at": _iso(quarantine_processed),
@@ -275,6 +300,8 @@ def read_completed_recording_endpoints(session, keys, at):
     from app.redis_connections import get_redis_connection
 
     result = read_completed_canonical_endpoints(session, keys, at)
+    for value in result.values():
+        value["canonical_expected_through"] = value["expected_through"]
     hourly = tuple(key for key in keys if key[1] in LIVE_FREQUENCIES)
     if not hourly:
         return result
@@ -294,14 +321,17 @@ def read_completed_recording_endpoints(session, keys, at):
                     published = datetime.fromisoformat(prior["expected_through"]) if prior["expected_through"] else None
                     if published is None or end > published:
                         result[key] = {"expected_through": end.isoformat(), "expected_source": "completed_live",
-                            "endpoint_status": "READY", "endpoint_reason": None}
+                            "endpoint_status": "READY", "endpoint_reason": None,
+                            "canonical_expected_through": prior["canonical_expected_through"]}
             except Exception:  # No exception text or alternate source can prove a Session.
                 result[key] = {"expected_through": None, "expected_source": "completed_live",
-                    "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE"}
+                    "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE",
+                    "canonical_expected_through": prior["canonical_expected_through"]}
     except Exception:
         for key in hourly:
             result[key] = {"expected_through": None, "expected_source": "completed_live",
-                "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE"}
+                "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE",
+                "canonical_expected_through": result[key].get("canonical_expected_through")}
     finally:
         if redis is not None:
             redis.close()

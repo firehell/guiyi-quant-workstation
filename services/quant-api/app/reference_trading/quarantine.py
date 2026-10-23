@@ -28,11 +28,14 @@ def mismatch_evidence(session, routes):
         ReferenceBatch.revision_id == ReferenceStream.active_revision_id,
         ReferenceCaptureReconciliation.status == 'mismatch',
     ).order_by(ReferenceCaptureReconciliation.reconciliation_id)).all()
+    from app.reference_trading.source_revisions import resolved_mismatches
+
+    resolved = resolved_mismatches(session, rows)
     return [{'reconciliation_id': r.reconciliation_id, 'capture_id': b.batch_id,
         'stream_id': b.stream_id, 'revision_id': b.revision_id,
         'captured_sha256': r.captured_sha256, 'canonical_sha256': r.canonical_sha256,
         'source_revision': r.source_revision, 'checked_at': r.checked_at.isoformat()}
-        for r, b in rows]
+        for r, b in rows if r.reconciliation_id not in resolved]
 
 
 def quarantine_observation(factory, routes, observation, *, assert_owned, now=lambda: datetime.now(UTC)):

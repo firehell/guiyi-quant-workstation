@@ -103,7 +103,10 @@ export interface NewowRecordingItem {
   last_observed_at?: string | null
   latest_observed_trading_day?: string | null
   latest_state_source?: 'historical_seed' | 'observed' | null
-  latest_reconciliation_status?: 'pending' | 'matched' | 'mismatch' | 'not_applicable' | null
+  latest_reconciliation_status?: 'pending' | 'matched' | 'source_revised' | 'mismatch' | 'not_applicable' | null
+  source_revision_count?: number
+  source_revisions?: Array<{ capture_id: string; bar_end: string; policy_version: string; differences: Record<string, { observed: string; canonical: string }>; impact_status: string }>
+  canonical_history?: { stream_id: string; status: string; revision_id: string | null; computed_through: string | null; expected_through: string | null; recording_mode: 'historical_replay'; source: 'canonical' } | null
   expected_through?: string | null
   expected_source?: 'canonical_completed' | 'completed_live'
   endpoint_status?: 'READY' | 'UNKNOWN'

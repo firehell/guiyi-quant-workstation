@@ -72,7 +72,7 @@ export async function getNewowRecordingMatrix(options: ReferenceRequestOptions =
         || (item.latest_observed_trading_day !== undefined && item.latest_observed_trading_day !== null
           && !isRecordingTradingDay(item.latest_observed_trading_day))
         || (item.latest_reconciliation_status !== undefined
-          && ![null, 'pending', 'matched', 'mismatch', 'not_applicable'].includes(item.latest_reconciliation_status))
+          && ![null, 'pending', 'matched', 'source_revised', 'mismatch', 'not_applicable'].includes(item.latest_reconciliation_status))
         || ![item.expected_through, item.observed_through, item.historical_computed_through, item.last_observed_at]
           .every(value => value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)))))) {
       throw new Error('REFERENCE_RESPONSE_INVALID')
