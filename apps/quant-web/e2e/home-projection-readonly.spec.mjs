@@ -49,3 +49,27 @@ test('real production home reads 60 precomputed products without computation HTT
   expect(firstScreen).toBeLessThanOrEqual(1000)
   expect(sectorMs).toBeLessThanOrEqual(100)
 })
+
+
+test('real projected card matches compact desktop and mobile layout without computation requests', async ({page}, testInfo) => {
+  const requests=[]
+  page.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/')) requests.push(new URL(request.url()).pathname)})
+  await page.goto('/market')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
+  const reads = requests.filter(path=>path.endsWith('/home-projection')).length
+  await expect(page.locator('.strategy-sort')).toHaveCount(0)
+  await page.getByRole('button',{name:'鸡蛋展开策略摘要',exact:true}).click()
+  const article=page.locator('.strategy-list-item').filter({has:page.getByRole('button',{name:'鸡蛋展开策略摘要',exact:true})})
+  const card=article.getByRole('link',{name:'鸡蛋趋势策略详情',exact:true})
+  await expect(card).toBeVisible()
+  await expect(card.locator('.composite-stage[aria-current="step"]')).toHaveCount(1)
+  await expect(card).not.toContainText('查看策略详情')
+  for(const width of [1168,390]) {
+    await page.setViewportSize({width,height:900})
+    await expect(card).toBeVisible()
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1)).toBe(true)
+    await article.screenshot({path:testInfo.outputPath(`home-card-${width}.png`)})
+  }
+  expect(requests.filter(path=>path.endsWith('/home-projection')).length).toBe(reads)
+  expect(requests.some(path=>/home-cards|home-card-performance/.test(path))).toBe(false)
+})

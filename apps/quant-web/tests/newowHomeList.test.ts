@@ -6,9 +6,37 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
+
+
+test('home card wording follows identified composite facts without inventing prices or confirmations', () => {
+  const day = {...ready('BUILD'), reference_cost:'50.47', target:'53.75', current_event:{kind:'BUILD' as const, bar_end:ready('BUILD').bar_end!, signal_id:'buy'}, reference_current:'53.5', guard_ma10:'50'}
+  const week = ready('FLAT')
+  const buy = homeCardPresentation(day, week)
+  assert.equal(buy.price, '50.47')
+  assert.equal(buy.prefix, '预估当前')
+  assert.equal(buy.suffix, '附近可以买入')
+  assert.equal(buy.signal, '买入信号')
+  assert.equal(buy.context, '日线买入（周线未确认），先反弹到53.75（日线目标价）')
+  assert.equal(buy.stageIndex, 1)
+  assert.match(homeCardPresentation(day, ready('HOLD')).context, /日周共振买入/)
+  assert.equal(homeCardPresentation(ready('HOLD'), ready('HOLD')).signal, '持股信号')
+  assert.match(homeCardPresentation(ready('FLAT'), ready('BUILD')).context, /周线买入（日线未确认）/)
+  assert.doesNotMatch(homeCardPresentation(ready('FLAT'), ready('BUILD')).context, /日周共振/)
+  const sell = homeCardPresentation(ready('HOLD'), ready('CLEAR'))
+  assert.match(sell.context, /周线卖出/)
+  assert.equal(sell.stageIndex, 3)
+  const flat = homeCardPresentation(ready('FLAT'), ready('FLAT'))
+  assert.equal(flat.signal, '空仓信号')
+  assert.match(flat.context, /等待买入信号/)
+  const missing = homeCardPresentation(day, {status:'warming',state:null})
+  assert.equal(missing.state, null)
+  assert.equal(missing.stageIndex, -1)
+  assert.doesNotMatch(missing.context, /日周共振|附近可以买入/)
+  assert.equal(homeCardPresentation({...day, reference_cost:null, absorb:null}, week).price, '--')
+})
 
 test('daily target/absorb follows only the ready state and uses Decimal rounding', () => {
   for (const state of ['BUILD', 'HOLD'] as const) assert.deepEqual(homeReferenceDisplay(ready(state)), { label: '目标', text: '9007199254740993.13' })
@@ -146,12 +174,12 @@ test('rows expand and summary cards navigate with selected strategy while retain
     sequence.value++; await nextTick()
     api.calls.at(-1).resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': { ...ready('HOLD'), target_space_percent: '4' }, '1w': ready('CLEAR') }, oscillation: { '1d': { ...ready('FLAT'), absorb_space_percent: '-3' }, '1w': ready('HOLD') } } }] })
     await settle()
-    assert.match(nodeText(root), /日线吸筹参考价相对确认收盘价 -3/)
+    assert.match(nodeText(root), /周线持股/)
     ;(findNode(root, n => n.type === 'button' && nodeText(n) === '趋势')!.props.onClick as Function)(); await nextTick()
-    assert.match(nodeText(root), /日线目标参考价相对确认收盘价 \+4/)
+    assert.match(nodeText(root), /周线卖出/)
     ;(switcher.props.onClick as Function)(); await nextTick()
 
-    assert.match(nodeText(root), /空仓.*建仓.*持有.*清仓/)
+    assert.match(nodeText(root), /空仓.*买入.*持股.*卖出/)
     assert.match(nodeText(root), /参考收益待确认/)
     const sort = findNode(root, n => n.type === 'button' && nodeText(n).startsWith('涨跌幅'))!
     ;(sort.props.onClick as Function)(); assert.deepEqual(sorts, ['change'])
@@ -168,7 +196,7 @@ test('rows expand and summary cards navigate with selected strategy while retain
     assert.match(nodeText(root), /周线不可用/)
     assert.match(nodeText(root), /日周一致性不可用/)
     assert.doesNotMatch(nodeText(root), /日周向下|策略刷新失败/)
-    assert.match(nodeText(root), /综合状态不可用/)
+    assert.match(nodeText(root), /日周状态待确认/)
     ;(summary.props.onClick as Function)(); await nextTick()
     assert.equal(summary.props['aria-expanded'], false)
     assert.doesNotMatch(nodeText(root), /日周综合/)

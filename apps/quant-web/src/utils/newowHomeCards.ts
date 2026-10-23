@@ -114,6 +114,28 @@ export function homeCompositeDisplay(day?: HomePeriodFact, week?: HomePeriodFact
   return { state, label: homeStateLabels[state], reference, reason: '' }
 }
 
+/** Text and layout only: consume the existing authenticated composite and prices. */
+export function homeCardPresentation(day?: HomePeriodFact, week?: HomePeriodFact) {
+  const { state } = homeCompositeDisplay(day, week)
+  const price = (value?: string | null) => newowReferencePrice(value).replace(/^—$/, '--')
+  if (!state) return { state, prefix:'日周策略摘要', price:'--', suffix:'', signal:'待确认', glyph:'', context:'日周状态待确认，等待完整数据', stageIndex:-1 }
+  const weeklyLead = week?.state === 'BUILD' || week?.state === 'HOLD'
+  const target = price(day?.target), absorb = price(day?.absorb)
+  const goal = target === '--' ? '日线目标价待确认' : `${target}（日线目标价）`
+  if (state === 'BUILD') {
+    const cost = day?.state === 'BUILD' || day?.state === 'HOLD' ? day.reference_cost
+      : weeklyLead ? week?.reference_cost : null
+    return { state, prefix:'预估当前', price:price(cost ?? day?.absorb), suffix:'附近可以买入', signal:'买入信号', glyph:'▲',
+      context:weeklyLead ? (day?.state === 'BUILD' || day?.state === 'HOLD' ? `日周共振买入，目标看${goal}` : `周线买入（日线未确认），目标看${goal}`) : `日线买入（周线未确认），先反弹到${goal}`, stageIndex:1 }
+  }
+  if (state === 'HOLD') return { state, prefix:'当前持股，目标看', price:target, suffix:'', signal:'持股信号', glyph:'✓',
+    context:weeklyLead ? `周线持股，目标看${goal}` : `日线持股（周线未确认），目标看${goal}`, stageIndex:2 }
+  if (state === 'CLEAR') return { state, prefix:'当前', price:price(day?.reference_current), suffix:'已出现卖出信号', signal:'卖出信号', glyph:'▼',
+    context:`${day?.state === 'CLEAR' || day?.current_event?.kind === 'CLEAR' ? '日线' : '周线'}卖出，等待新的买入信号`, stageIndex:3 }
+  return { state, prefix:'预估当前', price:absorb, suffix:'附近可以关注', signal:'空仓信号', glyph:'×',
+    context:absorb === '--' ? '日周空仓，等待买入信号；日线吸筹价待确认' : `日周空仓，等待买入信号；关注${absorb}（日线吸筹价）`, stageIndex:0 }
+}
+
 export function homeDeliveryNotice(delivery?: CardDelivery) {
   if (delivery?.projectionStatus === 'missing') return delivery.card ? '摘要待重建，保留历史快照' : '计算中… 尚无已发布摘要'
   if (delivery?.projectionStatus === 'updating') return delivery.card ? '摘要更新中，保留上次结果' : '计算中…'
