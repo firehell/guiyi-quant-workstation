@@ -9,6 +9,7 @@ import type { SubingReferenceIndicator } from '@/types/subingReference'
 import { markersForDetailView } from '@/utils/marketDetailMarkers'
 
 const props = defineProps<{
+  hasMoreBefore?: boolean; loadingBefore?: boolean; historyError?: string | null
   bars: BarData[]; mutation: MarketSeriesMutation; loading: boolean; error: string | null; period: string; seriesKind: SeriesKind
   referenceCallouts?: KlineReferenceCallout[]
   referenceIndicators?: SubingReferenceIndicator[]
@@ -22,7 +23,7 @@ const subingMarkers = computed(() => markersForDetailView('subing', props.marker
 </script>
 
 <template>
-  <MarketKlineStage
+  <MarketKlineStage :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"
     :visible-main-indicators="visibleMainIndicators" range-detector-source-identity="" :range-detector-anchor-time="null"
     :reference-callouts="referenceCallouts" :reference-selection="referenceSelection" :focus-request-id="focusRequestId" :marker-selection-enabled="false"

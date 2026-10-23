@@ -236,6 +236,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   const canonicalCoverage = ref<MarketBarsPageResponse['canonical_coverage']>(null)
   const loadingInitial = ref(false)
   const loadingBefore = ref(false)
+  const historyError = ref<string | null>(null)
   const marketState = ref<MarketReadState | null>(null)
   const liveUnavailable = ref(false)
   const overlaySource = ref<MarketOverlaySource>('none')
@@ -300,6 +301,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     marketState.value = null
     liveUnavailable.value = false
     loadingBefore.value = false
+    historyError.value = null
     loadingBeforePromise = null
     publishMerged({ kind: 'replace' })
     return requestGeneration
@@ -534,10 +536,16 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     const before = nextBefore.value
     const signal = reads.signal
     loadingBefore.value = true
+    historyError.value = null
     const request = Promise.resolve().then(async () => {
       try {
         const page = await fetchPage(toPageRequest(requestIdentity, before), signal)
         if (!isCurrentGeneration(requestGeneration, generation)) return
+        if (page.page.has_more_before && (!page.page.next_before
+          || !Number.isFinite(Date.parse(page.page.next_before))
+          || Date.parse(page.page.next_before) >= Date.parse(before))) {
+          throw new Error('MARKET_HISTORY_CURSOR_NOT_ADVANCING')
+        }
         const merged = prependHistoricalPage(canonicalBars, page)
         const previous = canonicalBars
         canonicalBars = merged.bars
@@ -547,7 +555,10 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         const previousTimes = new Set(previous.map((bar) => bar.time))
         publishMerged({ kind: 'prepend', bars: canonicalBars.filter((bar) => !previousTimes.has(bar.time)) })
       } catch (error) {
-        if (!signal.aborted && isCurrentGeneration(requestGeneration, generation)) throw error
+        if (!signal.aborted && isCurrentGeneration(requestGeneration, generation)) {
+          historyError.value = '更早行情加载失败，请重试'
+          throw error
+        }
       } finally {
         if (isCurrentGeneration(requestGeneration, generation)) loadingBefore.value = false
         if (loadingBeforePromise === request) loadingBeforePromise = null
@@ -570,6 +581,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     canonicalCoverage,
     loadingInitial,
     loadingBefore,
+    historyError,
     marketState,
     liveUnavailable,
     overlaySource,

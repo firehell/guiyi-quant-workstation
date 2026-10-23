@@ -20,8 +20,6 @@ const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'
 const emit = defineEmits<{ 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
 const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.asOf : props.response.snapshotContext || props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
-const historicalDecision = computed(() => props.historical || props.response.snapshotContext?.freshness === 'pending_update'
-  || previewInstant(decisionAsOf.value) !== previewInstant(props.response.meta.as_of))
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
 const collapsed = ref(true), evidenceExpanded = ref(false)
@@ -89,7 +87,6 @@ const chipColor = (axis: string, period: string) => {
 
 <template>
   <section ref="surface" data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
-    <p class="decision-v2__snapshot" role="status" aria-label="判断快照时间">{{ historicalDecision ? '历史快照判断' : '判断快照' }} · 截至 {{ formatBeijingInstant(decisionAsOf) }}{{ historicalDecision ? ' · 仅供历史参考' : '' }}</p>
     <div class="decision-v2__header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
         <strong>综合决策</strong>
@@ -274,5 +271,4 @@ p { margin:0; font-size:12px; line-height:1.55; color:var(--gy-text-muted); }
 </style>
 
 <style scoped>
-.decision-v2__snapshot { margin: 8px 14px 4px; color: var(--gy-text-secondary); font-size: 12px; line-height: 1.5; }
 </style>

@@ -32,6 +32,8 @@ export interface MarketDetailControllerState {
 
 interface MarketDetailSeriesController {
   bars: Ref<BarData[]>
+  loadingBefore?: Ref<boolean>
+  historyError?: Ref<string | null>
   hasMoreBefore: Ref<boolean>
   canonicalCoverage: Ref<{ start: string; end: string } | null>
   marketState: Ref<MarketReadState | null>
@@ -83,6 +85,8 @@ export function useMarketDetailController(
   productCatalog: Readonly<Ref<readonly MarketProductDirectoryItem[]>>
   bars: Readonly<Ref<BarData[]>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
+  loadingBefore: Readonly<Ref<boolean>>
+  historyError: Readonly<Ref<string | null>>
   hasMoreBefore: Readonly<Ref<boolean>>
   research: Ref<ProductResearchResponse | null>
   researchError: Readonly<Ref<boolean>>
@@ -179,7 +183,6 @@ export function useMarketDetailController(
     const previousIdentity = state.value.identity
     const retainedHeader = canKeepHeader(previousIdentity, identity) ? state.value.header : null
     const usesGenericSeries = identity.view !== 'newow'
-    const referenceBackedDaily = identity.view === 'subing' && identity.frequency === '1d'
     const nextSeriesKey = seriesKey(identity)
     const reuseSeries = usesGenericSeries && activeSeriesKey === nextSeriesKey
     const nextResearchKey = researchKey(identity)
@@ -239,7 +242,7 @@ export function useMarketDetailController(
         state.value.error = '品种元数据不可用'
         return
       }
-      if (!seriesResult.ok && !referenceBackedDaily) {
+      if (!seriesResult.ok) {
         activeSeriesKey = null
         state.value.header = null
         state.value.loading = false
@@ -288,6 +291,8 @@ export function useMarketDetailController(
     productCatalog: readonly(productCatalog),
     bars: publicBars,
     mutation: publicMutation,
+    loadingBefore: readonly(series.loadingBefore ?? ref(false)),
+    historyError: readonly(series.historyError ?? ref(null)),
     hasMoreBefore: readonly(series.hasMoreBefore),
     research: currentResearch,
     researchError: readonly(researchError),

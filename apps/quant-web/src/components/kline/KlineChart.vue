@@ -54,6 +54,7 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators?: MainIndicatorId[]
   rangeDetectorSourceIdentity?: string
   rangeDetectorAnchorTime?: string | null
+  showDerivedMarkers?: boolean
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
   markerSelectionEnabled?: boolean
@@ -68,6 +69,7 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators: () => [],
   rangeDetectorSourceIdentity: '',
   rangeDetectorAnchorTime: null,
+  showDerivedMarkers: true,
   alertMarkers: () => [],
   researchMarkers: () => [],
   markerSelectionEnabled: true,
@@ -536,14 +538,14 @@ function renderDerivedSeries(): void {
 
 function mergedDisplayMarkers(): KlineMarker[] {
   return mergeKlineMarkers(
-    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    mergeKlineMarkers(props.showDerivedMarkers ? derivedData.htdy?.markers ?? [] : [], props.alertMarkers),
     props.researchMarkers,
   )
 }
 
 function markersForHoverContext(): KlineMarker[] {
   return mergeKlineMarkers(
-    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    mergeKlineMarkers(props.showDerivedMarkers ? derivedData.htdy?.markers ?? [] : [], props.alertMarkers),
     props.researchMarkers,
   )
 }

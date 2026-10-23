@@ -7,6 +7,7 @@ import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import { markersForDetailView } from '@/utils/marketDetailMarkers'
 
 const props = withDefaults(defineProps<{
+  hasMoreBefore?: boolean; loadingBefore?: boolean; historyError?: string | null
   bars: BarData[]
   mutation: MarketSeriesMutation
   loading: boolean
@@ -28,7 +29,7 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
 </script>
 
 <template>
-  <MarketKlineStage
+  <MarketKlineStage :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars"
     :mutation="mutation"
     :loading="loading"

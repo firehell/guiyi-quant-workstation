@@ -400,7 +400,7 @@ test('one source disclosure contains both main chart and decision price evidence
 })
 
 for (const frequency of ['1d', '1w']) {
- test(`pending ${frequency} snapshot shows dated decisions and partial roles without a current claim`, async () => {
+ test(`pending ${frequency} snapshot preserves cutoff and partial roles without a current claim`, async () => {
   const Panel = await component('newow/NewowDecisionV2Panel'), root = element('root'), before = mock.calls.length
   const cutoff = '2026-10-20T07:00:00.000001Z'
   const response = { ...input('fu'), snapshotContext: { frequency, as_of: cutoff, freshness: 'pending_update' } }
@@ -413,8 +413,7 @@ for (const frequency of ['1d', '1w']) {
   assert.equal(mock.calls[before].request.asOf, cutoff, 'verified cutoff must not fall back to a frozen research date')
   assert.equal(mock.calls[before].request.snapshotToken, 'fu-snapshot')
   const notice = findNode(root, n => n.props['aria-label'] === '判断快照时间')!
-  assert.ok(notice, 'snapshot date must remain visible while the decision is collapsed')
-  assert.match(nodeText(notice), /历史快照.*2026-10-20/)
+  assert.equal(notice, undefined, 'owner removed the snapshot sentence from this panel')
   const value = output()
   value.value.decision_v2.cdv2.as_of = cutoff
   mock.calls[before].resolve(value)
@@ -456,7 +455,7 @@ test('workspace mounts the real decision and status cards for a verified pending
  const app=createRenderer(nodeOperations()).createApp({render:()=>render(context,[])})
  app.component('NewowDecisionV2Panel',Panel);app.mount(root)
  assert.equal(mock.calls.length,before+1,'publication lag must not prevent the dependent decision read')
- assert.match(nodeText(root),/历史快照判断/)
+ assert.equal(findNode(root,n=>n.props['aria-label']==='判断快照时间'),undefined)
  assert.ok(findNode(root,n=>n.props['aria-label']==='日周状态摘要'))
  mock.calls[before].resolve(output());await nextTick();await nextTick()
  assert.match(nodeText(root),/周:持有.*日:持有/)

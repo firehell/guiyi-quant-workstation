@@ -6,6 +6,29 @@
 
 ## Requirements
 
+### Requirement: Shared chart history remains independent of strategy records
+
+HTDY, SuBing and free chart workspaces SHALL use the same authoritative paged market
+series controller. The initial page SHALL remain bounded. Explicit earlier-history loading
+and left-edge loading SHALL preserve chronological deduplication, cancel obsolete identities,
+and retain the successful chart and retry cursor when an earlier request fails. An exhausted
+cursor SHALL be distinguishable from an error. Reference-record pagination SHALL NOT replace
+or truncate the chart series, including SuBing D1. Strategy warm-up and record statistics SHALL
+retain their own source and window contracts. Free chart SHALL NOT fabricate strategy trades.
+
+#### Scenario: Earlier-page failure is recoverable
+
+- **WHEN** loading an earlier page fails after a successful chart load
+- **THEN** the chart and earlier cursor remain available and an explicit retry is shown
+- **AND** retry loads that page without resetting the newest completed Bar
+
+#### Scenario: SuBing daily browsing outlives the record window
+
+- **WHEN** the user loads D1 Bars earlier than the reference-record window
+- **THEN** chart history continues through the market paging API
+- **AND** the record window and historical trade results remain unchanged
+
+
 ### Requirement: Ordinary historical reads prove every promised endpoint
 
 Physical and actual-dominant interval queries and pages SHALL compare returned Bar identities with the Calendar, Session, lifecycle and rank1 owner endpoints for the requested committed window. A missing interior minute, session tail or page-adjacent endpoint MUST fail closed; a later Bar MUST NOT conceal the earlier gap. Page cursors retain their existing inclusive/exclusive contract. Maintenance strict readback MAY use its already frozen authoritative target endpoints rather than querying Calendar a second time, but MUST compare the complete returned sequence exactly. An all-zero `NO_TRADE` Bar does not become a usable research price solely because its endpoint exists.

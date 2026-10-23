@@ -854,6 +854,42 @@ availability/warming semantics and formulas remain unchanged.
 - **THEN** the dedicated atomic warm revision preserves future FLAT and original times
 - **AND** subsequent natural acceptance remains pending, without manufacturing a missing gap
 
+### Requirement: HTDY retrospective fixed-window reference is independently identified
+
+The read-only `/api/v1/market/{symbol}/htdy/reference` endpoint SHALL replay each completed
+physical-prefix Bar using the existing HTDY evaluator's fixed 32-Bar window. Its model identity
+SHALL be `htdy_historical_window32_reverse_close_v1`, recording mode `historical_replay`, with
+no observation policy or fabricated observed timestamp. It SHALL reuse the existing reverse-close
+reference policy rather than introduce new buy/sell rules. This is retrospective reconstruction,
+not proof of a first-seen event or account execution.
+
+The reader SHALL obtain storage-wide physical prefixes and authoritative quality/owner boundaries
+through the existing MDS-backed historical loader. Presentation since/through SHALL NOT truncate
+warm-up or change signal pairing. Quality interruption and rollover SHALL terminate reference
+trades explicitly and restart window warm-up. It SHALL NOT write reference storage, AlertEvent,
+notifications, Canonical, or Runtime state. Date filtering and trade pagination SHALL be independent
+of graph pagination; the cursor SHALL bind full source content, model identity and cutoff. Source
+metadata changes during the read SHALL reject the result.
+
+#### Scenario: Historical reconstruction differs from an actual observation
+
+- **WHEN** a completed prefix is replayed without an original captured observation
+- **THEN** its signals and reference trades are labeled historical reconstruction only
+- **AND** no actual observation stream, event or notification is created or rewritten
+
+#### Scenario: Paging cannot change the reconstructed trade
+
+- **WHEN** a user changes the displayed date window or requests the next records page
+- **THEN** computation starts from the same authoritative storage prefix and fixed model
+- **AND** records retain stable action/trade identities while changed source invalidates the cursor
+
+The HTDY reader MAY retain a bounded process cache of pure replay results, keyed by full input
+content, owner/quality segment boundaries, source metadata, formula/model identity and cutoff.
+Every request MUST still verify MDS input identity; TTL or cache presence MUST NOT prove validity.
+Record pagination and summary use the same replay result without re-evaluating unchanged prefixes.
+The cache SHALL NOT be a historical fact authority and SHALL NOT write Redis or persistent events.
+
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

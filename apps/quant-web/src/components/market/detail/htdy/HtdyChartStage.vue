@@ -17,18 +17,23 @@ const props = defineProps<{
   rangeDetectorSourceIdentity: string
   rangeDetectorAnchorTime: string | null
   identityKey: string
+  hasMoreBefore?: boolean
+  loadingBefore?: boolean
+  historyError?: string | null
   focusBarEnd?: string | null
+  historicalMode?: boolean
   markers: readonly KlineMarker[]
 }>()
 const emit = defineEmits<{ 'load-earlier': []; 'focus-resolved': [focusBarEnd: string] }>()
-const htdyMarkers = computed(() => markersForDetailView('htdy', props.markers))
+const htdyMarkers = computed(() => props.historicalMode ? [...props.markers] : markersForDetailView('htdy', props.markers))
 </script>
 
 <template>
   <MarketKlineStage
+    :show-derived-markers="false"
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"
     :visible-main-indicators="visibleMainIndicators" :range-detector-source-identity="rangeDetectorSourceIdentity"
     :range-detector-anchor-time="rangeDetectorAnchorTime" :identity-key="identityKey" :focus-bar-end="focusBarEnd"
-    :markers="htdyMarkers" @load-earlier="emit('load-earlier')" @focus-resolved="emit('focus-resolved', $event)"
+    :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :markers="htdyMarkers" @load-earlier="emit('load-earlier')" @focus-resolved="emit('focus-resolved', $event)"
   />
 </template>

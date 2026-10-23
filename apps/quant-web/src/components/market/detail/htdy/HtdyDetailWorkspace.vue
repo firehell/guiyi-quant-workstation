@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
 import MarketDetailSectionTabs from '@/components/market/detail/MarketDetailSectionTabs.vue'
+import HtdyHistoricalPanel from './HtdyHistoricalPanel.vue'
+import { getHtdyReference } from '@/api/htdyReference'
+import { useHtdyHistoricalReference } from '@/composables/useHtdyHistoricalReference'
+import type { ReferenceTradeView } from '@/types/referenceTrading'
 import HtdyChartStage from './HtdyChartStage.vue'
 import ReferenceTradePanel from '@/components/market/detail/ReferenceTradePanel.vue'
 import { getAlertEvents, getAlertRuntimeStatus, getProductAlerts } from '@/api/alerts'
@@ -21,9 +25,45 @@ import { ALERT_RULE_CODES, isHtdyAlertEvent } from '@/utils/alertRules'
 const props = defineProps<{
   identity: MarketDetailIdentity; header: MarketDetailHeaderModel; bars: BarData[]; mutation: MarketSeriesMutation
   loading: boolean; error: string | null; preferences: FlexibleDetailPreferences; hasMoreBefore: boolean
+  loadingBefore?: boolean; historyError?: string | null
   loadEarlier: () => Promise<void>; identityWarning?: string | null
 }>()
 const emit = defineEmits<{ updatePreferences: [preferences: FlexibleDetailPreferences]; 'history-availability': [available: boolean]; 'focus-resolved': [focusBarEnd: string] }>()
+const recordingMode = ref<'historical_replay' | 'forward_observation'>('historical_replay')
+const historical = useHtdyHistoricalReference(getHtdyReference)
+const historySupported = computed(() => props.identity.seriesKind === 'actual_dominant' && ['15m', '30m', '60m', '1d'].includes(props.identity.frequency))
+const selectedFocus = ref<string | null>(null)
+const focusError = ref<string | null>(null)
+let focusGeneration = 0
+watch(() => [props.identity.symbol, props.identity.frequency, props.identity.seriesKind], () => {
+  focusGeneration += 1; selectedFocus.value = null; focusError.value = null
+  historical.reset(props.identity.symbol, props.identity.frequency)
+  if (historySupported.value) void historical.read()
+}, { immediate: true })
+watch(() => props.bars.at(-1)?.time ?? null, value => { historical.latestBar.value = value }, { immediate: true })
+const historyMarkers = computed(() => (historical.result.value?.signals ?? []).filter(signal => props.bars.some(bar => Date.parse(bar.time) === Date.parse(signal.bar_end) && bar.physicalContract === signal.physical_contract)).flatMap(signal => signal.observation_types.map(direction => ({
+  id: `htdy-history:${signal.physical_contract}:${signal.bar_end}:${direction}`, time: signal.bar_end,
+  label: direction === 'buy' ? '买入参考' : '卖出参考', tone: 'htdy' as const,
+  position: direction === 'buy' ? 'belowBar' as const : 'aboveBar' as const,
+  shape: direction === 'buy' ? 'arrowUp' as const : 'arrowDown' as const,
+}))))
+async function focusTrade(trade: ReferenceTradeView) {
+  const generation = ++focusGeneration
+  focusError.value = null
+  while (generation === focusGeneration) {
+    const found = props.bars.find(bar => Date.parse(bar.time) === Date.parse(trade.entry_bar_end))
+    if (found) {
+      if (found.physicalContract !== trade.physical_contract) focusError.value = '目标合约与图表来源不一致'
+      else selectedFocus.value = trade.entry_bar_end
+      return
+    }
+    if (!props.hasMoreBefore || (props.bars[0] && Date.parse(props.bars[0].time) < Date.parse(trade.entry_bar_end))) break
+    const previous = props.bars[0]?.time
+    try { await props.loadEarlier(); await nextTick() } catch { break }
+    if (props.bars[0]?.time === previous) break
+  }
+  if (generation === focusGeneration) focusError.value = '未找到该合约对应的精确历史K线，请核对数据范围'
+}
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([...props.preferences.optionalEmaIndicators])
 const showRangeDetector = ref(props.preferences.showRangeDetector)
 const activeTab = ref<string | null>('explanation')
@@ -56,19 +96,23 @@ async function refresh() {
 }
 function updatePreferences() { emit('updatePreferences', { seriesKind: 'actual_dominant', frequency: props.identity.frequency, optionalEmaIndicators: [...optionalEmaIndicators.value], showRangeDetector: showRangeDetector.value }) }
 function toggleEma(value: OptionalEmaIndicatorId) { optionalEmaIndicators.value = optionalEmaIndicators.value.includes(value) ? optionalEmaIndicators.value.filter((item) => item !== value) : [...optionalEmaIndicators.value, value] }
-function openHistory() { tabs.value?.openHistory() }
+function openHistory() { document.querySelector('.htdy-history')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); if (recordingMode.value === 'forward_observation') tabs.value?.openHistory() }
 defineExpose({ openHistory })
 watch([() => props.identity, () => props.bars, () => props.mutation], () => { void refresh() }, { immediate: true, deep: true })
 watch([optionalEmaIndicators, showRangeDetector], () => { updatePreferences(); if (!showRangeDetector.value) rangeWarmup.reset() }, { deep: true })
-watch(() => model.value.history.length, (value) => emit('history-availability', value > 0), { immediate: true })
-onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose() })
+watch(recordingMode, () => { focusGeneration += 1; selectedFocus.value = null; focusError.value = null })
+watch(() => model.value.history.length + (historical.result.value?.trades.length ?? 0), (value) => emit('history-availability', value > 0), { immediate: true })
+onBeforeUnmount(() => { focusGeneration += 1; historical.dispose(); loader.dispose(); alertFacts.dispose() })
 </script>
 
 <template>
   <section class="htdy-workspace" data-detail-workspace="htdy">
     <p v-if="identityWarning" class="htdy-workspace__hint" role="status">{{ identityWarning }}</p>
-    <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null" :identity-key="sourceIdentity" :focus-bar-end="identity.focusBarEnd" :markers="loader.markers.value" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" />
-    <ReferenceTradePanel strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :through="bars.at(-1)?.trading_day" :historical-available="false" />
+    <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null" :identity-key="sourceIdentity" :focus-bar-end="selectedFocus ?? identity.focusBarEnd" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :historical-mode="recordingMode === 'historical_replay'" :markers="recordingMode === 'historical_replay' ? historyMarkers : loader.markers.value" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" />
+    <nav aria-label="火天大有记录模式"><button type="button" :aria-pressed="recordingMode === 'historical_replay'" @click="recordingMode = 'historical_replay'">历史重算</button><button type="button" :aria-pressed="recordingMode === 'forward_observation'" @click="recordingMode = 'forward_observation'">实际记录</button></nav>
+    <p v-if="recordingMode === 'historical_replay' && !historySupported" role="status">此周期或序列暂不支持历史重算参考。</p>
+    <HtdyHistoricalPanel v-else-if="recordingMode === 'historical_replay'" :stale="historical.stale.value" :result="historical.result.value" :loading="historical.loading.value" :error="historical.error.value" :focus-error="focusError" @more="historical.read(true)" @retry="historical.read()" @window="historical.read(false, $event)" @focus="focusTrade" />
+    <ReferenceTradePanel v-else strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :through="bars.at(-1)?.trading_day" :historical-available="false" />
     <div class="htdy-workspace__indicators"><details><summary>指标设置</summary><label v-for="item in [['ema_10', 'EMA10'], ['ema_21', 'EMA21'], ['ema_60', 'EMA60']] as const" :key="item[0]"><input type="checkbox" :checked="optionalEmaIndicators.includes(item[0])" @change="toggleEma(item[0])">{{ item[1] }}</label><label><input v-model="showRangeDetector" type="checkbox">箱体识别（Range）</label></details></div>
     <MarketDetailSectionTabs ref="tabs" :tabs="[{ id: 'explanation', label: '信号说明' }, { id: 'alerts', label: '预警与运行' }, { id: 'data', label: '数据与历史' }]" :active-id="activeTab" :history="model.history" @select="activeTab = $event"><template #default><MarketDetailInsightDeck :identity-key="sourceIdentity" :sections="sectionsForTab" :default-open="true" /></template></MarketDetailSectionTabs>
   </section>

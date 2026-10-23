@@ -19,14 +19,18 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime: string | null
   identityKey: string
   focusBarEnd?: string | null
+  showDerivedMarkers?: boolean
   markers?: KlineMarker[]
   markerSelectionEnabled?: boolean
   referenceCallouts?: KlineReferenceCallout[]
   referenceIndicators?: KlineReferenceIndicator[]
   referenceSelection?: KlineReferenceSelection[]
   qualityBreaks?: KlineQualityBreak[]
+  hasMoreBefore?: boolean
+  loadingBefore?: boolean
+  historyError?: string | null
   focusRequestId?: number
-}>(), { markers: () => [], markerSelectionEnabled: true })
+}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -96,7 +100,15 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
         <MarketDetailIcon name="fullscreen" :size="18" />
       </button>
     </div>
+    <div v-if="hasMoreBefore !== undefined" class="market-kline-stage__history" role="status">
+      <button v-if="hasMoreBefore" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
+        {{ loadingBefore ? '加载中…' : historyError ? '重试加载更早' : '加载更早' }}
+      </button>
+      <span v-else-if="!loading && bars.length">已到最早可用数据</span>
+      <span v-if="historyError">{{ historyError }}</span>
+    </div>
     <KlineChart
+      :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
       :loading="loading"
@@ -112,7 +124,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :reference-indicators="referenceIndicators"
       :reference-selection="referenceSelection"
       :quality-breaks="qualityBreaks"
-      @need-more-before="emit('loadEarlier')"
+      @need-more-before="!loadingBefore && !historyError && hasMoreBefore !== false && emit('loadEarlier')"
       @follow-latest-change="followLatest = $event"
       @marker-select="emit('marker-select', $event)"
     />
@@ -121,6 +133,8 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 
 <style scoped>
 .market-kline-stage { position: relative; min-width: 0; }
+.market-kline-stage__history { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; color: var(--gy-text-secondary); }
+.market-kline-stage__history button { cursor: pointer; padding: 4px 10px; border: 1px solid var(--gy-border); border-radius: 4px; background: var(--gy-bg-panel); color: inherit; }
 .market-kline-stage__controls { position: absolute; z-index: 4; top: 10px; right: 10px; display: flex; gap: 8px; }
 .market-kline-stage__controls button { min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); cursor: pointer; }
 .market-kline-stage--fullscreen { display: grid; height: 100vh; padding: 16px; background: var(--gy-bg-app); }

@@ -46,7 +46,8 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
 const isFutures = computed(() => props.identity.strategyModel === 'futures_bidir_v1')
 const futuresTests = [{value:'osc-test',label:'测试'}, {value:'osc-test2',label:'测试2'}, {value:'osc-test3',label:'测试3'}, {value:'osc-test4',label:'测试4'}] as const
 function chooseTest(choice: MarketDetailIdentity['newowTest'] | 'main_rise') {
-  emit('select', { ...props.identity, strategy: choice === 'main_rise' ? 'main_rise' : 'oscillation', newowMode: undefined,
+  const base = props.identity.view === 'newow' ? props.identity : resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
+  emit('select', { ...base, view: 'newow', strategy: choice === 'main_rise' ? 'main_rise' : 'oscillation', newowMode: undefined,
     newowTest: choice === 'main_rise' ? undefined : choice, homeContext: undefined, focusBarEnd: undefined })
 }
 const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'newow'
@@ -81,6 +82,11 @@ function chooseView(view: AnalysisChoice) {
     return
   }
   emit('select', resolveViewSwitchIdentity(view, props.identity.symbol, props.identity, props.restore))
+}
+
+function openAiAnalysis() {
+  if (props.identity.view !== 'newow') chooseView('trend')
+  emit('ai-analysis')
 }
 
 function chooseSeries(seriesKind: DetailSeriesKind) {
@@ -123,20 +129,30 @@ function periodLabel(value: MarketFrequency) {
 <template>
   <nav class="detail-view-nav" aria-label="分析视角" data-detail-section="view-nav">
     <div class="detail-view-nav__views" role="tablist" aria-label="分析选项">
-      <template v-for="view in views" :key="view.value"><button
+      <template v-for="view in views.filter(view => ['oscillation', 'trend', 'dual'].includes(view.value))" :key="view.value"><button
         type="button"
         role="tab"
         :aria-selected="activeChoice === view.value"
         :class="{ 'is-active': activeChoice === view.value }"
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
-      <span v-if="view.value === 'dual'" id="newow-strategy-test-anchor" />
-      <button v-if="view.value === 'dual' && identity.view === 'newow' && !isFutures" type="button" class="detail-view-nav__ai" @click="emit('ai-analysis')">AI分析</button></template>
+      <span v-if="view.value === 'dual'" id="newow-strategy-test-anchor">
+        <details v-if="identity.view !== 'newow'" class="newow-test-menu"><summary aria-label="牛哇T策略">T ▾</summary><div class="nav-test-options"><button v-for="option in futuresTests" :key="option.value" type="button" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" @click="chooseTest('main_rise')">主升浪</button></div></details>
+      </span>
+      <button v-if="view.value === 'dual'" type="button" class="detail-view-nav__ai" @click="openAiAnalysis">AI分析</button></template>
       <span v-if="identity.view === 'newow'" id="newow-channel-controls" />
       <button v-if="identity.view === 'newow'" type="button" role="switch" :aria-checked="isFutures" class="detail-view-nav__model" data-testid="futures-model-switch" @click="emit('select',switchFuturesModel(identity,!isFutures))">期货双向 {{ isFutures ? '开' : '关' }}</button>
       <details v-if="isFutures" class="detail-view-nav__tests"><summary aria-label="牛哇T策略">T</summary><div aria-label="T策略选项"><button v-for="option in futuresTests" :key="option.value" type="button" :aria-pressed="identity.newowTest===option.value" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" :aria-pressed="identity.strategy === 'main_rise'" @click="chooseTest('main_rise')">主升浪</button></div></details>
+    </div>
+
+    <div class="detail-view-nav__views detail-view-nav__secondary" role="tablist" aria-label="其他分析选项">
+      <button v-for="view in views.filter(view => ['htdy', 'subing', 'free'].includes(view.value))" :key="view.value"
+        type="button" role="tab" :aria-selected="activeChoice === view.value"
+        :class="{ 'is-active': activeChoice === view.value }" @click="chooseView(view.value)">{{ view.label }}</button>
       <slot name="display-controls" />
     </div>
+
+
 
     <div v-if="showSeriesControls || showFrequencyControls" class="detail-view-nav__controls">
       <div v-if="showSeriesControls" class="detail-view-nav__group" role="group" aria-label="序列">
@@ -174,6 +190,11 @@ function periodLabel(value: MarketFrequency) {
 
 <style scoped>
 .detail-view-nav__tests { display:flex; white-space:nowrap; }
+.newow-test-menu { position:relative; }
+.newow-test-menu summary { display:flex; align-items:center; height:28px; padding:0 12px; border-radius:6px; background:#f2f2f7; color:#999; font-size:13px; font-weight:600; cursor:pointer; list-style:none; }
+.newow-test-menu summary::-webkit-details-marker { display:none; }
+.nav-test-options { position:absolute; z-index:100; top:100%; min-width:88px; background:var(--gy-bg-panel); box-shadow:0 4px 16px #0002; }
+.nav-test-options button { display:block; width:100%; }
 .detail-view-nav__tests summary { cursor:pointer; padding:8px; }
 .detail-view-nav__model[aria-checked=true] { background:#fff0ce; border-color:#d8ad56; }
 .detail-view-nav { display: grid; gap: var(--gy-space-2); padding: var(--gy-space-2) 0; border-bottom: 1px solid var(--gy-border-subtle); }

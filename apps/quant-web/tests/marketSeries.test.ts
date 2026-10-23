@@ -1330,3 +1330,40 @@ describe('market Live overlay', () => {
     ])
   })
 })
+
+describe('history pagination recovery', () => {
+  it('preserves the cursor and loaded bars after failure and retries explicitly', async () => {
+    let calls = 0
+    const series = useMarketSeries({
+      fetchPage: async () => {
+        calls += 1
+        if (calls === 1) return page([{ bar_end: '2026-08-07T07:00:00Z', close: 100 }], { has_more_before: true, next_before: '2026-08-07T07:00:00Z' })
+        if (calls === 2) throw new Error('temporary')
+        return page([{ bar_end: '2026-08-06T07:00:00Z', close: 99 }], { has_more_before: false, next_before: null })
+      },
+      fetchState: async () => { throw new Error('offline') },
+    })
+    await series.replaceSeries({ symbol: 'jm', seriesKind: 'continuous', frequency: '1d' })
+    await assert.rejects(series.loadMoreBefore())
+    assert.ok(series.historyError.value)
+    assert.equal(series.bars.value.length, 1)
+    assert.equal(series.hasMoreBefore.value, true)
+    await series.loadMoreBefore()
+    assert.equal(series.historyError.value, null)
+    assert.equal(series.hasMoreBefore.value, false)
+    assert.equal(series.bars.value.length, 2)
+    series.dispose()
+  })
+
+  it('rejects a nonadvancing server cursor without corrupting loaded history', async () => {
+    const series = useMarketSeries({
+      fetchPage: async () => page([{ bar_end: '2026-08-07T07:00:00Z', close: 100 }], { has_more_before: true, next_before: '2026-08-07T07:00:00Z' }),
+      fetchState: async () => { throw new Error('offline') },
+    })
+    await series.replaceSeries({ symbol: 'jm', seriesKind: 'continuous', frequency: '1d' })
+    await assert.rejects(series.loadMoreBefore(), /CURSOR_NOT_ADVANCING/)
+    assert.equal(series.bars.value.length, 1)
+    assert.ok(series.historyError.value)
+    series.dispose()
+  })
+})

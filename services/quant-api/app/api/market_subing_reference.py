@@ -2,11 +2,13 @@
 
 from collections.abc import Callable
 from datetime import date, datetime
+from decimal import Decimal
 from threading import BoundedSemaphore
 from time import monotonic
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal, get_db
@@ -119,5 +121,42 @@ def subing_reference(
         raise HTTPException(
             500, detail={"code": "SUBING_REFERENCE_INTERNAL_ERROR"}
         ) from None
+    finally:
+        _GATE.release()
+
+
+@router.get("/{symbol}/htdy/reference")
+def htdy_historical_reference(
+    request: Request, symbol: str, since: date | None = None,
+    through: date | None = None, as_of: datetime | None = None,
+    before: str | None = Query(None, max_length=2048),
+    limit: int = Query(50, ge=1, le=200), frequency: str = "15m",
+    session: Session = Depends(get_db),
+):
+    from app.reference_trading.htdy_history import query_htdy_history
+    from app.alerts.evaluators import AlertEvaluationError
+
+    keys = [key for key, _ in request.query_params.multi_items()]
+    if set(keys) - _FIELDS or len(keys) != len(set(keys)):
+        raise HTTPException(422, detail={"code": "HTDY_REFERENCE_INVALID_QUERY"})
+    if not _GATE.acquire(blocking=False):
+        raise HTTPException(503, detail={"code": "HTDY_REFERENCE_BUSY"})
+    deadline = monotonic() + 30
+
+    def check_cancelled():
+        if monotonic() > deadline:
+            raise SubingReferenceError("HTDY_REFERENCE_BUDGET_EXCEEDED")
+
+    try:
+        return jsonable_encoder(query_htdy_history(_build_service(session, check_cancelled),
+            SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency)),
+            custom_encoder={Decimal: str})
+    except SubingReferenceError as exc:
+        raise HTTPException(422 if "INVALID_QUERY" in exc.code else 503,
+                            detail={"code": exc.code.replace("SUBING_", "HTDY_")}) from None
+    except (MarketDataError, ActualDominantResearchSegmentIdentityError):
+        raise HTTPException(503, detail={"code": "HTDY_REFERENCE_DATA_UNAVAILABLE"}) from None
+    except (ValueError, KeyError, TypeError, AlertEvaluationError):
+        raise HTTPException(409, detail={"code": "HTDY_REFERENCE_SOURCE_CONFLICT"}) from None
     finally:
         _GATE.release()

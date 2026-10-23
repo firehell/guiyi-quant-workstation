@@ -21,7 +21,7 @@ const props = defineProps<{
   research: ProductResearchResponse | null
   researchError: boolean
   preferences: FlexibleDetailPreferences
-  hasMoreBefore: boolean
+  hasMoreBefore: boolean; loadingBefore?: boolean; historyError?: string | null
   loadEarlier: () => Promise<void>
   identityWarning?: string | null
 }>()
@@ -171,7 +171,7 @@ function loadEarlier() { void props.loadEarlier() }
     <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ model.semanticBanner.text }}</p>
     <FreeChartStage
       :bars="bars"
-      :mutation="mutation"
+      :mutation="mutation" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
       :loading="loading"
       :error="error"
       :period="identity.frequency"
