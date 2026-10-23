@@ -66,7 +66,7 @@ test('composite covers all stage pairs without changing daily reference selectio
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_as_of: '2026-10-11T00:00:00.000001Z' }).state, null)
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), physical_contract: 'RB2705' }).state, null)
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_projection_version: undefined }).state, null)
-  assert.equal(homeTrendDisplay().label, '独立趋势来源未确认')
+  assert.equal(homeTrendDisplay().label, '趋势来源待确认')
 })
 
 test('current events are exact-bar owned, price guarded and historical recent actions never override', () => {
@@ -149,7 +149,7 @@ test('rows expand and summary cards navigate with selected strategy while retain
     assert.match(nodeText(root), /3100.13/)
     assert.equal(nodeText(findNode(root, n => n.props.class === 'row-hint')!), '小心')
     assert.match(nodeText(root), /9007199254740993.13/)
-    assert.match(nodeText(root), /趋势来源未确认/)
+    assert.ok(findNode(root, n => n.type === 'svg' && n.props['aria-label'] === '趋势来源待确认'))
     assert.doesNotMatch(nodeText(root), /日周向上/)
     const summary = findNode(root, n => n.props['aria-label'] === '螺纹钢展开策略摘要')!
     assert.equal(summary.props['aria-expanded'], false)
@@ -304,5 +304,5 @@ test('expanded precomputed performance never issues a separate HTTP read', async
 test('period disclosure distinguishes a data conflict from an unconfirmed private source', () => {
   assert.match(homePeriodReason({ status: 'unavailable', state: null, reason_code: 'REFERENCE_CANONICAL_MISMATCH' })!, /身份冲突/)
   assert.equal(homePeriodReason({ status: 'ready', state: 'HOLD' }), null)
-  assert.equal(homeTrendDisplay().label, '独立趋势来源未确认')
+  assert.equal(homeTrendDisplay().label, '趋势来源待确认')
 })

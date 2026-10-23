@@ -3033,3 +3033,13 @@ T菜单实际仅测试1–4及主升浪；AI分析弹窗显示六组合并可采
 
 
 2026-10-20发布候选补充：小心事件保持完整物理前缀计算，但仅输出observation_eligible锚点；主图按时间、physical_contract、segment_id、calculation_segment_id完整身份筛选，避免换月预热前缀共享时间戳导致foreign-owner事件污染和整图校验失败。公式不变。两项新增回归实际RED→GREEN，分别覆盖重叠非可见合约与同时间合约/物理段/计算段三类不匹配。
+
+### 2026-10-23 独立趋势公开来源复核
+
+公开首页v3.4.06的trendBullBear(code)读取trendMap：bull为红升箭头（#FF3B30、12%浅底），bear为绿降箭头（#34C759、12%浅底），22px；缺失为灰色描边时钟。snapshot/batch解析只把item.trend按fullCode写入trendMap，不在浏览器计算方向。
+公开GET /api/batch?codes=000001.SH本次返回trend=bear，signal_daily=wait、signal_weekly=wait，与页面绿降箭头相符；这只证明传输及显示映射，不证明生成公式、周期或截止身份。切换策略不把此独立字段替换为日周同向。
+首页引用的strategy-calc.js未找到trend/bull/bear生成实现。生成公式、输入窗口、完成周期和截止身份仍UNKNOWN/EVIDENCE_REQUIRED；不推断为MA、涨跌或主升浪，不把股票结果应用到期货。
+
+本次首页HTML SHA256：d1215b2132412648ef3729ef7a0c53f7c262eea3dfa42ec458fa281451ffec1f；
+strategy-calc.js SHA256：f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0。
+期货首页采用灰色时钟和“趋势来源待确认”，不再复用“数据不足”图标。趋势计算尚未复刻，不新增投影字段、不重建源数据、不启用有方向箭头；未来证据充分后才版本化接入预计算。

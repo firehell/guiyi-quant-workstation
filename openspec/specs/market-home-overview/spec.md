@@ -414,3 +414,13 @@ Existing unconditional derived-projection reads remain unchanged. An overview re
 
 - **WHEN** separate requests establish identical checked inputs concurrently
 - **THEN** calculation may be shared while both retain authority validation and cancellation boundaries
+
+### Requirement: Independent trend remains explicit when its formula is unknown
+
+首页独立趋势不得用日周同向、涨跌幅或主升浪替代。公开trendMap的bull/bear映射已确认但生成规则未确认时，SHALL显示22px灰色描边时钟，提供“趋势来源待确认”的title及中文图像语义，不再复用“数据不足”的通用图标。不得制造有方向的期货趋势事实或将股票接口结果移植为期货输入。
+
+#### Scenario: No verified independent trend formula is available
+
+- **WHEN** 首页只有日周策略摘要而没有经验证的独立趋势生成规则
+- **THEN** 全部品种显示来源待确认，不因分钟报价、策略切换或日周状态改变而显示红升/绿降
+- **AND** 既有投影、行情链和GET不增加策略计算或来源请求

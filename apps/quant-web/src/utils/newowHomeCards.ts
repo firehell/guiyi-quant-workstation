@@ -81,7 +81,7 @@ export function homeDirectionDisplay(day?: HomePeriodFact, week?: HomePeriodFact
 }
 
 /** trendMap is an independent source fact; alignment cannot stand in for it. */
-export function homeTrendDisplay() { return { label: '独立趋势来源未确认', tone: 'pending' } as const }
+export function homeTrendDisplay() { return { label: '趋势来源待确认', tone: 'pending' } as const }
 
 const identifiedHomeFact = (fact?: HomePeriodFact): fact is HomePeriodFact & { state: HomeState } => Boolean(
   fact?.status === 'ready' && fact.state && fact.physical_contract && fact.segment_id && fact.calculation_segment_id && fact.input_sha256 && fact.formula_versions?.length
