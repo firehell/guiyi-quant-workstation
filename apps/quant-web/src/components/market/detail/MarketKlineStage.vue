@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime: string | null
   identityKey: string
   focusBarEnd?: string | null
+  showHistoryButton?: boolean
   showNavigationButtons?: boolean
   showDerivedMarkers?: boolean
   markers?: KlineMarker[]
@@ -31,7 +32,7 @@ const props = withDefaults(defineProps<{
   loadingBefore?: boolean
   historyError?: string | null
   focusRequestId?: number
-}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
+}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true, showHistoryButton: true })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -101,11 +102,11 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
         <MarketDetailIcon name="fullscreen" :size="18" />
       </button>
     </div>
-    <div v-if="hasMoreBefore !== undefined && (showNavigationButtons || loadingBefore || historyError || hasMoreBefore === false)" class="market-kline-stage__history" role="status">
-      <button v-if="hasMoreBefore && (showNavigationButtons || historyError)" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
+    <div v-if="hasMoreBefore !== undefined && ((showNavigationButtons && showHistoryButton) || loadingBefore || historyError || hasMoreBefore === false)" class="market-kline-stage__history" role="status">
+      <button v-if="hasMoreBefore && ((showNavigationButtons && showHistoryButton) || historyError)" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
         {{ loadingBefore ? '加载中…' : historyError ? '重试加载更早' : '加载更早' }}
       </button>
-      <span v-if="!showNavigationButtons && loadingBefore">加载中…</span>
+      <span v-if="(!showNavigationButtons || !showHistoryButton) && loadingBefore">加载中…</span>
       <span v-if="hasMoreBefore === false && !loading && bars.length">已到最早可用数据</span>
       <span v-if="historyError">{{ historyError }}</span>
     </div>
