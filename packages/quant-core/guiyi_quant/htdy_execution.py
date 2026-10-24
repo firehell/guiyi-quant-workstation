@@ -78,6 +78,7 @@ class AccountSnapshot:
     available: Decimal
     positions: tuple[Position, ...] = ()
     orders: tuple[OrderReport, ...] = ()
+    settled_order_ids: tuple[str, ...] = ()
 
     def __post_init__(self):
         _text(self.account_id)
@@ -92,6 +93,11 @@ class AccountSnapshot:
                 or len({p.product for p in self.positions}) != len(self.positions)
                 or len({o.order_id for o in self.orders}) != len(self.orders)):
             raise ValueError("ACCOUNT_SNAPSHOT_INVALID")
+        if (type(self.settled_order_ids) is not tuple
+                or len(set(self.settled_order_ids)) != len(self.settled_order_ids)
+                or any(not any(o.order_id == identity and o.status in ("CANCELLED", "REJECTED")
+                               for o in self.orders) for identity in self.settled_order_ids)):
+            raise ValueError("ACCOUNT_SETTLEMENT_PROOF_INVALID")
 
 
 @dataclass(frozen=True)
@@ -232,6 +238,8 @@ class Order:
     signal_id: str
     status: str = "PROPOSED"
     quantity: int = 1
+    cancel_required: bool = False
+    reconciled: bool = False
 
     def __post_init__(self):
         _text(self.order_id)
@@ -240,6 +248,7 @@ class Order:
         _time(self.created_at)
         if (self.side not in ("BUY", "SELL") or self.offset not in ("OPEN", "CLOSE")
                 or type(self.quantity) is not int or self.quantity != 1
+                or type(self.cancel_required) is not bool or type(self.reconciled) is not bool
                 or self.status not in ("PROPOSED", "WORKING", "CANCEL_PENDING", "UNKNOWN",
                                        "FILLED", "CANCELLED", "REJECTED")):
             raise ValueError("ORDER_INVALID")
@@ -296,6 +305,8 @@ class State:
     receipts: tuple[tuple[str, str], ...] = ()
     audit: tuple[Audit, ...] = ()
     clock: datetime | None = None
+    unresolved_fill_ids: tuple[str, ...] = ()
+    baseline_orders: tuple[OrderReport, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -320,7 +331,8 @@ def start(account_id: str, products: tuple[str, ...], at: datetime, snapshot: Ac
     if (type(products) is not tuple or not products or len(set(products)) != len(products)
             or any(type(p) is not str or re.fullmatch(r"[A-Z]{1,3}", p) is None for p in products)):
         raise ValueError("UNIVERSE_INVALID")
-    return State(account_id, at, snapshot, tuple(ProductState(p) for p in products), clock=at)
+    return State(account_id, at, snapshot, tuple(ProductState(p) for p in products), clock=at,
+                 baseline_orders=snapshot.orders)
 
 
 def _encode(value):
@@ -357,7 +369,9 @@ def _replace_order(state, order):
 
 
 def _unsettled(state, order):
-    return order.status not in ("REJECTED", "CANCELLED") and not any(f.order_id == order.order_id for f in state.fills)
+    if any(f.order_id == order.order_id for f in state.fills):
+        return False
+    return order.status not in ("REJECTED", "CANCELLED") or not order.reconciled
 
 
 def _apply_signal(state, signal):
@@ -377,6 +391,9 @@ def _apply_signal(state, signal):
     if state.phase != "READY" or p.product in state.blocked_products or p.rolling:
         return _replace_product(state, p), "SIGNAL_BLOCKED"
     if len(signal.directions) > 1:
+        state = replace(state, orders=tuple(replace(o, cancel_required=True)
+            if o.product == p.product and o.offset == "OPEN" and _unsettled(state, o) else o
+            for o in state.orders))
         closing = any(o.product == p.product and o.offset == "CLOSE" and _unsettled(state, o) for o in state.orders)
         return _replace_product(state, replace(p, target=0 if closing else p.quantity, signal_id=signal.source_id,
                                               eligible_after=signal.observed_at)), "SIGNAL_CONFLICT"
@@ -388,19 +405,19 @@ def _apply_signal(state, signal):
 
 def _advance(state, cmd, command_id):
     p = _product(state, cmd.product)
-    if state.phase != "READY":
-        return state, (), "ACCOUNT_READBACK_REQUIRED"
     working = [o for o in state.orders if o.product == p.product and _unsettled(state, o)]
     if len(working) > 1:
         raise ValueError("ORDER_CAPACITY_CONFLICT")
     if working:
         order = working[0]
         wanted = 1 if order.side == "BUY" else -1
-        if order.offset == "OPEN" and (p.rolling or p.product in state.blocked_products or p.target != wanted):
+        if order.offset == "OPEN" and (order.cancel_required or p.rolling or p.product in state.blocked_products or p.target != wanted):
             if order.status in ("PROPOSED", "WORKING"):
                 order = replace(order, status="CANCEL_PENDING")
                 return _replace_order(state, order), (Effect("CANCEL", order),), "CANCEL_OPEN"
         return state, (), "ORDER_PENDING"
+    if state.phase != "READY":
+        return state, (), "ACCOUNT_READBACK_REQUIRED"
     if p.rolling and p.quantity == 0:
         p = replace(p, rolling=False, target=0, wait_after=cmd.at)
         return _replace_product(state, p), (), "ROLLOVER_FLAT_WAIT_NEW_SIGNAL"
@@ -435,6 +452,14 @@ def _fill(state, fill):
     if fill.filled_at <= order.created_at or any(f.order_id == order.order_id for f in state.fills):
         raise ValueError("FILL_TIMING_OR_QUANTITY_INVALID")
     p = _product(state, order.product)
+    capacity_conflict = order.offset == "OPEN" and p.quantity != 0
+    close_conflict = order.offset == "CLOSE" and (
+        p.position_contract != order.contract or p.quantity != (1 if order.side == "SELL" else -1))
+    if capacity_conflict or close_conflict:
+        state = _replace_order(state, replace(order, status="FILLED"))
+        return replace(state, fills=state.fills + (fill,), phase="BLOCKED",
+                       unresolved_fill_ids=state.unresolved_fill_ids + (fill.trade_id,)), "NATIVE_FILL_PROJECTION_CONFLICT"
+    late_terminal = order.status in ("CANCELLED", "REJECTED")
     if order.offset == "OPEN":
         if p.quantity != 0:
             raise ValueError("POSITION_CAPACITY_CONFLICT")
@@ -447,6 +472,10 @@ def _fill(state, fill):
         p = replace(p, quantity=0, position_contract=None)
     state = _replace_product(state, p)
     state = _replace_order(state, replace(order, status="FILLED"))
+    if late_terminal:
+        state = replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED", orders=tuple(
+            replace(o, cancel_required=True) if o.offset == "OPEN" and _unsettled(state, o) else o
+            for o in state.orders))
     return replace(state, fills=state.fills + (fill,)), "BROKER_FILL_RECORDED"
 
 
@@ -466,7 +495,7 @@ def _report(state, cmd):
     if order.status == "CANCEL_PENDING" and status == "WORKING":
         status = "CANCEL_PENDING"
     state = _replace_order(state, replace(order, status=status))
-    if status in ("UNKNOWN", "FILLED", "REJECTED"):
+    if status in ("UNKNOWN", "FILLED", "REJECTED", "CANCELLED") and not state.unresolved_fill_ids:
         state = replace(state, phase="RECOVERY_REQUIRED")
     return state, "ORDER_REPORT_RECORDED"
 
@@ -488,6 +517,10 @@ def _validate_state(state):
     positions, filled = {}, set()
     orders = {o.order_id: o for o in state.orders}
     for fill in state.fills:
+        if fill.trade_id in state.unresolved_fill_ids:
+            if state.phase != "BLOCKED" or fill.account_id != state.account_id:
+                raise ValueError("STATE_UNRESOLVED_FILL_CONFLICT")
+            continue
         order = orders.get(fill.order_id)
         if (order is None or fill.order_id in filled or fill.account_id != state.account_id
                 or fill.contract != order.contract or fill.filled_at <= order.created_at
@@ -516,10 +549,13 @@ def _recover(state, cmd):
     snapshot = cmd.snapshot
     if type(snapshot) is not AccountSnapshot or snapshot.account_id != state.account_id:
         raise ValueError("ACCOUNT_IDENTITY_INVALID")
+    if state.unresolved_fill_ids:
+        return replace(state, phase="BLOCKED"), "NATIVE_FILL_PROJECTION_REQUIRES_RECONCILIATION"
     expected = tuple(sorted((p.product, p.position_contract, p.quantity) for p in state.products if p.quantity))
     actual = tuple(sorted((p.product, p.contract, p.quantity) for p in snapshot.positions))
     reports = {r.order_id: r for r in snapshot.orders}
-    if expected != actual or any(r.order_id not in {o.order_id for o in state.orders} for r in snapshot.orders):
+    if expected != actual or any(r.order_id not in {o.order_id for o in state.orders}
+                                and r not in state.baseline_orders for r in snapshot.orders):
         return replace(state, phase="BLOCKED"), "ACCOUNT_RECONCILIATION_MISMATCH"
     # Missing or ambiguous outcomes never imply a failed order and never free capacity.
     for order in state.orders:
@@ -527,8 +563,15 @@ def _recover(state, cmd):
             report = reports.get(order.order_id)
             if report is None or report.status in ("UNKNOWN", "FILLED"):
                 return replace(state, phase="RECOVERY_REQUIRED"), "ORDER_OUTCOME_UNRESOLVED"
+            if report.status in ("CANCELLED", "REJECTED") and order.order_id not in snapshot.settled_order_ids:
+                return replace(state, phase="RECOVERY_REQUIRED"), "CANCEL_TRADE_RECONCILIATION_REQUIRED"
     for report in snapshot.orders:
-        state, _ = _report(state, Report(state.account_id, snapshot.at, report))
+        if report not in state.baseline_orders:
+            state, _ = _report(state, Report(state.account_id, snapshot.at, report))
+    state = replace(state, orders=tuple(replace(o, reconciled=True)
+        if o.order_id in snapshot.settled_order_ids else
+        replace(o, cancel_required=True) if o.offset == "OPEN" and _unsettled(state, o) else o
+        for o in state.orders))
     if type(cmd.inputs) is not tuple or any(type(i) is not RecoveryInput for i in cmd.inputs):
         raise ValueError("RECOVERY_INPUT_INVALID")
     if len({i.product for i in cmd.inputs}) != len(cmd.inputs):
@@ -595,7 +638,7 @@ def apply(state: State, command_id: str, command) -> Transition:
     elif type(command) is Report:
         state, reason = _report(state, command)
     elif type(command) is Disconnect:
-        state, reason = replace(state, phase="RECOVERY_REQUIRED"), "DISCONNECTED"
+        state, reason = replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED"), "DISCONNECTED"
     else:
         state, reason = _recover(state, command)
     state = replace(state, clock=at, receipts=state.receipts + ((command_id, digest),),
@@ -638,6 +681,6 @@ def restore(payload: str) -> State:
         if type(state) is not State:
             raise ValueError("CHECKPOINT_STATE_INVALID")
         _validate_state(state)
-        return replace(state, phase="RECOVERY_REQUIRED")
+        return replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED")
     except (KeyError, TypeError, ValueError, ArithmeticError):
         raise ValueError("CHECKPOINT_INVALID") from None

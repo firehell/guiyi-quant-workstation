@@ -368,3 +368,87 @@ def test_conflict_while_closing_cannot_create_a_reentry_after_close_fill():
         T + timedelta(minutes=181), T + timedelta(minutes=181, seconds=1),
         Decimal("3500"), Decimal("1"), 1)).state
     assert advance(state, 182).effects == ()
+
+
+def test_new_matching_signal_cannot_erase_recovery_cancel_obligation():
+    state = owner(started())
+    state = step(state, signal(state)).state
+    tx = advance(state)
+    order = tx.effects[0].order
+    state = step(tx.state, h.Disconnect(T + timedelta(minutes=90))).state
+    state = step(state, h.Recover(snapshot(orders=(h.OrderReport(order.order_id, "WORKING"),),
+        at=T + timedelta(minutes=120, seconds=3)),
+        (h.RecoveryInput("RB", "RB2701", 1, T + timedelta(minutes=120), "complete"),))).state
+    state = step(state, signal(state, "buy", 180, previous=T + timedelta(minutes=120))).state
+    assert advance(state, 181).effects[0].kind == "CANCEL"
+
+
+def test_cancel_ack_without_trade_reconciliation_cannot_free_capacity():
+    state = owner(started())
+    state = step(state, signal(state)).state
+    tx = advance(state)
+    old = tx.effects[0].order
+    state = step(tx.state, signal(tx.state, "sell", 120, previous=T + timedelta(minutes=60))).state
+    state = advance(state, 121).state
+    state = step(state, h.Report("simnow-test", T + timedelta(minutes=122),
+        h.OrderReport(old.order_id, "CANCELLED"))).state
+    assert advance(state, 123).effects == ()
+    assert state.phase == "RECOVERY_REQUIRED"
+
+
+def test_impossible_late_native_fill_is_retained_and_cancels_new_open():
+    from dataclasses import replace
+    state = owner(started())
+    state = step(state, signal(state)).state
+    tx = advance(state)
+    old = tx.effects[0].order
+    state = step(tx.state, signal(tx.state, "sell", 120, previous=T + timedelta(minutes=60))).state
+    state = advance(state, 121).state
+    state = step(state, h.Report("simnow-test", T + timedelta(minutes=122),
+        h.OrderReport(old.order_id, "CANCELLED"))).state
+    snap = replace(snapshot(at=T + timedelta(minutes=180, seconds=3),
+        orders=(h.OrderReport(old.order_id, "CANCELLED"),)), settled_order_ids=(old.order_id,))
+    state = step(state, h.Recover(snap, (h.RecoveryInput("RB", "RB2701", -1,
+        T + timedelta(minutes=180), "complete"),))).state
+    state = step(state, signal(state, "sell", 240, previous=T + timedelta(minutes=180))).state
+    new_tx = advance(state, 241)
+    newer = new_tx.effects[0].order
+    late = h.Fill("late-contradiction", old.order_id, "simnow-test", old.contract,
+        T + timedelta(minutes=119), T + timedelta(minutes=242), Decimal("3500"), Decimal("1"), 1)
+    state = step(new_tx.state, late).state
+    assert state.phase == "RECOVERY_REQUIRED"
+    assert state.fills[-1] == late
+    cancel = advance(state, 243)
+    assert cancel.effects[0].kind == "CANCEL"
+    assert cancel.effects[0].order.order_id == newer.order_id
+    incoming = h.Fill("second-unexpected-fill", newer.order_id, "simnow-test", newer.contract,
+        T + timedelta(minutes=242), T + timedelta(minutes=244), Decimal("3490"), Decimal("1"), 1)
+    state = step(cancel.state, incoming).state
+    assert state.phase == "BLOCKED"
+    assert state.fills[-1] == incoming
+    assert incoming.trade_id in state.unresolved_fill_ids
+    restored = h.restore(h.checkpoint(state))
+    assert restored.phase == "BLOCKED"
+
+
+def test_conflict_cancel_obligation_survives_later_matching_signal():
+    from dataclasses import replace
+    state = owner(started())
+    state = step(state, signal(state)).state
+    state = advance(state).state
+    conflict = replace(signal(state, "buy", 120, previous=T + timedelta(minutes=60)),
+                       directions=("buy", "sell"))
+    state = step(state, conflict).state
+    state = step(state, signal(state, "buy", 180, previous=T + timedelta(minutes=120))).state
+    assert advance(state, 181).effects[0].kind == "CANCEL"
+
+
+def test_verified_terminal_orders_at_activation_remain_valid_after_restart():
+    baseline = (h.OrderReport("previous-terminal", "FILLED"),)
+    state = h.start("simnow-test", ("RB",), T, snapshot(orders=baseline))
+    state = owner(state)
+    state = h.restore(h.checkpoint(state))
+    state = step(state, h.Recover(snapshot(orders=baseline, at=T + timedelta(minutes=120, seconds=3)),
+        (h.RecoveryInput("RB", "RB2701", 0, T + timedelta(minutes=120), "complete"),))).state
+    assert state.phase == "READY"
+    assert advance(state, 121).effects == ()
