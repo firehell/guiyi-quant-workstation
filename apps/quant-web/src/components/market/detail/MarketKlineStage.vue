@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime: string | null
   identityKey: string
   focusBarEnd?: string | null
+  showNavigationButtons?: boolean
   showDerivedMarkers?: boolean
   markers?: KlineMarker[]
   markerSelectionEnabled?: boolean
@@ -30,7 +31,7 @@ const props = withDefaults(defineProps<{
   loadingBefore?: boolean
   historyError?: string | null
   focusRequestId?: number
-}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true })
+}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -95,16 +96,17 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 <template>
   <section ref="root" class="market-kline-stage" :class="{ 'market-kline-stage--fullscreen': fullscreen }">
     <div class="market-kline-stage__controls">
-      <button v-if="!followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
+      <button v-if="showNavigationButtons && !followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
       <button type="button" :aria-label="fullscreen ? '退出全屏' : '全屏图表'" @click="toggleFullscreen">
         <MarketDetailIcon name="fullscreen" :size="18" />
       </button>
     </div>
-    <div v-if="hasMoreBefore !== undefined" class="market-kline-stage__history" role="status">
-      <button v-if="hasMoreBefore" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
+    <div v-if="hasMoreBefore !== undefined && (showNavigationButtons || loadingBefore || historyError || hasMoreBefore === false)" class="market-kline-stage__history" role="status">
+      <button v-if="hasMoreBefore && (showNavigationButtons || historyError)" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
         {{ loadingBefore ? '加载中…' : historyError ? '重试加载更早' : '加载更早' }}
       </button>
-      <span v-else-if="!loading && bars.length">已到最早可用数据</span>
+      <span v-if="!showNavigationButtons && loadingBefore">加载中…</span>
+      <span v-if="hasMoreBefore === false && !loading && bars.length">已到最早可用数据</span>
       <span v-if="historyError">{{ historyError }}</span>
     </div>
     <KlineChart

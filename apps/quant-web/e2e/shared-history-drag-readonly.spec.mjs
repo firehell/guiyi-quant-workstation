@@ -28,7 +28,11 @@ for (const view of ['htdy', 'subing', 'free']) {
       expect(Date.parse(next.bars[0].bar_end)).toBeLessThan(Date.parse(cursor))
       expect(Date.parse(next.bars.at(-1).bar_end)).toBeLessThan(Date.parse(cursor))
       cursor = next.page.next_before
-      await expect(page.getByRole('button', { name: '加载更早', exact: true })).toBeEnabled()
+      if (view === 'subing') {
+        await expect(page.getByRole('button', { name: '加载更早', exact: true })).toHaveCount(0)
+        await expect(page.getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      } else await expect(page.getByRole('button', { name: '加载更早', exact: true })).toBeEnabled()
     }
   })
 }
