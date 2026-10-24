@@ -8,6 +8,7 @@ defineProps<{
   historyLabel?: string
   hideBack?: boolean
   staticIdentity?: boolean
+  displayDate?: string | null
   actions: {
     canOpenHistory: boolean
     canManageAlert: boolean
@@ -23,7 +24,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <header class="detail-topbar" :class="{ 'detail-topbar--without-back': hideBack }" data-detail-section="topbar">
+  <header class="detail-topbar" :class="{ 'detail-topbar--without-back': hideBack, 'detail-topbar--stock-title': staticIdentity }" data-detail-section="topbar">
     <button v-if="!hideBack" class="detail-topbar__back" type="button" aria-label="返回市场" @click="emit('back')">
       <MarketDetailIcon name="back" />
       <span>返回市场</span>
@@ -39,7 +40,8 @@ const emit = defineEmits<{
       <MarketDetailIcon name="chevron-down" :size="18" />
     </button>
 
-    <div class="detail-topbar__actions" role="group" aria-label="详情页操作">
+    <span v-if="staticIdentity" class="detail-topbar__date">日期：{{ displayDate || '—' }}</span>
+    <div v-else class="detail-topbar__actions" role="group" aria-label="详情页操作">
       <button
         v-if="actions.canOpenHistory"
         class="detail-topbar__action detail-topbar__history"
@@ -108,5 +110,16 @@ button.detail-topbar__identity:hover,
   .detail-topbar__history span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .detail-topbar__action { padding: 0 var(--gy-space-2); }
   .detail-topbar__contract { display: none; }
+}
+.detail-topbar--stock-title { min-height: 30px; border-bottom: 0; background: transparent; gap: 12px; }
+.detail-topbar--stock-title .detail-topbar__identity { min-height: 24px; padding: 0; gap: 8px; }
+.detail-topbar--stock-title .detail-topbar__name { color: #161616; font-size: 18px; font-weight: 700; line-height: 24px; }
+.detail-topbar--stock-title .detail-topbar__contract { display: inline; color: #888; font-size: 13px; line-height: 24px; }
+.detail-topbar__date { color: #aaa; font-size: 11px; white-space: nowrap; }
+@media (max-width: 640px) {
+  .detail-topbar--stock-title { min-height: 30px; gap: 8px; }
+  .detail-topbar--stock-title .detail-topbar__name { font-size: 16px; }
+  .detail-topbar--stock-title .detail-topbar__contract { font-size: 12px; }
+  .detail-topbar__date { font-size: 10px; }
 }
 </style>
