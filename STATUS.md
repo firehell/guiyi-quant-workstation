@@ -1,5 +1,13 @@
 # 当前状态
 
+## 10/24 第一步主动排障：44路旧缺口门禁恢复已验，自然新输入待验
+
+进一步实查确认11品种44路H1在下一Session前仍夹旧缺失端点，effective block不能被关闭。逐桶真实原件证明17个完整H1缺失，对应611条缺失M1；00:01–00:29部分M1完整保留。按原生BoundedForwardRecovery单次追加44精确中断并由原消费者消费，当前active参考状态FLAT、内核精确重置；19笔active OPEN以OBSERVATION_INTERRUPTED结束，无退出价或收益，旧inactive版本及旧经济事实保持。44路及L4下一权威H1门禁均已只读证明为ONE_NEXT_ENDPOINT（日程证明不是未来Bar）。
+
+正式仍exact v1.15.18/gen23，Feed/Live/Alert/Reference原PID恢复；最终回读所有保留journal消费者追尾、pending Capture0、PG维护锁0，deployment/after-market文件锁空闲。旧原件和索引/ObservationStream游标未改，611没有恢复；API仍672 READY/48观察滞后，全局degraded保留，不制造自然验收或绿色状态。29执行器测试、原生15 passed/4 skipped及独立实际代码/结果复审通过。
+
+通知只新增44条原生BATCH_PROCESSED记账收据及正常policy消费游标推进；旧delivery逐摘要保持、policy数量/配置/stream/topic精确核对，0可发送动作/0外发。原controller因总摘要差异停止的记录保持原样，独立`gap-repair-004/independent-verified-003.json`严格解释该增量；旧前置失败/只读验收错误均保留。闭市可完成的工程排障已完成，下一自然分钟/H1仍待10/26真实Session，不新建监控或补发。详见[第一步记录](docs/tasks/runtime-step1-20261024.md)。
+
 ## 10/24 第一步运行阻断核查：未发现当前进程、锁或消费积压阻断，自然新输入待验
 
 17:40–17:45 CST只读两轮回读：正式十服务v1.15.18/gen23身份匹配，六PID稳定；PG维护锁持有者0，deployment/after-market文件锁空闲。所有保留source/completed journal的Live/Alert/Reference消费者均追尾，前后数量/游标一致，pending Capture0。Reference连续40秒采样出现3次cycle ready=true，blocked_count始终0，scan ready=false是原生阶段标记，未发现卡死；历史刷新和通知后台存活、无刷新错误。Feed心跳新鲜、available=true/input_failure=null/pending0；60品种全CLOSED，订阅0符合闭市状态。
