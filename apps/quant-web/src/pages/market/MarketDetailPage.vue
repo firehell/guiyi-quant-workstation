@@ -286,9 +286,9 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 
     <template v-else-if="routeResult.kind === 'valid'">
       <MarketDetailTopBar
-        :static-identity="routeResult.identity.view === 'free'"
+        static-identity
         :display-date="header?.tradingDay"
-        :hide-back="isNewowView || routeResult.identity.view === 'free'"
+        hide-back
         :product-name="header?.productName ?? routeResult.identity.symbol.toUpperCase()"
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"

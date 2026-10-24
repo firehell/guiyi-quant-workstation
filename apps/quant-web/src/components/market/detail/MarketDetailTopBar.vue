@@ -40,8 +40,8 @@ const emit = defineEmits<{
       <MarketDetailIcon name="chevron-down" :size="18" />
     </button>
 
-    <span v-if="staticIdentity" class="detail-topbar__date">日期：{{ displayDate || '—' }}</span>
-    <div v-else class="detail-topbar__actions" role="group" aria-label="详情页操作">
+    <div class="detail-topbar__actions" role="group" aria-label="详情页操作">
+      <span v-if="staticIdentity" class="detail-topbar__date">日期：{{ displayDate || '—' }}</span>
       <button
         v-if="actions.canOpenHistory"
         class="detail-topbar__action detail-topbar__history"
@@ -115,7 +115,7 @@ button.detail-topbar__identity:hover,
 .detail-topbar--stock-title .detail-topbar__identity { min-height: 24px; padding: 0; gap: 8px; }
 .detail-topbar--stock-title .detail-topbar__name { color: #161616; font-size: 18px; font-weight: 700; line-height: 24px; }
 .detail-topbar--stock-title .detail-topbar__contract { display: inline; color: #888; font-size: 13px; line-height: 24px; }
-.detail-topbar__date { color: #aaa; font-size: 11px; white-space: nowrap; }
+.detail-topbar__date { order: 2; color: #aaa; font-size: 11px; white-space: nowrap; }
 @media (max-width: 640px) {
   .detail-topbar--stock-title { min-height: 30px; gap: 8px; }
   .detail-topbar--stock-title .detail-topbar__name { font-size: 16px; }
