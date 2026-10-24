@@ -195,6 +195,10 @@ def query_htdy_history(service, query):
         offset = int(parts[1])
     page = selected[offset:offset + query.limit]
     closed = [trade for trade in selected if trade.status.value == "CLOSED"]
+    returns = [trade.reference_return for trade in closed if trade.reference_return is not None]
+    total = sum(returns, Decimal(0))
+    wins = sum(value > 0 for value in returns)
+    losses = sum(value < 0 for value in returns)
     return dict(schema_version="htdy_historical_reference_v1", product=query.symbol,
         frequency=query.frequency, recording_mode="historical_replay", source="canonical",
         reference_model_version=HISTORICAL_MODEL_VERSION, stream_id=stream.stream_id,
@@ -204,6 +208,11 @@ def query_htdy_history(service, query):
         trades=[asdict(trade) for trade in page],
         signals=[signal for signal in signals if since <= signal["trading_day"] <= through],
         summary=dict(total=len(selected), closed=len(closed),
-                     open=sum(trade.status.value == "OPEN" for trade in selected)),
+                     open=sum(trade.status.value == "OPEN" for trade in selected),
+                     wins=wins, losses=losses, flat=len(returns)-wins-losses,
+                     win_rate_pct=Decimal(wins)/Decimal(len(returns))*100 if returns else None,
+                     mean_return_pct=total/Decimal(len(returns)) if returns else None,
+                     sum_return_percentage_points=total,
+                     interrupted=sum(trade.status.value not in {"OPEN", "CLOSED"} for trade in selected)),
         next_cursor=f"{cursor_identity}:{offset + query.limit}" if offset + query.limit < len(selected) else None,
         quality=quality)

@@ -62,7 +62,7 @@ test('daily data interruption requires exact reason, day, and no synthetic mark'
 
 test('reference indicator rendering preserves warmup nulls as chart whitespace', () => {
   const chart = readFileSync(new URL('../src/components/kline/KlineChart.vue', import.meta.url), 'utf8')
-  assert.match(chart, /point\[key\] === null \? Number\.NaN/)
+  assert.match(chart, /referenceIndicatorOverlay\(renderedBars, props\.referenceIndicators\)/)
   assert.match(chart, /Number\.isFinite\(point\.value\)/)
   assert.match(chart, /\{ time: chartTime\(bar\) \}/)
 })

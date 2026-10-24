@@ -96,10 +96,15 @@ def test_query_uses_storage_prefix_and_cursor_identity(monkeypatch):
     result = query_htdy_history(Service(), query)
     assert result["recording_mode"] == "historical_replay"
     assert result["summary"]["total"] == 2
+    assert result["summary"]["closed"] == 1
+    assert result["summary"]["wins"] == 1
+    assert result["summary"]["win_rate_pct"] == Decimal(100)
+    assert result["summary"]["mean_return_pct"] == result["summary"]["sum_return_percentage_points"]
     assert result["next_cursor"]
     initial_evaluations = len(evaluations)
     next_result = query_htdy_history(Service(), replace(query, before=result["next_cursor"]))
     assert len(next_result["trades"]) == 1
+    assert next_result["summary"] == result["summary"]
     assert next_result["trades"] != result["trades"]
     assert len(evaluations) == initial_evaluations
     # Responses cannot mutate the cached signal dictionaries.

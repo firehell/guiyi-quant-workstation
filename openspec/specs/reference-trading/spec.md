@@ -887,6 +887,10 @@ The HTDY reader MAY retain a bounded process cache of pure replay results, keyed
 content, owner/quality segment boundaries, source metadata, formula/model identity and cutoff.
 Every request MUST still verify MDS input identity; TTL or cache presence MUST NOT prove validity.
 Record pagination and summary use the same replay result without re-evaluating unchanged prefixes.
+HTDY summary SHALL aggregate the entire selected entry-day window before record pagination.
+Win/loss/flat counts, win rate, mean return and summed percentage points SHALL use only CLOSED
+reference returns with Decimal arithmetic; OPEN and interrupted records SHALL NOT count as
+completed returns. These values SHALL NOT be labeled account equity or compound return.
 The cache SHALL NOT be a historical fact authority and SHALL NOT write Redis or persistent events.
 
 

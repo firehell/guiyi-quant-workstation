@@ -45,6 +45,8 @@ import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { referencePriceLevelSegments } from '@/utils/referencePriceLevels'
 import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitive'
 
+import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
+
 const props = withDefaults(defineProps<{
   bars: BarData[]
   loading?: boolean
@@ -144,6 +146,7 @@ const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
+const macdPointCount = ref(0)
 let isNearLeftBoundary = false
 let paginationArmed = false
 let followLatest = true
@@ -477,19 +480,12 @@ function renderDerivedSeries(): void {
       anchorTime: props.rangeDetectorAnchorTime,
     },
   })
-  if (props.referenceIndicators) {
-    const byIdentity = new Map(props.referenceIndicators.map(point => [`${Date.parse(point.bar_end)}:${point.physical_contract}`, point]))
-    const exact = renderedBars.flatMap(bar => {
-      const point = byIdentity.get(`${Date.parse(bar.time)}:${bar.physicalContract ?? ''}`)
-      return point ? [{ time: bar.time, point }] : []
-    })
-    const values = (key: 'dif' | 'dea' | 'macd' | 'ema21') => exact.map(({ time, point }) => ({
-      time, value: point[key] === null ? Number.NaN : Number(point[key]),
-    }))
-    derivedData.ema.ema_21 = values('ema21')
-    derivedData.macd.dif = values('dif')
-    derivedData.macd.dea = values('dea')
-    derivedData.macd.histogram = values('macd')
+  const referenceOverlay = referenceIndicatorOverlay(renderedBars, props.referenceIndicators)
+  if (referenceOverlay) {
+    derivedData.ema.ema_21 = referenceOverlay.ema21
+    derivedData.macd.dif = referenceOverlay.dif
+    derivedData.macd.dea = referenceOverlay.dea
+    derivedData.macd.histogram = referenceOverlay.histogram
   }
   referenceLevelSeries.forEach(series => chart!.removeSeries(series))
   referenceLevelSeries = []
@@ -523,6 +519,7 @@ function renderDerivedSeries(): void {
     ribbonTime,
   )
 
+  macdPointCount.value = derivedData.macd.dif.filter(point => Number.isFinite(point.value)).length
   macdDif.setData(chartValues(derivedData.macd.dif))
   macdDea.setData(chartValues(derivedData.macd.dea))
   macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => (
@@ -660,6 +657,7 @@ defineExpose({
     class="kline-shell"
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
+    :data-macd-point-count="macdPointCount"
     :data-reference-target-segments="referenceTargetSegments"
     :data-reference-stop-segments="referenceStopSegments"
     :data-research-marker-count="researchMarkers.length"

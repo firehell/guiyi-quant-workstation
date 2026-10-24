@@ -109,7 +109,8 @@ onBeforeUnmount(() => { focusGeneration += 1; historical.dispose(); loader.dispo
   <section class="htdy-workspace" data-detail-workspace="htdy">
     <p v-if="identityWarning" class="htdy-workspace__hint" role="status">{{ identityWarning }}</p>
     <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null" :identity-key="sourceIdentity" :focus-bar-end="selectedFocus ?? identity.focusBarEnd" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :historical-mode="recordingMode === 'historical_replay'" :markers="recordingMode === 'historical_replay' ? historyMarkers : loader.markers.value" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" />
-    <nav aria-label="火天大有记录模式"><button type="button" :aria-pressed="recordingMode === 'historical_replay'" @click="recordingMode = 'historical_replay'">历史重算</button><button type="button" :aria-pressed="recordingMode === 'forward_observation'" @click="recordingMode = 'forward_observation'">实际记录</button></nav>
+    <p class="htdy-workspace__source">历史重算·乐观参考｜零费用/零滑点　历史信号与实际预警分开展示</p>
+    <nav class="htdy-workspace__filter" aria-label="火天大有记录模式"><button type="button" :aria-pressed="recordingMode === 'historical_replay'" @click="recordingMode = 'historical_replay'">历史重算参考</button><button type="button" :aria-pressed="recordingMode === 'forward_observation'" @click="recordingMode = 'forward_observation'">实际记录</button></nav>
     <p v-if="recordingMode === 'historical_replay' && !historySupported" role="status">此周期或序列暂不支持历史重算参考。</p>
     <HtdyHistoricalPanel v-else-if="recordingMode === 'historical_replay'" :stale="historical.stale.value" :result="historical.result.value" :loading="historical.loading.value" :error="historical.error.value" :focus-error="focusError" @more="historical.read(true)" @retry="historical.read()" @window="historical.read(false, $event)" @focus="focusTrade" />
     <ReferenceTradePanel v-else strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :through="bars.at(-1)?.trading_day" :historical-available="false" />
@@ -119,6 +120,10 @@ onBeforeUnmount(() => { focusGeneration += 1; historical.dispose(); loader.dispo
 </template>
 
 <style scoped>
+.htdy-workspace__filter { display: flex; flex-wrap: wrap; gap: var(--gy-space-2); }
+.htdy-workspace__filter button { padding: 8px 12px; min-height: 40px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); color: var(--gy-text-primary); cursor: pointer; }
+.htdy-workspace__filter button[aria-pressed="true"] { border-color: var(--gy-accent); background: var(--gy-detail-accent-soft); }
+.htdy-workspace__source { margin: 0; padding: 8px 12px; border-left: 2px solid var(--gy-accent); background: var(--gy-accent-soft); color: var(--gy-text-secondary); font-size: 12px; }
 .htdy-workspace { display: grid; gap: var(--gy-space-4); }
 .htdy-workspace__indicators, .htdy-workspace__semantic { padding: var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
 .htdy-workspace details { display: flex; gap: 12px; flex-wrap: wrap; }.htdy-workspace summary { cursor: pointer; }.htdy-workspace label { margin-right: 8px; }
