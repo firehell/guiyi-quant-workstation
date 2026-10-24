@@ -7,6 +7,7 @@ defineProps<{
   displayContract: string | null
   historyLabel?: string
   hideBack?: boolean
+  staticIdentity?: boolean
   actions: {
     canOpenHistory: boolean
     canManageAlert: boolean
@@ -28,7 +29,11 @@ const emit = defineEmits<{
       <span>返回市场</span>
     </button>
 
-    <button class="detail-topbar__identity" type="button" aria-label="切换品种或合约" @click="emit('select-symbol')">
+    <div v-if="staticIdentity" class="detail-topbar__identity detail-topbar__identity--static">
+      <span class="detail-topbar__name">{{ productName }}</span>
+      <span class="detail-topbar__contract">{{ displayContract || symbol.toUpperCase() }}</span>
+    </div>
+    <button v-else class="detail-topbar__identity" type="button" aria-label="切换品种或合约" @click="emit('select-symbol')">
       <span class="detail-topbar__name">{{ productName }}</span>
       <span class="detail-topbar__contract">{{ displayContract || symbol.toUpperCase() }}</span>
       <MarketDetailIcon name="chevron-down" :size="18" />
@@ -83,8 +88,9 @@ const emit = defineEmits<{
   cursor: pointer;
 }
 .detail-topbar__back { display: inline-flex; align-items: center; gap: var(--gy-space-1); padding: 0 var(--gy-space-2); white-space: nowrap; }
+.detail-topbar__identity--static { cursor: default; }
 .detail-topbar__identity { display: flex; align-items: center; gap: var(--gy-space-2); min-width: 0; padding: 0 var(--gy-space-2); text-align: left; }
-.detail-topbar__identity:hover,
+button.detail-topbar__identity:hover,
 .detail-topbar__action:hover,
 .detail-topbar__back:hover { background: var(--gy-bg-hover); }
 .detail-topbar button:focus-visible { outline: 2px solid var(--gy-border-focus); outline-offset: 2px; }
