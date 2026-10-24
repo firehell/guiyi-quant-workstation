@@ -18,6 +18,7 @@ const props = defineProps<{
   header: MarketDetailHeaderModel
   unified?: boolean
   newow?: boolean
+  hideExtendedFacts?: boolean
   identityKey: string
 }>()
 
@@ -80,7 +81,7 @@ function integer(value: number | null): string {
     </div>
 
     <MarketFactsDisclosure
-      v-if="!newow"
+      v-if="!newow && !hideExtendedFacts"
       :identity-key="identityKey"
       :sections="header.extendedSections"
       :freshness="header.freshness"

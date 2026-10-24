@@ -298,7 +298,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @select-symbol="productSelector?.focus()"
         @open-history="openHistory"
       />
-      <MarketDetailQuoteHeader v-if="!isFuturesMode && !controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :unified="isWorkspacePreview" :newow="isNewowView" />
+      <MarketDetailQuoteHeader v-if="!isFuturesMode && !controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :unified="isWorkspacePreview" :newow="isNewowView" :hide-extended-facts="['htdy', 'subing', 'free'].includes(routeResult.identity.view)" />
       <MarketDetailViewNav
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
