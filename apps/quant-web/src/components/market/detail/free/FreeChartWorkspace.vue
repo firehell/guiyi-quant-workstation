@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
 import FreeChartStage from '@/components/market/detail/free/FreeChartStage.vue'
 import { useRangeDetectorOverlayWarmup } from '@/composables/useRangeDetectorOverlayWarmup'
 import type { BarData, OptionalEmaIndicatorId, ProductResearchResponse } from '@/types/market'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
-import type { DetailViewModel, MarketDetailDisclosureSection, MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
+import type { DetailViewModel, MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
 import type { FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
-import { matchingDetailResearch } from '@/utils/marketDetailViewModel'
 import { buildFreeDetailViewModel } from '@/utils/freeDetailViewModel'
 
 const props = defineProps<{
@@ -64,39 +62,6 @@ const emaIndicatorControls = [
   { id: 'ema_60', label: 'EMA60', tone: 'ema60' },
 ] as const
 const rangeIndicatorLabel = computed(() => rangeState.value === 'loading' ? '箱体识别 · 加载中' : '箱体识别')
-const backgroundResearch = computed(() => matchingDetailResearch(props.research, props.identity))
-const backgroundSections = computed<readonly MarketDetailDisclosureSection[]>(() => [{
-  id: 'market-background',
-  title: '市场背景',
-  summary: props.research && !backgroundResearch.value ? '该统计不适用于当前序列' : backgroundResearch.value ? '已加载市场事实' : props.researchError ? '暂不可用' : '暂无市场背景',
-  updatedAt: props.header.asOf,
-  tone: props.researchError ? 'unavailable' : 'default',
-  rows: backgroundResearch.value
-    ? [
-        { label: '统计合约', value: backgroundResearch.value.metric_contract ?? '—', source: 'market' },
-        { label: '日线趋势', value: backgroundResearch.value.daily_trend, source: 'market' },
-        { label: '周线趋势', value: backgroundResearch.value.weekly_trend, source: 'market' },
-        { label: '20日位置', value: String(backgroundResearch.value.position20 ?? '—'), source: 'market' },
-        { label: '量比20', value: String(backgroundResearch.value.volume_ratio20 ?? '—'), source: 'market' },
-        { label: 'OI 1D', value: String(backgroundResearch.value.oi_change_1d ?? '—'), source: 'market' },
-        { label: 'ATR分位', value: String(backgroundResearch.value.atr14_percentile252 ?? '—'), source: 'market' },
-      ]
-    : [{ label: '状态', value: props.researchError ? '市场背景暂不可用' : '暂无市场背景', source: 'market' }],
-}])
-const dataSections = computed<readonly MarketDetailDisclosureSection[]>(() => [{
-  id: 'market-data-details',
-  title: '数据详情',
-  summary: model.value.disclosureSections.length > 0 ? '展开查看行情扩展事实' : '暂无扩展数据',
-  updatedAt: props.header.asOf,
-  tone: model.value.disclosureSections.some((section) => section.tone === 'unavailable')
-    ? 'unavailable'
-    : model.value.disclosureSections.some((section) => section.tone === 'warning') ? 'warning' : 'default',
-  rows: model.value.disclosureSections.length > 0
-    ? model.value.disclosureSections.flatMap((section) => section.rows.map((row) => ({
-        ...row, label: `${section.title} · ${row.label}`,
-      })))
-    : [{ label: '状态', value: '暂无扩展数据', source: 'market' }],
-}])
 function updatePreferences(identity: MarketDetailIdentity) {
   emit('updatePreferences', {
     seriesKind: 'actual_dominant',
@@ -184,8 +149,6 @@ function loadEarlier() { void props.loadEarlier() }
       @focus-resolved="emit('focus-resolved', $event)"
       @load-earlier="loadEarlier"
     />
-    <MarketDetailInsightDeck :identity-key="sourceIdentity" :sections="backgroundSections" :default-open="false" />
-    <MarketDetailInsightDeck :identity-key="sourceIdentity" :sections="dataSections" :default-open="false" />
   </section>
 </template>
 
