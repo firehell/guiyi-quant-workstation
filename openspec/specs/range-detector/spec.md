@@ -85,3 +85,33 @@ snapshot。Range 的 display backpaint MUST NOT 改写因果 point 或授予历�
 
 - **WHEN** 后续 confirmation、revision 或 invalid reset 终止上一 range
 - **THEN** Historical visual range 派生结束时间，而 incremental state 不预填未来时间
+
+### Requirement: Historical chart browsing SHALL recalculate loaded ranges
+
+The chart overlay SHALL use the earliest currently loaded Bar as its calculation anchor, rather
+than permanently freezing the anchor when enabled. It SHALL reuse the existing formula and default
+parameters independently within each physical-contract/calculation segment. Invalid input SHALL
+retain the kernel's reset behavior. Range levels SHALL NOT extend across a segment boundary.
+
+For the first visible Bar the overlay SHALL request the existing paginated history sequentially
+until at least 520 preceding Bars within the same valid segment are loaded, or until the available
+history or an explicit segment boundary prevents it. Prepending SHALL preserve the user's visible
+time range. Disabled or disposed overlays SHALL stop requesting additional pages; late reads SHALL
+not publish into a newer identity. Loading and repeated viewport requests SHALL share one read chain.
+
+The display SHALL distinguish loading, insufficient warm-up, failed history reads and successful
+calculation with no detected range. Previously warmed loaded segments MAY remain visible while the
+current visible segment is insufficient. Additional loaded history MAY revise historical boxes;
+the UI SHALL identify them as revisable historical graphics, not actual trades or first-seen signals.
+
+#### Scenario: A user browses earlier K lines
+
+- **WHEN** an enabled overlay receives an earlier visible Bar or prepended history
+- **THEN** it obtains the necessary available same-segment prefix and recalculates using loaded input
+- **AND** it retains the visible time window rather than jumping to the latest Bar
+
+#### Scenario: Warm-up cannot cross the known boundary
+
+- **WHEN** the visible Bar has fewer than 520 prior valid same-segment Bars and the segment boundary is already loaded
+- **THEN** the display reports insufficient warm-up without downloading unrelated earlier segments
+- **AND** no range is fabricated or extended across that boundary

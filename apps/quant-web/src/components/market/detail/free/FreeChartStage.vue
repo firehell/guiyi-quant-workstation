@@ -22,6 +22,9 @@ const props = withDefaults(defineProps<{
   markers?: readonly KlineMarker[]
 }>(), { markers: () => [] })
 const emit = defineEmits<{
+  'visible-from-change': [time: string | null]
+  'range-detector-result': [result: { count: number; calculationMs: number }]
+
   loadEarlier: []
   'focus-resolved': [focusBarEnd: string]
 }>()
@@ -44,5 +47,7 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
     :markers="freeMarkers"
     @load-earlier="emit('loadEarlier')"
     @focus-resolved="emit('focus-resolved', $event)"
+    @visible-from-change="emit('visible-from-change', $event)"
+    @range-detector-result="emit('range-detector-result', $event)"
   />
 </template>

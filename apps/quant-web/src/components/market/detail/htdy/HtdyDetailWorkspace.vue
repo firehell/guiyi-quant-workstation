@@ -13,6 +13,7 @@ import type { ReferenceTradeView } from '@/types/referenceTrading'
 import HtdyChartStage from './HtdyChartStage.vue'
 import { getAlertEvents } from '@/api/alerts'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
+import { rangeDetectorStatusText } from '@/utils/rangeDetectorStatus'
 import { useRangeDetectorOverlayWarmup } from '@/composables/useRangeDetectorOverlayWarmup'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import type { BarData } from '@/types/market'
@@ -69,8 +70,10 @@ const optionalEmaIndicators = computed(() => props.preferences.optionalEmaIndica
 const showRangeDetector = computed(() => props.preferences.showRangeDetector)
 const workspace = ref<HTMLElement | null>(null)
 const sourceIdentity = computed(() => [props.identity.seriesKind, props.identity.symbol, props.identity.contract ?? '', props.identity.frequency].join(':'))
-const rangeWarmup = useRangeDetectorOverlayWarmup({ bars: computed(() => props.bars), hasMoreBefore: computed(() => props.hasMoreBefore), enabled: showRangeDetector, identityKey: sourceIdentity, loadMoreBefore: props.loadEarlier })
-const rangeState = computed(() => !showRangeDetector.value ? 'disabled' : rangeWarmup.loading.value ? 'loading' : rangeWarmup.unavailableReason.value === null && rangeWarmup.anchorTime.value ? 'ready' : 'insufficient')
+const visibleFrom = ref<string | null>(null)
+const rangeCount = ref(0)
+watch(sourceIdentity, () => { visibleFrom.value = null; rangeCount.value = 0 }, { flush: 'sync' })
+const rangeWarmup = useRangeDetectorOverlayWarmup({ visibleFrom, bars: computed(() => props.bars), hasMoreBefore: computed(() => props.hasMoreBefore), enabled: showRangeDetector, identityKey: sourceIdentity, loadMoreBefore: props.loadEarlier })
 const loader = usePersistentAlertMarkers({ fetchEvents: getAlertEvents }, { resolveRuleCodes: () => [ALERT_RULE_CODES.HTDY] })
 const indicators = computed(() => visibleMainIndicatorsForOverlay('htdy', optionalEmaIndicators.value, showRangeDetector.value))
 async function refresh() {
@@ -87,9 +90,10 @@ onBeforeUnmount(() => { focusGeneration += 1; historical.dispose(); chartSignals
 </script>
 
 <template>
-  <section ref="workspace" class="htdy-workspace" data-detail-workspace="htdy">
+  <section ref="workspace" class="htdy-workspace" data-detail-workspace="htdy" :data-range-detector-status="rangeWarmup.status.value" :data-range-detector-anchor="rangeWarmup.anchorTime.value" :data-range-detector-visible-from="visibleFrom">
     <p v-if="identityWarning" class="htdy-workspace__hint" role="status">{{ identityWarning }}</p>
-    <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null" :identity-key="sourceIdentity" :focus-bar-end="selectedFocus ?? identity.focusBarEnd" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :historical-mode="recordingMode === 'historical_replay'" :reference-callouts="callouts" :markers="recordingMode === 'historical_replay' ? [] : actualSignals.map(item => item.marker)" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" />
+    <p v-if="showRangeDetector" class="htdy-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
+    <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeWarmup.anchorTime.value" :identity-key="sourceIdentity" :focus-bar-end="selectedFocus ?? identity.focusBarEnd" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :historical-mode="recordingMode === 'historical_replay'" :reference-callouts="callouts" :markers="recordingMode === 'historical_replay' ? [] : actualSignals.map(item => item.marker)" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" @visible-from-change="visibleFrom = $event" @range-detector-result="rangeCount = $event.count" />
     <p class="htdy-workspace__source">正式历史图使用盘后 Canonical 重算 · 首次事件保留在实时审计｜参考交易零费用/零滑点，非账户成交</p>
     <nav class="htdy-workspace__filter" aria-label="火天大有记录模式"><button type="button" :aria-pressed="recordingMode === 'historical_replay'" @click="recordingMode = 'historical_replay'">盘后历史</button><button type="button" :aria-pressed="recordingMode === 'forward_observation'" @click="recordingMode = 'forward_observation'">实时首次事件审计</button></nav>
     <p v-if="recordingMode === 'historical_replay' && !historySupported" role="status">此周期或序列暂不支持历史重算参考。</p>

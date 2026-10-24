@@ -36,7 +36,8 @@ import {
   toKlineDisplayTimeForPeriod,
 } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
-import { initialChartLogicalRange } from '@/utils/chartViewport'
+import { visibleRangeDetectorCount } from '@/utils/rangeDetectorStatus'
+import { initialChartLogicalRange, prependChartLogicalRange } from '@/utils/chartViewport'
 import {
   buildKlineDerivedData,
   resolveKlineHoverContext,
@@ -83,6 +84,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'need-more-before': []
+  'visible-from-change': [time: string | null]
+  'range-detector-result': [result: { count: number; calculationMs: number }]
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
   'marker-select': [marker: KlineMarker]
@@ -149,6 +152,10 @@ const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
+const rangeCalculationMs = ref(0)
+const rangeCount = ref(0)
+const visibleRangeCount = ref(0)
+const lastVisibleFrom = ref<string | null>(null)
 const macdPointCount = ref(0)
 let isNearLeftBoundary = false
 let paginationArmed = false
@@ -157,6 +164,8 @@ const hoverContext = ref<HoverKlineContext | null>(null)
 const macdLabelTop = ref<number | null>(null)
 const chartViewportReady = ref(false)
 let derivedData = buildKlineDerivedData([], [])
+// One latest result only; normalized Bar arrays are replaced on every input mutation.
+let rangeCache: { bars: BarData[]; key: string; result: NonNullable<typeof derivedData.rangeDetector> } | null = null
 let renderedMarkerById = new Map<string, KlineMarker>()
 let viewportStabilityFrame: number | null = null
 let viewportStabilityTarget: ChartViewportRange | null = null
@@ -249,6 +258,7 @@ onUnmounted(() => {
   chart?.unsubscribeClick(onClick)
   observer?.disconnect()
   container.value?.removeEventListener('pointerup', syncMacdLabelTop)
+  rangeCache = null
   chart?.remove()
 })
 
@@ -311,6 +321,7 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   renderedBars = normalizeBarSeries(bars)
   if (!chart) return
   paginationArmed = false
+  lastVisibleFrom.value = null
   renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
   const targetRange = visibleRange ?? initialChartLogicalRange(renderedBars.length)
@@ -323,6 +334,7 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
     // must be allowed to request history.
     isNearLeftBoundary = false
     paginationArmed = true
+    publishVisibleFrom(chart?.timeScale().getVisibleLogicalRange() ?? null)
     syncMacdLabelTop()
   })
 }
@@ -369,6 +381,12 @@ function prependBars(bars: BarData[]): void {
   renderedBars = normalizeBarSeries([...bars, ...renderedBars])
   const prependedCount = renderedBars.length - previousLength
   if (!prependedCount) return
+  // An initial warm-up page can arrive before the stability RAF finishes.
+  // Shift both targets, otherwise the next RAF would restore the old indices.
+  viewportStabilityTarget = prependChartLogicalRange(viewportStabilityTarget, prependedCount)
+  viewportStableFrames = 0
+  const wasArmed = paginationArmed
+  paginationArmed = false
   renderAllSeries()
   if (visibleRange) {
     chart.timeScale().setVisibleLogicalRange({
@@ -376,6 +394,8 @@ function prependBars(bars: BarData[]): void {
       to: visibleRange.to + prependedCount,
     })
   }
+  paginationArmed = wasArmed
+  publishVisibleFrom(chart.timeScale().getVisibleLogicalRange())
 }
 
 function updateBar(bar: BarData): void {
@@ -417,6 +437,21 @@ function revealTime(iso: string, exact = false): boolean {
   return true
 }
 
+function publishRangeResult(range = chart?.timeScale().getVisibleLogicalRange() ?? null) {
+  const from = range ? renderedBars[Math.max(0, Math.min(renderedBars.length - 1, Math.floor(range.from)))]?.time ?? null : null
+  const to = range ? renderedBars[Math.max(0, Math.min(renderedBars.length - 1, Math.ceil(range.to)))]?.time ?? null : null
+  visibleRangeCount.value = visibleRangeDetectorCount(derivedData.rangeDetector?.ranges ?? [], from, to, renderedBars.at(-1)?.time ?? null)
+  emit('range-detector-result', { count: visibleRangeCount.value, calculationMs: rangeCalculationMs.value })
+}
+
+function publishVisibleFrom(range: LogicalRange | null) {
+  if (!range || !renderedBars.length) return
+  const index = Math.max(0, Math.min(renderedBars.length - 1, Math.floor(range.from)))
+  const time = renderedBars[index].time
+  if (time !== lastVisibleFrom.value) { lastVisibleFrom.value = time; emit('visible-from-change', time) }
+  publishRangeResult(range)
+}
+
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   scheduleReferenceCallouts()
   if (!range || !renderedBars.length) return
@@ -426,6 +461,7 @@ function onVisibleLogicalRangeChange(range: LogicalRange | null) {
     emit('follow-latest-change', isFollowing)
   }
   if (!paginationArmed || props.loading) return
+  publishVisibleFrom(range)
   const nearLeftBoundary = range.from <= 20
   if (!nearLeftBoundary) {
     isNearLeftBoundary = false
@@ -474,15 +510,19 @@ function renderAllSeries(): void {
 
 function renderDerivedSeries(): void {
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
+  const calculationStarted = performance.now()
+  const rangeEnabled = props.visibleMainIndicators.includes('range_detector') && Boolean(props.rangeDetectorSourceIdentity) && Boolean(props.rangeDetectorAnchorTime)
+  const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])
+  const cachedRange = rangeEnabled && rangeCache?.bars === renderedBars && rangeCache.key === rangeKey ? rangeCache.result : null
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
-    rangeDetector: {
-      enabled: props.visibleMainIndicators.includes('range_detector')
-        && Boolean(props.rangeDetectorSourceIdentity)
-        && Boolean(props.rangeDetectorAnchorTime),
-      sourceIdentity: props.rangeDetectorSourceIdentity,
-      anchorTime: props.rangeDetectorAnchorTime,
-    },
+    rangeDetector: { enabled: rangeEnabled && !cachedRange, sourceIdentity: props.rangeDetectorSourceIdentity, anchorTime: props.rangeDetectorAnchorTime },
   })
+  if (cachedRange) derivedData.rangeDetector = cachedRange
+  if (rangeEnabled && derivedData.rangeDetector) rangeCache = { bars: renderedBars, key: rangeKey, result: derivedData.rangeDetector }
+  else rangeCache = null
+  rangeCalculationMs.value = performance.now() - calculationStarted
+  rangeCount.value = derivedData.rangeDetector?.ranges.length ?? 0
+  publishRangeResult()
   const referenceOverlay = referenceIndicatorOverlay(renderedBars, props.referenceIndicators)
   if (referenceOverlay) {
     derivedData.ema.ema_21 = referenceOverlay.ema21
@@ -670,7 +710,10 @@ defineExpose({
     :data-rendered-research-marker-count="researchMarkers.length"
     :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
-    :data-range-detector-range-count="derivedData.rangeDetector?.ranges.length ?? 0"
+    :data-range-detector-range-count="rangeCount"
+    :data-range-detector-visible-range-count="visibleRangeCount"
+    :data-range-detector-calculation-ms="rangeCalculationMs"
+    :data-visible-from="lastVisibleFrom"
     :data-chart-viewport-ready="chartViewportReady"
   >
     <div ref="container" class="chart" @pointermove="scheduleReferenceCallouts" @pointerup="scheduleReferenceCallouts" @wheel="scheduleReferenceCallouts" />

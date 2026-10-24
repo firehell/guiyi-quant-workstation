@@ -2,12 +2,12 @@
 import { computed, ref, watch } from 'vue'
 
 import FreeChartStage from '@/components/market/detail/free/FreeChartStage.vue'
+import { rangeDetectorStatusText } from '@/utils/rangeDetectorStatus'
 import { useRangeDetectorOverlayWarmup } from '@/composables/useRangeDetectorOverlayWarmup'
 import type { BarData, OptionalEmaIndicatorId, ProductResearchResponse } from '@/types/market'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
-import type { DetailViewModel, MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
+import type { MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
 import type { FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
-import { buildFreeDetailViewModel } from '@/utils/freeDetailViewModel'
 
 const props = defineProps<{
   identity: MarketDetailIdentity
@@ -31,10 +31,14 @@ const emit = defineEmits<{
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([...props.preferences.optionalEmaIndicators])
 const showRangeDetector = ref(props.preferences.showRangeDetector)
 const sourceIdentity = computed(() => [props.identity.seriesKind, props.identity.symbol, props.identity.contract ?? '', props.identity.frequency].join(':'))
+const visibleFrom = ref<string | null>(null)
+const rangeCount = ref(0)
+watch(sourceIdentity, () => { visibleFrom.value = null; rangeCount.value = 0 }, { flush: 'sync' })
 const bars = computed(() => props.bars)
 const hasMoreBefore = computed(() => props.hasMoreBefore)
 const rangeWarmup = useRangeDetectorOverlayWarmup({
   bars,
+  visibleFrom,
   hasMoreBefore,
   enabled: showRangeDetector,
   identityKey: sourceIdentity,
@@ -45,13 +49,6 @@ const rangeState = computed<'disabled' | 'loading' | 'ready' | 'insufficient'>((
   if (rangeWarmup.loading.value) return 'loading'
   return rangeWarmup.unavailableReason.value === null && rangeWarmup.anchorTime.value ? 'ready' : 'insufficient'
 })
-const model = computed<DetailViewModel>(() => buildFreeDetailViewModel({
-  identity: props.identity,
-  header: props.header,
-  research: props.research,
-  researchError: props.researchError,
-  rangeState: rangeState.value,
-}))
 const indicators = computed(() => [
   ...optionalEmaIndicators.value,
   ...(showRangeDetector.value ? ['range_detector' as const] : []),
@@ -104,7 +101,7 @@ function loadEarlier() { void props.loadEarlier() }
 </script>
 
 <template>
-  <section class="free-workspace" data-detail-workspace="free" :data-range-detector-warmup="rangeState" :data-range-detector-anchor="rangeWarmup.anchorTime.value" :data-range-detector-source-identity="sourceIdentity">
+  <section class="free-workspace" data-detail-workspace="free" :data-range-detector-status="rangeWarmup.status.value" :data-range-detector-visible-from="visibleFrom" :data-range-detector-warmup="rangeState" :data-range-detector-anchor="rangeWarmup.anchorTime.value" :data-range-detector-source-identity="sourceIdentity">
     <div class="free-workspace__indicators" role="group" aria-label="主图指标">
       <span class="free-workspace__indicators-title">指标</span>
       <button
@@ -133,7 +130,7 @@ function loadEarlier() { void props.loadEarlier() }
       </button>
     </div>
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
-    <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ model.semanticBanner.text }}</p>
+    <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
     <FreeChartStage
       :bars="bars"
       :mutation="mutation" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
@@ -143,11 +140,13 @@ function loadEarlier() { void props.loadEarlier() }
       :series-kind="identity.seriesKind"
       :visible-main-indicators="indicators"
       :range-detector-source-identity="sourceIdentity"
-      :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null"
+      :range-detector-anchor-time="rangeWarmup.anchorTime.value"
       :identity-key="sourceIdentity"
       :focus-bar-end="identity.focusBarEnd"
       @focus-resolved="emit('focus-resolved', $event)"
       @load-earlier="loadEarlier"
+      @visible-from-change="visibleFrom = $event"
+      @range-detector-result="rangeCount = $event.count"
     />
   </section>
 </template>

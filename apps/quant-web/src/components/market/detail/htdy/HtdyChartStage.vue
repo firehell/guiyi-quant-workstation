@@ -26,7 +26,10 @@ const props = defineProps<{
   historicalMode?: boolean
   markers: readonly KlineMarker[]
 }>()
-const emit = defineEmits<{ 'load-earlier': []; 'focus-resolved': [focusBarEnd: string] }>()
+const emit = defineEmits<{
+  'visible-from-change': [time: string | null]
+  'range-detector-result': [result: { count: number; calculationMs: number }]
+ 'load-earlier': []; 'focus-resolved': [focusBarEnd: string] }>()
 const htdyMarkers = computed(() => props.historicalMode ? [...props.markers] : markersForDetailView('htdy', props.markers))
 </script>
 
@@ -37,5 +40,7 @@ const htdyMarkers = computed(() => props.historicalMode ? [...props.markers] : m
     :visible-main-indicators="visibleMainIndicators" :range-detector-source-identity="rangeDetectorSourceIdentity"
     :range-detector-anchor-time="rangeDetectorAnchorTime" :identity-key="identityKey" :focus-bar-end="focusBarEnd"
     :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :markers="htdyMarkers" @load-earlier="emit('load-earlier')" @focus-resolved="emit('focus-resolved', $event)"
+    @visible-from-change="emit('visible-from-change', $event)"
+    @range-detector-result="emit('range-detector-result', $event)"
   />
 </template>

@@ -68,7 +68,7 @@ export function buildKlineDerivedData(
     ? bars.filter((bar) => Date.parse(bar.time) >= Date.parse(options.rangeDetector!.anchorTime!))
     : []
   const rangeDetector = options.rangeDetector?.enabled && options.rangeDetector.anchorTime
-    ? calculateRangeDetectorLux(anchoredBars, { sourceIdentity: options.rangeDetector.sourceIdentity })
+    ? buildSegmentedRangeDetector(anchoredBars, options.rangeDetector.sourceIdentity)
     : null
   return {
     ema,
@@ -80,6 +80,37 @@ export function buildKlineDerivedData(
     htdy: visibleMainIndicators.includes('htdy') ? buildHtdyDerivedData(bars) : null,
     rangeDetector,
   }
+}
+
+/** Physical/quality ownership limits the kernel warm-up just like its input validity reset. */
+function buildSegmentedRangeDetector(bars: BarData[], sourceIdentity: string): RangeDetectorLuxResult {
+  const segments: BarData[][] = []
+  let current: BarData[] = []
+  for (const bar of bars) {
+    const previous = current.at(-1)
+    if (previous && (previous.physicalContract !== bar.physicalContract || previous.calculationSegmentId !== bar.calculationSegmentId)) {
+      if (Date.parse(previous.time) >= Date.parse(bar.time)) throw new Error('bar times must be strictly increasing')
+      segments.push(current)
+      current = []
+    }
+    current.push(bar)
+  }
+  if (current.length) segments.push(current)
+  const merged: RangeDetectorLuxResult = { points: [], ranges: [] }
+  segments.forEach((segment, index) => {
+    const first = segment[0]!
+    // No positional segment index: prepending another owner cannot rename an existing segment.
+    const identity = segments.length === 1
+      ? sourceIdentity
+      : JSON.stringify([sourceIdentity, first.physicalContract ?? null, first.calculationSegmentId ?? null, first.time])
+    const result = calculateRangeDetectorLux(segment, { sourceIdentity: identity })
+    const lastTime = segment.at(-1)!.time
+    merged.points.push(...result.points)
+    merged.ranges.push(...result.ranges.map(range => index < segments.length - 1 && range.levelsActiveUntil === null
+      ? { ...range, levelsActiveUntil: lastTime }
+      : range))
+  })
+  return merged
 }
 
 function buildHtdyDerivedData(bars: BarData[]): HtdyDerivedData {

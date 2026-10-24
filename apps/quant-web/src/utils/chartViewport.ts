@@ -14,3 +14,10 @@ export function initialChartLogicalRange(barCount: number) {
     to: barCount - 1,
   }
 }
+
+/** Keep a pending stabilization target tied to the same candles after a prepend. */
+export function prependChartLogicalRange(range: { from: number; to: number } | null, added: number) {
+  if (!range) return null
+  if (!Number.isSafeInteger(added) || added < 0) throw new Error('invalid prepend count')
+  return { from: range.from + added, to: range.to + added }
+}

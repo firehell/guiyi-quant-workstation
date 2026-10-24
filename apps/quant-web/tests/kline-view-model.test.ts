@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { BarData } from '../src/types/market.ts'
-import type { RangeDetectorLuxResult } from '../src/utils/rangeDetectorLux.ts'
+import { calculateRangeDetectorLux, type RangeDetectorLuxResult } from '../src/utils/rangeDetectorLux.ts'
 import {
   buildKlineDerivedData,
   formatKlineHoverValue,
@@ -211,3 +211,66 @@ function flatBars(count: number, start: number): BarData[] {
     volume: 1,
   }))
 }
+
+
+function deriveRanges(input: BarData[]) {
+  return buildKlineDerivedData(input, ['range_detector'], {
+    rangeDetector: { enabled: true, sourceIdentity: 'actual_dominant|jm|15m', anchorTime: input[0]?.time ?? null },
+  }).rangeDetector!
+}
+
+test('single owned segment preserves the original Range Detector kernel values exactly', () => {
+  const input = flatBars(700, 0).map(bar => ({ ...bar, physicalContract: 'JM2701', calculationSegmentId: 'quality-one' }))
+  const result = deriveRanges(input)
+  const identity = result.points.find(point => point.snapshot)?.snapshot?.sourceIdentity
+  assert.equal(identity, 'actual_dominant|jm|15m')
+  assert.deepEqual(result, calculateRangeDetectorLux(input, { sourceIdentity: 'actual_dominant|jm|15m' }))
+})
+
+test('physical and quality boundaries independently require 500 real warm-up Bars', () => {
+  for (const boundary of ['physicalContract', 'calculationSegmentId'] as const) {
+    const input = flatBars(800, 0).map((bar, index) => ({ ...bar,
+      physicalContract: boundary === 'physicalContract' && index >= 400 ? 'JM2705' : 'JM2701',
+      calculationSegmentId: boundary === 'calculationSegmentId' && index >= 400 ? 'quality-two' : 'quality-one',
+    }))
+    const result = deriveRanges(input)
+    assert.equal(result.points.length, 800)
+    assert.equal(result.ranges.length, 0)
+    assert.ok(result.points.every(point => !point.ready && point.snapshot === null))
+  }
+})
+
+test('owned segment ranges are distinct and stop at the true owner boundary', () => {
+  const input = flatBars(1200, 0).map((bar, index) => ({ ...bar,
+    physicalContract: index < 600 ? 'JM2701' : 'JM2705', calculationSegmentId: 'quality-one',
+  }))
+  const result = deriveRanges(input)
+  assert.equal(result.ranges.length, 2)
+  assert.notEqual(result.ranges[0].rangeId, result.ranges[1].rangeId)
+  assert.equal(result.ranges[0].levelsActiveUntil, input[599].time)
+  assert.equal(result.ranges[1].levelsActiveUntil, null)
+  assert.ok(result.points.slice(600, 1099).every(point => !point.ready))
+  const secondIdentity = result.points[1099].snapshot!.sourceIdentity
+  const second = calculateRangeDetectorLux(input.slice(600), { sourceIdentity: secondIdentity })
+  assert.deepEqual(result.points.slice(600), second.points)
+  assert.deepEqual(result.ranges.slice(1), second.ranges)
+})
+
+test('invalid Bar stays a kernel reset and does not borrow previous warm-up', () => {
+  const input = flatBars(1100, 0).map(bar => ({ ...bar, physicalContract: 'JM2701', calculationSegmentId: 'quality-one' }))
+  input[550] = { ...input[550], close: Number.NaN }
+  const result = deriveRanges(input)
+  assert.equal(result.points[550].transition?.kind, 'invalid_reset')
+  assert.ok(result.points.slice(551, 1050).every(point => !point.ready && point.snapshot === null))
+  const identity = result.points[499].snapshot!.sourceIdentity
+  assert.deepEqual(result, calculateRangeDetectorLux(input, { sourceIdentity: identity }))
+})
+
+test('rebasing the external anchor includes earlier loaded history without fabricating Bars', () => {
+  const input = flatBars(1100, 0).map(bar => ({ ...bar, physicalContract: 'JM2701', calculationSegmentId: 'quality-one' }))
+  const recent = deriveRanges(input.slice(600))
+  const full = deriveRanges(input)
+  assert.equal(recent.points.length, 500)
+  assert.equal(full.points.length, input.length)
+  assert.equal(full.points[0].time, input[0].time)
+})

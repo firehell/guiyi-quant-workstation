@@ -35,6 +35,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   loadEarlier: []
+  'visible-from-change': [time: string | null]
+  'range-detector-result': [result: { count: number; calculationMs: number }]
   'focus-resolved': [focusBarEnd: string]
   'marker-select': [marker: KlineMarker]
 }>()
@@ -118,6 +120,8 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :quality-breaks="qualityBreaks"
       @need-more-before="!loadingBefore && !historyError && hasMoreBefore !== false && emit('loadEarlier')"
       @follow-latest-change="followLatest = $event"
+      @visible-from-change="emit('visible-from-change', $event)"
+      @range-detector-result="emit('range-detector-result', $event)"
       @marker-select="emit('marker-select', $event)"
     />
   </section>
