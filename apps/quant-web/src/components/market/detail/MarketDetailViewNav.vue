@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 
 import { type MarketProductDirectoryItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
 import {
-  type DetailSeriesKind,
   type MarketDetailIdentity,
   type MarketDetailView,
   type MarketDetailViewRestore,
@@ -53,12 +52,8 @@ function chooseTest(choice: MarketDetailIdentity['newowTest'] | 'main_rise') {
 const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'newow'
   ? props.identity.newowMode === 'dual' ? 'dual' : props.identity.strategy ?? 'trend'
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
-const seriesLabels: Record<DetailSeriesKind, string> = { actual_dominant: '真实主力', contract: '指定合约' }
-const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
-const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInWorkspace) || props.identity.view === 'subing' || showSeriesControls.value)
+const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInWorkspace) || ['subing', 'htdy', 'free'].includes(props.identity.view))
 const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : props.identity.view === 'subing' ? ['5m', '15m', '30m', '60m', '1d', '1w'] as MarketFrequency[] : props.frequencies)
-const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind): kind is 'actual_dominant' => kind === 'actual_dominant'))
-const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
 const symbol = ref(props.identity.symbol)
 const contract = ref(props.identity.contract ?? '')
 
@@ -87,16 +82,6 @@ function chooseView(view: AnalysisChoice) {
 function openAiAnalysis() {
   if (props.identity.view !== 'newow') chooseView('trend')
   emit('ai-analysis')
-}
-
-function chooseSeries(seriesKind: DetailSeriesKind) {
-  if (seriesKind === 'contract' && !contract.value.trim()) return
-  emit('select', {
-    ...props.identity,
-    seriesKind,
-    ...(seriesKind === 'contract' ? { contract: contract.value.trim().toUpperCase() } : { contract: undefined }),
-    focusBarEnd: undefined,
-  })
 }
 
 function chooseFrequency(frequency: MarketFrequency) {
@@ -154,26 +139,7 @@ function periodLabel(value: MarketFrequency) {
 
 
 
-    <div v-if="showSeriesControls || showFrequencyControls" class="detail-view-nav__controls">
-      <div v-if="showSeriesControls && identity.view !== 'htdy'" class="detail-view-nav__group" role="group" aria-label="序列">
-        <button
-          v-for="kind in availableSeriesKinds"
-          :key="kind"
-          type="button"
-          :aria-pressed="identity.seriesKind === kind"
-          :class="{ 'is-active': identity.seriesKind === kind }"
-          @click="chooseSeries(kind)"
-        >{{ seriesLabels[kind] }}</button>
-        <template v-if="allowsContract">
-          <input v-model="contract" aria-label="指定合约" placeholder="例如 JM2601" @change="chooseSeries('contract')">
-          <button
-            type="button"
-            :aria-pressed="identity.seriesKind === 'contract'"
-            :class="{ 'is-active': identity.seriesKind === 'contract' }"
-            @click="chooseSeries('contract')"
-          >{{ seriesLabels.contract }}</button>
-        </template>
-      </div>
+    <div v-if="showFrequencyControls" class="detail-view-nav__controls">
       <div v-if="showFrequencyControls" class="detail-view-nav__group" role="group" aria-label="周期">
         <button
           v-for="frequency in availableFrequencies"
