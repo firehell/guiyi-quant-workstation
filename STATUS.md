@@ -1,5 +1,9 @@
 # 当前状态
 
+## 10/24 苏冰历史续算/追加：前置连接失败已修复
+
+AL15m续算及RB四周期追加脚本原先先导入应用、后加载私有配置，数据库连接池提前缓存开发配置。已调整初始化顺序，默认离线行为保留；新增只读check-only和安全错误定位。18项定向测试通过、独立Review无Confirmed Issue。正式v18现场只读：AL225792/320074原生续算位置一致、RB四周期exact append/旧事实校验全部PREFLIGHT_PASSED，production_writes=0。旧失败目录不重写，修复版v2目录独占；本步未执行apply，不代表全量历史计算完成。下一步仍须确认旧writer退出、现场锁和来源后精确续算/追加。详见[修复记录](docs/tasks/subing-history-preflight-fix-20261024.md)。
+
 ## 10/24 第一步主动排障：44路旧缺口门禁恢复已验，自然新输入待验
 
 进一步实查确认11品种44路H1在下一Session前仍夹旧缺失端点，effective block不能被关闭。逐桶真实原件证明17个完整H1缺失，对应611条缺失M1；00:01–00:29部分M1完整保留。按原生BoundedForwardRecovery单次追加44精确中断并由原消费者消费，当前active参考状态FLAT、内核精确重置；19笔active OPEN以OBSERVATION_INTERRUPTED结束，无退出价或收益，旧inactive版本及旧经济事实保持。44路及L4下一权威H1门禁均已只读证明为ONE_NEXT_ENDPOINT（日程证明不是未来Bar）。
