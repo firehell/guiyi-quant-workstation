@@ -418,19 +418,13 @@ def _build_product_service(
         ),
     )
 
-    mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
-    if mode not in {"legacy", "persisted"}:
-        raise ValueError("REFERENCE_READER_MODE_INVALID")
-    if mode == "persisted" or historical_intraday or current_reference:
-        from app.reference_trading.persisted_newow import PersistedNewowReference
-        factory = (sessionmaker(bind=engine.execution_options(
-            schema_translate_map={None: INTRADAY_HISTORY_SCHEMA}), autoflush=False)
-            if historical_intraday else SessionLocal)
-        persisted_reference = PersistedNewowReference(
-            factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
-        ).section
-    else:
-        persisted_reference = None
+    from app.reference_trading.persisted_newow import PersistedNewowReference
+    factory = (sessionmaker(bind=engine.execution_options(
+        schema_translate_map={None: INTRADAY_HISTORY_SCHEMA}), autoflush=False)
+        if historical_intraday else SessionLocal)
+    persisted_reference = PersistedNewowReference(
+        factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
+    ).section
     return composition.service(
         cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,

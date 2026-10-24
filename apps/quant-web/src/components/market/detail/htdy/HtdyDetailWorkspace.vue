@@ -27,6 +27,7 @@ const emit = defineEmits<{ updatePreferences: [preferences: FlexibleDetailPrefer
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([...props.preferences.optionalEmaIndicators])
 const showRangeDetector = ref(props.preferences.showRangeDetector)
 const activeTab = ref<string | null>('explanation')
+const showActualAudit = ref(false)
 const tabs = ref<InstanceType<typeof MarketDetailSectionTabs> | null>(null)
 const sourceIdentity = computed(() => [props.identity.seriesKind, props.identity.symbol, props.identity.contract ?? '', props.identity.frequency].join(':'))
 const rangeWarmup = useRangeDetectorOverlayWarmup({ bars: computed(() => props.bars), hasMoreBefore: computed(() => props.hasMoreBefore), enabled: showRangeDetector, identityKey: sourceIdentity, loadMoreBefore: props.loadEarlier })
@@ -67,8 +68,10 @@ onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose() })
 <template>
   <section class="htdy-workspace" data-detail-workspace="htdy">
     <p v-if="identityWarning" class="htdy-workspace__hint" role="status">{{ identityWarning }}</p>
-    <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null" :identity-key="sourceIdentity" :focus-bar-end="identity.focusBarEnd" :markers="loader.markers.value" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" />
-    <ReferenceTradePanel strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :through="bars.at(-1)?.trading_day" :historical-available="false" />
+    <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null" :identity-key="sourceIdentity" :focus-bar-end="identity.focusBarEnd" :markers="showActualAudit ? loader.markers.value : []" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" />
+    <p class="htdy-workspace__hint">HTDY 当前入口展示 Canonical 指标；实时首次事件仅供审计，不作为盘后正式历史参考。</p>
+    <label><input v-model="showActualAudit" type="checkbox">显示实时首次事件审计</label>
+    <ReferenceTradePanel v-if="showActualAudit" strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :through="bars.at(-1)?.trading_day" />
     <div class="htdy-workspace__indicators"><details><summary>指标设置</summary><label v-for="item in [['ema_10', 'EMA10'], ['ema_21', 'EMA21'], ['ema_60', 'EMA60']] as const" :key="item[0]"><input type="checkbox" :checked="optionalEmaIndicators.includes(item[0])" @change="toggleEma(item[0])">{{ item[1] }}</label><label><input v-model="showRangeDetector" type="checkbox">箱体识别（Range）</label></details></div>
     <MarketDetailSectionTabs ref="tabs" :tabs="[{ id: 'explanation', label: '信号说明' }, { id: 'alerts', label: '预警与运行' }, { id: 'data', label: '数据与历史' }]" :active-id="activeTab" :history="model.history" @select="activeTab = $event"><template #default><MarketDetailInsightDeck :identity-key="sourceIdentity" :sections="sectionsForTab" :default-open="true" /></template></MarketDetailSectionTabs>
   </section>
