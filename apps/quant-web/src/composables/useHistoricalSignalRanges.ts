@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { BarData } from '../types/market.ts'
 import type { OwnedSignalMarker } from '../utils/historicalSignalMerge.ts'
 export interface HistoricalSignalIdentity { symbol: string; strategy: string; frequency: string }
@@ -10,22 +10,33 @@ export interface HistoricalSignalRangePage {
 export interface HistoricalSignalRangeRequest extends HistoricalSignalIdentity { since: string; through: string; from: string; to: string; before?: string }
 const MAX_CHUNKS = 256
 const MAX_SIGNALS = 12000
-export function useHistoricalSignalRanges(fetchPage: (query: HistoricalSignalRangeRequest, signal: AbortSignal) => Promise<HistoricalSignalRangePage>) {
+export function useHistoricalSignalRanges(
+  fetchPage: (query: HistoricalSignalRangeRequest, signal: AbortSignal) => Promise<HistoricalSignalRangePage>,
+  authority?: { source: () => string | undefined; error: () => string | null },
+) {
   const signals = ref<OwnedSignalMarker[]>([]), loading = ref(false), error = ref<string | null>(null)
   const cache = new Map<string, HistoricalSignalRangePage>()
   let controller = new AbortController(), generation = 0
+  const inputBars = new Map<string, string>()
   let active = '', running: Promise<void> | null = null
   let latest: { identity: HistoricalSignalIdentity; bars: readonly BarData[] } | null = null
   function publish(bars: readonly BarData[]) {
     const accepted = new Set(bars.filter(bar => bar.physicalContract).map(bar => `${Date.parse(bar.time)}|${bar.physicalContract!.toUpperCase()}`))
     signals.value = [...cache.values()].flatMap(page => page.signals).filter(item => accepted.has(`${Date.parse(item.barEnd)}|${item.physicalContract.toUpperCase()}`)).slice(-MAX_SIGNALS)
   }
-  async function sync(identity: HistoricalSignalIdentity, bars: readonly BarData[]): Promise<void> {
+  async function sync(identity: HistoricalSignalIdentity, bars: readonly BarData[], replaceSource = false): Promise<void> {
+    if (authority?.error()) { invalidate(); return }
     const identityKey = JSON.stringify(identity)
-    if (identityKey !== active) {
+    const fingerprints = bars.map(bar => [String(Date.parse(bar.time)), JSON.stringify([
+      bar.trading_day, bar.physicalContract, bar.calculationSegmentId,
+      bar.open, bar.high, bar.low, bar.close, bar.volume, bar.turnover, bar.openInterest,
+    ])] as const)
+    const sourceChanged = fingerprints.some(([key, value]) => inputBars.has(key) && inputBars.get(key) !== value)
+    if (identityKey !== active || replaceSource || sourceChanged) {
       controller.abort(); controller = new AbortController(); generation++; active = identityKey
-      cache.clear(); signals.value = []; running = null; loading.value = false; error.value = null
+      cache.clear(); inputBars.clear(); signals.value = []; running = null; loading.value = false; error.value = null
     }
+    for (const [key, value] of fingerprints) inputBars.set(key, value)
     const requested = { identity: { ...identity }, bars: [...bars] }
     latest = requested
     publish(bars)
@@ -64,13 +75,29 @@ export function useHistoricalSignalRanges(fetchPage: (query: HistoricalSignalRan
           publish(latest?.bars ?? bars)
           if ([...cache.values()].some(page => page.coverage?.status !== undefined && page.coverage.status !== 'COMPLETE')) error.value = '部分历史信号尚未覆盖最新完成行情；保留已确认信号'
         }
-      } catch { if (requestGeneration === generation) error.value = '历史信号读取未完成，请重试；保留已读信号' }
+      } catch {
+        if (requestGeneration === generation) {
+          cache.clear(); signals.value = []
+          error.value = '历史信号暂不可用，请重试；未回退到实时记录'
+        }
+      }
       finally { if (requestGeneration === generation) loading.value = false }
     })()
     running = task
     await task
     if (running === task) running = null
   }
-  function dispose() { generation++; controller.abort(); cache.clear(); latest = null }
-  return { signals, loading, error, sync, dispose }
+  function invalidate() {
+    generation++; controller.abort(); controller = new AbortController()
+    cache.clear(); inputBars.clear(); signals.value = []; latest = null; running = null; loading.value = false
+    error.value = '正式历史来源待重新验证，旧信号已撤销'
+  }
+  // A reference refresh may revoke its source before failing, or retain an old
+  // result alongside an error. Neither state may keep COMPLETE chart markers.
+  const stopAuthority = authority ? watch([authority.source, authority.error],
+    ([source, failure], previous) => {
+      if (failure || (!source && previous?.[0])) invalidate()
+    }, { flush: 'sync' }) : null
+  function dispose() { stopAuthority?.(); generation++; controller.abort(); cache.clear(); inputBars.clear(); latest = null }
+  return { signals, loading, error, sync, invalidate, dispose }
 }

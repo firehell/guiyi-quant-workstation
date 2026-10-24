@@ -396,7 +396,7 @@ class PersistedNewowReference:
 
         matches = self._query.streams(
             strategy=f"newow_{request.strategy.value}", product=request.product,
-            frequency=request.frequency.value,
+            frequency=request.frequency.value, mode="historical_replay",
         )
         if not matches:
             raise QueryConflict("NOT_BUILT")

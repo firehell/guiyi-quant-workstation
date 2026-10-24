@@ -1,21 +1,17 @@
 <script setup lang="ts">
 import PerformancePanel from '../../performance/PerformancePanel.vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 import { useReferenceTrading } from '@/composables/useReferenceTrading'
-import type { ReferenceMode } from '@/types/referenceTrading'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   strategy: string
   product: string
   frequency: string
   through?: string
-  initialMode?: ReferenceMode
-  historicalAvailable?: boolean
-}>(), { initialMode: 'forward_observation', historicalAvailable: true })
-const mode = ref<ReferenceMode>(props.initialMode)
+}>()
 const reference = useReferenceTrading()
-const throughDate = computed(() => (mode.value === 'historical_replay' ? props.through : undefined) || new Intl.DateTimeFormat('en-CA', {
+const throughDate = computed(() => props.through || new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date()))
 const since = computed(() => {
@@ -24,10 +20,10 @@ const since = computed(() => {
   day.setUTCDate(day.getUTCDate() - 90)
   return day.toISOString().slice(0, 10)
 })
-watch(() => [props.strategy, props.product, props.frequency, throughDate.value, mode.value] as const,
+watch(() => [props.strategy, props.product, props.frequency, throughDate.value] as const,
   ([strategy, product, frequency, through]) => {
     if (!through) return
-    void reference.refresh({ strategy, product, frequency, mode: mode.value }, {
+    void reference.refresh({ strategy, product, frequency, mode: 'forward_observation' }, {
       since: since.value, through,
     })
   }, { immediate: true })
@@ -35,27 +31,20 @@ onBeforeUnmount(reference.dispose)
 </script>
 
 <template>
-  <PerformancePanel class="reference-trade-panel" :kind="mode === 'historical_replay' ? '已保存历史参考' : '盘中观察参考'" :since="since" :through="throughDate" description="零费用、零滑点 · 策略参考事实，不代表账户成交">
-    <header>
-
-      <nav aria-label="参考记录模式">
-        <button v-if="historicalAvailable" type="button" :aria-pressed="mode === 'historical_replay'" @click="mode = 'historical_replay'">历史参考</button>
-        <button type="button" :aria-pressed="mode === 'forward_observation'" @click="mode = 'forward_observation'">盘中观察参考</button>
-      </nav>
-    </header>
+  <PerformancePanel class="reference-trade-panel" kind="实时首次事件审计" :since="since" :through="throughDate" description="零费用、零滑点 · 策略参考事实，不代表账户成交">
     <p class="reference-trade-panel__note">零费用、零滑点的页面参考记录；不代表账户成交。</p>
     <p v-if="reference.loading.value" role="status">读取参考记录中…</p>
     <p v-else-if="reference.error.value" role="status">{{ reference.error.value }}</p>
     <template v-if="reference.stream.value && reference.page.value">
-      <p v-if="mode === 'forward_observation'" role="status">
+      <p role="status">
         记录起点 {{ formatBeijingInstant(reference.stream.value.recording_start) }} ·
         计算至 {{ formatBeijingInstant(reference.page.value.coverage?.computed_through) }} ·
         <template v-if="reference.page.value.coverage?.observation_boundary_at">观察中断于 {{ formatBeijingInstant(reference.page.value.coverage.observation_boundary_at) }} ·</template>
         观察连续性 {{ reference.page.value.coverage?.complete_window_proven ? '已证明' : '待核对' }} ·
-        Canonical 核对待执行
+        首次事件不可被盘后重算改写；正式历史见策略历史参考
       </p>
       <p v-if="reference.summary.value">已平 {{ reference.summary.value.closed_count }} · 未平 {{ reference.summary.value.open_count }} · 中断 {{ reference.summary.value.interrupted_count }} · 窗口初始 {{ reference.summary.value.initial_count }}</p>
-      <section v-if="mode === 'forward_observation' && reference.signals.value.length" aria-label="首次观察记录">
+      <section v-if="reference.signals.value.length" aria-label="首次观察记录">
         <h3>首次观察记录</h3>
         <ul>
           <li v-for="(signal, index) in reference.signals.value" :key="index">
@@ -75,7 +64,7 @@ onBeforeUnmount(reference.dispose)
           <td>{{ trade.reference_return === null ? '—' : `${trade.reference_return}%` }}</td>
         </tr></tbody>
       </table></div>
-      <p v-if="!reference.page.value.items.length">所选窗口暂无已观察的参考交易。</p>
+      <p v-if="!reference.page.value.items.length">所选窗口暂无参考交易。</p>
       <p v-if="reference.capped.value" role="status">已达到本页显示容量，尚未读取完整历史；请缩小日期窗口。</p>
       <button v-if="reference.page.value.next_cursor && !reference.capped.value" type="button" :disabled="reference.loading.value" @click="reference.loadMore()">加载更多</button>
     </template>

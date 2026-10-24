@@ -404,7 +404,7 @@ def _build_product_service(
     session: Session,
     cancelled: Callable[[], bool] | None = None,
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
-    *, historical_intraday: bool = False, current_reference: bool = False,
+    *, historical_intraday: bool = False,
     reuse_read_inputs: bool = False,
 ) -> NewowProductService:
     market_data = build_market_data_service(session)
@@ -418,19 +418,15 @@ def _build_product_service(
         ),
     )
 
-    mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
-    if mode not in {"legacy", "persisted"}:
-        raise ValueError("REFERENCE_READER_MODE_INVALID")
-    if mode == "persisted" or historical_intraday or current_reference:
-        from app.reference_trading.persisted_newow import PersistedNewowReference
-        factory = (sessionmaker(bind=engine.execution_options(
-            schema_translate_map={None: INTRADAY_HISTORY_SCHEMA}), autoflush=False)
-            if historical_intraday else SessionLocal)
-        persisted_reference = PersistedNewowReference(
-            factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
-        ).section
-    else:
-        persisted_reference = None
+    # Public history has one saved Canonical authority. Reader configuration must
+    # never switch a missing/stale asset to a different recomputation or Live.
+    from app.reference_trading.persisted_newow import PersistedNewowReference
+    factory = (sessionmaker(bind=engine.execution_options(
+        schema_translate_map={None: INTRADAY_HISTORY_SCHEMA}), autoflush=False)
+        if historical_intraday else SessionLocal)
+    persisted_reference = PersistedNewowReference(
+        factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
+    ).section
     return composition.service(
         cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,
@@ -815,7 +811,6 @@ def newow_strategy_detail(
                                and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES)
         service = (_build_product_service(session, cancelled, policy, historical_intraday=True)
                    if historical_intraday else
-                   _build_product_service(session, cancelled, policy, current_reference=True) if frequency in {"5m", "15m", "30m", "60m"} else
                    _build_product_service(session, cancelled) if policy is InputQualityPolicy.V1
                    else _build_product_service(session, cancelled, policy))
         result = service.query(product_query)

@@ -63,21 +63,19 @@ def test_exact_signal_pages_keep_prefix_and_source(monkeypatch):
                                             cursor=first["next_cursor"]))
 
 
-def test_subing_legacy_reuses_real_kernel(monkeypatch):
-    monkeypatch.setenv("REFERENCE_TRADING_READER_MODE","legacy")
-    service=Service()
-    result=query_signal_window(service,replace(query(service),strategy="subing"))
-    assert result["identity"]["formula_versions"]==["subing_ths_15m_v3"]
-    assert result["coverage"]["bar_count"]==49
-    assert result["recording_mode"]=="historical_replay"
-    assert "summary" not in result
+def test_subing_formal_signals_require_saved_history_even_with_legacy_environment(monkeypatch):
+    monkeypatch.setenv("REFERENCE_TRADING_READER_MODE", "legacy")
+    service = Service()
+    with pytest.raises(SubingReferenceError, match="NOT_BUILT"):
+        query_signal_window(service, replace(query(service), strategy="subing"))
 
 
-def test_persisted_mode_never_falls_back_to_replay(monkeypatch):
-    monkeypatch.setenv("REFERENCE_TRADING_READER_MODE","persisted")
-    service=Service()
-    with pytest.raises(SubingReferenceError,match="NOT_BUILT"):
-        query_signal_window(service,query(service))
+def test_htdy_uses_its_canonical_model_independent_of_obsolete_reader_switch(monkeypatch):
+    monkeypatch.setenv("REFERENCE_TRADING_READER_MODE", "persisted")
+    service = Service()
+    result = query_signal_window(service, query(service))
+    assert result["recording_mode"] == "historical_replay"
+    assert result["identity"]["reference_model_version"]
 
 
 def test_display_bar_limit_is_independent_of_prefix(monkeypatch):
@@ -140,7 +138,7 @@ def test_complete_requires_exact_existing_endpoints(monkeypatch,change):
 def test_partial_canonical_has_nonempty_verified_lower_endpoint(monkeypatch):
     monkeypatch.setenv("REFERENCE_TRADING_READER_MODE","legacy")
     service=Service()
-    request=replace(query(service),strategy="subing",to_time=service.original.bars[-1].bar_end+timedelta(minutes=15))
+    request=replace(query(service),strategy="htdy",to_time=service.original.bars[-1].bar_end+timedelta(minutes=15))
     result=query_signal_window(service,request)
     assert result["coverage"]["status"]=="PARTIAL_CANONICAL"
     assert result["coverage"]["first_bar_end"]==request.from_time

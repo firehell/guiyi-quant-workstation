@@ -518,9 +518,41 @@ The independent disabled historical identity SHALL use the existing full Canonic
 An exact `P4_SOURCE_REVISION_REBUILD` invalidation MAY generate a fresh bounded native rebuild plan in the
 existing rest-window worker; unknown invalidations, inflight outcomes and blocked attempts SHALL NOT be
 automatically retried. Source token, complete prefix, budget, publication and resume checks remain mandatory.
-The UI SHALL distinguish preserved realtime results, individual changed fields and the independent historical
-cutoff/freshness. Field differences SHALL NOT be presented as an attributed profit change. Incomplete historical
-recalculation or comparison SHALL remain explicit.
+Formal historical prices, indicators, signals and reference trades SHALL use post-market Canonical as their
+single authority. Newow and SuBing public historical reference pages SHALL use their existing saved historical
+identity with current complete-prefix source verification; HTDY SHALL retain its dedicated Canonical historical
+model. The retired reader-mode environment switch SHALL NOT select another public history implementation.
+Missing, incomplete, stale or quality-invalid historical assets SHALL remain unavailable and SHALL NOT fall
+back to first-seen observations or an alternate calculation path. A checkpoint endpoint alone does not prove
+current source identity.
+
+The UI SHALL use Canonical historical signals without giving prior actual events priority in historical chart
+slots. First-seen records and notifications SHALL remain immutable and accessible in an explicitly separate
+audit view; generic snapshot readers do not prove current Canonical identity and SHALL NOT be presented as a
+second formal history. Later numeric source corrections require independent native historical recomputation,
+not rewriting observations or resending notifications. Individual source differences, historical cutoff,
+unresolved missing originals and incomplete recalculation SHALL remain explicit; field differences SHALL NOT
+be presented as an attributed profit change.
+
+Historical signal pages SHALL verify the same saved complete-prefix source as the reference page, before and
+after reading saved presentation points. A revision to an earlier warmup prefix must invalidate the result even
+when visible chart bars are unchanged. Canonical chart replacements or changed Bar/owner identities SHALL
+invalidate browser signal caches and in-flight generations; failures SHALL NOT retain a stale formal signal
+or substitute a realtime event. Pagination remains bound to the exact historical snapshot and source.
+
+#### Scenario: A prior realtime event disagrees with corrected formal history
+- **GIVEN** a preserved first-seen observation and a later verified Canonical revision
+- **WHEN** the user opens formal historical reference or chart signals
+- **THEN** the page uses the current verified Canonical historical calculation only
+- **AND** a missing or stale saved calculation is unavailable instead of using the realtime result
+- **AND** the original event remains visible only as an audit fact without notification replay
+
+#### Scenario: A revision affects an earlier warmup prefix only
+- **GIVEN** a COMPLETE cached chart range whose visible prices have not changed
+- **WHEN** the formal Canonical series is refreshed or the saved source changes
+- **THEN** the range is revalidated against the complete source prefix
+- **AND** an old in-flight result cannot replace the new generation
+- **AND** a stale source or a changed pagination source is rejected explicitly
 
 #### Scenario: A later cleaned minute changes H1 volume
 - **GIVEN** a valid retained H1 capture and same physical Canonical endpoint differ numerically

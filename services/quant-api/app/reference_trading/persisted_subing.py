@@ -66,12 +66,32 @@ class PersistedSubingReference:
             if cursor is None:
                 return points
 
+    def verify_source(self, *, stream_id: str, revision_id: str, seq: int,
+                      through: date, as_of: datetime) -> None:
+        """Bind a saved history snapshot to the current complete Canonical prefix."""
+        identity, manifest = self._stored_manifest(
+            stream_id=stream_id, revision_id=revision_id, seq=seq,
+        )
+        storage_start = manifest.get("query_since")
+        if not isinstance(storage_start, str):
+            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+        try:
+            source_request = HistoricalStreamRequest(
+                identity, date.fromisoformat(storage_start), through, as_of,
+            )
+            source = MarketDataHistoricalInputReader(
+                newow_reader=None, subing_service=self._market,
+            ).plan_stream(source_request)
+        except (TypeError, ValueError) as exc:
+            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
+        verify_saved_input_prefix(manifest, source.dependency_manifest, through)
+
     def query(self, request: SubingReferenceQuery) -> dict[str, object]:
         self._check_cancelled()
         since, through, cutoff, as_of = self._market.resolve_read_window(request)
         matches = self._query.streams(
             strategy="subing_reference", product=request.symbol.upper(),
-            frequency=request.frequency,
+            frequency=request.frequency, mode="historical_replay",
         )
         if not matches:
             raise QueryConflict("NOT_BUILT")
@@ -91,22 +111,8 @@ class PersistedSubingReference:
             cursor=request.before,
         )
         snapshot = trades["snapshot"]
-        identity, manifest = self._stored_manifest(
-            stream_id=stream_id, revision_id=trades["revision_id"], seq=trades["seq"],
-        )
-        storage_start = manifest.get("query_since")
-        if not isinstance(storage_start, str):
-            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
-        try:
-            source_request = HistoricalStreamRequest(
-                identity, date.fromisoformat(storage_start), through, as_of,
-            )
-            source = MarketDataHistoricalInputReader(
-                newow_reader=None, subing_service=self._market,
-            ).plan_stream(source_request)
-        except (TypeError, ValueError) as exc:
-            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
-        verify_saved_input_prefix(manifest, source.dependency_manifest, through)
+        self.verify_source(stream_id=stream_id, revision_id=trades["revision_id"],
+                           seq=trades["seq"], through=through, as_of=as_of)
         self._check_cancelled()
         stats = self._query.summary(
             stream_id, since=since, through=through, cutoff=cutoff,
@@ -204,6 +210,10 @@ class PersistedSubingReference:
         )
         if readiness in ("PRICE_UNAVAILABLE", "NONPOSITIVE_CLOSE"):
             readiness = "WARMING"
+        # Recheck the complete saved prefix after all presentation reads; a
+        # revision outside the visible window must also invalidate this result.
+        self.verify_source(stream_id=stream_id, revision_id=trades["revision_id"],
+                           seq=trades["seq"], through=through, as_of=as_of)
         return {
             "symbol": request.symbol, "frequency": request.frequency,
             "series_kind": "actual_dominant",

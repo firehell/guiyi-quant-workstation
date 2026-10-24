@@ -1,4 +1,4 @@
-"""Read-only persisted historical reference API."""
+"""Immutable reference audit reads; official history pages add Canonical source admission."""
 
 from __future__ import annotations
 

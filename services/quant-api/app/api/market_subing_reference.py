@@ -5,7 +5,6 @@ from datetime import date, datetime
 from decimal import Decimal
 from threading import BoundedSemaphore
 from time import monotonic
-import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
@@ -75,16 +74,11 @@ def subing_reference(
             raise SubingReferenceError("SUBING_REFERENCE_BUDGET_EXCEEDED")
 
     try:
-        mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
-        if mode not in {"legacy", "persisted"}:
-            raise HTTPException(503, detail={"code": "REFERENCE_READER_MODE_INVALID"})
         query = SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency)
         service = _build_service(session, check_cancelled)
-        result = (
-            service.query(query)
-            if mode == "legacy"
-            else PersistedSubingReference(SessionLocal, service, check_cancelled).query(query)
-        )
+        # Saved Canonical history is the public authority; unavailable or stale
+        # saved sources fail closed instead of silently rerunning another path.
+        result = PersistedSubingReference(SessionLocal, service, check_cancelled).query(query)
         from app.reference_trading.signal_window import historical_window_navigation
         result.update(historical_window_navigation(service, symbol=symbol,
             since=date.fromisoformat(result["performance_since"]),
@@ -197,9 +191,12 @@ def historical_reference_signals(
             raise SubingReferenceError("SIGNAL_WINDOW_BUDGET_EXCEEDED")
     try:
         from app.reference_trading.query import HistoricalReferenceQuery
-        result = query_signal_window(_build_service(session, check_cancelled), SignalWindowQuery(
+        service = _build_service(session, check_cancelled)
+        historical = PersistedSubingReference(SessionLocal, service, check_cancelled)
+        result = query_signal_window(service, SignalWindowQuery(
             symbol, strategy, frequency, since, through, from_time, to_time, as_of, cursor, limit),
-            persisted_query=HistoricalReferenceQuery(SessionLocal))
+            persisted_query=HistoricalReferenceQuery(SessionLocal),
+            verify_persisted_source=historical.verify_source)
         return jsonable_encoder(result, custom_encoder={Decimal: str})
     except SubingReferenceError as exc:
         code = exc.code

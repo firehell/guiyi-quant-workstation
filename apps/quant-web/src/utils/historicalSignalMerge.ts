@@ -9,17 +9,13 @@ export interface OwnedSignalMarker {
 function key(signal: OwnedSignalMarker): string {
   return [signal.strategy, signal.frequency, Date.parse(signal.barEnd), signal.physicalContract.toUpperCase()].join('|')
 }
-/** Actual observation owns the display slot, including unrecorded/different formula versions.
- * This UI preference does not prove formula equivalence or join historical/actual ReferenceTrades.
- * All input facts and their original versions remain untouched.
- */
-export function mergeOwnedSignalMarkers(historical: readonly OwnedSignalMarker[], actual: readonly OwnedSignalMarker[], identity: { strategy: string; frequency: string }): KlineMarker[] {
-  const owns = (item: OwnedSignalMarker) => item.strategy === identity.strategy && item.frequency === identity.frequency && Number.isFinite(Date.parse(item.barEnd)) && Boolean(item.physicalContract)
-  const observed = actual.filter(item => owns(item) && item.source === 'actual_observation')
-  const actualKeys = new Set(observed.map(key))
+/** Formal history displays Canonical replay only; first-seen events belong to audit. */
+export function canonicalHistoryMarkers(historical: readonly OwnedSignalMarker[], identity: { strategy: string; frequency: string }): KlineMarker[] {
   const unique = new Map<string, OwnedSignalMarker>()
-  for (const item of historical) if (owns(item) && item.source === 'historical_replay' && !actualKeys.has(key(item))) unique.set(`${key(item)}|${item.marker.id}`, item)
-  for (const item of observed) unique.set(`${key(item)}|${item.marker.id}`, item)
+  for (const item of historical) {
+    if (item.source === 'historical_replay' && item.strategy === identity.strategy && item.frequency === identity.frequency
+      && Number.isFinite(Date.parse(item.barEnd)) && Boolean(item.physicalContract)) unique.set(`${key(item)}|${item.marker.id}`, item)
+  }
   return [...unique.values()].sort((a, b) => Date.parse(a.barEnd) - Date.parse(b.barEnd)).map(item => item.marker)
 }
 
