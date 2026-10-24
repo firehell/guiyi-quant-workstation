@@ -16,7 +16,7 @@
 
 六服务日志22:27恢复后再次被删，owner随后确认运行过清理工具；未改全局清理设置。新v4计划/attempt004重新正常恢复，10/25 00:08–00:09 CST连续60秒验证全部PID/FD/路径稳定，00:12再次核对通过，仍exact v18/gen23。Feed46503/Live46533/Alert46575/Reference46611/API46633/Web46651 active；原件索引/游标与Rule/Event/policy/delivery全摘要保持，0新通知。按owner接受口径，最近夜盘4批平台accepted/2批failed或unknown，不追查或补发偶发发送失败。
 
-本轮PARTIAL_NATURAL_ACCEPTANCE_PENDING：闭市可执行的数据依赖与日志修复完成；611原件缺失事实不改，历史替代及下一自然采集/H1/18:05增量待10/26。7路短有效历史继续warming_up，global degraded及672 READY/48观察滞后保留，不制造READY。详见[本轮修复记录](docs/tasks/runtime-data-health-recovery-20261024.md)。
+本轮PARTIAL_NATURAL_ACCEPTANCE_PENDING：闭市已验证数据依赖和日志修复完成；611对应独立夜盘1m/60m历史已由并行任务修复，本轮另补11合约5m/15m/30m共33分区（873Bar，0下载），正式v18独立读回33/33完整物理prefix；累计本轮242发布/33请求。611原件缺失事实不改，下一自然采集/H1/18:05增量待10/26。7路短有效历史继续warming_up，global degraded及672 READY/48观察滞后保留，不制造READY。详见[本轮修复记录](docs/tasks/runtime-data-health-recovery-20261024.md)。
 
 ## 10/24 苏冰历史续算/追加：前置连接失败已修复
 

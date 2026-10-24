@@ -27,6 +27,7 @@ class ContractSessionRepairRequest:
     session_end: datetime
     expected_plan_sha256: str | None = None
     apply: bool = False
+    derived_frequencies: tuple[str, ...] = ("60m",)
 
 
 def _hash(value):
@@ -74,6 +75,11 @@ def _plan(manager, request, now):
         raise ValueError('SESSION_REPAIR_TIMEZONE_REQUIRED')
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError('SESSION_REPAIR_TIMEZONE_REQUIRED')
+    frequencies = request.derived_frequencies
+    if (not isinstance(frequencies, tuple) or not frequencies
+            or any(f not in ('5m', '15m', '30m', '60m') for f in frequencies)
+            or len(set(frequencies)) != len(frequencies)):
+        raise ValueError('SESSION_REPAIR_DERIVED_FREQUENCIES_INVALID')
     end = request.session_end.astimezone(UTC)
     symbol, contract = request.symbol.strip().lower(), request.contract.strip().upper()
     if symbol not in load_active_products():
@@ -99,16 +105,17 @@ def _plan(manager, request, now):
     authoritative = manager.coverage.expected_bar_ends_for_trading_days(key, (day,))
     if tuple(t for t in authoritative if night[0].start < t <= end) != ends:
         raise ValueError('SESSION_REPAIR_ENDPOINT_OWNERSHIP_INVALID')
-    h1_key = DatasetKey('contract', symbol, contract, BarFrequency.H1)
-    snapshots = {k: _snapshot(manager, k, day) for k in (key, h1_key)}
-    for k, scope in ((key, ends), (h1_key, h1_ends)):
+    derived_keys = tuple(DatasetKey('contract', symbol, contract, BarFrequency(f)) for f in frequencies)
+    scopes = {key: ends, **{k: expected_intraday_ends(night, k.frequency) for k in derived_keys}}
+    snapshots = {k: _snapshot(manager, k, day) for k in scopes}
+    for k, scope in scopes.items():
         bars, quality, _revision = snapshots[k]
         if any(b.trading_day != day for b in bars if b.bar_end in scope):
             raise ValueError('SESSION_REPAIR_EXISTING_TRADING_DAY_CONFLICT')
         if any(q.bar_end in scope for q in quality):
             raise ValueError('SESSION_REPAIR_SOURCE_QUALITY_CONFLICT')
     missing = {k: tuple(t for t in scope if t not in {b.bar_end for b in snapshots[k][0]})
-               for k, scope in ((key, ends), (h1_key, h1_ends))}
+               for k, scope in scopes.items()}
     identity = {
         'schema_version': 2, 'input_value_encoding': 'canonical_decimal38_18_v1',
         'command': 'data.contract-session-repair',
@@ -120,14 +127,17 @@ def _plan(manager, request, now):
         'partitions': {k.frequency.value: snapshots[k][2] for k in snapshots},
         'missing': {k.frequency.value: [t.isoformat() for t in missing[k]] for k in missing},
     }
+    if frequencies != ('60m',):
+        identity['derived_frequencies'] = list(frequencies)
+        identity['expected_derived'] = {k.frequency.value: [t.isoformat() for t in scopes[k]] for k in derived_keys}
     payload = {
         **identity, 'plan_sha256': _hash(identity), 'status': 'planned',
         'readonly': True, 'provider_requests': 0,
         'provider_request_count': int(bool(missing[key])),
-        'missing_1m': len(missing[key]), 'missing_60m': len(missing[h1_key]),
+        'missing_1m': len(missing[key]), 'missing_60m': sum(len(missing[k]) for k in derived_keys if k.frequency == BarFrequency.H1),
         'applied': 0, 'failed': 0, 'blocked': 0, 'publications': [],
     }
-    return payload, (key, h1_key, night, ends, h1_ends, snapshots, missing)
+    return payload, (key, derived_keys, night, ends, scopes, snapshots, missing)
 
 
 def _valid_prices(bar):
@@ -161,7 +171,7 @@ def run_session_repair(manager, request, *, now=None, before_apply=None):
         plan, context = _plan(manager, request, now)
         if plan['plan_sha256'] != request.expected_plan_sha256:
             raise ValueError('SESSION_REPAIR_PLAN_CHANGED')
-        key, h1_key, sessions, ends, h1_ends, snapshots, missing = context
+        key, derived_keys, sessions, ends, scopes, snapshots, missing = context
         try:
             existing, quality, _ = snapshots[key]
             merged = {b.bar_end: b for b in existing}
@@ -191,16 +201,17 @@ def run_session_repair(manager, request, *, now=None, before_apply=None):
             source = tuple(merged[t] for t in ends)
             if any(b.trading_day != request.trading_day or not _valid_prices(b) for b in source):
                 raise StorageError('SESSION_REPAIR_SOURCE_INVALID')
-            derived = aggregate_from_1m(source, target_frequency=BarFrequency.H1, sessions=sessions)
-            if tuple(b.bar_end for b in derived) != h1_ends:
-                raise StorageError('TARGET_WINDOW_INCOMPLETE')
-            old_h1 = {b.bar_end: b for b in snapshots[h1_key][0]}
-            if any(b.bar_end in old_h1 and old_h1[b.bar_end] != b for b in derived):
-                raise StorageError('SESSION_REPAIR_EXISTING_VALUE_CONFLICT')
-            candidates = (
-                (key, tuple(merged[t] for t in sorted(merged)), quality, source),
-                (h1_key, tuple(sorted({**old_h1, **{b.bar_end: b for b in derived}}.values(), key=lambda b: b.bar_end)), snapshots[h1_key][1], source),
-            )
+            candidates = [(key, tuple(merged[t] for t in sorted(merged)), quality, source)]
+            for derived_key in derived_keys:
+                derived = aggregate_from_1m(source, target_frequency=derived_key.frequency, sessions=sessions)
+                if tuple(b.bar_end for b in derived) != scopes[derived_key]:
+                    raise StorageError('TARGET_WINDOW_INCOMPLETE')
+                old = {b.bar_end: b for b in snapshots[derived_key][0]}
+                if any(b.bar_end in old and old[b.bar_end] != b for b in derived):
+                    raise StorageError('SESSION_REPAIR_EXISTING_VALUE_CONFLICT')
+                candidates.append((derived_key,
+                    tuple(sorted({**old, **{b.bar_end: b for b in derived}}.values(), key=lambda b: b.bar_end)),
+                    snapshots[derived_key][1], source))
             if before_apply is not None and any(missing.values()):
                 before_apply()
             for candidate_key, bars, facts, inputs in candidates:
@@ -209,7 +220,7 @@ def run_session_repair(manager, request, *, now=None, before_apply=None):
                 # Preserve schema v1 provenance so the current Runtime remains a
                 # compatible reader. The scope is bound into input_sha256 and the
                 # returned plan/publication record carries the exact Session.
-                source_type = 'canonical_1m' if candidate_key == h1_key else (
+                source_type = 'canonical_1m' if candidate_key != key else (
                     'rqdata' if type(manager.provider).__module__ == 'app.market_data.rqdata_adapter' else 'historical_provider')
                 proof = {'version': 1, 'input_source': source_type,
                          'input_sha256': _hash({'plan_sha256': plan['plan_sha256'], 'bars': _source_records(inputs)})}
