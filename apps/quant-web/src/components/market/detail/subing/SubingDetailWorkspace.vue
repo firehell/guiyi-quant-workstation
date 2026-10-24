@@ -2,9 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import ObservedReferenceRecords from '@/components/market/detail/ObservedReferenceRecords.vue'
+import { historicalActionCallouts } from '@/utils/historicalActionCallouts'
 import { getHistoricalSignalRange } from '@/api/historicalSignals'
 import { useHistoricalSignalRanges } from '@/composables/useHistoricalSignalRanges'
-import { actualEventsToOwnedMarkers, canonicalHistoryMarkers } from '@/utils/historicalSignalMerge'
+import { actualEventsToOwnedMarkers } from '@/utils/historicalSignalMerge'
 import { matchesReferenceBar } from '@/utils/referenceCalloutLayout'
 import type { KlineQualityBreak, KlineReferenceSelection } from '@/types/referenceCallout'
 import type { SubingReferenceTrade } from '@/types/subingReference'
@@ -74,17 +75,14 @@ async function focusTrade(trade: SubingReferenceTrade) {
   if (current() && !chartBars.value.some(matches)) referenceFocusNotice.value = '此参考 Bar 不在当前可读图表范围内；记录详情仍可查看。'
 }
 const missingCalloutCount = computed(() => callouts.value.filter(callout => !chartBars.value.some(bar => matchesReferenceBar(callout, bar))).length)
-const callouts = computed(() => [])
-const chartSignals = useHistoricalSignalRanges(getHistoricalSignalRange, {
-  source: () => reference.data.value?.input_snapshot_hash,
-  error: () => reference.error.value,
-})
+const chartSignals = useHistoricalSignalRanges(getHistoricalSignalRange)
+const callouts = computed(() => referenceMode.value === 'recalculated' ? historicalActionCallouts(chartSignals.actions.value, chartBars.value) : [])
 const actualSignals = computed(() => actualEventsToOwnedMarkers(visibleEvents.value, props.bars, { symbol: props.identity.symbol, strategy: 'subing', frequency: props.identity.frequency }))
 const selectedEvent = ref<number | null>(null)
 const alignmentFilter = ref<'all' | 'aligned'>('all')
 const referenceSupported = computed(() => ['15m', '30m', '60m', '1d'].includes(props.identity.frequency))
 const visibleEvents = computed(() => loader.events.value.filter(isSubingThsAlertEvent).filter(event => alignmentFilter.value === 'all' || event.subing_alignment?.status === 'PASS'))
-const visibleMarkers = computed(() => referenceMode.value === 'saved' ? actualSignals.value.map(item => item.marker) : canonicalHistoryMarkers(chartSignals.signals.value, { strategy: 'subing', frequency: props.identity.frequency }))
+const visibleMarkers = computed(() => referenceMode.value === 'saved' ? actualSignals.value.map(item => item.marker) : [])
 const selectedEventRecord = computed(() => visibleEvents.value.find(event => event.id === selectedEvent.value) ?? null)
 function alignmentLabel(status: string | undefined) { return status === 'PASS' ? '六周期同向' : status === 'FAIL' ? '未全部同向' : status === 'UNKNOWN' ? '无法判断' : '未记录' }
 
@@ -112,7 +110,6 @@ function loadEarlierChart() { void props.loadEarlier().catch(() => { referenceFo
 defineExpose({ openHistory })
 watch([() => props.identity, () => props.bars, () => props.mutation], () => { void refresh() }, { immediate: true, deep: true })
 watch(() => model.value.history.length, (value) => emit('history-availability', value > 0), { immediate: true })
-watch(() => reference.data.value?.input_snapshot_hash, (source, previous) => { if (source && source !== previous && referenceSupported.value) void chartSignals.sync({ symbol: props.identity.symbol, strategy: 'subing', frequency: props.identity.frequency }, props.bars, true) })
 watch(() => reference.data.value?.input_snapshot_hash, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; referenceFocus.value = null; referenceFocusNotice.value = null }, { flush: 'sync' })
 watch(identityKey, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; selectedEvent.value = null; referenceFocusNotice.value = null; referenceFocus.value = null; reference.dispose(); if (referenceSupported.value) void reference.refresh(props.identity.symbol, { frequency: props.identity.frequency as '15m' | '30m' | '60m' | '1d' }) }, { immediate: true })
 watch([identityKey, () => props.bars, () => props.mutation], (_value, previous) => { if (referenceSupported.value) void chartSignals.sync({ symbol: props.identity.symbol, strategy: 'subing', frequency: props.identity.frequency }, props.bars, props.mutation.kind === 'replace' && props.mutation !== previous?.[2]) }, { immediate: true, deep: true })
@@ -124,12 +121,12 @@ onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose(); reference.dispos
     <p v-if="identityWarning" class="subing-workspace__hint" role="status">{{ identityWarning }}</p>
     <div ref="chartRegion" class="subing-workspace__chart"><SubingChartStage :allow-historical-markers="referenceMode === 'recalculated'" :bars="chartBars" :mutation="chartMutation" :loading="loading" :error="error" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :period="identity.frequency" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="callouts" :reference-indicators="referenceMode === 'recalculated' ? reference.data.value?.indicators ?? [] : []" :quality-breaks="qualityBreaks" :focus-request-id="referenceFocusRequestId" :reference-selection="referenceSelection" :markers="visibleMarkers" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlierChart" @focus-resolved="emit('focus-resolved', $event)" /></div>
     <p v-if="missingCalloutCount" class="subing-workspace__hint" role="status">{{ missingCalloutCount }} 个历史参考信号尚未匹配当前已载 Bar 与物理合约；可在参考记录中点击定位，数据不足时不绘制。</p>
-    <p v-if="referenceSupported" class="subing-workspace__reference-source">{{ reference.data.value?.storage_mode === 'persisted' ? '历史参考·已保存' : '盘后 Canonical 历史' }}｜零费用/零滑点 <span>历史参考箭头 · 实时首次事件单独审计</span></p>
+    <p v-if="referenceSupported" class="subing-workspace__reference-source">{{ reference.data.value?.storage_mode === 'persisted' ? '历史参考·已保存' : '盘后 Canonical 历史' }}｜零费用/零滑点 <span>历史建仓／清仓参考标签 · 实时首次事件单独审计</span></p>
     <p v-if="!referenceSupported" class="subing-workspace__hint">本周期展示已保存信号；暂无历史参考交易。</p>
     <section class="subing-workspace__references" aria-label="收益与参考记录">
     <div class="subing-workspace__filter" role="group" aria-label="参考记录来源"><button type="button" :aria-pressed="referenceMode === 'recalculated'" @click="referenceMode = 'recalculated'">盘后历史</button><button type="button" :aria-pressed="referenceMode === 'saved'" @click="referenceMode = 'saved'">实时首次事件审计</button></div>
     <p v-if="chartSignals.loading.value" class="subing-workspace__hint" role="status">正在读取当前图表范围的历史信号…</p>
-    <p v-if="chartSignals.error.value" class="subing-workspace__hint" role="status">{{ chartSignals.error.value }} <button type="button" @click="chartSignals.sync({ symbol: identity.symbol, strategy: 'subing', frequency: identity.frequency }, bars, true)">重试历史信号</button></p>
+    <p v-if="chartSignals.error.value" class="subing-workspace__hint" role="status">{{ chartSignals.error.value }} <button type="button" @click="chartSignals.sync({ symbol: identity.symbol, strategy: 'subing', frequency: identity.frequency }, bars)">重试历史信号</button></p>
     <ObservedReferenceRecords v-if="referenceMode === 'saved'" strategy="subing-reference" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :events="visibleEvents" :unavailable="loader.unavailable.value" @focus="focusObservation" />
     <SubingReferencePanel v-if="referenceSupported && referenceMode === 'recalculated'" :capped="reference.capped.value" :data="reference.data.value" :loading="reference.loading.value" :error="reference.error.value" @refresh="reference.refresh(identity.symbol, { ...$event, frequency: identity.frequency as '15m' | '30m' | '60m' | '1d' })" @load-more="reference.loadMore" @focus="focusTrade" @details="selectedTrade = $event" />
     <p v-if="!referenceSupported && referenceMode === 'recalculated'" class="subing-workspace__hint">当前周期尚无历史重算参考交易。</p>

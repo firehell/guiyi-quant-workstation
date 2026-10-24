@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { KlineReferenceCallout } from '@/types/referenceCallout'
 import { computed } from 'vue'
 
 import MarketKlineStage from '@/components/market/detail/MarketKlineStage.vue'
@@ -21,6 +22,7 @@ const props = defineProps<{
   loadingBefore?: boolean
   historyError?: string | null
   focusBarEnd?: string | null
+  referenceCallouts?: KlineReferenceCallout[]
   historicalMode?: boolean
   markers: readonly KlineMarker[]
 }>()
@@ -30,7 +32,7 @@ const htdyMarkers = computed(() => props.historicalMode ? [...props.markers] : m
 
 <template>
   <MarketKlineStage
-    :show-derived-markers="false"
+    :show-derived-markers="false" :reference-callouts="referenceCallouts"
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"
     :visible-main-indicators="visibleMainIndicators" :range-detector-source-identity="rangeDetectorSourceIdentity"
     :range-detector-anchor-time="rangeDetectorAnchorTime" :identity-key="identityKey" :focus-bar-end="focusBarEnd"

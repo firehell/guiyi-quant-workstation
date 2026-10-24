@@ -19,7 +19,8 @@ import {
   type WhitespaceData,
 } from 'lightweight-charts'
 import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
-import { layoutReferenceCallouts, matchesReferenceBar, REFERENCE_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
+import ReferenceCalloutLabels from './ReferenceCalloutLabels.vue'
+import { layoutNiuwaReferenceCallouts, matchesReferenceBar, NIUWA_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
 import type {
   BarData,
@@ -106,14 +107,16 @@ function projectReferenceCallouts() {
       if (!bar) return []
       const x = chart!.timeScale().timeToCoordinate(chartTime(bar))
       const y = candles!.priceToCoordinate(Number(callout.price))
+      const high = candles!.priceToCoordinate(bar.high), low = candles!.priceToCoordinate(bar.low)
       return x === null || y === null ? [] : [{
         callout, x, y,
-        boxWidth: REFERENCE_CALLOUT_BOX.width,
-        boxHeight: REFERENCE_CALLOUT_BOX.height,
+        candle: high === null || low === null ? undefined : { left: x - 8, top: Math.min(high, low) - 3, width: 16, height: Math.abs(low - high) + 6 },
+        boxWidth: Math.max(NIUWA_CALLOUT_BOX.width, Math.min(180, Math.max(callout.title.length, callout.detail.length) * 7 + 14)),
+        boxHeight: NIUWA_CALLOUT_BOX.height,
         expanded: isReferenceSelected(callout),
       }]
     })
-    positionedCallouts.value = layoutReferenceCallouts(points, width, height)
+    positionedCallouts.value = layoutNiuwaReferenceCallouts(points, width, height, [], true)
     positionedSelection.value = props.referenceSelection.flatMap(selection => {
       const bar = renderedBars.find(item => matchesReferenceBar(selection, item))
       if (!bar) return []
@@ -673,10 +676,7 @@ defineExpose({
     <div ref="container" class="chart" @pointermove="scheduleReferenceCallouts" @pointerup="scheduleReferenceCallouts" @wheel="scheduleReferenceCallouts" />
     <div v-for="selection in positionedSelection" :key="selection.time" class="reference-candle-selection" aria-hidden="true" :style="{ left: `${selection.x - 6}px`, height: `${selection.height}px` }" />
     <div v-if="referenceCallouts.length" class="reference-callouts" aria-label="历史重算参考信号">
-      <svg class="reference-callouts__lines" aria-hidden="true"><line v-for="item in positionedCallouts.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
-      <div v-for="item in positionedCallouts" :key="item.callout.id" role="img" class="reference-callout" :class="[{ 'reference-callout--density-node': item.compact, 'reference-callout--compact': item.compact, 'reference-callout--selected': isReferenceSelected(item.callout) }, `reference-callout--${item.callout.tone}`]" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-reference-id="item.callout.id" :data-reference-time="item.callout.time" :data-reference-contract="item.callout.physicalContract" :data-reference-price="item.callout.price" :aria-label="`${item.callout.title}，参考价 ${item.callout.detail}，历史重算`">
-        <template v-if="!item.compact"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><i v-else class="reference-callout__node" aria-hidden="true" />
-      </div>
+      <ReferenceCalloutLabels :items="positionedCallouts.map(item => ({ position: item, title: item.callout.title, detail: item.callout.detail, direction: item.callout.tone === 'gain' ? 'up' : item.callout.tone === 'loss' ? 'down' : 'neutral', selected: isReferenceSelected(item.callout), labelClass: 'reference-callout', ariaLabel: `${item.callout.title}，参考价 ${item.callout.detail}，历史重算` }))" />
     </div>
     <KlineHoverLegend
       :context="hoverContext"
@@ -709,17 +709,7 @@ defineExpose({
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .reference-candle-selection { position: absolute; top: 0; width: 12px; background: #aa927b2b; border-inline: 1px solid #8b653d; pointer-events: none; z-index: 2; }
-.reference-callout--selected { outline: 2px solid #8b653d; background: rgb(255 243 217 / .78); }
 .reference-callouts { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
-.reference-callouts__lines { width: 100%; height: 100%; position: absolute; inset: 0; stroke: rgb(155 129 105 / .76); stroke-width: 1; }
-.reference-callout { position: absolute; pointer-events: none; display: grid; place-content: center; gap: 1px; box-sizing: border-box; padding: 3px; overflow: hidden; border: 1px solid rgb(170 146 123 / .82); border-radius: 3px; background: rgb(255 254 250 / .78); color: #665343; font-size: 9px; line-height: 1.1; text-align: center; box-shadow: 0 1px 3px rgb(140 115 85 / .1); }
-.reference-callout strong { font-weight: 600; font-size: 10px; }
-.reference-callout strong, .reference-callout span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reference-callout--gain span { color: #ff403a; }
-.reference-callout--loss span { color: #22b95d; }
-.reference-callout--density-node { min-width: 0; min-height: 0; }
-.reference-callout--compact { padding: 0; place-items: center; }
-.reference-callout__node { width: 6px; height: 6px; border-radius: 50%; background: #8b653d; }
 .chart { width: 100%; height: 100%; }
 .secondary-panel-label { position: absolute; z-index: 3; left: 10px; min-height: 26px; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-primary); font-size: var(--gy-font-size-xs); font-weight: 600; pointer-events: none; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }

@@ -48,3 +48,39 @@ snapshot or silently aggregate their performance.
 - **WHEN** the current window has no remaining records page and `previous_window` exists
 - **THEN** the client may request that earlier window through the existing reference endpoint
 - **AND** the initial summary remains attributed to its original performance window
+
+### Requirement: Version two chart items are server-associated reference actions
+
+The sole active `historical_signal_window_v2` response SHALL expose `items` as a stable paginated
+sequence of reference action facts, rather than unpaired observation arrows. HTDY actions SHALL come
+from its existing replay trades; SuBing actions SHALL come from the verified persisted reference
+trades under exactly the same snapshot, revision and sequence as the saved source signals. The client
+SHALL NOT infer trade pairing, exits, reference prices or returns from observed directions.
+
+Each item SHALL contain stable `action_id`, `source_action_id`, `reference_trade_id`, `signal_id`,
+`role` (`BUILD` or `CLEAR`), `side` (`LONG` or `SHORT`), exact Bar/time/trading-day, physical contract,
+owner and calculation segment, reference price, trade status, recording mode and nullable `return_pct`.
+The public reference trade identity SHALL match the corresponding record-list identity. A source
+signal association SHALL match the exact Bar, physical contract, owner segment and calculation segment.
+When present, source `action_ids`, `entry_trade_id` and `closed_trade_id` SHALL match the exact referenced
+action and role-specific public trade identity; a missing or
+ambiguous association SHALL fail explicitly. Prices and returns SHALL retain Decimal serialization.
+
+Only an existing trade entry SHALL emit BUILD. Only a CLOSED trade's linked exit SHALL emit CLEAR;
+only that exit may carry its existing percentage reference return. Same-direction repeated
+observations SHALL NOT manufacture another BUILD. Interrupted references SHALL NOT manufacture a
+CLEAR or realized return. Reversals SHALL expose two separately identified actions, old trade CLEAR
+before opposite trade BUILD at the same Bar. Pagination SHALL bind the action schema and source
+window and SHALL sort by exact time, CLEAR before BUILD, trade identity and action identity.
+
+#### Scenario: A reversal creates two linked reference facts
+
+- **WHEN** the established model closes a LONG reference and opens SHORT at one completed Bar
+- **THEN** v2 emits that LONG trade's CLEAR followed by the distinct SHORT trade's BUILD
+- **AND** the exit alone carries the established closed return without client-side pairing
+
+#### Scenario: Historical references are interrupted
+
+- **WHEN** a reference terminates because of a physical-owner or data-quality boundary
+- **THEN** its entry may remain visible as BUILD with the interrupted trade status
+- **AND** no executable exit, CLEAR action or realized percentage is invented
