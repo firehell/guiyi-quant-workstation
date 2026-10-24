@@ -1,5 +1,13 @@
 # 当前状态
 
+## 10/24 第一步运行阻断核查：未发现当前进程、锁或消费积压阻断，自然新输入待验
+
+17:40–17:45 CST只读两轮回读：正式十服务v1.15.18/gen23身份匹配，六PID稳定；PG维护锁持有者0，deployment/after-market文件锁空闲。所有保留source/completed journal的Live/Alert/Reference消费者均追尾，前后数量/游标一致，pending Capture0。Reference连续40秒采样出现3次cycle ready=true，blocked_count始终0，scan ready=false是原生阶段标记，未发现卡死；历史刷新和通知后台存活、无刷新错误。Feed心跳新鲜、available=true/input_failure=null/pending0；60品种全CLOSED，订阅0符合闭市状态。
+
+Live覆盖34ok/15not_due/11lagging（既有611原件缺口）；Reference672 READY/48 OBSERVATION_LAGGING，其中44路对应11品种缺口，L4为持久旧滞后标签，当前端点已追平、该标签不参与新输入门禁，未手改READY。全局仍degraded：旧缺口、保留盘后UPDATE_FAILED、旧推送失败/评估覆盖及本代weekly skipped_busy均未伪造消除。仅证明当前进程/连接/消费/锁具备运行条件，不能证明下一交易时段自然采集、H1或Push完成。未下载、写生产、重启、改游标、重放、补发或新增监控。
+
+exact v18定向45 passed/23 skipped（独立环境项）；初次2项因测试日志目录缺失失败，改用独占临时日志目录后重跑全定向通过，无应用修改。详见[第一步核查记录](docs/tasks/runtime-step1-20261024.md)，证据`output/runtime-step1-20261024/summary.json`。
+
 ## 10/24 正式历史单一 Canonical 入口：开发验证通过，正式补丁已发布，运行续接待验收
 
 按 owner 新口径，Newow/Subing 正式历史固定已验证 Canonical 保存资产；实际事件与通用快照只作审计，不覆盖正式图。修复源修订、旧缓存和参考读取失败后旧标记撤销；独立 Review 通过。扩展后端 894 passed/81 skipped，完整 Web1195 passed/3 skipped，新增失败路径18项、type/build/topology、OpenSpec/secret/diff通过。develop 含其他未发布 input/formula/launcher 变化，本次正式v1.15.18从exact v17最小回移，不带入无关合同；v1.15.18已由PR466发布，main/tag peeled062310abd5eca6fac442bd565258ab0b05fa2d73，精确最小候选819后端/1168Web及构建/独审通过；现场切换尚未完成，不声明第一项整体完成。当前维护状态及611边界见下一节。
