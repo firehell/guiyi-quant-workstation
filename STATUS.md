@@ -1,16 +1,92 @@
 # 当前状态
 
-## 10/24 v1.15.18 正式历史单口径补丁候选
+## 10/25 v1.16.0 综合发布候选整理
 
-盘后Canonical为唯一正式历史；Newow/Subing固定已验证保存入口，缺失/旧来源不回退；实时事件只作审计，不覆盖正式历史图。此补丁基于exact v17，不含develop其他输入/公式/launcher变化。精确候选后端819 passed/81 skipped，完整Web1168 passed/3 skipped，OpenSpec/secret/diff/离线锁与独立Review通过；正式发布、运行切换与现场读回须按实际执行另记。旧2565对应历史已齐/240路独立验收通过，不宣称原件恢复；新增611属10/26交易日未完成。
+按 owner 交办收敛 develop：保留并提交三份已存在的现场记录；生成的 output 证据保留本地，未跟踪产物统一排除，既有 tracked evidence 不变。其他数据维护工作树有未提交修改，未覆盖或清理。候选汇总首页预计算、历史浏览、共享交易标签、历史箱体及已集成离线研究／执行政策；不启用账户、订单或 Runtime。两项旧来源校验测试已复现为 SavedSignals 缺 trades 的夹具问题，补齐接口；同时补齐路由exact清单和隔离HTTP／锁测试边界。扩展4597 passed/82 skipped，首轮3项失败已分别修复或以隔离端口复跑；后验350+11项通过，新增夜盘修复106项通过，Web1221 passed/3 skipped、构建及独立复核通过。发布事实待远端回读后更新。详见[版本说明](docs/releases/v1.16.0.md)。
 
-旧Runtime维护已在四健康服务退出、故障Feed/Live暂停后因只读预算停止，无kill或版本切换；独立读回证明锁已释放。主任务使用新SUSPENDED_NO_KILL状态与精确计划续接，不能重跑旧attempt，不声明RUNTIME_READY。
+## 10/25 凌晨现有健康修复：闭市修复已验，下一Session自然验收待续
 
-## 10/21 v1.15.16 发布候选验证通过
+按owner优先级，苏冰全量历史资产后置，不新增功能。全60品种全历史manual审计60/60 passed、through10/23、findings0；修复NI/PG/PS/SI2612×5/15/30的132聚合分区（provider0），并确认10/26新主力CU2612原七周期预热缺失，原生补齐77分区/provider33。13次维护全部passed、postplan0，旧4合约文件SHA保持，CU此前无旧分区。fresh独立lease+MDS按10/26实际rank1核验240/240分钟前缀完整；CU1m93645/D1 205/W1 44，质量中断0，D1/W1共享内核ready。56任务测试、278原生测试、独立代码及实际结果Review通过。
+
+六服务日志22:27恢复后再次被删，owner随后确认运行过清理工具；未改全局清理设置。新v4计划/attempt004重新正常恢复，10/25 00:08–00:09 CST连续60秒验证全部PID/FD/路径稳定，00:12再次核对通过，仍exact v18/gen23。Feed46503/Live46533/Alert46575/Reference46611/API46633/Web46651 active；原件索引/游标与Rule/Event/policy/delivery全摘要保持，0新通知。按owner接受口径，最近夜盘4批平台accepted/2批failed或unknown，不追查或补发偶发发送失败。
+
+本轮PARTIAL_NATURAL_ACCEPTANCE_PENDING：闭市可执行的数据依赖与日志修复完成；611原件缺失事实不改，历史替代及下一自然采集/H1/18:05增量待10/26。7路短有效历史继续warming_up，global degraded及672 READY/48观察滞后保留，不制造READY。详见[本轮修复记录](docs/tasks/runtime-data-health-recovery-20261024.md)。
+
+## 10/24 苏冰历史续算/追加：前置连接失败已修复
+
+AL15m续算及RB四周期追加脚本原先先导入应用、后加载私有配置，数据库连接池提前缓存开发配置。已调整初始化顺序，默认离线行为保留；新增只读check-only和安全错误定位。18项定向测试通过、独立Review无Confirmed Issue。正式v18现场只读：AL225792/320074原生续算位置一致、RB四周期exact append/旧事实校验全部PREFLIGHT_PASSED，production_writes=0。旧失败目录不重写，修复版v2目录独占；本步未执行apply，不代表全量历史计算完成。下一步仍须确认旧writer退出、现场锁和来源后精确续算/追加。详见[修复记录](docs/tasks/subing-history-preflight-fix-20261024.md)。
+
+## 10/24 第一步主动排障：44路旧缺口门禁恢复已验，自然新输入待验
+
+进一步实查确认11品种44路H1在下一Session前仍夹旧缺失端点，effective block不能被关闭。逐桶真实原件证明17个完整H1缺失，对应611条缺失M1；00:01–00:29部分M1完整保留。按原生BoundedForwardRecovery单次追加44精确中断并由原消费者消费，当前active参考状态FLAT、内核精确重置；19笔active OPEN以OBSERVATION_INTERRUPTED结束，无退出价或收益，旧inactive版本及旧经济事实保持。44路及L4下一权威H1门禁均已只读证明为ONE_NEXT_ENDPOINT（日程证明不是未来Bar）。
+
+正式仍exact v1.15.18/gen23，Feed/Live/Alert/Reference原PID恢复；最终回读所有保留journal消费者追尾、pending Capture0、PG维护锁0，deployment/after-market文件锁空闲。旧原件和索引/ObservationStream游标未改，611没有恢复；API仍672 READY/48观察滞后，全局degraded保留，不制造自然验收或绿色状态。29执行器测试、原生15 passed/4 skipped及独立实际代码/结果复审通过。
+
+通知只新增44条原生BATCH_PROCESSED记账收据及正常policy消费游标推进；旧delivery逐摘要保持、policy数量/配置/stream/topic精确核对，0可发送动作/0外发。原controller因总摘要差异停止的记录保持原样，独立`gap-repair-004/independent-verified-003.json`严格解释该增量；旧前置失败/只读验收错误均保留。闭市可完成的工程排障已完成，下一自然分钟/H1仍待10/26真实Session，不新建监控或补发。详见[第一步记录](docs/tasks/runtime-step1-20261024.md)。
+
+## 10/24 第一步运行阻断核查：未发现当前进程、锁或消费积压阻断，自然新输入待验
+
+17:40–17:45 CST只读两轮回读：正式十服务v1.15.18/gen23身份匹配，六PID稳定；PG维护锁持有者0，deployment/after-market文件锁空闲。所有保留source/completed journal的Live/Alert/Reference消费者均追尾，前后数量/游标一致，pending Capture0。Reference连续40秒采样出现3次cycle ready=true，blocked_count始终0，scan ready=false是原生阶段标记，未发现卡死；历史刷新和通知后台存活、无刷新错误。Feed心跳新鲜、available=true/input_failure=null/pending0；60品种全CLOSED，订阅0符合闭市状态。
+
+Live覆盖34ok/15not_due/11lagging（既有611原件缺口）；Reference672 READY/48 OBSERVATION_LAGGING，其中44路对应11品种缺口，L4为持久旧滞后标签，当前端点已追平、该标签不参与新输入门禁，未手改READY。全局仍degraded：旧缺口、保留盘后UPDATE_FAILED、旧推送失败/评估覆盖及本代weekly skipped_busy均未伪造消除。仅证明当前进程/连接/消费/锁具备运行条件，不能证明下一交易时段自然采集、H1或Push完成。未下载、写生产、重启、改游标、重放、补发或新增监控。
+
+exact v18定向45 passed/23 skipped（独立环境项）；初次2项因测试日志目录缺失失败，改用独占临时日志目录后重跑全定向通过，无应用修改。详见[第一步核查记录](docs/tasks/runtime-step1-20261024.md)，证据`output/runtime-step1-20261024/summary.json`。
+
+## 10/24 正式历史单一 Canonical 入口：v1.15.18/gen23已切换，正式历史资产验收中
+
+按 owner 新口径，Newow/Subing 正式历史固定已验证 Canonical 保存资产；实际事件与通用快照只作审计，不覆盖正式图。修复源修订、旧缓存和参考读取失败后旧标记撤销；独立 Review 通过。扩展后端 894 passed/81 skipped，完整 Web1195 passed/3 skipped，新增失败路径18项、type/build/topology、OpenSpec/secret/diff通过。develop 含其他未发布 input/formula/launcher 变化，本次正式v1.15.18从exact v17最小回移，不带入无关合同；v1.15.18已由PR466发布，main/tag peeled062310abd5eca6fac442bd565258ab0b05fa2d73，精确最小候选819后端/1168Web及构建/独审通过；004精确续接已成功完成：六轮旧事实哈希核对通过，十项服务统一v1.15.18/gen23，独立PID/标签/发布树及OS维护锁验收通过，PG维护锁持有者0。正式API Newow JM60m/D1返回保存的Canonical历史；苏冰现场240身份初次清点236缺失、RB4只到9/22；已完成JM4并独立完整来源/checkpoint/四API验收通过，A/AG各4原生构建完成。AL15m在原1800秒预算后明确INTERRUPTED（225792/320074），完整token保留，正在准备单次原生resume；现场223仍缺失，RB4追加证明通过待advance，不声明第一项整体完成。新自然采集/Event/Push另验，611边界见下一节。
+
+## 10/24 原件缺口采用独立历史补齐：240路已验，服务已恢复，611待交易日完成
+
+Owner 已选择保留自然原件缺失、补齐独立历史行情和计算。旧 2,565 条对应 Canonical 已逐物理合约核对齐全；新增 611 条属于 10/26 交易日，当前 11 品种原生 warmup 均因交易日未完成而拒绝，未请求或发布这部分历史数据。240 路 H1 精确历史重算 attempt004 已完成前 84 路，第 85 路 NI 在 planner 阶段报 DATASET_OR_PARTITION_MISSING、无 native intent，调用器已停止；84 路及完整旧事实独立验收已通过；另已完成 NI/PG/PS/SI2612 的 44 次分钟下载和 88 个分钟/H1 分区发布，后验零目标，剩余 156 路以新计划全部重算完成、完整旧事实扫描通过，既有周审计 60/60 passed、发现 0 后，全 240 路独立新 lease 来源与融合依赖验收通过，180 个已满足 H1 维护项精确替代、旧控制原件保存且游标不变。先前002停止迟滞、003只读哈希超时均保留；004新精确计划在四健康服务已停、两个故障输入服务已暂停的已知状态续接，单次终止旧故障进程并完成全10冷切换，六轮完整旧事实哈希与原始日志/游标保留验收通过。正式现v1.15.18/gen23/062310abd5eca6fac442bd565258ab0b05fa2d73，六常驻原生active、四calendar已注册，Reference保留日志正常追尾；维护锁已释放。120个旧日短期恢复metadata缺失以精确清单单列possible TTL，未宣称单键到期已证明；未扩TTL、重写原件或补发。新自然采集与推送仍待各自事件，不能从闭市ready推导。详见[缺口修复记录](docs/tasks/original-gap-history-repair-20261024.md)。
+
+## 10/23 三项修复推进：周线已修，来源修订补丁已发布，Runtime待切换
+
+PR2612/SF2701 的 W1 矛盾质量区间已精确修复 15 周、6 个月分区；另八合约 W1 warmup 170 请求/170 发布通过，10 物理前缀及三策略独立读取通过。32 路 W1 lag 已自然追平。10/23 21:30 正式读回 540 READY/180 H1 DATA_CONFLICT/pending Capture 0；旧 2565 条自然 1m 原件无持久副本，保留缺口，不能用历史价格补造。
+
+按 owner 选定的双事实规则实现来源修订追加证据及独立 Canonical 历史展示。修复已集成 develop，v1.15.17 经 PR #465 发布，main/tag peeled commit `2459fa8659f0ae51640e430c20cbdcb263868f24`，发布树 `.worktrees/release-v1.15.17`；正式仍 v1.15.16/gen22，未切换。精确补丁 Reference 792 passed/81 skipped；新虚拟环境定向 74 passed/2 skipped；独立 PostgreSQL 两次测试及清理通过；Web 22 测与 build、OpenSpec、secret、独立 Review 通过。
+
+为避免旧冲突规则处理新夜盘 H1，Reference-worker PID27877/gen22 已唯一原生停驻，token `9a8ed93479bb469eb6397bcb23e9ab5f`，原 cursor `1792762446303-0` 保留。Feed/Live/Alert/API/Web 保持原 PID；21:39 自然 source 1755=45×39，Live/Alert 追尾，Reference 有意积压 270。只读候选分类 267 条比较全部可逐条证明，覆盖180路；无 quarantine/original terminal/pending，相关 checkpoint 均10/23 15:00，无恢复或 FLAT 需求。分类生产写入、独立历史重算、全品种 CLOSED 后精确冷切与新版本自然接续验收尚未完成，不声明 RUNTIME_READY。
+
+证据：`output/data-three-repair-20261023/`、`output/operational-audit-20261023/`；工程记录见 [来源修订修复](docs/tasks/reference-source-revision-20261023.md)。
+
+## 10/22 夜间三项数据修复已执行，64路自然H1验收待发生
+
+按owner交办恢复Live/Feed、补齐AL2612/PG2612/PS2612/SI2612 D1并修复原240路H1异常。22:00–23:00的45夜盘品种source/completed各2700根自然1m，权威端点缺失0；旧原始观察缺口与Feed buffer未知保留。D1实际44次来源请求/44个月分区，AL204/PS205/SI205有效Bar；PG190有效+5条既有零OHL质量事实，四品种SuBing输入只读valid/ready，未发Event或通知。
+H1完成236旧日中断及L4原子冲突重置；首caller因22/23点真实原件已齐而拒绝多余night-prefix gap，安全停止记录保留。独立新continuation用两根真实L原件暖机并建立23:45未来FLAT，完整读回后恢复原Reference PID29965/gen22。23:13正式720路为656 READY/64 OBSERVATION_LAGGING，来源不可用/冲突/pending Capture均0，四日journal全追尾；176夜路正常消费者实际计算至23:00，原件身份与原始时间验证通过。
+剩64路为15无夜盘品种60路+L4，权威下一H1均10/23 10:00；另88夜路震荡/融合availability仍真实warming，不冒充全指标ready。旧20108批次/6129核对/645动作无缺失改写。新暖机21定向、exact v16兼容8项、Ruff/OpenSpec/diff/secret及独立Review通过。正式仍v1.15.16/gen22，无Scope/Rule/公式/交易阶段变更，不宣称第三项自然验收或全局RUNTIME_READY。详见[三项修复记录](docs/tasks/data-three-repair-20261022.md)。
+
+## 10/22 Reference 遗留冲突修复完成，晨盘自然验收待发生
+
+按owner指定顺序完成92夜盘原件暖机与PG四路换主力边界。正常原件使用独立retained证明，不伪造repair收据；PG以权威PG2611→PG2612相邻rank1边界和两根真实新合约H1执行原生kernel reset，未继承旧合约指标/参考仓位。PG震荡仍真实NEWOW_OSCILLATION_WARMING，趋势/主升浪availability ready原样保留。
+08:30完整读回720 READY、冲突/滞后/pending Capture均0；累计212冲突与40gap精确收据通过，旧18352批次/5721核对/611动作逐条无缺失改写。Reference与本次attempt前像同PID62430/gen22 active，四日source/completed消费者全追尾，无有效维护drain；heartbeat ready在cycle/scan采样间变化，last_success=null/pending_keys112保留，不替代完整业务health或新自然H1证据。148定向测试通过/6跳过，Ruff/OpenSpec strict/diff及独立Review通过；exact v16隔离checkpoint消费、commit/restart/fusion兼容验证通过，fixture非自然证据。
+维护源码33bcd5ae7/db236c39d已集成develop；正式常驻仍v1.15.16/gen22，无公式/Scope/Rule/通知/交易阶段变更。新恢复96路未来起点10/22 09:00，首晨自然H1尚未发生；不以即时恢复证明自然业务或全局RUNTIME_READY。详见[恢复记录](docs/tasks/reference-recovery-20261021.md)。
+
+## 10/22 凌晨 Reference 第六步部分恢复
+
+按owner定时交办续接：原240路H1历史种子全部完成并独立核对READY/active、checkpoint与manifest摘要，截至10/21 15:00。第五步40路缺口与2601条旧积压已恢复正常消费。前向冲突累计116/212恢复（本轮新增28），旧18352批次/5721核对/611动作逐条无缺失改写。原生定向测试48 passed/6 skipped，独立Review与精确收据读回通过。
+剩96冲突：23夜盘组92路需完整普通原件warm authority；现有v1要求actual repair plan/readback，不能伪造或把Live改称Canonical；PG4路owner边界未证明。直接改未来起点会遗漏夜盘kernel输入，已由原生端点复现并阻止。凌晨新28路未来09:00起点不代表首晨自然验收。正式应用仍v1.15.16/gen22，无公式/Scope/Rule/通知/交易阶段变化；不声明第六步完成或全局RUNTIME_READY。详见[第五六步恢复记录](docs/tasks/reference-recovery-20261021.md)。
+
+## 10/21 FU2701 日线预热缺口已修复
+
+按owner交办，仅FU2701上市日至2026-10-21的1d物理预热完成：10次RQData请求、10个月分区发布、191根权威日线，0质量事实；后验原生计划零目标，旧文件哈希保持。独立Review通过。开发API8002新鲜60m综合判断HTTP200，日线与60m的趋势/震荡事实均ready；周线两项仍unavailable，不声明全周期完整。开发日线页面已读至10/21、当前合约FU2701。未改公式、应用源码或Runtime配置，未重启、发布、重放或通知；自然业务与送达验收仍独立。详见[日线修复记录](docs/tasks/fu-daily-warmup-20261021.md)。
+
+## 10/21 苏冰前四步输入修复完成，20路独立重算通过
+
+owner交办的四品种16路分钟预热、PR/PX/SF/ZN四路日线和十路warming核实已完成。AL2612/FU2701/ZN2612/PX2612真实修复43个月1m输入（320025根），重建172个月5/15/30/60m派生；PX/ZN D1另补22个月407端点。PR39/SF1/PX21条原零收盘价经三次新鲜来源逐值核对后，按既有NonpositiveCloseFact合同替换9质量分区，保留时间/七数值及其他Bar。
+原生warmup75测试、quality/rewarm46测试通过；独立只读验收REPAIR_INPUTS_VERIFIED：16分钟+4日线内核valid/ready，20份分钟后验计划零缺口，61facts与旧Bar及旧文件逐值/哈希核对通过；独立Review无阻塞。十路输入完整但有效段不足，继续真实warming，不伪造READY。正式十项身份仍v1.15.16/gen22/c559eb7a5，应用源码/配置未变，无发布或重启。没有手工Event/重放/补发，整体health仍degraded，自然Runtime确认PENDING_NEXT_NATURAL_TRIGGER；Reference问题不在本轮。详见[输入修复记录](docs/tasks/subing-input-repair-20261021.md)。
+
+## 10/21 正式运行已统一 v1.15.16 / gen22
+
+按owner交办执行实际恢复与all10冷切换，正式十项binding、installed/loaded配置与六常驻进程已统一为v1.15.16/gen22/c559eb7a594dea5189c7a630b010a284032e89f4，运行根.worktrees/release-v1.15.16，schema20261015_0052不变；四calendar空闲。API8000返回1.15.16，Web5173 index与exact发布dist逐字一致，研究API/Web代理与冻结snapshot身份一致，576格研究结果可读。
+原Live/Feed恢复失败attempt与旧Feed观察缺口未知保留，没有重放、回填、补发或扩大Scope。冷切换drain/stop/install完成，start十effect各一次committed；最终即时owner采样失败记录保留，未重跑启动。最终独立版本读回VERSION_CONVERGENCE_VERIFIED通过：十项正式身份一致、六PID双轮稳定、API/Web与冻结研究可读、journal/Live原像保持。完整业务数据库验收仍未通过，版本一致不等于RUNTIME_READY。
+Reference完整矩阵仍720 enabled/480 READY/200 DATA_CONFLICT/40 OBSERVATION_LAGGING/pending Capture0；固定时点720行完整health与切换前逐字一致。既有disabled历史candidate按原生重建计划继续推进，原caller未覆盖此进度而拒绝，未修改冻结caller或把失败attempt改绿；对初始三条候选已完成完整旧表哈希复原与batch链解释；后续持续推进的全部候选尚未完成整体验收，保留其断言失败，不宣称全部不可变事实核验通过。新版本自然Bar/Event、盘后业务及手机实际送达待验收；未启用Paper/Shadow/Broker/订单。离线caller191、Runtime54+19测试与exact树build通过；详见[正式运行收敛记录](docs/tasks/runtime-unify-v1.15.16.md)。
+
+## 10/21 v1.15.16 期货双向研究与L.M.S证据已发布
 
 本轮发布范围为已集成develop的期货双向研究/详情页模式，以及L.M.S 4.0.5 JM2605时间线、周期还原和价格核验文档。原版牛哇保持默认；冻结研究不是正式策略晋升，OOS_NOT_PROVEN及资金不足、换月/数据中断等状态保留。冻结大文件留在本地显式结果根，不随Git发布。
 本轮候选实跑：期货研究定向179 passed，版本/健康/canonical24 passed，完整Web1165 passed/3 skipped，浏览器4 passed；uv lock离线校验、类型/build/topology、secret零发现及diff检查通过。数值实现沿用此前独立Review及全量核验，本轮只更新应用版本和发布记录。
-本次只发布main/tag/GitHub Release，不切换Runtime，不启用持续Paper、通知、Shadow、Broker或订单。发布最终身份以远端main、annotated tag peeled和GitHub Release精确读回为准；原正式Runtime及其未完成自然验收边界保持。
+本次只发布main/tag/GitHub Release，不切换Runtime，不启用持续Paper、通知、Shadow、Broker或订单。发布PR464已合并；远端main与annotated tag v1.15.16 peeled均为c559eb7a594dea5189c7a630b010a284032e89f4，合并树与验证候选81e200703c一致。GitHub Release非draft/非prerelease，target为同一精确commit，现场远端读回通过。证据CSV统一LF并核对解析内容不变。原正式Runtime及其未完成自然验收边界保持。
 
 ## 10/21 期货双向研究与详情页开关已集成 develop
 

@@ -108,6 +108,6 @@ export function projectNewowAuxiliaryReadiness(value: NewowAuxiliaryValue | null
 }
 
 /** A readable old snapshot is useful for charts but cannot make the current quote fresh. */
-export function newowQuoteFreshness(hasQuote: boolean, dailyPendingUpdate: boolean): 'fresh' | 'unavailable' {
-  return hasQuote && !dailyPendingUpdate ? 'fresh' : 'unavailable'
+export function newowQuoteFreshness(hasQuote: boolean, dailyPendingUpdate: boolean): 'fresh' | 'stale' | 'unavailable' {
+  return !hasQuote ? 'unavailable' : dailyPendingUpdate ? 'stale' : 'fresh'
 }

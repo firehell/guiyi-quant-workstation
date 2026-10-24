@@ -1665,3 +1665,11 @@ Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading
 `guiyi_daily_weekly_path_v3` 的 active 图为 `newow_historical_path_v3402_v1` 历史买卖双线、预测区、周状态背景和 ETA，原 periods 只保留来源事实，不再渲染阶段示意。使用完整普通页面参考投影及物理/质量段内样本，forceClose 不生成真实卖点；缺样本、日历或周状态明确不可用，不跨段拼线。ETA 保留原式日期数组限幅并披露，不外推未来交易日，不作为执行预测。股票私有 target/cost 不反推；期货价格仍使用公开标识的 Canonical 通道。
 
 现有 explanation GET 在 `decision_v2=true` 时可附 `path_strategy=trend|oscillation|main_rise|fusion|osc-test|osc-test2|osc-test3|osc-test4`，参数加入缓存身份。该参数只选择普通页面路径的交易来源，不改变 CDV2 背景公式；主升浪周背景使用自身信号，实验使用震荡背景，融合缺独立周背景时明确不可用。理论收益/范围页签与此普通路径独立，不能标成理论路径。所有历史日期采用上海日，instant 按真实时刻比较。
+
+
+### 首页派生展示投影
+
+首页使用持久化预计算投影，接口、构建时序、失效和缓存边界见
+`openspec/specs/market-home-overview/spec.md` 的首页投影合同。首页摘要与普通页面参考收益在显式
+构建中复用本域原计算；不保留短期snapshot token，不改变详情独立校验或收益口径。
+旧进程展示缓存及home-card-display-cache入口已退出，不保留兼容reader。

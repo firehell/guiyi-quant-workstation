@@ -172,3 +172,8 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 在同一 checkout 的 `apps/quant-web` 运行 `npm run dev:develop`，页面为 `http://localhost:5175/market`，HTTP 与 WebSocket 默认代理到同一 develop API8002。正式5173/8000不随此命令切换。
 
 首页控盘复用确认 Bar 的现有控盘指标；日线收益展示现有 ordinary 页面参考收益及参考交易数，零手续费与滑点，不是牛哇私有最佳周期准确率或账户收益。目标／吸筹空间以确认收盘价计算；日周综合信号与日线参考价格分别表达。缺失或身份不匹配的数据继续显示待确认。
+
+
+首页策略联调先显式执行 `guiyi home build --output <开发派生文件>`，启动8002 API时设置
+`GUIYI_HOME_PROJECTION_PATH` 指向该文件。首页GET只读投影，首次缺失不会自动计算。
+正式默认投影与开发文件分离；不要为预览启用盘后任务或切换正式Runtime。

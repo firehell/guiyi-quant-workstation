@@ -163,11 +163,15 @@ export function useNewowReferenceParts(
     clear()
     mode.value = 'closed'
     requestedWindow.value = window
-    await load(true)
-    if (!curve.value || error.value) return false
-    await loadHistory()
+    const pending = load(true)
+    const own = generation
+    await pending
+    if (own !== generation || !curve.value || error.value) return false
+    await loadHistory(own)
+    if (own !== generation) return false
     for (let page = 0; page < 100 && history.value?.value?.reference_part === 'history'
-      && history.value.value.next_before && !historyError.value && !historyCapped.value; page++) await loadMore()
+      && history.value.value.next_before && !historyError.value && !historyCapped.value && own === generation; page++) await loadMore()
+    if (own !== generation) return false
     if (!complete.value) historyError.value = '完整记录未能核对，当前不显示双策略参考统计。'
     return complete.value
   }

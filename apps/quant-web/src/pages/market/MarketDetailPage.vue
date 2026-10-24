@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
 import { useDetailPricePreview } from '@/composables/useDetailPricePreview'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
@@ -20,7 +20,6 @@ import NewowProductWorkspace from '@/components/market/detail/newow/NewowProduct
 import NewowAiAnalysisDialog from '@/components/market/detail/newow/NewowAiAnalysisDialog.vue'
 import type { AiCombo } from '@/api/newowAiAnalysis'
 import '@/styles/marketDetailUnified.css'
-import { resetNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowQuoteFreshness } from '@/utils/newowDetailPresentation'
 import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
 import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
@@ -31,7 +30,6 @@ import type { ProductOption } from '@/utils/productSearch'
 import { normalizeProductOptions } from '@/utils/productSearch'
 import {
   loadMarketDetailPreferences,
-  defaultMarketDetailPreferences,
   replaceFreeDetailPreferences,
   replaceHtdyDetailPreferences,
   replaceNewowDetailPreferences,
@@ -46,14 +44,6 @@ const seriesPreferenceMigrated = ref(false)
 const preferences = ref(loadMarketDetailPreferences(undefined, () => { seriesPreferenceMigrated.value = true }))
 if (seriesPreferenceMigrated.value) saveMarketDetailPreferences(preferences.value)
 const workspaceVisible = ref(true)
-async function resetDisplayPreferences() {
-  workspaceVisible.value = false
-  await nextTick()
-  preferences.value = defaultMarketDetailPreferences()
-  saveMarketDetailPreferences(preferences.value)
-  resetNewowUiPreferences()
-  workspaceVisible.value = true
-}
 const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
@@ -296,7 +286,9 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 
     <template v-else-if="routeResult.kind === 'valid'">
       <MarketDetailTopBar
-        :hide-back="isNewowView"
+        static-identity
+        :display-date="header?.tradingDay"
+        hide-back
         :product-name="header?.productName ?? routeResult.identity.symbol.toUpperCase()"
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
@@ -306,7 +298,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @select-symbol="productSelector?.focus()"
         @open-history="openHistory"
       />
-      <MarketDetailQuoteHeader v-if="!isFuturesMode && !controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :unified="isWorkspacePreview" :newow="isNewowView" />
+      <MarketDetailQuoteHeader v-if="!isFuturesMode && !controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :unified="isWorkspacePreview" :newow="isNewowView" :hide-extended-facts="['htdy', 'subing', 'free'].includes(routeResult.identity.view)" />
       <MarketDetailViewNav
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
@@ -317,12 +309,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @contract-cleared="selectContractCleared"
         @ai-analysis="aiOpen = true"
       >
-        <template v-if="!isNewowView" #display-controls>
-          <details class="market-detail-page__display-controls">
-            <summary>显示设置</summary>
-            <button type="button" class="gy-reset-display" @click="resetDisplayPreferences">重置页面显示</button>
-          </details>
-        </template>
       </MarketDetailViewNav>
       <NewowAiAnalysisDialog v-if="isOriginalNewow" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
@@ -394,6 +380,8 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :research-error="controller.researchError.value"
             :preferences="preferences.free"
             :has-more-before="controller.hasMoreBefore.value"
+            :loading-before="controller.loadingBefore.value"
+            :history-error="controller.historyError.value"
             :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
             @update-preferences="updateFreePreferences"
@@ -410,6 +398,8 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :error="controller.state.value.error"
             :preferences="preferences.htdy"
             :has-more-before="controller.hasMoreBefore.value"
+            :loading-before="controller.loadingBefore.value"
+            :history-error="controller.historyError.value"
             :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
             @update-preferences="updateHtdyPreferences"
@@ -427,6 +417,8 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :loading="controller.state.value.loading"
             :error="controller.state.value.error"
             :has-more-before="controller.hasMoreBefore.value"
+            :loading-before="controller.loadingBefore.value"
+            :history-error="controller.historyError.value"
             :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
             @history-availability="hasSubingHistory = $event"
@@ -439,9 +431,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 </template>
 
 <style scoped>
-.market-detail-page__display-controls { position:relative; color:var(--gy-text-muted); font-size:12px; }
-.market-detail-page__display-controls summary { cursor:pointer; white-space:nowrap; }
-.market-detail-page__display-controls .gy-reset-display { position:absolute; right:0; top:100%; z-index:10; white-space:nowrap; box-shadow:0 3px 12px #0002; }
 .newow-chart-frequency { display:flex; align-items:center; gap:0; padding:2px; border-radius:6px; background:#eeeeef; }
 .unified-detail-light .newow-chart-frequency button { min-height:22px; height:22px; border:0; border-radius:4px; padding:0 8px; color:#666; background:transparent; font-size:11px; line-height:22px; font-weight:500; cursor:pointer; white-space:nowrap; }
 .newow-chart-frequency button:hover { color:#333; }

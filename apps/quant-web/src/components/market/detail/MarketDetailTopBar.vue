@@ -7,6 +7,8 @@ defineProps<{
   displayContract: string | null
   historyLabel?: string
   hideBack?: boolean
+  staticIdentity?: boolean
+  displayDate?: string | null
   actions: {
     canOpenHistory: boolean
     canManageAlert: boolean
@@ -22,19 +24,24 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <header class="detail-topbar" :class="{ 'detail-topbar--without-back': hideBack }" data-detail-section="topbar">
+  <header class="detail-topbar" :class="{ 'detail-topbar--without-back': hideBack, 'detail-topbar--stock-title': staticIdentity }" data-detail-section="topbar">
     <button v-if="!hideBack" class="detail-topbar__back" type="button" aria-label="返回市场" @click="emit('back')">
       <MarketDetailIcon name="back" />
       <span>返回市场</span>
     </button>
 
-    <button class="detail-topbar__identity" type="button" aria-label="切换品种或合约" @click="emit('select-symbol')">
+    <div v-if="staticIdentity" class="detail-topbar__identity detail-topbar__identity--static">
+      <span class="detail-topbar__name">{{ productName }}</span>
+      <span class="detail-topbar__contract">{{ displayContract || symbol.toUpperCase() }}</span>
+    </div>
+    <button v-else class="detail-topbar__identity" type="button" aria-label="切换品种或合约" @click="emit('select-symbol')">
       <span class="detail-topbar__name">{{ productName }}</span>
       <span class="detail-topbar__contract">{{ displayContract || symbol.toUpperCase() }}</span>
       <MarketDetailIcon name="chevron-down" :size="18" />
     </button>
 
     <div class="detail-topbar__actions" role="group" aria-label="详情页操作">
+      <span v-if="staticIdentity" class="detail-topbar__date">日期：{{ displayDate || '—' }}</span>
       <button
         v-if="actions.canOpenHistory"
         class="detail-topbar__action detail-topbar__history"
@@ -83,8 +90,9 @@ const emit = defineEmits<{
   cursor: pointer;
 }
 .detail-topbar__back { display: inline-flex; align-items: center; gap: var(--gy-space-1); padding: 0 var(--gy-space-2); white-space: nowrap; }
+.detail-topbar__identity--static { cursor: default; }
 .detail-topbar__identity { display: flex; align-items: center; gap: var(--gy-space-2); min-width: 0; padding: 0 var(--gy-space-2); text-align: left; }
-.detail-topbar__identity:hover,
+button.detail-topbar__identity:hover,
 .detail-topbar__action:hover,
 .detail-topbar__back:hover { background: var(--gy-bg-hover); }
 .detail-topbar button:focus-visible { outline: 2px solid var(--gy-border-focus); outline-offset: 2px; }
@@ -102,5 +110,16 @@ const emit = defineEmits<{
   .detail-topbar__history span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .detail-topbar__action { padding: 0 var(--gy-space-2); }
   .detail-topbar__contract { display: none; }
+}
+.detail-topbar--stock-title { min-height: 30px; border-bottom: 0; background: transparent; gap: 12px; }
+.detail-topbar--stock-title .detail-topbar__identity { min-height: 24px; padding: 0; gap: 8px; }
+.detail-topbar--stock-title .detail-topbar__name { color: #161616; font-size: 18px; font-weight: 700; line-height: 24px; }
+.detail-topbar--stock-title .detail-topbar__contract { display: inline; color: #888; font-size: 13px; line-height: 24px; }
+.detail-topbar__date { order: 2; color: #aaa; font-size: 11px; white-space: nowrap; }
+@media (max-width: 640px) {
+  .detail-topbar--stock-title { min-height: 30px; gap: 8px; }
+  .detail-topbar--stock-title .detail-topbar__name { font-size: 16px; }
+  .detail-topbar--stock-title .detail-topbar__contract { font-size: 12px; }
+  .detail-topbar__date { font-size: 10px; }
 }
 </style>

@@ -89,18 +89,26 @@ class DatabaseCoverageSource:
 
     def latest_complete_day(self, products: tuple[str, ...]) -> date:
         """各品种最近「交易日已收盘」的日期，取多品种最小值作为统一 through 上界。"""
+        return self.latest_complete_day_with_refresh_at(products)[0]
+
+    def latest_complete_day_with_refresh_at(self, products: tuple[str, ...], *, now: datetime | None = None) -> tuple[date, datetime]:
+        """Same completed-day authority plus its next clock invalidation boundary."""
         values: list[date] = []
-        current = self._now().astimezone(SHANGHAI)
+        current = (now or self._now()).astimezone(SHANGHAI)
         today = current.date()
+        boundaries = [datetime.combine(today + timedelta(days=1), datetime.min.time(), SHANGHAI)]
+        calendar_by_exchange: dict[str, date | None] = {}
         for symbol in products:
             exchange = self._exchange(symbol)
-            value = self.session.scalar(
-                select(func.max(TradingCalendar.trade_date)).where(
-                    TradingCalendar.exchange_code == exchange,
-                    TradingCalendar.is_trading_day.is_(True),
-                    TradingCalendar.trade_date <= today,
+            if exchange not in calendar_by_exchange:
+                calendar_by_exchange[exchange] = self.session.scalar(
+                    select(func.max(TradingCalendar.trade_date)).where(
+                        TradingCalendar.exchange_code == exchange,
+                        TradingCalendar.is_trading_day.is_(True),
+                        TradingCalendar.trade_date <= today,
+                    )
                 )
-            )
+            value = calendar_by_exchange[exchange]
             if value is None:
                 raise InfrastructureError("TRADING_CALENDAR_MISSING")
             # 若最大交易日是今天但会话尚未结束，回退到上一交易日，避免拉未完成日 bar。
@@ -117,9 +125,10 @@ class DatabaseCoverageSource:
                     value = self._previous_trading_day(exchange, today)
                 else:
                     if current < session_end:
+                        boundaries.append(session_end)
                         value = self._previous_trading_day(exchange, today)
             values.append(value)
-        return min(values)
+        return min(values), min(boundaries)
 
     def latest_metadata_day(self, products: tuple[str, ...]) -> date:
         """metadata bootstrap 可安全同步到的最近已知交易日，不依赖 SessionClock。"""
@@ -516,6 +525,20 @@ class DatabaseCoverageSource:
             return ()
         days = self.contract_trading_days(fact, lower, upper)
         return self.expected_bar_ends_for_trading_days(key, days)
+
+    def contract_session_windows(self, key: DatasetKey, trading_day: date) -> tuple[SessionWindow, ...]:
+        """Resolve one exact physical-contract day without scanning unrelated dates."""
+        if key.kind is not DatasetKind.CONTRACT:
+            raise InfrastructureError("CONTRACT_IDENTITY_MISMATCH")
+        fact = MarketCatalog(self.session, PROJECT_ROOT).contract_fact(key.symbol, key.series_or_contract)
+        if self.contract_trading_days(fact, trading_day, trading_day) != (trading_day,):
+            raise InfrastructureError("TRADING_CALENDAR_MISSING")
+        batch = SessionWindowBatch(self.session, exchange=fact.exchange, symbol=key.symbol,
+                                   trading_days=(trading_day,))
+        try:
+            return batch.windows(trading_day)
+        except SessionClockError as exc:
+            raise InfrastructureError(exc.code) from exc
 
     def sessions(
         self,

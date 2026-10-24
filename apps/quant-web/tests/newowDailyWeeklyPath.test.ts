@@ -98,3 +98,25 @@ test('history presentation formats long prices and supplies finite price-axis ti
  assert.equal(g.yTicks.length,4)
  assert.ok(g.yTicks.every(t=>Number.isFinite(t.y)&&!t.label.includes('000000')))
 })
+
+for (const frequency of ['1d','1w','60m'] as const) {
+ test(`historical ${frequency} path binds calculation identity within its own period`,()=>{
+  const raw=historyWire(), addon=raw.explanation.value.decision_v2
+  raw.meta.identity.frequency=frequency
+  raw.meta.identity.profile_id=`newow_product_trend_${frequency}_v1`
+  if(frequency==='1w')raw.meta.futures_adaptation_version='newow_futures_weekly_quality_segment_v1'
+  addon.daily_weekly_path.history.source.calculation_segment_id=frequency+'-calc'
+  const current=addon.daily_weekly_path.periods.find((row:any)=>row.frequency==='1d').current
+  addon.prices={formula_version:'newow_target_absorb_selection_v3_3_81_v1',as_of:NEWOW_AS_OF,executable:false,current_price:current,previous_close:null,shared:{target:null,absorb:null},status_card:{target:null,absorb:null}}
+  const request={...pathRequest,frequency}
+  normalizeNewowProductResponse(raw,request)
+  for(const field of ['physical_contract','segment_id']) {
+   const bad=structuredClone(raw);bad.explanation.value.decision_v2.daily_weekly_path.history.source[field]='foreign'
+   assert.throws(()=>normalizeNewowProductResponse(bad,request),/path/)
+  }
+  if(frequency==='1d') {
+   const bad=structuredClone(raw);bad.explanation.value.decision_v2.daily_weekly_path.history.source.calculation_segment_id='foreign'
+   assert.throws(()=>normalizeNewowProductResponse(bad,request),/path.calculation_segment/)
+  }
+ })
+}

@@ -9,6 +9,9 @@ from starlette.requests import Request
 from app.api import market_newow, market_subing_reference
 from app.reference_trading.persisted_newow import PersistedNewowReference
 from app.reference_trading.query import QueryConflict
+from app.reference_trading.signal_window import query_signal_window
+from app.market_data.subing_reference import SubingReferenceError
+from test_signal_window import Service, query
 
 
 @pytest.mark.parametrize('obsolete_mode', ('legacy', 'persisted', 'invalid'))
@@ -47,37 +50,63 @@ def test_subing_public_saved_failure_never_calls_on_demand_or_observation(monkey
     assert error.value.status_code in (409, 503)
 
 
-def test_subing_rejects_prefix_revision_during_presentation_read(monkeypatch):
+class SavedSignals:
+    def streams(self, **kwargs):
+        assert kwargs['mode'] == 'historical_replay'
+        return [dict(stream_id='saved', formula_versions=['subing_ths_15m_v3'], reference_model_version='saved-model')]
+    def signals(self, *args, **kwargs):
+        return dict(snapshot='snapshot', revision_id='revision', seq=3, items=[], next_cursor=None)
+    def trades(self, *args, **kwargs):
+        assert kwargs['snapshot_token'] == 'snapshot'
+        return dict(snapshot='snapshot', revision_id='revision', seq=3, items=[], next_cursor=None)
+
+
+def test_subing_signal_window_requires_current_source_proof_before_saved_points():
+    service = Service()
+    request = replace(query(service), strategy='subing')
+    with pytest.raises(SubingReferenceError, match='SOURCE_IDENTITY_UNVERIFIED'):
+        query_signal_window(service, request, persisted_query=SavedSignals())
+    seen = []
+    result = query_signal_window(service, request, persisted_query=SavedSignals(),
+        verify_persisted_source=lambda **kwargs: seen.append(kwargs))
+    assert len(seen) == 2 and seen[0]['revision_id'] == 'revision' and seen[0]['seq'] == 3
+    assert result['recording_mode'] == 'historical_replay' and result['items'] == []
+    def revised(**kwargs): raise QueryConflict('SOURCE_IDENTITY_UNVERIFIED')
+    with pytest.raises(QueryConflict, match='SOURCE_IDENTITY_UNVERIFIED'):
+        query_signal_window(service, request, persisted_query=SavedSignals(), verify_persisted_source=revised)
+
+
+def test_subing_signal_source_change_during_read_rejects_even_unchanged_visible_metadata():
+    service = Service()
+    request = replace(query(service), strategy='subing')
+    calls = []
+    def prefix_proof(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 2:
+            raise QueryConflict('SOURCE_IDENTITY_UNVERIFIED')
+    with pytest.raises(QueryConflict, match='SOURCE_IDENTITY_UNVERIFIED'):
+        query_signal_window(service, request, persisted_query=SavedSignals(), verify_persisted_source=prefix_proof)
+    assert len(calls) == 2
+
+
+def test_shared_saved_source_gate_rejects_earlier_prefix_revision(monkeypatch):
     from datetime import UTC, date, datetime
     from app.reference_trading import persisted_subing
-    from app.market_data.subing_reference import SubingReferenceQuery
-    now = datetime(2026, 10, 23, 7, tzinfo=UTC)
-    day = date(2026, 10, 23)
     saved = dict(query_since='2025-01-01', reader='subing_reference',
         input_fingerprints=['warmup-old', 'visible-same'],
         calendar_session_effective_fingerprints=['sessions'])
     current = dict(saved)
     service = persisted_subing.PersistedSubingReference.__new__(persisted_subing.PersistedSubingReference)
-    service._check_cancelled = lambda: None
-    service._market = SimpleNamespace(resolve_read_window=lambda _: (day, day, now, now))
+    service._market = object()
     service._stored_manifest = lambda **kwargs: (object(), saved)
     monkeypatch.setattr(persisted_subing, 'HistoricalStreamRequest', lambda *args: args)
     class Reader:
         def __init__(self, **kwargs): pass
         def plan_stream(self, request): return SimpleNamespace(dependency_manifest=current)
     monkeypatch.setattr(persisted_subing, 'MarketDataHistoricalInputReader', Reader)
-    fields = ('closed_count', 'win_count', 'loss_count', 'flat_count', 'open_count',
-        'interrupted_count', 'rollover_interrupted_count', 'data_interrupted_count',
-        'initial_count', 'win_rate_pct', 'mean_return_pct', 'sum_return_percentage_points')
-    def summary(*args, **kwargs):
-        # Only the earlier warmup prefix changes; visible presentation remains equal.
-        current['input_fingerprints'] = ['warmup-new', 'visible-same']
-        return dict.fromkeys(fields, 0)
-    service._query = SimpleNamespace(
-        streams=lambda **kwargs: [dict(stream_id='saved', formula_versions=['subing-v1'], reference_model_version='v1')],
-        trades=lambda *args, **kwargs: dict(snapshot='saved', revision_id='rev', seq=3, items=[], next_cursor=None),
-        summary=summary,
-        signals=lambda *args, **kwargs: dict(items=[], next_cursor=None),
-    )
+    args = dict(stream_id='saved', revision_id='revision', seq=3,
+        through=date(2026, 10, 23), as_of=datetime(2026, 10, 23, 7, tzinfo=UTC))
+    service.verify_source(**args)
+    current['input_fingerprints'] = ['warmup-revised', 'visible-same']
     with pytest.raises(QueryConflict, match='SOURCE_IDENTITY_UNVERIFIED'):
-        service.query(SubingReferenceQuery('rb', day, day, now, None, 50, '15m'))
+        service.verify_source(**args)

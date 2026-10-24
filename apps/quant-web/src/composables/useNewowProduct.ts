@@ -405,11 +405,9 @@ export function useNewowProduct(options: UseNewowProductOptions) {
               asOf.value = context.as_of
               if (context.frequency === '1d') dailySnapshot.value = context
               else weeklySnapshot.value = context
-              if (context.freshness === 'pending_update') {
-                resources.chart.state.value = 'stale'
-                resources.chart.error.value = '当前周期待更新，仅显示价格预览；可切换历史回看。'
-                return
-              }
+              // Freshness describes publication lag, not chart validity. Accept
+              // the verified completed snapshot and pin dependents to its cutoff.
+              // accept() keeps pending snapshots out of the current-signal viewport.
             } else if (request.identity.frequency === '1d' || request.identity.frequency === '1w') {
               failConflict('chart', 'NEWOW_RESPONSE_INVALID')
               return
@@ -600,6 +598,9 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     return {
       meta: response.meta,
       section: 'chart',
+      // Pagination extends this same verified snapshot; it must not erase the
+      // completed-period context used by dated quotes and freshness labels.
+      ...(prior?.snapshotContext ? { snapshotContext: prior.snapshotContext } : {}),
       status: prior!.status,
       value: {
         ...value,

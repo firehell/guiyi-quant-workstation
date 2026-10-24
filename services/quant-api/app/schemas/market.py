@@ -154,6 +154,8 @@ class MarketHomeSectorOut(BaseModel):
 class MarketHomeOverviewResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    projection_status: Literal["ready", "updating", "stale", "failed", "missing"] = "ready"
+
     status: Literal["ready", "degraded"]
     target_as_of: date
     data_as_of: date

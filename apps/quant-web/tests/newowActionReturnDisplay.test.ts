@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { newowActionReturnDisplay, newowActionStatus } from '../src/utils/newowActionReturnDisplay.ts'
 import type { NewowReferenceTrade } from '../src/types/newowProduct.ts'
-const callout = { id: 'exit-1', time: '2026-09-01T15:00:00', physicalContract: 'RB2610', price: '3022', title: '清仓', detail: '参考价 3022', tone: 'loss' as const, above: true }
+const callout = { id: 'exit-1', time: '2026-09-01T15:00:00Z', physicalContract: 'RB2610', price: '3022', title: '清仓', detail: '参考价 3022', tone: 'loss' as const, above: true }
 const trade = { status: 'CLOSED', strategy_code: 'trend', exit_signal_id: callout.id, exit_bar_end: callout.time, exit_reference_price: callout.price, physical_contract: callout.physicalContract, reference_return_pct: '0.4' } as NewowReferenceTrade
 test('closed exact exit displays authoritative return with profit/loss colors', () => {
   assert.deepEqual(newowActionReturnDisplay(callout, 'trend', [trade]), { text: '3022(+0.4%)', direction: 'up' })
@@ -31,4 +31,16 @@ test('interruption belongs only to the exact entry and is not closed PnL', () =>
   assert.equal(newowActionStatus(callout, 'trend', [interrupted]), null)
   assert.equal(newowActionStatus(entry, 'oscillation', [interrupted]), null)
   assert.equal(newowActionReturnDisplay(callout, 'trend', [interrupted]).direction, 'neutral')
+})
+
+// Persisted Canonical references serialize UTC as +00:00; chart actions use Z.
+test('Canonical UTC and Decimal serialization preserve exact exit identity', () => {
+  const chart = { ...callout, time: '2026-09-01T07:00:00Z' }
+  const stored = { ...trade, exit_bar_end: '2026-09-01T07:00:00+00:00', exit_reference_price: '3022.00' }
+  assert.deepEqual(newowActionReturnDisplay(chart, 'trend', [stored]), { text: '3022(+0.4%)', direction: 'up' })
+  assert.equal(newowActionReturnDisplay(chart, 'trend', [{ ...stored, exit_bar_end: '2026-09-01T07:00:01+00:00' }]).direction, 'neutral')
+  assert.equal(newowActionReturnDisplay(chart, 'trend', [{ ...stored, exit_reference_price: '3022.0000000000000001' }]).direction, 'neutral')
+  assert.equal(newowActionReturnDisplay(chart, 'trend', [{ ...stored, exit_bar_end: '2026-09-01T07:00:00.000001+00:00' }]).direction, 'neutral')
+  const entry = { ...chart, above: false }
+  assert.equal(newowActionStatus(entry, 'trend', [{ ...stored, status: 'DATA_INTERRUPTED', entry_signal_id: chart.id, entry_bar_end: stored.exit_bar_end, entry_reference_price: '3022.0' }]), '数据中断')
 })

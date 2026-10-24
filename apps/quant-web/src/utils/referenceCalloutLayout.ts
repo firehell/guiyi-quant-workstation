@@ -1,5 +1,6 @@
 import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
 
+export const NIUWA_CALLOUT_BOX = Object.freeze({ width: 96, height: 28 })
 export const REFERENCE_CALLOUT_BOX = Object.freeze({ width: 96, height: 38 })
 export const REFERENCE_CALLOUT_COMPACT = Object.freeze({ width: 28, height: 28 })
 const REFERENCE_CALLOUT_MICRO = Object.freeze({ width: 8, height: 8 })
@@ -148,19 +149,20 @@ function clamp(value: number, minimum: number, maximum: number): number {
 export function matchesReferenceBar(callout: Pick<KlineReferenceCallout, 'time' | 'physicalContract'>, bar: { time: string; physicalContract?: string }): boolean { return bar.physicalContract === callout.physicalContract && Date.parse(bar.time) === Date.parse(callout.time) }
 
 /** Public Niuwa four-direction search: redraw visible labels on zoom; never merge signal facts. */
-export function layoutNiuwaReferenceCallouts(points: readonly ProjectedCallout[], width: number, height: number, reserved: readonly Rectangle[] = []): PositionedCallout[] {
+export function layoutNiuwaReferenceCallouts(points: readonly ProjectedCallout[], width: number, height: number, reserved: readonly Rectangle[] = [], preserveAllActions = false): PositionedCallout[] {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 4 || height <= 4) return []
   const placed: PositionedCallout[] = []
   const directions = [[0, -1], [0.7, -0.7], [0, 1], [-0.7, -0.7]] as const
   const ordered = points.filter(point => point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height)
     .sort((a, b) => Number(b.expanded === true) - Number(a.expanded === true) || a.x - b.x || a.callout.id.localeCompare(b.callout.id))
   for (const point of ordered) {
-    const boxWidth = boundedDimension(point.boxWidth, 96)
-    const boxHeight = boundedDimension(point.boxHeight, 30)
-    if (boxWidth > width - 4 || boxHeight > height - 4) continue
+    const boxWidth = boundedDimension(point.boxWidth, NIUWA_CALLOUT_BOX.width)
+    const boxHeight = boundedDimension(point.boxHeight, NIUWA_CALLOUT_BOX.height)
+    const fitsBox = boxWidth <= width - 4 && boxHeight <= height - 4
+    if (!fitsBox && !preserveAllActions) continue
     const preference = point.callout.above ? [2, 1, 3, 0] : [0, 3, 1, 2]
     let best: Rectangle | null = null
-    for (const distance of [28, 48, 72, 100]) {
+    for (const distance of fitsBox ? [28, 48, 72, 100] : []) {
       let bestDistance = Infinity
       for (const index of preference) {
         const [dx, dy] = directions[index]!
@@ -175,10 +177,18 @@ export function layoutNiuwaReferenceCallouts(points: readonly ProjectedCallout[]
       }
       if (best) break
     }
-    // Crowding only suppresses the text box. Native markers and reference records retain every action.
+    // Newow may retain its native action markers; generic charts instead preserve every
+    // action as an accessible compact node when its full label cannot fit.
+    let compact = false
+    if (!best && preserveAllActions) {
+      compact = true
+      best = findPlacement(point, 12, 12, width, height, [...placed, ...reserved])
+        ?? findPlacement(point, 8, 8, width, height, [...placed, ...reserved])
+        ?? { left: clamp(point.x - 4, 2, Math.max(2, width - 10)), top: clamp(point.y - 4, 2, Math.max(2, height - 10)), width: Math.min(8, width - 4), height: Math.min(8, height - 4) }
+    }
     if (best) {
       const line = lineEndpoint(point.x, point.y, best)
-      placed.push({ ...point, ...best, compact: false, lineX: line.x, lineY: line.y })
+      placed.push({ ...point, ...best, compact, lineX: line.x, lineY: line.y })
     }
   }
   return placed.sort((a, b) => a.x - b.x || a.callout.id.localeCompare(b.callout.id))

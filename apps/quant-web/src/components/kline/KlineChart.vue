@@ -19,7 +19,8 @@ import {
   type WhitespaceData,
 } from 'lightweight-charts'
 import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
-import { layoutReferenceCallouts, matchesReferenceBar, REFERENCE_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
+import ReferenceCalloutLabels from './ReferenceCalloutLabels.vue'
+import { layoutNiuwaReferenceCallouts, matchesReferenceBar, NIUWA_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
 import type {
   BarData,
@@ -35,7 +36,8 @@ import {
   toKlineDisplayTimeForPeriod,
 } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
-import { initialChartLogicalRange } from '@/utils/chartViewport'
+import { visibleRangeDetectorCount } from '@/utils/rangeDetectorStatus'
+import { initialChartLogicalRange, prependChartLogicalRange } from '@/utils/chartViewport'
 import {
   buildKlineDerivedData,
   resolveKlineHoverContext,
@@ -44,6 +46,8 @@ import {
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { referencePriceLevelSegments } from '@/utils/referencePriceLevels'
 import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitive'
+
+import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -54,6 +58,7 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators?: MainIndicatorId[]
   rangeDetectorSourceIdentity?: string
   rangeDetectorAnchorTime?: string | null
+  showDerivedMarkers?: boolean
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
   markerSelectionEnabled?: boolean
@@ -68,6 +73,7 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators: () => [],
   rangeDetectorSourceIdentity: '',
   rangeDetectorAnchorTime: null,
+  showDerivedMarkers: true,
   alertMarkers: () => [],
   researchMarkers: () => [],
   markerSelectionEnabled: true,
@@ -78,6 +84,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'need-more-before': []
+  'visible-from-change': [time: string | null]
+  'range-detector-result': [result: { count: number; calculationMs: number }]
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
   'marker-select': [marker: KlineMarker]
@@ -102,14 +110,16 @@ function projectReferenceCallouts() {
       if (!bar) return []
       const x = chart!.timeScale().timeToCoordinate(chartTime(bar))
       const y = candles!.priceToCoordinate(Number(callout.price))
+      const high = candles!.priceToCoordinate(bar.high), low = candles!.priceToCoordinate(bar.low)
       return x === null || y === null ? [] : [{
         callout, x, y,
-        boxWidth: REFERENCE_CALLOUT_BOX.width,
-        boxHeight: REFERENCE_CALLOUT_BOX.height,
+        candle: high === null || low === null ? undefined : { left: x - 8, top: Math.min(high, low) - 3, width: 16, height: Math.abs(low - high) + 6 },
+        boxWidth: Math.max(NIUWA_CALLOUT_BOX.width, Math.min(180, Math.max(callout.title.length, callout.detail.length) * 7 + 14)),
+        boxHeight: NIUWA_CALLOUT_BOX.height,
         expanded: isReferenceSelected(callout),
       }]
     })
-    positionedCallouts.value = layoutReferenceCallouts(points, width, height)
+    positionedCallouts.value = layoutNiuwaReferenceCallouts(points, width, height, [], true)
     positionedSelection.value = props.referenceSelection.flatMap(selection => {
       const bar = renderedBars.find(item => matchesReferenceBar(selection, item))
       if (!bar) return []
@@ -142,6 +152,11 @@ const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
+const rangeCalculationMs = ref(0)
+const rangeCount = ref(0)
+const visibleRangeCount = ref(0)
+const lastVisibleFrom = ref<string | null>(null)
+const macdPointCount = ref(0)
 let isNearLeftBoundary = false
 let paginationArmed = false
 let followLatest = true
@@ -149,6 +164,8 @@ const hoverContext = ref<HoverKlineContext | null>(null)
 const macdLabelTop = ref<number | null>(null)
 const chartViewportReady = ref(false)
 let derivedData = buildKlineDerivedData([], [])
+// One latest result only; normalized Bar arrays are replaced on every input mutation.
+let rangeCache: { bars: BarData[]; key: string; result: NonNullable<typeof derivedData.rangeDetector> } | null = null
 let renderedMarkerById = new Map<string, KlineMarker>()
 let viewportStabilityFrame: number | null = null
 let viewportStabilityTarget: ChartViewportRange | null = null
@@ -241,6 +258,7 @@ onUnmounted(() => {
   chart?.unsubscribeClick(onClick)
   observer?.disconnect()
   container.value?.removeEventListener('pointerup', syncMacdLabelTop)
+  rangeCache = null
   chart?.remove()
 })
 
@@ -303,6 +321,7 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   renderedBars = normalizeBarSeries(bars)
   if (!chart) return
   paginationArmed = false
+  lastVisibleFrom.value = null
   renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
   const targetRange = visibleRange ?? initialChartLogicalRange(renderedBars.length)
@@ -310,9 +329,12 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   else chart.timeScale().fitContent()
   beginViewportStabilityCheck(targetRange)
   requestAnimationFrame(() => {
-    const range = chart?.timeScale().getVisibleLogicalRange()
-    isNearLeftBoundary = !!range && range.from <= 20
+    // Initial placement is not a pagination request. Even when the first
+    // page fills the viewport, the first user move toward its left edge
+    // must be allowed to request history.
+    isNearLeftBoundary = false
     paginationArmed = true
+    publishVisibleFrom(chart?.timeScale().getVisibleLogicalRange() ?? null)
     syncMacdLabelTop()
   })
 }
@@ -359,6 +381,12 @@ function prependBars(bars: BarData[]): void {
   renderedBars = normalizeBarSeries([...bars, ...renderedBars])
   const prependedCount = renderedBars.length - previousLength
   if (!prependedCount) return
+  // An initial warm-up page can arrive before the stability RAF finishes.
+  // Shift both targets, otherwise the next RAF would restore the old indices.
+  viewportStabilityTarget = prependChartLogicalRange(viewportStabilityTarget, prependedCount)
+  viewportStableFrames = 0
+  const wasArmed = paginationArmed
+  paginationArmed = false
   renderAllSeries()
   if (visibleRange) {
     chart.timeScale().setVisibleLogicalRange({
@@ -366,6 +394,8 @@ function prependBars(bars: BarData[]): void {
       to: visibleRange.to + prependedCount,
     })
   }
+  paginationArmed = wasArmed
+  publishVisibleFrom(chart.timeScale().getVisibleLogicalRange())
 }
 
 function updateBar(bar: BarData): void {
@@ -407,6 +437,21 @@ function revealTime(iso: string, exact = false): boolean {
   return true
 }
 
+function publishRangeResult(range = chart?.timeScale().getVisibleLogicalRange() ?? null) {
+  const from = range ? renderedBars[Math.max(0, Math.min(renderedBars.length - 1, Math.floor(range.from)))]?.time ?? null : null
+  const to = range ? renderedBars[Math.max(0, Math.min(renderedBars.length - 1, Math.ceil(range.to)))]?.time ?? null : null
+  visibleRangeCount.value = visibleRangeDetectorCount(derivedData.rangeDetector?.ranges ?? [], from, to, renderedBars.at(-1)?.time ?? null)
+  emit('range-detector-result', { count: visibleRangeCount.value, calculationMs: rangeCalculationMs.value })
+}
+
+function publishVisibleFrom(range: LogicalRange | null) {
+  if (!range || !renderedBars.length) return
+  const index = Math.max(0, Math.min(renderedBars.length - 1, Math.floor(range.from)))
+  const time = renderedBars[index].time
+  if (time !== lastVisibleFrom.value) { lastVisibleFrom.value = time; emit('visible-from-change', time) }
+  publishRangeResult(range)
+}
+
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   scheduleReferenceCallouts()
   if (!range || !renderedBars.length) return
@@ -416,6 +461,7 @@ function onVisibleLogicalRangeChange(range: LogicalRange | null) {
     emit('follow-latest-change', isFollowing)
   }
   if (!paginationArmed || props.loading) return
+  publishVisibleFrom(range)
   const nearLeftBoundary = range.from <= 20
   if (!nearLeftBoundary) {
     isNearLeftBoundary = false
@@ -464,28 +510,25 @@ function renderAllSeries(): void {
 
 function renderDerivedSeries(): void {
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
+  const calculationStarted = performance.now()
+  const rangeEnabled = props.visibleMainIndicators.includes('range_detector') && Boolean(props.rangeDetectorSourceIdentity) && Boolean(props.rangeDetectorAnchorTime)
+  const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])
+  const cachedRange = rangeEnabled && rangeCache?.bars === renderedBars && rangeCache.key === rangeKey ? rangeCache.result : null
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
-    rangeDetector: {
-      enabled: props.visibleMainIndicators.includes('range_detector')
-        && Boolean(props.rangeDetectorSourceIdentity)
-        && Boolean(props.rangeDetectorAnchorTime),
-      sourceIdentity: props.rangeDetectorSourceIdentity,
-      anchorTime: props.rangeDetectorAnchorTime,
-    },
+    rangeDetector: { enabled: rangeEnabled && !cachedRange, sourceIdentity: props.rangeDetectorSourceIdentity, anchorTime: props.rangeDetectorAnchorTime },
   })
-  if (props.referenceIndicators) {
-    const byIdentity = new Map(props.referenceIndicators.map(point => [`${Date.parse(point.bar_end)}:${point.physical_contract}`, point]))
-    const exact = renderedBars.flatMap(bar => {
-      const point = byIdentity.get(`${Date.parse(bar.time)}:${bar.physicalContract ?? ''}`)
-      return point ? [{ time: bar.time, point }] : []
-    })
-    const values = (key: 'dif' | 'dea' | 'macd' | 'ema21') => exact.map(({ time, point }) => ({
-      time, value: point[key] === null ? Number.NaN : Number(point[key]),
-    }))
-    derivedData.ema.ema_21 = values('ema21')
-    derivedData.macd.dif = values('dif')
-    derivedData.macd.dea = values('dea')
-    derivedData.macd.histogram = values('macd')
+  if (cachedRange) derivedData.rangeDetector = cachedRange
+  if (rangeEnabled && derivedData.rangeDetector) rangeCache = { bars: renderedBars, key: rangeKey, result: derivedData.rangeDetector }
+  else rangeCache = null
+  rangeCalculationMs.value = performance.now() - calculationStarted
+  rangeCount.value = derivedData.rangeDetector?.ranges.length ?? 0
+  publishRangeResult()
+  const referenceOverlay = referenceIndicatorOverlay(renderedBars, props.referenceIndicators)
+  if (referenceOverlay) {
+    derivedData.ema.ema_21 = referenceOverlay.ema21
+    derivedData.macd.dif = referenceOverlay.dif
+    derivedData.macd.dea = referenceOverlay.dea
+    derivedData.macd.histogram = referenceOverlay.histogram
   }
   referenceLevelSeries.forEach(series => chart!.removeSeries(series))
   referenceLevelSeries = []
@@ -519,6 +562,7 @@ function renderDerivedSeries(): void {
     ribbonTime,
   )
 
+  macdPointCount.value = derivedData.macd.dif.filter(point => Number.isFinite(point.value)).length
   macdDif.setData(chartValues(derivedData.macd.dif))
   macdDea.setData(chartValues(derivedData.macd.dea))
   macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => (
@@ -536,14 +580,14 @@ function renderDerivedSeries(): void {
 
 function mergedDisplayMarkers(): KlineMarker[] {
   return mergeKlineMarkers(
-    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    mergeKlineMarkers(props.showDerivedMarkers ? derivedData.htdy?.markers ?? [] : [], props.alertMarkers),
     props.researchMarkers,
   )
 }
 
 function markersForHoverContext(): KlineMarker[] {
   return mergeKlineMarkers(
-    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    mergeKlineMarkers(props.showDerivedMarkers ? derivedData.htdy?.markers ?? [] : [], props.alertMarkers),
     props.researchMarkers,
   )
 }
@@ -656,23 +700,26 @@ defineExpose({
     class="kline-shell"
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
+    :data-macd-point-count="macdPointCount"
     :data-reference-target-segments="referenceTargetSegments"
     :data-reference-stop-segments="referenceStopSegments"
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-marker-count="mergedDisplayMarkers().length"
+    :data-rendered-marker-times="mergedDisplayMarkers().map(marker => marker.time).join(',')"
+    :data-rendered-marker-ids="mergedDisplayMarkers().map(marker => marker.id).join(',')"
     :data-rendered-research-marker-count="researchMarkers.length"
     :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
-    :data-range-detector-range-count="derivedData.rangeDetector?.ranges.length ?? 0"
+    :data-range-detector-range-count="rangeCount"
+    :data-range-detector-visible-range-count="visibleRangeCount"
+    :data-range-detector-calculation-ms="rangeCalculationMs"
+    :data-visible-from="lastVisibleFrom"
     :data-chart-viewport-ready="chartViewportReady"
   >
     <div ref="container" class="chart" @pointermove="scheduleReferenceCallouts" @pointerup="scheduleReferenceCallouts" @wheel="scheduleReferenceCallouts" />
     <div v-for="selection in positionedSelection" :key="selection.time" class="reference-candle-selection" aria-hidden="true" :style="{ left: `${selection.x - 6}px`, height: `${selection.height}px` }" />
     <div v-if="referenceCallouts.length" class="reference-callouts" aria-label="历史重算参考信号">
-      <svg class="reference-callouts__lines" aria-hidden="true"><line v-for="item in positionedCallouts.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
-      <div v-for="item in positionedCallouts" :key="item.callout.id" role="img" class="reference-callout" :class="[{ 'reference-callout--density-node': item.compact, 'reference-callout--compact': item.compact, 'reference-callout--selected': isReferenceSelected(item.callout) }, `reference-callout--${item.callout.tone}`]" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-reference-id="item.callout.id" :data-reference-time="item.callout.time" :data-reference-contract="item.callout.physicalContract" :data-reference-price="item.callout.price" :aria-label="`${item.callout.title}，参考价 ${item.callout.detail}，历史重算`">
-        <template v-if="!item.compact"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><i v-else class="reference-callout__node" aria-hidden="true" />
-      </div>
+      <ReferenceCalloutLabels :items="positionedCallouts.map(item => ({ position: item, title: item.callout.title, detail: item.callout.detail, direction: item.callout.tone === 'gain' ? 'up' : item.callout.tone === 'loss' ? 'down' : 'neutral', selected: isReferenceSelected(item.callout), labelClass: 'reference-callout', ariaLabel: `${item.callout.title}，参考价 ${item.callout.detail}，历史重算` }))" />
     </div>
     <KlineHoverLegend
       :context="hoverContext"
@@ -705,17 +752,7 @@ defineExpose({
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .reference-candle-selection { position: absolute; top: 0; width: 12px; background: #aa927b2b; border-inline: 1px solid #8b653d; pointer-events: none; z-index: 2; }
-.reference-callout--selected { outline: 2px solid #8b653d; background: rgb(255 243 217 / .78); }
 .reference-callouts { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
-.reference-callouts__lines { width: 100%; height: 100%; position: absolute; inset: 0; stroke: rgb(155 129 105 / .76); stroke-width: 1; }
-.reference-callout { position: absolute; pointer-events: none; display: grid; place-content: center; gap: 1px; box-sizing: border-box; padding: 3px; overflow: hidden; border: 1px solid rgb(170 146 123 / .82); border-radius: 3px; background: rgb(255 254 250 / .78); color: #665343; font-size: 9px; line-height: 1.1; text-align: center; box-shadow: 0 1px 3px rgb(140 115 85 / .1); }
-.reference-callout strong { font-weight: 600; font-size: 10px; }
-.reference-callout strong, .reference-callout span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reference-callout--gain span { color: #ff403a; }
-.reference-callout--loss span { color: #22b95d; }
-.reference-callout--density-node { min-width: 0; min-height: 0; }
-.reference-callout--compact { padding: 0; place-items: center; }
-.reference-callout__node { width: 6px; height: 6px; border-radius: 50%; background: #8b653d; }
 .chart { width: 100%; height: 100%; }
 .secondary-panel-label { position: absolute; z-index: 3; left: 10px; min-height: 26px; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-primary); font-size: var(--gy-font-size-xs); font-weight: 600; pointer-events: none; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }

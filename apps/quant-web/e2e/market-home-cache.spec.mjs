@@ -1,3 +1,4 @@
+import { homeProjection } from './fixtures/home-projection.mjs'
 import { expect, test } from '@playwright/test'
 import { lightHomeOverview } from './fixtures/market-home-light.mjs'
 import { mockMarketDetail, installDetailFakeWebSocket } from './market-detail.helpers.mjs'
@@ -5,7 +6,7 @@ import { mockMarketDetail, installDetailFakeWebSocket } from './market-detail.he
 async function setup(page) {
   await mockMarketDetail(page)
   await installDetailFakeWebSocket(page)
-  const control = { slow: false, fail: false, target: '120', overviewCalls: 0, cardCalls: 0, conditional: 0, errors: [] }
+  const control = { stale: false, missing: false, slow: false, fail: false, target: '120', overviewCalls: 0, cardCalls: 0, conditional: 0, errors: [] }
   page.on('pageerror', error => control.errors.push(error.message))
   const overview = lightHomeOverview()
   const delay = async () => { if (control.slow) await new Promise(resolve => setTimeout(resolve, 1800)) }
@@ -15,14 +16,19 @@ async function setup(page) {
     control.overviewCalls++; await delay()
     if (control.fail) return route.fulfill({ status:503, json:{detail:{code:'UNAVAILABLE'}} })
     if (route.request().headers()['if-none-match'] === '"overview-fixture"') { control.conditional++; return route.fulfill({status:304,headers:{ETag:'"overview-fixture"'}}) }
-    return route.fulfill({json:overview,headers:{ETag:'"overview-fixture"'}})
+    return route.fulfill({json:{...overview, ...(control.stale ? {projection_status:'stale'} : {})},headers:{ETag:'"overview-fixture"'}})
   })
-  await page.route('**/api/v1/market/newow/home-cards?*', async route => {
+  await page.route('**/api/v1/market/newow/home-projection', async route => {
     control.cardCalls++; const target = control.target; await delay()
     if (control.fail) return route.fulfill({status:503,json:{detail:{code:'UNAVAILABLE'}}})
-    const products = new URL(route.request().url()).searchParams.get('products').split(',')
-    const fact = product => ({ status:'ready', state:'HOLD', as_of:'2026-09-04T07:00:00Z', bar_end:'2026-09-04T07:00:00Z', physical_contract:`${product.toUpperCase()}2611`, segment_id:'s', calculation_segment_id:'c', input_sha256:'a'.repeat(64), formula_versions:['fixture-v1'], page_parity:true, executable:false, display_projection_version:'newow_home_display_v1', display_as_of:'2026-09-04T07:01:00Z', target: product === 'a' ? target : '120', absorb:'90', reference_current:'100', snapshot_token:'fixture-token' })
-    return route.fulfill({json:{schema_version:'newow_home_cards_v2', requested_at:'2026-09-04T07:01:00Z', items:products.map(product => ({product, strategies:{trend:{'1d':fact(product),'1w':fact(product)},oscillation:{'1d':{status:'warming',state:null},'1w':{status:'unavailable',state:null}}}}))}})
+    const products = overview.items.map(item => item.symbol)
+    if (control.missing) {
+      const value = homeProjection(products.map(product => ({product,strategies:Object.fromEntries(['trend','oscillation'].map(s=>[s,Object.fromEntries(['1d','1w'].map(p=>[p,{status:'unavailable',state:null}]))]))})))
+      for (const item of value.items) { item.projection_status='missing'; item.computed_at=null;item.period_status={'1d':'missing','1w':'missing'} }
+      return route.fulfill({json:value})
+    }
+    const fact = product => ({ status:'ready', state:'HOLD', as_of:'2026-09-04T07:00:00Z', bar_end:'2026-09-04T07:00:00Z', physical_contract:`${product.toUpperCase()}2611`, segment_id:'s', calculation_segment_id:'c', input_sha256:'a'.repeat(64), formula_versions:['fixture-v1'], page_parity:true, executable:false, display_projection_version:'newow_home_display_v1', display_as_of:'2026-09-04T07:01:00Z', target: product === 'a' ? target : '120', absorb:'90', reference_current:'100' })
+    return route.fulfill({json:homeProjection(products.map(product => ({product, strategies:{trend:{'1d':fact(product),'1w':fact(product)},oscillation:{'1d':{status:'warming',state:null},'1w':{status:'unavailable',state:null}}}})))})
   })
   return control
 }
@@ -97,4 +103,25 @@ test('reload failure retains labelled cached facts and never reports current hea
   await expect(page.getByText(/行情刷新失败/)).toBeVisible()
   await expect(page.locator('.strategy-list-item').first()).toContainText(/保留上次快照|快照待核对/)
   expect(control.errors).toEqual([])
+})
+
+
+test('missing server projection retains browser history with explicit rebuild status', async({page})=>{
+ const control=await setup(page);await page.goto('/market')
+ const row=page.locator('.strategy-list-item').first()
+ await expect(row.locator('.list-reference')).toHaveText('120.00')
+ control.missing=true
+ await page.getByRole('button',{name:'刷新',exact:true}).click()
+ await expect(row).toContainText('摘要待重建，保留历史快照')
+ await expect(row.locator('.list-reference')).toHaveText('120.00')
+})
+
+
+test('cold browser displays server lastgood rows and strategy facts with stale label', async ({page}) => {
+  const control = await setup(page)
+  control.stale = true
+  await page.goto('/market')
+  await expect(page.locator('.strategy-list-item')).toHaveCount(60)
+  await expect(page.locator('.list-reference').first()).toHaveText('120.00')
+  await expect(page.getByRole('alert')).toContainText('上一份成功快照')
 })

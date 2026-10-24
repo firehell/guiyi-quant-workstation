@@ -10,6 +10,8 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
   let generation = 0
   let controller = new AbortController()
   let symbol = ''
+  let active: SubingReferenceResponse | null = null
+  let pageCount = 0
   const capped = ref(false)
   const pages = createReferencePageState<SubingReferenceResponse['items'][number]>(item => item.reference_trade_id)
   async function refresh(nextSymbol: string, query: SubingReferenceQuery = {}) {
@@ -17,34 +19,45 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
     const signal = controller.signal
     const current = ++generation
     symbol = nextSymbol.toLowerCase(); const expected = symbol
-    pages.reset(); capped.value = false; data.value = null; error.value = null; loading.value = true
+    pages.reset(); active = null; pageCount = 0; capped.value = false; data.value = null; error.value = null; loading.value = true
     try {
       const result = normalizeSubingReference(await fetch(expected, query, signal), expected)
       if (query.frequency && result.frequency !== query.frequency || query.since && result.performance_since !== query.since || query.through && result.performance_through !== query.through || query.as_of && Date.parse(result.as_of) !== Date.parse(query.as_of)) throw new Error('identity')
       if (current === generation) {
         pages.first(referenceIdentity(result), result.items, result.next_before)
         capped.value = pages.capped
-        data.value = { ...result, items: pages.items }
+        active = result; pageCount = 1
+        data.value = { ...result, items: pages.items, loaded_history_since: result.performance_since, history_sources: [{ since: result.performance_since, through: result.performance_through, source: result.input_snapshot_hash }] }
       }
     } catch (reason) { if (current === generation) error.value = referenceReadError(reason) }
     finally { if (current === generation) loading.value = false }
   }
   async function loadMore() {
-    const previous = data.value
-    if (capped.value || !previous?.next_before || loading.value) return
+    const previous = active
+    const earlier = previous && !previous.next_before ? previous.previous_window : null
+    if (capped.value || !previous || !data.value || (!previous.next_before && !earlier) || loading.value) return
     const current = generation; const expected = symbol; const signal = controller.signal
     loading.value = true; error.value = null
     try {
-      const result = normalizeSubingReference(await fetch(expected, { ...(previous.frequency === '15m' ? {} : { frequency: previous.frequency }), since: previous.performance_since, through: previous.performance_through, as_of: previous.as_of, before: previous.next_before }, signal), expected)
+      const result = normalizeSubingReference(await fetch(expected, { ...(previous.frequency === '15m' ? {} : { frequency: previous.frequency }), ...(earlier ? earlier : { since: previous.performance_since, through: previous.performance_through, as_of: previous.as_of, before: previous.next_before! }) }, signal), expected)
       if (current !== generation) return
-      if (referenceIdentity(result) !== referenceIdentity(previous) || JSON.stringify(result.summary) !== JSON.stringify(previous.summary) || JSON.stringify(result.signals) !== JSON.stringify(previous.signals) || JSON.stringify(result.indicators) !== JSON.stringify(previous.indicators)) throw new Error('snapshot')
-      const items = pages.append(referenceIdentity(result), previous.next_before, result.items, result.next_before)
-      capped.value = pages.capped
-      data.value = { ...result, items, next_before: pages.cursor }
-    } catch { if (current === generation) { pages.reset(); capped.value = false; data.value = null; error.value = '历史参考快照已变化或分页不可用，请重新读取。' } }
+      if (previous.next_before && (referenceIdentity(result) !== referenceIdentity(previous) || JSON.stringify(result.summary) !== JSON.stringify(previous.summary) || JSON.stringify(result.signals) !== JSON.stringify(previous.signals) || JSON.stringify(result.indicators) !== JSON.stringify(previous.indicators))) throw new Error('snapshot')
+      if (earlier && (result.symbol !== previous.symbol || result.frequency !== previous.frequency || result.series_kind !== previous.series_kind || result.formula_version !== previous.formula_version || result.reference_model_version !== previous.reference_model_version || (result.storage_mode ?? null) !== (previous.storage_mode ?? null))) throw new Error('identity')
+      if (earlier && (result.performance_since !== earlier.since || result.performance_through !== earlier.through || result.performance_through >= previous.performance_since)) throw new Error('window')
+      if (earlier) pages.first(referenceIdentity(result), result.items, result.next_before)
+      else pages.append(referenceIdentity(result), previous.next_before!, result.items, result.next_before)
+      const combined = [...data.value!.items, ...result.items.filter(item => !data.value!.items.some(prior => prior.reference_trade_id === item.reference_trade_id))]
+      if (combined.length > 10000) { capped.value = true; throw new Error('capacity') }
+      active = result; pageCount += 1
+      capped.value = pages.capped || combined.length >= 10000 || pageCount >= 100
+      const sources = data.value!.history_sources ?? []
+      const source = { since: result.performance_since, through: result.performance_through, source: result.input_snapshot_hash }
+      data.value = { ...data.value!, items: combined, next_before: result.next_before, previous_window: result.previous_window, loaded_history_since: result.performance_since, history_sources: sources.some(item => item.source === source.source && item.since === source.since && item.through === source.through) ? sources : [...sources, source], history_capped: capped.value }
+    } catch { if (current === generation) { error.value = '历史参考快照已变化或分页不可用，已载记录保留，请重试或重新读取。' } }
+
     finally { if (current === generation) loading.value = false }
   }
-  function dispose() { generation += 1; controller.abort(); loading.value = false; pages.reset(); capped.value = false; data.value = null }
+  function dispose() { active = null; pageCount = 0; generation += 1; controller.abort(); loading.value = false; pages.reset(); capped.value = false; data.value = null }
   return { capped, data, loading, error, refresh, loadMore, dispose }
 }
 

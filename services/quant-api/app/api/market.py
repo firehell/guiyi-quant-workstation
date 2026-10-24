@@ -7,13 +7,12 @@ from typing import cast
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from app.api.conditional import conditional_json
-from app.market_data.market_home_projection import market_home_response
+from app.market_data.newow.home_projection_composition import build_home_overview_projection as build_market_home_projection
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.market_data.composition import (
     build_market_data_service,
-    build_market_home_projection,
     build_market_research_service,
 )
 from app.market_data.domain import (
@@ -51,11 +50,9 @@ def market_home_overview(
 ) -> Response:
     try:
         projection = build_market_home_projection(session)
-        # The file projection's existing validation contract is unchanged.
-        # Conditional requests require a fresh checked MDS read: a date alone
-        # cannot prove that the client's retained facts remain current.
-        value = (market_home_response(projection.service.snapshot())
-                 if request.headers.get('if-none-match') else projection.read())
+        if getattr(request.state, 'candidate_preview_as_of', None) is not None:
+            raise HTTPException(503, detail={'code': 'HOME_PROJECTION_PREVIEW_UNAVAILABLE'})
+        value = projection.read()
         return conditional_json(request, value.model_dump(mode="json"))
     except MarketHomeOverviewError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc

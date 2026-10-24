@@ -68,6 +68,8 @@ OperationalProductsLoader = Callable[[], tuple[str, ...]]
 SessionAnchorRepairFactory = Callable[[Any], SessionAnchorRepairService]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
+    if args.domain == "home":
+        return False
     if args.domain == "reference":
         return args.reference_command == "plan" or not bool(getattr(args, "apply", False))
     if args.domain == "runtime":
@@ -151,6 +153,11 @@ def build_parser() -> argparse.ArgumentParser:
     reference_resume.add_argument("--resume-token", required=True)
     reference_resume.add_argument("--expected-plan-hash", required=True)
     reference_resume.add_argument("--apply", action="store_true")
+    home = domains.add_parser('home', allow_abbrev=False)
+    home_commands = home.add_subparsers(dest='home_command', required=True)
+    projection = home_commands.add_parser('build', allow_abbrev=False)
+    projection.add_argument('--products', help='Comma separated operational products; default all')
+    projection.add_argument('--output', help='Explicit derived projection file for isolated preview')
     return parser
 
 
@@ -203,7 +210,14 @@ def main(
         return 2
 
     try:
-        if args.domain == "reference":
+        if args.domain == 'home':
+            from app.market_data.newow.home_projection_composition import build_home_projection
+            result = build_home_projection(output_path=args.output).build(args.products.split(',') if args.products else None)
+            counts = {state: sum(item['projection_status'] == state for item in result['items']) for state in ('ready', 'stale', 'failed', 'missing', 'updating')}
+            selected = set(args.products.split(',')) if args.products else {item['product'] for item in result['items']}
+            selected_ready = sum(item['projection_status'] == 'ready' for item in result['items'] if item['product'] in selected)
+            payload = {'command': 'home.build', 'status': 'passed' if selected_ready == len(selected) and result['overview_status'] == 'ready' else 'partial', 'overview_status': result['overview_status'], 'counts': counts, 'selected_count': len(selected), 'readonly': False}
+        elif args.domain == "reference":
             if reference_command_runner is None:
                 from app.guiyi_cli.reference_commands import run_reference_command
 
@@ -429,6 +443,8 @@ def _run_data(
             finally:
                 lease.release()
         result = run_data_command(args, manager, progress_stream=stderr)
+        if args.data_command == "contract-session-repair":
+            return result
         if args.data_command == "contract-warmup":
             return contract_warmup_payload(result)
         return result.as_payload()

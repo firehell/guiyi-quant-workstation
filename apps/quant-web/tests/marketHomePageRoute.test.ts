@@ -57,13 +57,13 @@ test('Home header choice enters selected view and symbol through the page handle
   }
 })
 
-test('restored sector limits strategy requests to displayed rows', async () => {
+test('restored sector filters visible strategy rows', async () => {
   const Page = await loadPage('agriculture'), root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Page)
   try {
     app.mount(root); await nextTick()
     const list = findNode(root, node => node.type === 'button' && node.text === 'OPEN_AG')!
-    assert.deepEqual(list.props.products, ['a'])
+    assert.deepEqual(new Set(list.props.products as string[]), new Set(['cu', 'a']))
     assert.deepEqual((list.props.rows as { symbol: string }[]).map(row => row.symbol), ['a'])
   } finally { app.unmount() }
 })
@@ -171,6 +171,7 @@ function moduleUrl(source: string): string {
 }
 
 interface TestNode {
+  style?: { display: string }
   type: string
   parent: TestNode | null
   children: TestNode[]
@@ -179,7 +180,7 @@ interface TestNode {
 }
 
 function element(type: string): TestNode {
-  return { type, parent: null, children: [], props: {}, text: '' }
+  return { style: { display: '' }, type, parent: null, children: [], props: {}, text: '' }
 }
 
 function findNode(node: TestNode, predicate: (candidate: TestNode) => boolean): TestNode | null {

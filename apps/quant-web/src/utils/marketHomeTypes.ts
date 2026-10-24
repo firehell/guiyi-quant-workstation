@@ -14,6 +14,7 @@ const MARKET_TRENDS = new Set<MarketHomeTrend>(['up', 'down', 'neutral', 'unavai
 export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHomeOverviewResponse {
   const value = record(payload, 'market home overview')
   const status = literal(value.status, ['ready', 'degraded'], 'status')
+  const projectionStatus = literal(value.projection_status ?? 'ready', ['ready', 'updating', 'stale', 'failed', 'missing'], 'projection_status')
   const freshness = literal(value.freshness, ['fresh', 'stale', 'unavailable'], 'freshness')
   const items = array(value.items, 'items').map((item, index) => normalizeItem(item, index))
   const participantCount = count(value.participant_count, 'participant_count')
@@ -45,7 +46,7 @@ export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHom
     || (freshness === 'stale' && (staleCount === 0 || unavailableCount !== 0))
     || (freshness === 'unavailable' && unavailableCount === 0)
   ) throw new Error('market home overview status and freshness are inconsistent')
-  return { status, target_as_of: targetAsOf, data_as_of: dataAsOf, freshness, active_count: activeCount, participant_count: participantCount, stale_count: staleCount, unavailable_count: unavailableCount, summary, items, sectors }
+  return { ...(value.projection_status === undefined ? {} : { projection_status: projectionStatus }), status, target_as_of: targetAsOf, data_as_of: dataAsOf, freshness, active_count: activeCount, participant_count: participantCount, stale_count: staleCount, unavailable_count: unavailableCount, summary, items, sectors }
 }
 
 /** Cache stores the normalized view model; reconstitute Decimal wire fields only after finite-number checks. */

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vue'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
 import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
@@ -49,7 +50,7 @@ import { newowComparisonCompatible } from '@/utils/newowComparison'
 import { mergeNewowDualReferences, layoutNewowDualCallouts, newowDualDominance, newowDualVisibleStatistics, type DualPoint } from '@/utils/newowDualChartDisplay'
 import { NewowDualBackgroundPrimitive } from '@/components/market/detail/newow/newowDualBackgroundPrimitive'
 import { initialNewowChartLogicalRange } from '@/utils/chartViewport'
-import { layoutNiuwaReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
+import { NIUWA_CALLOUT_BOX, layoutNiuwaReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import {
   buildNewowProductChartModel,
   buildNewowActionCallouts,
@@ -150,7 +151,7 @@ const comparisonDominant = ref<'trend' | 'oscillation' | null>(null)
 const trendTrack = ref(true)
 const oscillationTrack = ref(true)
 const comparisonBackground = ref(true)
-const ACTION_LABEL_BOX = { width: 96, height: 30 }
+const ACTION_LABEL_BOX = NIUWA_CALLOUT_BOX
 const container = ref<HTMLElement | null>(null)
 const auxiliaryToolbar = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
@@ -797,16 +798,9 @@ function onFullscreenChange(): void {
   fullscreen.value = document.fullscreenElement === stageRoot.value
   resize()
 }
-async function toggleFullscreen(): Promise<void> {
-  fullscreenError.value = null
-  try {
-    if (document.fullscreenElement === stageRoot.value) await document.exitFullscreen()
-    else if (stageRoot.value?.requestFullscreen) await stageRoot.value.requestFullscreen()
-    else fullscreenError.value = '当前浏览器不支持图表全屏。'
-  } catch { fullscreenError.value = '无法进入图表全屏。' }
-}
 
-defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
+
+defineExpose({ revealSignal, scrollToLatest })
 </script>
 
 <template>
@@ -853,15 +847,14 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
                   <button type="button" :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button>
                 </template>
               </details>
-              <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
               <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
-              <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
             </div>
             <p v-if="!comparisonActive && referenceTradesComplete === false" class="newow-product-chart-stage__reference-record-status" role="status">单笔参考收益仅显示已核对记录；未显示收益不代表没有交易。下方参考记录可按需加载。</p>
           </div>
         </details>
       </div>
     </div>
+    <p v-if="!comparisonActive && referenceStatsError" class="newow-product-chart-stage__reference-record-status" role="status">清仓参考收益读取未完成：{{ referenceStatsError }} <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">重试</button></p>
     <div v-if="comparisonActive" class="newow-product-chart-stage__dual-summary" aria-label="双策略本视图摘要" :title="referenceTradesComplete === false ? '历史记录按需分页，未证明覆盖全部图表信号；仅显示已核对单笔。' : `统计仅含已绘制清仓标签对应的 ${comparisonStats.samples} 笔已完成参考交易，不含融合配对收益`">主导：{{ comparisonDominant === 'trend' ? '趋势' : comparisonDominant === 'oscillation' ? '震荡' : '—' }} · 上=趋势 下=震荡 · 本视图 {{ comparisonStats.count }} 个信号 · <template v-if="referenceTradesComplete !== false">平均盈亏 {{ comparisonStats.average }} · 胜率 {{ comparisonStats.winRate }} · 最大 {{ comparisonStats.maximum }}</template><template v-else>参考收益需完整记录，当前不显示统计 <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">{{ referenceStatsLoading ? '正在核对完整记录…' : '读取完整参考统计' }}</button><span v-if="referenceStatsError" role="alert">{{ referenceStatsError }}</span></template> · 背景深色=趋势蓝带</div>
     <Teleport defer :to="channelControlsTarget ?? 'body'" :disabled="!channelControlsTarget || fullscreen">
       <NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" />
@@ -894,26 +887,12 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
       :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }"
       aria-label="策略参考动作"
     >
-      <svg aria-hidden="true"><polyline v-for="item in positionedActions" :key="item.callout.id" :points="`${item.x},${item.y} ${item.x},${(item.y + item.lineY) / 2} ${item.lineX},${(item.y + item.lineY) / 2} ${item.lineX},${item.lineY}`" fill="none" /></svg>
-      <div
-        v-for="item in positionedActions"
-        :key="item.callout.id"
-        class="newow-product-chart-stage__action-label"
-        :class="[{ 'is-density-node': item.compact, 'is-compact': item.compact && selectedSignalId !== item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `return-${actionDisplay(item.callout).direction}`]"
-        :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }"
-        :data-action-id="item.callout.id"
-        :data-reference-price="item.callout.price"
-        :data-reference-time="item.callout.time"
-        :data-reference-contract="item.callout.physicalContract"
-        :data-anchor-y="item.y"
-        :aria-label="`${actionTitle(item.callout)}，${actionDisplay(item.callout).text}，策略参考动作`"
-        :title="`${actionTitle(item.callout)} · ${actionDisplay(item.callout).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`"
-      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ actionTitle(item.callout) }}</strong><span>{{ actionDisplay(item.callout).text }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></div>
+      <ReferenceCalloutLabels :items="positionedActions.map(item => ({ position: item, title: actionTitle(item.callout), detail: actionDisplay(item.callout).text, direction: actionDisplay(item.callout).direction, selected: selectedSignalId === item.callout.id, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${actionTitle(item.callout)}，${actionDisplay(item.callout).text}，策略参考动作`, tooltip: `${actionTitle(item.callout)} · ${actionDisplay(item.callout).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
     <div v-if="comparisonActive" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双策略叠加">
       <svg aria-hidden="true"><line v-for="(item,index) in comparisonSwitches" :key="`switch:${index}`" :x1="item.x" y1="20" :x2="item.x" :y2="actionOverlayHeight" stroke-dasharray="4 3" class="dual-switch-line" /><polyline v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" :points="`${item.x},${item.y} ${item.x},${(item.y + item.lineY) / 2} ${item.lineX},${(item.y + item.lineY) / 2} ${item.lineX},${item.lineY}`" fill="none" /><circle v-for="item in positionedComparison" :key="`anchor:${item.origin}:${item.callout.id}`" :cx="item.x" :cy="item.y" r="2.5" :fill="item.callout.above ? '#34c759' : '#ff3b30'" stroke="none" /></svg>
       <div v-for="(item,index) in comparisonSwitches" :key="index" class="newow-product-chart-stage__dual-switch" :style="{ left: `${item.x}px` }" :title="`${item.from === 'trend' ? '趋势' : '震荡'}切换至${item.to === 'trend' ? '趋势' : '震荡'}，仅主图展示主导策略`"><b :class="item.from">{{ item.from === 'trend' ? '趋' : '震' }}</b><span>⇄</span><b :class="item.to">{{ item.to === 'trend' ? '趋' : '震' }}</b></div>
-      <div v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" class="newow-product-chart-stage__action-label" :class="[`return-${actionDisplay(item.callout, item.origin).direction}`, `origin-${item.origin}`]" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-origin-strategy="item.origin" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :data-reference-time="item.callout.time" :data-anchor-y="item.y" :title="`${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}`" :aria-label="`${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`"><strong>{{ detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price) }}</strong><span v-if="detailLabels">{{ actionDisplay(item.callout, item.origin).text }}</span></div>
+      <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
     <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量 <button v-if="yellowVolumeIndexes.length" class="newow-product-chart-stage__volume-help" type="button" @click="showLatestVolumeScore">黄色柱说明</button></span>
@@ -953,26 +932,15 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
 .newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(400px,48vh,650px) + 350px); min-height:690px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
-.newow-product-chart-stage__action-label { position:absolute; pointer-events:none; cursor:default; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:1px 4px; overflow:hidden; border:1.5px solid #AD5734; border-radius:8px; background:var(--gy-bg-panel); color:#665044; font-size:11px; line-height:13px; text-align:center; box-shadow:none; }
-.newow-product-chart-stage__action-label strong { font-size:11px; font-weight:600; }
-.newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { display:block; line-height:13px; overflow:hidden; white-space:nowrap; }
 .newow-product-chart-stage__dual-summary { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0; padding:3px 12px 7px; background:#fafafa; color:var(--gy-text-muted); font-size:11px; font-weight:600; line-height:1.5; }
 .newow-product-chart-stage__reference-record-status { margin:0; padding:2px 12px; color:var(--gy-text-muted); font-size:10px; }
 .newow-product-chart-stage__dual-controls { margin-left:auto; display:flex; align-items:center; gap:4px; }.newow-product-chart-stage__dual-controls button,.newow-product-chart-stage__dual-controls summary { min-height:22px; padding:0 5px; font-size:10px; background:transparent; }.newow-product-chart-stage__dual-controls > button[aria-pressed="true"] { color:var(--gy-bg-panel); background:#ff6b35; border-radius:4px; }.newow-product-chart-stage__dual-controls details { width:36px; height:22px; }
 .newow-product-chart-stage__dual-layer-menu { position:absolute; top:100%; right:0; min-width:128px; padding:4px; border:1px solid #ebedf0; border-radius:4px; background:var(--gy-bg-panel); box-shadow:0 6px 18px #20242b14; }
 .newow-product-chart-stage__dual-layer-menu button { display:block; width:100%; text-align:left; white-space:nowrap; }
 .newow-product-chart-stage__dual-layer-menu button[aria-pressed="true"] { color:#ff6b35; }
-.newow-product-chart-stage__dual-tracks .origin-trend { pointer-events:auto; color:#0a84ff; border-color:#0a84ff; border-radius:3px; background:#fffffff0; }
-.newow-product-chart-stage__dual-tracks .origin-oscillation { pointer-events:auto; color:#ff9500; border-color:#ff9500; border-radius:3px; background:#fffffff0; }
 .newow-product-chart-stage__dual-switch { position:absolute; top:1px; transform:translateX(-50%); display:flex; height:16px; border-radius:4px; overflow:hidden; color:white; font-size:10px; line-height:16px; }
 .newow-product-chart-stage__dual-switch b { padding:0 3px; }.newow-product-chart-stage__dual-switch .trend { background:#0a84ff; }.newow-product-chart-stage__dual-switch .oscillation { background:#ff9500; }.newow-product-chart-stage__dual-switch span { padding:0 2px; background:#666; }
 .newow-product-chart-stage__dual-tracks .dual-switch-line { stroke:var(--gy-text-muted); }
-.newow-product-chart-stage__action-label.return-neutral span { color:#665044; }
-.newow-product-chart-stage__action-label.return-up span { color:#ff3030; }
-.newow-product-chart-stage__action-label.return-down span { color:#159447; }
-.newow-product-chart-stage__action-label.is-density-node { min-width:0; min-height:0; }
-.newow-product-chart-stage__action-label.is-compact { padding:0; place-items:center; }
-.newow-product-chart-stage__action-label.is-selected { z-index:5; outline:2px solid #8B653D; background:#FFF3D9; }
 .newow-product-chart-stage__toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; min-height:48px; flex-shrink:0; border-bottom:1px solid #ebedf0; padding:0 8px; }
 .newow-product-chart-stage__controls,.newow-product-chart-stage__legend { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
 button,summary { min-height:44px; padding:0 10px; border:0; color:var(--gy-text-muted); background:var(--gy-bg-panel); cursor:pointer; font-size:12px; flex-shrink:0; white-space:nowrap; }

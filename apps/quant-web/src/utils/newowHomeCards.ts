@@ -6,7 +6,26 @@ import { newowReferencePrice } from './newowPagePresentation.ts'
 export type HomeStrategy = 'trend' | 'oscillation'
 export type HomePeriod = '1d' | '1w'
 export type HomeState = 'BUILD' | 'HOLD' | 'CLEAR' | 'FLAT'
+export interface HomeIndependentTrend {
+  status: 'ready' | 'warming' | 'unavailable'
+  direction: 'bull' | 'bear' | null
+  formula_version: string
+  frequency: '1d'
+  bar_end: string
+  physical_contract: string
+  segment_id: string
+  calculation_segment_id: string
+  input_sha256: string | null
+  parent_input_sha256: string
+  close: string | null
+  ma60: string | null
+  sample_count: number
+  approximate: true
+  page_parity: false
+  executable: false
+}
 export interface HomePeriodFact {
+  independent_trend?: HomeIndependentTrend | null
   status: 'ready' | 'warming' | 'unavailable'
   state: HomeState | null
   reason_code?: string | null
@@ -45,10 +64,7 @@ export interface HomePeriodFact {
 }
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
 export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[]; restored?: boolean }
-export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string }
-
-/** Fresh session aliases include the complete accepted overview authority. */
-export function homeCardSessionKey(products: readonly string[], authority: string) { return `home:${products.join(',')}:${authority}` }
+export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string; projectionStatus?: import('./newowHomeProjection.ts').ProjectionStatus }
 
 export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
 export const homeStateIcons = { BUILD: '▲', HOLD: '✓', CLEAR: '↘', FLAT: '○' } as const
@@ -83,8 +99,25 @@ export function homeDirectionDisplay(day?: HomePeriodFact, week?: HomePeriodFact
   return up(day.state) ? { label: '日周向上', tone: 'up' } : { label: '日周向下', tone: 'down' }
 }
 
-/** trendMap is an independent source fact; alignment cannot stand in for it. */
-export function homeTrendDisplay() { return { label: '独立趋势来源未确认', tone: 'pending' } as const }
+/** Display the owner's accepted approximation; never derive direction from live quotes. */
+export function homeTrendDisplay(day?: HomePeriodFact, delivery?: Pick<CardDelivery, 'stale' | 'failed' | 'projectionStatus'>): {label: string; title: string; tone: 'up' | 'down' | 'pending'} {
+  const pending = {label:'趋势来源待确认', title:'趋势待重建 · MA60近似规则', tone:'pending' as const}
+  const value = day?.independent_trend
+  if (!value || value.formula_version !== 'guiyi_home_close_ma60_v1' || value.frequency !== '1d'
+    || value.approximate !== true || value.page_parity !== false || value.executable !== false
+    || !value.input_sha256 || value.parent_input_sha256 !== day?.input_sha256
+    || !value.physical_contract || value.physical_contract !== day.physical_contract
+    || !value.segment_id || value.segment_id !== day.segment_id
+    || !value.calculation_segment_id || value.calculation_segment_id !== day.calculation_segment_id
+    || !value.bar_end || value.bar_end !== day.bar_end || previewInstant(value.bar_end) === null) return pending
+  if (value.status === 'warming') return {label:'趋势预热中',title:`MA60近似 · 已完成日线 ${value.sample_count}/60 根`,tone:'pending'}
+  if (value.status !== 'ready' || value.sample_count !== 60 || !['bull','bear'].includes(value.direction ?? '')
+    || comparePositiveDecimalText(value.close, value.ma60) === null) return pending
+  const stale = delivery?.stale || delivery?.failed || (delivery?.projectionStatus && delivery.projectionStatus !== 'ready')
+  const label = `趋势向${value.direction === 'bull' ? '上' : '下'}（MA60近似）`
+  return {label, tone:value.direction === 'bull' ? 'up' : 'down',
+    title:`${stale ? '历史结果 · ' : ''}${label} · 收盘价与60日均线比较 · 截至 ${value.bar_end} · ${value.physical_contract} · 非牛哇原公式`}
+}
 
 const identifiedHomeFact = (fact?: HomePeriodFact): fact is HomePeriodFact & { state: HomeState } => Boolean(
   fact?.status === 'ready' && fact.state && fact.physical_contract && fact.segment_id && fact.calculation_segment_id && fact.input_sha256 && fact.formula_versions?.length
@@ -117,8 +150,35 @@ export function homeCompositeDisplay(day?: HomePeriodFact, week?: HomePeriodFact
   return { state, label: homeStateLabels[state], reference, reason: '' }
 }
 
+/** Text and layout only: consume the existing authenticated composite and prices. */
+export function homeCardPresentation(day?: HomePeriodFact, week?: HomePeriodFact) {
+  const { state } = homeCompositeDisplay(day, week)
+  const price = (value?: string | null) => newowReferencePrice(value).replace(/^—$/, '--')
+  if (!state) return { state, prefix:'日周策略摘要', price:'--', suffix:'', signal:'待确认', glyph:'', context:'日周状态待确认，等待完整数据', stageIndex:-1 }
+  const weeklyLead = week?.state === 'BUILD' || week?.state === 'HOLD'
+  const target = price(day?.target), absorb = price(day?.absorb)
+  const goal = target === '--' ? '日线目标价待确认' : `${target}（日线目标价）`
+  if (state === 'BUILD') {
+    const cost = day?.state === 'BUILD' || day?.state === 'HOLD' ? day.reference_cost
+      : weeklyLead ? week?.reference_cost : null
+    return { state, prefix:'预估当前', price:price(cost ?? day?.absorb), suffix:'附近可以买入', signal:'买入信号', glyph:'▲',
+      context:weeklyLead ? (day?.state === 'BUILD' || day?.state === 'HOLD' ? `日周共振买入，目标看${goal}` : `周线买入（日线未确认），目标看${goal}`) : `日线买入（周线未确认），先反弹到${goal}`, stageIndex:1 }
+  }
+  if (state === 'HOLD') return { state, prefix:'当前持股，目标看', price:target, suffix:'', signal:'持股信号', glyph:'✓',
+    context:weeklyLead ? `周线持股，目标看${goal}` : `日线持股（周线未确认），目标看${goal}`, stageIndex:2 }
+  if (state === 'CLEAR') return { state, prefix:'当前', price:price(day?.reference_current), suffix:'已出现卖出信号', signal:'卖出信号', glyph:'▼',
+    context:`${day?.state === 'CLEAR' || day?.current_event?.kind === 'CLEAR' ? '日线' : '周线'}卖出，等待新的买入信号`, stageIndex:3 }
+  return { state, prefix:'预估当前', price:absorb, suffix:'附近可以关注', signal:'空仓信号', glyph:'×',
+    context:absorb === '--' ? '日周空仓，等待买入信号；日线吸筹价待确认' : `日周空仓，等待买入信号；关注${absorb}（日线吸筹价）`, stageIndex:0 }
+}
+
 export function homeDeliveryNotice(delivery?: CardDelivery) {
-  if (delivery?.stale) return delivery.loading ? delivery.savedAt ? '本地策略快照，正在重新验证' : '策略刷新中，保留上次快照' : delivery.failed ? '策略刷新失败，保留上次快照' : '本地策略快照，等待重新验证'
+  if (delivery?.projectionStatus === 'missing') return delivery.card ? '摘要待重建，保留历史快照' : '计算中… 尚无已发布摘要'
+  if (delivery?.projectionStatus === 'updating') return delivery.card ? '摘要更新中，保留上次结果' : '计算中…'
+  if (delivery?.projectionStatus === 'failed') return delivery.card ? '摘要更新失败，保留上次结果' : '摘要计算失败'
+  if (delivery?.projectionStatus === 'stale' && !delivery.loading) return '历史策略摘要，等待数据更新'
+
+  if (delivery?.stale) return delivery.loading ? delivery.savedAt ? '策略历史快照，正在重新验证' : '策略刷新中，保留上次快照' : delivery.failed ? '策略刷新失败，保留上次快照' : '策略历史快照，等待重新验证'
   if (delivery?.failed) return '策略读取失败，可刷新重试'
   return delivery?.loading || !delivery ? '策略读取中' : null
 }
@@ -149,94 +209,6 @@ export function normalizeHomeCards(value: unknown, products: readonly string[]):
 export function homeCardsReloadIdentity(overview: { target_as_of: string; items: readonly { symbol: string }[] } | null | undefined) {
   return overview ? JSON.stringify([overview.target_as_of, [...overview.items].sort((a, b) => a.symbol.localeCompare(b.symbol))]) : ''
 }
-
-/** Two workers; late/cancelled generations cannot replace a newer snapshot. */
-export function createHomeCardLoader(fetch: (products: string[], signal: AbortSignal) => Promise<HomeCardsResponse>, publish: (items: Record<string, CardDelivery>) => void, cached?: (product: string) => HomeCardsResponse | undefined) {
-  let generation = 0
-  let controller: AbortController | null = null
-  let items: Record<string, CardDelivery> = {}
-  const revisions = new Map<string, number>()
-  type Queue = { generation: number; signal: AbortSignal; products: string[]; workers: Set<Promise<void>> }
-  let queue: Queue | null = null
-  function addProducts(products: readonly string[]) {
-    if (!queue) return
-    for (const product of products) {
-      if (items[product]) continue
-      const snapshot = cached?.(product), card = snapshot?.items.find(item => item.product === product)
-      const validated = card && !snapshot?.restored
-      items[product] = card ? { card, loading: !validated, stale: !validated, failed: false, savedAt: snapshot?.requested_at } : { card: null, loading: true, stale: false, failed: false }
-      if (!card || !validated) queue.products.push(product)
-    }
-    publish({ ...items })
-  }
-  function startWorkers(owner: Queue) {
-    while (owner.products.length && owner.workers.size < 2) {
-      const worker = (async () => {
-        while (owner.products.length && owner.generation === generation && !owner.signal.aborted) {
-          const product = owner.products.shift()!
-          const revision = (revisions.get(product) ?? 0) + 1
-          revisions.set(product, revision)
-          try {
-            const response = normalizeHomeCards(await fetch([product], owner.signal), [product])
-            if (owner.generation !== generation || owner.signal.aborted) return
-            if (revisions.get(product) !== revision) continue
-            items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
-          } catch {
-            if (owner.generation !== generation || owner.signal.aborted) return
-            if (revisions.get(product) !== revision) continue
-            items[product] = { card: items[product]?.card ?? null, loading: false, stale: Boolean(items[product]?.card), failed: true }
-          }
-          publish({ ...items })
-        }
-      })().finally(() => owner.workers.delete(worker))
-      owner.workers.add(worker)
-    }
-  }
-  return {
-    async load(products: readonly string[]) {
-      const current = ++generation
-      controller?.abort()
-      controller = new AbortController()
-      const previous = items
-      items = {}
-      queue = { generation: current, signal: controller.signal, products: [], workers: new Set() }
-      addProducts(products)
-      for (const product of products) {
-        if (items[product]?.loading && previous[product]?.card) items[product] = { ...items[product]!, card: previous[product]!.card, stale: true }
-      }
-      publish({ ...items })
-      startWorkers(queue)
-      await Promise.all([...queue.workers])
-    },
-    admit(products: readonly string[]) {
-      if (!queue || queue.signal.aborted) return
-      const newlyAdmitted = products.filter(product => !items[product])
-      addProducts(products)
-      // A newly visible row takes the next free slot; active reads finish.
-      queue.products = [...newlyAdmitted.filter(product => items[product]?.loading), ...queue.products.filter(product => !newlyAdmitted.includes(product))]
-      startWorkers(queue)
-    },
-    async reloadProduct(product: string) {
-      const current = generation, signal = controller?.signal
-      if (!signal || signal.aborted || !items[product]) return
-      const revision = (revisions.get(product) ?? 0) + 1
-      revisions.set(product, revision)
-      items[product] = { card: items[product]!.card, loading: true, stale: Boolean(items[product]!.card), failed: false }
-      publish({ ...items })
-      try {
-        const response = normalizeHomeCards(await fetch([product], signal), [product])
-        if (current !== generation || signal.aborted || revisions.get(product) !== revision) return
-        items[product] = { card: response.items[0]!, loading: false, stale: false, failed: false }
-      } catch {
-        if (current !== generation || signal.aborted || revisions.get(product) !== revision) return
-        items[product] = { card: items[product]!.card, loading: false, stale: Boolean(items[product]!.card), failed: true }
-      }
-      publish({ ...items })
-    },
-    dispose() { ++generation; controller?.abort() },
-  }
-}
-
 
 /** Presentation only: space uses the confirmed daily anchor, never live ticks. */
 export function homeCardSpace(day?: HomePeriodFact) {

@@ -1276,7 +1276,14 @@ function normalizeHistoricalPath(payload:unknown,meta:NewowProductMeta,prices:un
     const role=`trend_${meta.identity.frequency==='1w'?'week':meta.identity.frequency==='60m'?'m60':'day'}`
     const fact=array(cd.facts,'facts').map(f=>record(f,'fact')).find(f=>f.role===role)
     if(fact?.physical_contract){requireExact(s.physical_contract,fact.physical_contract,'path.fact_owner');requireExact(s.segment_id,fact.segment_id,'path.fact_segment')}
-    if(prices){const current=record(record(prices,'prices').current_price,'current');requireExact(s.physical_contract,current.physical_contract,'path.owner');requireExact(s.segment_id,current.segment_id,'path.segment');requireExact(s.calculation_segment_id,current.calculation_segment_id,'path.calculation_segment')}
+    if(prices) {
+      const current=record(record(prices,'prices').current_price,'current')
+      requireExact(s.physical_contract,current.physical_contract,'path.owner')
+      requireExact(s.segment_id,current.segment_id,'path.segment')
+      // Calculation segments include period-specific quality boundaries. A W1
+      // or 60m path may share a D1 price without sharing its calculation segment.
+      if(current.frequency===meta.identity.frequency) requireExact(s.calculation_segment_id,current.calculation_segment_id,'path.calculation_segment')
+    }
   }
   if(v.eta!==null) {const e=record(v.eta,'path.eta');literal(e.status,['ready','unavailable'],'eta.status');if(e.status==='ready'){day(e.date,'eta.date');for(const k of ['base','remain','elapsed','ratio','samples']) {if(finiteNumber(e[k],`eta.${k}`)<0)throw new Error('negative ETA field')}boolean(e.date_limited,'eta.date_limited');boolean(e.overdue,'eta.overdue')}}
   return v as unknown as import('../types/newowDecisionV2').HistoricalPath

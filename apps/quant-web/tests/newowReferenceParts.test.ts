@@ -233,3 +233,23 @@ test('ideal tab survives strategy switches but never crosses product or period i
   assert.equal(state.mode.value,'fusion_page_ordinary')
  }finally{scope.stop()}
 })
+
+test('superseded automatic closed read cannot continue pagination on a new chart', async () => {
+  const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d')
+  const chart = ref<any>({ meta: raw.meta, section: 'chart', ...raw.chart })
+  const scope = effectScope()
+  let resolve!: (value: any) => void
+  let reads = 0
+  const state = scope.run(() => useNewowReferenceParts(chart, ref(false), ref(false), async () => {
+    reads++
+    return await new Promise<any>(done => { resolve = done })
+  }))!
+  const pending = state.loadCompleteClosed({ performanceSince: '2026-01-01', performanceThrough: '2026-10-15' })
+  chart.value = null
+  resolve({ meta: raw.meta, value: null })
+  assert.equal(await pending, false)
+  assert.equal(reads, 1)
+  assert.equal(state.historyRows.value.length, 0)
+  assert.equal(state.historyError.value, null)
+  scope.stop()
+})

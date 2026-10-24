@@ -57,7 +57,7 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 not has_all_paths or not result.apply
             ):
                 self.error("prepare/publish require paths and --apply")
-        if getattr(result, "data_command", None) == "contract-warmup":
+        if getattr(result, "data_command", None) in {"contract-warmup", "contract-session-repair"}:
             expected_hash = result.expected_plan_sha256
             if not result.apply and expected_hash is not None:
                 self.error("dry-run does not accept an expected plan hash")
@@ -208,6 +208,14 @@ def add_data_commands(
     contract_warmup.add_argument("--frequency", choices=("1m", "5m", "1d", "1w", "15m", "30m", "60m"))
     contract_warmup.add_argument("--expected-plan-sha256")
     contract_warmup.add_argument("--apply", action="store_true")
+
+    session_repair = commands.add_parser("contract-session-repair", allow_abbrev=False)
+    session_repair.add_argument("--symbol", required=True)
+    session_repair.add_argument("--contract", required=True)
+    session_repair.add_argument("--trading-day", required=True)
+    session_repair.add_argument("--session-end", required=True)
+    session_repair.add_argument("--expected-plan-sha256")
+    session_repair.add_argument("--apply", action="store_true")
 
     audit = commands.add_parser("audit")
     selector = audit.add_mutually_exclusive_group(required=True)

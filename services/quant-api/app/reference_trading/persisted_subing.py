@@ -66,10 +66,9 @@ class PersistedSubingReference:
             if cursor is None:
                 return points
 
-    def _verify_source(
-        self, *, stream_id: str, revision_id: str, seq: int,
-        through: date, as_of: datetime,
-    ) -> None:
+    def verify_source(self, *, stream_id: str, revision_id: str, seq: int,
+                      through: date, as_of: datetime) -> None:
+        """Bind a saved history snapshot to the current complete Canonical prefix."""
         identity, manifest = self._stored_manifest(
             stream_id=stream_id, revision_id=revision_id, seq=seq,
         )
@@ -112,10 +111,8 @@ class PersistedSubingReference:
             cursor=request.before,
         )
         snapshot = trades["snapshot"]
-        self._verify_source(
-            stream_id=stream_id, revision_id=trades["revision_id"], seq=trades["seq"],
-            through=through, as_of=as_of,
-        )
+        self.verify_source(stream_id=stream_id, revision_id=trades["revision_id"],
+                           seq=trades["seq"], through=through, as_of=as_of)
         self._check_cancelled()
         stats = self._query.summary(
             stream_id, since=since, through=through, cutoff=cutoff,
@@ -213,10 +210,10 @@ class PersistedSubingReference:
         )
         if readiness in ("PRICE_UNAVAILABLE", "NONPOSITIVE_CLOSE"):
             readiness = "WARMING"
-        self._verify_source(
-            stream_id=stream_id, revision_id=trades["revision_id"], seq=trades["seq"],
-            through=through, as_of=as_of,
-        )
+        # Recheck the complete saved prefix after all presentation reads; a
+        # revision outside the visible window must also invalidate this result.
+        self.verify_source(stream_id=stream_id, revision_id=trades["revision_id"],
+                           seq=trades["seq"], through=through, as_of=as_of)
         return {
             "symbol": request.symbol, "frequency": request.frequency,
             "series_kind": "actual_dominant",

@@ -55,6 +55,7 @@ export interface MarketHomeOverviewItem {
 }
 
 export interface MarketHomeOverviewResponse {
+  projection_status?: 'ready' | 'updating' | 'stale' | 'failed' | 'missing'
   status: 'ready' | 'degraded'
   target_as_of: string
   data_as_of: string

@@ -28,7 +28,7 @@ import { validateStoredMarketHomeOverview } from '@/utils/marketHomeTypes'
 const router = useRouter()
 const initialPreferences = loadMarketHomePreferences()
 const sector = ref(initialPreferences.sector)
-const sort = ref<MarketHomeSort>(initialPreferences.sort)
+const sort = ref<MarketHomeSort>(initialPreferences.sort === 'change' ? 'change' : 'default')
 const sortDirection = ref<MarketHomeSortDirection>(initialPreferences.sortDirection)
 const compactDensity = ref(initialPreferences.compactDensity)
 const activeTab = ref<'market' | 'messages'>(loadActiveTab())
@@ -48,12 +48,13 @@ const home = useMarketHome({
 })
 const productOptions = computed(() => normalizeProductOptions(home.directory.data.value?.items ?? []))
 const directoryStatus = computed(() => home.directory.unavailable.value ? 'error' : home.directory.data.value == null ? 'loading' : 'ready')
-const model = computed(() => buildMarketHomeViewModel({ overview: home.overview.data.value ?? null, overviewStale: home.overview.stale.value ?? false, runtime: home.runtime.data.value ?? null, runtimeStale: home.runtime.stale.value ?? false }))
+const overviewOutdated = computed(() => home.overview.stale.value || Boolean(home.overview.data.value?.projection_status && home.overview.data.value.projection_status !== 'ready'))
+const model = computed(() => buildMarketHomeViewModel({ overview: home.overview.data.value ?? null, overviewStale: overviewOutdated.value, runtime: home.runtime.data.value ?? null, runtimeStale: home.runtime.stale.value ?? false }))
 const live = useMarketHomeLive({ onAuthorityChanged: () => { home.invalidateOverview(); void home.refreshOverviewIfExpired() } })
 const loading = computed(() => Boolean(home.overview.loading.value))
 const displayRows = computed(() => projectMarketHomeLiveRows(model.value.rows, live.items.value))
 const rows = computed(() => filterAndSortMarketHomeRows(displayRows.value, { query: '', sector: sector.value, filter: 'all', sort: sort.value, sortDirection: sortDirection.value }))
-const strategyProducts = computed(() => rows.value.map(row => row.symbol))
+const strategyProducts = computed(() => displayRows.value.map(row => row.symbol))
 const sectors = computed(() => home.overview.data.value?.sectors ?? [])
 const selectedSector = computed(() => sectors.value.find((item) => item.sector === sector.value))
 const liveStatus = computed(() => {
@@ -190,21 +191,21 @@ onBeforeUnmount(() => {
   <div class="market-dashboard-page">
     <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @select-tab="selectTab" @open-view="openView" @refresh="refreshAll" />
     <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
-    <template v-if="activeTab === 'market'">
+    <div v-show="activeTab === 'market'" style="display: contents">
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
       <section class="market-home-main">
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>
-      <p v-else-if="home.overview.stale.value && !loading" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
+      <p v-else-if="overviewOutdated && !loading" class="market-dashboard-page__error" role="alert">{{ home.overview.stale.value ? '行情刷新失败；正在展示上一份成功快照。' : '行情结果待更新；正在展示上一份成功快照。' }}</p>
       <p v-if="home.overview.stale.value && loading" class="market-home-cache-status" role="status">本地快照 · {{ new Date(home.overview.updatedAt.value ?? 0).toLocaleString() }} · 正在重新验证</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />
       <template v-else>
-        <MarketHomeStrategyCards :rows="rows" :products="strategyProducts" :authority="homeCardsReloadIdentity(home.overview.data.value)" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart">
-          <template #status><div class="market-home-snapshot" aria-live="polite"><span class="market-home-snapshot__dot" :class="`market-home-live-status--${live.connection.value}`" /><span>{{ liveStatus }} · {{ rows.some(row => row.liveQuote) ? '日周指标为收盘口径' : '数据为上一完整交易日收盘价' }}</span><button v-if="live.connection.value === 'stale' || live.connection.value === 'unavailable'" type="button" @click="live.restart">重连</button><details v-if="home.overview.data.value"><summary>口径</summary><p>日线报价可用 {{ home.overview.data.value.participant_count }} / {{ home.overview.data.value.active_count }} · 过期 {{ home.overview.data.value.stale_count }} · 报价不可用 {{ home.overview.data.value.unavailable_count }}；截至 {{ home.overview.data.value.target_as_of }}。日周策略单独预热，报价可用不代表策略就绪。</p></details></div></template>
+        <MarketHomeStrategyCards :active="activeTab === 'market'" :rows="rows" :products="strategyProducts" :authority="homeCardsReloadIdentity(home.overview.data.value)" :refresh-sequence="cardReloadSequence" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" @chart="openCardChart">
+          <template #status><div class="market-home-snapshot" aria-live="polite"><span class="market-home-snapshot__dot" :class="`market-home-live-status--${live.connection.value}`" /><span>{{ liveStatus }}<template v-if="!rows.some(row => row.liveQuote)"> · 数据为上一完整交易日收盘价</template></span><button v-if="live.connection.value === 'stale' || live.connection.value === 'unavailable'" type="button" @click="live.restart">重连</button></div></template>
         </MarketHomeStrategyCards>
         <p v-if="!rows.length && home.overview.data.value" class="market-home-empty">当前{{ sector ? productSectorLabel(sector) : '快照' }}暂无可用品种。<span v-if="selectedSector">可用 {{ selectedSector.participant_count }} / 总数 {{ selectedSector.active_count }}；缺失品种不生成行情行。</span></p>
       </template>
       </section>
-    </template>
-    <MarketHomeMessages v-else :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" @open-newow="openNewowEvent" />
+    </div>
+    <MarketHomeMessages v-if="activeTab === 'messages'" :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" @open-newow="openNewowEvent" />
   </div>
 </template>

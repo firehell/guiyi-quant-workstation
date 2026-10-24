@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { readNewowBasis, saveNewowBasis } from '@/utils/newowDecisionPreferences'
 import { deriveBasisDecision } from '@/utils/newowBasisDecision'
+import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import { previewInstant } from '@/utils/candidatePreviewInstant'
 import { historicalAnalysisAsOf } from '@/api/newowAiAnalysis'
 import { ref, computed, watch, onBeforeUnmount, onMounted, useId } from 'vue'
@@ -15,9 +16,9 @@ import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
 
-const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; pathStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; showPriceSources?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true, showPriceSources: true })
+const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; historical?: boolean; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; displayStrategy?: string; pathStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; showPriceSources?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true, showPriceSources: true })
 const emit = defineEmits<{ 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
-const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.asOf : props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
+const decisionAsOf = computed(() => props.expectedOwner ? props.expectedOwner.asOf : props.response.snapshotContext || props.latestCompletedFrequencies?.includes(props.response.meta.identity.frequency)
   ? props.response.meta.as_of : historicalAnalysisAsOf(props.response.meta.as_of))
 const context = computed(() => decisionContextIdentity(props.response.meta.identity))
 const result = ref<NewowDecisionV2 | null>(null), loading = ref(false), error = ref('')
@@ -49,7 +50,13 @@ async function load() {
     if (props.expectedOwner && !sharedDecisionForOwner(next.value.decision_v2, props.expectedOwner, props.mainRiseBackground ? 'trend' : 'oscillation')) throw new Error('shared owner mismatch')
     if (token === generation) result.value = next.value.decision_v2
   } catch (failure) {
-    if (token === generation) error.value = failure instanceof NewowProductRequestError && failure.classification === 'busy' ? '图表仍在计算，请稍后重试综合解释。' : '综合解释读取失败或输入快照不一致，请刷新后重试。'
+    if (token === generation) {
+      error.value = failure instanceof NewowProductRequestError
+        ? failure.classification === 'busy' ? '图表仍在计算，请稍后重试综合解释。'
+          : failure.diagnostic ? failure.message
+            : newowErrorDisplay(failure.code) ?? '综合解释暂不可用，请重试。'
+        : '综合解释读取失败或输入快照不一致，请刷新后重试。'
+    }
   } finally { if (token === generation) loading.value = false }
 }
 const basis = ref(readNewowBasis())
@@ -261,4 +268,7 @@ p { margin:0; font-size:12px; line-height:1.55; color:var(--gy-text-muted); }
 .decision-v2__direction p,.decision-v2__resonance p { font-size:11px; }
 .decision-v2__mismatch { padding:6px 8px; }
 
+</style>
+
+<style scoped>
 </style>

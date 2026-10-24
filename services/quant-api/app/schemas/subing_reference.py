@@ -160,6 +160,11 @@ class SubingQualityChartBarOut(ReferenceOut):
     calculation_segment_id: str
 
 
+class PreviousReferenceWindowOut(ReferenceOut):
+    since: str
+    through: str
+
+
 class SubingReferenceResponse(ReferenceOut):
     symbol: str
     frequency: Literal["15m", "30m", "60m", "1d"]
@@ -178,6 +183,9 @@ class SubingReferenceResponse(ReferenceOut):
     auto_order: Literal[False]
     source: Literal["historical_replay"]
     storage_mode: Literal["persisted"] | None = None
+    history_start: str | None = None
+    previous_window: PreviousReferenceWindowOut | None = None
+    window_identity_scope: Literal["PER_WINDOW_SOURCE_IDENTITY"] | None = None
     research_status: Literal[
         "ready", "warming", "WARMING",
         "INDICATOR_READY_CROSS_UNEVALUABLE", "CROSS_EVALUATED",

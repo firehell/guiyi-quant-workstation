@@ -142,8 +142,7 @@ RETIRED_MODULE_ATTRIBUTES = {
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 ACTIVE_MARKET_ROUTE_OWNERS = {
-    ("GET", "/api/v1/market/newow/home-cards", "app.api.market_newow:newow_home_cards"),
-    ("GET", "/api/v1/market/newow/home-card-performance", "app.api.market_newow:newow_home_card_performance"),
+    ("GET", "/api/v1/market/newow/home-projection", "app.api.market_newow:newow_home_projection"),
     ("GET", "/api/v1/market/newow/experiments", "app.api.market_newow:newow_experiments"),
     (
         "WEBSOCKET",
@@ -151,6 +150,8 @@ ACTIVE_MARKET_ROUTE_OWNERS = {
         "app.api.market_live:market_home_live_websocket",
     ),
     ("GET", "/api/v1/market/{symbol}/subing/reference", "app.api.market_subing_reference:subing_reference"),
+    ("GET", "/api/v1/market/{symbol}/htdy/reference", "app.api.market_subing_reference:htdy_historical_reference"),
+    ("GET", "/api/v1/market/{symbol}/reference-signals", "app.api.market_subing_reference:historical_reference_signals"),
     ("GET", "/api/v1/market/bars/page", "app.api.market:canonical_market_bars_page"),
     ("GET", "/api/v1/market/dominants", "app.api.market:market_dominants"),
     ("GET", "/api/v1/market/product-directory", "app.api.market:market_product_directory"),
@@ -302,7 +303,7 @@ def test_public_entrypoints_are_exact() -> None:
     main_module = importlib.import_module("app.guiyi_cli.main")
     parser = main_module.build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
-    assert set(domain_action.choices) == {"data", "runtime", "reference"}
+    assert set(domain_action.choices) == {"data", "runtime", "reference", "home"}
 
 
 def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:

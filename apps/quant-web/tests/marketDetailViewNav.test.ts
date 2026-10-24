@@ -21,7 +21,7 @@ function nodeOperations() {
     remove(child: TestNode) { if (child.parent === null) return; child.parent.children = child.parent.children.filter((item) => item !== child); child.parent = null },
     createElement: (type: string) => element(type), createText(text: string) { const node = element('#text'); node.text = text; return node }, createComment(text: string) { const node = element('#comment'); node.text = text; return node },
     setText(node: TestNode, text: string) { node.text = text }, setElementText(node: TestNode, text: string) { node.text = text; node.children = [] },
-    parentNode(node: TestNode) { return node.parent }, nextSibling(node: TestNode) { if (node.parent === null) return null; const index = node.parent.children.indexOf(node); return node.parent.children[index + 1] ?? null }, querySelector() { return null }, setScopeId() {}, insertStaticContent() { return [element('#static'), element('#static')] as const },
+    parentNode(node: TestNode) { return node.parent }, nextSibling(node: TestNode) { if (node.parent === null) return null; const index = node.parent.children.indexOf(node); return node.parent.children[index + 1] ?? null }, querySelector() { return null }, setScopeId() {}, insertStaticContent(content: string, parent: TestNode, anchor: TestNode | null) { const node = element('#static'); node.text = content; node.parent = parent; const index = anchor ? parent.children.indexOf(anchor) : -1; if (index < 0) parent.children.push(node); else parent.children.splice(index, 0, node); return [node, node] as const },
   }
 }
 
@@ -70,14 +70,14 @@ test('Newow navigation restores frequency choices whenever the workspace does no
   app.unmount()
 })
 
-test('futures navigation preserves mode and period for eight variants and disables original AI', async () => {
+test('futures navigation preserves mode and period for eight variants and keeps the fixed AI entry', async () => {
   const Nav=(await import(await compileCurveComponent(new URL('../src/components/market/detail/MarketDetailViewNav.vue',import.meta.url)))).default
   const identity=ref<any>({view:'newow',symbol:'jm',strategy:'main_rise',strategyModel:'futures_bidir_v1',seriesKind:'actual_dominant',frequency:'5m'})
   const root=element('root'),selected:any[]=[]
   const app=createRenderer(nodeOperations()).createApp({render:()=>h(Nav,{identity:identity.value,restore:{newow:{strategy:'trend',frequency:'1d'}},newowFrequencies:['1w','1d','60m','30m','15m','5m'],onSelect:(value:any)=>{selected.push(value);identity.value=value}})})
   app.mount(root)
   const button=(label:string)=>findNode(root,n=>n.type==='button'&&nodeText(n)===label)!
-  assert.equal(findNode(root,n=>n.type==='button'&&nodeText(n)==='AI分析'),undefined)
+  assert.ok(findNode(root,n=>n.type==='button'&&nodeText(n)==='AI分析'), 'AI entry stays in the fixed navigation row')
   for(const label of ['趋势策略','震荡策略','双策略','主升浪','测试','测试2','测试3','测试4']){
     ;(button(label).props.onClick as Function)();await nextTick()
     assert.equal(selected.at(-1).strategyModel,'futures_bidir_v1',label);assert.equal(selected.at(-1).frequency,'5m',label)

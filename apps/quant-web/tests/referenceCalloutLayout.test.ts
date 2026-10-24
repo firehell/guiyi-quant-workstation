@@ -110,3 +110,19 @@ test('Niuwa callouts preserve their anchors while avoiding a breakout price labe
   assert.equal(placed.y, 150)
   assert.ok(placed.left + placed.width < area.left || placed.left > area.left + area.width || placed.top + placed.height < area.top || placed.top > area.top + area.height)
 })
+
+test('generic same-bar reversals retain both full action labels at normal density', () => {
+  const points = [false, true].map((above, index) => ({ x: 210, y: 120, callout: { ...callout(`reverse-${index}`), above }, boxWidth: 112, boxHeight: 28 }))
+  const result = layoutNiuwaReferenceCallouts(points, 500, 300, [], true)
+  assert.equal(result.length, 2)
+  assert.ok(result.every(item => !item.compact))
+  assertNoOverlap(result)
+})
+test('generic mobile crowding preserves every reversal identity as full label or compact node', () => {
+  const points = Array.from({ length: 80 }, (_, index) => ({ x: 195, y: 110, callout: { ...callout(`pair-${index}`), above: index % 2 === 0 }, boxWidth: 126, boxHeight: 28 }))
+  const result = layoutNiuwaReferenceCallouts(points, 390, 220, [], true)
+  assert.equal(result.length, points.length)
+  assert.equal(new Set(result.map(item => item.callout.id)).size, points.length)
+  assert.ok(result.some(item => item.compact))
+  assert.ok(result.every(item => item.left >= 2 && item.top >= 2 && item.left + item.width <= 388 && item.top + item.height <= 218))
+})

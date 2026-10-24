@@ -14,6 +14,7 @@ from .reducer import reduce_reference
 
 
 MODEL_VERSION = "htdy_first_seen_reverse_close_v1"
+HISTORICAL_MODEL_VERSION = "htdy_historical_window32_reverse_close_v1"
 CONTEXT_BARS = 32
 
 
@@ -53,6 +54,28 @@ def project_first_seen(
     """Map only the current observed candidate; historical repainting is irrelevant."""
     if state.stream.reference_model_version != MODEL_VERSION:
         raise ValueError("HTDY_MODEL_IDENTITY_INVALID")
+    return _project_reverse_close(
+        state, observations=observations, physical_contract=physical_contract,
+        owner_segment_id=owner_segment_id, calculation_segment_id=calculation_segment_id,
+        bar_end=bar_end, trading_day=trading_day, close=close,
+    )
+
+
+def project_historical_observation(state: ReferenceState, **kwargs):
+    """Same reference action policy with a distinct retrospective stream identity."""
+    from .contracts import RecordingMode
+
+    if (state.stream.reference_model_version != HISTORICAL_MODEL_VERSION
+            or state.stream.recording_mode is not RecordingMode.HISTORICAL_REPLAY):
+        raise ValueError("HTDY_HISTORICAL_IDENTITY_INVALID")
+    return _project_reverse_close(state, **kwargs)
+
+
+def _project_reverse_close(
+    state: ReferenceState, *, observations: tuple[str, ...],
+    physical_contract: str, owner_segment_id: str, calculation_segment_id: str,
+    bar_end: datetime, trading_day: date, close: Decimal,
+) -> tuple[tuple[ReferenceAction, ...], ReferenceTransition]:
     kinds = set(observations)
     if len(kinds) != len(observations) or kinds - {"buy", "sell"} or len(kinds) > 1:
         raise ValueError("HTDY_SIGNAL_CONFLICT")

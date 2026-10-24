@@ -518,9 +518,41 @@ The independent disabled historical identity SHALL use the existing full Canonic
 An exact `P4_SOURCE_REVISION_REBUILD` invalidation MAY generate a fresh bounded native rebuild plan in the
 existing rest-window worker; unknown invalidations, inflight outcomes and blocked attempts SHALL NOT be
 automatically retried. Source token, complete prefix, budget, publication and resume checks remain mandatory.
-The UI SHALL distinguish preserved realtime results, individual changed fields and the independent historical
-cutoff/freshness. Field differences SHALL NOT be presented as an attributed profit change. Incomplete historical
-recalculation or comparison SHALL remain explicit.
+Formal historical prices, indicators, signals and reference trades SHALL use post-market Canonical as their
+single authority. Newow and SuBing public historical reference pages SHALL use their existing saved historical
+identity with current complete-prefix source verification; HTDY SHALL retain its dedicated Canonical historical
+model. The retired reader-mode environment switch SHALL NOT select another public history implementation.
+Missing, incomplete, stale or quality-invalid historical assets SHALL remain unavailable and SHALL NOT fall
+back to first-seen observations or an alternate calculation path. A checkpoint endpoint alone does not prove
+current source identity.
+
+The UI SHALL use Canonical historical signals without giving prior actual events priority in historical chart
+slots. First-seen records and notifications SHALL remain immutable and accessible in an explicitly separate
+audit view; generic snapshot readers do not prove current Canonical identity and SHALL NOT be presented as a
+second formal history. Later numeric source corrections require independent native historical recomputation,
+not rewriting observations or resending notifications. Individual source differences, historical cutoff,
+unresolved missing originals and incomplete recalculation SHALL remain explicit; field differences SHALL NOT
+be presented as an attributed profit change.
+
+Historical signal pages SHALL verify the same saved complete-prefix source as the reference page, before and
+after reading saved presentation points. A revision to an earlier warmup prefix must invalidate the result even
+when visible chart bars are unchanged. Canonical chart replacements or changed Bar/owner identities SHALL
+invalidate browser signal caches and in-flight generations; failures SHALL NOT retain a stale formal signal
+or substitute a realtime event. Pagination remains bound to the exact historical snapshot and source.
+
+#### Scenario: A prior realtime event disagrees with corrected formal history
+- **GIVEN** a preserved first-seen observation and a later verified Canonical revision
+- **WHEN** the user opens formal historical reference or chart signals
+- **THEN** the page uses the current verified Canonical historical calculation only
+- **AND** a missing or stale saved calculation is unavailable instead of using the realtime result
+- **AND** the original event remains visible only as an audit fact without notification replay
+
+#### Scenario: A revision affects an earlier warmup prefix only
+- **GIVEN** a COMPLETE cached chart range whose visible prices have not changed
+- **WHEN** the formal Canonical series is refreshed or the saved source changes
+- **THEN** the range is revalidated against the complete source prefix
+- **AND** an old in-flight result cannot replace the new generation
+- **AND** a stale source or a changed pagination source is rejected explicitly
 
 #### Scenario: A later cleaned minute changes H1 volume
 - **GIVEN** a valid retained H1 capture and same physical Canonical endpoint differ numerically
@@ -718,18 +750,181 @@ changes to previously read facts, or unavailable sources becoming available SHAL
 - **WHEN** a source fails on an initial read
 - **THEN** successful sources remain readable with explicit partial coverage and no false completeness claim.
 
-### Requirement: One formal Canonical historical authority
-Official historical reference reads MUST use their existing validated Canonical historical authority. Newow and SuBing public historical reads MUST use the existing saved historical adapters and MUST NOT select an alternate reader through an environment setting. Missing, stale, unverified or invalid sources MUST fail explicitly, without fallback to forward observations.
+### Requirement: Normal retained observation conflict warm provenance
 
-#### Scenario: Post-market revision supersedes historical values
-- **WHEN** validated post-market Canonical facts revise a historical input
-- **THEN** official results MUST be rebuilt and read against that Canonical source, or reject the stale saved result
-- **AND** forward first-seen events and delivery facts MUST remain audit records and MUST NOT override official historical charts or be rewritten/replayed
+`retained_conflict_warm_seed_v1` SHALL be a distinct source identity from
+`original_conflict_warm_seed_v1`. It MAY warm an unchanged Historical baseline with
+normal, retained, completed Live originals, without claiming a provider repair or
+fabricating repair plan/readback hashes. The existing v1 repair proof requirements
+remain unchanged. `reference_capture_retained_warm_recovery_v1` SHALL use the same
+complete four-route mismatch admission, locked fresh source revalidation, atomic
+future FLAT activation and unknown-outcome recovery conditions as final-warm recovery.
 
-#### Scenario: Generic saved snapshot is not a second formal history entry
-- **WHEN** the generic recording panels display saved first-seen events
-- **THEN** they MUST identify them as event audit and MUST NOT offer an unverified historical snapshot as an alternate formal result
-- **AND** a strategy without an opened historical model MUST NOT gain one through this display change
+The concrete read-only authority SHALL bind each original's exact completed-journal
+key, trading day, stream ID, observation ID, original envelope bytes and identity-index
+bytes. Index ID and payload must match the retained row; when the native index format
+includes content, its canonical completed content must match too. Original received,
+observed and confirmed times SHALL be preserved, with bar end no later than confirmation
+and confirmation no later than knowledge time. Duplicate, missing, changed, unconfirmed,
+wrong-contract, wrong-period or unexpected originals SHALL fail closed.
+
+A fresh MDS Session/owner authority SHALL prove the complete ordered interval from the
+baseline watermark through every warm input and no remaining endpoint before the exact
+future start. A future exclusive start does not permit future inputs: every input must
+already be confirmed at knowledge time. The original baseline query and all existing
+formula, quality, physical and checkpoint proofs remain mandatory. Normal retained input
+provenance and interval readback hashes SHALL never be labelled repair receipts. The
+same strategy kernel advances state; source facts are not republished as Canonical.
+
+The initial retained loader SHALL reject physical/owner/calculation changes and require
+an independently proved rollover path; choosing the current contract to bypass an old
+checkpoint mismatch is forbidden. Fusion SHALL bind three base seeds of the same retained
+version and complete input chain. Warm materialization creates no Capture, action, trade,
+notification or journal ACK. Maintenance writes only the newly approved independent FLAT
+revision and its existing activation/boundary facts; old immutable facts remain unchanged.
+
+#### Scenario: A normal retained night prefix warms a conflict without a fake repair
+- **GIVEN** an exact Historical seed and a complete, confirmed night prefix retained with matching native journal indexes
+- **WHEN** fresh Session, owner, baseline and repeated original readback proofs all pass
+- **THEN** the retained seed advances the existing kernel to the night frontier and remains future-start FLAT
+- **AND** no repair receipt is fabricated and no original is replayed to the normal consumer
+
+#### Scenario: A retained original or its index changes during warm verification
+- **GIVEN** a candidate retained warm interval
+- **WHEN** an original is missing, duplicated, altered or disagrees with its native index on fresh readback
+- **THEN** no new revision is activated and the failure evidence is preserved
+
+
+### Requirement: Explicit retained rank1 owner transition
+
+`retained_rank1_owner_transition_v1` MAY admit exactly one adjacent authoritative
+rank1 physical-contract transition through a separate opt-in retained warm loader.
+The ordinary retained loader SHALL continue rejecting owner changes. The proof SHALL
+bind the previous authoritative trading day, old rank1 effective end, new rank1
+start, both Session windows and owner/calculation identities. The baseline must be
+exactly the old day's final completed endpoint with no omitted old-owner tail;
+nonadjacent, changed old-contract or unproven mapping cases SHALL fail closed.
+
+The new physical contract SHALL be chosen only from that independently proved new
+rank1 segment. Complete retained originals and expected endpoints SHALL be checked
+under the new day owner, and every input must match it. The first input SHALL take
+the existing kernel's explicit rollover branch with seed_replay_state; later inputs
+continue only this new state. Old-contract indicator state and reference positions
+SHALL NOT carry into the new contract. The warm proof SHALL retain exactly one old/
+new owner transition and a final no-remaining-endpoints proof. A new FLAT revision
+means reference consumption recovery only; the new physical segment's actual WARMING
+or unavailable strategy facts SHALL remain unchanged and disclosed.
+
+#### Scenario: A complete night prefix follows an authoritative rank1 rollover
+- **GIVEN** a Historical checkpoint at the previous rank1 contract's exact final endpoint
+- **AND** authoritative adjacent-day rank1/Session evidence and complete new-contract originals
+- **WHEN** the opt-in transition loader warms the existing kernel
+- **THEN** the result equals a fresh kernel fed only the new-contract inputs
+- **AND** no old-contract indicator state, reference position, Capture or notification is carried forward
+
+
+### Requirement: October 22 retired-day absence is sealed by native day advancement
+
+The explicit October 22 repair MAY use `RETIRED_DAY_ABSENCE_V1` only for H1
+checkpoints no earlier than October 21 15:00 Asia/Shanghai and missing completed
+endpoints through October 22 15:00. Source Live and completed Alert/Reference
+registration keys SHALL actually exist and equal October 23. Native monotonic
+NEW_DAY and pre-write APPEND/COMMIT registration checks seal the retired day;
+wall-clock silence or expiration of arrival grace alone is insufficient.
+
+Both source and completed October 21/22 journals and identity indexes SHALL
+exist, be fully read and match original IDs, payloads and native content
+fingerprints. Their old consumers SHALL be at tails. A saved target H1 after the
+checkpoint blocks absence, even when acknowledged. Missing keys, invalid indexes,
+changed rank1/Session endpoints, missing cleanup evidence or lost writer fences
+SHALL fail closed. Plans bind exact Runtime, checkpoint, receipt and source proof,
+reuse the native one-shot interruption calculation, and preserve old facts and
+unknown provider buffers. No October 23 endpoint is admitted by this proof.
+
+For the complete four-route L H1 conflict group only,
+`reference_retired_day_conflict_reset_v1` MAY atomically retire the conflicted
+revision and create an independent future FLAT revision. Its native product or
+fusion kernel SHALL be empty, with an explicit retired-day interruption watermark
+and provenance; it SHALL NOT be represented as a historical or retained warm seed.
+Old DATA_CONFLICT evidence remains unchanged. Health remains
+OBSERVATION_LAGGING; the open October 23 gap and subsequent natural warm-up remain
+separate acceptance conditions. No maintenance replay, cursor changes or notices
+are authorized by either repair entry.
+
+#### Scenario: Retired-day source keys expired
+- **GIVEN** a retired day's journal or identity index no longer exists
+- **WHEN** the task attempts to prove absence
+- **THEN** it fails closed instead of treating expiration as an empty observation day
+
+#### Scenario: A new day still has an open gap
+- **GIVEN** the October 22 interruption is committed and October 23 is active
+- **WHEN** no complete natural H1 has closed the new-day prefix gap
+- **THEN** that gap remains unproven and the repair does not claim full natural readiness
+
+### Requirement: Pristine L reset uses retained originals for preactivation warm-up
+
+Only the complete four-route L H1 group with the pristine October 22 empty-reset
+seed MAY use `reference_retired_original_warmup_v1`. The active revision SHALL
+contain only its seed chunk and seal, retain the explicit 15:00 interruption,
+empty kernel and 22:55 future-FLAT boundary, and have no captures or actions.
+A separate atomic revision SHALL warm native product kernels using the retained
+October 23 trading-day 22:00 and 23:00 completed H1 originals. Authoritative
+endpoints, each original ID/index/content, contract/owner, metadata and frontier
+SHALL be re-read before admission. Missing or changed evidence fails closed.
+
+This operation SHALL preserve old conflict and empty-reset revisions and all
+immutable facts. It SHALL NOT fabricate a reconciliation conflict, missing gap,
+natural capture or first-seen time; no journal replay, ACK, cursor change,
+notification or reference trade is created. The new checkpoint uses a future
+FLAT boundary and typed original provenance; health remains OBSERVATION_LAGGING
+until a subsequent actual Session H1 is consumed normally. Existing strategy
+availability/warming semantics and formulas remain unchanged.
+
+#### Scenario: An existing pre-start original must warm the kernel
+- **GIVEN** the pristine L reset starts after the retained 22:00 original
+- **WHEN** both 22:00 and 23:00 originals and the complete frontier are proved
+- **THEN** the dedicated atomic warm revision preserves future FLAT and original times
+- **AND** subsequent natural acceptance remains pending, without manufacturing a missing gap
+
+### Requirement: HTDY retrospective fixed-window reference is independently identified
+
+The read-only `/api/v1/market/{symbol}/htdy/reference` endpoint SHALL replay each completed
+physical-prefix Bar using the existing HTDY evaluator's fixed 32-Bar window. Its model identity
+SHALL be `htdy_historical_window32_reverse_close_v1`, recording mode `historical_replay`, with
+no observation policy or fabricated observed timestamp. It SHALL reuse the existing reverse-close
+reference policy rather than introduce new buy/sell rules. This is retrospective reconstruction,
+not proof of a first-seen event or account execution.
+
+The reader SHALL obtain storage-wide physical prefixes and authoritative quality/owner boundaries
+through the existing MDS-backed historical loader. Presentation since/through SHALL NOT truncate
+warm-up or change signal pairing. Quality interruption and rollover SHALL terminate reference
+trades explicitly and restart window warm-up. It SHALL NOT write reference storage, AlertEvent,
+notifications, Canonical, or Runtime state. Date filtering and trade pagination SHALL be independent
+of graph pagination; the cursor SHALL bind full source content, model identity and cutoff. Source
+metadata changes during the read SHALL reject the result.
+
+#### Scenario: Historical reconstruction differs from an actual observation
+
+- **WHEN** a completed prefix is replayed without an original captured observation
+- **THEN** its signals and reference trades are labeled historical reconstruction only
+- **AND** no actual observation stream, event or notification is created or rewritten
+
+#### Scenario: Paging cannot change the reconstructed trade
+
+- **WHEN** a user changes the displayed date window or requests the next records page
+- **THEN** computation starts from the same authoritative storage prefix and fixed model
+- **AND** records retain stable action/trade identities while changed source invalidates the cursor
+
+The HTDY reader MAY retain a bounded process cache of pure replay results, keyed by full input
+content, owner/quality segment boundaries, source metadata, formula/model identity and cutoff.
+Every request MUST still verify MDS input identity; TTL or cache presence MUST NOT prove validity.
+Record pagination and summary use the same replay result without re-evaluating unchanged prefixes.
+HTDY summary SHALL aggregate the entire selected entry-day window before record pagination.
+Win/loss/flat counts, win rate, mean return and summed percentage points SHALL use only CLOSED
+reference returns with Decimal arithmetic; OPEN and interrupted records SHALL NOT count as
+completed returns. These values SHALL NOT be labeled account equity or compound return.
+The cache SHALL NOT be a historical fact authority and SHALL NOT write Redis or persistent events.
+
 
 ## Requirement: Live observation handover preserves capture identity
 

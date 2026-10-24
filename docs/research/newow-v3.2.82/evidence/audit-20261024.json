@@ -1,0 +1,251 @@
+{
+  "schema": "newow_public_audit_evidence_v1",
+  "observed_on": "2026-10-24 Asia/Shanghai",
+  "public_version": "3.4.07",
+  "develop_commit": "0ea31719b7c543b772e8990b4714594d1c122f31",
+  "scope_excludes": [
+    "push",
+    "messages",
+    "screener",
+    "month_k",
+    "time_sharing_chart"
+  ],
+  "sources": [
+    {
+      "file": "strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.07",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+    },
+    {
+      "file": "composite-decision-v2.js",
+      "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.4.07",
+      "exit": 0,
+      "sha256": "522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2"
+    },
+    {
+      "file": "position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.0.0",
+      "exit": 0,
+      "sha256": "31e133d5288ed2b9f89ec084384871e5907afb8cb30acc2cee6629ee882e754d"
+    },
+    {
+      "file": "trend-reversal-core.js",
+      "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.4.07",
+      "exit": 0,
+      "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80"
+    },
+    {
+      "file": "api-config.js",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.07",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+    },
+    {
+      "file": "api-shim.js",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.07",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+    },
+    {
+      "file": "index.html",
+      "url": "https://www.v8848.cn/index.html",
+      "sha256": "62a7d3a0620e4084cd77c13e5124b8654dc9b8261fc1b95087799a6bc730c5c9",
+      "exit": 0
+    },
+    {
+      "file": "stock_detail.html",
+      "url": "https://www.v8848.cn/stock_detail.html?code=688702.SH",
+      "sha256": "b5f3e7a406f278a2d2957cd9341aff5a5f091aabbf645d1fe516f115d435ca0d",
+      "exit": 0
+    }
+  ],
+  "api": [
+    {
+      "file": "kline-day.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=day&strategy=huanglantai&startdate=2025-10-01&enddate=2026-10-24",
+      "exit": 0,
+      "status": "200",
+      "sha256": "756321c7d328cc3efcff42d9e6d6c0fb56a7738cc391a07bcef545cbcea77cf6",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 66,
+      "table_shapes": [
+        {
+          "table": "dict",
+          "time": 600
+        }
+      ]
+    },
+    {
+      "file": "kline-week.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=week&strategy=huanglantai&startdate=2024-06-01&enddate=2026-10-24",
+      "exit": 0,
+      "status": "200",
+      "sha256": "fe1ff7b49f27ac4b04aac7848f43279ee06c8dd4dfd9308f6b2a766658171d6c",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 12,
+      "table_shapes": [
+        {
+          "table": "dict",
+          "time": 160
+        }
+      ]
+    },
+    {
+      "file": "kline-5min.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=5min&strategy=zhushenglang&startdate=2026-10-01&enddate=2026-10-24",
+      "exit": 0,
+      "status": "200",
+      "sha256": "a3390f7ec1a56fbed2a7d3655f7c62591356c1f3c6da0d5bb3d79ac4aaf14671",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source",
+        "_filtered"
+      ],
+      "errorcode": 0,
+      "signals": 33,
+      "table_shapes": [
+        {
+          "time": 576,
+          "table": "dict"
+        }
+      ]
+    },
+    {
+      "file": "batch.json",
+      "url": "https://www.v8848.cn/api/batch?codes=688702.SH",
+      "exit": 0,
+      "status": "200",
+      "sha256": "be0f05243b338aca07833bf6f35e55574dc4526690f1f4c183c3a7597afd9587",
+      "top_keys": [
+        "stocks",
+        "_source",
+        "signalStale",
+        "quoteAge"
+      ],
+      "errorcode": null,
+      "signals": 0,
+      "table_shapes": []
+    }
+  ],
+  "core_oracle": {
+    "declaration_count": 24,
+    "extracted_declarations_sha256": "50c4d019f330ea683dbf37c087061dff75a40683e8de0456e322e80653b8bb0d",
+    "historical_cases_equal": 9,
+    "cdv2_cases_equal": 729,
+    "ma_window_fusion_witnesses_equal": true
+  },
+  "adapter_check": {
+    "stable_functions": {
+      "calcZhaoyaoMirror": {
+        "sha256": "26ab20dcebc00800e4b6ae7cdd4717930913553123adaf30f5cbd30fada8e828",
+        "same_as_v3402": true
+      },
+      "readMainForceInputs": {
+        "sha256": "056f0c7b1891fc873085b9fd6fdba18e47c712f4855bfaddfe4bf948fd7b1db8",
+        "same_as_v3402": true
+      },
+      "nwPathTrades": {
+        "sha256": "b4ccba9108058df6e7ed505f79000e8bbbd3db026a9f1adb6c6aee918ccf0e0a",
+        "same_as_v3402": true
+      },
+      "nwPathETA": {
+        "sha256": "25367d7ef8efeced04aba696d0df579eb30363a53fbaefa557e74f62c4e1dfcf",
+        "same_as_v3402": true
+      },
+      "nwPathRenderTrend": {
+        "sha256": "451018aa79b5c16be41d125e3ff7bd62c76a4068eb7e9c839bfa184d7c3ab18a",
+        "same_as_v3402": true
+      }
+    },
+    "source_witnesses": {
+      "gate": [
+        {
+          "minute": -1,
+          "open": false
+        },
+        {
+          "minute": 869,
+          "open": false
+        },
+        {
+          "minute": 870,
+          "open": true
+        }
+      ],
+      "noAnchorPost": 19,
+      "noAnchorPre": -1,
+      "anchorAge10": 9,
+      "anchorAge11": -1,
+      "otherCodePre": -1
+    },
+    "tooltip_three_distinct_states": true,
+    "detail_anchor_success_only_source_review": true
+  },
+  "current_delivered": [
+    "care adapter",
+    "tentative primitive and confirmation indexes",
+    "home event date and deep link",
+    "historical path and ETA",
+    "channel autofocus/outside close",
+    "basis persistence",
+    "theory tabs",
+    "experiment paging identity",
+    "home_context",
+    "explicit MA60 approximate trend"
+  ],
+  "remaining": [
+    "fixed first-event display anchor policy",
+    "display age and time policy for futures",
+    "main-rise 5/15/30m",
+    "optional home organization/sorting",
+    "exact layout/touch/performance acceptance"
+  ],
+  "browser_visual_status": "NOT_VERIFIED_TAB_NOT_FOUND_AND_CREATE_TIMEOUT",
+  "checks": {
+    "web_passed": 195,
+    "web_failed": 0,
+    "web_skipped": 0,
+    "python_and_engineering_passed": 67,
+    "python_and_engineering_failed": 1,
+    "baseline_failure": {
+      "test": "test_active_market_route_inventory_is_exact_and_uniquely_owned",
+      "actual_count": 19,
+      "expected_count": 18,
+      "extra_route": "GET /api/v1/market/{symbol}/htdy/reference",
+      "related_to_newow_formula": false,
+      "modified_to_hide_failure": false
+    },
+    "documentation_links_and_fences": "passed",
+    "single_current_anchor": "passed",
+    "frozen_source_api_hashes_verified": 12,
+    "secret_findings": 0,
+    "diff_check": "passed"
+  },
+  "limitations": [
+    "No server icon-states POST or private message query; server anchor semantics not proved.",
+    "No current DOM/screenshots or native app evidence; source checks are not UI acceptance.",
+    "Candidate peak location and published event anchor are distinct; stock 14:30 is not a futures trading rule.",
+    "Age <=10 covers indexes 0..10; source witness, not market/OOS proof.",
+    "Full third-party sources and raw market responses stay outside Git."
+  ],
+  "validation_commands": {
+    "web": "NEWOW_PUBLIC_SOURCE=/private/tmp/newow-weekly-20261024/stock_detail.html node --test tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
+    "python": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/newow/test_subplots_page_v1.py services/quant-api/tests/newow/test_historical_path.py services/quant-api/tests/newow/test_daily_weekly_path.py tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py",
+    "source_oracle": "bounded AST extraction/VM in temporary directory; core-oracle.mjs and adapter-check.mjs; no full page execution"
+  }
+}

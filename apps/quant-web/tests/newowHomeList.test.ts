@@ -6,9 +6,37 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
+
+
+test('home card wording follows identified composite facts without inventing prices or confirmations', () => {
+  const day = {...ready('BUILD'), reference_cost:'50.47', target:'53.75', current_event:{kind:'BUILD' as const, bar_end:ready('BUILD').bar_end!, signal_id:'buy'}, reference_current:'53.5', guard_ma10:'50'}
+  const week = ready('FLAT')
+  const buy = homeCardPresentation(day, week)
+  assert.equal(buy.price, '50.47')
+  assert.equal(buy.prefix, '预估当前')
+  assert.equal(buy.suffix, '附近可以买入')
+  assert.equal(buy.signal, '买入信号')
+  assert.equal(buy.context, '日线买入（周线未确认），先反弹到53.75（日线目标价）')
+  assert.equal(buy.stageIndex, 1)
+  assert.match(homeCardPresentation(day, ready('HOLD')).context, /日周共振买入/)
+  assert.equal(homeCardPresentation(ready('HOLD'), ready('HOLD')).signal, '持股信号')
+  assert.match(homeCardPresentation(ready('FLAT'), ready('BUILD')).context, /周线买入（日线未确认）/)
+  assert.doesNotMatch(homeCardPresentation(ready('FLAT'), ready('BUILD')).context, /日周共振/)
+  const sell = homeCardPresentation(ready('HOLD'), ready('CLEAR'))
+  assert.match(sell.context, /周线卖出/)
+  assert.equal(sell.stageIndex, 3)
+  const flat = homeCardPresentation(ready('FLAT'), ready('FLAT'))
+  assert.equal(flat.signal, '空仓信号')
+  assert.match(flat.context, /等待买入信号/)
+  const missing = homeCardPresentation(day, {status:'warming',state:null})
+  assert.equal(missing.state, null)
+  assert.equal(missing.stageIndex, -1)
+  assert.doesNotMatch(missing.context, /日周共振|附近可以买入/)
+  assert.equal(homeCardPresentation({...day, reference_cost:null, absorb:null}, week).price, '--')
+})
 
 test('daily target/absorb follows only the ready state and uses Decimal rounding', () => {
   for (const state of ['BUILD', 'HOLD'] as const) assert.deepEqual(homeReferenceDisplay(ready(state)), { label: '目标', text: '9007199254740993.13' })
@@ -38,7 +66,7 @@ test('composite covers all stage pairs without changing daily reference selectio
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_as_of: '2026-10-11T00:00:00.000001Z' }).state, null)
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), physical_contract: 'RB2705' }).state, null)
   assert.equal(homeCompositeDisplay(ready('HOLD'), { ...ready('HOLD'), display_projection_version: undefined }).state, null)
-  assert.equal(homeTrendDisplay().label, '独立趋势来源未确认')
+  assert.equal(homeTrendDisplay().label, '趋势来源待确认')
 })
 
 test('current events are exact-bar owned, price guarded and historical recent actions never override', () => {
@@ -82,7 +110,8 @@ test('home supplemental facts keep daily ownership and ordinary page return', ()
 })
 
 const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
-const apiUrl = moduleUrl('export function invalidateHomeCard(){};export const performanceCalls=[];export const authorityCalls=[];export function configureHomeCardAuthority(...args){authorityCalls.push(args)};export function peekNewowHomeCards(){return undefined};export function getNewowHomePerformance(product,strategy,fact,signal){return new Promise((resolve,reject)=>performanceCalls.push({product,strategy,fact,signal,resolve,reject}))};export const calls=[];export function getNewowHomeCards(products,signal){return new Promise((resolve,reject)=>calls.push({products,signal,resolve,reject}))}')
+const apiUrl = moduleUrl(`export const calls=[]; export const homeSnapshotCache={peek(){return undefined},put(){return Promise.resolve()},discard(){return Promise.resolve()}};export function getNewowHomeProjection(signal){return new Promise((resolve,reject)=>calls.push({signal,resolve(value){resolve({...value,items:value.items.map(item=>({...item,projection_status:'ready',computed_at:value.requested_at}))})},reject}))}`)
+
 const api = await import(apiUrl)
 async function loadList() {
   const iconSource = readFileSync(new URL('../src/components/market/MarketStateIcon.vue', import.meta.url), 'utf8')
@@ -100,7 +129,7 @@ async function loadList() {
     .replace(/from ['"]\.\/detail\/newow\/NewowPriceSources\.vue['"]/g, `from '${priceUrl}'`)
     .replace(/from ['"]\.\/MarketStateIcon\.vue['"]/g, `from '${iconUrl}'`)
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
-    .replace(/from ['"]@\/api\/newowHomeCards['"]/g, `from '${apiUrl}'`)
+    .replace(/from ['"]@\/api\/(newowHomeCards|homeSnapshotCache)['"]/g, `from '${apiUrl}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_m, name) => `from '${pathToFileURL(resolve(root, name + '.ts')).href}'`)
   return (await import(moduleUrl(code))).default
 }
@@ -114,24 +143,18 @@ test('rows expand and summary cards navigate with selected strategy while retain
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows, products: ['rb'], authority: 'one', refreshSequence: sequence.value, liveStale: true, sort: 'default', sortDirection: 'desc', onChart: (...args: unknown[]) => chart.push(args), onSort: (value: unknown) => sorts.push(value) }) }))
   try {
     app.mount(root)
-    assert.equal(api.authorityCalls.at(-1)?.[1], false)
     const call = api.calls.at(-1)
     call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:true, executable:false, items:[{kind:'caution', peak_day:'2026-10-08', event_day:'2026-10-09', formula_version:'mirror'}]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
     await settle()
     assert.match(nodeText(root), /3100.13/)
     assert.equal(nodeText(findNode(root, n => n.props.class === 'row-hint')!), '小心')
     assert.match(nodeText(root), /9007199254740993.13/)
-    assert.match(nodeText(root), /趋势来源未确认/)
+    assert.ok(findNode(root, n => n.type === 'svg' && n.props['aria-label'] === '趋势来源待确认'))
     assert.doesNotMatch(nodeText(root), /日周向上/)
     const summary = findNode(root, n => n.props['aria-label'] === '螺纹钢展开策略摘要')!
     assert.equal(summary.props['aria-expanded'], false)
     ;(summary.props.onClick as Function)(); await nextTick()
     assert.equal(summary.props['aria-expanded'], true)
-    assert.match(nodeText(root), /日周向上/)
-    assert.match(nodeText(root), /日周综合/)
-    assert.match(nodeText(root), /来源信息不可用/)
-    assert.match(nodeText(root), /原站私有价格逐值一致未证明/)
-    assert.match(nodeText(root), /断线保留最新完成报价/)
     assert.equal(findNode(root, n => n.type === 'details')?.props.open, undefined)
     assert.deepEqual(chart, [])
     assert.equal(findNode(root, n => n.props.class === 'summary-toggle'), null)
@@ -140,24 +163,23 @@ test('rows expand and summary cards navigate with selected strategy while retain
     const switcher = findNode(root, n => n.type === 'button' && nodeText(n) === '震荡')!
     ;(switcher.props.onClick as Function)(); await nextTick()
     assert.match(nodeText(root), /3000.00/)
-    assert.match(nodeText(root), /日周向下/)
     assert.match(nodeText(root), /等待最新周期更新/)
     ;(findNode(root, n => n.props.role === 'link')!.props.onClick as Function)()
     assert.deepEqual(chart, [['rb', 'trend', '1d'], ['rb', 'oscillation', '1d']])
     sequence.value++; await nextTick()
     api.calls.at(-1).resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': { ...ready('HOLD'), target_space_percent: '4' }, '1w': ready('CLEAR') }, oscillation: { '1d': { ...ready('FLAT'), absorb_space_percent: '-3' }, '1w': ready('HOLD') } } }] })
     await settle()
-    assert.match(nodeText(root), /日线吸筹参考价相对确认收盘价 -3/)
+    assert.match(nodeText(root), /周线持股/)
     ;(findNode(root, n => n.type === 'button' && nodeText(n) === '趋势')!.props.onClick as Function)(); await nextTick()
-    assert.match(nodeText(root), /日线目标参考价相对确认收盘价 \+4/)
+    assert.match(nodeText(root), /周线卖出/)
     ;(switcher.props.onClick as Function)(); await nextTick()
 
-    assert.match(nodeText(root), /空仓.*建仓.*持有.*清仓/)
+    assert.match(nodeText(root), /空仓.*买入.*持股.*卖出/)
     assert.match(nodeText(root), /参考收益待确认/)
     const sort = findNode(root, n => n.type === 'button' && nodeText(n).startsWith('涨跌幅'))!
     ;(sort.props.onClick as Function)(); assert.deepEqual(sorts, ['change'])
     sequence.value++; await nextTick()
-    assert.match(nodeText(root), /策略刷新中，保留上次快照/)
+    assert.match(nodeText(root), /策略历史快照，正在重新验证/)
     api.calls.at(-1).reject(Error('offline')); await settle()
     assert.match(nodeText(root), /策略刷新失败，保留上次快照/)
     assert.match(nodeText(root), /3000.00/)
@@ -167,16 +189,16 @@ test('rows expand and summary cards navigate with selected strategy while retain
     await settle()
     assert.match(nodeText(root), /日线预热中/)
     assert.match(nodeText(root), /周线不可用/)
-    assert.match(nodeText(root), /日周一致性不可用/)
+    assert.equal(findNode(root, n => String(n.props.class).includes("composite-evidence")), null)
     assert.doesNotMatch(nodeText(root), /日周向下|策略刷新失败/)
-    assert.match(nodeText(root), /综合状态不可用/)
+    assert.match(nodeText(root), /日周状态待确认/)
     ;(summary.props.onClick as Function)(); await nextTick()
     assert.equal(summary.props['aria-expanded'], false)
     assert.doesNotMatch(nodeText(root), /日周综合/)
   } finally { app.unmount() }
 })
 
-test('sector changes cancel obsolete requests and preserve displayed product order', async () => {
+test('sector changes reuse the one batch request and preserve displayed product order', async () => {
   const List = await loadList(), root = element('root')
   const all = ['rb', 'cu', 'a'].map(symbol => ({ symbol, product_name: symbol, reason_codes: [], close: 100, price_change_1d: 0 }))
   const rows = ref(all), authority = ref('one')
@@ -188,12 +210,12 @@ test('sector changes cancel obsolete requests and preserve displayed product ord
   try {
     app.mount(root)
     const initial = api.calls.slice(start)
-    assert.deepEqual(initial.map(call => call.products), [['rb'], ['cu']])
+    assert.equal(initial.length, 1)
     rows.value = [all[2]!]; await nextTick()
-    assert.ok(initial.every(call => call.signal.aborted))
-    assert.deepEqual(api.calls.at(-1).products, ['a'])
+    assert.ok(initial.every(call => !call.signal.aborted))
+    assert.equal(api.calls.length, start + 1)
     const before = api.calls.length
-    initial.forEach(call => call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: call.products.map((product: string) => ({ product, strategies: { trend: { '1d': ready('HOLD'), '1w': ready('HOLD') }, oscillation: { '1d': ready('FLAT'), '1w': ready('FLAT') } } })) }))
+    initial.forEach(call => call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: all.map(({symbol: product}) => ({ product, strategies: { trend: { '1d': ready('HOLD'), '1w': ready('HOLD') }, oscillation: { '1d': ready('FLAT'), '1w': ready('FLAT') } } })) }))
     await settle()
     assert.equal(api.calls.length, before, 'obsolete queue must not start hidden a product')
     assert.doesNotMatch(nodeText(root), /rb RB/)
@@ -263,43 +285,38 @@ test('row hints require exact daily ownership and do not create a trend source',
 })
 
 
-test('expanded performance is lazy, deduplicated, authority isolated and recovers one rejected product owner', async () => {
-  const List = await loadList(), root = element('root'), authority = ref('first')
-  const row = { symbol: 'rb', product_name: '螺纹钢', reason_codes: [], close: 3100, price_change_1d: 0 }
-  const packet = (token: string) => ({ schema_version: 'newow_home_cards_v2', requested_at: ready('FLAT').display_as_of, items: [{ product:'rb', strategies: { trend: { '1d': { ...ready('FLAT'), snapshot_token:token }, '1w':ready('FLAT') }, oscillation: { '1d':{ ...ready('HOLD'), snapshot_token:token + '-osc' }, '1w':ready('HOLD') } } }] })
-  const initialCount = api.performanceCalls.length
-  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(List, { rows:[row], products:['rb'], authority:authority.value, refreshSequence:0, liveStale:false, sort:'default', sortDirection:'desc' }) }))
+test('expanded precomputed performance never issues a separate HTTP read', async () => {
+  const List = await loadList(), root = element('root')
+  const row = { symbol:'rb',product_name:'螺纹钢',reason_codes:[],close:3100,price_change_1d:0 }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(List,{rows:[row],products:['rb'],authority:'first',refreshSequence:0,liveStale:false,sort:'default',sortDirection:'desc'})}))
   try {
-    app.mount(root); api.calls.at(-1).resolve(packet('one')); await settle()
-    assert.equal(api.performanceCalls.length, initialCount)
-    const toggle = () => (findNode(root, n => n.props['aria-label'] === '螺纹钢展开策略摘要')!.props.onClick as Function)()
-    toggle(); await settle(); assert.equal(api.performanceCalls.length, initialCount + 2)
-    assert.match(nodeText(root), /参考收益读取中/)
-    toggle(); toggle(); await settle(); assert.equal(api.performanceCalls.length, initialCount + 2)
-    const oldTrend = api.performanceCalls[initialCount], oldOsc = api.performanceCalls[initialCount + 1]
-    authority.value = 'second'; await settle(); api.calls.at(-1).resolve(packet('one')); await settle()
-    assert.equal(api.performanceCalls.length, initialCount + 4)
-    const perf = (strategy: string, percent: string) => ({ status:'ready', version:'newow_page_performance_v3379_v2', strategy, frequency:'1d', as_of:ready('FLAT').as_of, input_sha256:'history', cum_return_percent:percent, trade_count:5, page_parity:true, executable:false })
-    oldTrend.resolve(perf('trend','999')); oldOsc.reject(Error('old offline')); await settle()
-    assert.doesNotMatch(nodeText(root), /999|读取失败/)
-    api.performanceCalls[initialCount + 2].reject(Object.assign(Error('conflict'), { code:'NEWOW_SNAPSHOT_GENERATION_CONFLICT' })); await settle()
-    assert.match(nodeText(root), /策略刷新中，保留上次快照/)
-    api.calls.at(-1).resolve(packet('two')); await settle()
-    assert.equal(api.performanceCalls.length, initialCount + 6)
-    api.performanceCalls[initialCount + 3].resolve(perf('oscillation','999')); await settle()
-    api.performanceCalls[initialCount + 4].resolve(perf('trend','20.59'))
-    api.performanceCalls[initialCount + 5].resolve(perf('oscillation','62.14')); await settle()
+    app.mount(root)
+    const day = {...ready('HOLD'), page_performance:{status:'ready',version:'page-v1',strategy:'trend',frequency:'1d',as_of:ready('HOLD').as_of,input_sha256:'history',cum_return_percent:'20.59',trade_count:5,page_parity:true,executable:false}}
+    api.calls.at(-1).resolve({requested_at:ready('HOLD').display_as_of,items:[{product:'rb',strategies:{trend:{'1d':day,'1w':ready('HOLD')},oscillation:{'1d':ready('FLAT'),'1w':ready('FLAT')}}}]})
+    await settle()
+    const before = api.calls.length
+    ;(findNode(root,n=>n.props['aria-label']==='螺纹钢展开策略摘要')!.props.onClick as Function)();await settle()
     assert.match(nodeText(root), /20.59%/)
-    const before = api.performanceCalls.length
-    ;(findNode(root, n => n.type === 'button' && nodeText(n) === '震荡')!.props.onClick as Function)(); await settle()
-    assert.match(nodeText(root), /62.14%/); assert.doesNotMatch(nodeText(root), /999/)
-    toggle(); toggle(); await settle(); assert.equal(api.performanceCalls.length, before)
-  } finally { app.unmount() }
+    assert.equal(api.calls.length,before)
+  } finally {app.unmount()}
 })
-
 
 test('period disclosure distinguishes a data conflict from an unconfirmed private source', () => {
   assert.match(homePeriodReason({ status: 'unavailable', state: null, reason_code: 'REFERENCE_CANONICAL_MISMATCH' })!, /身份冲突/)
   assert.equal(homePeriodReason({ status: 'ready', state: 'HOLD' }), null)
-  assert.equal(homeTrendDisplay().label, '独立趋势来源未确认')
+  assert.equal(homeTrendDisplay().label, '趋势来源待确认')
+})
+
+test('MA60 approximate trend uses precomputed D1 identity and preserves stale direction', () => {
+  const fact = ready('HOLD')
+  fact.independent_trend = {status:'ready',direction:'bull',frequency:'1d',formula_version:'guiyi_home_close_ma60_v1',bar_end:fact.bar_end!,physical_contract:fact.physical_contract!,segment_id:fact.segment_id!,calculation_segment_id:fact.calculation_segment_id!,parent_input_sha256:fact.input_sha256!,input_sha256:'window',close:'101',ma60:'100',sample_count:60,approximate:true,page_parity:false,executable:false}
+  assert.equal(homeTrendDisplay(fact).tone, 'up')
+  assert.match(homeTrendDisplay(fact).label, /MA60近似/)
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,direction:'bear'}}).tone,'down')
+  assert.match(homeTrendDisplay(fact, {stale:true} as any).title, /历史/)
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,physical_contract:'OTHER'}}).tone,'pending')
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,parent_input_sha256:'other'}}).tone,'pending')
+  assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,formula_version:'unrecognized'}}).tone,'pending')
+  assert.match(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,status:'warming',direction:null,sample_count:59}}).label,/预热/)
+  assert.equal(homeTrendDisplay(fact).tone, 'up') // No quote input is accepted.
 })

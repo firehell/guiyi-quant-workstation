@@ -18,6 +18,7 @@ const props = defineProps<{
   header: MarketDetailHeaderModel
   unified?: boolean
   newow?: boolean
+  hideExtendedFacts?: boolean
   identityKey: string
 }>()
 
@@ -55,7 +56,7 @@ function integer(value: number | null): string {
       </span>
     </div>
     <div class="quote-header__meta">
-      <p v-if="!newow" class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · 截至 {{ asOfText }}</p>
+      <p v-if="!newow || header.freshness === 'stale'" class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · 截至 {{ asOfText }}</p>
       <div class="quote-header__facts-row">
         <p v-if="!newow" class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
         <div v-if="newow" class="quote-header__newow-facts">
@@ -80,7 +81,7 @@ function integer(value: number | null): string {
     </div>
 
     <MarketFactsDisclosure
-      v-if="!newow"
+      v-if="!newow && !hideExtendedFacts"
       :identity-key="identityKey"
       :sections="header.extendedSections"
       :freshness="header.freshness"

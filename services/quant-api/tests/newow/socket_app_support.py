@@ -1,7 +1,9 @@
 """Spawn-only socket harness for the real app with owned in-memory MDS facts.
 
-No test endpoints or product-service replacements: the normal route composition
-owns its SnapshotCache, HeavyResourceGate and InFlightCoordinator per process.
+No test endpoints: the normal service owns its SnapshotCache, HeavyResourceGate
+and InFlightCoordinator per process. A fixture-only composition omits the saved
+reference adapter so these tests exercise transport/navigation with in-memory
+facts, not the public Canonical persistence contract (tested independently).
 """
 
 from contextlib import contextmanager
@@ -26,6 +28,15 @@ def _serve(listener):
     from app.market_data.domain import BarFrequency
     from newow.product_fixtures import ProductCases
     import uvicorn
+
+    # Deliberate fixture boundary, never a fallback after a failed saved read.
+    # No application or production configuration is changed.
+    original_composition = market_newow.NewowComposition
+    class SocketComposition(original_composition):
+        def service(self, **kwargs):
+            kwargs['persisted_reference'] = None
+            return super().service(**kwargs)
+    market_newow.NewowComposition = SocketComposition
 
     cases = ProductCases()
     _, _, facts = cases.paged_reader(prefix_bars=520, frequency="1d")

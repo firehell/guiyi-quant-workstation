@@ -1472,6 +1472,7 @@ def test_binding_rejects_duplicate_ignored_setting(target):
 def test_binding_drops_active_settings_that_closeout_does_not_consume(target):
     ignored_names = (
         "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
+        "GUIYI_NEWOW_FUTURES_RESULTS_ROOT",
         "VITE_API_BASE_URL", "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET",
         "VITE_PROXY_WS_TARGET",
     )

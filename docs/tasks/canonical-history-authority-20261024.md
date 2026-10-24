@@ -1,15 +1,69 @@
-# 正式历史唯一口径：v1.15.18 最小补丁
+# 正式历史读取与展示收敛（2026-10-24）
 
-Owner 已交办盘后 Canonical 作为唯一正式历史口径。此补丁基于 exact v1.15.17，只回移正式入口及审计隔离修复，不带入 develop 其他未发布的输入、公式或 launcher 变化。
+## 目标与边界
 
-Newow/Subing 固定原有已保存历史 reader，保留原生完整来源证明和质量拒绝。通用记录面板仅作首次事件审计；Subing 正式图只画 Canonical callouts/指标，实时标记仅在审计模式显示。HTDY 本版不新增历史模型，仅保留既有 Canonical 指标并将实际事件标记改为显式审计。旧记录不删、不回写、不重放通知。
+Owner 已交办：盘后 Canonical 是历史行情、指标、信号与参考交易的唯一正式口径；较晚来源修订由历史重算处理。实时首次事件、通知和旧不可变记录保留作审计，不能反向改写或补发。不宣称缺失的观察原件恢复，不把未完成交易日标为完整。
 
-旧 2,565 条对应 Canonical 已齐全，240 路 H1 独立历史经新 lease 验收。新 611 条属于未完成的 10/26 交易日，本补丁不将其标为完整。正式部署、旧故障进程处置及运行读回另行执行，不由离线测试推导完成。
+本项仅源码、领域合同和离线验证；不连接生产服务、数据库或 Redis，不修改 STATUS、版本、Runtime 配置或 output 证据，不发布或提交。现场数据修复和运行切换由主任务独立交付。
 
-验证与发布的实际结果由主任务在通过后追加。
+## 实现
 
-## 精确候选实际验证
+- Newow 正式产品参考固定 `PersistedNewowReference`；SuBing 正式参考固定 `PersistedSubingReference`。废弃 reader-mode 环境开关不能选择另一个公共历史实现；未构建、过期、来源不明和质量异常不回退到现算或 forward。
+- HTDY 保留其既有专用 Canonical 历史模型；图表信号与该模型使用同一实现，环境开关不再将它切换到另一种参考身份。
+- SuBing 参考与图表信号共享完整历史输入前缀证明。读取保存点前后都验证当前 Canonical；图表窗口之前的预热前缀修订也必须拒绝，保留既有分页和元数据证据边界。
+- 正式历史图仅显示 Canonical 历史信号。通用记录面板只读首次事件审计，不再通过未验证的 generic snapshot 包装第二个正式历史入口。真实事件、实际观察时间和通知均不改写。
+- 历史信号缓存绑定已加载 Bar 的 OHLCV、成交额、持仓量及物理/计算身份；正式行情 replace、正式参考源身份变化或主动重试均重新读取。即使可见 Bar 不变，较早前缀修订也不能保留 COMPLETE 缓存；旧请求晚到与失败不覆盖或补成实时信号。
+- 底层 generic snapshot API 明确标记为 immutable audit snapshot，不能单凭该快照或 checkpoint CURRENT 宣称当前 Canonical 来源已验证。
 
-扩展后端 819 passed / 81 skipped；完整 Web 1168 passed / 3 skipped；正式sourceproof/API定向24项及审计面板4项独立复验通过。Subing读取前后用同一revision/seq验证完整Canonical前缀；mid-read暖机前缀修订拒绝旧结果。原融合cache三项fixture补充精确historical模式断言后全套通过，未放宽代际检查。
+## 实际验证
 
-OpenSpec strict、secret scan、diff、离线uv lock通过。独立Review无剩余Confirmed Issue，允许发布main/tag。候选与v16对比db/live/input/formula/launcher指纹相等，仅reference合同变化。实际发布与维护续接/readback由主任务在Git外证据和develop STATUS中追加，当前不提前声明上线或自然采集验收。
+```sh
+PYTHONDONTWRITEBYTECODE=1 \
+PYTHONPATH=.:services/quant-api:packages/quant-core:services/quant-api/tests:services/quant-api/tests/reference_trading \
+GUIYI_LOG_DIR=/private/tmp/guiyi-formal-history-review \
+services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+ services/quant-api/tests/reference_trading/test_formal_history_authority.py \
+ services/quant-api/tests/reference_trading/test_signal_window.py \
+ services/quant-api/tests/reference_trading/test_source_identity.py \
+ services/quant-api/tests/test_subing_reference_api.py \
+ services/quant-api/tests/newow/test_composition.py \
+ services/quant-api/tests/reference_trading/test_historical_integration.py \
+ services/quant-api/tests/reference_trading/test_api.py
+```
+
+结果：47 passed、1 skipped。跳过的是需要独立数据库的既有集成项；本任务未连接数据库。
+
+```sh
+cd apps/quant-web
+node --test tests/historicalSignalRanges.test.ts tests/newowRecordingPanel.test.ts tests/referenceTrading.test.ts
+```
+
+结果：18 passed。覆盖 Canonical-only 选择、可见 Bar 修订、可见 Bar 不变但源前缀换版、失败清除旧 marker、过时响应拒绝、夜盘审计交易日及禁止 generic 面板选择历史流。
+
+5 个修改的 Vue SFC 经 `@vue/compiler-sfc` 编译通过；`git diff --check` 通过。
+
+## 待主任务完成
+
+独立高风险 Review、全 Web/typecheck/build、必要扩展回归、正式发布/运行切换和自然验收仍由主任务执行。离线测试不证明生产数据完整或 Runtime 已切换。
+
+补充失败路径验证：正式参考来源撤销或读取失败时同步清除图表旧 COMPLETE 信号，且错误未解除前禁止由 unchanged Bars 重绘。HTDY 保留旧 result 的错误路径同样覆盖；定向 Web 18 passed，vue-tsc -b exit 0。
+
+## 主线程扩大验证与交付隔离
+
+完整 Web 1195 passed / 3 skipped；扩展后端 894 passed / 81 skipped（需独立服务/数据库的既有项）；P2 参考读取失败撤销旧信号修正后定向 Web 18 passed，类型检查和完整 build/topology 通过。reference-trading OpenSpec strict、secret scan、diff 检查通过；独立 Review 无剩余 Confirmed Issue，允许集成 develop。最初后端两项因临时日志目录未创建失败，创建独占目录后完整集合重跑通过，旧输出不冒充业务失败。
+
+develop 相对已发布 v1.15.17 还含其他任务的 input/formula/launcher 变化，因此正式 v1.15.18 从 exact v17 独立最小回移本修复，不发布其他未完成合同。正式候选、现场维护续接和实际读回完成后另记，不用 develop 验证替代候选验证。
+
+正式最小补丁 v1.15.18 已经 PR466 发布，main/tag peeled `062310abd5eca6fac442bd565258ab0b05fa2d73`，合并树与候选 `814471345658affa415e8c247ae74a5de24c5a6a` 完全相等；Release非draft/非prerelease。精确补丁后端819 passed/81 skipped、完整Web1168 passed/3 skipped、构建及独审通过。回合develop冲突保留已验证完整实现，不把v17最小补丁覆盖其他未发布功能；运行续接仍单独验收。
+
+## 现场切换与入口读回（14:44 CST）
+
+004 plan `59a5c53d48e704522c1eb18b6a8c0d03a249e4fc61de4d47b660dd57085bfb43` 单次执行成功，六轮完整旧PK事实核对通过，十项v1.15.18/gen23一致，六常驻PID/发布树/OS锁独立验证通过，PG维护锁持有者0。证据：`output/data-three-repair-20261023/suspended-continuation-004/attempt-1/completed.json`、`final-runtime-readback/identity-001.json`、`pg-lock-001.json`。原2565及611自然原件未恢复，旧事实未改写，无replay/补发。
+
+`v18-formal-history-readback-001.json`：API版本1.15.18，Newow JM60m/D1正式返回persisted Canonical历史；苏冰JM15m/D1返回503 NOT_BUILT，必须继续调查/补齐，不能以fail-closed本身宣布整体完成。新自然采集、Event、Push不在这份闭市读回证明范围。
+
+## 正式历史资产现场缺失与补齐（16:00 CST）
+
+首轮240苏冰身份清点236 ABSENT、4 RB active但仅算到9/22，历史起点均2023-01-01；不能把NOT_BUILT关闭显示或恢复实时fallback冒充完成。JM4原生单次构建completed，完整源前缀/checkpoint及四正式API independent通过（`subing-jm-independent-001/result.json`）。逐路dispatcher独审修复absence与PGlease并发窗口、精确inventory SHA/fullidentity/start及O_EXCL+fsync intent，8安全测试通过；remaining attempt001已完成A/AG共8，AL15m在1800秒预算后明确partial/INTERRUPTED，225792/320074输入、完整token，非unknowncommit。旧attempt不重跑；新现场inventory004为16active/1candidate/223absent。
+
+AL精确单次resume沿用原51.4MBplan/hash/budget，只允许完整INTERRUPTED/token/receipt/checkpoint/source连续nativelease下核对，未知禁止retry。RB4只读计划均EXACT_APPEND_PROVEN，仅375/196/115/17尾输入，待原生advance。源asset补齐与全范围正式API尚未完成；新版Web5173 index与exactv18 dist逐字一致。

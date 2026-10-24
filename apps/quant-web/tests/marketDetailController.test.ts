@@ -484,7 +484,7 @@ test('Newow chart starts while generic series is still pending', async () => {
   controller.dispose()
 })
 
-test('SuBing daily falls back to its quality-segmented reference when the strict generic series fails', async () => {
+test('SuBing daily reports canonical chart failure independently from reference records', async () => {
   const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
   const series = fakeSeries()
   let genericRequests = 0
@@ -502,9 +502,9 @@ test('SuBing daily falls back to its quality-segmented reference when the strict
   await controller.switchIdentity(identity)
 
   assert.equal(genericRequests, 1)
-  assert.equal(controller.state.value.error, null)
+  assert.equal(controller.state.value.error, '详情行情加载失败')
   assert.equal(controller.state.value.loading, false)
-  assert.ok(controller.state.value.header)
+  assert.equal(controller.state.value.header, null)
   assert.deepEqual(controller.bars.value, [])
   controller.dispose()
 })

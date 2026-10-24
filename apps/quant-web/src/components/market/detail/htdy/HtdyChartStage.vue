@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { KlineReferenceCallout } from '@/types/referenceCallout'
 import { computed } from 'vue'
 
 import MarketKlineStage from '@/components/market/detail/MarketKlineStage.vue'
@@ -17,18 +18,29 @@ const props = defineProps<{
   rangeDetectorSourceIdentity: string
   rangeDetectorAnchorTime: string | null
   identityKey: string
+  hasMoreBefore?: boolean
+  loadingBefore?: boolean
+  historyError?: string | null
   focusBarEnd?: string | null
+  referenceCallouts?: KlineReferenceCallout[]
+  historicalMode?: boolean
   markers: readonly KlineMarker[]
 }>()
-const emit = defineEmits<{ 'load-earlier': []; 'focus-resolved': [focusBarEnd: string] }>()
-const htdyMarkers = computed(() => markersForDetailView('htdy', props.markers))
+const emit = defineEmits<{
+  'visible-from-change': [time: string | null]
+  'range-detector-result': [result: { count: number; calculationMs: number }]
+ 'load-earlier': []; 'focus-resolved': [focusBarEnd: string] }>()
+const htdyMarkers = computed(() => props.historicalMode ? [...props.markers] : markersForDetailView('htdy', props.markers))
 </script>
 
 <template>
   <MarketKlineStage
+    :show-derived-markers="false" :reference-callouts="referenceCallouts"
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"
     :visible-main-indicators="visibleMainIndicators" :range-detector-source-identity="rangeDetectorSourceIdentity"
     :range-detector-anchor-time="rangeDetectorAnchorTime" :identity-key="identityKey" :focus-bar-end="focusBarEnd"
-    :markers="htdyMarkers" @load-earlier="emit('load-earlier')" @focus-resolved="emit('focus-resolved', $event)"
+    :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :markers="htdyMarkers" @load-earlier="emit('load-earlier')" @focus-resolved="emit('focus-resolved', $event)"
+    @visible-from-change="emit('visible-from-change', $event)"
+    @range-detector-result="emit('range-detector-result', $event)"
   />
 </template>

@@ -11,6 +11,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
+import re
 from typing import Callable
 
 from app.reference_trading.contracts import manifest_sha256
@@ -26,6 +27,7 @@ from guiyi_quant.reference_trading.adapters import AdapterCheckpoint, strategy_i
 from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_to_json
 
 VERSION = 'original_conflict_warm_seed_v1'
+RETAINED_VERSION = 'retained_conflict_warm_seed_v1'
 BASE_SCHEMA = 'newow_product_replay_v1'
 FUSION_SCHEMA = 'newow_dual_fusion_reference_v1'
 
@@ -147,7 +149,17 @@ def _baseline(baseline, fresh_snapshot, verify):
     return authority
 
 
-def materialize_warm_seed(baseline: WarmBaseline, *, fresh_snapshot: HistoricalInputSnapshot,
+def materialize_warm_seed(baseline: WarmBaseline, **kwargs) -> MaterializedWarmSeed:
+    return _materialize_warm_seed(baseline, version=VERSION, **kwargs)
+
+
+def materialize_retained_warm_seed(baseline: WarmBaseline, **kwargs) -> MaterializedWarmSeed:
+    """Normal retained originals have separate provenance; never repair receipts."""
+    return _materialize_warm_seed(baseline, version=RETAINED_VERSION, **kwargs)
+
+
+def _materialize_warm_seed(baseline: WarmBaseline, *, version: str,
+        fresh_snapshot: HistoricalInputSnapshot,
         inputs: tuple[WarmInput, ...], expected_endpoints: tuple[datetime, ...],
         recording_start: datetime, cutoff: datetime, verify_authority: Callable,
         stage: str = 'final_observation', knowledge_at: datetime | None = None) -> MaterializedWarmSeed:
@@ -214,8 +226,20 @@ def materialize_warm_seed(baseline: WarmBaseline, *, fresh_snapshot: HistoricalI
             and all(_sha(fresh.get(k)) for k in ('source_manifest_sha256', 'owner_sha256', 'session_sha256', 'quality_sha256'))
             and fresh == item.source_proof, 'WARM_SEED_INPUT_AUTHORITY_INVALID')
         if item.source_kind == 'completed_live':
-            require(_sha(fresh.get('recovery_plan_sha256')) and _sha(fresh.get('recovery_readback_sha256')),
-                'WARM_SEED_LIVE_RECOVERY_UNVERIFIED')
+            if version == VERSION:
+                require(_sha(fresh.get('recovery_plan_sha256')) and _sha(fresh.get('recovery_readback_sha256')),
+                    'WARM_SEED_LIVE_RECOVERY_UNVERIFIED')
+            else:
+                require(version == RETAINED_VERSION
+                    and fresh.get('provenance') == 'retained_completed_observation_v1'
+                    and all(_sha(fresh.get(key)) for key in ('envelope_sha256',
+                        'identity_index_sha256', 'interval_sha256', 'original_readback_sha256'))
+                    and isinstance(fresh.get('journal_id'), str)
+                    and re.fullmatch(r'[0-9]+-[0-9]+', fresh['journal_id'])
+                    and isinstance(fresh.get('observation_id'), str) and fresh['observation_id']
+                    and fresh.get('journal_key') == 'live:observations:completed:' + bar.trading_day.isoformat()
+                    and not {'recovery_plan_sha256', 'recovery_readback_sha256'}.intersection(fresh),
+                    'WARM_SEED_RETAINED_OBSERVATION_UNVERIFIED')
         old_owner = (checkpoint.physical_contract, checkpoint.owner_segment_id, checkpoint.calculation_segment_id)
         new_owner = (bar.physical_contract, bar.segment_id, product.calculation_segment_id)
         rollover = old_owner != new_owner
@@ -236,7 +260,7 @@ def materialize_warm_seed(baseline: WarmBaseline, *, fresh_snapshot: HistoricalI
             ReferenceState.flat(identity, recording_start=start))
         previous = _aware(bar.bar_end)
         records.append({'facts': facts, 'authority': fresh})
-    proof = {'version': VERSION, 'original_source_binding': deepcopy(baseline.binding),
+    proof = {'version': version, 'original_source_binding': deepcopy(baseline.binding),
         'original_manifest': deepcopy(baseline.saved_manifest),
         'fresh_original_range_manifest': deepcopy(fresh_snapshot.dependency_manifest),
         'baseline_authority': authority, 'inputs': records, 'rollovers': rollovers,
@@ -251,12 +275,13 @@ def materialize_warm_seed(baseline: WarmBaseline, *, fresh_snapshot: HistoricalI
 
 
 def _result(identity, checkpoint, schema, proof, original_binding):
-    manifest = {'reader': VERSION, 'warm_seed_version': VERSION, 'proof': deepcopy(proof),
+    version = proof['version']
+    manifest = {'reader': version, 'warm_seed_version': version, 'proof': deepcopy(proof),
         'formula_versions': list(identity.formula_versions), 'reference_model_version': identity.reference_model_version}
     content = adapter_checkpoint_to_json(checkpoint, strategy_schema=schema)
     checkpoint_hash = sha256(content.encode()).hexdigest()
     seed_hash = _hash({'checkpoint_hash': checkpoint_hash, 'manifest': manifest})
-    binding = {'kind': VERSION, 'stream_id': identity.stream_id,
+    binding = {'kind': version, 'stream_id': identity.stream_id,
         'revision_id': original_binding['revision_id'], 'seq': original_binding['seq'],
         'checkpoint_hash': checkpoint_hash, 'dependency_digest': manifest_sha256(manifest),
         'computed_through': checkpoint.computed_through.isoformat(), 'seed_hash': seed_hash,
@@ -265,10 +290,10 @@ def _result(identity, checkpoint, schema, proof, original_binding):
 
 
 def materialize_fusion_warm_seed(identity: StreamIdentity, bases: tuple[MaterializedWarmSeed, ...],
-        *, original_binding: dict, recording_start: datetime) -> MaterializedWarmSeed:
+        *, original_binding: dict, recording_start: datetime, version: str = VERSION) -> MaterializedWarmSeed:
     require(len(bases) == 3 and {b.identity.strategy_code for b in bases}
         == {'newow_trend', 'newow_oscillation', 'newow_main_rise'}, 'WARM_SEED_FUSION_BASES_INVALID')
-    require(all(b.schema == BASE_SCHEMA and b.proof.get('version') == VERSION for b in bases)
+    require(all(b.schema == BASE_SCHEMA and b.proof.get('version') == version for b in bases)
         and len({(b.identity.product, b.identity.frequency, b.proof['input_chain_sha256'],
             b.proof['cutoff'], b.proof['recording_start'], b.proof['stage'],
             b.proof['knowledge_at'], b.checkpoint.computed_through,
@@ -292,7 +317,7 @@ def materialize_fusion_warm_seed(identity: StreamIdentity, bases: tuple[Material
         'WARM_SEED_FUSION_IDENTITY_CONFLICT')
     checkpoint = replace(first.checkpoint, strategy_state=FusionReferenceReplayState(), stream=identity,
         reference_state=ReferenceState.flat(identity, recording_start=_aware(recording_start)))
-    proof = {'version': VERSION, 'input_chain_sha256': first.proof['input_chain_sha256'],
+    proof = {'version': version, 'input_chain_sha256': first.proof['input_chain_sha256'],
         'cutoff': first.proof['cutoff'], 'recording_start': first.proof['recording_start'],
         'stage': first.proof['stage'], 'knowledge_at': first.proof['knowledge_at'],
         'status': first.proof['status'],
@@ -302,9 +327,10 @@ def materialize_fusion_warm_seed(identity: StreamIdentity, bases: tuple[Material
     return _result(identity, checkpoint, FUSION_SCHEMA, proof, original_binding)
 
 
-def load_verified_warm_source(source_loader, session, source_id, *, lock, new_health):
+def load_verified_warm_source(source_loader, session, source_id, *, lock, new_health, version=VERSION):
     """Validate one freshly materialized source; conflict evidence stays caller-owned."""
-    WARM_VERSION = VERSION
+    WARM_VERSION = version
+    require(version in (VERSION, RETAINED_VERSION), "ORIGINAL_CONFLICT_WARM_SEED_UNVERIFIED")
     seed = source_loader(session, source_id, lock=lock)
     require(isinstance(seed, MaterializedWarmSeed), "ORIGINAL_CONFLICT_WARM_SEED_UNVERIFIED")
     require(seed.identity.stream_id == source_id and seed.proof.get('version') == WARM_VERSION

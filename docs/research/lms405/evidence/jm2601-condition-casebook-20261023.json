@@ -1,0 +1,97 @@
+{
+  "schema_version": "lms405-public-casebook-v0.1",
+  "recorded_at": "2026-10-23T04:22:07+00:00",
+  "source_kind": "MANUALLY_EXTRACTED_CURRENT_VISIBLE_TEXT",
+  "historical_immutability_verified": false,
+  "sample_kind": "DEVELOPMENT_NECESSARY_CONDITIONS_NOT_SUFFICIENT_ORIGINAL_RULES",
+  "cases": [
+    {
+      "id": "JM2601_20251127_RECOVER_SHORT",
+      "contract": "JM2601",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405237640902607401",
+      "available_at": "2026-10-23T04:22:07+00:00",
+      "version_405": null,
+      "actions": [
+        "UNLOCK_SHORT"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "BREAK_1072_OBSERVED",
+          "AUTHOR_VPLUS_CONFIRMED",
+          "UNIDENTIFIED_EXECUTION_GATES_RESOLVED"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "1",
+        "short": "1"
+      },
+      "action": {
+        "kind": "UNLOCK_SHORT",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "研究安全约束：当天原计划仍适用",
+        "BREAK_1072_OBSERVED": "提前恢复空向也至少先破位1072；完整1061–1072区域角色另保留",
+        "AUTHOR_VPLUS_CONFIRMED": "作者规则确认的左侧VPLUS，非自制形态",
+        "UNIDENTIFIED_EXECUTION_GATES_RESOLVED": "未识别的信号有效性、持仓及历史时序事实须明确；不是作者命名规则"
+      },
+      "missing": [
+        "ORIGINAL_SIGNAL_FORMULA",
+        "BREAK_THRESHOLD",
+        "AUTHOR_PERIOD_AND_BAR_TIME",
+        "HISTORICAL_CONTENT_VERSION",
+        "OBSERVED_ORDER_AND_POSITION_CONTINUITY"
+      ],
+      "disclosed_conditions": []
+    },
+    {
+      "id": "JM2601_20251201_GRAB_M_LONG",
+      "contract": "JM2601",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405239099287535779",
+      "available_at": "2026-10-23T04:22:07+00:00",
+      "version_405": true,
+      "actions": [
+        "UNLOCK_LONG"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "PRIOR_PROTECTION_CONFIRMED",
+          "TWO_LOWS_ONE_HIGH_CONFIRMED",
+          "IRON_AND_REBAR_STRONG",
+          "TIMING_MATURE",
+          "UNIDENTIFIED_EXECUTION_GATES_RESOLVED"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "1",
+        "short": "1"
+      },
+      "action": {
+        "kind": "UNLOCK_LONG",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "研究安全约束：本次锁定后抓M的场景适用",
+        "PRIOR_PROTECTION_CONFIRMED": "原空向已按pinbar与区域完成保护；历史动作时刻未知",
+        "TWO_LOWS_ONE_HIGH_CONFIRMED": "图注所指两低一高已具备；拐点算法未披露",
+        "IRON_AND_REBAR_STRONG": "图注所指铁矿螺纹强势；未量化阈值",
+        "TIMING_MATURE": "作者所指时机成熟；未识别条件",
+        "UNIDENTIFIED_EXECUTION_GATES_RESOLVED": "来源只证明抓M意图，不证明唯一解锁腿、数量或其他信号条件，须独立核实"
+      },
+      "missing": [
+        "ORIGINAL_SIGNAL_FORMULA",
+        "PATTERN_CONFIRMATION",
+        "CROSS_PRODUCT_STRENGTH_FORMULA",
+        "AUTHOR_PERIOD_AND_BAR_TIME",
+        "M_END_EXIT",
+        "POSITION_AND_ORDER_PATH",
+        "HISTORICAL_CONTENT_VERSION"
+      ],
+      "disclosed_conditions": []
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import { markersForDetailView } from '@/utils/marketDetailMarkers'
 
 const props = withDefaults(defineProps<{
+  hasMoreBefore?: boolean; loadingBefore?: boolean; historyError?: string | null
   bars: BarData[]
   mutation: MarketSeriesMutation
   loading: boolean
@@ -21,6 +22,9 @@ const props = withDefaults(defineProps<{
   markers?: readonly KlineMarker[]
 }>(), { markers: () => [] })
 const emit = defineEmits<{
+  'visible-from-change': [time: string | null]
+  'range-detector-result': [result: { count: number; calculationMs: number }]
+
   loadEarlier: []
   'focus-resolved': [focusBarEnd: string]
 }>()
@@ -28,7 +32,7 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
 </script>
 
 <template>
-  <MarketKlineStage
+  <MarketKlineStage :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars"
     :mutation="mutation"
     :loading="loading"
@@ -43,5 +47,7 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
     :markers="freeMarkers"
     @load-earlier="emit('loadEarlier')"
     @focus-resolved="emit('focus-resolved', $event)"
+    @visible-from-change="emit('visible-from-change', $event)"
+    @range-detector-result="emit('range-detector-result', $event)"
   />
 </template>

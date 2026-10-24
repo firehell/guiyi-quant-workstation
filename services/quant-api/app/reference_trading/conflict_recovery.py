@@ -171,6 +171,7 @@ class FinalWarmConflictRevisionRecovery(ConflictRevisionRecovery):
     Reuse atomic future flat activation, but retain a distinct plan identity.
     Original-observation diagnostics never establish capture reconciliation.
     """
+    seed_version = 'original_conflict_warm_seed_v1'
     plan_version = 'reference_capture_final_warm_recovery_v1'
     boundary_key = 'capture_final_warm_conflict_boundary_v1'
     manifest_key = 'capture_final_warm_conflict_recovery_v1'
@@ -184,7 +185,7 @@ class FinalWarmConflictRevisionRecovery(ConflictRevisionRecovery):
     def _source(self, session, source_id, *, lock):
         from app.reference_trading.original_conflict_warm_seed import load_verified_warm_source
         return load_verified_warm_source(self.source_loader, session, source_id,
-            lock=lock, new_health='READY')
+            lock=lock, new_health='READY', version=self.seed_version)
 
     def _freeze(self, session, source_ids, *, start, expiry, lock=False):
         if not source_ids or len(source_ids) != 4:
@@ -199,3 +200,11 @@ class FinalWarmConflictRevisionRecovery(ConflictRevisionRecovery):
                     or checkpoint.reference_state.recording_start != start):
                 raise RepositoryConflict('CONFLICT_RECOVERY_WARM_SEED_START_MISMATCH')
         return plan, data
+
+
+class RetainedWarmConflictRevisionRecovery(FinalWarmConflictRevisionRecovery):
+    """Atomic flat recovery using fully verified normal retained observations."""
+    seed_version = 'retained_conflict_warm_seed_v1'
+    plan_version = 'reference_capture_retained_warm_recovery_v1'
+    boundary_key = 'capture_retained_warm_conflict_boundary_v1'
+    manifest_key = 'capture_retained_warm_conflict_recovery_v1'

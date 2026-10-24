@@ -62,7 +62,7 @@ test('daily data interruption requires exact reason, day, and no synthetic mark'
 
 test('reference indicator rendering preserves warmup nulls as chart whitespace', () => {
   const chart = readFileSync(new URL('../src/components/kline/KlineChart.vue', import.meta.url), 'utf8')
-  assert.match(chart, /point\[key\] === null \? Number\.NaN/)
+  assert.match(chart, /referenceIndicatorOverlay\(renderedBars, props\.referenceIndicators\)/)
   assert.match(chart, /Number\.isFinite\(point\.value\)/)
   assert.match(chart, /\{ time: chartTime\(bar\) \}/)
 })
@@ -114,12 +114,12 @@ test('late historical result cannot overwrite switched symbol or disposed loader
   assert.equal(loader.data.value?.symbol, 'rb')
   loader.dispose()
 })
-test('page identity mismatch clears historical facts and preserves explicit unavailable state', async () => {
+test('page identity mismatch preserves old facts with explicit error', async () => {
   let calls = 0
   const loader = useSubingReference(async () => ++calls === 1 ? { ...referenceFixture(), next_before: 'cursor' } : { ...referenceFixture(), input_snapshot_hash: 'b'.repeat(64) })
   await loader.refresh('jm')
   await loader.loadMore()
-  assert.equal(loader.data.value, null)
+  assert.equal(loader.data.value?.input_snapshot_hash, 'a'.repeat(64))
   assert.match(loader.error.value ?? '', /快照/)
 })
 
@@ -200,3 +200,35 @@ test('reference records separate precise chart location from detail inspection',
   assert.match(panel, /开始交易日不能晚于结束交易日/)
   assert.match(workspace, /chartRegion\.value\?\.scrollIntoView/)
 })
+
+test('earlier windows retain original statistics and consume each cursor before moving earlier', async () => {
+  const queries: any[] = []
+  const loader = useSubingReference(async (_symbol, query) => {
+    queries.push(query)
+    if (queries.length === 1) return { ...referenceFixture(), previous_window: { since: '2026-07-15', through: '2026-08-11' } }
+    return { ...referenceFixture(), performance_since: '2026-07-15', performance_through: '2026-08-11', input_snapshot_hash: 'b'.repeat(64), next_before: queries.length === 2 ? 'older-page' : null, previous_window: null }
+  })
+  await loader.refresh('jm'); await loader.loadMore(); await loader.loadMore()
+  assert.equal(queries[1].since, '2026-07-15')
+  assert.equal(queries[2].before, 'older-page')
+  assert.equal(loader.data.value?.performance_since, '2026-08-12')
+  assert.equal(loader.data.value?.loaded_history_since, '2026-07-15')
+  assert.equal(loader.data.value?.history_sources?.length, 2)
+  loader.dispose()
+})
+
+for (const field of ['frequency', 'formula_version', 'reference_model_version']) {
+  test(`earlier window rejects changed ${field} and retains loaded facts`, async () => {
+    let reads = 0
+    const loader = useSubingReference(async () => {
+      if (++reads === 1) return { ...referenceFixture(), previous_window: { since: '2026-07-15', through: '2026-08-11' } }
+      return { ...referenceFixture(), performance_since: '2026-07-15', performance_through: '2026-08-11', [field]: field === 'frequency' ? '30m' : 'different-version', input_snapshot_hash: 'b'.repeat(64), previous_window: null }
+    })
+    await loader.refresh('jm')
+    const before = JSON.stringify(loader.data.value)
+    await loader.loadMore()
+    assert.ok(loader.error.value)
+    assert.equal(JSON.stringify(loader.data.value), before)
+    loader.dispose()
+  })
+}

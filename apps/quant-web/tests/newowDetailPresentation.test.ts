@@ -160,8 +160,8 @@ test('latest auxiliary readiness stays independent of historical warming for all
   }
 })
 
-test('pending daily update keeps a successfully fetched historical quote unavailable', () => {
-  assert.equal(newowQuoteFreshness(true, true), 'unavailable')
+test('pending daily update labels a verified historical quote stale', () => {
+  assert.equal(newowQuoteFreshness(true, true), 'stale')
   assert.equal(newowQuoteFreshness(true, false), 'fresh')
   assert.equal(newowQuoteFreshness(false, false), 'unavailable')
   assert.equal(newowQuoteFreshness(false, true), 'unavailable')

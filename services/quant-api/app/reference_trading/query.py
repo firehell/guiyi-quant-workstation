@@ -101,6 +101,8 @@ class HistoricalReferenceQuery:
                 if "-" in key
             },
             "readable_modes": ["historical_replay", "forward_observation"],
+            "snapshot_scope": "immutable_audit_snapshot",
+            "current_canonical_source_proven": False,
             "forward_observation": "requires_exact_activation",
             "page_opening": "separate_product_capability",
         }
