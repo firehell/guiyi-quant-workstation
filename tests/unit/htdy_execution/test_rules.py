@@ -452,3 +452,16 @@ def test_verified_terminal_orders_at_activation_remain_valid_after_restart():
         (h.RecoveryInput("RB", "RB2701", 0, T + timedelta(minutes=120), "complete"),))).state
     assert state.phase == "READY"
     assert advance(state, 121).effects == ()
+
+
+@pytest.mark.parametrize("restart", [True, False])
+def test_no_cancel_effect_before_native_readback_after_restart_or_disconnect(restart):
+    state = owner(started())
+    state = step(state, signal(state)).state
+    state = advance(state).state
+    state = step(state, signal(state, "sell", 120, previous=T + timedelta(minutes=60))).state
+    if restart:
+        state = h.restore(h.checkpoint(state))
+    else:
+        state = step(state, h.Disconnect(T + timedelta(minutes=121))).state
+    assert advance(state, 122).effects == ()

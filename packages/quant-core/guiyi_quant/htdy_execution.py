@@ -307,6 +307,7 @@ class State:
     clock: datetime | None = None
     unresolved_fill_ids: tuple[str, ...] = ()
     baseline_orders: tuple[OrderReport, ...] = ()
+    readback_valid: bool = True
 
 
 @dataclass(frozen=True)
@@ -405,6 +406,8 @@ def _apply_signal(state, signal):
 
 def _advance(state, cmd, command_id):
     p = _product(state, cmd.product)
+    if not state.readback_valid:
+        return state, (), "ACCOUNT_READBACK_REQUIRED"
     working = [o for o in state.orders if o.product == p.product and _unsettled(state, o)]
     if len(working) > 1:
         raise ValueError("ORDER_CAPACITY_CONFLICT")
@@ -504,6 +507,7 @@ def _validate_state(state):
     if (type(state) is not State or type(state.products) is not tuple or not state.products
             or len({p.product for p in state.products}) != len(state.products)
             or state.phase not in ("READY", "RECOVERY_REQUIRED", "BLOCKED")
+            or type(state.readback_valid) is not bool
             or state.snapshot.account_id != state.account_id
             or len({o.order_id for o in state.orders}) != len(state.orders)
             or len({f.trade_id for f in state.fills}) != len(state.fills)
@@ -594,7 +598,7 @@ def _recover(state, cmd):
             eligible_after=snapshot.at, wait_after=snapshot.at,
             last_bar=proof.bar_end if proof and p.product not in blocked else p.last_bar))
     return replace(state, snapshot=snapshot, products=tuple(products), phase="READY",
-                   blocked_products=tuple(blocked)), "RECOVERED_NO_OPEN_BACKFILL"
+                   blocked_products=tuple(blocked), readback_valid=True), "RECOVERED_NO_OPEN_BACKFILL"
 
 
 def apply(state: State, command_id: str, command) -> Transition:
@@ -638,7 +642,8 @@ def apply(state: State, command_id: str, command) -> Transition:
     elif type(command) is Report:
         state, reason = _report(state, command)
     elif type(command) is Disconnect:
-        state, reason = replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED"), "DISCONNECTED"
+        state, reason = replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED",
+                                readback_valid=False), "DISCONNECTED"
     else:
         state, reason = _recover(state, command)
     state = replace(state, clock=at, receipts=state.receipts + ((command_id, digest),),
@@ -681,6 +686,7 @@ def restore(payload: str) -> State:
         if type(state) is not State:
             raise ValueError("CHECKPOINT_STATE_INVALID")
         _validate_state(state)
-        return replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED")
+        return replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED",
+                       readback_valid=False)
     except (KeyError, TypeError, ValueError, ArithmeticError):
         raise ValueError("CHECKPOINT_INVALID") from None
