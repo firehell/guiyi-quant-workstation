@@ -718,6 +718,19 @@ changes to previously read facts, or unavailable sources becoming available SHAL
 - **WHEN** a source fails on an initial read
 - **THEN** successful sources remain readable with explicit partial coverage and no false completeness claim.
 
+### Requirement: One formal Canonical historical authority
+Official historical reference reads MUST use their existing validated Canonical historical authority. Newow and SuBing public historical reads MUST use the existing saved historical adapters and MUST NOT select an alternate reader through an environment setting. Missing, stale, unverified or invalid sources MUST fail explicitly, without fallback to forward observations.
+
+#### Scenario: Post-market revision supersedes historical values
+- **WHEN** validated post-market Canonical facts revise a historical input
+- **THEN** official results MUST be rebuilt and read against that Canonical source, or reject the stale saved result
+- **AND** forward first-seen events and delivery facts MUST remain audit records and MUST NOT override official historical charts or be rewritten/replayed
+
+#### Scenario: Generic saved snapshot is not a second formal history entry
+- **WHEN** the generic recording panels display saved first-seen events
+- **THEN** they MUST identify them as event audit and MUST NOT offer an unverified historical snapshot as an alternate formal result
+- **AND** a strategy without an opened historical model MUST NOT gain one through this display change
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

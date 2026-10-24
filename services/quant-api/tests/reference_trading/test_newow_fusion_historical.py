@@ -223,7 +223,8 @@ def test_hot_fusion_cache_validates_real_payload_shape_and_all_generations(chang
     dependencies = [{'stream_id':s, 'revision_id':'revision', 'seq':7,
                      'dependency_digest': manifest_sha256(base_manifest)}
                     for s in ('trend','oscillation')]
-    def streams(*, strategy, product, frequency):
+    def streams(*, strategy, product, frequency, mode):
+        assert mode == 'historical_replay'
         assert (product, frequency) == ('rb','1m')
         name = 'fusion' if strategy == 'newow_dual_fusion' else strategy.removeprefix('newow_')
         return [{'stream_id':name,'active_revision_id':'revision','latest_seq':8 if changed==name else 7}]

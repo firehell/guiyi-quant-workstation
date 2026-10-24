@@ -4,7 +4,6 @@ from collections.abc import Callable
 from datetime import date, datetime
 from threading import BoundedSemaphore
 from time import monotonic
-import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -73,16 +72,9 @@ def subing_reference(
             raise SubingReferenceError("SUBING_REFERENCE_BUDGET_EXCEEDED")
 
     try:
-        mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
-        if mode not in {"legacy", "persisted"}:
-            raise HTTPException(503, detail={"code": "REFERENCE_READER_MODE_INVALID"})
         query = SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency)
         service = _build_service(session, check_cancelled)
-        result = (
-            service.query(query)
-            if mode == "legacy"
-            else PersistedSubingReference(SessionLocal, service, check_cancelled).query(query)
-        )
+        result = PersistedSubingReference(SessionLocal, service, check_cancelled).query(query)
         return SubingReferenceResponse.model_validate(result)
     except QueryConflict as exc:
         status = 503 if exc.code in {

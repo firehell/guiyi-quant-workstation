@@ -67,10 +67,9 @@ test('actual night point stays visible through its saved trading day and paging 
   ;(more.props.onClick as Function)(); await settle()
   assert.equal(mock.calls.at(-1).window.through,'2026-10-09')
   assert.equal(mock.calls.at(-1).snapshot,'forward')
-  const historical=findNode(root,n=>n.type==='button' && nodeText(n).trim()==='历史回放')!
-  ;(historical.props.onClick as Function)(); await settle()
-  assert.equal(mock.calls.at(-1).id,'historical')
-  assert.equal(mock.calls.at(-1).window.through,'2026-10-08')
+  assert.equal(findNode(root,n=>n.type==='button' && /历史回放|盘后历史/.test(nodeText(n).trim())), undefined)
+  assert.ok(mock.calls.every((call: { id: string }) => call.id !== 'historical'))
+  assert.match(nodeText(root), /仅审计实时首次观察/)
   app.unmount()
 })
 

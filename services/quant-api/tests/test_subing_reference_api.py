@@ -13,6 +13,18 @@ from test_subing_reference_service import (
 )
 
 
+@pytest.fixture(autouse=True)
+def saved_projection_fixture(monkeypatch):
+    # These tests exercise API DTO/query classification using real Canonical
+    # projection fixtures; saved-source admission has separate repository tests.
+    class SavedProjectionFixture:
+        def __init__(self, factory, service, check_cancelled):
+            self.service = service
+        def query(self, query):
+            return self.service.query(query)
+    monkeypatch.setattr(market_subing_reference, "PersistedSubingReference", SavedProjectionFixture)
+
+
 @pytest.fixture
 def client(monkeypatch):
     service = SubingReferenceService(
