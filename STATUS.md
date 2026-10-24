@@ -1,8 +1,8 @@
 # 当前状态
 
-## 10/24 正式历史单一 Canonical 入口：开发验证通过，正式补丁待验收
+## 10/24 正式历史单一 Canonical 入口：开发验证通过，正式补丁已发布，运行续接待验收
 
-按 owner 新口径，Newow/Subing 正式历史固定已验证 Canonical 保存资产；实际事件与通用快照只作审计，不覆盖正式图。修复源修订、旧缓存和参考读取失败后旧标记撤销；独立 Review 通过。扩展后端 894 passed/81 skipped，完整 Web1195 passed/3 skipped，新增失败路径18项、type/build/topology、OpenSpec/secret/diff通过。develop 含其他未发布 input/formula/launcher 变化，本次正式v1.15.18从exact v17最小回移，不带入无关合同；候选验证/发布/现场切换尚未完成，不声明第一项整体完成。当前维护状态及611边界见下一节。
+按 owner 新口径，Newow/Subing 正式历史固定已验证 Canonical 保存资产；实际事件与通用快照只作审计，不覆盖正式图。修复源修订、旧缓存和参考读取失败后旧标记撤销；独立 Review 通过。扩展后端 894 passed/81 skipped，完整 Web1195 passed/3 skipped，新增失败路径18项、type/build/topology、OpenSpec/secret/diff通过。develop 含其他未发布 input/formula/launcher 变化，本次正式v1.15.18从exact v17最小回移，不带入无关合同；v1.15.18已由PR466发布，main/tag peeled062310abd5eca6fac442bd565258ab0b05fa2d73，精确最小候选819后端/1168Web及构建/独审通过；现场切换尚未完成，不声明第一项整体完成。当前维护状态及611边界见下一节。
 
 ## 10/24 原件缺口采用独立历史补齐：部分执行，采集恢复仍阻塞
 

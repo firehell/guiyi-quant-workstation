@@ -53,3 +53,5 @@ node --test tests/historicalSignalRanges.test.ts tests/newowRecordingPanel.test.
 完整 Web 1195 passed / 3 skipped；扩展后端 894 passed / 81 skipped（需独立服务/数据库的既有项）；P2 参考读取失败撤销旧信号修正后定向 Web 18 passed，类型检查和完整 build/topology 通过。reference-trading OpenSpec strict、secret scan、diff 检查通过；独立 Review 无剩余 Confirmed Issue，允许集成 develop。最初后端两项因临时日志目录未创建失败，创建独占目录后完整集合重跑通过，旧输出不冒充业务失败。
 
 develop 相对已发布 v1.15.17 还含其他任务的 input/formula/launcher 变化，因此正式 v1.15.18 从 exact v17 独立最小回移本修复，不发布其他未完成合同。正式候选、现场维护续接和实际读回完成后另记，不用 develop 验证替代候选验证。
+
+正式最小补丁 v1.15.18 已经 PR466 发布，main/tag peeled `062310abd5eca6fac442bd565258ab0b05fa2d73`，合并树与候选 `814471345658affa415e8c247ae74a5de24c5a6a` 完全相等；Release非draft/非prerelease。精确补丁后端819 passed/81 skipped、完整Web1168 passed/3 skipped、构建及独审通过。回合develop冲突保留已验证完整实现，不把v17最小补丁覆盖其他未发布功能；运行续接仍单独验收。
