@@ -797,7 +797,9 @@ MUST stop mutation and require independent readback without automatic retry. Rep
 scope SHALL yield no publication targets and no source request.
 
 The plan/publication result SHALL record exact Sessions and bind them into existing historical provenance
-hashes. Stored provenance SHALL remain compatible with the active Runtime reader. Original Live data,
+hashes. Plan schema v2 SHALL bind `canonical_decimal38_18_v1` input encoding: numeric values are
+serialized with exactly 18 fractional places and zero has a positive sign, rejecting any precision loss. Legacy v1 published hashes
+retain their original input text encoding and MUST NOT be rewritten merely to change representation. Stored provenance SHALL remain compatible with the active Runtime reader. Original Live data,
 missingness, journal cursors, interruptions, signals and notifications MUST NOT be rewritten or replayed.
 
 #### Scenario: Friday night assigned to Monday

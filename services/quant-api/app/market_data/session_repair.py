@@ -33,6 +33,27 @@ def _hash(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), default=str).encode()).hexdigest()
 
 
+def _source_records(bars):
+    """Hash the exact decimal128(38,18) representation used by Canonical.
+
+    Decimal equality alone does not preserve its textual exponent. Reject any
+    precision loss rather than rounding input to make a provenance hash match.
+    """
+    from decimal import Decimal
+
+    records = []
+    for bar in bars:
+        record = bar.as_record()
+        for field, value in record.items():
+            if isinstance(value, Decimal):
+                encoded = "0.000000000000000000" if value == 0 else format(value, ".18f")
+                if Decimal(encoded) != value:
+                    raise StorageError("SESSION_REPAIR_SOURCE_PRECISION_INVALID")
+                record[field] = encoded
+        records.append(record)
+    return records
+
+
 def _snapshot(manager, key, day):
     rows = tuple(p for p in manager.catalog.all_partitions(key) if (p.year, p.month) == (day.year, day.month))
     if len(rows) > 1:
@@ -89,7 +110,8 @@ def _plan(manager, request, now):
     missing = {k: tuple(t for t in scope if t not in {b.bar_end for b in snapshots[k][0]})
                for k, scope in ((key, ends), (h1_key, h1_ends))}
     identity = {
-        'schema_version': 1, 'command': 'data.contract-session-repair',
+        'schema_version': 2, 'input_value_encoding': 'canonical_decimal38_18_v1',
+        'command': 'data.contract-session-repair',
         'symbol': symbol, 'contract': contract, 'contract_fact': asdict(fact),
         'trading_day': day.isoformat(), 'session_end': end.isoformat(),
         'sessions': [{'start': s.start.isoformat(), 'end': s.end.isoformat()} for s in night],
@@ -190,7 +212,7 @@ def run_session_repair(manager, request, *, now=None, before_apply=None):
                 source_type = 'canonical_1m' if candidate_key == h1_key else (
                     'rqdata' if type(manager.provider).__module__ == 'app.market_data.rqdata_adapter' else 'historical_provider')
                 proof = {'version': 1, 'input_source': source_type,
-                         'input_sha256': _hash({'plan_sha256': plan['plan_sha256'], 'bars': [b.as_record() for b in inputs]})}
+                         'input_sha256': _hash({'plan_sha256': plan['plan_sha256'], 'bars': _source_records(inputs)})}
                 expected = tuple(sorted({b.bar_end for b in bars} | {q.bar_end for q in facts}))
                 partition = manager.store.publish(PublishRequest(
                     candidate_key, request.trading_day.year, request.trading_day.month, bars, expected,

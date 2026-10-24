@@ -226,17 +226,17 @@ def test_post_commit_observer_failure_escapes_without_false_zero_commit(setup):
 
 
 def test_h1_provenance_binds_actual_minute_input_not_aggregate(setup):
-    from app.market_data.session_repair import _hash
+    from app.market_data.session_repair import _hash, _source_records
     from app.market_data.aggregation import aggregate_from_1m
     manager, provider = setup
     source = provider.bars[KEY.as_tuple()]
     result = apply(manager)
     provenance = manager.store.read_publication_provenance(manager.catalog.all_partitions(H1)[0])
-    assert provenance['input_sha256'] == _hash({'plan_sha256': result['plan_sha256'], 'bars': [b.as_record() for b in source]})
+    assert provenance['input_sha256'] == _hash({'plan_sha256': result['plan_sha256'], 'bars': _source_records(source)})
     changed = (source[0], replace(source[1], close=Decimal('100.5')), *source[2:])
     sessions = (SessionWindow(START, END),)
     assert aggregate_from_1m(source, target_frequency='60m', sessions=sessions) == aggregate_from_1m(changed, target_frequency='60m', sessions=sessions)
-    assert provenance['input_sha256'] != _hash({'plan_sha256': result['plan_sha256'], 'bars': [b.as_record() for b in changed]})
+    assert provenance['input_sha256'] != _hash({'plan_sha256': result['plan_sha256'], 'bars': _source_records(changed)})
 
 
 def test_maintenance_busy_never_calls_provider(setup, monkeypatch):
@@ -300,3 +300,31 @@ def test_cli_end_to_end_plan_uses_native_manager(setup):
     payload = json.loads(stdout.getvalue())
     assert payload['command'] == 'data.contract-session-repair' and payload['missing_1m'] == 120
     assert payload['provider_requests'] == 0 and provider.calls == []
+
+
+def test_input_hash_replays_after_decimal_parquet_roundtrip(setup):
+    from app.market_data.session_repair import _hash, _source_records
+    manager, provider = setup
+    provider.bars[KEY.as_tuple()] = tuple(replace(b, open=Decimal('100.0'), close=Decimal('100.00'), volume=Decimal('1.0')) for b in provider.bars[KEY.as_tuple()])
+    result = apply(manager)
+    stored = manager.store.read_catalog_partition(manager.catalog.all_partitions(KEY)[0])
+    proof = manager.store.read_publication_provenance(manager.catalog.all_partitions(H1)[0])
+    assert result['input_value_encoding'] == 'canonical_decimal38_18_v1'
+    assert _source_records(stored) == _source_records(provider.bars[KEY.as_tuple()])
+    assert proof['input_sha256'] == _hash({'plan_sha256': result['plan_sha256'], 'bars': _source_records(stored)})
+
+
+def test_source_encoding_never_rounds_to_fit_hash():
+    from app.market_data.session_repair import _source_records
+    with pytest.raises(StorageError, match='SESSION_REPAIR_SOURCE_PRECISION_INVALID'):
+        _source_records((replace(bar(START), close=Decimal('100.0000000000000000001')),))
+
+
+def test_input_hash_normalizes_signed_zero_like_parquet(setup):
+    from app.market_data.session_repair import _source_records
+    manager, provider = setup
+    provider.bars[KEY.as_tuple()] = tuple(replace(b, volume=Decimal('-0.0'), turnover=Decimal('-0.00'), open_interest=Decimal('-0')) for b in provider.bars[KEY.as_tuple()])
+    assert apply(manager)['status'] == 'passed'
+    stored = manager.store.read_catalog_partition(manager.catalog.all_partitions(KEY)[0])
+    assert _source_records(stored) == _source_records(provider.bars[KEY.as_tuple()])
+    assert all(r['volume'] == '0.000000000000000000' for r in _source_records(stored))
