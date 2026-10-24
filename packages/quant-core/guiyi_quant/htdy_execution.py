@@ -377,7 +377,8 @@ def _apply_signal(state, signal):
     if state.phase != "READY" or p.product in state.blocked_products or p.rolling:
         return _replace_product(state, p), "SIGNAL_BLOCKED"
     if len(signal.directions) > 1:
-        return _replace_product(state, replace(p, target=p.quantity, signal_id=signal.source_id,
+        closing = any(o.product == p.product and o.offset == "CLOSE" and _unsettled(state, o) for o in state.orders)
+        return _replace_product(state, replace(p, target=0 if closing else p.quantity, signal_id=signal.source_id,
                                               eligible_after=signal.observed_at)), "SIGNAL_CONFLICT"
     if not signal.directions:
         return _replace_product(state, p), "HOLD"
@@ -571,7 +572,8 @@ def apply(state: State, command_id: str, command) -> Transition:
     if type(command) is Fill and any(f.trade_id == command.trade_id for f in state.fills):
         # Native trade identity survives redelivery after newer observations.
         state, _ = _fill(state, command)
-        at = max(at, state.clock)
+        if state.clock is not None:
+            at = max(at, state.clock)
     if state.clock is not None and at < state.clock:
         raise ValueError("COMMAND_TIME_REGRESSION")
     effects = ()

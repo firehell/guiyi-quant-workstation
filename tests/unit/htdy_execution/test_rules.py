@@ -353,3 +353,18 @@ def test_reconnect_during_pending_close_does_not_reopen_after_late_close_fill():
         T + timedelta(minutes=181), T + timedelta(minutes=181, seconds=1),
         Decimal("3500"), Decimal("1"), 1)).state
     assert advance(state, 182).effects == ()
+
+
+def test_conflict_while_closing_cannot_create_a_reentry_after_close_fill():
+    from dataclasses import replace
+    state = opened()
+    state = step(state, signal(state, "sell", 120, previous=T + timedelta(minutes=60))).state
+    tx = advance(state, 121)
+    closing = tx.effects[0].order
+    conflict = replace(signal(tx.state, "buy", 180, previous=T + timedelta(minutes=120)),
+                       directions=("buy", "sell"))
+    state = step(tx.state, conflict).state
+    state = step(state, h.Fill("conflict-close", closing.order_id, "simnow-test", closing.contract,
+        T + timedelta(minutes=181), T + timedelta(minutes=181, seconds=1),
+        Decimal("3500"), Decimal("1"), 1)).state
+    assert advance(state, 182).effects == ()
