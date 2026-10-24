@@ -155,7 +155,7 @@ function periodLabel(value: MarketFrequency) {
 
 
     <div v-if="showSeriesControls || showFrequencyControls" class="detail-view-nav__controls">
-      <div v-if="showSeriesControls" class="detail-view-nav__group" role="group" aria-label="序列">
+      <div v-if="showSeriesControls && identity.view !== 'htdy'" class="detail-view-nav__group" role="group" aria-label="序列">
         <button
           v-for="kind in availableSeriesKinds"
           :key="kind"
