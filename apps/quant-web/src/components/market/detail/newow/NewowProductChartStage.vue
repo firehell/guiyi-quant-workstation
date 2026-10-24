@@ -150,7 +150,7 @@ const comparisonDominant = ref<'trend' | 'oscillation' | null>(null)
 const trendTrack = ref(true)
 const oscillationTrack = ref(true)
 const comparisonBackground = ref(true)
-const ACTION_LABEL_BOX = { width: 96, height: 30 }
+const ACTION_LABEL_BOX = { width: 96, height: 28 }
 const container = ref<HTMLElement | null>(null)
 const auxiliaryToolbar = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
@@ -853,6 +853,7 @@ defineExpose({ revealSignal, scrollToLatest })
         </details>
       </div>
     </div>
+    <p v-if="!comparisonActive && referenceStatsError" class="newow-product-chart-stage__reference-record-status" role="status">清仓参考收益读取未完成：{{ referenceStatsError }} <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">重试</button></p>
     <div v-if="comparisonActive" class="newow-product-chart-stage__dual-summary" aria-label="双策略本视图摘要" :title="referenceTradesComplete === false ? '历史记录按需分页，未证明覆盖全部图表信号；仅显示已核对单笔。' : `统计仅含已绘制清仓标签对应的 ${comparisonStats.samples} 笔已完成参考交易，不含融合配对收益`">主导：{{ comparisonDominant === 'trend' ? '趋势' : comparisonDominant === 'oscillation' ? '震荡' : '—' }} · 上=趋势 下=震荡 · 本视图 {{ comparisonStats.count }} 个信号 · <template v-if="referenceTradesComplete !== false">平均盈亏 {{ comparisonStats.average }} · 胜率 {{ comparisonStats.winRate }} · 最大 {{ comparisonStats.maximum }}</template><template v-else>参考收益需完整记录，当前不显示统计 <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">{{ referenceStatsLoading ? '正在核对完整记录…' : '读取完整参考统计' }}</button><span v-if="referenceStatsError" role="alert">{{ referenceStatsError }}</span></template> · 背景深色=趋势蓝带</div>
     <Teleport defer :to="channelControlsTarget ?? 'body'" :disabled="!channelControlsTarget || fullscreen">
       <NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" />
@@ -944,7 +945,7 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(400px,48vh,650px) + 350px); min-height:690px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
-.newow-product-chart-stage__action-label { position:absolute; pointer-events:none; cursor:default; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:1px 4px; overflow:hidden; border:1.5px solid #AD5734; border-radius:8px; background:var(--gy-bg-panel); color:#665044; font-size:11px; line-height:13px; text-align:center; box-shadow:none; }
+.newow-product-chart-stage__action-label { position:absolute; pointer-events:none; cursor:default; min-height:0; display:grid; place-content:center; gap:0; box-sizing:border-box; padding:0 4px; overflow:hidden; border:1px solid #AD5734; border-radius:3px; background:var(--gy-bg-panel); color:#665044; font-size:12px; line-height:13px; text-align:center; box-shadow:none; }
 .newow-product-chart-stage__action-label strong { font-size:11px; font-weight:600; }
 .newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { display:block; line-height:13px; overflow:hidden; white-space:nowrap; }
 .newow-product-chart-stage__dual-summary { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0; padding:3px 12px 7px; background:#fafafa; color:var(--gy-text-muted); font-size:11px; font-weight:600; line-height:1.5; }
@@ -959,8 +960,8 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage__dual-switch b { padding:0 3px; }.newow-product-chart-stage__dual-switch .trend { background:#0a84ff; }.newow-product-chart-stage__dual-switch .oscillation { background:#ff9500; }.newow-product-chart-stage__dual-switch span { padding:0 2px; background:#666; }
 .newow-product-chart-stage__dual-tracks .dual-switch-line { stroke:var(--gy-text-muted); }
 .newow-product-chart-stage__action-label.return-neutral span { color:#665044; }
-.newow-product-chart-stage__action-label.return-up span { color:#ff3030; }
-.newow-product-chart-stage__action-label.return-down span { color:#159447; }
+.newow-product-chart-stage__action-label.return-up span { color:#ff0000; }
+.newow-product-chart-stage__action-label.return-down span { color:#008000; }
 .newow-product-chart-stage__action-label.is-density-node { min-width:0; min-height:0; }
 .newow-product-chart-stage__action-label.is-compact { padding:0; place-items:center; }
 .newow-product-chart-stage__action-label.is-selected { z-index:5; outline:2px solid #8B653D; background:#FFF3D9; }
