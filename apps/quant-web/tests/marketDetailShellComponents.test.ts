@@ -130,7 +130,7 @@ test('the shared K-line stage uses the registered clean-room action icons', () =
   const { source, template } = parsedComponent('MarketKlineStage')
   assert.match(source, /MarketDetailIcon/)
   assert.match(template, /name="refresh"/)
-  assert.match(template, /name="fullscreen"/)
+  assert.doesNotMatch(template, /name="fullscreen"/)
   assert.doesNotMatch(template, /↺|⛶/)
 })
 

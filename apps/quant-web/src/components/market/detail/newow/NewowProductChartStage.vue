@@ -797,16 +797,9 @@ function onFullscreenChange(): void {
   fullscreen.value = document.fullscreenElement === stageRoot.value
   resize()
 }
-async function toggleFullscreen(): Promise<void> {
-  fullscreenError.value = null
-  try {
-    if (document.fullscreenElement === stageRoot.value) await document.exitFullscreen()
-    else if (stageRoot.value?.requestFullscreen) await stageRoot.value.requestFullscreen()
-    else fullscreenError.value = '当前浏览器不支持图表全屏。'
-  } catch { fullscreenError.value = '无法进入图表全屏。' }
-}
 
-defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
+
+defineExpose({ revealSignal, scrollToLatest })
 </script>
 
 <template>
@@ -853,9 +846,7 @@ defineExpose({ revealSignal, scrollToLatest, toggleFullscreen })
                   <button type="button" :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button>
                 </template>
               </details>
-              <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
               <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
-              <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
             </div>
             <p v-if="!comparisonActive && referenceTradesComplete === false" class="newow-product-chart-stage__reference-record-status" role="status">单笔参考收益仅显示已核对记录；未显示收益不代表没有交易。下方参考记录可按需加载。</p>
           </div>

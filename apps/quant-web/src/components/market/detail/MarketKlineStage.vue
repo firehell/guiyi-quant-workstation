@@ -19,7 +19,6 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime: string | null
   identityKey: string
   focusBarEnd?: string | null
-  showHistoryButton?: boolean
   showNavigationButtons?: boolean
   showDerivedMarkers?: boolean
   markers?: KlineMarker[]
@@ -32,7 +31,7 @@ const props = withDefaults(defineProps<{
   loadingBefore?: boolean
   historyError?: string | null
   focusRequestId?: number
-}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true, showHistoryButton: true })
+}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -40,7 +39,6 @@ const emit = defineEmits<{
   'marker-select': [marker: KlineMarker]
 }>()
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
-const root = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const fullscreen = ref(false)
 let resolvedFocusKey: string | null = null
@@ -83,30 +81,21 @@ watch(() => props.mutation, async (mutation) => {
   resolveFocus()
 }, { deep: true })
 
-async function toggleFullscreen() {
-  if (!root.value) return
-  if (document.fullscreenElement) await document.exitFullscreen()
-  else await root.value.requestFullscreen()
-}
-
 function syncFullscreen() { fullscreen.value = Boolean(document.fullscreenElement) }
 document.addEventListener('fullscreenchange', syncFullscreen)
 onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFullscreen))
 </script>
 
 <template>
-  <section ref="root" class="market-kline-stage" :class="{ 'market-kline-stage--fullscreen': fullscreen }">
+  <section class="market-kline-stage" :class="{ 'market-kline-stage--fullscreen': fullscreen }">
     <div class="market-kline-stage__controls">
       <button v-if="showNavigationButtons && !followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
-      <button type="button" :aria-label="fullscreen ? '退出全屏' : '全屏图表'" @click="toggleFullscreen">
-        <MarketDetailIcon name="fullscreen" :size="18" />
-      </button>
     </div>
-    <div v-if="hasMoreBefore !== undefined && ((showNavigationButtons && showHistoryButton) || loadingBefore || historyError || hasMoreBefore === false)" class="market-kline-stage__history" role="status">
-      <button v-if="hasMoreBefore && ((showNavigationButtons && showHistoryButton) || historyError)" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
-        {{ loadingBefore ? '加载中…' : historyError ? '重试加载更早' : '加载更早' }}
+    <div v-if="hasMoreBefore !== undefined && (loadingBefore || historyError || hasMoreBefore === false)" class="market-kline-stage__history" role="status">
+      <button v-if="hasMoreBefore && historyError" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
+        {{ loadingBefore ? '加载中…' : '重试' }}
       </button>
-      <span v-if="(!showNavigationButtons || !showHistoryButton) && loadingBefore">加载中…</span>
+      <span v-if="loadingBefore">加载中…</span>
       <span v-if="hasMoreBefore === false && !loading && bars.length">已到最早可用数据</span>
       <span v-if="historyError">{{ historyError }}</span>
     </div>
