@@ -1,8 +1,14 @@
 # 当前状态
 
-## 10/25 v1.16.0 综合发布候选整理
+## 10/25 v1.16.0 已发布，正式 Runtime 未切换
 
-按 owner 交办收敛 develop：保留并提交三份已存在的现场记录；生成的 output 证据保留本地，未跟踪产物统一排除，既有 tracked evidence 不变。其他数据维护工作树有未提交修改，未覆盖或清理。候选汇总首页预计算、历史浏览、共享交易标签、历史箱体及已集成离线研究／执行政策；不启用账户、订单或 Runtime。两项旧来源校验测试已复现为 SavedSignals 缺 trades 的夹具问题，补齐接口；同时补齐路由exact清单和隔离HTTP／锁测试边界。扩展4597 passed/82 skipped，首轮3项失败已分别修复或以隔离端口复跑；后验350+11项通过，新增夜盘修复106项通过，Web1221 passed/3 skipped、构建及独立复核通过。发布事实待远端回读后更新。详见[版本说明](docs/releases/v1.16.0.md)。
+按 owner 交办完成 develop 整理及综合发布：PR468 已合入 main；annotated tag `v1.16.0` peeled commit `015a93ed0e63ba515d72c3764d174252da5345d9`，与冻结候选 `9be4d5388cf4a5ef3a02d58a13a4b4f43d324b25` 代码树完全相同；GitHub Release 已公开为非 draft、非 prerelease。发布树 `.worktrees/release-v1.16.0` 保持 exact tag，并放置同候选已验证 Web 构建。
+
+汇总首页持久预计算、统一历史浏览、共享建仓／清仓盈亏标签、历史箱体及已集成离线研究／执行政策、显式已结束夜盘修复入口。三份既有现场记录已提交；output 证据保留本地，未跟踪生成产物排除，tracked evidence 不变。其他数据维护工作区不覆盖、不删除。
+
+本轮扩展后端首轮4597 passed/82 skipped，3项失败已定位并定向修正／重跑；350项来源／路由／盘后等回归、11项隔离HTTP与正式历史门禁通过；冻结候选新增夜盘修复／准入109项通过。完整Web1221 passed/3 skipped、类型/build/topology、UV离线锁一致、Ruff定向、OpenSpec strict12项、secret0、diff及独立静态Review通过。跳过项未计通过，未声称全部数据库环境或自然业务验收。
+
+仅发布，未执行 migration、行情修复、通知或 Runtime promotion；正式API fresh回读仍1.15.18，现役v18发布树仍被引用而保留。新版切换前须初始化并核对正式共享目录首页投影；苏冰历史资产未全量、611自然原件、暖机／滞后和日志问题均独立保留。详见[版本说明](docs/releases/v1.16.0.md)及[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.0)。
 
 ## 10/25 凌晨现有健康修复：闭市修复已验，下一Session自然验收待续
 
