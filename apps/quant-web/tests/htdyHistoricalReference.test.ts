@@ -55,3 +55,19 @@ it('marks a newer completed bar stale without fetching and rejects excessive dat
   assert.equal(reference.result.value?.source_token, 'a')
   reference.dispose()
 })
+
+it('appends older windows with independent cursors and keeps original statistics', async () => {
+  const queries: any[] = []
+  const reference = useHtdyHistoricalReference(async (_symbol, params) => {
+    queries.push(params)
+    if (queries.length === 1) return { ...response(), next_cursor: null, previous_window: { since: '2025-12-01', through: '2025-12-31' } }
+    return { ...response('older'), since: '2025-12-01', through: '2025-12-31', next_cursor: queries.length === 2 ? 'older:50' : null, previous_window: null }
+  })
+  reference.reset('jm', '15m'); await reference.read(); await reference.read(true); await reference.read(true)
+  assert.equal(queries[1].since, '2025-12-01')
+  assert.equal(queries[2].before, 'older:50')
+  assert.equal(reference.result.value?.since, '2026-01-01')
+  assert.equal(reference.result.value?.source_token, 'a')
+  assert.equal(reference.result.value?.history_sources?.length, 2)
+  reference.dispose()
+})

@@ -87,7 +87,7 @@ test('view navigation exposes six flat analysis choices and emits exact identiti
   assert.match(source, /newowFrequencies/)
   assert.match(source, /select:\s*\[identity:\s*MarketDetailIdentity\]/)
   assert.match(template, /role="tablist" aria-label="分析选项"/)
-  assert.match(template, /v-if="showSeriesControls"/)
+  assert.match(template, /v-if="showSeriesControls && identity\.view !== 'htdy'"/)
   assert.match(template, /v-if="showFrequencyControls"/)
   assert.match(template, /role="group" aria-label="序列"/)
   assert.match(template, /role="group" aria-label="周期"/)

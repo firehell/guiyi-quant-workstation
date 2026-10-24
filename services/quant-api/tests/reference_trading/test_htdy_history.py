@@ -174,12 +174,14 @@ def test_http_preserves_decimal_lexemes(monkeypatch):
     app.include_router(routes.router)
     app.dependency_overrides[routes.get_db] = lambda: None
     monkeypatch.setattr(routes, "_build_service", lambda *_: object())
+    from app.reference_trading import signal_window
+    monkeypatch.setattr(signal_window, "historical_window_navigation", lambda *args, **kwargs: {})
     monkeypatch.setattr(htdy_history, "query_htdy_history", lambda *_: {
         "trades": [{"entry_reference_price": Decimal("1417.00"),
                     "reference_return": Decimal("0.1234567890123456789")}],
-        "computed_through": START,
+        "computed_through": START, "since": START.date(), "through": START.date(),
     })
-    response = TestClient(app).get("/api/v1/market/jm/htdy/reference")
+    response = TestClient(app).get("/api/v1/market/jm/htdy/reference?as_of=" + START.isoformat().replace("+", "%2B"))
     assert response.status_code == 200
     assert response.json()["trades"][0] == {
         "entry_reference_price": "1417.00",

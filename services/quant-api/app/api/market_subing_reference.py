@@ -85,6 +85,11 @@ def subing_reference(
             if mode == "legacy"
             else PersistedSubingReference(SessionLocal, service, check_cancelled).query(query)
         )
+        from app.reference_trading.signal_window import historical_window_navigation
+        result.update(historical_window_navigation(service, symbol=symbol,
+            since=date.fromisoformat(result["performance_since"]),
+            through=date.fromisoformat(result["performance_through"]), frequency=frequency,
+            as_of=datetime.fromisoformat(result["as_of"])))
         return SubingReferenceResponse.model_validate(result)
     except QueryConflict as exc:
         status = 503 if exc.code in {
@@ -148,9 +153,14 @@ def htdy_historical_reference(
             raise SubingReferenceError("HTDY_REFERENCE_BUDGET_EXCEEDED")
 
     try:
-        return jsonable_encoder(query_htdy_history(_build_service(session, check_cancelled),
-            SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency)),
-            custom_encoder={Decimal: str})
+        from app.reference_trading.signal_window import historical_window_navigation
+        service = _build_service(session, check_cancelled)
+        result = query_htdy_history(service,
+            SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency))
+        result.update(historical_window_navigation(service, symbol=symbol,
+            since=result["since"], through=result["through"], frequency=frequency,
+            as_of=as_of or service.now()))
+        return jsonable_encoder(result, custom_encoder={Decimal: str})
     except SubingReferenceError as exc:
         raise HTTPException(422 if "INVALID_QUERY" in exc.code else 503,
                             detail={"code": exc.code.replace("SUBING_", "HTDY_")}) from None
@@ -158,5 +168,51 @@ def htdy_historical_reference(
         raise HTTPException(503, detail={"code": "HTDY_REFERENCE_DATA_UNAVAILABLE"}) from None
     except (ValueError, KeyError, TypeError, AlertEvaluationError):
         raise HTTPException(409, detail={"code": "HTDY_REFERENCE_SOURCE_CONFLICT"}) from None
+    finally:
+        _GATE.release()
+
+
+@router.get("/{symbol}/reference-signals")
+def historical_reference_signals(
+    request: Request, symbol: str, strategy: str, since: date, through: date,
+    from_time: datetime = Query(alias="from"), to_time: datetime = Query(alias="to"),
+    frequency: str = "15m", as_of: datetime | None = None,
+    cursor: str | None = Query(None, max_length=2048),
+    limit: int = Query(200, ge=1, le=200), session: Session = Depends(get_db),
+):
+    from decimal import Decimal
+    from fastapi.encoders import jsonable_encoder
+    from app.reference_trading.signal_window import SignalWindowQuery, query_signal_window
+    from sqlalchemy.exc import SQLAlchemyError
+
+    allowed = {"strategy", "since", "through", "from", "to", "frequency", "as_of", "cursor", "limit"}
+    keys = [key for key, _ in request.query_params.multi_items()]
+    if set(keys)-allowed or len(keys) != len(set(keys)):
+        raise HTTPException(422, detail={"code": "SIGNAL_WINDOW_INVALID_QUERY"})
+    if not _GATE.acquire(blocking=False):
+        raise HTTPException(503, detail={"code": "SIGNAL_WINDOW_BUSY"})
+    deadline = monotonic() + 30
+    def check_cancelled():
+        if monotonic() > deadline:
+            raise SubingReferenceError("SIGNAL_WINDOW_BUDGET_EXCEEDED")
+    try:
+        from app.reference_trading.query import HistoricalReferenceQuery
+        result = query_signal_window(_build_service(session, check_cancelled), SignalWindowQuery(
+            symbol, strategy, frequency, since, through, from_time, to_time, as_of, cursor, limit),
+            persisted_query=HistoricalReferenceQuery(SessionLocal))
+        return jsonable_encoder(result, custom_encoder={Decimal: str})
+    except SubingReferenceError as exc:
+        code = exc.code
+        status = 422 if any(value in code for value in ("INVALID_QUERY", "TOO_LARGE")) else (
+            409 if "CONFLICT" in code else 503)
+        raise HTTPException(status, detail={"code": code}) from None
+    except QueryConflict as exc:
+        raise HTTPException(409 if "CONFLICT" in exc.code else 503, detail={"code": exc.code}) from None
+    except (MarketDataError, ActualDominantResearchSegmentIdentityError):
+        raise HTTPException(503, detail={"code": "SIGNAL_WINDOW_DATA_UNAVAILABLE"}) from None
+    except (SQLAlchemyError, PresentationUnavailable):
+        raise HTTPException(503, detail={"code": "SIGNAL_WINDOW_DATA_UNAVAILABLE"}) from None
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(409, detail={"code": "SIGNAL_WINDOW_SOURCE_CONFLICT"}) from None
     finally:
         _GATE.release()

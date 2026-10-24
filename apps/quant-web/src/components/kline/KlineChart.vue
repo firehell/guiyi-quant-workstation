@@ -662,6 +662,8 @@ defineExpose({
     :data-reference-stop-segments="referenceStopSegments"
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-marker-count="mergedDisplayMarkers().length"
+    :data-rendered-marker-times="mergedDisplayMarkers().map(marker => marker.time).join(',')"
+    :data-rendered-marker-ids="mergedDisplayMarkers().map(marker => marker.id).join(',')"
     :data-rendered-research-marker-count="researchMarkers.length"
     :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"

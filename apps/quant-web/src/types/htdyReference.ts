@@ -4,6 +4,9 @@ export interface HtdyHistoricalSignal {
   calculation_segment_id: string; observation_types: ('buy' | 'sell')[]; reference_price: string; action_ids: string[]
 }
 export interface HtdyHistoricalResponse {
+  history_start?: string; previous_window?: { since: string; through: string } | null
+  loaded_history_since?: string; history_sources?: { since: string; through: string; source: string }[]; history_capped?: boolean
+
   schema_version: 'htdy_historical_reference_v1'; recording_mode: 'historical_replay'
   product: string; frequency: string; source_token: string; computed_through: string
   since: string; through: string; trades: ReferenceTradeView[]; signals: HtdyHistoricalSignal[]

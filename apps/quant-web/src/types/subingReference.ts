@@ -21,6 +21,9 @@ export interface SubingCoverageInterval { since: string; through: string; status
 export interface SubingQualityInterruption { bar_end: string; trading_day: string; physical_contract: string; segment_id: string; classification: 'PRICE_UNAVAILABLE' | 'NONPOSITIVE_CLOSE'; classification_version: 'rqdata-d1-zero-ohl-v1' | 'rqdata-d1-nonpositive-close-v1'; request_sha256: string; response_sha256: string }
 export interface SubingQualityChartBar { bar_end: string; trading_day: string; open: string; high: string; low: string; close: string; volume: string; turnover: string | null; open_interest: string | null; physical_contract: string; segment_id: string; calculation_segment_id: string }
 export interface SubingReferenceResponse {
+  history_start?: string; previous_window?: { since: string; through: string } | null
+  loaded_history_since?: string; history_sources?: { since: string; through: string; source: string }[]; history_capped?: boolean
+
   symbol: string; frequency: '15m' | '30m' | '60m' | '1d'; series_kind: 'actual_dominant'; formula_version: 'subing_ths_15m_v3' | 'subing_ths_30m_v1' | 'subing_ths_60m_v1' | 'subing_ths_1d_v1'
   reference_model_version: 'subing_reference_reverse_close_v1' | 'subing_reference_reverse_close_quality_segment_v2'; as_of: string; performance_since: string; performance_through: string
   reference_cutoff: string; input_snapshot_hash: string; executable: false; auto_order: false; source: 'historical_replay'; research_status: 'ready' | 'warming' | 'WARMING' | 'INDICATOR_READY_CROSS_UNEVALUABLE' | 'CROSS_EVALUATED'

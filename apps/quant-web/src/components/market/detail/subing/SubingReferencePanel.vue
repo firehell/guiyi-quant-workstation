@@ -19,6 +19,8 @@ const readinessLabel = (status: SubingReferenceResponse['research_status']) => (
     <form @submit.prevent="refresh"><label>开始交易日<input v-model="since" type="date" aria-label="参考开始交易日" /></label><label>结束交易日<input v-model="through" type="date" aria-label="参考结束交易日" /></label><button type="submit" :disabled="loading || invalidRange">{{ loading ? '读取中…' : '读取参考' }}</button></form>
     <p v-if="invalidRange" class="reference-history__validation" role="alert">开始交易日不能晚于结束交易日。</p>
     <template v-if="data">
+      <p v-if="data.loaded_history_since" class="reference-history__note">已载记录展示区间 {{ data.loaded_history_since }} — {{ data.performance_through }}；统计仍为上方原始窗口。各历史窗口独立来源，不是同一快照。</p>
+      <p v-if="data.history_capped" role="status">已达本页记录容量；请通过日期选择切换更早窗口继续读取。</p>
       <div class="reference-history__summary"><span>已平 <b>{{ data.summary.closed_count }}</b></span><span>胜 / 负 / 平 <b>{{ data.summary.win_count }} / {{ data.summary.loss_count }} / {{ data.summary.flat_count }}</b></span><span>胜率 <b>{{ data.summary.win_rate_pct === null ? '—' : `${referenceDecimalDisplay(data.summary.win_rate_pct, false)}%` }}</b></span><span>平均参考收益 <b :class="referenceTone(data.summary.mean_return_pct)">{{ data.summary.mean_return_pct === null ? '—' : `${referenceDecimalDisplay(data.summary.mean_return_pct)}%` }}</b></span><span>累计参考收益（百分点） <b :class="referenceTone(data.summary.sum_return_percentage_points)">{{ referenceDecimalDisplay(data.summary.sum_return_percentage_points) }} 百分点</b></span></div>
       <p class="reference-history__note">统计按所选交易日固定，不随图表缩放或翻页变化。未平 {{ data.summary.open_count }} · 换月中断 {{ data.summary.rollover_interrupted_count ?? data.summary.interrupted_count }} · 数据中断 {{ data.summary.data_interrupted_count ?? 0 }} · 窗口初始 {{ data.summary.initial_count }}；未平和中断不计入已平收益。百分比之和不是账户复利收益。</p>
       <p v-if="data.frequency === '1d'" role="status">日线质量状态：{{ readinessLabel(data.research_status) }}；质量中断 {{ data.quality_interruptions?.length ?? 0 }} 项。</p>
@@ -27,7 +29,7 @@ const readinessLabel = (status: SubingReferenceResponse['research_status']) => (
       <p v-if="data.research_status === 'warming' || data.research_status === 'WARMING' || data.research_status === 'INDICATOR_READY_CROSS_UNEVALUABLE'" role="status">物理合约当前计算分段尚未形成可判定交叉；当前零交易不能解释为无信号或零胜率。</p>
       <p v-else-if="!data.items.length">已完成计算，所选窗口暂无历史参考记录。</p>
       <p v-if="capped" role="status">已达到本页显示容量，尚未读取完整历史；请缩小日期窗口。</p>
-      <button v-if="data.next_before && !capped" type="button" :disabled="loading" @click="emit('load-more')">{{ loading ? '读取中…' : '加载更多参考记录' }}</button>
+      <button v-if="(data.next_before || data.previous_window) && !data.history_capped && !capped" type="button" :disabled="loading" @click="emit('load-more')">{{ loading ? '读取中…' : '读取更多 / 更早参考记录' }}</button>
       <p class="reference-history__note">历史来源截止 {{ formatBeijingInstant(data.reference_cutoff) }} · {{ data.performance_since }} — {{ data.performance_through }}</p>
     </template>
   </PerformancePanel>
