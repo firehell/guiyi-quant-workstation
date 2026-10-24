@@ -526,6 +526,20 @@ class DatabaseCoverageSource:
         days = self.contract_trading_days(fact, lower, upper)
         return self.expected_bar_ends_for_trading_days(key, days)
 
+    def contract_session_windows(self, key: DatasetKey, trading_day: date) -> tuple[SessionWindow, ...]:
+        """Resolve one exact physical-contract day without scanning unrelated dates."""
+        if key.kind is not DatasetKind.CONTRACT:
+            raise InfrastructureError("CONTRACT_IDENTITY_MISMATCH")
+        fact = MarketCatalog(self.session, PROJECT_ROOT).contract_fact(key.symbol, key.series_or_contract)
+        if self.contract_trading_days(fact, trading_day, trading_day) != (trading_day,):
+            raise InfrastructureError("TRADING_CALENDAR_MISSING")
+        batch = SessionWindowBatch(self.session, exchange=fact.exchange, symbol=key.symbol,
+                                   trading_days=(trading_day,))
+        try:
+            return batch.windows(trading_day)
+        except SessionClockError as exc:
+            raise InfrastructureError(exc.code) from exc
+
     def sessions(
         self,
         key: DatasetKey,

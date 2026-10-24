@@ -207,6 +207,7 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "weekly-audit",
         "session-anchor-repair",
         "contract-warmup",
+        "contract-session-repair",
         "newow-readiness",
         "metadata-repair",
         "au-calendar-correction",

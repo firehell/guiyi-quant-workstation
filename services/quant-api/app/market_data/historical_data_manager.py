@@ -42,7 +42,7 @@ from typing import Literal, Protocol, cast
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.market_data.aggregation import AggregationError, aggregate_from_1m
+from app.market_data.aggregation import AggregationError, SessionWindow, aggregate_from_1m
 from app.market_data.catalog import CatalogPartition, ContractFact, MaintenanceLease, MarketCatalog
 from app.market_data.domain import (
     INTRADAY_DERIVED_FREQUENCIES,
@@ -119,6 +119,10 @@ class CoverageSource(Protocol):
         month: int,
         through: date,
     ) -> tuple[datetime, ...]: ...
+    def contract_session_windows(
+        self, key: DatasetKey, trading_day: date,
+    ) -> tuple[SessionWindow, ...]: ...
+
     def sessions(
         self,
         key: DatasetKey,
@@ -1439,6 +1443,12 @@ class HistoricalDataManager(ContractWarmupPlanner):
         finally:
             _release_maintenance_lease(lease)
 
+
+    def contract_session_repair(self, request, *, now=None, before_apply=None):
+        """Repair only an authoritative, fully closed night into historical data."""
+        from app.market_data.session_repair import run_session_repair
+
+        return run_session_repair(self, request, now=now, before_apply=before_apply)
 
     def audit(
         self,

@@ -252,3 +252,12 @@ binds that marker; derived frequencies continue through the single native
 Canonical 1m aggregation chain and source lineage. No DB or Parquet column
 schema migration is introduced. Superseding this rule requires an explicit new
 policy and a separately bounded data revision; never silently overwrite it.
+
+
+## Requirement: Closed-session historical publication preserves monthly facts
+
+A physical-contract monthly partition MAY contain a complete, authoritative ended night before its
+trading day is complete. This SHALL NOT assert complete whole-day coverage. Scoped historical repair
+MUST merge and retain all unrelated same-month Bars and typed quality facts, retain prior immutable
+files, and use existing atomic Catalog publication and strict consumer readback. Source/scope hashes
+MUST identify the exact historical repair; original Live evidence and first-seen identity are separate.

@@ -1973,3 +1973,13 @@ HOME_PROJECTION_REAL=1 PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=http://12
 
 该测试使用实际60品种、空浏览器存储及二次reload，分别记录首屏、浏览器缓存恢复、本地板块切换、
 API请求时间与JS错误；不把API耗时当作首屏。截图/JSON保存在Playwright测试结果目录。
+
+
+## 已结束夜盘修复与 HTDY 输入准入
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/data_foundation/test_contract_session_repair.py services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/data_foundation/test_historical_data_manager.py services/quant-api/tests/data_foundation/test_cli.py
+```
+
+真实修复先只读 `guiyi data contract-session-repair`，锁内核对精确 hash 后 apply；实际源查询、
+Canonical/Catalog 发布、消费者读回和自然 Live 连续性分别验收。fixture 不证明生产已修复。

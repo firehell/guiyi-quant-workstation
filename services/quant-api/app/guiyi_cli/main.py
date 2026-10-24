@@ -443,6 +443,8 @@ def _run_data(
             finally:
                 lease.release()
         result = run_data_command(args, manager, progress_stream=stderr)
+        if args.data_command == "contract-session-repair":
+            return result
         if args.data_command == "contract-warmup":
             return contract_warmup_payload(result)
         return result.as_payload()

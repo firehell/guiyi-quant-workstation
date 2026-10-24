@@ -22,6 +22,7 @@ from app.market_data.historical_data_manager import (
     RefreshRequest,
     UpdateRequest,
 )
+from app.market_data.session_repair import ContractSessionRepairRequest
 from app.market_data.market_home_projection import (
     MarketHomeProjectionStore,
     market_home_projection_path,
@@ -75,6 +76,13 @@ def build_request(args: argparse.Namespace):
             since=since,
             through=through,
             apply=bool(args.apply),
+        )
+    if args.data_command == "contract-session-repair":
+        return ContractSessionRepairRequest(
+            symbol=_active_product(args.symbol), contract=str(args.contract).strip().upper(),
+            trading_day=_required_day(args.trading_day),
+            session_end=datetime.fromisoformat(args.session_end.replace("Z", "+00:00")),
+            expected_plan_sha256=args.expected_plan_sha256, apply=bool(args.apply),
         )
     if args.data_command == "contract-warmup":
         return ContractWarmupRequest(
@@ -142,7 +150,7 @@ def run_data_command(
         assert progress_stream is not None
         return manager.audit(request, observer=_audit_progress_writer(progress_stream))
     action = getattr(manager, args.data_command.replace("-", "_"))
-    if isinstance(request, (UpdateRequest, RefreshRequest, ContractWarmupRequest)) and request.apply:
+    if isinstance(request, (UpdateRequest, RefreshRequest, ContractWarmupRequest, ContractSessionRepairRequest)) and request.apply:
         projection_invalidate = MarketHomeProjectionStore(
             market_home_projection_path(manager.catalog.canonical_root)
         ).invalidate

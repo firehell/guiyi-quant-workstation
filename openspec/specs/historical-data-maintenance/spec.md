@@ -771,3 +771,42 @@ cross-day `select_day` that could clear them.
 - **WHEN** the Feed's existing Calendar/Session authority selects a new trading day and all prior consumers are drained
 - **THEN** only the Feed performs the existing next-day snapshot and journal initialization
 - **AND** consumers retain their existing no-replay and cursor-proof contracts
+
+
+## Requirement: Exact closed-night contract repair
+
+`guiyi data contract-session-repair --symbol SYMBOL --contract CONTRACT --trading-day DATE
+--session-end ISO_TIMESTAMP [--expected-plan-sha256 HASH --apply]` SHALL repair only authoritative,
+fully ended night Sessions for one active physical contract. It MUST NOT relax contract-warmup's
+complete-trading-day guard, advance any whole-day watermark, fetch D1/W1, or claim natural observation.
+The timezone-aware cutoff MUST equal the last night Session end and be no later than the current time.
+Daytime breaks, partial Sessions, missing Calendar/Session or lifecycle facts MUST fail closed.
+
+Planning SHALL issue zero provider requests and zero production writes. Its stable hash MUST bind
+contract identity/lifecycle, trading day, exact Session windows, expected endpoints, missing endpoints,
+and physically verified current monthly partition revisions. Apply MUST acquire the existing maintenance
+lock and recompute the exact plan before provider access. Drift MUST prevent downloads/publication.
+
+Apply SHALL fetch RQData physical 1m and derive 60m only from a complete validated same-contract source.
+When a source request is needed its retained overlap MUST agree with existing Canonical values.
+Duplicates, wrong ownership, incomplete inputs or numeric conflicts MUST stop publication. Existing
+same-month Bars, quality facts and immutable old files SHALL survive publication; no scoped request may
+replace the month with only the requested night. Catalog commit remains the partition visibility point;
+consumer readback MUST verify the candidate. Partial success MUST be explicit; unknown commit outcomes
+MUST stop mutation and require independent readback without automatic retry. Replanning a fully repaired
+scope SHALL yield no publication targets and no source request.
+
+The plan/publication result SHALL record exact Sessions and bind them into existing historical provenance
+hashes. Stored provenance SHALL remain compatible with the active Runtime reader. Original Live data,
+missingness, journal cursors, interruptions, signals and notifications MUST NOT be rewritten or replayed.
+
+#### Scenario: Friday night assigned to Monday
+- **GIVEN** authoritative Sessions assign the already ended Friday night to Monday's trading day
+- **WHEN** repair runs during the weekend with the exact night Session end
+- **THEN** the night may be published as historical 1m/60m while Monday's whole-day status remains incomplete
+- **AND** missing original Live observations remain missing and historical Bars cannot become first-seen signals
+
+#### Scenario: Subsequent full-day maintenance
+- **WHEN** the trading day later completes and ordinary update processes its remaining endpoints
+- **THEN** existing repaired night Bars remain valid historical inputs; missing daytime endpoints are still required
+- **AND** the old complete-day maintenance guard and quality checks remain enforced
