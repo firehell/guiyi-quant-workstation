@@ -14,7 +14,7 @@ const statusLabel = (trade: SubingReferenceTrade) => trade.status === 'CLOSED' ?
 const readinessLabel = (status: SubingReferenceResponse['research_status']) => ({ WARMING: '预热中（不足 34 根有效日线）', INDICATOR_READY_CROSS_UNEVALUABLE: '指标已就绪，交叉尚不可判定（34 根）', CROSS_EVALUATED: '交叉可判定（至少 35 根）', warming: '预热中', ready: '已就绪' })[status]
 </script>
 <template>
-  <PerformancePanel class="subing-reference reference-history" title="策略收益与参考记录" kind="已完成参考交易" :since="data?.performance_since" :through="data?.performance_through" :cutoff="data?.reference_cutoff" description="按入场交易日窗口统计；零手续费、零滑点，非账户收益。" :loading="loading" :error="error">
+  <PerformancePanel :show-details="false" class="subing-reference reference-history" title="策略收益与参考记录" kind="已完成参考交易" :since="data?.performance_since" :through="data?.performance_through" :cutoff="data?.reference_cutoff" description="按入场交易日窗口统计；零手续费、零滑点，非账户收益。" :loading="loading" :error="error">
     <header><div><h3>{{ data?.storage_mode === 'persisted' ? '已保存历史参考' : '历史重算参考' }}</h3><p>{{ data?.storage_mode === 'persisted' ? '历史参考·已保存' : '历史重算·乐观参考' }}｜零费用/零滑点</p></div><span>{{ data?.frequency ?? '当前周期' }} · 双向反手 · 非可执行</span></header>
     <form @submit.prevent="refresh"><label>开始交易日<input v-model="since" type="date" aria-label="参考开始交易日" /></label><label>结束交易日<input v-model="through" type="date" aria-label="参考结束交易日" /></label><button type="submit" :disabled="loading || invalidRange">{{ loading ? '读取中…' : '读取参考' }}</button></form>
     <p v-if="invalidRange" class="reference-history__validation" role="alert">开始交易日不能晚于结束交易日。</p>
