@@ -55,3 +55,15 @@ node --test tests/historicalSignalRanges.test.ts tests/newowRecordingPanel.test.
 develop 相对已发布 v1.15.17 还含其他任务的 input/formula/launcher 变化，因此正式 v1.15.18 从 exact v17 独立最小回移本修复，不发布其他未完成合同。正式候选、现场维护续接和实际读回完成后另记，不用 develop 验证替代候选验证。
 
 正式最小补丁 v1.15.18 已经 PR466 发布，main/tag peeled `062310abd5eca6fac442bd565258ab0b05fa2d73`，合并树与候选 `814471345658affa415e8c247ae74a5de24c5a6a` 完全相等；Release非draft/非prerelease。精确补丁后端819 passed/81 skipped、完整Web1168 passed/3 skipped、构建及独审通过。回合develop冲突保留已验证完整实现，不把v17最小补丁覆盖其他未发布功能；运行续接仍单独验收。
+
+## 现场切换与入口读回（14:44 CST）
+
+004 plan `59a5c53d48e704522c1eb18b6a8c0d03a249e4fc61de4d47b660dd57085bfb43` 单次执行成功，六轮完整旧PK事实核对通过，十项v1.15.18/gen23一致，六常驻PID/发布树/OS锁独立验证通过，PG维护锁持有者0。证据：`output/data-three-repair-20261023/suspended-continuation-004/attempt-1/completed.json`、`final-runtime-readback/identity-001.json`、`pg-lock-001.json`。原2565及611自然原件未恢复，旧事实未改写，无replay/补发。
+
+`v18-formal-history-readback-001.json`：API版本1.15.18，Newow JM60m/D1正式返回persisted Canonical历史；苏冰JM15m/D1返回503 NOT_BUILT，必须继续调查/补齐，不能以fail-closed本身宣布整体完成。新自然采集、Event、Push不在这份闭市读回证明范围。
+
+## 正式历史资产现场缺失与补齐（16:00 CST）
+
+首轮240苏冰身份清点236 ABSENT、4 RB active但仅算到9/22，历史起点均2023-01-01；不能把NOT_BUILT关闭显示或恢复实时fallback冒充完成。JM4原生单次构建completed，完整源前缀/checkpoint及四正式API independent通过（`subing-jm-independent-001/result.json`）。逐路dispatcher独审修复absence与PGlease并发窗口、精确inventory SHA/fullidentity/start及O_EXCL+fsync intent，8安全测试通过；remaining attempt001已完成A/AG共8，AL15m在1800秒预算后明确partial/INTERRUPTED，225792/320074输入、完整token，非unknowncommit。旧attempt不重跑；新现场inventory004为16active/1candidate/223absent。
+
+AL精确单次resume沿用原51.4MBplan/hash/budget，只允许完整INTERRUPTED/token/receipt/checkpoint/source连续nativelease下核对，未知禁止retry。RB4只读计划均EXACT_APPEND_PROVEN，仅375/196/115/17尾输入，待原生advance。源asset补齐与全范围正式API尚未完成；新版Web5173 index与exactv18 dist逐字一致。

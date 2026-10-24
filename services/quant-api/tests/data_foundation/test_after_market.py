@@ -460,7 +460,7 @@ def _after_market_guard_process(root, connection):
     @contextmanager
     def guard():
         connection.send("guard_attempt")
-        with after_market_recovery_guard(root=root / "guards", wait=True):
+        with after_market_recovery_guard(root=root / "guards", wait=True, legacy_root=True):
             connection.send("guard_acquired")
             yield
 
@@ -498,7 +498,7 @@ def test_global_guard_serializes_after_market_before_any_status_or_provider_writ
     parent, child = context.Pipe()
     process = context.Process(target=_after_market_guard_process, args=(tmp_path, child))
     try:
-        with after_market_recovery_guard(root=tmp_path / "guards"):
+        with after_market_recovery_guard(root=tmp_path / "guards", legacy_root=True):
             process.start()
             assert parent.poll(10)
             assert parent.recv() == "guard_attempt"
@@ -508,7 +508,7 @@ def test_global_guard_serializes_after_market_before_any_status_or_provider_writ
             assert parent.poll(10)
             assert parent.recv() == expected
         with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
-            with after_market_recovery_guard(root=tmp_path / "guards"):
+            with after_market_recovery_guard(root=tmp_path / "guards", legacy_root=True):
                 pytest.fail("captured recovery must reject an active after-market job")
         parent.send("finish")
         assert parent.poll(10)
@@ -516,7 +516,7 @@ def test_global_guard_serializes_after_market_before_any_status_or_provider_writ
         process.join(10)
         assert process.exitcode == 0
         assert _status(tmp_path / "after-market-status.json")["current_run"] is None
-        with after_market_recovery_guard(root=tmp_path / "guards"):
+        with after_market_recovery_guard(root=tmp_path / "guards", legacy_root=True):
             pass
     finally:
         if process.pid is not None and process.is_alive():
@@ -531,13 +531,13 @@ def test_global_guard_is_held_through_bounded_retry_and_final_status(tmp_path):
 
     updater, manager, *_ = _updater(
         tmp_path, trading_day=date(2026, 8, 10), readiness=[True, True], results=[],
-        recovery_guard_factory=lambda: after_market_recovery_guard(root=tmp_path / "guards"),
+        recovery_guard_factory=lambda: after_market_recovery_guard(root=tmp_path / "guards", legacy_root=True),
     )
     stages = []
 
     def verify_held(stage):
         with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
-            with after_market_recovery_guard(root=tmp_path / "guards"):
+            with after_market_recovery_guard(root=tmp_path / "guards", legacy_root=True):
                 pytest.fail("whole after-market job must retain the lock")
         stages.append(stage)
 
@@ -567,7 +567,7 @@ def test_production_builder_always_composes_waiting_after_market_guard(tmp_path,
 
     def guard(*, wait):
         calls.append(wait)
-        return after_market_recovery_guard(root=tmp_path / "guards", wait=wait)
+        return after_market_recovery_guard(root=tmp_path / "guards", wait=wait, legacy_root=True)
 
     monkeypatch.delenv("GUIYI_LIVE_RECOVERY_ENABLED", raising=False)
     monkeypatch.setattr(module, "after_market_recovery_guard", guard)
@@ -579,7 +579,7 @@ def test_production_builder_always_composes_waiting_after_market_guard(tmp_path,
     assert calls == []
     with updater.recovery_guard_factory():
         with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
-            with after_market_recovery_guard(root=tmp_path / "guards"):
+            with after_market_recovery_guard(root=tmp_path / "guards", legacy_root=True):
                 pytest.fail("production updater must exclude captured recovery")
     assert calls == [True]
 

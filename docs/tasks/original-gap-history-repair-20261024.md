@@ -37,3 +37,11 @@ Runtime 新 002 计划 `942bf2a6e04b577cf1da29da97271836c2b2f540cf3a40a506924ff5
 002 后续已用独立 `healthy-restore-002` 精确恢复 Alert/API/Web，仅取消本次三个 token；Reference 原 token 保留。003新计划060eb149…执行首轮全部旧事实SHA通过、四健康服务退出、Redis空集与PG屏障通过，fault两PID精确SIGSTOP。随后只读old-PK全列表分页扫描超900秒停止，session62428真实exit1，无kill intent/commit。独立读回 `suspended-no-kill-independent-readback.json` 证明四healthy标签absent、fault原birth/kernel status4、PG锁空、Redis非维护连接0。该attempt禁止重跑，需从SUSPENDED_NO_KILL新状态续接，不能把暂停当作退出或恢复完成。
 
 Owner 10/24 进一步交办：正式历史只用盘后Canonical，来源冲突按已通过质量验证的盘后数据重算；不再双正式历史展示。正在收敛读取及Web入口，旧不可变审计不物理删除；源未就绪/质量/身份错误继续显式阻断。
+
+## 004续接完成（2026-10-24 14:44 CST）
+
+新精确计划59a5c53d48e704522c1eb18b6a8c0d03a249e4fc61de4d47b660dd57085bfb43执行成功，旧四健康服务与两暂停故障服务的已知状态经独立校验后单次续接；两旧故障PID仅一次终止/卸载，全10安装与registry CAS后启动v1.15.18/gen23。六轮逐旧PK/行哈希、长度及完整汇总核对通过（1,496,254行、98,970,213,267源字节）；日志、索引、原游标保留，Reference原生追尾。独立检查发布树/六PID/十binding及loaded配置一致，OS维护锁空闲，PG维护锁持有者0。无原件伪造、游标修改、replay或补发；旧失败全部保留。
+
+120个10/21短期恢复metadata已缺失，按精确清单projection处理，标记EXPECTED_EPHEMERAL_METADATA_ABSENCE_POSSIBLE_TTL；旧DUMP哈希保留，单键到期时间未证明，不能称已证明TTL。保留source/journal/index在15:00:03.266自然过期前完成完整读回；没有延长TTL。
+
+证据：`output/data-three-repair-20261023/suspended-continuation-004/attempt-1/completed.json`及`final-runtime-readback/{identity-001,pg-lock-001}.json`。服务恢复不等于新自然采集/Event/Push验收。旧2565的Canonical替代和240H1已通过；611仍待10/26交易日完成。正式历史API入口已切换，NewowJM60m/D1已返回保存历史，苏冰NOT_BUILT需继续补齐，第一项整体完成仍保留待验。

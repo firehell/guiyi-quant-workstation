@@ -1,5 +1,17 @@
 # 当前状态
 
+## 10/25 v1.16.0 综合发布候选整理
+
+按 owner 交办收敛 develop：保留并提交三份已存在的现场记录；生成的 output 证据保留本地，未跟踪产物统一排除，既有 tracked evidence 不变。其他数据维护工作树有未提交修改，未覆盖或清理。候选汇总首页预计算、历史浏览、共享交易标签、历史箱体及已集成离线研究／执行政策；不启用账户、订单或 Runtime。两项旧来源校验测试已复现为 SavedSignals 缺 trades 的夹具问题，补齐接口；同时补齐路由exact清单和隔离HTTP／锁测试边界。扩展4597 passed/82 skipped，首轮3项失败已分别修复或以隔离端口复跑；后验350+11项通过，新增夜盘修复106项通过，Web1221 passed/3 skipped、构建及独立复核通过。发布事实待远端回读后更新。详见[版本说明](docs/releases/v1.16.0.md)。
+
+## 10/25 凌晨现有健康修复：闭市修复已验，下一Session自然验收待续
+
+按owner优先级，苏冰全量历史资产后置，不新增功能。全60品种全历史manual审计60/60 passed、through10/23、findings0；修复NI/PG/PS/SI2612×5/15/30的132聚合分区（provider0），并确认10/26新主力CU2612原七周期预热缺失，原生补齐77分区/provider33。13次维护全部passed、postplan0，旧4合约文件SHA保持，CU此前无旧分区。fresh独立lease+MDS按10/26实际rank1核验240/240分钟前缀完整；CU1m93645/D1 205/W1 44，质量中断0，D1/W1共享内核ready。56任务测试、278原生测试、独立代码及实际结果Review通过。
+
+六服务日志22:27恢复后再次被删，owner随后确认运行过清理工具；未改全局清理设置。新v4计划/attempt004重新正常恢复，10/25 00:08–00:09 CST连续60秒验证全部PID/FD/路径稳定，00:12再次核对通过，仍exact v18/gen23。Feed46503/Live46533/Alert46575/Reference46611/API46633/Web46651 active；原件索引/游标与Rule/Event/policy/delivery全摘要保持，0新通知。按owner接受口径，最近夜盘4批平台accepted/2批failed或unknown，不追查或补发偶发发送失败。
+
+本轮PARTIAL_NATURAL_ACCEPTANCE_PENDING：闭市可执行的数据依赖与日志修复完成；611原件缺失事实不改，历史替代及下一自然采集/H1/18:05增量待10/26。7路短有效历史继续warming_up，global degraded及672 READY/48观察滞后保留，不制造READY。详见[本轮修复记录](docs/tasks/runtime-data-health-recovery-20261024.md)。
+
 ## 10/24 苏冰历史续算/追加：前置连接失败已修复
 
 AL15m续算及RB四周期追加脚本原先先导入应用、后加载私有配置，数据库连接池提前缓存开发配置。已调整初始化顺序，默认离线行为保留；新增只读check-only和安全错误定位。18项定向测试通过、独立Review无Confirmed Issue。正式v18现场只读：AL225792/320074原生续算位置一致、RB四周期exact append/旧事实校验全部PREFLIGHT_PASSED，production_writes=0。旧失败目录不重写，修复版v2目录独占；本步未执行apply，不代表全量历史计算完成。下一步仍须确认旧writer退出、现场锁和来源后精确续算/追加。详见[修复记录](docs/tasks/subing-history-preflight-fix-20261024.md)。
@@ -20,13 +32,13 @@ Live覆盖34ok/15not_due/11lagging（既有611原件缺口）；Reference672 REA
 
 exact v18定向45 passed/23 skipped（独立环境项）；初次2项因测试日志目录缺失失败，改用独占临时日志目录后重跑全定向通过，无应用修改。详见[第一步核查记录](docs/tasks/runtime-step1-20261024.md)，证据`output/runtime-step1-20261024/summary.json`。
 
-## 10/24 正式历史单一 Canonical 入口：开发验证通过，正式补丁已发布，运行续接待验收
+## 10/24 正式历史单一 Canonical 入口：v1.15.18/gen23已切换，正式历史资产验收中
 
-按 owner 新口径，Newow/Subing 正式历史固定已验证 Canonical 保存资产；实际事件与通用快照只作审计，不覆盖正式图。修复源修订、旧缓存和参考读取失败后旧标记撤销；独立 Review 通过。扩展后端 894 passed/81 skipped，完整 Web1195 passed/3 skipped，新增失败路径18项、type/build/topology、OpenSpec/secret/diff通过。develop 含其他未发布 input/formula/launcher 变化，本次正式v1.15.18从exact v17最小回移，不带入无关合同；v1.15.18已由PR466发布，main/tag peeled062310abd5eca6fac442bd565258ab0b05fa2d73，精确最小候选819后端/1168Web及构建/独审通过；现场切换尚未完成，不声明第一项整体完成。当前维护状态及611边界见下一节。
+按 owner 新口径，Newow/Subing 正式历史固定已验证 Canonical 保存资产；实际事件与通用快照只作审计，不覆盖正式图。修复源修订、旧缓存和参考读取失败后旧标记撤销；独立 Review 通过。扩展后端 894 passed/81 skipped，完整 Web1195 passed/3 skipped，新增失败路径18项、type/build/topology、OpenSpec/secret/diff通过。develop 含其他未发布 input/formula/launcher 变化，本次正式v1.15.18从exact v17最小回移，不带入无关合同；v1.15.18已由PR466发布，main/tag peeled062310abd5eca6fac442bd565258ab0b05fa2d73，精确最小候选819后端/1168Web及构建/独审通过；004精确续接已成功完成：六轮旧事实哈希核对通过，十项服务统一v1.15.18/gen23，独立PID/标签/发布树及OS维护锁验收通过，PG维护锁持有者0。正式API Newow JM60m/D1返回保存的Canonical历史；苏冰现场240身份初次清点236缺失、RB4只到9/22；已完成JM4并独立完整来源/checkpoint/四API验收通过，A/AG各4原生构建完成。AL15m在原1800秒预算后明确INTERRUPTED（225792/320074），完整token保留，正在准备单次原生resume；现场223仍缺失，RB4追加证明通过待advance，不声明第一项整体完成。新自然采集/Event/Push另验，611边界见下一节。
 
-## 10/24 原件缺口采用独立历史补齐：部分执行，采集恢复仍阻塞
+## 10/24 原件缺口采用独立历史补齐：240路已验，服务已恢复，611待交易日完成
 
-Owner 已选择保留自然原件缺失、补齐独立历史行情和计算。旧 2,565 条对应 Canonical 已逐物理合约核对齐全；新增 611 条属于 10/26 交易日，当前 11 品种原生 warmup 均因交易日未完成而拒绝，未请求或发布这部分历史数据。240 路 H1 精确历史重算 attempt004 已完成前 84 路，第 85 路 NI 在 planner 阶段报 DATASET_OR_PARTITION_MISSING、无 native intent，调用器已停止；84 路及完整旧事实独立验收已通过；另已完成 NI/PG/PS/SI2612 的 44 次分钟下载和 88 个分钟/H1 分区发布，后验零目标，剩余 156 路以新计划全部重算完成、完整旧事实扫描通过，既有周审计 60/60 passed、发现 0 后，全 240 路独立新 lease 来源与融合依赖验收通过，180 个已满足 H1 维护项精确替代、旧控制原件保存且游标不变。正式仍 v1.15.16/gen22，采集中断未修复；typed interruption 新编排离线 97 测试与主审通过，使用可回退的健康服务准备阶段及同 Redis 实例全非维护连接空集证明；现场统计改为有界分页，112 测试通过；新 002 attempt 完整旧事实前像通过，但首个 Alert stop 因标签读回迟滞停止。002 三健康服务已精确恢复；新 003 首轮完整前像通过，四健康服务已停、同实例 Redis 空集通过、Feed/Live 已精确暂停。随后 old-PK 稳定性扫描超 900 秒停止，无 kill 或版本切换；独立读回证明 kernel paused、PG 维护锁已释放、Redis 非维护连接 0，正在准备新状态续接与正式 Canonical 入口收敛，不重试旧 attempt、不重放或补发。详见[缺口修复记录](docs/tasks/original-gap-history-repair-20261024.md)。
+Owner 已选择保留自然原件缺失、补齐独立历史行情和计算。旧 2,565 条对应 Canonical 已逐物理合约核对齐全；新增 611 条属于 10/26 交易日，当前 11 品种原生 warmup 均因交易日未完成而拒绝，未请求或发布这部分历史数据。240 路 H1 精确历史重算 attempt004 已完成前 84 路，第 85 路 NI 在 planner 阶段报 DATASET_OR_PARTITION_MISSING、无 native intent，调用器已停止；84 路及完整旧事实独立验收已通过；另已完成 NI/PG/PS/SI2612 的 44 次分钟下载和 88 个分钟/H1 分区发布，后验零目标，剩余 156 路以新计划全部重算完成、完整旧事实扫描通过，既有周审计 60/60 passed、发现 0 后，全 240 路独立新 lease 来源与融合依赖验收通过，180 个已满足 H1 维护项精确替代、旧控制原件保存且游标不变。先前002停止迟滞、003只读哈希超时均保留；004新精确计划在四健康服务已停、两个故障输入服务已暂停的已知状态续接，单次终止旧故障进程并完成全10冷切换，六轮完整旧事实哈希与原始日志/游标保留验收通过。正式现v1.15.18/gen23/062310abd5eca6fac442bd565258ab0b05fa2d73，六常驻原生active、四calendar已注册，Reference保留日志正常追尾；维护锁已释放。120个旧日短期恢复metadata缺失以精确清单单列possible TTL，未宣称单键到期已证明；未扩TTL、重写原件或补发。新自然采集与推送仍待各自事件，不能从闭市ready推导。详见[缺口修复记录](docs/tasks/original-gap-history-repair-20261024.md)。
 
 ## 10/23 三项修复推进：周线已修，来源修订补丁已发布，Runtime待切换
 

@@ -56,6 +56,9 @@ class SavedSignals:
         return [dict(stream_id='saved', formula_versions=['subing_ths_15m_v3'], reference_model_version='saved-model')]
     def signals(self, *args, **kwargs):
         return dict(snapshot='snapshot', revision_id='revision', seq=3, items=[], next_cursor=None)
+    def trades(self, *args, **kwargs):
+        assert kwargs['snapshot_token'] == 'snapshot'
+        return dict(snapshot='snapshot', revision_id='revision', seq=3, items=[], next_cursor=None)
 
 
 def test_subing_signal_window_requires_current_source_proof_before_saved_points():

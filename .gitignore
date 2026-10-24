@@ -207,3 +207,7 @@ secrets/
 /output/subing-input-repair-20261021/
 /output/weibo-philosophy-20261016/
 /output/worktree-cleanup-20261015/
+
+# Local generated research, maintenance and browser evidence; retain on disk.
+# Tracked evidence and fixtures remain tracked.
+/output/
