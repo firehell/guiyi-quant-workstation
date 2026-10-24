@@ -312,8 +312,10 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   else chart.timeScale().fitContent()
   beginViewportStabilityCheck(targetRange)
   requestAnimationFrame(() => {
-    const range = chart?.timeScale().getVisibleLogicalRange()
-    isNearLeftBoundary = !!range && range.from <= 20
+    // Initial placement is not a pagination request. Even when the first
+    // page fills the viewport, the first user move toward its left edge
+    // must be allowed to request history.
+    isNearLeftBoundary = false
     paginationArmed = true
     syncMacdLabelTop()
   })
