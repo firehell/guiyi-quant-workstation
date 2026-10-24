@@ -465,3 +465,37 @@ def test_no_cancel_effect_before_native_readback_after_restart_or_disconnect(res
     else:
         state = step(state, h.Disconnect(T + timedelta(minutes=121))).state
     assert advance(state, 122).effects == ()
+
+
+def test_unprojectable_late_fill_cancels_other_products_pending_open():
+    from dataclasses import replace
+    state = owner(started())
+    state = step(state, h.Owner("JM", "JM2701", T, "jm-owner")).state
+    state = step(state, signal(state)).state
+    tx = advance(state)
+    old = tx.effects[0].order
+    state = step(tx.state, signal(tx.state, "sell", 120, previous=T + timedelta(minutes=60))).state
+    state = advance(state, 121).state
+    state = step(state, h.Report("simnow-test", T + timedelta(minutes=122),
+        h.OrderReport(old.order_id, "CANCELLED"))).state
+    snap = replace(snapshot(at=T + timedelta(minutes=180, seconds=3),
+        orders=(h.OrderReport(old.order_id, "CANCELLED"),)), settled_order_ids=(old.order_id,))
+    state = step(state, h.Recover(snap, (h.RecoveryInput("RB", "RB2701", -1,
+        T + timedelta(minutes=180), "complete"), h.RecoveryInput("JM", "JM2701", 0,
+        T + timedelta(minutes=180), "jm-complete")))).state
+    state = step(state, signal(state, "sell", 240, previous=T + timedelta(minutes=180))).state
+    tx = advance(state, 241)
+    newer = tx.effects[0].order
+    state = step(tx.state, h.Fill("new-fill", newer.order_id, "simnow-test", newer.contract,
+        T + timedelta(minutes=242), T + timedelta(minutes=242, seconds=1),
+        Decimal("3500"), Decimal("1"), 1)).state
+    state = step(state, h.Owner("JM", "JM2701", T + timedelta(minutes=243), "jm-owner")).state
+    state = step(state, signal(state, "buy", 300, contract="JM2701", product="JM",
+        previous=T + timedelta(minutes=180))).state
+    state = step(state, h.Advance("JM", T + timedelta(minutes=301), True, True, "funding")).state
+    state = step(state, h.Fill("unprojectable-late", old.order_id, "simnow-test", old.contract,
+        T + timedelta(minutes=119), T + timedelta(minutes=302),
+        Decimal("3500"), Decimal("1"), 1)).state
+    tx = step(state, h.Advance("JM", T + timedelta(minutes=303), True, True, "funding"))
+    assert tx.state.phase == "BLOCKED"
+    assert tx.effects[0].kind == "CANCEL"

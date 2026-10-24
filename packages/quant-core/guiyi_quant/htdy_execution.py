@@ -375,6 +375,12 @@ def _unsettled(state, order):
     return order.status not in ("REJECTED", "CANCELLED") or not order.reconciled
 
 
+def _cancel_opens(state, product=None):
+    return replace(state, orders=tuple(replace(o, cancel_required=True)
+        if o.offset == "OPEN" and (product is None or o.product == product) and _unsettled(state, o) else o
+        for o in state.orders))
+
+
 def _apply_signal(state, signal):
     p = _product(state, signal.product)
     if any(s.source_id == signal.source_id and (s.product, s.bar_end) != (signal.product, signal.bar_end) for s in state.signals):
@@ -392,9 +398,7 @@ def _apply_signal(state, signal):
     if state.phase != "READY" or p.product in state.blocked_products or p.rolling:
         return _replace_product(state, p), "SIGNAL_BLOCKED"
     if len(signal.directions) > 1:
-        state = replace(state, orders=tuple(replace(o, cancel_required=True)
-            if o.product == p.product and o.offset == "OPEN" and _unsettled(state, o) else o
-            for o in state.orders))
+        state = _cancel_opens(state, p.product)
         closing = any(o.product == p.product and o.offset == "CLOSE" and _unsettled(state, o) for o in state.orders)
         return _replace_product(state, replace(p, target=0 if closing else p.quantity, signal_id=signal.source_id,
                                               eligible_after=signal.observed_at)), "SIGNAL_CONFLICT"
@@ -460,8 +464,9 @@ def _fill(state, fill):
         p.position_contract != order.contract or p.quantity != (1 if order.side == "SELL" else -1))
     if capacity_conflict or close_conflict:
         state = _replace_order(state, replace(order, status="FILLED"))
-        return replace(state, fills=state.fills + (fill,), phase="BLOCKED",
-                       unresolved_fill_ids=state.unresolved_fill_ids + (fill.trade_id,)), "NATIVE_FILL_PROJECTION_CONFLICT"
+        state = replace(state, fills=state.fills + (fill,), phase="BLOCKED",
+                        unresolved_fill_ids=state.unresolved_fill_ids + (fill.trade_id,))
+        return _cancel_opens(state), "NATIVE_FILL_PROJECTION_CONFLICT"
     late_terminal = order.status in ("CANCELLED", "REJECTED")
     if order.offset == "OPEN":
         if p.quantity != 0:
@@ -476,9 +481,8 @@ def _fill(state, fill):
     state = _replace_product(state, p)
     state = _replace_order(state, replace(order, status="FILLED"))
     if late_terminal:
-        state = replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED", orders=tuple(
-            replace(o, cancel_required=True) if o.offset == "OPEN" and _unsettled(state, o) else o
-            for o in state.orders))
+        state = replace(state, phase="BLOCKED" if state.unresolved_fill_ids else "RECOVERY_REQUIRED")
+        state = _cancel_opens(state)
     return replace(state, fills=state.fills + (fill,)), "BROKER_FILL_RECORDED"
 
 
