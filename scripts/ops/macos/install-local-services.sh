@@ -19,6 +19,7 @@ ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 case "$MODE" in
   --plan-cohort) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-plan "$@" ;;
   --apply-cohort-plan) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-apply "$@" ;;
+  --resolve-cohort-restored) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-resolve "$@" ;;
   --plan-release) shift; exec "$PYTHON_BIN" -m app.runtime_deployment plan "$@" ;;
   --apply-release-plan) shift; exec "$PYTHON_BIN" -m app.runtime_deployment apply-plan "$@" ;;
   --plan-topology) shift; exec "$PYTHON_BIN" -m app.runtime_bootstrap plan "$@" ;;

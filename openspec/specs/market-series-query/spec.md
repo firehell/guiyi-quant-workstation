@@ -267,3 +267,16 @@ with maintenance and owner guards held; new consumers SHALL start before Feed an
 - **WHEN** the cohort-only warmup validates a SuBing D1/W1 quality-v2 Canonical segment and the unchanged evaluator returns exactly WARMING_UP
 - **THEN** it records the stream identity and bar count as warming, excludes it from calculated and keeps natural_signals_verified false
 - **AND** default native warmup remains strict, while any quality, mapping or other error still blocks the cohort
+
+### Requirement: Asynchronous teardown and precommit recovery remain evidence gated
+
+The cohort host SHALL request each bootout once and wait for actual label absence and old PID exit within its budget. Before restoring a requested source, it SHALL wait for that teardown to finish before cancelling drain and restoring the frozen loaded state.
+
+#### Scenario: A successful bootout response precedes actual job removal
+- **WHEN** the old definition remains visible while launchd is still terminating it
+- **THEN** the controller waits instead of treating the response as an exit or starting a duplicate owner
+
+#### Scenario: A precommit unknown restoration is independently proved complete
+- **WHEN** both original journals identify the same restore_unknown attempt with no CAS effects, and exact old registry/config/loaded state, fresh live PID/owner locks and scoped candidate absence are verified
+- **THEN** an identity-only audit MAY use the historical plan after expiry, retain the original attempt bytes, publish a unique private recovery readback and update only the global checkpoint
+- **AND** it SHALL NOT execute the old plan or accept post-CAS unknown; any new switch requires a fresh plan and attempt

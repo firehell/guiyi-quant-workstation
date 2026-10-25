@@ -328,3 +328,7 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 仅cohort闭市Canonical预热可将苏冰D1/W1 quality-v2的明确WARMING_UP逐路记录，不能计入calculated或声明信号就绪；原生预热默认strict，未知/质量/映射失败仍阻断。预热证据在任何停机前持久化。
 
 完整Alert scope的只读预热上限600秒，其他子服务120秒；均在停机预算开始之前。该上限不延长15分钟plan有效期，预热后计划过期仍取消，不能带过期计划停服。
+
+卸载每项仅请求一次；在既定停机预算内等待真实label缺席与旧PID退出。CAS前恢复须先等待本控制器已请求的teardown完成（独立有界恢复等待），再取消drain，按原loaded前像恢复，不把异步仍loaded误当恢复成功。
+
+若CAS前进入`restore_unknown`，先恢复并只读核对原态；`install-local-services.sh --resolve-cohort-restored --plan <original-plan>`仅审计历史计划身份，不执行过期计划。它要求exact旧registry/SHA、原plist及loaded前像、fresh owner/实际PID/OS锁、空闲日历、Scope/config哈希与本attempt不同目标label缺席，写唯一私有恢复receipt并fsync后才更新global指针。原attempt/state.json逐字保留；postCAS unknown、新registry或任何漂移均不能使用此入口。之后切换必须全新plan/attempt，全局工作树引用另按retention核查。

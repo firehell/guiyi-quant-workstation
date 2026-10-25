@@ -330,8 +330,48 @@ class CohortHost(FaultRecoveryHost):
             require(backend.idle(binding), "COHORT_CALENDAR_BUSY")
             self.launch("disable", f"gui/{os.getuid()}/{binding.label}")
             require(backend.idle(binding), "COHORT_CALENDAR_START_RACE")
-            self.launch("bootout", f"gui/{os.getuid()}/{binding.label}", missing=True)
+            self._bootout_old_once(
+                binding,
+                plan["installed"][name].get("loaded_pid"),
+                deadline=min(self.deadline, monotonic() + 30),
+            )
         return {"idle_unloaded": list(CALENDARS)}
+
+    def _await_old_absent(self, binding, pid, *, deadline):
+        """After one bootout request, observe label removal before PID exit."""
+        while monotonic() < deadline:
+            if self.definition_absent(binding):
+                if pid is None:
+                    return
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return
+                except OSError:
+                    raise CohortError("COHORT_OLD_PID_EXIT_UNPROVEN") from None
+            sleep(0.1)
+        raise CohortError("COHORT_OLD_BOOTOUT_TIMEOUT")
+
+    def _bootout_old_once(self, binding, pid, *, deadline):
+        if pid is not None:
+            require(
+                type(pid) is int
+                and pid > 1
+                or isinstance(pid, str)
+                and re.fullmatch(r"[1-9][0-9]*", pid)
+                and int(pid) > 1,
+                "COHORT_OLD_PID_UNPROVEN",
+            )
+            pid = int(pid)
+        requests = getattr(self, "bootout_requests", None)
+        if requests is None:
+            requests = self.bootout_requests = {}
+        require(binding.service not in requests, "COHORT_BOOTOUT_ALREADY_REQUESTED")
+        # Record before the call: even an uncertain launchctl result consumes
+        # this request and restore must first observe its teardown boundary.
+        requests[binding.service] = {"label": binding.label, "pid": pid}
+        self.launch("bootout", f"gui/{os.getuid()}/{binding.label}", missing=True)
+        self._await_old_absent(binding, pid, deadline=deadline)
 
     def drain(self, plan):
         old = registry(plan["old"])
@@ -435,11 +475,18 @@ class CohortHost(FaultRecoveryHost):
         for name in CONTINUOUS:
             binding = old.services[name]
             self.launch("disable", f"gui/{os.getuid()}/{binding.label}")
-            self.launch("bootout", f"gui/{os.getuid()}/{binding.label}", missing=True)
-            require(self.definition_absent(binding), "COHORT_OLD_LABEL_STILL_LOADED")
-        self.assert_old_pids_exited(proof)
+            pid = proof["owners"][name]["pid"]
+            require(pid is not None, "COHORT_OLD_PID_UNPROVEN")
+            self._bootout_old_once(
+                binding,
+                pid,
+                deadline=min(self.deadline, monotonic() + 30),
+            )
         self.session_proof()
-        return {"old_pids_exited": True}
+        return {
+            "old_pids_exited": True,
+            "bootout_requests": dict(self.bootout_requests),
+        }
 
     @staticmethod
     def _sync_directory(path):
@@ -934,6 +981,19 @@ class CohortHost(FaultRecoveryHost):
     def restore_old(self, plan):
         old = registry(plan["old"])
         require(self.bindings() == old, "COHORT_OLD_RESTORE_REGISTRY_UNKNOWN")
+        # launchctl can still report a tearing-down definition after bootout
+        # returned. Do not cancel drain or mistake that definition for a live
+        # restored process. Recovery has a separate finite wait budget.
+        restore_deadline = monotonic() + 60
+        for name, request in getattr(self, "bootout_requests", {}).items():
+            require(
+                name in old.services
+                and request.get("label") == old.services[name].label,
+                "COHORT_RESTORE_BOOTOUT_IDENTITY_CHANGED",
+            )
+            self._await_old_absent(
+                old.services[name], request.get("pid"), deadline=restore_deadline
+            )
         for name, binding in old.services.items():
             self._replace_plist(
                 self.path(binding), bytes.fromhex(plan["installed"][name]["plist_hex"])
@@ -1017,3 +1077,157 @@ class CohortHost(FaultRecoveryHost):
                 self.launch("disable", f"gui/{os.getuid()}/{new.services[name].label}")
             except Exception:
                 pass
+
+    def verify_old_restored(self, plan):
+        """Audit an already-restored pre-CAS cohort; never start or stop anything."""
+        from app.runtime_handover import _read
+        from app.runtime_scheduled import ScheduledBackend
+        from app.reference_trading.recovery_campaign import digest
+
+        old, new = registry(plan["old"]), registry(plan["new"])
+        require(
+            self.bindings() == old and self.binding_hash() == plan["registry_sha256"],
+            "COHORT_REGISTRY_DRIFT",
+        )
+        protected = self.protected(old)
+        require(protected == plan["protected"], "COHORT_PROTECTED_FACT_DRIFT")
+        releases = {}
+        for binding in old.services.values():
+            releases[(binding.root, binding.tag, binding.commit)] = binding.contracts
+        for (root, tag, commit), contracts in releases.items():
+            self.verify_release(Path(root), tag, commit)
+            require(
+                contract_fingerprints(Path(root)) == contracts, "COHORT_CONTRACT_DRIFT"
+            )
+        installed = self.installed(old)
+        require(
+            installed.get("launcher_sha256")
+            == plan["installed"].get("launcher_sha256"),
+            "COHORT_RESTORE_LAUNCHER_DRIFT",
+        )
+        rows = {}
+        for name, binding in old.services.items():
+            actual, expected = installed[name], plan["installed"][name]
+            require(
+                actual.get("sha256") == expected.get("sha256")
+                and actual.get("plist_hex") == expected.get("plist_hex")
+                and type(actual.get("loaded")) is bool
+                and actual["loaded"] is expected.get("loaded"),
+                "COHORT_RESTORE_INSTALLED_DRIFT",
+            )
+            if name in CALENDARS and actual["loaded"]:
+                require(
+                    ScheduledBackend().idle(binding), "COHORT_RESTORE_CALENDAR_BUSY"
+                )
+            rows[name] = {
+                "root": binding.root,
+                "tag": binding.tag,
+                "commit": binding.commit,
+                "generation": binding.generation,
+                "enabled": binding.enabled,
+                "label": binding.label,
+                "loaded": actual["loaded"],
+                "pid": str(actual["loaded_pid"])
+                if actual["loaded_pid"] is not None
+                else None,
+                "plist_sha256": actual["sha256"],
+            }
+
+        def audit_owners():
+            owners = {}
+            for name in CONTINUOUS:
+                binding = old.services[name]
+                require(
+                    binding.enabled and installed[name]["loaded"],
+                    "COHORT_RESTORE_OWNER_UNPROVEN",
+                )
+                state = read_service_state(name, runtime_dir=self.directory)
+                try:
+                    fresh = (
+                        bool(state)
+                        and 0
+                        <= (
+                            self.now() - datetime.fromisoformat(state["at"])
+                        ).total_seconds()
+                        <= 30
+                    )
+                except (KeyError, ValueError, TypeError):
+                    fresh = False
+                require(
+                    fresh
+                    and state.get("schema_version") == 1
+                    and state.get("service") == name
+                    and state.get("phase") == "active"
+                    and type(state.get("pid")) is int
+                    and state["pid"] > 0
+                    and state.get("generation") == binding.generation
+                    and str(state["pid"]) == str(installed[name]["loaded_pid"])
+                    and owner_process_matches(state, binding),
+                    "COHORT_RESTORE_OWNER_UNPROVEN",
+                )
+                try:
+                    os.kill(state["pid"], 0)
+                except OSError:
+                    raise CohortError("COHORT_RESTORE_OWNER_PID_UNPROVEN") from None
+                require(
+                    not owner_lock_available(name, runtime_dir=self.directory),
+                    "COHORT_RESTORE_OWNER_LOCK_UNPROVEN",
+                )
+                request = _read(self.directory / f"{name}.handover.json")
+                require(
+                    request is None
+                    or (
+                        request.get("schema_version") == 1
+                        and request.get("service") == name
+                        and type(request.get("generation")) is int
+                        and request.get("phase") in {"drain", "cancelled"}
+                        and re.fullmatch(r"[0-9a-f]{32}", request.get("request_id", ""))
+                        is not None
+                        and (
+                            request["generation"] != binding.generation
+                            or request["phase"] == "cancelled"
+                        )
+                    ),
+                    "COHORT_RESTORE_DRAIN_ACTIVE",
+                )
+                owners[name] = {
+                    key: state.get(key)
+                    for key in ("pid", "generation", "phase", "at", "ready")
+                }
+            return owners
+
+        audit_owners()
+        absent = []
+        for name, binding in new.services.items():
+            if binding.label != old.services[name].label:
+                require(
+                    self.definition_absent(binding), "COHORT_RESTORE_NEW_LABEL_PRESENT"
+                )
+                absent.append(binding.label)
+        require(self.installed(old) == installed, "COHORT_RESTORE_READBACK_DRIFT")
+        owners = audit_owners()
+        for name, binding in new.services.items():
+            if binding.label != old.services[name].label:
+                require(
+                    self.definition_absent(binding), "COHORT_RESTORE_NEW_LABEL_PRESENT"
+                )
+        require(
+            self.bindings() == old
+            and self.binding_hash() == plan["registry_sha256"]
+            and self.protected(old) == protected,
+            "COHORT_RESTORE_READBACK_DRIFT",
+        )
+        identity = {
+            "registry_sha256": plan["registry_sha256"],
+            "services": rows,
+            "launcher_sha256": installed["launcher_sha256"],
+            "protected_sha256": digest(protected),
+            "new_labels_absent": sorted(absent),
+        }
+        return {
+            "kind": "precommit_restore_readback",
+            "observed_at": self.now().isoformat(),
+            "identity_sha256": digest(identity),
+            "identity": identity,
+            "owners": owners,
+        }
