@@ -7,6 +7,22 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/25 其余8项服务切换：5项完成，Alert/Feed/Live现场校验阻塞
+
+Owner交办其余8项切至已发布v1.16.4。4项定时服务（after-market、late-provider-recovery、weekly-audit、log-rotate）及Reference已切至exact `bc7a91621ddaae6ad3ee915662994227496ccac6`/gen26。
+API/Web保留v1.16.4/gen28及原PID；最终十项身份均matched。Reference原生交接结果switched、新PID13658持续存活超过两分钟、消费边界未回退；启动后扫描和自然业务验收另验，不声明整体RUNTIME_READY。
+
+原生自动影响计划为空，按owner明确指定范围冻结独立重绑定计划，复用同版本原生warmup/drain/CAS/verify及日历更新API；未改写原生plan、tag或发布源码。
+52项runtime binding/handover/deployment/scheduled回归及独立执行Review通过。定时服务仅注册日历，RunAtLoad/KeepAlive=false、PID均空；原日历、非身份配置及6份原启用/盘后状态文件逐项SHA保持。
+新旧状态复制在原生idle guard内、旧任务卸载后、CAS前完成；失败attempt及新Reference独立计划保留，不重试失败Alert候选。
+
+- Alert：候选预热失败`MARKET_READ_CONTRACT_UNAVAILABLE`，已取消并保留原PID6203/v1.16.1。只读复核A的5m/15m/30m最新历史为10/23，该日Live订阅为空；不伪造订阅或回填信号以通过预检。
+- Feed：`MARKET_FEED_SESSION_BREAK_REQUIRED`；Live：`CANDIDATE_SESSION_UNKNOWN`。60品种现场均CLOSED但trading_day=None，原生交接/预热不能证明，不改Gate；原PID6228/6197及v1.16.1保持。
+
+Scope摘要、Event3921条/max_id3923、流状态及两日观察cursor/tail读回保持；没有手动触发盘后/周审、通知重发或订单。
+旧v1.16.1仍被三项常驻服务引用，必须保留。现场evidence：`output/runtime-all-v1164-20261025/`。
+下一最小步骤：有效Session和对应Live订阅事实具备后，重新生成精确计划并预检剩余三项；没有新增定时监控或自动重试。
+
 ## 10/25 消息页缓存与分页优化，v1.16.4已发布并切换API/Web
 
 消息首屏与续页20条；类型查询缓存30秒免请求、5分钟保留，恢复已加载分页与滚动；搜索350ms防抖/回车立即提交。
