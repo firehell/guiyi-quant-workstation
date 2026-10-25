@@ -32,6 +32,14 @@ async function setup(page) {
   })
   return control
 }
+async function returnToVisiblePage(page) {
+  await page.evaluate(() => {
+    for (const state of ['hidden', 'visible']) {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: state })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }
+  })
+}
 async function stored(page) {
   return page.evaluate(async () => {
     const names = (await indexedDB.databases()).filter(x => x.name.startsWith('guiyi-home:'))
@@ -76,16 +84,20 @@ test('reload restores real IndexedDB rows and cards within 500ms of mount before
   expect(control.errors).toEqual([])
 })
 
-test('manual reconciliation keeps expanded row, accepts304 and replaces only changed product', async ({page}) => {
+test('expired visible-page reconciliation keeps expanded row, accepts304 and replaces only changed product', async ({page}) => {
+  await page.clock.install()
   const control=await setup(page); await page.goto('/market')
   await expect(page.locator('.list-reference').first()).toHaveText('120.00')
   const first=page.locator('.strategy-list-row').first()
   await first.click(); await expect(first).toHaveAttribute('aria-expanded','true')
   await page.evaluate(()=>{window.__unchangedRow=document.querySelectorAll('.strategy-list-row')[1]})
   control.target='125'; control.slow=true
-  await page.getByRole('button',{name:'刷新',exact:true}).click()
+  await page.clock.fastForward(6 * 60_000)
+  await returnToVisiblePage(page)
+  await expect.poll(() => control.cardCalls).toBeGreaterThan(1)
   await expect(first).toHaveAttribute('aria-expanded','true')
   await expect(page.locator('.strategy-list-row')).toHaveCount(60)
+  await page.clock.runFor(6_000)
   await expect(page.locator('.list-reference').first()).toHaveText('125.00',{timeout:15000})
   expect(control.conditional).toBeGreaterThan(0)
   expect(await page.evaluate(()=>window.__unchangedRow===document.querySelectorAll('.strategy-list-row')[1])).toBe(true)
@@ -107,11 +119,13 @@ test('reload failure retains labelled cached facts and never reports current hea
 
 
 test('missing server projection retains browser history with explicit rebuild status', async({page})=>{
+ await page.clock.install()
  const control=await setup(page);await page.goto('/market')
  const row=page.locator('.strategy-list-item').first()
  await expect(row.locator('.list-reference')).toHaveText('120.00')
  control.missing=true
- await page.getByRole('button',{name:'刷新',exact:true}).click()
+ await page.clock.fastForward(6 * 60_000)
+ await returnToVisiblePage(page)
  await expect(row).toContainText('摘要待重建，保留历史快照')
  await expect(row.locator('.list-reference')).toHaveText('120.00')
 })

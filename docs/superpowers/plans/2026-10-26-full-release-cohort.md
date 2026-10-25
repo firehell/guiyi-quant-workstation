@@ -12,6 +12,7 @@ Owner已批准：审计当前develop所有未发布合格内容；权威休市�
 
 Implementation ledger:
 - Closed预热23项及相关组合287 passed/10 skipped。3个原多周期失败在HEAD内存源码复现，为fixture缺quality-rewarm接口，已只修fixture。
-- Cohort状态机16项通过，覆盖预热后过期、安装超预算及postCAS日志IO失败仍停止新工作。六常驻缺启用显式不支持；主机故障58项通过并经独立Review，整组Runtime相关163项通过。
-- 未发布执行边界/参考面板223 passed；Runtime+消息+预热133 passed。完整Web1237 passed/3 skipped，type/build/topology通过；OpenSpec12/12、secret0。浏览器旧合同断言按现行入口修复中；旧SuBing/Free金图与本轮未改产品源码失配，保留原阈值及失败原件。32项原生只读与8项SDK宿主无网络smoke通过。
-- 运行操作、发布、清理均未开始；需先完成全部Review与检查。
+- Cohort状态机17项通过，覆盖预热后过期、安装超预算及postCAS日志IO失败仍停止新工作。六常驻缺启用显式不支持；主机故障58项通过并经独立Review，整组Runtime相关164项通过。
+- 未发布执行边界/参考面板223 passed；Runtime+消息+预热133 passed。完整Web1237 passed/3 skipped，type/build/topology通过；OpenSpec12/12、secret0。关键五组浏览器70 passed、详情现役交互10 passed；旧SuBing/Free金图与本轮未改产品源码失配，保留原阈值及失败原件。32项原生只读与8项SDK宿主无网络smoke通过。
+- 完整Review与检查已完成。namespace app.__file__=None由候选实机发现，已改真实模块路径并补CLI回归。正式发布、切换与清理待执行。
+- 两张旧金图保持原阈值/失败；Newow三项旧自动explanation断言相关src/fixture与v1.16.4相同，周线中断，不宣称完整七组浏览器通过。

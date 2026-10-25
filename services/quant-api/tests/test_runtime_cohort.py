@@ -351,3 +351,26 @@ def test_rehashed_plan_cannot_expand_ttl_or_release_storage(tmp_path, mutation):
     with pytest.raises(CohortError):
         apply_cohort(h, p)
     assert h.calls == []
+
+
+def test_warmup_reports_real_app_file_for_namespace_package(monkeypatch, capsys):
+    import app
+    import json
+    from pathlib import Path
+    from app import runtime_cohort, runtime_deployment
+
+    assert app.__file__ is None  # Production app is a namespace package.
+    calls = []
+    monkeypatch.setattr(
+        runtime_deployment,
+        "warmup_service",
+        lambda service: calls.append(service) or {},
+    )
+    assert runtime_cohort.main(["warmup", "web"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "ready" and calls == ["web"]
+    assert (
+        Path(result["source_roots"]["app"]) == Path(runtime_cohort.__file__).resolve()
+    )
+    assert Path(result["source_roots"]["app"]).is_file()
+    assert Path(result["source_roots"]["core"]).is_file()

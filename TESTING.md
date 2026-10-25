@@ -2068,3 +2068,5 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 ```
 
 状态机与主机故障注入不停止真实服务；真实切换须另验 exact release、权威休市窗口、十服务绑定/PID/heartbeat/HTTP、游标及原Scope。闭市生命周期不代替自然业务证据。
+
+详情与首页缓存旧入口回归按当前中文周期、全局搜索、预警audit及可见性返回验证；保留原截图阈值，实际发布验证及已确认旧金图/旧pane例外见[整组发布记录](docs/superpowers/plans/2026-10-26-full-release-cohort.md)。

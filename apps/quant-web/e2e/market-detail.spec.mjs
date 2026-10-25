@@ -369,30 +369,37 @@ test('shared K-line focus also resolves an existing daily trading day', async ({
   await expect.poll(() => page.evaluate(() => window.__marketKlineDailyFocusContract.resolved)).toEqual(['2026-09-02T07:00:00Z'])
 })
 
-test('Free identity controls keep the selected contract in the URL', async ({ page }) => {
-  const requests = await mockMarketDetail(page)
-  await page.goto(freeJm)
-
-  await page.getByLabel('指定合约').fill('JM2605')
-  await page.getByRole('button', { name: '指定合约' }).click()
-  await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('contract')
+test('Free explicit contract identity survives visible frequency selection and reload', async ({ page }) => {
+  const requests = await mockMarketDetail(page, {
+    barsPage: ({ url, symbol }) => url.searchParams.get('series_kind') === 'contract'
+      ? { bars: [0, 1].map(index => ({ ...detailBar(symbol, index), physical_contract: 'JM2605' })) }
+      : undefined,
+  })
+  await page.goto('/market/chart?symbol=jm&view=free&series_kind=contract&contract=JM2605&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  const periods = page.getByRole('group', { name: '周期', exact: true })
+  await periods.getByRole('button', { name: '60分钟', exact: true }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('60m')
+  await page.reload()
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('series_kind')).toBe('contract')
   expect(new URL(page.url()).searchParams.get('contract')).toBe('JM2605')
-  await expect.poll(() => requests.some((url) => (
-    url.pathname.endsWith('/bars/page')
-    && url.searchParams.get('series_kind') === 'contract'
-    && url.searchParams.get('contract') === 'JM2605'
+  await expect.poll(() => requests.some(url => (
+    url.pathname.endsWith('/bars/page') && url.searchParams.get('series_kind') === 'contract'
+    && url.searchParams.get('contract') === 'JM2605' && url.searchParams.get('frequency') === '60m'
   ))).toBe(true)
 })
 
-test('Free uses one shared series and frequency control surface while keeping a contract selector', async ({ page }) => {
+test('Free uses one visible frequency surface and the shared indicator controls', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
-
-  await expect(page.getByRole('button', { name: '真实主力', exact: true })).toHaveCount(1)
-  await expect(page.getByRole('button', { name: '15m', exact: true })).toHaveCount(1)
-  await expect(page.getByLabel('指定合约')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: /市场背景/ })).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.getByRole('button', { name: /数据详情/ })).toHaveAttribute('aria-expanded', 'false')
+  const periods = page.getByRole('group', { name: '周期', exact: true })
+  await expect(periods).toHaveCount(1)
+  await expect(periods.getByRole('button', { name: '15分钟', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '15分钟', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('group', { name: '主图指标', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '自由看盘', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByLabel('指定合约')).toHaveCount(0)
 })
 
 test('Free migrates legacy continuous links and keeps 60-minute and daily navigation', async ({ page }) => {
@@ -541,6 +548,33 @@ test('SuBing projects Rule-specific runtime warm-up and failure states', async (
   await expect(page.locator('.detail-insight-deck').getByText(/评估失败/)).toBeVisible()
 })
 
+test('SuBing current MACD and immutable history remain usable on desktop and mobile', async ({ page }) => {
+  await mockDetailDailyQuote(page, {
+    barsPage: ({ url, symbol }) => url.searchParams.get('frequency') === '15m'
+      ? { bars: Array.from({ length: 40 }, (_, index) => detailBar(symbol, index, 100 + index)) }
+      : undefined,
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  await expect.poll(async () => Number(await page.getByTestId('kline-shell').getAttribute('data-macd-point-count'))).toBeGreaterThan(30)
+  await expect(page.getByText('MACD · MA21 金死叉', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+    await page.getByRole('tab', { name: '历史记录', exact: true }).click()
+    const history = width === 390 ? page.getByRole('dialog', { name: '历史记录', exact: true }) : page.locator('.detail-section-tabs__history')
+    await expect(history).toContainText('Bar 2026-09-03 10:45 北京时间')
+    await expect(history).toContainText('JM2601')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    if (width === 390) {
+      await page.keyboard.press('Escape')
+      await expect(history).not.toBeVisible()
+      await expect(page.getByRole('tab', { name: '历史记录', exact: true })).toBeFocused()
+    }
+  }
+})
+
 test('SuBing has stable desktop and narrow viewport visuals with selectable history', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await mockDetailDailyQuote(page, {
@@ -555,7 +589,7 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
   await expect(workspace).toBeVisible()
   const chart = page.getByTestId('kline-shell')
   await chart.scrollIntoViewIfNeeded()
-  for (const label of ['5分', '15分', '30分', '60分', '日线', '周线']) await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
+  for (const label of ['5分钟', '15分钟', '30分钟', '60分钟', '日线', '周线']) await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
   await expect(page).toHaveScreenshot('market-detail-subing-1440x900.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
   })
@@ -615,7 +649,7 @@ test('SuBing focus remains visible after viewport readiness settles', async ({ p
   expect(range.to - range.from).toBeLessThan(100)
 })
 
-test('HTDY resolves immutable Event focus across every official frequency', async ({ page }) => {
+test('HTDY keeps seven historical periods but only 60m resolves immutable Event focus', async ({ page }) => {
   const cases = [
     ['1m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
     ['5m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
@@ -642,24 +676,36 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
   })
   for (const [frequency, focus, tradingDay, detectedAt] of cases) {
     currentCase = [frequency, focus, tradingDay, detectedAt]
+    const beforeReads = requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events')).length
     await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}&focus_bar_end=${encodeURIComponent(focus)}`)
     await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-    await page.getByRole('tab', { name: '历史记录' }).click()
-    await expect(page.locator('.detail-section-tabs__history')).toContainText('买入观察')
-    await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+    await expect(page.getByTestId('kline-shell')).toBeVisible()
+    expect(new URL(page.url()).searchParams.get('frequency')).toBe(frequency)
+    if (frequency === '60m') {
+      await page.locator('.observed-records__audit summary').click()
+      await expect(page.locator('.observed-records__table')).toContainText('买入观察')
+      await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+    } else {
+      await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+      await expect(page.locator('.observed-records')).toHaveCount(0)
+      await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
+      await page.waitForTimeout(100)
+      expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(beforeReads)
+    }
     await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
   }
   const eventRequests = requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))
-  expect(eventRequests.length).toBeGreaterThanOrEqual(7)
-  expect(new Set(eventRequests.map(({ url }) => url.searchParams.get('frequency'))))
-    .toEqual(new Set(cases.map(([frequency]) => frequency)))
+  expect(eventRequests.length).toBeGreaterThanOrEqual(1)
+  expect(new Set(eventRequests.map(({ url }) => url.searchParams.get('frequency')))).toEqual(new Set(['60m']))
   expect(eventRequests.every(({ url }) => url.searchParams.get('rule_code') === 'htdy_original_15m')).toBe(true)
   expect(requests.alertRequests.every(({ method }) => method !== 'PUT')).toBe(true)
 
   const before = eventRequests.length
-  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=continuous&frequency=15m')
+  currentCase = ['60m', '2026-09-03T02:30:00.000Z', '2026-09-03']
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=continuous&frequency=60m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=contract&contract=JM2601&frequency=15m')
+  await expect.poll(() => requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events')).length).toBe(before + 1)
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=contract&contract=JM2601&frequency=60m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
   expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(before + 1)
 })
@@ -668,25 +714,26 @@ test('HTDY keeps last successful immutable Event evidence when a later Event ref
   await page.clock.install({ time: new Date('2026-09-03T03:00:00.000Z') })
   let eventCalls = 0
   await mockMarketDetail(page, {
-    alertEvents: () => (++eventCalls === 1 ? [htdyEvent('jm', '15m')] : 'error'),
+    alertEvents: () => (++eventCalls === 1 ? [htdyEvent('jm', '60m')] : 'error'),
   })
-  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=60m')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
-  await expect(page.getByRole('tab', { name: '历史记录' })).toBeVisible()
+  await expect(page.locator('.observed-records__audit summary')).toBeVisible()
   expect(eventCalls).toBe(1)
   await page.clock.runFor(30_000)
   await expect.poll(() => eventCalls).toBe(2)
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
-  await page.getByRole('tab', { name: '历史记录' }).click()
-  await expect(page.locator('.detail-section-tabs__history')).toContainText('买入观察')
-  await expect(page.getByText(/Bar 2026-09-03 10:45 北京时间/)).toBeVisible()
+  await page.locator('.observed-records__audit summary').click()
+  await expect(page.locator('.observed-records__table')).toContainText('买入观察')
+  await expect(page.locator('.observed-records__table')).toContainText('2026-09-03 10:45 北京时间')
+  await expect(page.locator('.observed-records__audit')).toContainText('实际预警读取未完成或失败')
 })
 
 test('HTDY focus resolves and keyboard product selection stays in the unified identity', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto('/market/chart?symbol=jm&overlay=htdy&series_kind=actual_dominant&frequency=30m&focus_bar_end=2026-09-03T02%3A30%3A00Z')
   await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
-  await page.getByRole('button', { name: '切换品种或合约' }).click()
+  await page.getByRole('combobox', { name: '搜索60品种' }).focus()
   const symbol = page.getByRole('combobox', { name: '搜索60品种' })
   await expect(symbol).toBeFocused()
   await symbol.fill('rb')
@@ -730,29 +777,14 @@ test('leaving the Free shell closes its live series resource', async ({ page }) 
   ))).toBe(true)
 })
 
-test('390px shell opens market facts in a keyboard-dismissible dialog and does not invent history', async ({ page }) => {
+test('390px shell shows inline market facts and does not invent history', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await mockMarketDetail(page)
   await page.goto(freeJm)
-
-  const disclosure = page.getByRole('button', { name: /更多行情数据/ })
-  await disclosure.focus()
-  await page.keyboard.press('Enter')
-  const dialog = page.getByRole('dialog', { name: '行情数据详情' })
-  await expect(dialog).toBeVisible()
-  expect(await dialog.evaluate((element) => {
-    const bounds = element.getBoundingClientRect()
-    return bounds.left >= 0 && bounds.right <= window.innerWidth && bounds.top >= 0 && bounds.bottom <= window.innerHeight
-  })).toBe(true)
-  await page.mouse.click(8, 8)
-  await expect(dialog).not.toBeVisible()
-  await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
-  await expect(disclosure).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(dialog).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(dialog).not.toBeVisible()
-  await expect(disclosure).toBeFocused()
+  await expect(page.getByText('OHLCV · 15分钟收盘', { exact: true })).toBeVisible()
+  await expect(page.getByText('报价可用', { exact: true })).toBeVisible()
+  for (const name of ['开', '高', '低', '成交量', '持仓量']) await expect(page.getByRole('term').filter({ hasText: new RegExp(`^${name}$`) })).toBeVisible()
+  await expect(page.getByRole('button', { name: /更多行情数据/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '历史记录' })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-390.png', {
@@ -843,8 +875,8 @@ for (const width of [1440, 390]) {
     await page.goto('/market/chart?symbol=jm&series_kind=contract&contract=JM2601&frequency=60m')
     await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
     expect(new URL(page.url()).searchParams.get('contract')).toBe('JM2601')
-    await page.getByRole('button', { name: '切换品种或合约' }).focus()
-    await page.keyboard.press('Enter')
+    await page.getByRole('combobox', { name: '搜索60品种' }).focus()
+    await page.keyboard.press('ArrowDown')
     await expect(page.getByRole('combobox', { name: '搜索60品种' })).toBeFocused()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
@@ -862,7 +894,7 @@ test('unavailable bars still permit keyboard product recovery inside the unified
   })
   await page.goto(freeJm)
   await expect(page.getByText('行情事实不可用', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '切换品种或合约' }).click()
+  await page.getByRole('combobox', { name: '搜索60品种' }).focus()
   const symbol = page.getByRole('combobox', { name: '搜索60品种' })
   await expect(symbol).toBeFocused()
   await symbol.fill('rb')
@@ -874,7 +906,7 @@ test('unavailable bars still permit keyboard product recovery inside the unified
 test('product selection closes once, keeps focus, and reopens only after a fresh user focus', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
-  await page.getByRole('button', { name: '切换品种或合约' }).click()
+  await page.getByRole('combobox', { name: '搜索60品种' }).focus()
   const productSearch = page.getByRole('combobox', { name: '搜索60品种' })
   await productSearch.fill('rb')
   await page.getByRole('option', { name: /螺纹钢 RB/ }).click()

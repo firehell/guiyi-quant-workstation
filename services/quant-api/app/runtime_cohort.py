@@ -303,7 +303,6 @@ def main(argv=None):
     try:
         if args.mode == "warmup":
             from app.runtime_deployment import warmup_service
-            import app
             import guiyi_quant
             from app.core.env import PROJECT_ROOT
             from app.version import APP_VERSION
@@ -315,7 +314,7 @@ def main(argv=None):
                         "service": args.service,
                         "proof": warmup_service(args.service),
                         "source_roots": {
-                            "app": str(Path(app.__file__).resolve()),
+                            "app": str(Path(__file__).resolve()),
                             "core": str(Path(guiyi_quant.__file__).resolve()),
                             "project_root": str(PROJECT_ROOT),
                             "version": APP_VERSION,

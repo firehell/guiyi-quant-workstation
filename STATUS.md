@@ -15,8 +15,9 @@ CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE（部署工程）：新增权威
 闭市Feed必须当代新鲜健康heartbeat及owner ready；Live不以空proof豁免故障。跨日待Feed初始化、未知权威、schema变更均前置拒绝。
 保留Scope、配置、日历、单次机会状态与私有原件；不接Broker、不下单、auto_order=false。
 
-当前候选版本1.16.5；部署/预热相关163 passed，未发布执行边界/参考面板223 passed，完整Web1237 passed/3 skipped，type/build/topology、OpenSpec12/12、secret0及独立高风险Review通过。
-旧详情页E2E入口按现行合同修正中；原SuBing/Free金图失配保持原阈值和原件，不冒充视觉通过。
+当前候选版本1.16.5；部署/预热相关164 passed，未发布执行边界/参考面板223 passed，完整Web1237 passed/3 skipped，type/build/topology、OpenSpec12/12、secret0及独立高风险Review通过。
+旧详情页及首页缓存E2E入口已按现行合同修正：关键五组70 passed，详情现役交互10 passed。两张旧SuBing/Free金图保持失败；Newow旧pane自动explanation断言与v1.16.4相同源码/fixture仍失配，周线被中断不记通过，不宣称完整七组全绿。
+候选离线环境/构建及源码根读回通过；namespace app身份路径实机发现并补测修复，独立Review通过。
 正式发布、统一切换、60秒稳定读回和旧树清理尚未执行；现役身份仍以既有记录及现场为准，自然业务另验。
 
 ## 10/26 首页5项旧E2E失配已清理
