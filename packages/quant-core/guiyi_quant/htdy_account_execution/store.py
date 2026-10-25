@@ -5,6 +5,7 @@ or a sender. Reopening requires native recovery before a new command can mutate.
 """
 
 from dataclasses import dataclass, replace
+from contextlib import contextmanager
 import os
 import json
 from pathlib import Path
@@ -141,6 +142,23 @@ class LocalStore:
                 )
             return state
 
+    @contextmanager
+    def dispatch_guard(self):
+        """Hold the account writer lock across bounded SDK request admission.
+
+        Native callbacks must only stage facts in a separate journal until exit.
+        No account mutation or automatic sending is performed here.
+        """
+        with self._mutex:
+            if self._uncertain or self._needs_recovery:
+                raise StoreError("NATIVE_RECOVERY_REQUIRED")
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                _, state = self._projection()
+                yield state
+            finally:
+                self._conn.execute("ROLLBACK")
+
     def receipt(self, key):
         """Read-only inspection after uncertain commit; never returns sendable effects."""
         connection = sqlite3.connect(
@@ -192,11 +210,15 @@ class LocalStore:
                 if self._needs_recovery and type(command) not in (
                     m.Recover,
                     m.Fill,
+                    m.NativeFill,
+                    m.Disconnect,
                     m.OrderUpdate,
                 ):
                     raise StoreError("NATIVE_RECOVERY_REQUIRED")
                 recovery_mode = int(
-                    self._needs_recovery and type(command) in (m.Fill, m.OrderUpdate)
+                    self._needs_recovery
+                    and type(command)
+                    in (m.Fill, m.NativeFill, m.OrderUpdate, m.Disconnect)
                 )
                 execution_state = (
                     replace(
@@ -283,7 +305,8 @@ class LocalStore:
                 if (
                     recovery_mode not in (0, 1)
                     or recovery_mode
-                    and type(command) not in (m.Fill, m.OrderUpdate)
+                    and type(command)
+                    not in (m.Fill, m.NativeFill, m.OrderUpdate, m.Disconnect)
                 ):
                     raise StoreError("JOURNAL_RECOVERY_MODE_INVALID")
                 execution_state = (

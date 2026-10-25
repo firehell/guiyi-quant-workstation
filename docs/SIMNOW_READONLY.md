@@ -52,7 +52,7 @@ CTP 查询不是事务快照；两轮相等只证明有界稳定，不排除窗�
 `account_empty_observed` 只在两轮相同、持仓及冻结均零、无未完成/未知委托，且资金中的占用保证金/冻结保证金/冻结手续费均零时为true；
 有保证金但无仓、有冻结资金但无挂单时另列 `inventory_warnings`，不报空账户；
 历史成交和终态委托保留，不因此判为当前有仓。它不是执行准入：`execution_eligible=false`，
-`ledger_reconciled=false`、`atomic_snapshot=false` 始终保持。尚未存在本程序订单账本，无法证明经济归属或完成账本对账。
+`ledger_reconciled=false`、`atomic_snapshot=false` 始终保持。该只读CLI未连接后续本地订单journal，无法证明经济归属或完成账本对账。
 
 ## 输出、安全及失败恢复
 

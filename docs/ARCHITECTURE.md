@@ -212,3 +212,9 @@ JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原
 `LocalStore` 原子提交命令、预留、状态与惰性提案。没有Broker transport、Web路由或持续Runtime依赖。
 冻结v1仍是原政策基线，新账户语义只在v2；公式、Alert及ReferenceTrade不依赖该账户模块。
 合同见[HTDY执行规则](HTDY_SIMNOW_V1.md)。
+
+## SimNow受控请求适配
+
+`guiyi_quant.simnow_execution` 显式注入已登录CTP API及HTDY账户LocalStore，以私有发送journal先领取再调用。
+原生回调stage后drain写账户事实；账户writer锁与独立发送journal分离，SDK依赖不进入API服务环境。
+没有Alert/Runtime/路由挂接，原只读CLI保持只读。事实与执行边界见[适配合同](SIMNOW_EXECUTION.md)。
