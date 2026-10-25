@@ -1,5 +1,17 @@
 # 当前状态
 
+## 10/25 HTDY实时信号统一60分钟，v1.16.2已发布并切换API/Web
+
+按owner批准计划，通过既有Scope API关闭JM5m/15m并开启60m，逐次及最终独立读回：operational60品种均且仅60m（60组合）。JM旧5m/15m Event及发送字段前后相等，无补发、回填或周期转换。
+
+HTDY仅60m查询/显示实时Event及已有参考交易流；其他周期保留历史研究图表并提示统一60m。未新增参考交易流，不将Event冒充开平仓成交。develop已集成3bc2db867；正式v1.16.1最小回移经PR475发布annotated v1.16.2，peeled/main d143143099f1dbc4b153eae4a2dcea927fb85f4c。原生release plan共享合同全相等、仅API+Web，单次apply两项switched；独立正式HTTP/API和十项身份读回通过，API/Web为v1.16.2，其余八项仍exact v1.16.1，未切Alert/Feed/Live/Reference。
+
+候选Web1222 passed/3 skipped、alerts定向25 passed、浏览器9 passed（非60m六旧链接、空流/失败、SPA切换和迟到响应）、健康接口6 passed；build/typecheck/topology、offline lock、OpenSpec12/12、secret0、diff和独立Review通过。develop另一套页面亦经13项浏览器及补充SPA集9项验证。初次浏览器fixture及回移模板适配失败保留，修正后才冻结。
+
+正式Chrome只读实测：JM15m零实时查询，原地切60m仅两项60m实时读取、缺流状态明确、pageerror0；截图留证。现场历史动作读取仍有失败提示，本任务未修改其后端或用实时Event替代历史事实。
+
+独立配置/版本读回在本地 `output/htdy-60m-unification-20261025/`；旧发布树仍被八项服务引用，保留。全局health仍degraded；JM60m新的自然completed评估、Event、provider accepted与手机送达分别待验，不声明整体RUNTIME_READY，不新增监控或制造信号。
+
 ## 10/25 SimNow受控订单适配代码及离线端到端完成，真实柜台待验
 
 新增 `simnow_ctp_controlled_v1`：固定第一套会话/账户/交易日绑定、最多60秒精确单次Permit、
