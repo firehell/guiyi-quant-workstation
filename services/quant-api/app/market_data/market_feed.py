@@ -469,8 +469,18 @@ class MarketFeedService(LiveMarketService):
         if self._coverage_session_source is None:
             return False
         for symbol, phase in phases.items():
-            if phase.trading_day is None or phase.phase not in (MarketPhase.BREAK, MarketPhase.CLOSED):
+            if phase.phase not in (MarketPhase.BREAK, MarketPhase.CLOSED):
                 return False
+            if phase.trading_day is None:
+                # Resolver CLOSED/None is an authoritative nontrading interval,
+                # not a missing mapping. Never invent a day or subscribe it.
+                if (phase.phase is not MarketPhase.CLOSED or phase.current_session is not None
+                        or phase.next_session_start is not None and phase.next_session_start <= now
+                        or any(window.start <= now <= window.end + timedelta(seconds=60)
+                               for (product, _day), windows in self._known_sessions.items()
+                               if product == symbol for window in windows)):
+                    return False
+                continue
             try:
                 windows = self._coverage_session_source(symbol, phase.trading_day)
             except Exception:  # noqa: BLE001 - missing Session authority cannot prove a quiet window

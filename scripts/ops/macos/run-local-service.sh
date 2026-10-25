@@ -113,6 +113,16 @@ if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
   export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
 fi
 case "$SERVICE" in
+  cohort-plan)
+    shift
+    export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
+    exec "$PYTHON_BIN" -m app.runtime_cohort plan "$@"
+    ;;
+  cohort-apply)
+    shift
+    export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
+    exec "$PYTHON_BIN" -m app.runtime_cohort apply-plan "$@"
+    ;;
   handover-candidate)
     exec "$PYTHON_BIN" -m app.runtime_deployment candidate "${2:?}" "${3:?}" "${4:?}"
     ;;

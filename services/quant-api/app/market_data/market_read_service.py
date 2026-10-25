@@ -244,6 +244,10 @@ class MarketReadService:
             after_market_status_path or PROJECT_ROOT / ".run" / "after-market-status.json"
         )
 
+    def canonical_warmup_reader(self, now: datetime) -> _CanonicalWarmupReader:
+        """Internal preflight reader; never used by the running signal path."""
+        return _CanonicalWarmupReader(self, now)
+
     def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         """读取正式历史页；不直接接触 Parquet 或 Live Redis。"""
         return self._market_data.query_page(request)
@@ -1344,6 +1348,98 @@ class MarketReadService:
             and bar.bar_end <= through
         }
         return tuple(deduped[key] for key in sorted(deduped))
+
+
+class _CanonicalWarmupReader(MarketReadService):
+    """Read-only closed preflight using confirmed MDS facts, without Live identity.
+
+    Reuses Alert coverage, physical-prefix replay and the same evaluators. All
+    results are disposable warmup calculations, never Event inputs or readiness
+    evidence for natural observations.
+    """
+
+    def __init__(self, source: MarketReadService, now: datetime) -> None:
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_TIMEZONE_REQUIRED")
+        super().__init__(market_data=source._market_data,
+                         phase_resolver=source._phase_resolver,
+                         operational_products=tuple(source._operational_products),
+                         live_store=source._live_store,
+                         after_market_status_path=source._after_market_status_path)
+        self._warmup_as_of = now.astimezone(UTC)
+
+    def _closed(self, symbol: str) -> bool:
+        phase = self._phase_resolver.resolve(symbol, self._warmup_as_of)
+        if phase.symbol != symbol or phase.phase not in {
+                MarketPhase.CLOSED, MarketPhase.TRADING, MarketPhase.BREAK}:
+            raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+        if phase.phase is not MarketPhase.CLOSED:
+            return False
+        if (phase.current_session is not None or phase.next_session_start is not None
+                and phase.next_session_start <= self._warmup_as_of):
+            raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+        return True
+
+    def closed_window(self, identity: SeriesPageQuery, *, limit: int = 64, quality_rewarm: bool = False) -> MarketReadWindow | None:
+        if not self._closed(identity.symbol):
+            return None
+        if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
+                or identity.contract is not None
+                or isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 2000):
+            raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        if quality_rewarm:
+            window = self.latest_subing_quality_window_as_of(identity, as_of=self._warmup_as_of)
+            self.assert_window_current(window)
+            return window
+        try:
+            # Select the latest published Canonical prefix. A wall-clock
+            # cursor would incorrectly demand unpublished post-close Live bars.
+            page = self.history_page(replace(identity, before=None, limit=limit))
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
+        bars = page.bars
+        if (not bars or any(type(bar) is not CanonicalBar or bar.bar_end > self._warmup_as_of for bar in bars)
+                or any(left.bar_end >= right.bar_end for left, right in zip(bars, bars[1:]))):
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        owners = tuple(_resolved_contract_for_bar(identity.symbol, bar, page.resolved_contract_segments) for bar in bars)
+        latest = bars[-1]
+        window = MarketReadWindow(symbol=identity.symbol, series_kind=identity.series_kind.value,
+                                  frequency=identity.frequency.value, trading_day=latest.trading_day,
+                                  contract=owners[-1], cutoff=latest.bar_end, bars=bars, bar_contracts=owners)
+        self.assert_window_current(window)
+        if identity.frequency in INTRADAY_FREQUENCIES:
+            self.validate_alert_window(window, context_bars=len(bars))
+        return window
+
+    def assert_window_current(self, window: MarketReadWindow) -> None:
+        if not self._closed(window.symbol):
+            raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+        if window.input_policy_version == SUBING_QUALITY_REWARM_POLICY_V2:
+            try:
+                sessions = self._market_data.session_windows(symbol=window.symbol, trading_day=window.trading_day)
+                if (not sessions or window.cutoff > self._warmup_as_of
+                        or any(item.start <= self._warmup_as_of <= item.end + timedelta(seconds=60) for item in sessions)):
+                    raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+            except MarketDataError as exc:
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
+            super().assert_window_current(window)
+            return
+        try:
+            page = self.history_page(SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, window.symbol,
+                BarFrequency(window.frequency), before=window.cutoff + timedelta(microseconds=1), limit=len(window.bars)))
+            owners = tuple(_resolved_contract_for_bar(window.symbol, bar, page.resolved_contract_segments) for bar in page.bars)
+            owner = self._market_data.dominant_segment_for_day(window.symbol, window.trading_day)
+            sessions = self._market_data.session_windows(symbol=window.symbol, trading_day=window.trading_day)
+            if (page.bars != window.bars or owners != window.bar_contracts
+                    or owner.contract != window.contract or not sessions
+                    or any(item.start <= self._warmup_as_of <= item.end + timedelta(seconds=60) for item in sessions)
+                    or window.cutoff > self._warmup_as_of):
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
+
+    def _verified_live_bars(self, **_kwargs) -> tuple[CanonicalBar, ...]:
+        return ()
 
 
 def _resolved_contract_for_bar(

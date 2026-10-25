@@ -232,3 +232,33 @@ SHALL remain unknown. The check SHALL NOT start, stop, promote or send anything.
 - **WHEN** the API's local Market activation marker is absent
 - **THEN** health exposes the identity mismatch and unknown Market state with degraded overall
 - **AND** it does not claim disabled Market services with a healthy operational path
+
+### Requirement: Closed release warmup reads confirmed Canonical without Live fabrication
+
+A stopped-world release warmup MAY use a private Canonical-only reader when authoritative operational
+Calendar/Session proves a known rest interval, including CLOSED with no current trading day. It SHALL use
+the existing quality, physical-prefix, mapping and completed cutoff checks and SHALL NOT create Redis
+subscriptions, emit an Event, invoke transport or change the normal live signal reader.
+
+#### Scenario: Confirmed historical day has already been cleaned from Live
+- **WHEN** the release candidate warms a completed historical prefix in a proven closed interval
+- **THEN** it reads the same validated Canonical values and physical mapping without requiring retired Live subscriptions
+- **AND** unknown authority, quality or physical-prefix gaps fail closed and natural Live readiness remains unverified
+
+### Requirement: Incompatible all-service releases require a bounded stopped cohort
+
+The cohort installer SHALL freeze exact old and new identities for all ten services, preserve existing enabled
+states and schedules, and support no schema change. It SHALL require all six continuous services enabled,
+authoritative rest for all operational products and at least 660 seconds before the next Session.
+The plan SHALL expire after fifteen minutes and be revalidated after read-only prewarm and immediately before
+CAS. Downtime SHALL be bounded to 600 seconds. All old owners SHALL drain and exit before the sole registry CAS,
+with maintenance and owner guards held; new consumers SHALL start before Feed and calendars register last.
+
+#### Scenario: Prewarm or installation outlives the safe execution window
+- **WHEN** the plan expires or the downtime budget is exhausted before CAS
+- **THEN** the registry remains old and suspended definitions restore only their frozen prior loaded state
+
+#### Scenario: Registry commit or new cohort outcome is unknown
+- **WHEN** failure occurs after entering CAS
+- **THEN** the attempt is retained as unknown, new work is cooperatively halted and automatic rollback or replay is forbidden
+- **AND** closed idle evidence cannot substitute for a natural completed Bar, Event or recipient delivery

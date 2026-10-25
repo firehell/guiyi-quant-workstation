@@ -7,6 +7,18 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/26 全量发布候选与整组升级工程
+
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE（部署工程）：新增权威休市窗口十服务整组向前升级，
+先只读Canonical预热、排空旧Feed与消费者、旧PID全部退出后持维护/所有者锁一次CAS；消费者先于Feed，最后仅注册日历。
+15分钟计划有效期在预热后与CAS前复核，停机预算600秒；CAS前恢复原加载状态，CAS后未知结果不自动回滚或重试。
+闭市Feed必须当代新鲜健康heartbeat及owner ready；Live不以空proof豁免故障。跨日待Feed初始化、未知权威、schema变更均前置拒绝。
+保留Scope、配置、日历、单次机会状态与私有原件；不接Broker、不下单、auto_order=false。
+
+当前候选版本1.16.5；部署/预热相关163 passed，未发布执行边界/参考面板223 passed，完整Web1237 passed/3 skipped，type/build/topology、OpenSpec12/12、secret0及独立高风险Review通过。
+旧详情页E2E入口按现行合同修正中；原SuBing/Free金图失配保持原阈值和原件，不冒充视觉通过。
+正式发布、统一切换、60秒稳定读回和旧树清理尚未执行；现役身份仍以既有记录及现场为准，自然业务另验。
+
 ## 10/26 首页5项旧E2E失配已清理
 
 修正旧micro尺寸图标、已移除刷新按钮及快照summary的测试断言，保留原行为目标：

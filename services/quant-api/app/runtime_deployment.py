@@ -168,21 +168,32 @@ def warmup_service(service):
         from app.db.session import SessionLocal
         from app.market_data.composition import build_market_data_service
         from app.market_data.operational_universe import load_operational_products
-        from app.market_data.market_phase import MarketPhaseResolver
+        from app.market_data.market_phase import MarketPhase, MarketPhaseResolver
         from datetime import UTC, datetime
         with SessionLocal() as session:
             market = build_market_data_service(session)
             resolver = MarketPhaseResolver(session)
             products = load_operational_products()
             progress = observation_progress(service)
+            now = datetime.now(UTC)
+            closed_idle = True
             for product in products:
-                phase = resolver.resolve(product, datetime.now(UTC))
-                if phase.trading_day is None:
+                phase = resolver.resolve(product, now)
+                if (phase.symbol != product or phase.phase not in {
+                        MarketPhase.TRADING, MarketPhase.BREAK, MarketPhase.CLOSED}):
                     raise DeploymentError('CANDIDATE_SESSION_UNKNOWN')
+                is_closed = (phase.phase is MarketPhase.CLOSED and phase.current_session is None
+                             and (phase.next_session_start is None or phase.next_session_start > now))
+                closed_idle = closed_idle and is_closed
+                if phase.trading_day is None:
+                    if not is_closed:
+                        raise DeploymentError('CANDIDATE_SESSION_UNKNOWN')
+                    continue
                 market.dominant_segment_for_day(product, phase.trading_day)
             if not products:
                 raise DeploymentError('CANDIDATE_SCOPE_EMPTY')
-            return {'products': len(products), 'progress': progress}
+            return {'products': len(products), 'progress': progress,
+                    'proven_closed_idle': closed_idle, 'natural_bar_verified': False}
     if service == 'api':
         from app.main import app
         return {'routes': len(app.routes)}
@@ -396,7 +407,11 @@ class LaunchdBackend:
             'schema_version': 1, 'phase': 'cancelled', 'service': service, 'request_id': request})
 
 
-def assert_no_unknown_deployment():
+def assert_no_unknown_deployment(*, cohort_plan_sha256=None):
+    cohort = _read(runtime_directory() / 'cohort-release.json')
+    if (cohort is not None and cohort.get('phase') not in {'switched', 'cancelled'}
+            and (cohort_plan_sha256 is None or cohort.get('plan_sha256') != cohort_plan_sha256)):
+        raise DeploymentError('COHORT_RECOVERY_READBACK_REQUIRED')
     journal = _read(runtime_directory() / 'deployment-outcome.json')
     if journal is not None and journal.get('phase') not in {'switched', 'cancelled'}:
         raise DeploymentError('RUNTIME_HANDOVER_RECOVERY_READBACK_REQUIRED')
