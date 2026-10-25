@@ -151,6 +151,27 @@ describe('persistent Alert markers', () => {
     controller.dispose()
   })
 
+  test('disposing HTDY 60m reads rejects late success and failure without restarting polling', async () => {
+    for (const fail of [false, true]) {
+      const slow = deferred<{ items: AlertEvent[] }>()
+      let timers = 0
+      const controller = usePersistentAlertMarkers({
+        fetchEvents: () => slow.promise,
+        scheduleInterval: () => { timers++; return 1 },
+        clearInterval: () => undefined,
+      }, { resolveRuleCodes: () => [ALERT_RULE_CODES.HTDY] })
+      const pending = controller.sync({ seriesKind: 'actual_dominant', symbol: 'jm', frequency: '60m' }, bars(), 'replace')
+      controller.dispose() // HTDY leaves the only enabled realtime display period.
+      if (fail) slow.reject(new Error('late failure'))
+      else slow.resolve({ items: [{ ...event(1, ['buy']), frequency: '60m' }] })
+      await pending
+      assert.deepEqual(controller.events.value, [])
+      assert.deepEqual(controller.markers.value, [])
+      assert.equal(controller.unavailable.value, false)
+      assert.equal(timers, 0)
+    }
+  })
+
   test('HTDY workspace narrows read-only Event requests to HTDY and exposes immutable Event facts', async () => {
     const requests: string[] = []
     const controller = usePersistentAlertMarkers({
