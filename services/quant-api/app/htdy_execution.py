@@ -40,3 +40,11 @@ def signal_from_window(
     digest = sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return Signal(source_id, window.symbol.upper(), window.contract, window.cutoff,
                   observed_at, window.bars[-2].bar_end, directions, digest)
+
+
+def start_account_operational(account_id: str, at: datetime, readback):
+    """Explicit v2 account bootstrap; no API route, transport or background enable."""
+    from app.market_data.operational_universe import load_operational_products
+    from guiyi_quant.htdy_account_execution import start as start_account
+
+    return start_account(account_id, tuple(p.upper() for p in load_operational_products()), at, readback)
