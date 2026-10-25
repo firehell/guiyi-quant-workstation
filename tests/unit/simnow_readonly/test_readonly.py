@@ -86,7 +86,9 @@ class ReadOnlyTests(unittest.TestCase):
         p.api = FixtureApi(p, data)
         if logged:
             p.day = DAY
-            p.result.update(login_passed=True, authentication_passed=True)
+            p.result.update(
+                login_passed=True, authentication_passed=True, trading_day=DAY
+            )
         return p
 
     def collect(self, p):
@@ -124,6 +126,53 @@ class ReadOnlyTests(unittest.TestCase):
         test = self.probe()
         self.assertNotEqual(
             result["account_fingerprint"], test.result["account_fingerprint"]
+        )
+
+    def test_reset_acceptance_rejects_test_environment_copy(self):
+        p = self.probe()
+        self.collect(p)
+        check = m.check_funding_reset(p.result, "100000", "20261027")
+        self.assertFalse(check["passed"])
+        self.assertIn("FIRST_ENVIRONMENT_REQUIRED", check["reasons"])
+
+    def test_reset_acceptance_rejects_early_trading_day(self):
+        p = self.probe()
+        self.collect(p)
+        p.result["environment"] = "SIMNOW_FIRST"
+        p.result["front"] = "tcp://182.254.243.31:30001"
+        p.result["source_scope"] = "FIRST_ENVIRONMENT_READBACK"
+        check = m.check_funding_reset(p.result, "100000", "20261027")
+        self.assertIn("EFFECTIVE_TRADING_DAY_NOT_REACHED", check["reasons"])
+
+    def test_reset_acceptance_requires_exact_funds_and_flat_account(self):
+        p = m.Probe(USER, "dummy", environment="first")
+        p.api = FixtureApi(
+            p,
+            {
+                "funds": [
+                    row(
+                        "funds", TradingDay="20261027", Balance=100000, Available=100000
+                    )
+                ]
+            },
+        )
+        p.day = "20261027"
+        p.result.update(
+            login_passed=True, authentication_passed=True, trading_day=p.day
+        )
+        self.collect(p)
+        check = m.check_funding_reset(p.result, "100000", "20261027")
+        self.assertTrue(check["passed"])
+        self.assertFalse(p.result["execution_eligible"])
+        p.result["rounds"][1]["queries"]["funds"]["rows"][0]["Available"] = "99999"
+        self.assertFalse(
+            m.check_funding_reset(p.result, "100000", "20261027")["passed"]
+        )
+
+    def test_reset_acceptance_never_accepts_incomplete_readback(self):
+        p = self.probe()
+        self.assertFalse(
+            m.check_funding_reset(p.result, "100000", "20261027")["passed"]
         )
 
     def test_complete_empty_account_requires_all_eight_queries(self):
