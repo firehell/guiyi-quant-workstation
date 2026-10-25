@@ -1,6 +1,6 @@
 """归一量化 FastAPI 应用入口。
 
-当前仅挂载 Market 行情、Alert 与 Runtime 运维只读 API；
+当前挂载 Market 行情、Alert、SimNow 本地监控与 Runtime 运维只读 API；
 data_center HTTP、旧 Signal/Review/Strategy
 等已退役表面均未注册。存活探针（liveness）与详细运维健康检查分层：本模块提供轻量
 `/health` 别名，完整组件状态见 `/api/runtime/health`。
@@ -12,6 +12,7 @@ from starlette.middleware.gzip import GZipMiddleware
 import logging
 import os
 
+from app.api.simnow_monitor import router as simnow_monitor_router
 from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_newow import router as market_newow_router
@@ -63,6 +64,7 @@ app.add_middleware(
 )
 
 # Market + Alert + Runtime 运维面
+app.include_router(simnow_monitor_router)
 app.include_router(market_router)
 app.include_router(market_newow_router)
 app.include_router(market_messages_router)

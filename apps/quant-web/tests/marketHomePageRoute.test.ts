@@ -142,6 +142,7 @@ async function loadPage(initialSector = '') {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText
     .replace(/import ['"]@\/styles\/marketHome.css['"];?/g, '')
+    .replace(/from ['"]@\/utils\/marketHomeTab['"]/g, `from '${new URL('../src/utils/marketHomeTab.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/utils\/productSearch['"]/g, `from '${new URL('../src/utils/productSearch.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/utils\/productDirectory['"]/g, `from '${new URL('../src/utils/productDirectory.ts', import.meta.url).href}'`)
     .replace(/from ['"]vue['"]/g, `from '${vueUrl}'`)

@@ -106,3 +106,41 @@ execute包括必要的本次结算确认，必须先完成实际资金、账户�
 账户收益使用原生Balance及实际Deposit/Withdraw调整，手续费来自原生事实而非参考交易；当前可证明同日区间净收益。
 跨日没有完整现金流/结算连续性时，继续展示原生权益、持仓损益及费用，累计区间收益保持 `CASHFLOW_CONTINUITY_REQUIRED`，不能猜零现金流。
 所有fixture输出 `broker_e2e_passed=false`；实际第一套、资金生效及原生订单仍须分别验收。一次性受控程序不安装launchd或启用全品种持续自动交易。
+
+## 首页只读监控（simnow_monitor_v1）
+
+首页“市场 / 消息 / 模拟交易”第三项只展示已留存的原生账户走势、持仓、执行链及待核事实，
+不提供报撤单、连接、结算确认或恢复按钮。页面可见时每5秒读取；隐藏、离开和卸载后暂停。
+默认近7天按北京时间记录时间筛选；原生交易日仅在原始来源存在时另列，不从自然日期推算。
+翻页/抽屉期间新快照仅提示，不替换当前列表或选择；失败保留最后快照和核验时间。
+
+现有一次性受控宿主继续使用 PROJECT_ROOT/output/simnow-controlled 作为唯一监控根。
+GUIYI_SIMNOW_MONITOR_ROOT 仅为API显式选源配置；默认是API自身工作区的上述根，跨工作区开发
+必须指向宿主实际的同一根。它不改变宿主既有输出位置，不通过目录扫描、mtime或PID寻找当前账户。
+根下 monitor.json 由宿主在既有控制流中以私有权限、独占短锁及原子替换发布，绑定账户指纹、run、
+运行开始/查询中/最后更新时间/结束、来源ID及账本摘要。索引仅是观察状态，非财务权威；
+账户冲突或发布失败只让监控不可用，不改变交易决定，不新增线程、查询或定时采集。
+
+只读API为：
+
+- GET /api/simnow/monitor/overview
+- GET /api/simnow/monitor/records：kind、product、status、start_day、end_day、cursor；每页50条，
+  窗口相隔最多93天，最多读取5000条记录，覆盖受限明确返回partial。
+- GET /api/simnow/monitor/records/{id}：精确稳定身份关联信号、风控、订单、实际成交。
+
+reader分别以SQLite mode=ro、query_only和读取事务访问 account.sqlite、dispatch.sqlite、
+native-evidence.sqlite；不构造执行LocalStore、不触发恢复、不调用Broker或创建缺失文件。
+现有库为rollback journal；reader在连接前检查文件头，拒绝WAL，避免SQLite只读连接创建共享内存文件。
+缺失、损坏、账户/schema/hash不匹配或未来来源均不回退到零资金/空仓。多库不是跨库原子快照，
+原生核验和账本时点分别公开；原生来源与账本未匹配、待核成交/异常持仓时保留原始事实，预算完整性待核。
+缺失监控索引为未接入；记录读取失败不等于账户无持仓。
+
+财务投影复用 finance.performance 与账户 local_occupancy，金额/比率输出普通Decimal字符串。
+原生权益、当日Commission与本地成交归属费用分别显示，不在前端推算预算。
+跨日现金流无法证明时net_profit/return_ratio为空，曲线断开；原始权益仍保留。
+未经核对的成交只进待核事项，不捏造成已入账Fill。原始Live缺口、策略参考收益与账户事实始终独立。
+索引状态过期或运行结束后不宣称当前连接正常；历史登录成功不构成当前连接证据。
+
+API不公开完整账号、凭据、文件路径或原始异常；账户身份仅返回不可逆展示key与别名，
+关联来源摘要在抽屉折叠展示。此实现不安装服务、不启用持续交易、auto_order不改变。
+没有实际受控账户记录时以可核验空态交付，真实账户自然数据另验。

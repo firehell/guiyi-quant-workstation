@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { loadMarketHomeTab as loadActiveTab, saveMarketHomeTab as saveActiveTab, type MarketHomeTab } from '@/utils/marketHomeTab'
 import '@/styles/marketHome.css'
 import MarketHomeHeader from '@/components/market/MarketHomeHeader.vue'
 import { normalizeProductOptions } from '@/utils/productSearch'
@@ -8,6 +9,7 @@ import { productSectorLabel } from '@/utils/productDirectory'
 import { homeCardsReloadIdentity } from '@/utils/newowHomeCards'
 import MarketHomeStrategyCards from '@/components/market/MarketHomeStrategyCards.vue'
 import { newowMessageChartQuery, type NewowMessage } from '@/api/newowMessages'
+import MarketHomeSimnow from '@/components/market/MarketHomeSimnow.vue'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
 import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.vue'
 import MarketHomeSkeleton from '@/components/market/MarketHomeSkeleton.vue'
@@ -31,7 +33,7 @@ const sector = ref(initialPreferences.sector)
 const sort = ref<MarketHomeSort>(initialPreferences.sort === 'change' ? 'change' : 'default')
 const sortDirection = ref<MarketHomeSortDirection>(initialPreferences.sortDirection)
 const compactDensity = ref(initialPreferences.compactDensity)
-const activeTab = ref<'market' | 'messages'>(loadActiveTab())
+const activeTab = ref<MarketHomeTab>(loadActiveTab())
 const messageReloadSequence = ref(0)
 const cardReloadSequence = ref(0)
 const navigationError = ref<string | null>(null)
@@ -67,6 +69,7 @@ const liveStatus = computed(() => {
 let restoreFrame: number | null = null
 
 async function refreshAll() {
+  if (activeTab.value === 'simnow') return
   if (activeTab.value === 'messages') {
     void home.directory.refresh()
     messageReloadSequence.value += 1
@@ -115,7 +118,7 @@ function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
   void router.push({ name: 'market-chart', query: marketHomeViewChartQuery(view, symbol, frequency) })
 }
 
-function selectTab(tab: 'market' | 'messages') {
+function selectTab(tab: MarketHomeTab) {
   activeTab.value = tab
   saveActiveTab(tab)
 }
@@ -145,16 +148,6 @@ function restorePageScroll() {
       restoreFrame = null
     })
   })
-}
-
-function loadActiveTab(): 'market' | 'messages' {
-  if (typeof window === 'undefined') return 'market'
-  try { return sessionStorage.getItem('guiyi.market-home.tab.v1') === 'messages' ? 'messages' : 'market' } catch { return 'market' }
-}
-
-function saveActiveTab(tab: 'market' | 'messages') {
-  if (typeof window === 'undefined') return
-  try { sessionStorage.setItem('guiyi.market-home.tab.v1', tab) } catch {}
 }
 
 function changeSort(column: MarketHomeSort) {
@@ -206,6 +199,7 @@ onBeforeUnmount(() => {
       </template>
       </section>
     </div>
+    <MarketHomeSimnow v-if="activeTab === 'simnow'" :options="productOptions" />
     <MarketHomeMessages v-if="activeTab === 'messages'" :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" @open-newow="openNewowEvent" />
   </div>
 </template>

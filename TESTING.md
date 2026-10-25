@@ -2041,3 +2041,17 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-
 
 浏览器用隔离fixture验 UI、三笔卡片、延迟分页、移动端与缺失状态，不代表实际运行收益。
 真实页面只读 `forward_observation`；缺少留存流时不以历史重算／重绘补齐。
+
+## 首页SimNow只读监控
+
+以下全部使用隔离fixture，不连接SimNow、不写正式账户记录：
+
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_monitor services/quant-api/tests/test_simnow_monitor_api.py tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution
+    node --test apps/quant-web/tests/simnowMonitor.test.ts
+    pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/simnow-monitor.spec.mjs
+    pnpm -C apps/quant-web build
+
+覆盖只读文件前后不变、WAL拒绝、并发未提交写、损坏/错账户、分页cursor身份、原生异常持仓、
+待核成交、跨日收益留空、监控发布失败不影响受控交易，以及可见刷新/隐藏停止、迟到过滤响应、
+账户切换、分页与抽屉保护、缺失不为零、桌面/移动导航与全屏抽屉。
+e2e/fixtures/simnow-monitor.json 仅来自离线受控宿主测试，不是实际账户evidence。
