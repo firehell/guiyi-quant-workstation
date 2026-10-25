@@ -7,6 +7,7 @@ readback stability; they do not reconcile an execution ledger or authorize tradi
 
 from __future__ import annotations
 
+import argparse
 import getpass
 import hashlib
 import json
@@ -24,7 +25,18 @@ from zoneinfo import ZoneInfo
 
 from openctp_ctp import tdapi
 
-FRONT = "tcp://182.254.243.31:40001"
+ENVIRONMENTS = {
+    "api-test": (
+        "SIMNOW_API_TEST",
+        "tcp://182.254.243.31:40001",
+        "API_TEST_COPY_NOT_FIRST_ENVIRONMENT",
+    ),
+    "first": (
+        "SIMNOW_FIRST",
+        "tcp://182.254.243.31:30001",
+        "FIRST_ENVIRONMENT_READBACK",
+    ),
+}
 BROKER = "9999"
 SCHEMA = "simnow_readonly_inventory_v1"
 QUERY_GAP = 1.1
@@ -168,7 +180,10 @@ def checked_row(kind, row, user, day):
 
 
 class Probe(tdapi.CThostFtdcTraderSpi):
-    def __init__(self, user, password):
+    def __init__(self, user, password, *, environment="api-test"):
+        if environment not in ENVIRONMENTS:
+            raise ValueError("UNSUPPORTED_SIMNOW_ENVIRONMENT")
+        environment_id, self.front, self.source_scope = ENVIRONMENTS[environment]
         super().__init__()
         self.user, self.password, self.api = user, password, None
         self.lock = threading.RLock()
@@ -180,10 +195,10 @@ class Probe(tdapi.CThostFtdcTraderSpi):
         self.day = None
         self.result = {
             "schema": SCHEMA,
-            "environment": "SIMNOW_API_TEST",
-            "front": FRONT,
+            "environment": environment_id,
+            "front": self.front,
             "broker_id": BROKER,
-            "account_fingerprint": digest(["SIMNOW_API_TEST", BROKER, user]),
+            "account_fingerprint": digest([environment_id, BROKER, user]),
             "started_at": stamp(),
             "status": "WAITING_CONNECTION",
             "authentication_passed": False,
@@ -457,7 +472,7 @@ class Probe(tdapi.CThostFtdcTraderSpi):
                 and not active
                 and not encumbered,
                 inventory_warnings=inventory_warnings,
-                source_scope="API_TEST_COPY_NOT_FIRST_ENVIRONMENT",
+                source_scope=self.source_scope,
             )
 
 
@@ -475,11 +490,22 @@ def report_path():
 
 
 def main():
+    parser = argparse.ArgumentParser(description="SimNow一次性账户只读核验，无交易权限")
+    parser.add_argument(
+        "--environment",
+        choices=tuple(ENVIRONMENTS),
+        default="api-test",
+        help="api-test=历史账户副本；first=第一套模拟交易环境。固定前置，不自动fallback",
+    )
+    options = parser.parse_args()
     if not sys.stdin.isatty():
         raise SystemExit("请在本机交互终端运行；不接受管道凭据。")
     if sys.platform != "darwin" or version("openctp-ctp") != "6.7.7.1":
         raise SystemExit("SDK版本/平台不匹配，未读取凭据、未连接。")
-    print("SimNow只读核验：测试环境40001；认证/登录各一次，四类查询各两轮。")
+    environment_id, front, _ = ENVIRONMENTS[options.environment]
+    print(
+        f"SimNow只读核验：{environment_id} {front}；认证/登录各一次，四类查询各两轮。"
+    )
     print(
         "不下单、不撤单、不确认结算；密码不保存。测试环境结果不能代替第一套环境验收。"
     )
@@ -492,7 +518,7 @@ def main():
     if not password or len(password.encode()) > 40:
         raise SystemExit("密码为空或超长，未连接。")
     target = report_path()
-    probe = Probe(user, password)
+    probe = Probe(user, password, environment=options.environment)
     user = password = ""
     saved_out, saved_err = os.dup(1), os.dup(2)
     with tempfile.TemporaryDirectory(prefix="guiyi-simnow-readonly-") as flow:
@@ -502,7 +528,7 @@ def main():
             try:
                 probe.api = tdapi.CThostFtdcTraderApi.CreateFtdcTraderApi(flow + "/")
                 probe.api.RegisterSpi(probe)
-                probe.api.RegisterFront(FRONT)
+                probe.api.RegisterFront(probe.front)
                 probe.api.Init()
                 if not probe.login_done.wait(25):
                     with probe.lock:
