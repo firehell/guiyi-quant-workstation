@@ -996,3 +996,46 @@ def test_mismatched_recovery_contract_cannot_create_close_obligation():
     assert "RB" in s.blocked_products
     assert not next(p for p in s.products if p.product == "RB").must_close
     assert tick(s, 121).effects == ()
+
+
+def test_normal_filled_callback_is_not_a_fault_or_historical_reversal_recovery():
+    s, o, f = open_position()
+    s = settle_position(s, o, f)
+    s = step(
+        s, sig(direction="sell", minute=120, previous=T + timedelta(minutes=60))
+    ).state
+    tx = tick(s, 121)
+    closing = tx.effects[0].order
+    now = T + timedelta(minutes=122)
+    s = step(
+        tx.state,
+        a.OrderUpdate(
+            "simnow-test", closing.order_id, now, "native-close-filled", "FILLED"
+        ),
+    ).state
+    assert not s.readback_valid
+    actual = h.Fill(
+        "close-native",
+        closing.order_id,
+        "simnow-test",
+        closing.contract,
+        now,
+        now + timedelta(seconds=1),
+        closing.price,
+        D(3),
+        1,
+    )
+    s = step(s, actual).state
+    s = step(
+        s,
+        readback(
+            now + timedelta(seconds=2),
+            orders=(
+                h.OrderReport(o.order_id, "FILLED"),
+                h.OrderReport(closing.order_id, "FILLED"),
+            ),
+            trades=(f.trade_id, actual.trade_id),
+        ),
+    ).state
+    assert s.phase == "READY" and s.readback_valid
+    assert tick(s, 123).effects[0].order.offset == "OPEN"

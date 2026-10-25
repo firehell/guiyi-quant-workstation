@@ -13,9 +13,10 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 合同见[订单适配](docs/SIMNOW_EXECUTION.md)。纯离线CTP回报fixture与账户journal端到端，不连接柜台。
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_execution tests/unit/htdy_execution services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/reference_trading/test_htdy_reference_model.py services/quant-api/tests/reference_trading/test_htdy_reference_capture.py services/quant-api/tests/test_htdy_production_kernel_policy.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution services/quant-api/tests/test_simnow_controlled_market.py services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/reference_trading/test_htdy_reference_model.py services/quant-api/tests/reference_trading/test_htdy_reference_capture.py services/quant-api/tests/test_htdy_production_kernel_policy.py
 # 可选、已安装Mac ARM64 SDK；结构检查无网络、无原生API实例
 /path/to/isolated/python -I scripts/broker/simnow_order_compatibility.py
+/path/to/isolated/python -I tests/unit/simnow_host/native_gateway_smoke.py
 # 保持原只读协议行为
 /path/to/isolated/python -I tests/unit/simnow_readonly/test_readonly.py
 ```

@@ -218,3 +218,10 @@ JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原
 `guiyi_quant.simnow_execution` 显式注入已登录CTP API及HTDY账户LocalStore，以私有发送journal先领取再调用。
 原生回调stage后drain写账户事实；账户writer锁与独立发送journal分离，SDK依赖不进入API服务环境。
 没有Alert/Runtime/路由挂接，原只读CLI保持只读。事实与执行边界见[适配合同](SIMNOW_EXECUTION.md)。
+
+## SimNow一次性受控宿主
+
+`scripts/broker/simnow_controlled.py` 在隔离SDK环境中组合既有Probe、原生gateway、执行适配器和本地journal。
+`app.simnow_controlled_market.MarketBridge`仅只读组合共享MarketDataService/Calendar/Session和HTDY验证器；SimNow盘口只作owner批准的执行输入，不进入历史或策略。
+`inventory/finance/evidence/host`负责稳定两轮回读投影、实际单笔费用证明、原生权益区间收益及有界动作预算；无法证明的费用、现金流或外部事实保持待核。
+无API路由、launchd或持续Runtime挂接，原只读CLI保持独立。合同见[受控执行](SIMNOW_EXECUTION.md)。
