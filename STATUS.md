@@ -1,5 +1,11 @@
 # 当前状态
 
+## 10/25 Runtime 已切换 v1.16.0/gen24，自然验收待发生
+
+Owner明确交办后完成全停冷切。10项身份统一 exact `v1.16.0` / `015a93ed0e63ba515d72c3764d174252da5345d9` / gen24；六常驻active且60秒PID稳定，四calendar注册且idle，Reference cycle ready已观察。正式API1.16.0，5173 index与发布dist逐字一致，正式共享首页60/60 ready。原生热切换因合同不同被拒绝，未绕过其混跑门禁；两次停机阶段中断均保留失败，以新封印精确续接，无重复stop/install。最终attempt003单次完成，旧Event/delivery/参考经济状态与原文journal/索引/游标摘要保持，pending Capture0，无补发、原件伪造或订单。
+
+全局health仍degraded：原有暖机/观察滞后、原件缺失、盘后历史失败及下一Session自然采集/Event/Push/18:05增量仍分别待验，不宣称整体RUNTIME_READY。旧v18树解除全部引用后按retention计划清理，8个.run原件与SHA保留，tag/Release不删。详见[切换记录](docs/tasks/runtime-v1160-promotion-20261025.md)。
+
 ## 10/25 HTDY九品种闭市来源差异：已核验分类，下一交易日自然验收待发生
 
 按owner交办复核AP/CJ/JD/LH/PK/RS/SF/SM/UR；Canonical32根60m预热及底层1m完整，旧原件也完整，
@@ -13,7 +19,7 @@ fresh全60复核：历史60通过，当前计算51通过/9旧冲突阻断、原L
 独立Review验证9份证据hash及原件前像，关闭next ContractFact/next recovery两项边界缺口；定向执行/reader回归221通过，
 Ruff/OpenSpec12/secret0/diff通过。证据在 `output/htdy-source-conflicts-20261025/`，当前正式Runtime仍exact v1.15.18，v1.16.0发布事实见下。
 
-## 10/25 v1.16.0 已发布，正式 Runtime 未切换
+## 10/25 v1.16.0 发布记录（其后 Runtime 已切换）
 
 按 owner 交办完成 develop 整理及综合发布：PR468 已合入 main；annotated tag `v1.16.0` peeled commit `015a93ed0e63ba515d72c3764d174252da5345d9`，与冻结候选 `9be4d5388cf4a5ef3a02d58a13a4b4f43d324b25` 代码树完全相同；GitHub Release 已公开为非 draft、非 prerelease。发布树 `.worktrees/release-v1.16.0` 保持 exact tag，并放置同候选已验证 Web 构建。
 
