@@ -1,5 +1,13 @@
 # 当前状态
 
+## 10/25 D1历史75条修复完成：全部逐项验收，历史720端点CURRENT
+
+Owner交办前次审计的75条D1历史修复。18基础（AL/PG/PS/PX/SI/ZN各三策略）先、57融合后，使用正式exact v1.16.1/gen25原生fresh rebuild；75/75由独立进程逐条来源manifest/checkpoint/正式HTTP核验到10/23 15:00 CST，旧18个503入口恢复、57个滞后追齐。旧18个partial candidate/94已提交批次结果已独立核清，依赖改变后不复用旧plan/resume；ZN旧advance明确首写前REBUILD_REQUIRED。全部旧候选与经济事实保留。
+
+单次attempt001完成，18组旧事实全行摘要及所有journal/index/cursor前后保持；成功后精确解决74旧控制，原文保留，当前控制队列0。15:19独立最终Review通过，75新revision及旧候选/批次/App事实一致。正式启用历史720/720 CURRENT（D1由165/240至240/240）；非目标645的CURRENT仅端点级，本次75另有完整来源验收。
+
+Reference同PID6210/gen25已恢复，六常驻原PID均active、十binding仍exact v1.16.1；pending Capture/积压/PG维护占用0，文件锁空闲。Forward仍676 READY/44真实观察滞后，global degraded、旧2565+611原件限制、暖机及苏冰全量后置保留；下一自然采集/计算/Event及18:05增量另验。首轮定向144 passed/2 skipped、补强维护30 passed（含重叠）、独立代码和实际结果Review通过；provider/Canonical/forward/通知写入0，无版本切换。详见[D1历史修复记录](docs/tasks/d1-history-repair-20261025.md)。
+
 ## 10/25 48路闭市收尾完成：历史44已验，L4恢复，Runtime v1.16.1/gen25
 
 Owner交办当前能处理部分并明确批准发布/正式切换。33基础+11融合Canonical历史原生重建44/44完成，新进程逐项来源manifest/checkpoint/正式HTTP44/44验收通过；16组旧事实全行摘要及4组journal/index/cursor保持，Reference原PID正常恢复。33项已知纯前置刷新失败精确解决，其余74控制项保留。L四路真实观察端点已齐，修正只读健康投影，不改持久旧health或原件。
