@@ -99,6 +99,7 @@ class Gateway(_readonly.Probe):
         self.extra_done = threading.Event()
         self.extra_counter = 30000
         self.buffer = []
+        self.monitor_progress = None
 
     def OnRspUserLogin(self, rsp, info, request_id, last):
         if (
@@ -214,6 +215,8 @@ class Gateway(_readonly.Probe):
         self.extra_done.set()
 
     def snapshot(self):
+        if self.monitor_progress is not None:
+            self.monitor_progress()
         if self.failed:
             raise ValueError("NATIVE_GATEWAY_FAILED")
         self.result["rounds"] = []
@@ -226,6 +229,8 @@ class Gateway(_readonly.Probe):
         return json.loads(json.dumps(self.result))
 
     def query(self, kind, instrument=""):
+        if self.monitor_progress is not None:
+            self.monitor_progress()
         if self.failed:
             raise ValueError("NATIVE_GATEWAY_FAILED")
         time.sleep(1.1)

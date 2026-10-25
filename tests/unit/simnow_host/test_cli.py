@@ -448,3 +448,23 @@ def test_release_tail_late_fill_is_retained_before_journals_close(
     assert result["pending_fees_or_identity"]
     assert result["position_projection_complete"] is False
     assert any(not r["released"] for r in result["reservations"])
+
+
+def test_monitor_publication_failure_does_not_change_controlled_execution(
+    monkeypatch, tmp_path
+):
+    from guiyi_quant.simnow_execution.monitor import MonitorPublisher
+
+    config = configured(monkeypatch)
+
+    def failed(*args, **kwargs):
+        raise OSError("private observer failure")
+
+    monkeypatch.setattr(MonitorPublisher, "publish", failed)
+    gateway = FakeGateway("filled")
+    sdk = NS(CThostFtdcInputOrderField=NS, CThostFtdcInputOrderActionField=NS)
+    result = cli.run(gateway, sdk, config, tmp_path)
+    assert result["status"] == "CONTROLLED_RUN_ENDED"
+    assert result["monitor_status"] == "unavailable"
+    assert "private observer failure" not in str(result)
+    assert len([c for c in gateway.calls if c[0] == "insert"]) == 1
