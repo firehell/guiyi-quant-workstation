@@ -313,3 +313,13 @@ Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 com
 首次拓扑切换的旧launchd KeepAlive可能在正常SIGTERM后复活；收尾必须确认原PID退出，在完整发送锁持有期间重新验证复活定义并卸载，不能把label出现新PID视为原PID仍在发送。真实print-disabled同时支持enabled/disabled及旧布尔格式，未知值阻断。
 
 仅当旧拓扑已经局部停用、schema仍0050且没有新registry/观察基线/owner/安装preimage时，`python -m app.runtime_bootstrap recover-readback --output <absolute-plan>`冻结有限恢复计划；`recover-legacy --plan <absolute-plan>`重新校验后恢复原loaded Web启用状态和原空闲日历服务，不kickstart。原未知journal按原字节保留，失败恢复attempt禁止盲重试；恢复终态通过后另生成新的拓扑计划。该入口不处理已经迁移、安装或候选发送过的未知结果。
+
+### 休市窗口整组发布
+
+当待发布共享合同改变、不能与旧消费者并行时，使用 `install-local-services.sh --plan-cohort --candidate-root <absolute-release-root> --tag <annotated-tag> --commit <peeled-commit>` 冻结整组计划，再用 `--apply-cohort-plan --plan <absolute-plan>` 单次执行。
+仅支持现有十服务、六常驻全部启用、数据库合同不变的向前版本；保留原定时服务启用状态，不启用缺省任务。
+所有 operational 品种须由权威 Calendar/Session 证明休市、无 grace、距离下一 Session 超过660秒；未知仍阻断。
+计划有效15分钟，预热后和CAS前重新验证；停机预算600秒。预热只读Canonical，不伪造Live订阅、消费信号或发送通知。
+日历先暂停，Feed先排空，全部旧所有者退出后持维护/所有者锁，一次CAS提交全部新绑定；消费者先于Feed启动，最后仅注册原日历。
+CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知结果禁止自动回滚或重试，需只读核对。私有attempt、原件和旧失败记录保留。
+闭市空闲证明必须与自然completed Bar、Event及送达分开；工程切换成功不声明整体Runtime Ready。

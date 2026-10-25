@@ -69,3 +69,19 @@ def test_operational_bootstrap_freezes_existing_universe_without_a_new_resolver(
     state = start_operational("simnow-test", at, AccountSnapshot(
         "simnow-test", at, Decimal("100000"), Decimal("90000")))
     assert tuple(p.product for p in state.products) == tuple(p.upper() for p in load_operational_products())
+
+
+def test_account_bootstrap_uses_same_operational_scope_and_requires_native_funding():
+    from app.htdy_execution import start_account_operational
+    from app.market_data.operational_universe import load_operational_products
+    from guiyi_quant.htdy_account_execution import Readback
+    from guiyi_quant.htdy_execution import AccountSnapshot
+    at = datetime(2026, 10, 26, tzinfo=UTC)
+    proof = Readback(AccountSnapshot('simnow-test',at,Decimal('100000'),Decimal('100000')),
+                     Decimal('0'),Decimal('0'),Decimal('0'),(),(),'native-readback',
+                     at+timedelta(minutes=1),True)
+    state = start_account_operational('simnow-test',at,proof)
+    assert tuple(p.product for p in state.products) == tuple(p.upper() for p in load_operational_products())
+    assert state.orders == state.reservations == ()
+    with pytest.raises(ValueError,match='INITIAL_READBACK_INVALID'):
+        start_account_operational('simnow-test',at,replace(proof,complete=False))

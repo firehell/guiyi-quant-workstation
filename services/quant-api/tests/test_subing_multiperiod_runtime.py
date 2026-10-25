@@ -1,4 +1,5 @@
 """Runtime wiring evidence with deterministic candidates, not formula evidence."""
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.alerts.evaluators import AlertObservationCandidate
 from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
-from app.alerts.registry import SUBING_THS_RULE, SUBING_SIGNAL_FREQUENCIES
+from app.alerts.registry import SUBING_THS_RULE, SUBING_SIGNAL_FREQUENCIES, SUBING_QUALITY_REWARM_POLICY_V2
 from app.alerts.runtime import AlertRuntime
 from app.market_data.domain import CanonicalBar
 from app.market_data.market_read_service import CurrentContractReplayWindow, MarketReadWindow, MarketReadWindowError
@@ -29,9 +30,11 @@ class RecordingReader:
         assert trading_day == DAY and end == END
         return self.window(query.frequency.value)
 
-    def latest_canonical_window(self, query, *, trading_day, limit):
-        assert trading_day == DAY
-        return self.window(query.frequency.value)
+    def latest_subing_quality_window(self, query, *, trading_day):
+        # D1/W1 now use the explicit quality-rewarm contract. This fixture
+        # exercises routing/alignment only, not Canonical quality calculation.
+        assert trading_day == DAY and query.frequency.value in {'1d', '1w'}
+        return replace(self.window(query.frequency.value), input_policy_version=SUBING_QUALITY_REWARM_POLICY_V2)
 
     def assert_window_current(self, window):
         assert window.contract == 'JM2701'
@@ -46,7 +49,7 @@ class RecordingReader:
 
 class DeterministicEvaluator:
     def evaluate_candidates(self, reader, window):
-        return (AlertObservationCandidate(window.cutoff, window.trading_day, window.contract, ('buy',)),)
+        return (AlertObservationCandidate(window.cutoff, window.trading_day, window.contract, ('buy',), input_policy_version=window.input_policy_version),)
 
 
 class ForbiddenSender:
@@ -77,6 +80,10 @@ def test_six_natural_trigger_routes_preserve_raw_events_and_immutable_snapshots_
         events = session.scalars(select(AlertEvent).order_by(AlertEvent.frequency)).all()
         assert {event.frequency for event in events} == set(SUBING_SIGNAL_FREQUENCIES)
         assert len(events) == 6
+        assert {event.frequency: event.input_policy_version for event in events} == {
+            frequency: SUBING_QUALITY_REWARM_POLICY_V2 if frequency in {'1d', '1w'} else None
+            for frequency in SUBING_SIGNAL_FREQUENCIES
+        }
         assert all(event.notification_attempted_at is None for event in events)
         snapshots = {event.id: event.subing_alignment.snapshot for event in events}
         assert all(event.subing_alignment.status == outcome for event in events)

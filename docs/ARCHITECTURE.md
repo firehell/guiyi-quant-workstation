@@ -197,3 +197,40 @@ JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原
 `app.paper.ledger` 在专用本地 PostgreSQL 保存不可变命令与事件。
 本域不接 Alert、Redis、普通 API 启动、Broker 或后台 Runtime；不改变 ReferenceTrade。
 领域合同与恢复边界见 [PAPER_PILOT.md](PAPER_PILOT.md)。
+
+## SimNow 账户只读准备
+
+`scripts/broker/simnow_readonly.py` 是独立交互式、一次性原生CTP客户端，使用可选隔离SDK，
+不导入普通API或策略Runtime，不调用交易/结算写接口。读取只保存本地私有JSON，不写生产数据库，
+不把原生持仓压入一手政策或重建模型Fill。两轮完整相等只证明有界稳定，不提供原子快照或Ledger对账；
+环境及合同见 [SIMNOW_READONLY](SIMNOW_READONLY.md)。
+
+## HTDY离线账户执行
+
+`app.htdy_execution` 复用operational loader与原信号适配器，显式进入
+`guiyi_quant.htdy_account_execution` v2纯状态机；显式账户/合约/报价/Session事实进入风控，
+`LocalStore` 原子提交命令、预留、状态与惰性提案。没有Broker transport、Web路由或持续Runtime依赖。
+冻结v1仍是原政策基线，新账户语义只在v2；公式、Alert及ReferenceTrade不依赖该账户模块。
+合同见[HTDY执行规则](HTDY_SIMNOW_V1.md)。
+
+## SimNow受控请求适配
+
+`guiyi_quant.simnow_execution` 显式注入已登录CTP API及HTDY账户LocalStore，以私有发送journal先领取再调用。
+原生回调stage后drain写账户事实；账户writer锁与独立发送journal分离，SDK依赖不进入API服务环境。
+没有Alert/Runtime/路由挂接，原只读CLI保持只读。事实与执行边界见[适配合同](SIMNOW_EXECUTION.md)。
+
+## SimNow一次性受控宿主
+
+`scripts/broker/simnow_controlled.py` 在隔离SDK环境中组合既有Probe、原生gateway、执行适配器和本地journal。
+`app.simnow_controlled_market.MarketBridge`仅只读组合共享MarketDataService/Calendar/Session和HTDY验证器；SimNow盘口只作owner批准的执行输入，不进入历史或策略。
+`inventory/finance/evidence/host`负责稳定两轮回读投影、实际单笔费用证明、原生权益区间收益及有界动作预算；无法证明的费用、现金流或外部事实保持待核。
+无API路由、launchd或持续Runtime挂接，原只读CLI保持独立。合同见[受控执行](SIMNOW_EXECUTION.md)。
+
+## SimNow首页监控
+
+受控宿主仅在原有控制流发布私有原子监控索引；simnow_execution.monitor.MonitorReader 从单一显式根
+以SQLite只读连接校验账户、账本和原生快照。纯 monitor_projection 复用现有财务/预留逻辑提供
+/api/simnow/monitor/{overview,records,records/{id}}，不导入SDK或执行恢复。
+首页第三Tab复用全局导航、白底橙色和详情返回记忆，可见时5秒读取；详情抽屉在手机全屏。
+监控失败不影响宿主决策；原生/账本来源时点不同保留待核，不创建新的账户事实权威。
+合同见 [SIMNOW_EXECUTION](SIMNOW_EXECUTION.md#首页只读监控simnow_monitor_v1)。

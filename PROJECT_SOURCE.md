@@ -101,7 +101,7 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 ## HTDY 与 Alert
 
 HTDY 60m 固定一手双向执行规则已有独立离线状态机及显式输入适配器，合同见
-[HTDY_SIMNOW_V1](docs/HTDY_SIMNOW_V1.md)。它不接入现役 Alert/Runtime，不提供 Broker transport 或账户总风控，
+[HTDY_SIMNOW_V1](docs/HTDY_SIMNOW_V1.md)。它不接入现役 Alert/Runtime，提供独立离线账户风控、资金预留与本地命令journal，另有显式受控SimNow请求适配模块（见[订单适配](docs/SIMNOW_EXECUTION.md)），提供显式有界的一次性CLI、原生对账和费用投影，没有持续Broker宿主，
 不代表 SimNow 接入、持续 Paper、策略晋升或自动交易已启用；以下观察与参考口径保持独立。
 
 HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency。
@@ -116,7 +116,9 @@ HTDY 当前实时运行与页面实时记录统一为 operational 60 品种 × `
 
 苏冰持久 Event 使用 `exact` identity：同一 Rule、symbol、frequency、bar_end 的事实完全一致才幂等，冲突 fail-closed。正式预警 Web 和通知只消费 Event，不复制公式；Event-backed `S↑/S↓` 不拥有 Overlay 或订单语义。
 
-苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；15m 沿用 `subing_ths_15m_v3`，30m/60m/1d 使用各自版本身份、历史参考与六周期正式 Event 独立。它不创建或补发 AlertEvent。15m/30m/60m 参考模型保持 `subing_reference_reverse_close_v1`；D1 候选合同使用 `subing_reference_reverse_close_quality_segment_v2`，只接受 Market Fact 权威的有效 Bar 与 typed quality break，每个 break 后重新预热，质量中断单列为 `DATA_INTERRUPTED`，不制造退出价、收益或当前浮动。第 1–33 根有效日线为预热，第 34 根指标已就绪但不可评价 exact CROSS，第 35 根起才可评价。公式仍为 `subing_ths_1d_v1`。页面明确标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
+苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；15m 沿用 `subing_ths_15m_v3`，30m/60m/1d 使用各自版本身份、历史参考与六周期正式 Event 独立。它不创建或补发 AlertEvent。15m/30m/60m 参考模型保持 `subing_reference_reverse_close_v1`；D1 候选合同使用 `subing_reference_reverse_close_quality_segment_v2`，只接受 Market Fact 权威的有效 Bar 与 typed quality break，每个 break 后重新预热，质量中断单列为 `DATA_INTERRUPTED`，不制造退出价、收益或当前浮动。第 1–33 根有效日线为预热，第 34 根指标已就绪但不可评价 exact CROSS，第 35 根起才可评价。公式仍为 `subing_ths_1d_v1`。历史资产独立标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
+
+苏冰与 HTDY 详情收益区仅消费 `forward_observation` 实时留存参考交易：共用曲线、快捷窗口、最近三笔卡片、按需分页及有界快照缓存；不在该区展示历史重算或 HTDY 重绘交易。缺失实时流时明确不可用，实际 AlertEvent 审计独立折叠，不以预警条数推算完整交易收益。历史研究 API 和资产仍独立保留，不改写已有事实。合同见 [Reference Trading](openspec/specs/reference-trading/spec.md#requirement-retained-forward-reference-performance-panel)。
 
 Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 
@@ -143,3 +145,11 @@ RQData -> staging + hard validation -> Canonical Parquet
 全部既有策略域（包括 `subing_strategy_v1` 及其 Daily Watch、5m/15m 因子、Historical Projection、Current State、Formal Event、Runtime、Scope、CLI、API、Web 和派生 cache）均退出 active 产品面。新 SuBing Alert 是新身份、新合同和新版本，不恢复或复用旧策略实现。旧身份只允许存在于不可变 Git/Alembic lineage、0043 删除迁移的断言和 `STATUS.md` 的真实未迁移生产事实中。
 
 Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、Multi-Candidate Robustness、RQAlpha 与 Execution Review 同样不属于 active 产品、API、CLI、Web 或 Runtime。
+
+## SimNow 一次性账户只读准备
+
+独立交互式CLI支持固定SimNow测试环境及显式选择的第一套模拟环境认证、登录与资金/持仓/委托/成交两轮只读核验。
+本地快照与HTDY执行政策、Paper模型、页面参考收益保持独立；没有订单、账户管理、账本对账或持续Broker Runtime，
+不改变 `auto_order=false`。第一套模拟环境另验，合同见 [SIMNOW_READONLY](docs/SIMNOW_READONLY.md)。
+
+首页导航增加“模拟交易”：只读展示本地原生账户走势、持仓、执行链与待核事项，不提供交易操作。账户口径独立于策略参考收益，未接入或证据不足时明确待验。详见 [SimNow执行合同](docs/SIMNOW_EXECUTION.md)。

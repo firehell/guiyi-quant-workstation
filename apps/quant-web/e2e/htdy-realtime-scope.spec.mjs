@@ -29,9 +29,8 @@ for (const frequency of ['1m', '5m', '15m', '30m', '1d', '1w']) {
 test('HTDY 60m reads events, empty stream is explicit, then switching stops reads', async ({ page }) => {
   const requests = await setup(page)
   await page.goto(address('60m'))
-  await page.getByRole('button', { name: '实时首次事件审计', exact: true }).click()
   await expect(page.locator('.observed-records')).toBeVisible()
-  await expect(page.getByText('本周期暂无可读的实际参考交易流。以下为已保存的实际观察／预警，不代表账户成交；历史重算不会补写实际记录。', { exact: true })).toBeVisible()
+  await expect(page.getByText('尚无实时留存参考交易流', { exact: false })).toBeVisible()
   await expect.poll(() => requests.filter(url => url.pathname.includes('/api/alerts/events')).length).toBeGreaterThan(0)
   expect(requests.every(url => url.searchParams.get('frequency') === '60m')).toBe(true)
   await page.goto(address('15m'))
@@ -44,8 +43,7 @@ test('HTDY 60m event failure is disclosed and leaving 60m hides the audit', asyn
   await setup(page)
   await page.route('**/api/alerts/events?**', route => route.fulfill({ status: 503, json: { detail: 'fixture unavailable' } }))
   await page.goto(address('60m'))
-  await page.getByRole('button', { name: '实时首次事件审计', exact: true }).click()
-  // v1.16.2 keeps the existing always-visible audit table.
+  await page.locator('.observed-records summary').click()
   await expect(page.getByText('实际预警读取未完成或失败，当前实际覆盖尚不能确认。')).toBeVisible()
   await page.goto(address('15m'))
   await expect(page.locator('.observed-records')).toHaveCount(0)
@@ -61,7 +59,6 @@ test('HTDY SPA 60m → 15m → 60m rejects a delayed old Event response', async 
     await route.fulfill({ json: { items: [htdyEvent('jm', '60m')] } }).catch(() => {})
   })
   await page.goto(address('60m'))
-  await page.getByRole('button', { name: '实时首次事件审计', exact: true }).click()
   await started
   const controls = page.getByRole('group', { name: '周期', exact: true })
   await controls.getByRole('button', { name: '15分钟', exact: true }).click()
@@ -72,7 +69,6 @@ test('HTDY SPA 60m → 15m → 60m rejects a delayed old Event response', async 
   await page.waitForTimeout(150)
   expect(requests).toHaveLength(before)
   await controls.getByRole('button', { name: '60分钟', exact: true }).click()
-  await page.getByRole('button', { name: '实时首次事件审计', exact: true }).click()
   await expect(page.locator('.observed-records')).toBeVisible()
   await expect.poll(() => count).toBe(2)
   expect(requests.every(url => url.searchParams.get('frequency') === '60m')).toBe(true)

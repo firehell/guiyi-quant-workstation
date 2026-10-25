@@ -2,11 +2,26 @@
 
 ## HTDY 60分钟离线执行规则
 
-合同见[执行规则](docs/HTDY_SIMNOW_V1.md)。只验证离线政策、原生回报fixture及共享公式适配；不连接账号或启用交易。
+合同见[执行规则](docs/HTDY_SIMNOW_V1.md)。覆盖冻结v1、新版70%账户风控/预留/状态机、本地journal事务与恢复重放、原生回报fixture及共享公式适配；不连接账号或启用交易。
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/htdy_execution services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/reference_trading/test_htdy_reference_model.py services/quant-api/tests/reference_trading/test_htdy_reference_capture.py services/quant-api/tests/test_htdy_production_kernel_policy.py
 ```
+
+## SimNow 受控订单适配
+
+合同见[订单适配](docs/SIMNOW_EXECUTION.md)。纯离线CTP回报fixture与账户journal端到端，不连接柜台。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution services/quant-api/tests/test_simnow_controlled_market.py services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/reference_trading/test_htdy_reference_model.py services/quant-api/tests/reference_trading/test_htdy_reference_capture.py services/quant-api/tests/test_htdy_production_kernel_policy.py
+# 可选、已安装Mac ARM64 SDK；结构检查无网络、无原生API实例
+/path/to/isolated/python -I scripts/broker/simnow_order_compatibility.py
+/path/to/isolated/python -I tests/unit/simnow_host/native_gateway_smoke.py
+# 保持原只读协议行为
+/path/to/isolated/python -I tests/unit/simnow_readonly/test_readonly.py
+```
+
+SDK环境与API服务依赖隔离，不为运行上述纯Python模块向API安装CTP依赖。真实柜台端到端与资金生效另验。
 
 ## 期货双向研究
 
@@ -41,7 +56,7 @@ NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-we
 验证串行，保持单元并发1、浏览器单worker；fixture不证明Runtime或策略收益。
 
 ```sh
-NODE_OPTIONS=--max-old-space-size=512 node --test --test-concurrency=1 apps/quant-web/tests/marketDetailRoute.test.ts apps/quant-web/tests/marketDetailPreferences.test.ts apps/quant-web/tests/marketDetailViewNav.test.ts apps/quant-web/tests/marketDetailViewModel.test.ts apps/quant-web/tests/freeDetailViewModel.test.ts apps/quant-web/tests/newowProductRoutes.test.ts
+NODE_OPTIONS=--max-old-space-size=512 node --test --test-concurrency=1 apps/quant-web/tests/marketDetailRoute.test.ts apps/quant-web/tests/marketDetailPreferences.test.ts apps/quant-web/tests/marketDetailViewNav.test.ts apps/quant-web/tests/marketDetailViewModel.test.ts apps/quant-web/tests/newowProductRoutes.test.ts
 NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/hide-continuous.spec.mjs --workers=1 --output /private/tmp/guiyi-hide-continuous
 ```
 
@@ -72,6 +87,12 @@ PLAYWRIGHT_PORT=5196 pnpm -C apps/quant-web exec playwright test -c playwright.c
 PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs --output /private/tmp/guiyi-e2e-preview-results
 ```
 
+本轮八项已知失配的定向回归（保持原截图阈值，不带快照更新）：
+
+```sh
+NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5196 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-detail.spec.mjs e2e/market-home.spec.mjs --grep @contract-alignment --workers=1
+```
+
 第二条固定使用5182隔离预览端口。真实后端只读验收仍需显式 `REAL_BACKEND=1` 及其现场条件，
 fixture通过与默认跳过都不证明生产、发布或Runtime状态。
 
@@ -99,7 +120,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 不访问生产 API，不证明行情、收益或 Runtime 自然验收。
 
 ```sh
-node --test apps/quant-web/tests/useIdentityBoundResource.test.ts apps/quant-web/tests/useHtdyAlertFacts.test.ts apps/quant-web/tests/useSubingAlertFacts.test.ts
+node --test apps/quant-web/tests/useIdentityBoundResource.test.ts apps/quant-web/tests/useSubingAlertFacts.test.ts
 pnpm -C apps/quant-web test
 pnpm -C apps/quant-web build
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/overlay-lifecycle.spec.mjs e2e/alert-facts.spec.mjs e2e/return-curve-layout.spec.mjs
@@ -400,6 +421,11 @@ Web 验证返回保留列表和位置、有效快照不重复加载、过期后�
 数据与 Runtime 版本仍需独立读回。不得把当前正式 API 尚未提供的新端点用模拟数据补成可用。
 
 共享依赖的隔离 worktree 可以使用既有 Python 环境并显式设置本树 PYTHONPATH，不提交环境 symlink。
+首页E2E使用语义化的“数据不足”图标检查预热状态，不绑定micro/table尺寸。首页无手动刷新按钮：
+使用Playwright虚拟时钟触发可见定时重验，覆盖5分钟行情缓存、目录失败下一分钟重试及成功目录24小时过期；
+断言失败保留旧快照/选项。缺价原因在品种行检查，不点击已移除的全局快照summary。
+这些用例须包含在完整首页回归中，不再作为旧选择器失败排除。
+
 5182 必须空闲，禁止复用其他工作区服务。新行情只读连接与本地开发服务不授权启动 provider、
 修改 production Scope、发送通知或切换正式 Runtime。
 
@@ -1593,7 +1619,6 @@ SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
 pnpm -C apps/quant-web exec node --test \
   tests/alertRuleOwnership.test.ts \
   tests/alerts.test.ts \
-  tests/useHtdyAlertFacts.test.ts \
   tests/useSubingAlertFacts.test.ts \
   tests/marketHomeTypes.test.ts \
   tests/marketHomeViewModel.test.ts \
@@ -1993,3 +2018,55 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 真实复核用 `scripts/data/htdy_input_admission.py --output <独占目录>`。保留旧Live/Canonical差异及
 原始calc阻断；闭市分类是下一交易日自然验收待办，不证明首见信号或即时可开仓。
+
+## SimNow 一次性账户只读核验
+
+独立可选依赖 `openctp-ctp==6.7.7.1`（已验证Mac ARM64），不安装进API服务的依赖环境。
+协议fixture不联网、不读取凭据，不证明账户已查询；使用已装该SDK的隔离Python：
+
+```sh
+/path/to/isolated/python -I tests/unit/simnow_readonly/test_readonly.py
+```
+
+运行 `scripts/broker/simnow_readonly.py` 默认连接固定的SimNow测试前置；显式 `--environment first`
+才连接固定第一套前置。两者均要求本机TTY隐藏输入，环境绑定报告身份，不自动回退。
+认证和登录各一次、四类只读查询两轮；不确认结算、不下单/撤单、不接Runtime。
+字段、失败及稳定性边界见 [账户只读合同](docs/SIMNOW_READONLY.md)。本地输出不提交Git。
+
+资金初始基线生效验收可在first读取时成对提供 `--expected-balance 100000 --not-before-trading-day 20261027`，
+日期取自本次官网受理回执。验收单独报告，不改变原查询状态或执行权限；旧交易日、测试副本和部分结果不能通过。
+
+## 苏冰／HTDY 实时留存参考收益面板
+
+```sh
+services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/reference_trading/test_forward_panel.py services/quant-api/tests/reference_trading/test_forward_query.py services/quant-api/tests/reference_trading/test_api.py
+node --test apps/quant-web/tests/forwardPanelCache.test.ts apps/quant-web/tests/useForwardReferencePanel.test.ts apps/quant-web/tests/retainedReferenceFocus.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-reference.spec.mjs --workers=1
+```
+
+浏览器用隔离fixture验 UI、三笔卡片、延迟分页、移动端与缺失状态，不代表实际运行收益。
+真实页面只读 `forward_observation`；缺少留存流时不以历史重算／重绘补齐。
+
+## 首页SimNow只读监控
+
+以下全部使用隔离fixture，不连接SimNow、不写正式账户记录：
+
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_monitor services/quant-api/tests/test_simnow_monitor_api.py tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution
+    node --test apps/quant-web/tests/simnowMonitor.test.ts
+    pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/simnow-monitor.spec.mjs
+    pnpm -C apps/quant-web build
+
+覆盖只读文件前后不变、WAL拒绝、并发未提交写、损坏/错账户、分页cursor身份、原生异常持仓、
+待核成交、跨日收益留空、监控发布失败不影响受控交易，以及可见刷新/隐藏停止、迟到过滤响应、
+账户切换、分页与抽屉保护、缺失不为零、桌面/移动导航与全屏抽屉。
+e2e/fixtures/simnow-monitor.json 仅来自离线受控宿主测试，不是实际账户evidence。
+
+## 休市整组升级与Canonical预热
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_cohort.py services/quant-api/tests/test_runtime_cohort_host.py services/quant-api/tests/test_closed_runtime_warmup.py services/quant-api/tests/test_runtime_bindings.py services/quant-api/tests/test_runtime_handover.py services/quant-api/tests/test_runtime_deployment.py services/quant-api/tests/test_runtime_scheduled.py
+```
+
+状态机与主机故障注入不停止真实服务；真实切换须另验 exact release、权威休市窗口、十服务绑定/PID/heartbeat/HTTP、游标及原Scope。闭市生命周期不代替自然业务证据。
+
+详情与首页缓存旧入口回归按当前中文周期、全局搜索、预警audit及可见性返回验证；保留原截图阈值，实际发布验证及已确认旧金图/旧pane例外见[整组发布记录](docs/superpowers/plans/2026-10-26-full-release-cohort.md)。

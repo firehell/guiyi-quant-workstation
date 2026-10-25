@@ -253,17 +253,22 @@ def warmup_alert_runtime():
                 source._stream.cursor("alert", day)
         with runtime._session_factory() as session:
             market = runtime._market_read_factory(session)
+            canonical = market.canonical_warmup_reader(datetime.now(UTC))
             for rule in session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))):
                 for symbol, frequencies in rule.scope_product_frequencies.items():
                     for frequency in frequencies:
                         query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency(frequency))
-                        page = market.history_page(query)
-                        if not page.bars:
-                            raise RuntimeError("ALERT_WARMUP_INPUT_UNAVAILABLE")
-                        latest = page.bars[-1]
-                        window = market.bars_until(query, trading_day=latest.trading_day, end=latest.bar_end, limit=64)
-                        market.assert_window_current(window)
-                        runtime._evaluators[rule.rule_code].evaluate_candidates(market, window)
+                        window = canonical.closed_window(query, limit=64,
+                            quality_rewarm=rule.rule_code == SUBING_THS_ALERT_RULE_CODE and frequency in {"1d", "1w"})
+                        reader = canonical if window is not None else market
+                        if window is None:
+                            page = market.history_page(query)
+                            if not page.bars:
+                                raise RuntimeError("ALERT_WARMUP_INPUT_UNAVAILABLE")
+                            latest = page.bars[-1]
+                            window = market.bars_until(query, trading_day=latest.trading_day, end=latest.bar_end, limit=64)
+                        reader.assert_window_current(window)
+                        runtime._evaluators[rule.rule_code].evaluate_candidates(reader, window)
                         count += 1
         if not count:
             raise RuntimeError("ALERT_WARMUP_SCOPE_EMPTY")

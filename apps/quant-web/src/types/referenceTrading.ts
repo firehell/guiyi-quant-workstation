@@ -126,3 +126,12 @@ export interface NewowRecordingMatrix {
   seeded_count?: number
   items: NewowRecordingItem[]
 }
+
+export interface ForwardReferencePanel {
+  version: 'forward_reference_panel_v1'
+  page: ReferencePage<ReferenceTradeView> & { stream: ReferenceStreamInfo }
+  summary: ReferenceSummary
+  curve: { value: string; date: string; bar_end: string; reference_trade_id: string; segment: string }[]
+  total_curve_points: number
+  drawdown_percentage_points: string | null
+}

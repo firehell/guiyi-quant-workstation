@@ -37,7 +37,7 @@ export function buildSubingDetailViewModel(input: {
   }))
   return {
     view: 'subing', identity: input.identity, asOf: latest?.detected_at ?? input.header.asOf,
-    semanticBanner: { text: '正式 S↑ / S↓ 只来自 AlertEvent；当前接口未提供当前策略状态。白底标注为历史重算·乐观参考｜零费用/零滑点。EMA21 与 MACD 仅用于人工复核。', tone: 'info' },
+    semanticBanner: { text: '正式 S↑ / S↓ 只来自 AlertEvent；当前接口未提供当前策略状态。白底标注为历史重算·乐观参考｜零费用/零滑点。主图 EMA21 仅供观察；副图为独立 MA21 过滤金死叉，不代表正式苏冰信号。', tone: 'info' },
     facts: [
       { id: 'current-scope', label: '当前品种 Scope', value: scope, tone: input.ruleUnavailable ? 'unavailable' : input.rule?.enabled ? 'default' : 'warning', source: 'runtime' },
       { id: 'rule-runtime', label: 'Rule / Runtime', value: ruleRuntime, tone: input.ruleUnavailable || input.runtimeUnavailable ? 'unavailable' : status.includes('失败') ? 'warning' : 'default', source: 'runtime' },
@@ -46,7 +46,7 @@ export function buildSubingDetailViewModel(input: {
     ],
     disclosureSections: [
       { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${formatBeijingInstant(latest.bar_end)} · ${latest.contract}`, source: 'alert_event' }] : [] },
-      { id: 'subing-formula', title: '触发口径', summary: latest?.formula_version ?? '未记录', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 5m、15m、30m、60m、日线、周线 / completed_only · MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
+      { id: 'subing-formula', title: '触发口径', summary: latest?.formula_version ?? '未记录', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 5m、15m、30m、60m、日线、周线 / completed_only · 正式苏冰：MACD(12,26,9) CROSS + EMA(CLOSE,21)；副图 MA21 金死叉为独立观察', source: 'generic_indicator' }] },
       { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: runtimeTone(input.runtime, input.runtimeUnavailable), rows: runtimeRows(input.runtime) },
     ], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
   }
