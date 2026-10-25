@@ -59,6 +59,33 @@ def side(value):
 
 
 @dataclass(frozen=True)
+class NativeFill(Fill):
+    """Native second-resolution time, not an invented exact execution instant.
+
+    Order identity proves causality; timestamp is the start of its one-second
+    interval. Exact Fill semantics remain unchanged for research/model events.
+    """
+
+    request_started_at: datetime
+    dispatch_source_id: str
+    native_system_id: str
+    native_precision_seconds: int = 1
+
+    def __post_init__(self):
+        super().__post_init__()
+        time(self.request_started_at)
+        text(self.dispatch_source_id)
+        text(self.native_system_id)
+        if (
+            type(self.native_precision_seconds) is not int
+            or self.native_precision_seconds != 1
+            or self.filled_at.microsecond != 0
+            or self.recorded_at < self.request_started_at
+        ):
+            raise ValueError("NATIVE_FILL_PRECISION_INVALID")
+
+
+@dataclass(frozen=True)
 class Coverage:
     order_id: str
     margin: Decimal

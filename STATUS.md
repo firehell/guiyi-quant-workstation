@@ -1,5 +1,22 @@
 # 当前状态
 
+## 10/25 SimNow受控订单适配代码及离线端到端完成，真实柜台待验
+
+新增 `simnow_ctp_controlled_v1`：固定第一套会话/账户/交易日绑定、最多60秒精确单次Permit、
+持久发送领取与OrderRef/RequestID、平今/平昨、撤单、原生回报stage/drain、未知结果不重发。
+账户writer guard覆盖SDK请求受理；回调先到独立journal，避免同步回调嵌套账户事务。
+CTP秒级回报用独立NativeFill保留精度、dispatch因果及SystemID；缺实际手续费或SystemID不一致保留待核，
+未知成交quarantine，前日已知单迟到回报保留，unresolved状态在全部事实分支保持BLOCKED。
+
+155项适配/账户/HTDY回归通过；隔离SDK环境32项只读回归通过；Mac ARM64 openctp-ctp6.7.7.1真实结构与SPI mixin无网络smoke通过。
+Ruff、secret scan0及diff通过；独立高风险Review所指秒精度、恢复顺序、SystemID和跨日关联问题均已失败回归复现并修复，聚焦复审允许集成develop。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；真实端到端EXTERNAL_GATE_PENDING，SDK结构成功不等于柜台实测。
+
+未创建原生交易API实例、未读凭据、未真实报撤单、未发布或切Runtime，auto_order=false保持。
+第一套及10万元20261027生效仍待原生读回；完整原生Readback/实际费用投影与受控交易宿主尚未接线，无交易启动CLI。
+后续须在这些事实与可交易Session具备后验收精确一手报撤单，不能将测试副本/离线fixture当自然实测。
+合同见[SIMNOW_EXECUTION](docs/SIMNOW_EXECUTION.md)，验证见[TESTING](TESTING.md#simnow-受控订单适配)。
+
 ## 10/25 HTDY账户风控、预留与订单状态机离线实现完成
 
 `htdy_60m_account_execution_v2` 已实现70%权益保证金准入、冻结去重与本地资金/费用预留、资金拒绝永久消费信号、

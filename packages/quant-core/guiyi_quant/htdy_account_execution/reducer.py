@@ -169,6 +169,15 @@ def signal(state, cmd):
     ), "TARGET_UPDATED"
 
 
+def fill_follows_order(fill, order):
+    if type(fill) is m.NativeFill:
+        return (
+            fill.request_started_at >= order.created_at
+            and fill.filled_at + timedelta(seconds=1) > fill.request_started_at
+        )
+    return fill.filled_at > order.created_at
+
+
 def apply_fill(state, cmd):
     if cmd.account_id != state.account_id:
         raise ValueError("FILL_ACCOUNT_MISMATCH")
@@ -187,7 +196,7 @@ def apply_fill(state, cmd):
                 phase="BLOCKED",
             )
         ), "UNKNOWN_NATIVE_FILL_RETAINED"
-    if cmd.contract != o.contract or cmd.filled_at <= o.created_at:
+    if cmd.contract != o.contract or not fill_follows_order(cmd, o):
         raise ValueError("FILL_ORDER_OR_TIMING_INVALID")
     if has_fill(state, o):
         raise ValueError("FILL_CAPACITY_CONFLICT")
@@ -703,13 +712,16 @@ def validate(state):
         (state.orders, m.Order),
         (state.reservations, m.Reservation),
         (state.signals, m.Signal),
-        (state.fills, m.Fill),
+        (state.fills, (m.Fill, m.NativeFill)),
         (state.updates, m.OrderUpdate),
         (state.risk_decisions, m.RiskDecision),
         (state.audit, m.Audit),
     )
     if any(
-        type(values) is not tuple or any(type(v) is not kind for v in values)
+        type(values) is not tuple
+        or any(
+            type(v) not in (kind if type(kind) is tuple else (kind,)) for v in values
+        )
         for values, kind in collections
     ):
         raise ValueError("ACCOUNT_STATE_COLLECTION_INVALID")
@@ -763,7 +775,7 @@ def validate(state):
             or f.order_id in filled
             or f.account_id != state.account_id
             or f.contract != o.contract
-            or f.filled_at <= o.created_at
+            or not fill_follows_order(f, o)
             or f.recorded_at > state.clock
             or o.status != "FILLED"
         ):
@@ -814,6 +826,7 @@ def apply(state, key, cmd):
         m.Signal,
         m.Owner,
         m.Fill,
+        m.NativeFill,
         m.OrderUpdate,
         m.Readback,
         m.Recover,
@@ -831,10 +844,10 @@ def apply(state, key, cmd):
         cmd.observed_at
         if type(cmd) is m.Signal
         else cmd.recorded_at
-        if type(cmd) is m.Fill
+        if type(cmd) in (m.Fill, m.NativeFill)
         else cmd.at
     )
-    if type(cmd) in (m.Fill, m.OrderUpdate):
+    if type(cmd) in (m.Fill, m.NativeFill, m.OrderUpdate, m.Disconnect):
         at = max(at, state.clock)
     if type(cmd) is m.Signal and any(
         (s.product, s.bar_end) == (cmd.product, cmd.bar_end) for s in state.signals
@@ -861,7 +874,7 @@ def apply(state, key, cmd):
         else:
             state = replace_product(state, replace(p, owner=cmd.contract))
             reason = "OWNER_VERIFIED"
-    elif type(cmd) is m.Fill:
+    elif type(cmd) in (m.Fill, m.NativeFill):
         state, reason = apply_fill(state, cmd)
     elif type(cmd) is m.OrderUpdate:
         state, reason = order_update(state, cmd)
@@ -872,7 +885,13 @@ def apply(state, key, cmd):
     elif type(cmd) is m.Disconnect:
         state, reason = (
             cancel_opens(
-                replace(state, phase="RECOVERY_REQUIRED", readback_valid=False)
+                replace(
+                    state,
+                    phase="BLOCKED"
+                    if state.unresolved_fill_ids
+                    else "RECOVERY_REQUIRED",
+                    readback_valid=False,
+                )
             ),
             "DISCONNECTED",
         )
@@ -881,6 +900,7 @@ def apply(state, key, cmd):
     state = replace(
         state,
         clock=at,
+        phase="BLOCKED" if state.unresolved_fill_ids else state.phase,
         receipts=state.receipts + ((key, payload),),
         audit=state.audit + (m.Audit(key, reason, cmd),),
     )

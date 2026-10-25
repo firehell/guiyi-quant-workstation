@@ -54,6 +54,7 @@ def decode(value):
             m.AccountSnapshot,
             m.Position,
             m.Fill,
+            m.NativeFill,
             m.Signal,
             m.Owner,
             m.RecoveryInput,
