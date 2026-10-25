@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { detailBar, mockMarketDetail, subingEvent, subingRule } from './market-detail.helpers.mjs'
+import { detailBar, htdyEvent, mockMarketDetail, subingEvent, subingRule } from './market-detail.helpers.mjs'
 // Isolated fixtures verify presentation, not actual runtime records.
 async function setup(page, missing = false) {
   const bars = Array.from({length:80}, (_, i) => detailBar('jm', i))
-  await mockMarketDetail(page, {barsPage:()=>({bars}), alertEvents:()=>[subingEvent('jm')], alertRules:[subingRule()]})
+  await mockMarketDetail(page, {barsPage:({url})=>['1d','1w'].includes(url.searchParams.get('frequency'))?undefined:({bars}), alertEvents:({url})=>[url.searchParams.get('rule_code')==='htdy_original_15m'?htdyEvent('jm',url.searchParams.get('frequency')):{...subingEvent('jm'),frequency:url.searchParams.get('frequency')}], alertRules:[subingRule()]})
   const requests = []
   page.on('request', request => { if(request.url().includes('/api/v1/')) requests.push(new URL(request.url())) })
   await page.route('**/api/v1/reference-trading/**', async route => {
@@ -55,4 +55,37 @@ test('mobile retained reference cards fit viewport',async({page})=>{
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=60m')
   await expect(page.locator('.forward-reference .newow-reference__card')).toHaveCount(3)
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true)
+})
+
+for (const frequency of ['5m', '15m', '30m', '60m', '1d', '1w']) {
+  test(`SuBing ${frequency} reference panel follows the display periods without hiding signal audit`, async ({ page }) => {
+    const requests = await setup(page)
+    const eventReads = []
+    page.on('request', r => { if (new URL(r.url()).pathname.endsWith('/api/alerts/events')) eventReads.push(new URL(r.url())) })
+    await page.goto(`/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=${frequency}`)
+    await expect(page.locator('[data-detail-workspace="subing"] .market-kline-stage')).toBeVisible()
+    await expect(page.locator('.observed-records__audit')).toBeVisible()
+    const panel = page.getByRole('region', { name: '实时参考收益与记录', exact: true })
+    if (['15m', '30m', '60m', '1d'].includes(frequency)) {
+      await expect(panel.locator('.newow-reference__card')).toHaveCount(3)
+      expect(requests.some(url => url.pathname.endsWith('/streams') && url.searchParams.get('frequency') === frequency)).toBe(true)
+    } else {
+      await expect(panel).toHaveCount(0)
+      await expect(page.locator('.subing-workspace__reference-source')).toHaveCount(0)
+      await expect.poll(() => eventReads.length).toBeGreaterThan(0)
+      expect(requests.filter(url => url.pathname.includes('/reference-trading/'))).toHaveLength(0)
+    }
+  })
+}
+test('SuBing SPA hides reference panel at 5m and restores it at 30m', async ({ page }) => {
+  const requests = await setup(page)
+  await page.goto('/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=15m')
+  const panel = page.getByRole('region', { name: '实时参考收益与记录', exact: true })
+  await expect(panel.locator('.newow-reference__card')).toHaveCount(3)
+  const controls = page.getByRole('group', { name: '周期', exact: true })
+  await controls.getByRole('button', { name: '5分钟', exact: true }).click()
+  await expect(panel).toHaveCount(0)
+  expect(requests.filter(url=>url.pathname.endsWith('/streams') && url.searchParams.get('frequency') === '5m')).toHaveLength(0)
+  await controls.getByRole('button', { name: '30分钟', exact: true }).click()
+  await expect(panel.locator('.newow-reference__card')).toHaveCount(3)
 })

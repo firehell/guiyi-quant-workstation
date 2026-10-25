@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ReturnCurveSvg from '@/components/charts/ReturnCurveSvg.vue'
 import PerformancePanel from '../../performance/PerformancePanel.vue'
 import MarketDetailDrawer from './MarketDetailDrawer.vue'
+import { referencePanelSupported } from '@/utils/referencePanelPeriods'
 import { useForwardReferencePanel } from '@/composables/useForwardReferencePanel'
 import { formatBeijingInstant, formatDecimalText, formatMarketDecimal } from '@/utils/marketDisplay'
 import { returnCurveLayout } from '@/utils/returnCurveLayout'
@@ -15,7 +16,7 @@ const preset = ref<NewowReferencePreset | null>('three_months')
 const showAll = ref(false), analysis = ref(false)
 const selected = ref<string | null>(null)
 const sinceInput = ref(''), throughInput = ref('')
-const supported = computed(() => (!props.seriesKind || props.seriesKind === 'actual_dominant') && (props.strategy === 'htdy' ? ['15m','30m','60m'] : ['15m','30m','60m','1d']).includes(props.frequency))
+const supported = computed(() => referencePanelSupported(props.strategy, props.frequency, props.seriesKind))
 const through = computed(() => props.through?.slice(0, 10) ?? '')
 const window = ref({ since: '', through: '' })
 const data = reference.data
@@ -68,14 +69,13 @@ watch(() => [props.strategy, props.product, props.frequency, props.seriesKind, t
 onBeforeUnmount(reference.dispose)
 </script>
 <template>
-  <section class="newow-reference forward-reference" aria-label="实时参考收益与记录" :aria-busy="reference.loading.value" data-reference-mode="forward_observation">
+  <section v-if="supported" class="newow-reference forward-reference" aria-label="实时参考收益与记录" :aria-busy="reference.loading.value" data-reference-mode="forward_observation">
     <PerformancePanel kind="实时留存参考交易" :show-details="false" :loading="reference.loading.value" :error="reference.error.value">
       <template #header><header class="newow-reference__returns-heading"><h3>实时参考收益走势</h3><button type="button" @click="analysis = true">收益分析 ›</button></header></template>
       <nav class="newow-reference__presets" aria-label="实时参考统计快捷窗口">
         <button v-for="entry in ([['three_months','近3月'],['one_year','近1年'],['ytd','今年'],['all','全部']] as const)" :key="entry[0]" type="button" :disabled="reference.loading.value || !supported || !through || (entry[0] === 'all' && !start)" :aria-pressed="preset === entry[0]" @click="usePreset(entry[0])">{{ entry[1] }}</button>
       </nav>
-      <p v-if="!supported" role="status">此周期或序列尚不支持实时留存参考交易。</p>
-      <p v-else-if="!through" role="status">等待已确认行情的交易日，暂不推算统计窗口。</p>
+      <p v-if="!through" role="status">等待已确认行情的交易日，暂不推算统计窗口。</p>
       <p v-if="reference.error.value"><button type="button" :disabled="reference.loading.value" @click="read(true)">重新读取</button></p>
       <div v-if="data && plot.points.length" class="newow-reference__curve">
         <ReturnCurveSvg :plot="plot" label="已完成实时参考交易累计收益曲线，点击或按回车定位记录" area zero-line @select="index => selectPoint(plot.points[index]!.reference_trade_id)" @click="clickCurve" />

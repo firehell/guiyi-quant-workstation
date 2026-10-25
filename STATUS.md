@@ -7,6 +7,12 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/25 Web参考交易面板按周期显示（develop，未发布）
+
+按owner要求，HTDY仅60m显示参考交易，苏冰仅15m/30m/60m/1d显示；其余周期不渲染参考面板、说明或不支持占位，也不查询参考流。图表与独立Event审计保留，不改Scope、信号、推送或参考交易后端能力。共同显示规则由单一Web策略函数管理。
+
+最新develop集成后Web单测1222 passed/3 skipped、浏览器21 passed（含苏冰各周期及15→5→30切换）、显示矩阵3 passed，typecheck/build/topology、OpenSpec12/12、secret0、diff及自审通过。CODE_COMPLETE / TEST_COMPLETE；尚未发布或切Runtime，正式API/Web仍按下节记录的v1.16.2。
+
 ## 10/25 HTDY实时信号统一60分钟，v1.16.2已发布并切换API/Web
 
 按owner批准计划，通过既有Scope API关闭JM5m/15m并开启60m，逐次及最终独立读回：operational60品种均且仅60m（60组合）。JM旧5m/15m Event及发送字段前后相等，无补发、回填或周期转换。

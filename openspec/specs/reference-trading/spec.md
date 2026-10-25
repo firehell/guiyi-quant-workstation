@@ -966,6 +966,16 @@ subscriber cancellation SHALL NOT corrupt other views. Audit events remain
 separate from reference trades and are not evidence of recipient delivery.
 
 
+The Web reference panel and its reference-source caption SHALL appear only for
+HTDY `60m`, or SuBing `15m/30m/60m/1d`. Other periods SHALL render no reference
+panel or unsupported-reference placeholder and SHALL NOT query reference streams.
+This presentation policy SHALL preserve the chart and independent signal audit.
+
+#### Scenario: SuBing 5m keeps signals without a reference panel
+
+- **WHEN** the SuBing workspace selects 5m or 1w
+- **THEN** the chart and Event audit remain available, while the reference panel and its queries are absent
+
 #### Scenario: Missing retained reference stream
 
 - **WHEN** no readable retained forward stream exists for the selected identity
