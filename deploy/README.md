@@ -326,3 +326,5 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 
 整组预热对已有恢复journal使用限定8MiB读取（仅稳定目录直接子项的generation/deployment/scheduled-update三类），原配置文件上限、防链接及读前后身份校验不变。
 仅cohort闭市Canonical预热可将苏冰D1/W1 quality-v2的明确WARMING_UP逐路记录，不能计入calculated或声明信号就绪；原生预热默认strict，未知/质量/映射失败仍阻断。预热证据在任何停机前持久化。
+
+完整Alert scope的只读预热上限600秒，其他子服务120秒；均在停机预算开始之前。该上限不延长15分钟plan有效期，预热后计划过期仍取消，不能带过期计划停服。

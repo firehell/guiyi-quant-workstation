@@ -20,3 +20,5 @@ Implementation ledger:
 Forward fix ledger:
 - v1.16.5/PR481/main87f75c已发布，源码与候选同树；十服务未停。只读freeze因1.4MiB旧generation8原件触发继承1MiB上限，限定三类稳定journal改8MiB且保持file_snapshot全部安全检查。
 - v5真实预热API/Web/Live/Reference/Feed通过。Alert真实BZ/1w完整段26根，不足34根按合同预热；cohort-only显式分类warming，native strict不变，未知/质量/映射仍失败，prewarm证据停机前持久化。独立Review已通过；v6候选本身全量预热后再发布，不移动v5 tag。
+
+- v6候选部署114项、type/build通过；实际完整Alert replay超过原120秒，停机前预算单独改600秒，其他120不变；15分钟计划TTL与600秒停机上限不变。81项受影响测试与独立预算Review通过，真实全scope计算继续，未停服务。

@@ -299,7 +299,8 @@ class CohortHost(FaultRecoveryHost):
                     env=env,
                     capture_output=True,
                     text=True,
-                    timeout=120,
+                    # Full scoped Alert replay runs before the downtime budget.
+                    timeout=600 if service == "alert" else 120,
                     check=False,
                 )
                 value = json.loads(result.stdout.strip().splitlines()[-1])

@@ -589,17 +589,25 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
     old_root, new_root = tmp_path / "old", tmp_path / "new"
     old_root.mkdir()
     new_root.mkdir()
+    marker = old_root / ".run/alert-runtime-enabled"
+    marker.parent.mkdir(mode=0o700)
+    marker.write_text("enabled\n")
+    marker.chmod(0o600)
     old = BindingRegistry(
         1,
         {
-            name: replace(binding(old_root, name), enabled=name in {"api", "web"})
+            name: replace(
+                binding(old_root, name), enabled=name in {"api", "web", "alert"}
+            )
             for name in SERVICES
         },
     )
     new = BindingRegistry(
         1,
         {
-            name: replace(binding(new_root, name), enabled=name in {"api", "web"})
+            name: replace(
+                binding(new_root, name), enabled=name in {"api", "web", "alert"}
+            )
             for name in SERVICES
         },
     )
@@ -608,7 +616,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
         "new": asdict(new),
         "installed": {
             name: {"plist_hex": plistlib.dumps({"EnvironmentVariables": {}}).hex()}
-            for name in ("api", "web")
+            for name in ("api", "web", "alert")
         },
     }
     app, core = (
@@ -625,6 +633,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
         "version": "1.16.5",
     }
     host = object.__new__(CohortHost)
+    host.directory = tmp_path / "control"
     events = []
     host._verify_web_dependencies = lambda root: events.append(
         ("web-dependencies", root)
@@ -633,6 +642,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
     def warmup(arguments, **kwargs):
         events.append(("warmup", arguments[-1]))
         assert kwargs["env"]["GUIYI_PROJECT_ROOT"] == str(new_root)
+        assert kwargs["timeout"] == (600 if arguments[-1] == "alert" else 120)
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
@@ -650,7 +660,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
         with pytest.raises(CohortError, match="CANDIDATE_WARMUP_FAILED"):
             host.prewarm(plan)
     else:
-        assert set(host.prewarm(plan)) == {"api", "web"}
+        assert set(host.prewarm(plan)) == {"api", "web", "alert"}
     assert events[0] == ("web-dependencies", new_root)
 
 
