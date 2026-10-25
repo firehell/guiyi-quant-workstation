@@ -21,7 +21,7 @@ async function setup(page, missing = false) {
 for(const view of ['subing','htdy']) {
   test(`${view} retained curve, recent cards, lazy history and no replay`,async({page})=>{
     const requests=await setup(page)
-    await page.goto(`/market/chart?symbol=jm&view=${view}&series_kind=actual_dominant&frequency=15m`)
+    await page.goto(`/market/chart?symbol=jm&view=${view}&series_kind=actual_dominant&frequency=${view === 'htdy' ? '60m' : '15m'}`)
     const panel=page.getByRole('region',{name:'实时参考收益与记录',exact:true})
     await expect(panel.locator('.newow-reference__card')).toHaveCount(3)
     await expect(panel.locator('svg')).toBeVisible()
@@ -44,7 +44,7 @@ for(const view of ['subing','htdy']) {
   })
   test(`${view} absent retained stream never fabricates a curve`,async({page})=>{
     await setup(page,true)
-    await page.goto(`/market/chart?symbol=jm&view=${view}&series_kind=actual_dominant&frequency=15m`)
+    await page.goto(`/market/chart?symbol=jm&view=${view}&series_kind=actual_dominant&frequency=${view === 'htdy' ? '60m' : '15m'}`)
     const panel=page.getByRole('region',{name:'实时参考收益与记录',exact:true})
     await expect(panel).toContainText('尚无实时留存参考交易流')
     await expect(panel.locator('svg')).toHaveCount(0)
@@ -52,7 +52,7 @@ for(const view of ['subing','htdy']) {
 }
 test('mobile retained reference cards fit viewport',async({page})=>{
   await page.setViewportSize({width:390,height:844});await setup(page)
-  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=60m')
   await expect(page.locator('.forward-reference .newow-reference__card')).toHaveCount(3)
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true)
 })

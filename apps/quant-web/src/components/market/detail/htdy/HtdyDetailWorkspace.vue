@@ -26,7 +26,8 @@ const emit = defineEmits<{ updatePreferences: [preferences: FlexibleDetailPrefer
 const selectedFocus = ref<string | null>(null)
 const focusError = ref<string | null>(null)
 let focusGeneration = 0
-const actualSignals = computed(() => actualEventsToOwnedMarkers(loader.events.value, props.bars, { symbol: props.identity.symbol, strategy: 'htdy', frequency: props.identity.frequency }))
+const realtimeEnabled = computed(() => props.identity.frequency === '60m')
+const actualSignals = computed(() => realtimeEnabled.value ? actualEventsToOwnedMarkers(loader.events.value, props.bars, { symbol: props.identity.symbol, strategy: 'htdy', frequency: props.identity.frequency }) : [])
 async function focusObservation(identity: { barEnd: string; physicalContract: string }) {
   const own = ++focusGeneration, key = sourceIdentity.value
   const current = () => own === focusGeneration && key === sourceIdentity.value
@@ -49,12 +50,13 @@ const rangeWarmup = useRangeDetectorOverlayWarmup({ visibleFrom, bars: computed(
 const loader = usePersistentAlertMarkers({ fetchEvents: getAlertEvents }, { resolveRuleCodes: () => [ALERT_RULE_CODES.HTDY] })
 const indicators = computed(() => visibleMainIndicatorsForOverlay('htdy', optionalEmaIndicators.value, showRangeDetector.value))
 async function refresh() {
+  if (!realtimeEnabled.value) { loader.dispose(); return }
   const identity = { ...props.identity }
   await loader.sync(identity, props.bars, props.mutation.kind)
 }
 function openHistory() { workspace.value?.querySelector('.performance-panel')?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }
 defineExpose({ openHistory })
-watch([() => props.identity, () => props.bars, () => props.mutation], () => { void refresh() }, { immediate: true, deep: true })
+watch([() => props.identity, () => props.bars, () => props.mutation], () => { void refresh() }, { immediate: true, deep: true, flush: 'sync' })
 watch(() => loader.events.value.length, value => emit('history-availability', value > 0), { immediate: true })
 onBeforeUnmount(() => { focusGeneration += 1; loader.dispose() })
 </script>
@@ -64,8 +66,9 @@ onBeforeUnmount(() => { focusGeneration += 1; loader.dispose() })
     <p v-if="identityWarning" class="htdy-workspace__hint" role="status">{{ identityWarning }}</p>
     <p v-if="showRangeDetector" class="htdy-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
     <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeWarmup.anchorTime.value" :identity-key="sourceIdentity" :focus-bar-end="selectedFocus ?? identity.focusBarEnd" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :historical-mode="false" :reference-callouts="[]" :markers="actualSignals.map(item => item.marker)" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" @visible-from-change="visibleFrom = $event" @range-detector-result="rangeCount = $event.count" />
-    <p class="htdy-workspace__source">实时留存参考交易｜不统计盘后重算或历史重绘；零费用／零滑点，非账户成交</p>
-    <ObservedReferenceRecords strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :series-kind="identity.seriesKind" :through="bars.at(-1)?.trading_day" :events="loader.events.value" :unavailable="loader.unavailable.value" @focus="focusObservation" />
+    <p v-if="realtimeEnabled" class="htdy-workspace__source">60分钟实时买／卖信号｜首次观察留存，非账户成交；参考交易仅展示已建立的独立记录</p>
+    <p v-else class="htdy-workspace__source" role="status">实时信号统一记录于60分钟；当前周期保留历史研究图表。</p>
+    <ObservedReferenceRecords v-if="realtimeEnabled" strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :series-kind="identity.seriesKind" :through="bars.at(-1)?.trading_day" :events="loader.events.value" :unavailable="loader.unavailable.value" @focus="focusObservation" />
     <p v-if="focusError" role="status">{{ focusError }}</p>
 
   </section>
