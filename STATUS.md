@@ -19,9 +19,9 @@ CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE：首页第三Tab“模拟交易
 宿主监控发布异常已注入实测，不影响受控执行且监控状态明确unavailable；账户未知不当零资金或空仓。
 GUIYI_SIMNOW_MONITOR_ROOT仅为API选取既有宿主固定根，不改变宿主输出位置。
 
-实际验证：后端/账户/执行199 passed；Web单测1231 passed/3 skipped（含新9项）；
+实际验证：后端/账户/执行199 passed；合入同期消息页优化后Web单测1237 passed/3 skipped（含本任务新9项）；
 原生SDK结构无网络smoke8 passed；类型检查/构建、Ruff、secret scan0、独立高风险Review通过。
-新增监控4项和相关首页导航/视觉31项浏览器回归合计35 passed，覆盖桌面/375手机及共享首页1280/1440/1920/2560/390。
+新增监控4项和相关首页导航/视觉34项浏览器回归合计38 passed，覆盖桌面/375手机及共享首页1280/1440/1920/2560/390。
 扩展40项首轮10失败：5张导航截图随第三Tab更新后通过；另5个旧选择器失败在未修改HEAD归档同样复现
 （旧micro图标、已移除刷新按钮、已移除快照summary），未修改其无关行为，不宣称整套旧E2E全绿。
 
