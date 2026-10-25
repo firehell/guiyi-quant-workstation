@@ -230,7 +230,8 @@ def apply_cohort(host, plan):
         committed = False
         suspended = False
         try:
-            host.prewarm(plan)
+            state["effects"]["prewarm"] = host.prewarm(plan)
+            persist("prewarmed")
             host.check_plan(plan)
             validate(plan, host.now())
             host.deadline = monotonic() + plan["downtime_seconds"]
@@ -307,12 +308,18 @@ def main(argv=None):
             from app.core.env import PROJECT_ROOT
             from app.version import APP_VERSION
 
+            if args.service == "alert":
+                from app.alerts.composition import warmup_alert_runtime
+
+                proof = warmup_alert_runtime(allow_closed_warming=True)
+            else:
+                proof = warmup_service(args.service)
             print(
                 json.dumps(
                     {
                         "status": "ready",
                         "service": args.service,
-                        "proof": warmup_service(args.service),
+                        "proof": proof,
                         "source_roots": {
                             "app": str(Path(__file__).resolve()),
                             "core": str(Path(guiyi_quant.__file__).resolve()),

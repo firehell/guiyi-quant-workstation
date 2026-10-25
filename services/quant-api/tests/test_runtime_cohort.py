@@ -374,3 +374,73 @@ def test_warmup_reports_real_app_file_for_namespace_package(monkeypatch, capsys)
     )
     assert Path(result["source_roots"]["app"]).is_file()
     assert Path(result["source_roots"]["core"]).is_file()
+
+
+def test_internal_alert_warmup_explicitly_allows_only_closed_warming(
+    monkeypatch, capsys
+):
+    import json
+    from app import runtime_cohort, runtime_deployment
+    from app.alerts import composition
+
+    calls = []
+    proof = {
+        "calculated": 53,
+        "total": 54,
+        "warming": [{"symbol": "bz", "frequency": "1w", "bar_count": 26}],
+        "natural_signals_verified": False,
+    }
+    monkeypatch.setattr(
+        composition,
+        "warmup_alert_runtime",
+        lambda **kwargs: calls.append(kwargs) or proof,
+    )
+    monkeypatch.setattr(
+        runtime_deployment,
+        "warmup_service",
+        lambda _: pytest.fail("native warmup must stay strict"),
+    )
+    assert runtime_cohort.main(["warmup", "alert"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["proof"] == proof
+    assert calls == [{"allow_closed_warming": True}]
+
+
+def test_cohort_retains_per_stream_warming_in_attempt_before_any_stop(tmp_path):
+    import json
+
+    h = Host(tmp_path)
+    p = plan(h)
+    proof = {
+        "alert": {
+            "calculated": 53,
+            "total": 54,
+            "warming": [
+                {
+                    "rule_code": "subing_ths_alert_15m_v1",
+                    "symbol": "bz",
+                    "frequency": "1w",
+                    "contract": "BZ2611",
+                    "bar_count": 26,
+                }
+            ],
+            "natural_signals_verified": False,
+        }
+    }
+    h.prewarm = lambda _: proof
+    check = h.check_plan
+
+    def check_with_evidence(plan):
+        check(plan)
+        if (h.directory / "cohort-release.json").exists():
+            state = json.loads((h.directory / "cohort-release.json").read_text())
+            if state["phase"] == "prewarmed":
+                assert state["effects"]["prewarm"] == proof
+                assert "calendars_off" not in h.calls
+
+    h.check_plan = check_with_evidence
+    assert apply_cohort(h, p)["status"] == "switched"
+    state = json.loads((h.directory / "cohort-release.json").read_text())
+    attempt = h.directory / "cohort-attempts" / p["plan_sha256"] / "state.json"
+    assert state["effects"]["prewarm"] == proof
+    assert json.loads(attempt.read_text())["effects"]["prewarm"] == proof

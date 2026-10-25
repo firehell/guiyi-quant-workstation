@@ -323,3 +323,6 @@ Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 com
 日历先暂停，Feed先排空，全部旧所有者退出后持维护/所有者锁，一次CAS提交全部新绑定；消费者先于Feed启动，最后仅注册原日历。
 CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知结果禁止自动回滚或重试，需只读核对。私有attempt、原件和旧失败记录保留。
 闭市空闲证明必须与自然completed Bar、Event及送达分开；工程切换成功不声明整体Runtime Ready。
+
+整组预热对已有恢复journal使用限定8MiB读取（仅稳定目录直接子项的generation/deployment/scheduled-update三类），原配置文件上限、防链接及读前后身份校验不变。
+仅cohort闭市Canonical预热可将苏冰D1/W1 quality-v2的明确WARMING_UP逐路记录，不能计入calculated或声明信号就绪；原生预热默认strict，未知/质量/映射失败仍阻断。预热证据在任何停机前持久化。
