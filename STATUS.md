@@ -1,5 +1,18 @@
 # 当前状态
 
+## 10/25 HTDY九品种闭市来源差异：已核验分类，下一交易日自然验收待发生
+
+按owner交办复核AP/CJ/JD/LH/PK/RS/SF/SM/UR；Canonical32根60m预热及底层1m完整，旧原件也完整，
+两套各自1m→60m聚合精确一致；逐端点证实123根1m、17根60m数值差异，保留旧原件和历史事实，不反推provider修订原因。
+新增只读 `htdy_closed_day_source_difference_v1` 分类，完整交易日闭市、物理来源/质量、旧/新owner与新合约生命周期、
+Calendar/Session及旧/新恢复身份均须可证明；不是盘中fallback，不改变原生冲突reader或执行政策。
+
+fresh全60复核：历史60通过，当前计算51通过/9旧冲突阻断、原Live42完整/18阻断均保留；
+总体40等待新观察、11历史已补齐但原件缺失、9已核验闭市差异等待新交易日。9项下一日均10/26、首H1日程10:00 CST，
+尚无该自然Bar；所有审计eligible_now/first_seen均false。本次零下载/生产写入/Runtime切换/信号重放/通知，18个原件键前后hash一致。
+独立Review验证9份证据hash及原件前像，关闭next ContractFact/next recovery两项边界缺口；定向执行/reader回归221通过，
+Ruff/OpenSpec12/secret0/diff通过。证据在 `output/htdy-source-conflicts-20261025/`，当前正式Runtime仍exact v1.15.18，v1.16.0发布事实见下。
+
 ## 10/25 v1.16.0 已发布，正式 Runtime 未切换
 
 按 owner 交办完成 develop 整理及综合发布：PR468 已合入 main；annotated tag `v1.16.0` peeled commit `015a93ed0e63ba515d72c3764d174252da5345d9`，与冻结候选 `9be4d5388cf4a5ef3a02d58a13a4b4f43d324b25` 代码树完全相同；GitHub Release 已公开为非 draft、非 prerelease。发布树 `.worktrees/release-v1.16.0` 保持 exact tag，并放置同候选已验证 Web 构建。
