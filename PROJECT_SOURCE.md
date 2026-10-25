@@ -141,3 +141,9 @@ RQData -> staging + hard validation -> Canonical Parquet
 全部既有策略域（包括 `subing_strategy_v1` 及其 Daily Watch、5m/15m 因子、Historical Projection、Current State、Formal Event、Runtime、Scope、CLI、API、Web 和派生 cache）均退出 active 产品面。新 SuBing Alert 是新身份、新合同和新版本，不恢复或复用旧策略实现。旧身份只允许存在于不可变 Git/Alembic lineage、0043 删除迁移的断言和 `STATUS.md` 的真实未迁移生产事实中。
 
 Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、Multi-Candidate Robustness、RQAlpha 与 Execution Review 同样不属于 active 产品、API、CLI、Web 或 Runtime。
+
+## SimNow 一次性账户只读准备
+
+独立交互式CLI支持固定SimNow测试环境的认证、登录与资金/持仓/委托/成交两轮只读核验。
+本地快照与HTDY执行政策、Paper模型、页面参考收益保持独立；没有订单、账户管理、账本对账或持续Broker Runtime，
+不改变 `auto_order=false`。第一套模拟环境另验，合同见 [SIMNOW_READONLY](docs/SIMNOW_READONLY.md)。
