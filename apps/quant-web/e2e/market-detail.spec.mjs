@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 import {
   detailBar,
@@ -17,19 +18,16 @@ function freeHistory(total) {
   return Array.from({ length: total }, (_, index) => detailBar('jm', index, 100 + index))
 }
 
-async function mockPagedFreeHistory(page, total = 540) {
+async function mockPagedFreeHistory(page, total = 900) {
   const all = freeHistory(total)
   return mockMarketDetail(page, {
     barsPage({ url }) {
-      const first = all.slice(-300)
-      if (!url.searchParams.get('before')) {
-        return {
-          bars: first,
-          page: { has_more_before: all.length > first.length, next_before: first[0].bar_end },
-        }
-      }
-      const older = all.slice(0, -300)
-      return { bars: older, page: { has_more_before: false, next_before: null } }
+      const before = url.searchParams.get('before')
+      const end = before ? all.findIndex(bar => bar.bar_end === before) : all.length
+      expect(end).toBeGreaterThan(0)
+      const start = Math.max(0, end - 300)
+      const bars = all.slice(start, end)
+      return { bars, page: { has_more_before: start > 0, next_before: start > 0 ? bars[0].bar_end : null } }
     },
   })
 }
@@ -91,32 +89,51 @@ test('missing view migrates to the unified Free identity', async ({ page }) => {
   expect(new URL(page.url()).searchParams.get('frequency')).toBe('15m')
 })
 
-test('Newow daily route mounts its chart while its bounded independent daily quote is pending', async ({ page }) => {
-  const requests = await mockMarketDetail(page)
-  const typedRequests = []
-  const genericRequests = []
-  await page.route('**/api/v1/market/newow/strategy-detail**', async (route) => {
-    typedRequests.push(new URL(route.request().url()))
-    await new Promise(() => {})
+// Shell tests serve existing typed chart fixtures but explicitly leave lazy research unavailable.
+// Record those reads separately so they cannot hide premature requests before verification.
+async function installNewowShellFixture(page, options = {}) {
+  const state = await installNewowProductFixtures(page, options)
+  state.secondaryRequests = []
+  await page.route('**/api/v1/market/newow/strategy-detail**', route => {
+    const url = new URL(route.request().url())
+    if (!['reference', 'explanation'].includes(url.searchParams.get('section'))) return route.fallback()
+    expect(route.request().method()).toBe('GET')
+    state.secondaryRequests.push(url)
+    return route.fulfill({ status: 503, json: { detail: 'Explicit fixture: shell-only research unavailable' } })
   })
-  await page.route('**/api/v1/market/bars/page**', async (route) => {
-    genericRequests.push(new URL(route.request().url()))
-    await new Promise(() => {})
+  return state
+}
+
+test('Newow daily route keeps only a bounded price preview until the current chart is verified', { tag: '@contract-alignment' }, async ({ page }) => {
+  const state = await installNewowShellFixture(page, { deferOnce: 'trend:1d:chart' })
+  await page.goto(newowRoute())
+
+  const preview = page.getByRole('region', { name: '价格预览', exact: true })
+  await expect(preview.locator('canvas').first()).toBeVisible()
+  await expect(preview).toContainText('截止')
+  await expect(preview).toContainText('策略确认后显示')
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveCount(0)
+  await expect.poll(() => productRequests(state, 'chart').length).toBe(1)
+  const currentChart = productRequests(state, 'chart')[0].url
+  expect(currentChart.searchParams.get('resolve_current')).toBe('true')
+  expect(currentChart.searchParams.has('as_of')).toBe(false)
+  expect(productRequests(state, 'reference')).toHaveLength(0)
+  expect(productRequests(state, 'explanation')).toHaveLength(0)
+  expect(state.secondaryRequests).toHaveLength(0)
+  const prices = state.requests.filter(item => item.url.pathname.endsWith('/bars/page'))
+  expect(prices).toHaveLength(1)
+  expect(Object.fromEntries(prices[0].url.searchParams)).toEqual({
+    series_kind: 'actual_dominant', symbol: 'rb', frequency: '1d', limit: '500',
   })
+  expect(state.requests.filter(item => /\/(daily|weekly)-snapshot$/.test(item.url.pathname))).toHaveLength(0)
 
-  await page.goto('/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d')
-
-  await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
+  await expect.poll(() => state.deferred.has('trend:1d:chart')).toBe(true)
+  await state.deferred.get('trend:1d:chart')()
   await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible()
-  await expect(page.getByText('正在读取 Newow 主图…', { exact: true })).toBeVisible()
-  await expect.poll(() => typedRequests.length).toBe(1)
-  expect(typedRequests.map((url) => url.searchParams.get('section'))).toEqual(['chart'])
-  expect(genericRequests).toHaveLength(1)
-  expect(Object.fromEntries(genericRequests[0].searchParams)).toEqual({
-    series_kind: 'actual_dominant', symbol: 'jm', frequency: '1d',
-    before: '2026-09-03T07:00:00.000001Z', limit: '2',
-  })
-  expect(requests.filter((url) => url.pathname.endsWith('/research/product'))).toEqual([])
+  await expect(preview).toHaveCount(0)
+  await expect(page.locator('.quote-header__price strong')).not.toHaveText('—')
+  expect(state.requests.filter(item => item.url.pathname.endsWith('/bars/page'))).toHaveLength(1)
+  assertNoUnexpectedRequests(state)
 })
 
 test('Free mounts its generic workspace without the legacy sidebar or strategy markers', async ({ page }) => {
@@ -139,13 +156,15 @@ test('Free mounts its generic workspace without the legacy sidebar or strategy m
   expect(order.slice(0, 4)).toEqual(['topbar', 'quote', 'view-nav', 'workspace-slot'])
 })
 
-test('Newow HTDY and Free share one visual shell while preserving quote semantics', async ({ page }) => {
-  await mockDetailDailyQuote(page)
-  await page.goto('/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
+test('Newow HTDY and Free share one visual shell while preserving quote semantics', { tag: '@contract-alignment' }, async ({ page }) => {
+  const state = await installNewowShellFixture(page)
+  await page.goto(newowRoute())
+  await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible()
 
   const quote = page.locator('.quote-header')
-  await expect(quote).toContainText('最近日线收盘')
-  await expect(quote).toContainText('非实时')
+  await expect(quote.locator('.quote-header__price strong')).not.toHaveText('—')
+  await expect(quote.locator('[title="日涨跌（较前一日收盘）"]')).toBeVisible()
+  await expect(quote).toContainText('报价可用')
   const newowVisual = await unifiedShellVisual(page)
   expect(newowVisual.quoteUnified).toBe(true)
   expect(newowVisual.navigationMarginLeft).toBe('-24px')
@@ -168,15 +187,19 @@ test('Newow HTDY and Free share one visual shell while preserving quote semantic
   await expect(quote).not.toContainText('最近日线收盘')
   await expect(quote).not.toContainText('非实时')
   expect(await unifiedShellVisual(page)).toEqual(newowVisual)
+  assertNoUnexpectedRequests(state)
 })
 
-test('Free Range warm-up has a 1280 by 800 baseline and does not create a strategy marker', async ({ page }) => {
+test('Free Range warm-up has a 1280 by 800 baseline and does not create a strategy marker', { tag: '@contract-alignment' }, async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await mockMarketDetail(page)
   await page.goto(freeJm)
 
   await enableRangeDetector(page)
-  await expect(page.getByText(/箱体历史预载不足|箱体历史预载失败/)).toBeVisible()
+  const workspace = page.locator('[data-detail-workspace="free"]')
+  await expect(workspace).toHaveAttribute('data-range-detector-status', 'insufficient')
+  await expect(workspace.locator('.free-workspace__hint')).toContainText('同合约／质量分段预热不足')
+  await expect(workspace.locator('.free-workspace__hint')).toContainText('历史图形参考；加载更早数据可能修订箱体。')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
@@ -186,24 +209,31 @@ test('Free Range warm-up has a 1280 by 800 baseline and does not create a strate
   })
 })
 
-test('Free Range reaches its fixed ready boundary without strategy markers', async ({ page }) => {
+test('Free Range warms the first visible Bar with at least 520 preceding same-segment Bars', { tag: '@contract-alignment' }, async ({ page }) => {
   const requests = await mockPagedFreeHistory(page)
   await page.goto(freeJm)
 
   await enableRangeDetector(page)
-  await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBeGreaterThanOrEqual(2)
-  await expect(page.locator('[data-detail-workspace="free"]')).toHaveAttribute('data-range-detector-warmup', 'ready')
+  await expect.poll(() => requests.filter(url => url.pathname.endsWith('/bars/page')).length).toBeGreaterThanOrEqual(3)
+  const workspace = page.locator('[data-detail-workspace="free"]')
+  await expect(workspace).toHaveAttribute('data-range-detector-status', 'ready')
+  const firstVisible = await workspace.getAttribute('data-range-detector-visible-from')
+  expect(firstVisible).not.toBeNull()
+  expect(freeHistory(900).filter(bar => Date.parse(bar.bar_end) < Date.parse(firstVisible)).length).toBeGreaterThanOrEqual(520)
+  await expect(workspace.locator('.free-workspace__hint')).toContainText('历史图形参考；加载更早数据可能修订箱体。')
+  await expect(workspace.locator('.free-workspace__hint')).not.toContainText('预热不足')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
-  await expect(page.getByRole('status')).toContainText('Range Detector 只读回画展示；确认前不可用于策略判断。')
-  await expect(page.getByText('箱体历史预载不足')).toHaveCount(0)
 })
 
-test('Free shows the fixed Range read-only warning while history is insufficient', async ({ page }) => {
+test('Free discloses insufficient same-segment history and revisable Range graphics', { tag: '@contract-alignment' }, async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
 
   await enableRangeDetector(page)
-  await expect(page.getByRole('status')).toContainText('箱体历史预载不足；Range Detector 只读回画展示；确认前不可用于策略判断。')
+  const workspace = page.locator('[data-detail-workspace="free"]')
+  await expect(workspace).toHaveAttribute('data-range-detector-status', 'insufficient')
+  await expect(workspace.locator('.free-workspace__hint')).toContainText('同合约／质量分段预热不足')
+  await expect(workspace.locator('.free-workspace__hint')).toContainText('历史图形参考；加载更早数据可能修订箱体。')
 })
 
 test('Free pagination keeps an away-from-latest viewport while prepending history', async ({ page }) => {
@@ -228,7 +258,7 @@ test('Free pagination keeps an away-from-latest viewport while prepending histor
   await expect(page.getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
 })
 
-test('Free exposes fullscreen enter, exit, and return-to-latest controls', async ({ page }) => {
+test('Free keeps return-to-latest without restoring retired fullscreen controls', { tag: '@contract-alignment' }, async ({ page }) => {
   await mockPagedFreeHistory(page, 600)
   await page.goto(freeJm)
 
@@ -245,10 +275,9 @@ test('Free exposes fullscreen enter, exit, and return-to-latest controls', async
   await page.getByRole('button', { name: '回到最新', exact: true }).click()
   await expect(page.getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
 
-  await page.getByRole('button', { name: '全屏图表', exact: true }).click()
-  await expect(page.getByRole('button', { name: '退出全屏', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '退出全屏', exact: true }).click()
-  await expect(page.getByRole('button', { name: '全屏图表', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '全屏图表', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '退出全屏', exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
 })
 
 test('shared K-line focus retries an unresolved target and clears it on identity replacement', async ({ page }) => {
@@ -458,7 +487,7 @@ test('legacy Trend route migrates once into the unified Newow trend identity', a
   await expect(page.getByTestId('newow-trend-chart-stage')).toHaveCount(0)
 })
 
-test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', async ({ page }) => {
+test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', { tag: '@contract-alignment' }, async ({ page }) => {
   const requests = await mockDetailDailyQuote(page, {
     alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
     alertRules: [subingRule()],
@@ -470,14 +499,24 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
   await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
-  await expect(page.getByText(/当前回画观察与持久首次识别 Event 分别展示/)).toBeVisible()
-  await page.getByRole('tab', { name: '预警与运行' }).click()
-  await expect(page.getByText(/仅真实主力序列的 HTDY AlertEvent/)).toBeVisible()
+  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+  await expect(page.locator('.observed-records')).toHaveCount(0)
+  expect(requests.alertRequests.filter(({ url }) => url.searchParams.get('rule_code') === 'htdy_original_15m')).toHaveLength(0)
+  await page.getByRole('group', { name: '周期', exact: true }).getByRole('button', { name: '60分钟', exact: true }).click()
+  const htdyAudit = page.locator('[data-detail-workspace="htdy"] .observed-records')
+  await expect(htdyAudit).toBeVisible()
+  await htdyAudit.locator('summary').click()
+  await expect(htdyAudit).toContainText('当前已加载图表范围未读到实际观察记录；不以历史重算补齐。')
+  const htdyRequests = requests.alertRequests.filter(({ url }) => url.searchParams.get('rule_code') === 'htdy_original_15m')
+  expect(htdyRequests.length).toBeGreaterThan(0)
+  expect(htdyRequests.every(({ url }) => url.searchParams.get('frequency') === '60m')).toBe(true)
 
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
   await expect(page.locator('[data-detail-workspace="subing"]')).toBeVisible()
-  await expect(page.getByText(/实际预警记录 · 以下仅为已持久化 AlertEvent/)).toBeVisible()
+  const subingAudit = page.locator('[data-detail-workspace="subing"] .observed-records')
+  await subingAudit.locator('summary').click()
+  await expect(subingAudit).toContainText('首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史')
   await expect(page.getByText(/S↑ 多头预警/).first()).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()

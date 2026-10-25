@@ -87,6 +87,12 @@ PLAYWRIGHT_PORT=5196 pnpm -C apps/quant-web exec playwright test -c playwright.c
 PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs --output /private/tmp/guiyi-e2e-preview-results
 ```
 
+本轮八项已知失配的定向回归（保持原截图阈值，不带快照更新）：
+
+```sh
+NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5196 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-detail.spec.mjs e2e/market-home.spec.mjs --grep @contract-alignment --workers=1
+```
+
 第二条固定使用5182隔离预览端口。真实后端只读验收仍需显式 `REAL_BACKEND=1` 及其现场条件，
 fixture通过与默认跳过都不证明生产、发布或Runtime状态。
 

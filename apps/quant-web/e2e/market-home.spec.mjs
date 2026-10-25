@@ -605,7 +605,7 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080], [2560, 14
   })
 }
 
-test('390px compatibility retains readable market and messages without horizontal overflow', async ({ page }) => {
+test('390px compatibility retains readable market and messages without horizontal overflow', { tag: '@contract-alignment' }, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const requests = []
   await mockMarketHomeApi(page, requests, { status: 'unavailable', trading_day: null, items: [] })
@@ -613,6 +613,7 @@ test('390px compatibility retains readable market and messages without horizonta
   const list = page.getByRole('region', { name: '品种日周策略列表' })
   await expect(list).toContainText('涨跌幅')
   await expect(list.locator('.strategy-list-item')).toHaveCount(2)
+  await expect(list.getByRole('img', { name: '趋势来源待确认', exact: true })).toHaveCount(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await expect(list).toHaveScreenshot('market-home-390-list.png', { animations: 'disabled', maxDiffPixels: 400 })
   await expect(page).toHaveScreenshot('market-home-390.png', { fullPage: true, animations: 'disabled', maxDiffPixels: 400 })

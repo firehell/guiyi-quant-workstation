@@ -58,3 +58,26 @@ Newow筛选不受其他预警读取错误影响，已有记录仍按原逻辑保
 
 日志位于 `/private/tmp/guiyi-e2e-alignment-accepted.log`、同前缀 `web-unit-accepted.log`、`build-final.log`、`openspec-final.log`；均为本地临时输出，稳定复现入口见 `TESTING.md`。
 交付只至develop；不发布、不切换Runtime、不发送通知、不写生产数据。本任务合入后可通过普通Git revert回滚，无migration或生产数据回滚步骤。
+
+
+## 2026-10-25：精简审计所发现的八项 E2E 失配
+
+本轮基线 `022ee2f238d921b98907fedd0f985c8c02fe3a0f`，八项在未修改的隔离工作区全部复现。
+本轮只改浏览器测试和三张截图，不恢复旧功能或修改产品代码、公式、Scope、行情、通知或 Runtime。
+
+- Newow 外壳复用已有 typed fixture，当前主图验证前仅展示有界价格预览；验证后复用主图报价，不再期望独立两根日线读取。
+  显式503隔离外壳测试不负责的懒加载研究，单独记录这些请求，继续检查验证前零研究读取及意外请求。
+- 共享顶部检查合法日线报价及涨跌口径，再切 HTDY/Free 复核同一外壳与各自周期报价，不依赖未开放的旧周线夹具。
+- 箱体分页夹具按游标每页最多300根，提供900根同段样本；检查首根可见 Bar 前至少520根、无策略 Marker、
+  预热不足和“历史图形可修订”的当前提示，避免宽泛 status 选择器匹配历史边界消息。
+- 保留拖动与回到最新操作，断言已退役的全屏按钮不存在；HTDY非60m不读实际事件，60m才显示审计，苏冰独立检查已保存 Event 与精确Bar时间。
+- 三张截图逐张核对后更新：Free Range 当前预热/历史边界提示、已移除的全屏/旧空面板和当前MACD图层；
+  390px首页当前无刷新/旧口径入口，独立趋势无来源时为待确认时钟图标。保留原400像素阈值、无横向溢出和未伪造信号断言。
+
+八项标记 `@contract-alignment`，稳定命令见 `TESTING.md`。正常无更新验收8 passed；每项连续三轮24 passed，未启用retry或ignore-snapshots。
+这只证明fixture下的本轮页面合同，不代表全仓库E2E、生产数据、发布或Runtime验收。
+
+补充验证：相邻 `htdy-realtime-scope.spec.mjs` 9 passed；完整Web单元1222 passed/3 skipped；
+`pnpm -C apps/quant-web build`（含typecheck/能力生成/bundle拓扑）通过，保留既有chunk体积提示；
+仓库卫生/canonical/secret测试34 passed，secret scan0、两份spec的node语法和diff检查通过。
+独立只读Review无Confirmed Issue，三张截图复核通过，允许集成develop。
