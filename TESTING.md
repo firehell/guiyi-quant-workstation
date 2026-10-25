@@ -2,7 +2,7 @@
 
 ## HTDY 60分钟离线执行规则
 
-合同见[执行规则](docs/HTDY_SIMNOW_V1.md)。只验证离线政策、原生回报fixture及共享公式适配；不连接账号或启用交易。
+合同见[执行规则](docs/HTDY_SIMNOW_V1.md)。覆盖冻结v1、新版70%账户风控/预留/状态机、本地journal事务与恢复重放、原生回报fixture及共享公式适配；不连接账号或启用交易。
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/htdy_execution services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/reference_trading/test_htdy_reference_model.py services/quant-api/tests/reference_trading/test_htdy_reference_capture.py services/quant-api/tests/test_htdy_production_kernel_policy.py

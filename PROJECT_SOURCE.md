@@ -101,7 +101,7 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 ## HTDY 与 Alert
 
 HTDY 60m 固定一手双向执行规则已有独立离线状态机及显式输入适配器，合同见
-[HTDY_SIMNOW_V1](docs/HTDY_SIMNOW_V1.md)。它不接入现役 Alert/Runtime，不提供 Broker transport 或账户总风控，
+[HTDY_SIMNOW_V1](docs/HTDY_SIMNOW_V1.md)。它不接入现役 Alert/Runtime，提供独立离线账户风控、资金预留与本地命令journal，不提供 Broker transport，
 不代表 SimNow 接入、持续 Paper、策略晋升或自动交易已启用；以下观察与参考口径保持独立。
 
 HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency。
