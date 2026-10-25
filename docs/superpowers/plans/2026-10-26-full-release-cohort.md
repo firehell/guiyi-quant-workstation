@@ -22,3 +22,10 @@ Forward fix ledger:
 - v5真实预热API/Web/Live/Reference/Feed通过。Alert真实BZ/1w完整段26根，不足34根按合同预热；cohort-only显式分类warming，native strict不变，未知/质量/映射仍失败，prewarm证据停机前持久化。独立Review已通过；v6候选本身全量预热后再发布，不移动v5 tag。
 
 - v6候选部署114项、type/build通过；实际完整Alert replay超过原120秒，停机前预算单独改600秒，其他120不变；15分钟计划TTL与600秒停机上限不变。81项受影响测试与独立预算Review通过，真实全scope计算继续，未停服务。
+
+Recovery ledger:
+- v1.16.6/PR482/main c3e21cf0已发布，六服务正式prewarm通过（Alert413计算/7warming），plan52190...停在首个Feed异步bootout。未CAS，原registry及十plist原件不变，原attempt restore_unknown保留。
+- 原Feed6228退出且label absent/lockfree后独立Review通过，仅恢复旧v1.16.1/gen25一次，PID47191/HB可用。十原loaded、API/Web原身份读回；v7只读old-runtime-proof实际通过（identity ac3b9637...）。
+- v7修bootout一次后有限等待label+PID；恢复先等teardown再cancel/start。新增仅precommit的历史身份审计checkpoint，不执行过期plan、不处理postCAS unknown，不覆原attempt。独立70项Review通过，现场checkpoint/全新switch仍待验。
+
+- v7最终13文件组合231 passed/0 skipped；独立终审70 passed，现场10项只读恢复proof通过，Ruff/OpenSpec12/12/secret0。准备发布7后只读审计checkpoint及全新切换，不复用6attempt。

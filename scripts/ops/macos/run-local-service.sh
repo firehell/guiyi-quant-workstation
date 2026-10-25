@@ -123,6 +123,11 @@ case "$SERVICE" in
     export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
     exec "$PYTHON_BIN" -m app.runtime_cohort apply-plan "$@"
     ;;
+  cohort-resolve)
+    shift
+    export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
+    exec "$PYTHON_BIN" -m app.runtime_cohort resolve-restored "$@"
+    ;;
   handover-candidate)
     exec "$PYTHON_BIN" -m app.runtime_deployment candidate "${2:?}" "${3:?}" "${4:?}"
     ;;

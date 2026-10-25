@@ -2064,7 +2064,7 @@ e2e/fixtures/simnow-monitor.json 仅来自离线受控宿主测试，不是实�
 ## 休市整组升级与Canonical预热
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_cohort.py services/quant-api/tests/test_runtime_cohort_host.py services/quant-api/tests/test_closed_runtime_warmup.py services/quant-api/tests/test_alert_closed_warming.py services/quant-api/tests/test_runtime_bindings.py services/quant-api/tests/test_runtime_handover.py services/quant-api/tests/test_runtime_deployment.py services/quant-api/tests/test_runtime_scheduled.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_cohort.py services/quant-api/tests/test_runtime_cohort_host.py services/quant-api/tests/test_runtime_cohort_async.py services/quant-api/tests/test_runtime_cohort_recovery.py services/quant-api/tests/test_runtime_cohort_readback.py services/quant-api/tests/test_closed_runtime_warmup.py services/quant-api/tests/test_alert_closed_warming.py services/quant-api/tests/test_runtime_bindings.py services/quant-api/tests/test_runtime_handover.py services/quant-api/tests/test_runtime_deployment.py services/quant-api/tests/test_runtime_scheduled.py
 ```
 
 状态机与主机故障注入不停止真实服务；真实切换须另验 exact release、权威休市窗口、十服务绑定/PID/heartbeat/HTTP、游标及原Scope。闭市生命周期不代替自然业务证据。

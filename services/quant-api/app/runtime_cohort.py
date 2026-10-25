@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta
+from hashlib import sha256
 import json
 import stat
 import os
@@ -266,6 +267,8 @@ def apply_cohort(host, plan):
             persist("switched")
             return {"status": "switched", "readback": readback}
         except Exception as error:
+            if getattr(host, "bootout_requests", None):
+                state["effects"]["bootout_requests"] = dict(host.bootout_requests)
             state["error_type"] = type(error).__name__
             if committed:
                 try:
@@ -286,6 +289,188 @@ def apply_cohort(host, plan):
             raise CohortError("COHORT_PRECONDITION_CANCELLED") from None
 
 
+def _resolution_source(path):
+    raw = read_plan(path)
+    require(raw is not None, "COHORT_RESOLUTION_SOURCE_MISSING")
+    try:
+
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                require(key not in result, "COHORT_RESOLUTION_SOURCE_INVALID")
+                result[key] = value
+            return result
+
+        value = json.loads(raw, object_pairs_hook=unique)
+        require(isinstance(value, dict), "COHORT_RESOLUTION_SOURCE_INVALID")
+    except (ValueError, UnicodeError):
+        raise CohortError("COHORT_RESOLUTION_SOURCE_INVALID") from None
+    return raw, value
+
+
+def _sync_resolution_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def resolve_restored_cohort(host, plan_path):
+    """Audit an externally restored pre-CAS attempt; never execute its plan."""
+    with deployment_lock(runtime_dir=host.directory):
+        plan_raw, plan = _resolution_source(Path(plan_path))
+        # Reuse all identity/contract validation at the historical creation time.
+        # Expiry is ignored only in this audit; apply_cohort has no such bypass.
+        created = datetime.fromisoformat(plan["created_at"])
+        require(created <= host.now(), "COHORT_PLAN_INVALID")
+        old, _new = validate(plan, created)
+        require(
+            host.bindings() == old and host.binding_hash() == plan["registry_sha256"],
+            "COHORT_REGISTRY_DRIFT",
+        )
+        attempt = host.directory / "cohort-attempts" / plan["plan_sha256"]
+        for directory in (attempt.parent, attempt):
+            info = directory.lstat()
+            require(
+                directory.resolve() == directory
+                and stat.S_ISDIR(info.st_mode)
+                and info.st_uid == os.getuid()
+                and stat.S_IMODE(info.st_mode) == 0o700,
+                "COHORT_ATTEMPT_DIRECTORY_UNSAFE",
+            )
+        global_path, state_path = (
+            host.directory / "cohort-release.json",
+            attempt / "state.json",
+        )
+        global_raw, global_state = _resolution_source(global_path)
+        attempt_raw, attempt_state = _resolution_source(state_path)
+        allowed = {
+            "prewarm",
+            "calendars_off",
+            "drain",
+            "old_exited",
+            "preserve",
+            "install",
+            "bootout_requests",
+        }
+        for state in (global_state, attempt_state):
+            require(
+                state.get("schema_version") == 1
+                and state.get("phase") == "restore_unknown"
+                and state.get("plan_sha256") == plan["plan_sha256"]
+                and isinstance(state.get("effects"), dict)
+                and set(state["effects"]) <= allowed,
+                "COHORT_PRECOMMIT_RESTORE_REQUIRED",
+            )
+        require(global_state == attempt_state, "COHORT_RESOLUTION_STATE_MISMATCH")
+        sources = (
+            (Path(plan_path), plan_raw),
+            (global_path, global_raw),
+            (state_path, attempt_raw),
+        )
+
+        def unchanged():
+            for path, expected in sources:
+                require(read_plan(path) == expected, "COHORT_RESOLUTION_SOURCE_DRIFT")
+            require(
+                host.bindings() == old
+                and host.binding_hash() == plan["registry_sha256"],
+                "COHORT_REGISTRY_DRIFT",
+            )
+
+        proof = host.verify_old_restored(plan)
+        require(
+            isinstance(proof, dict)
+            and re.fullmatch(r"[0-9a-f]{64}", proof.get("identity_sha256", ""))
+            is not None,
+            "COHORT_RESTORE_PROOF_INVALID",
+        )
+        unchanged()
+        receipt_path = attempt / "recovery-readback.json"
+        receipt = {
+            "schema_version": 1,
+            "kind": "precommit_restore_readback",
+            "plan_sha256": plan["plan_sha256"],
+            "source_plan_sha256": sha256(plan_raw).hexdigest(),
+            "source_global_sha256": sha256(global_raw).hexdigest(),
+            "source_attempt_sha256": sha256(attempt_raw).hexdigest(),
+            "observed_at": host.now().isoformat(),
+            "proof": proof,
+        }
+        if os.path.lexists(receipt_path):
+            receipt_raw, existing = _resolution_source(receipt_path)
+            require(
+                all(
+                    existing.get(key) == value
+                    for key, value in receipt.items()
+                    if key not in {"observed_at", "proof"}
+                )
+                and isinstance(existing.get("proof"), dict)
+                and existing["proof"].get("identity_sha256")
+                == proof["identity_sha256"],
+                "COHORT_RESOLUTION_RECEIPT_MISMATCH",
+            )
+        else:
+            receipt_raw = (
+                json.dumps(receipt, sort_keys=True, indent=2) + "\n"
+            ).encode()
+            fd = os.open(
+                receipt_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600,
+            )
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(receipt_raw)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except OSError:
+                require(
+                    read_plan(receipt_path) == receipt_raw,
+                    "COHORT_RESOLUTION_RECEIPT_WRITE_UNKNOWN",
+                )
+        require(
+            read_plan(receipt_path) == receipt_raw, "COHORT_RESOLUTION_RECEIPT_DRIFT"
+        )
+        # Also sync a complete receipt recovered after an uncertain write.
+        fd = os.open(receipt_path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        _sync_resolution_directory(attempt)
+        unchanged()
+        receipt_sha = sha256(receipt_raw).hexdigest()
+        resolved = {
+            **global_state,
+            "phase": "cancelled",
+            "resolution": {
+                "kind": "precommit_restore_readback",
+                "receipt_sha256": receipt_sha,
+                "source_global_sha256": sha256(global_raw).hexdigest(),
+                "source_attempt_sha256": sha256(attempt_raw).hexdigest(),
+            },
+        }
+        try:
+            _write(global_path, resolved)
+        except OSError:
+            # A failed fsync/return is not permission to replay the pointer write.
+            _raw, observed = _resolution_source(global_path)
+            require(observed == resolved, "COHORT_RESOLUTION_WRITE_UNKNOWN")
+        _raw, observed = _resolution_source(global_path)
+        require(
+            observed == resolved and read_plan(state_path) == attempt_raw,
+            "COHORT_RESOLUTION_WRITE_UNKNOWN",
+        )
+        return {
+            "status": "cancelled",
+            "plan_sha256": plan["plan_sha256"],
+            "receipt_sha256": receipt_sha,
+            "original_attempt_preserved": True,
+        }
+
+
 def main(argv=None):
     import argparse
     from app.runtime_cohort_host import CohortHost
@@ -297,6 +482,8 @@ def main(argv=None):
     p.add_argument("--tag", required=True)
     p.add_argument("--commit", required=True)
     p = sub.add_parser("apply-plan")
+    p.add_argument("--plan", required=True, type=Path)
+    p = sub.add_parser("resolve-restored")
     p.add_argument("--plan", required=True, type=Path)
     p = sub.add_parser("warmup")
     p.add_argument("service", choices=CONTINUOUS)
@@ -338,6 +525,8 @@ def main(argv=None):
                 tag=args.tag,
                 commit=args.commit,
             )
+        elif args.mode == "resolve-restored":
+            result = resolve_restored_cohort(host, args.plan)
         else:
             raw = read_plan(args.plan)
             require(raw is not None, "COHORT_PLAN_MISSING")

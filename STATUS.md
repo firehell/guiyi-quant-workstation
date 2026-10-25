@@ -7,6 +7,13 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/26 v1.16.6切换未CAS，原态已恢复，v1.16.7部署修复候选
+
+v1.16.6经PR482正式发布，exact `c3e21cf058916271e4a29b3b205479bbf5415a64`。正式plan `52190cfec1f962fcb50729f863948e1bc2374159d00d24ddbf11b0c60415c4c1`完成六服务预热，但首个Feed异步bootout尚未消失即被错误判失败，恢复检查也落在teardown中间态。
+没有提交新registry；原attempt保持restore_unknown原字节。逐项读回证实原registry/SHA/十份plist不变，九项原loaded；旧Feed6228退出、label缺席、owner锁空闲后，经独立有限恢复Review仅bootstrap原v1.16.1/gen25 Feed一次，PID47191及heartbeat可用。
+十项原loaded与API1.16.4/Web原dist随后独立核对；新只读恢复证明已真实通过，identity SHA `ac3b9637dfb43a8f410a9726abc1535990fef686c5f8c4071947776a9c221dfe`。不把动态ready或闭市空闲当自然验收。
+候选1.16.7仅修异步等待并补精确pre-CAS恢复审计checkpoint，默认expired apply/postCAS unknown禁执行不变；旧attempt保全，恢复receipt与后续新计划分开。组合部署231 passed/0 skipped、独立终审70 passed、OpenSpec12/12、Ruff/secret0及新现场只读proof通过；发布、checkpoint、新计划和统一切换尚待执行，所有旧树因仍有引用暂保留。
+
 ## 10/26 v1.16.5已发布，整组切换停在预检，向前修复候选1.16.6
 
 PR481已合main，annotated v1.16.5 exact `87f75c16480160e5fc3d7f8af0800bcacb672a46`，GitHub Release已公开；与已测试候选完整树相同。
