@@ -936,6 +936,21 @@ completed returns. These values SHALL NOT be labeled account equity or compound 
 The cache SHALL NOT be a historical fact authority and SHALL NOT write Redis or persistent events.
 
 
+### Requirement: HTDY realtime presentation uses only 60m
+
+HTDY detail SHALL query and display realtime AlertEvent and retained forward
+reference records only at `60m`. Other periods SHALL retain their historical chart
+selection and display “实时信号统一记录于60分钟”; they SHALL NOT query realtime
+Event or reference streams. Leaving 60m SHALL invalidate outstanding Event reads
+and stop polling. Old Event and transport facts SHALL remain available for audit;
+this presentation restriction SHALL NOT delete generic API capabilities, replay
+signals, create reference streams or change SuBing behavior.
+
+#### Scenario: A legacy HTDY 15m link is opened
+
+- **WHEN** the HTDY workspace opens a 15m URL
+- **THEN** its chart remains 15m, the 60m realtime notice is shown, and no realtime Event or reference stream request is sent
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL
