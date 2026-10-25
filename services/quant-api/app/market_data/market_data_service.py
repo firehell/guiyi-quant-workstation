@@ -725,6 +725,10 @@ class MarketDataService:
             since=request.since,
             through=request.through,
         )
+        if request.as_of is not None:
+            end = min(end, request.as_of)
+            if end <= start:
+                raise MarketDataError("INVALID_TRADING_DAY_WINDOW")
         return replace(
             self.query(
                 SeriesQuery(

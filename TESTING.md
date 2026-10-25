@@ -1983,3 +1983,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 真实修复先只读 `guiyi data contract-session-repair`，锁内核对精确 hash 后 apply；实际源查询、
 Canonical/Catalog 发布、消费者读回和自然 Live 连续性分别验收。fixture 不证明生产已修复。
+
+
+## HTDY 闭市来源差异分类
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/data_foundation/test_htdy_closed_source_conflicts.py services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/test_market_read_service.py
+```
+
+真实复核用 `scripts/data/htdy_input_admission.py --output <独占目录>`。保留旧Live/Canonical差异及
+原始calc阻断；闭市分类是下一交易日自然验收待办，不证明首见信号或即时可开仓。

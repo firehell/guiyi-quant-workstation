@@ -68,3 +68,20 @@ hash用于损坏检测，不声称防御有权改写全部内容的操作者。
 
 执行入口见 [TESTING](../TESTING.md#htdy-60分钟离线执行规则)。测试使用隔离fixture，不连接SimNow、生产数据库、
 Redis或RQData，不证明策略收益、全品种数据ready、OOS、成交可得性或Runtime已启用。
+
+
+## 闭市旧日来源差异的输入诊断
+
+准入诊断版本 `htdy_60m_input_admission_v2` 将“旧日差异未解释”与“已核验差异、等待新交易日”分开。
+只有权威完整交易日已结束、Canonical最新32根预热及底层1m验证通过、同合约原件完整、两套1m各自
+聚合与各自60m一致，且具体字段差异和物理来源hash可核验时，才可记为
+`CLOSED_SOURCE_REVISION_WAIT_NEW_OBSERVATION`。该证据只证明已存两份事实不同，不反推RQData修订原因或发生时间。
+
+诊断还必须证明下一Session属于严格更晚交易日、rank1及首个H1端点已由Calendar/Session确定；
+覆盖该未来边界的恢复围栏、原件变化、身份/质量/可选值未知或缺口均继续阻断。
+下一合约预热及真实新输入仍按原生路径重新检查，日程证明不代表未来Bar存在。
+
+原始Live、旧信号、持仓及既有中断保持；旧日 `bars_until` 冲突仍拒绝，`calculation_input` 和
+原始Live状态不改成通过。新分类不返回可执行窗口，`first_seen_proven=false`、`eligible_now=false`；
+只允许等待新交易日的自然completed输入，再执行统一新鲜度、完整性、owner和恢复检查。
+不能用本诊断结果绕过执行政策或启用自动交易。盘中/午休/未完成交易日不得套用此闭市分类。

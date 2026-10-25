@@ -1,8 +1,33 @@
 # 当前状态
 
-## 10/25 v1.16.0 综合发布候选整理
+## 10/25 Runtime 已切换 v1.16.0/gen24，自然验收待发生
 
-按 owner 交办收敛 develop：保留并提交三份已存在的现场记录；生成的 output 证据保留本地，未跟踪产物统一排除，既有 tracked evidence 不变。其他数据维护工作树有未提交修改，未覆盖或清理。候选汇总首页预计算、历史浏览、共享交易标签、历史箱体及已集成离线研究／执行政策；不启用账户、订单或 Runtime。两项旧来源校验测试已复现为 SavedSignals 缺 trades 的夹具问题，补齐接口；同时补齐路由exact清单和隔离HTTP／锁测试边界。扩展4597 passed/82 skipped，首轮3项失败已分别修复或以隔离端口复跑；后验350+11项通过，新增夜盘修复106项通过，Web1221 passed/3 skipped、构建及独立复核通过。发布事实待远端回读后更新。详见[版本说明](docs/releases/v1.16.0.md)。
+Owner明确交办后完成全停冷切。10项身份统一 exact `v1.16.0` / `015a93ed0e63ba515d72c3764d174252da5345d9` / gen24；六常驻active且60秒PID稳定，四calendar注册且idle，Reference cycle ready已观察。正式API1.16.0，5173 index与发布dist逐字一致，正式共享首页60/60 ready。原生热切换因合同不同被拒绝，未绕过其混跑门禁；两次停机阶段中断均保留失败，以新封印精确续接，无重复stop/install。最终attempt003单次完成，旧Event/delivery/参考经济状态与原文journal/索引/游标摘要保持，pending Capture0，无补发、原件伪造或订单。
+
+全局health仍degraded：原有暖机/观察滞后、原件缺失、盘后历史失败及下一Session自然采集/Event/Push/18:05增量仍分别待验，不宣称整体RUNTIME_READY。旧v18树解除全部引用后按retention计划清理，8个.run原件与SHA保留，tag/Release不删。详见[切换记录](docs/tasks/runtime-v1160-promotion-20261025.md)。
+
+## 10/25 HTDY九品种闭市来源差异：已核验分类，下一交易日自然验收待发生
+
+按owner交办复核AP/CJ/JD/LH/PK/RS/SF/SM/UR；Canonical32根60m预热及底层1m完整，旧原件也完整，
+两套各自1m→60m聚合精确一致；逐端点证实123根1m、17根60m数值差异，保留旧原件和历史事实，不反推provider修订原因。
+新增只读 `htdy_closed_day_source_difference_v1` 分类，完整交易日闭市、物理来源/质量、旧/新owner与新合约生命周期、
+Calendar/Session及旧/新恢复身份均须可证明；不是盘中fallback，不改变原生冲突reader或执行政策。
+
+fresh全60复核：历史60通过，当前计算51通过/9旧冲突阻断、原Live42完整/18阻断均保留；
+总体40等待新观察、11历史已补齐但原件缺失、9已核验闭市差异等待新交易日。9项下一日均10/26、首H1日程10:00 CST，
+尚无该自然Bar；所有审计eligible_now/first_seen均false。本次零下载/生产写入/Runtime切换/信号重放/通知，18个原件键前后hash一致。
+独立Review验证9份证据hash及原件前像，关闭next ContractFact/next recovery两项边界缺口；定向执行/reader回归221通过，
+Ruff/OpenSpec12/secret0/diff通过。证据在 `output/htdy-source-conflicts-20261025/`，当前正式Runtime仍exact v1.15.18，v1.16.0发布事实见下。
+
+## 10/25 v1.16.0 发布记录（其后 Runtime 已切换）
+
+按 owner 交办完成 develop 整理及综合发布：PR468 已合入 main；annotated tag `v1.16.0` peeled commit `015a93ed0e63ba515d72c3764d174252da5345d9`，与冻结候选 `9be4d5388cf4a5ef3a02d58a13a4b4f43d324b25` 代码树完全相同；GitHub Release 已公开为非 draft、非 prerelease。发布树 `.worktrees/release-v1.16.0` 保持 exact tag，并放置同候选已验证 Web 构建。
+
+汇总首页持久预计算、统一历史浏览、共享建仓／清仓盈亏标签、历史箱体及已集成离线研究／执行政策、显式已结束夜盘修复入口。三份既有现场记录已提交；output 证据保留本地，未跟踪生成产物排除，tracked evidence 不变。其他数据维护工作区不覆盖、不删除。
+
+本轮扩展后端首轮4597 passed/82 skipped，3项失败已定位并定向修正／重跑；350项来源／路由／盘后等回归、11项隔离HTTP与正式历史门禁通过；冻结候选新增夜盘修复／准入109项通过。完整Web1221 passed/3 skipped、类型/build/topology、UV离线锁一致、Ruff定向、OpenSpec strict12项、secret0、diff及独立静态Review通过。跳过项未计通过，未声称全部数据库环境或自然业务验收。
+
+仅发布，未执行 migration、行情修复、通知或 Runtime promotion；正式API fresh回读仍1.15.18，现役v18发布树仍被引用而保留。新版切换前须初始化并核对正式共享目录首页投影；苏冰历史资产未全量、611自然原件、暖机／滞后和日志问题均独立保留。详见[版本说明](docs/releases/v1.16.0.md)及[Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.0)。
 
 ## 10/25 凌晨现有健康修复：闭市修复已验，下一Session自然验收待续
 
@@ -10,7 +35,7 @@
 
 六服务日志22:27恢复后再次被删，owner随后确认运行过清理工具；未改全局清理设置。新v4计划/attempt004重新正常恢复，10/25 00:08–00:09 CST连续60秒验证全部PID/FD/路径稳定，00:12再次核对通过，仍exact v18/gen23。Feed46503/Live46533/Alert46575/Reference46611/API46633/Web46651 active；原件索引/游标与Rule/Event/policy/delivery全摘要保持，0新通知。按owner接受口径，最近夜盘4批平台accepted/2批failed或unknown，不追查或补发偶发发送失败。
 
-本轮PARTIAL_NATURAL_ACCEPTANCE_PENDING：闭市可执行的数据依赖与日志修复完成；611原件缺失事实不改，历史替代及下一自然采集/H1/18:05增量待10/26。7路短有效历史继续warming_up，global degraded及672 READY/48观察滞后保留，不制造READY。详见[本轮修复记录](docs/tasks/runtime-data-health-recovery-20261024.md)。
+本轮PARTIAL_NATURAL_ACCEPTANCE_PENDING：闭市已验证数据依赖和日志修复完成；611对应独立夜盘1m/60m历史已由并行任务修复，本轮另补11合约5m/15m/30m共33分区（873Bar，0下载），正式v18独立读回33/33完整物理prefix；累计本轮242发布/33请求。611原件缺失事实不改，下一自然采集/H1/18:05增量待10/26。7路短有效历史继续warming_up，global degraded及672 READY/48观察滞后保留，不制造READY。详见[本轮修复记录](docs/tasks/runtime-data-health-recovery-20261024.md)。
 
 ## 10/24 苏冰历史续算/追加：前置连接失败已修复
 

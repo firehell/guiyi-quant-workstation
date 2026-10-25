@@ -291,18 +291,36 @@ def audit_product(
             prior_live_blocked=not live_ready,
             required="NEW_ORIGINAL_OBSERVATION_WITH_NATIVE_FRESHNESS_AND_RECOVERY_CHECKS",
         )
+    if (row["status"] == "BLOCKED" and row["history"].get("status") == "WINDOW32_VERIFIED"
+            and phase.phase.value == "CLOSED" and row["latest_complete_trading_day"] >= day):
+        from app.market_data.htdy_source_conflicts import classify_closed_difference
+
+        try:
+            row["source_conflict"] = classify_closed_difference(
+                market_read, coverage, product=product, day=day, contract=contract,
+                end=end, at=at, history=row["history"],
+            )
+            row["status"] = "CLOSED_SOURCE_REVISION_WAIT_NEW_OBSERVATION"
+            row["future_signal"].update(
+                status="WAIT_NEW_TRADING_DAY_OBSERVATION",
+                next_trading_day=row["source_conflict"]["next_trading_day"],
+                required="NEW_ORIGINAL_OBSERVATION_WITH_NATIVE_FRESHNESS_AND_RECOVERY_CHECKS",
+            )
+        except Exception as error:
+            row["source_conflict"] = {"status": "BLOCKED", "errors": safe_error(error)}
     return row
 
 
 def summarize(rows: list[dict], at: datetime) -> dict:
     """Produce an inspectable snapshot, retaining all three independent axes."""
     return {
-        "schema_version": "htdy_60m_input_admission_v1", "at": at,
+        "schema_version": "htdy_60m_input_admission_v2", "at": at,
         "readonly": True, "provider_requests": 0, "production_writes": 0,
         "product_count": len(rows), "operational_product_count": len(load_operational_products()),
         "counts": dict(Counter(row["status"] for row in rows)),
         "history_counts": dict(Counter(row["history"]["status"] for row in rows)),
         "calculation_counts": dict(Counter(row["calculation_input"]["status"] for row in rows)),
         "live_counts": dict(Counter(row["live"]["status"] for row in rows)),
+        "closed_source_difference_count": sum(row.get("source_conflict", {}).get("status") == "CLOSED_DAY_DIFFERENCE_VERIFIED" for row in rows),
         "first_seen_proven": False, "rows": rows,
     }

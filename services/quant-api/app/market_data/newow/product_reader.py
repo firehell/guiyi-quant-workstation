@@ -204,7 +204,10 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         self, request: ActualDominantTradingDayQuery
     ) -> MarketSeriesResult:
         self._check_cancelled()
-        bounded = replace(request, through=min(request.through, self._through))
+        bounded = replace(request, through=min(request.through, self._through),
+            as_of=self._as_of if request.frequency in {
+                BarFrequency.M1, BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1,
+            } else None)
         quality_query = getattr(self._market_data, "query_actual_dominant_trading_days_quality", None)
         if bounded.frequency in (BarFrequency.D1, BarFrequency.W1) and quality_query is not None:
             policy = self._quality_policies.get(ProductFrequency(bounded.frequency.value),
@@ -1218,7 +1221,12 @@ class NewowProductReader:
                 raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
             cutoff = max(window.end for window in sessions)
             if cutoff > cutoff_as_of:
-                raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+                if frequency not in {"1m", "5m", "15m", "30m", "60m"}:
+                    raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+                # A completed night can belong to a future civil trading date.
+                # Bound only completed intraday endpoints; the real read still
+                # proves Canonical coverage, quality and physical ownership.
+                cutoff = cutoff_as_of
             endpoints = self._market_data.expected_contract_replay_endpoints(
                 symbol=product,
                 contract=owner.contract,

@@ -55,7 +55,7 @@ def run(output: Path, *, at: datetime, products: tuple[str, ...]) -> dict:
     report = summarize(rows, at)
     with (output / "summary.json").open("x", encoding="utf-8") as target:
         json.dump(report, target, ensure_ascii=False, sort_keys=True, default=str)
-    columns = ("product", "status", "history", "calculation_input", "live", "missing_m1", "missing_h1", "future_signal")
+    columns = ("product", "status", "history", "calculation_input", "live", "missing_m1", "missing_h1", "source_conflict", "next_trading_day", "future_signal")
     with (output / "admission.csv").open("x", encoding="utf-8", newline="") as target:
         writer = csv.DictWriter(target, fieldnames=columns)
         writer.writeheader()
@@ -66,6 +66,8 @@ def run(output: Path, *, at: datetime, products: tuple[str, ...]) -> dict:
                 "calculation_input": row["calculation_input"]["status"],
                 "missing_m1": row["live"].get("source_1m", {}).get("missing_count"),
                 "missing_h1": row["live"].get("h1", {}).get("missing_count"),
+                "source_conflict": row.get("source_conflict", {}).get("status"),
+                "next_trading_day": row.get("source_conflict", {}).get("next_trading_day"),
                 "future_signal": row["future_signal"]["status"],
             })
     return report

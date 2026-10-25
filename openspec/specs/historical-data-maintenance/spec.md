@@ -787,7 +787,11 @@ contract identity/lifecycle, trading day, exact Session windows, expected endpoi
 and physically verified current monthly partition revisions. Apply MUST acquire the existing maintenance
 lock and recompute the exact plan before provider access. Drift MUST prevent downloads/publication.
 
-Apply SHALL fetch RQData physical 1m and derive 60m only from a complete validated same-contract source.
+Apply SHALL fetch RQData physical 1m and derive 60m by default from a complete validated same-contract source.
+For existing intraday input repair, the native request MAY explicitly select a nonempty unique subset
+of 5m/15m/30m/60m; the selected frequencies and their exact expected endpoints MUST enter the plan
+hash. All selected derivatives MUST pass source, coverage and existing-value checks before the first
+publication. D1/W1 and arbitrary periods remain forbidden; the default CLI scope remains 1m/60m.
 When a source request is needed its retained overlap MUST agree with existing Canonical values.
 Duplicates, wrong ownership, incomplete inputs or numeric conflicts MUST stop publication. Existing
 same-month Bars, quality facts and immutable old files SHALL survive publication; no scoped request may

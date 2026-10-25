@@ -328,3 +328,84 @@ def test_input_hash_normalizes_signed_zero_like_parquet(setup):
     stored = manager.store.read_catalog_partition(manager.catalog.all_partitions(KEY)[0])
     assert _source_records(stored) == _source_records(provider.bars[KEY.as_tuple()])
     assert all(r['volume'] == '0.000000000000000000' for r in _source_records(stored))
+
+
+def test_existing_canonical_night_can_fill_all_minute_derivatives_without_provider(setup):
+    from app.market_data.domain import BarFrequency
+    manager, provider = setup
+    assert apply(manager)['status'] == 'passed'
+    original = {k: manager.catalog.all_partitions(k)[0] for k in (KEY, H1)}
+    old_bytes = {k: p.file_path.read_bytes() for k, p in original.items()}
+    req = request(derived_frequencies=('5m', '15m', '30m'))
+    plan = manager.contract_session_repair(req, now=NOW)
+    assert plan['provider_request_count'] == 0
+    assert plan['missing'] == {
+        '1m': [],
+        **{f: plan['expected_derived'][f] for f in ('5m', '15m', '30m')},
+    }
+    result = apply(manager, req)
+    assert result['status'] == 'passed' and result['applied'] == 3
+    assert len(provider.calls) == 1
+    for f, count in (('5m', 24), ('15m', 8), ('30m', 4)):
+        k = DatasetKey('contract', 'jm', 'JM2509', BarFrequency(f))
+        assert len(manager.store.read_catalog_partition(manager.catalog.all_partitions(k)[0])) == count
+    assert all(p.file_path.read_bytes() == old_bytes[k] for k, p in original.items())
+    assert apply(manager, req)['applied'] == 0
+
+
+@pytest.mark.parametrize('frequencies', [(), ('1m',), ('1d',), ('1w',), ('5m', '5m')])
+def test_closed_night_derived_scope_rejects_invalid_periods(setup, frequencies):
+    manager, provider = setup
+    with pytest.raises(ValueError, match='SESSION_REPAIR_DERIVED_FREQUENCIES_INVALID'):
+        manager.contract_session_repair(request(derived_frequencies=frequencies), now=NOW)
+    assert provider.calls == []
+
+
+def test_additional_derived_value_conflict_stops_before_any_publication(setup):
+    manager, provider = setup
+    assert apply(manager)['status'] == 'passed'
+    key = DatasetKey('contract', 'jm', 'JM2509', '5m')
+    wrong = replace(bar(START + timedelta(minutes=5)), close=Decimal('100.5'))
+    manager.catalog.register_partition(manager.store.publish(PublishRequest(key, 2025, 1, (wrong,), (wrong.bar_end,))))
+    manager.catalog.session.commit()
+    result = apply(manager, request(derived_frequencies=('15m', '5m')))
+    assert result['status'] == 'failed' and result['applied'] == 0
+    assert manager.catalog.all_partitions(DatasetKey('contract', 'jm', 'JM2509', '15m')) == ()
+    assert manager.store.read_catalog_partition(manager.catalog.all_partitions(key)[0]) == (wrong,)
+    assert len(provider.calls) == 1
+
+
+def test_derived_frequency_scope_is_part_of_frozen_hash(setup):
+    manager, provider = setup
+    req = request(derived_frequencies=('5m',))
+    plan = manager.contract_session_repair(req, now=NOW)
+    with pytest.raises(ValueError, match='SESSION_REPAIR_PLAN_CHANGED'):
+        manager.contract_session_repair(request(derived_frequencies=('15m',), apply=True,
+            expected_plan_sha256=plan['plan_sha256']), now=NOW)
+    assert provider.calls == []
+
+
+def test_additional_derivative_unknown_commit_stops_later_periods(setup, monkeypatch):
+    manager, provider = setup
+    assert apply(manager)['status'] == 'passed'
+    commit = manager._commit_partition
+    attempted = []
+    def unknown(partition, target):
+        attempted.append(target.key.frequency.value)
+        if target.key.frequency.value == '15m':
+            raise StorageError('COMMIT_OUTCOME_UNKNOWN')
+        return commit(partition, target)
+    monkeypatch.setattr(manager, '_commit_partition', unknown)
+    with pytest.raises(StorageError, match='COMMIT_OUTCOME_UNKNOWN'):
+        apply(manager, request(derived_frequencies=('5m', '15m', '30m')))
+    assert attempted == ['5m', '15m']
+    assert manager.catalog.all_partitions(DatasetKey('contract', 'jm', 'JM2509', '30m')) == ()
+    assert len(provider.calls) == 1
+
+
+def test_default_scope_matches_explicit_legacy_h1_plan(setup):
+    manager, _ = setup
+    implicit = manager.contract_session_repair(request(), now=NOW)
+    explicit = manager.contract_session_repair(request(derived_frequencies=('60m',)), now=NOW)
+    assert implicit == explicit
+    assert 'derived_frequencies' not in implicit and 'expected_derived' not in implicit

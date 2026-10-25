@@ -271,7 +271,7 @@ def _iso(value):
 def _recording_status(stream, endpoint, observed):
     # A durable queue can be empty because an eligible Bar was never captured.
     # Compare source completion with actual observations, never the seed watermark.
-    if not stream.enabled or stream.health != "READY":
+    if not stream.enabled or stream.health not in {"READY", "OBSERVATION_LAGGING"}:
         return stream.health
     if endpoint.get("endpoint_status") != "READY":
         return "SOURCE_UNAVAILABLE"
@@ -282,11 +282,13 @@ def _recording_status(stream, endpoint, observed):
             return "SOURCE_UNAVAILABLE"
         start = stream.recording_start.replace(tzinfo=stream.recording_start.tzinfo or UTC)
         seen = observed.replace(tzinfo=observed.tzinfo or UTC) if observed else None
+        if stream.health == "OBSERVATION_LAGGING" and (seen is None or seen < start):
+            return "OBSERVATION_LAGGING"
         if expected >= start and (seen is None or seen < expected):
             return "OBSERVATION_LAGGING"
     except (TypeError, ValueError):
         return "SOURCE_UNAVAILABLE"
-    return stream.health
+    return "READY"
 
 
 def read_completed_recording_endpoints(session, keys, at):
