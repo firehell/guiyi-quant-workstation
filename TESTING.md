@@ -2003,6 +2003,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 /path/to/isolated/python -I tests/unit/simnow_readonly/test_readonly.py
 ```
 
-运行 `scripts/broker/simnow_readonly.py` 才会连接固定的SimNow测试前置，并要求本机TTY隐藏输入。
+运行 `scripts/broker/simnow_readonly.py` 默认连接固定的SimNow测试前置；显式 `--environment first`
+才连接固定第一套前置。两者均要求本机TTY隐藏输入，环境绑定报告身份，不自动回退。
 认证和登录各一次、四类只读查询两轮；不确认结算、不下单/撤单、不接Runtime。
 字段、失败及稳定性边界见 [账户只读合同](docs/SIMNOW_READONLY.md)。本地输出不提交Git。

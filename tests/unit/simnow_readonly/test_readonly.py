@@ -93,6 +93,39 @@ class ReadOnlyTests(unittest.TestCase):
         p.collect(gap=0, query_timeout=0)
         return p.result
 
+    def test_environment_is_explicitly_bound_to_fixed_front(self):
+        p = m.Probe(USER, "dummy-not-a-real-password", environment="first")
+        self.assertEqual(p.result["environment"], "SIMNOW_FIRST")
+        self.assertEqual(p.front, "tcp://182.254.243.31:30001")
+        self.assertEqual(p.result["front"], p.front)
+        self.assertFalse(p.result["execution_eligible"])
+
+    def test_arbitrary_environment_or_address_is_rejected(self):
+        for value in ("live", "tcp://example.invalid:1", "FIRST"):
+            with self.assertRaises(ValueError):
+                m.Probe(USER, "dummy-not-a-real-password", environment=value)
+
+    def test_first_environment_does_not_fallback_on_disconnect(self):
+        p = m.Probe(USER, "dummy-not-a-real-password", environment="first")
+        p.api = FixtureApi(p)
+        p.OnFrontDisconnected(4097)
+        p.OnFrontConnected()
+        self.assertEqual(p.api.calls, [])
+        self.assertEqual(p.result["front"], "tcp://182.254.243.31:30001")
+
+    def test_first_snapshot_does_not_claim_test_copy_or_ledger(self):
+        p = m.Probe(USER, "dummy-not-a-real-password", environment="first")
+        p.api = FixtureApi(p)
+        p.day = DAY
+        p.result["login_passed"] = True
+        result = self.collect(p)
+        self.assertEqual(result["source_scope"], "FIRST_ENVIRONMENT_READBACK")
+        self.assertFalse(result["ledger_reconciled"])
+        test = self.probe()
+        self.assertNotEqual(
+            result["account_fingerprint"], test.result["account_fingerprint"]
+        )
+
     def test_complete_empty_account_requires_all_eight_queries(self):
         p = self.probe()
         result = self.collect(p)

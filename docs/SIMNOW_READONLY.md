@@ -10,15 +10,23 @@
 不能关闭回显时直接停止；不接受命令行参数、管道、聊天记录提取或日志加载密码。
 
 ```sh
-/path/to/isolated/python -I scripts/broker/simnow_readonly.py
+/path/to/isolated/python -I scripts/broker/simnow_readonly.py --environment api-test
+# 第一套模拟环境只读验收（仅在其服务时段运行，无订单权限）
+/path/to/isolated/python -I scripts/broker/simnow_readonly.py --environment first
 ```
 
-前置固定为官网当次核实的测试环境 `tcp://182.254.243.31:40001`、BrokerID `9999`。
-默认 AppID/认证码沿用官网测试设置，不关闭终端认证。Mac SDK 登录四参数 ABI 已由前序实际登录验证；
-该 ABI 与 Linux 两参数形态不同。更换平台、SDK 或环境需要重新验证，不能仅改地址晋升。
+只支持官网当次核实的两个固定SimNow环境，BrokerID均为 `9999`：
 
-这是测试环境，账户/资金/持仓按官网说明来自第一套环境上一交易日副本。其交易日以实际登录和各行回报为准，
-不能标记为第一套环境当日账户验收。第一套环境连接及真实账户资格仍需后续独立验证。
+- `api-test`（默认）：`tcp://182.254.243.31:40001`，结果身份 `SIMNOW_API_TEST`，历史副本。
+- `first`（显式选择）：`tcp://182.254.243.31:30001`，结果身份 `SIMNOW_FIRST`，第一套环境原生读回。
+
+不接受任意前置地址或其他账户环境。断线/失败不切换环境、不重发；环境身份绑定报告及账号摘要。
+默认 AppID/认证码沿用官网测试设置，不关闭终端认证。Mac SDK 登录四参数 ABI 已由前序实际登录验证；
+该 ABI 与 Linux 两参数形态不同。更换平台、SDK需要重新验证。选择first只允许其只读验收，不能据地址改变晋升执行能力。
+
+api-test的账户/资金/持仓按官网说明来自第一套环境上一交易日副本。两个环境的交易日均以实际登录和各行回报为准，
+api-test不能标记为第一套环境当日账户验收。first必须实际完成自身登录与两轮查询才能确认读回；
+资金调整也必须以目标环境原生读回确认，不通过修改本地JSON实现。所有环境仍不具备执行资格。
 
 ## 读取合同
 
