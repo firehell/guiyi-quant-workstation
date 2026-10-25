@@ -111,6 +111,14 @@ def indicators(request: Request, stream_id: str, since: date, through: date,
     ))
 
 
+@router.get("/streams/{stream_id}/panel")
+def forward_reference_panel(request: Request, stream_id: str, since: date, through: date,
+                            cutoff: datetime | None = None):
+    from app.reference_trading.forward_panel import forward_panel
+    _keys(request, frozenset({"since", "through", "cutoff"}))
+    return _run(lambda: forward_panel(_query, stream_id, since=since, through=through, cutoff=cutoff))
+
+
 @router.get("/streams/{stream_id}/summary")
 def summary(request: Request, stream_id: str, since: date, through: date,
             cutoff: datetime | None = None,

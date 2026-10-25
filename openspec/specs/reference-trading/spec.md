@@ -936,6 +936,66 @@ completed returns. These values SHALL NOT be labeled account equity or compound 
 The cache SHALL NOT be a historical fact authority and SHALL NOT write Redis or persistent events.
 
 
+### Requirement: Retained forward reference performance panel
+
+SuBing and HTDY detail performance SHALL use only `forward_observation` retained
+reference streams. Historical replay and HTDY repainting SHALL NOT fill missing
+forward trades, summaries, curves or action labels. These are zero-cost reference
+facts, not Paper or broker fills. An absent, disabled, ambiguous or unsupported
+stream SHALL display its actual unavailable state, never a zero-performance claim.
+
+`GET /api/v1/reference-trading/streams/{stream_id}/panel` SHALL read one frozen
+snapshot for the first trade page, complete closed-trade curve and existing
+`entry_in_window_v1` summary. Collection is bounded to 10,000 records; excess,
+changed cursors/snapshots or count/sum disagreement SHALL fail closed. Decimal
+sums and drawdown use every eligible CLOSED trade, excluding initial, OPEN and
+interrupted trades. Drawdown is the maximum peak-to-trough difference of the
+cumulative percentage-point curve, not account equity drawdown or annualization.
+Curve sampling (at most 800 points) SHALL NOT recalculate statistics or join
+physical/calculation segment boundaries. GET SHALL NOT replay, build, enable,
+write production data or send notifications.
+
+The Web panel SHALL show the curve and summary together, three recent cards,
+on-demand full records and exact-snapshot pagination. It SHALL NOT download all
+signal/indicator presentation pages before displaying performance. Cached results
+are memory-only successes, bounded to 20 entries/15 seconds, partitioned by stream,
+revision, sequence, activation generation, health, strategy/product/frequency and
+window. Every refresh SHALL re-resolve the live stream before cache reuse;
+failures SHALL NOT be cached or replace another identity. Late responses and
+subscriber cancellation SHALL NOT corrupt other views. Audit events remain
+separate from reference trades and are not evidence of recipient delivery.
+
+
+The Web reference panel and its reference-source caption SHALL appear only for
+HTDY `60m`, or SuBing `15m/30m/60m/1d`. Other periods SHALL render no reference
+panel or unsupported-reference placeholder and SHALL NOT query reference streams.
+This presentation policy SHALL preserve the chart and independent signal audit.
+
+#### Scenario: SuBing 5m keeps signals without a reference panel
+
+- **WHEN** the SuBing workspace selects 5m or 1w
+- **THEN** the chart and Event audit remain available, while the reference panel and its queries are absent
+
+#### Scenario: Missing retained reference stream
+
+- **WHEN** no readable retained forward stream exists for the selected identity
+- **THEN** the panel displays the missing state without synthesizing trades or a return curve
+
+### Requirement: HTDY realtime presentation uses only 60m
+
+HTDY detail SHALL query and display realtime AlertEvent and retained forward
+reference records only at `60m`. Other periods SHALL retain their historical chart
+selection and display “实时信号统一记录于60分钟”; they SHALL NOT query realtime
+Event or reference streams. Leaving 60m SHALL invalidate outstanding Event reads
+and stop polling. Old Event and transport facts SHALL remain available for audit;
+this presentation restriction SHALL NOT delete generic API capabilities, replay
+signals, create reference streams or change SuBing behavior.
+
+#### Scenario: A legacy HTDY 15m link is opened
+
+- **WHEN** the HTDY workspace opens a 15m URL
+- **THEN** its chart remains 15m, the 60m realtime notice is shown, and no realtime Event or reference stream request is sent
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

@@ -211,3 +211,7 @@ secrets/
 # Local generated research, maintenance and browser evidence; retain on disk.
 # Tracked evidence and fixtures remain tracked.
 /output/
+
+# Regenerable workbook previews and inspection logs; keep workbooks, sources and checks.
+/outputs/01a07f08-100c-7e63-a568-e88df19d2b3d/*/*-preview.png
+/outputs/01a07f08-100c-7e63-a568-e88df19d2b3d/*/*.xlsx.inspect.ndjson

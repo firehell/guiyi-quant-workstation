@@ -29,6 +29,7 @@ import type {
   MainIndicatorId,
   SeriesKind,
 } from '@/types/market'
+import { calculateThsMacdDisplay } from '@/utils/thsMacdDisplay'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   formatChartAxisTimeInShanghai,
@@ -144,6 +145,7 @@ let volume: ISeriesApi<'Histogram'> | null = null
 let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
 let macdDea: ISeriesApi<'Line'> | null = null
+let macdCrossMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let htdyZk1: ISeriesApi<'Line'> | null = null
 let htdyZd1: ISeriesApi<'Line'> | null = null
 let htdyZd2: ISeriesApi<'Line'> | null = null
@@ -237,8 +239,10 @@ onMounted(async () => {
     priceFormat: { type: 'volume' },
   }, 1)
   macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
-  macdDif = chart.addSeries(LineSeries, { color: theme.macdDif, lineWidth: 1, lastValueVisible: false }, 2)
-  macdDea = chart.addSeries(LineSeries, { color: theme.macdDea, lineWidth: 1, lastValueVisible: false }, 2)
+  macdDif = chart.addSeries(LineSeries, { color: '#00bfcf', lineWidth: 1, lastValueVisible: false }, 2)
+  macdDea = chart.addSeries(LineSeries, { color: '#d4b000', lineWidth: 1, lastValueVisible: false }, 2)
+  macdCrossMarkers = createSeriesMarkers(macdDif)
+  macdDif.createPriceLine({ price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
   chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
@@ -526,9 +530,6 @@ function renderDerivedSeries(): void {
   const referenceOverlay = referenceIndicatorOverlay(renderedBars, props.referenceIndicators)
   if (referenceOverlay) {
     derivedData.ema.ema_21 = referenceOverlay.ema21
-    derivedData.macd.dif = referenceOverlay.dif
-    derivedData.macd.dea = referenceOverlay.dea
-    derivedData.macd.histogram = referenceOverlay.histogram
   }
   referenceLevelSeries.forEach(series => chart!.removeSeries(series))
   referenceLevelSeries = []
@@ -562,6 +563,14 @@ function renderDerivedSeries(): void {
     ribbonTime,
   )
 
+  const displayMacd = calculateThsMacdDisplay(renderedBars)
+  derivedData.macd = displayMacd
+  const displayBarByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
+  macdCrossMarkers?.setMarkers(displayMacd.crosses.map(point => ({
+    time: chartTime(displayBarByTime.get(point.time)!), position: 'atPriceMiddle' as const, price: point.value,
+    shape: 'circle' as const, size: 0, text: point.side === 'golden' ? '▲' : '▼',
+    color: point.side === 'golden' ? '#ef232a' : '#14b143',
+  })))
   macdPointCount.value = derivedData.macd.dif.filter(point => Number.isFinite(point.value)).length
   macdDif.setData(chartValues(derivedData.macd.dif))
   macdDea.setData(chartValues(derivedData.macd.dea))
@@ -731,7 +740,7 @@ defineExpose({
       data-testid="secondary-panel-label"
       :style="{ top: macdLabelTop === null ? '80%' : `${macdLabelTop + 5}px` }"
     >
-      MACD
+      MACD · MA21 金死叉
     </div>
     <div
       v-if="visibleMainIndicators.includes('htdy')"
