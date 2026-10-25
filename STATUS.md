@@ -1,6 +1,14 @@
 # 当前状态
 
-## 10/25 Runtime 已切换 v1.16.0/gen24，自然验收待发生
+## 10/25 48路闭市收尾完成：历史44已验，L4恢复，Runtime v1.16.1/gen25
+
+Owner交办当前能处理部分并明确批准发布/正式切换。33基础+11融合Canonical历史原生重建44/44完成，新进程逐项来源manifest/checkpoint/正式HTTP44/44验收通过；16组旧事实全行摘要及4组journal/index/cursor保持，Reference原PID正常恢复。33项已知纯前置刷新失败精确解决，其余74控制项保留。L四路真实观察端点已齐，修正只读健康投影，不改持久旧health或原件。
+
+PR469/main/annotated tag/Release v1.16.1 exact bc2c43dab2a8ce67038ca3998e74ac6b4a16b3c9已发布；十项身份已统一gen25。cold001在CAS后因新树缺Vite依赖导致Web启动验收超时，旧失败保留；仅离线frozen补依赖（0下载），由既有KeepAlive启动，未重复stop/install/CAS。独立final-readback-003验收全部binding/loaded/六owner/四calendar及旧Scope配置、选定forward字段和原journal一致，Web实际index=dist；60秒PID稳定、Reference cycle ready、日志FD匹配。当前Feed6228/Live6197/Alert6203/Reference6210/API6216/Web10198；旧v1.16.0已确认零引用，保留5个.run原件/SHA后按精确计划非force清理，tag/Release及其他任务树保留。
+
+正式Reference **676 READY/44 OBSERVATION_LAGGING**，L4 READY、44独立Canonical历史CURRENT；pending Capture/消费积压/PG维护占用均0，文件锁空闲。全局仍degraded，剩余44为真实观察缺失，不能靠历史计算消除；下一Session采集/H1/Event/Push及18:05增量另验，七路暖机和后置苏冰全量资产保留。1153关联回归/81明确跳过、183维护回归、exact候选339及独立Review通过。详见[48路收尾记录](docs/tasks/reference-lag-closeout-20261025.md)。
+
+## 10/25 前次Runtime切换 v1.16.0/gen24（其后已升级v1.16.1）
 
 Owner明确交办后完成全停冷切。10项身份统一 exact `v1.16.0` / `015a93ed0e63ba515d72c3764d174252da5345d9` / gen24；六常驻active且60秒PID稳定，四calendar注册且idle，Reference cycle ready已观察。正式API1.16.0，5173 index与发布dist逐字一致，正式共享首页60/60 ready。原生热切换因合同不同被拒绝，未绕过其混跑门禁；两次停机阶段中断均保留失败，以新封印精确续接，无重复stop/install。最终attempt003单次完成，旧Event/delivery/参考经济状态与原文journal/索引/游标摘要保持，pending Capture0，无补发、原件伪造或订单。
 
