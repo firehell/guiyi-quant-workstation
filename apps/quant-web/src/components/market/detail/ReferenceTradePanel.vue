@@ -1,83 +1,113 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import ReturnCurveSvg from '@/components/charts/ReturnCurveSvg.vue'
 import PerformancePanel from '../../performance/PerformancePanel.vue'
-import { computed, onBeforeUnmount, watch } from 'vue'
-import { useReferenceTrading } from '@/composables/useReferenceTrading'
-import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
-
-const props = defineProps<{
-  strategy: string
-  product: string
-  frequency: string
-  through?: string
-}>()
-const reference = useReferenceTrading()
-const throughDate = computed(() => props.through || new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-}).format(new Date()))
-const since = computed(() => {
-  const day = new Date(`${throughDate.value}T00:00:00Z`)
-  if (Number.isNaN(day.valueOf())) return throughDate.value
-  day.setUTCDate(day.getUTCDate() - 90)
-  return day.toISOString().slice(0, 10)
-})
-watch(() => [props.strategy, props.product, props.frequency, throughDate.value] as const,
-  ([strategy, product, frequency, through]) => {
-    if (!through) return
-    void reference.refresh({ strategy, product, frequency, mode: 'forward_observation' }, {
-      since: since.value, through,
-    })
-  }, { immediate: true })
+import MarketDetailDrawer from './MarketDetailDrawer.vue'
+import { useForwardReferencePanel } from '@/composables/useForwardReferencePanel'
+import { formatBeijingInstant, formatDecimalText, formatMarketDecimal } from '@/utils/marketDisplay'
+import { returnCurveLayout } from '@/utils/returnCurveLayout'
+import { newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
+import type { ReferenceTradeView } from '@/types/referenceTrading'
+const props = defineProps<{ strategy: string; product: string; frequency: string; through?: string; seriesKind?: string }>()
+const emit = defineEmits<{ focus: [identity: { barEnd: string; physicalContract: string }] }>()
+const reference = useForwardReferencePanel()
+const preset = ref<NewowReferencePreset | null>('three_months')
+const showAll = ref(false), analysis = ref(false)
+const selected = ref<string | null>(null)
+const sinceInput = ref(''), throughInput = ref('')
+const supported = computed(() => (!props.seriesKind || props.seriesKind === 'actual_dominant') && (props.strategy === 'htdy' ? ['15m','30m','60m'] : ['15m','30m','60m','1d']).includes(props.frequency))
+const through = computed(() => props.through?.slice(0, 10) ?? '')
+const window = ref({ since: '', through: '' })
+const data = reference.data
+const summary = computed(() => data.value?.summary)
+const start = computed(() => data.value?.page.stream.recording_start?.slice(0, 10))
+const rows = computed(() => showAll.value ? reference.rows.value : reference.rows.value.slice(0, 3))
+const plot = computed(() => returnCurveLayout((data.value?.curve ?? []).map(point => ({ ...point, value: Number(point.value), position: Date.parse(point.bar_end) })), {
+  headroom: 1.1, areaBaseline: 'zero', valueUnit: 'percentage_points', singlePoint: 'start',
+}))
+const invalidDates = computed(() => !sinceInput.value || !throughInput.value || sinceInput.value > throughInput.value)
+function reset() {
+  reference.dispose(); preset.value = 'three_months'; showAll.value = false; selected.value = null; analysis.value = false
+  if (!supported.value || !through.value) return
+  const chosen = newowReferenceWindow(through.value, 'three_months')
+  window.value = { since: chosen.performanceSince, through: chosen.performanceThrough }
+  sinceInput.value = window.value.since; throughInput.value = window.value.through
+  void read()
+}
+function read(force = false) { return reference.refresh({ strategy: props.strategy, product: props.product, frequency: props.frequency, mode: 'forward_observation' }, window.value, force) }
+function usePreset(value: NewowReferencePreset) {
+  if (!through.value) return
+  const chosen = newowReferenceWindow(through.value, value, start.value)
+  preset.value = value; showAll.value = false; selected.value = null
+  window.value = { since: chosen.performanceSince, through: chosen.performanceThrough }
+  sinceInput.value = window.value.since; throughInput.value = window.value.through
+  void read()
+}
+function customWindow() {
+  if (invalidDates.value) return
+  preset.value = null
+  window.value = { since: sinceInput.value, through: throughInput.value }; showAll.value = false; selected.value = null
+  void read()
+}
+const text = (value: unknown) => typeof value === 'string' ? value : null
+const pct = (value: unknown) => value == null ? '—' : `${formatDecimalText(text(value), { maximumFractionDigits: 2, signed: true })}%`
+const direction = (value: unknown) => value == null ? 'neutral' : Number(value) > 0 ? 'up' : Number(value) < 0 ? 'down' : 'neutral'
+const shortDate = (value: string | null) => value ? formatBeijingInstant(value).slice(0, 16) : '—'
+function label(row: ReferenceTradeView) { return row.status === 'OPEN' ? '持仓参考中' : row.status === 'CLOSED' ? props.frequency : '参考中断' }
+function focus(row: ReferenceTradeView) { if (typeof row.physical_contract === 'string') emit('focus', { barEnd: row.entry_bar_end, physicalContract: row.physical_contract }) }
+const cardElements = new Map<string, HTMLElement>()
+async function selectPoint(id: string) { selected.value = id; showAll.value = true; await nextTick(); cardElements.get(id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }
+function clickCurve(event: MouseEvent) {
+  const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
+  if (!rect.width || !plot.value.points.length) return
+  const x = (event.clientX - rect.left) / rect.width * 712
+  const point = plot.value.points.reduce((best, next) => Math.abs(next.x - x) < Math.abs(best.x - x) ? next : best)
+  void selectPoint(point.reference_trade_id)
+}
+watch(() => [props.strategy, props.product, props.frequency, props.seriesKind, through.value], reset, { immediate: true })
 onBeforeUnmount(reference.dispose)
 </script>
-
 <template>
-  <PerformancePanel class="reference-trade-panel" kind="实时首次事件审计" :since="since" :through="throughDate" description="零费用、零滑点 · 策略参考事实，不代表账户成交">
-    <p class="reference-trade-panel__note">零费用、零滑点的页面参考记录；不代表账户成交。</p>
-    <p v-if="reference.loading.value" role="status">读取参考记录中…</p>
-    <p v-else-if="reference.error.value" role="status">{{ reference.error.value }}</p>
-    <template v-if="reference.stream.value && reference.page.value">
-      <p role="status">
-        记录起点 {{ formatBeijingInstant(reference.stream.value.recording_start) }} ·
-        计算至 {{ formatBeijingInstant(reference.page.value.coverage?.computed_through) }} ·
-        <template v-if="reference.page.value.coverage?.observation_boundary_at">观察中断于 {{ formatBeijingInstant(reference.page.value.coverage.observation_boundary_at) }} ·</template>
-        观察连续性 {{ reference.page.value.coverage?.complete_window_proven ? '已证明' : '待核对' }} ·
-        首次事件不可被盘后重算改写；正式历史见策略历史参考
-      </p>
-      <p v-if="reference.summary.value">已平 {{ reference.summary.value.closed_count }} · 未平 {{ reference.summary.value.open_count }} · 中断 {{ reference.summary.value.interrupted_count }} · 窗口初始 {{ reference.summary.value.initial_count }}</p>
-      <section v-if="reference.signals.value.length" aria-label="首次观察记录">
-        <h3>首次观察记录</h3>
-        <ul>
-          <li v-for="(signal, index) in reference.signals.value" :key="index">
-            {{ formatBeijingInstant(String(signal.value.observed_at ?? '')) }} ·
-            {{ Array.isArray(signal.value.observation_types) && signal.value.observation_types.length ? signal.value.observation_types.join(' / ') : String(signal.value.direction ?? '首次观察') }} ·
-            {{ formatBeijingInstant(String(signal.value.bar_end ?? '')) }}
-          </li>
-        </ul>
-      </section>
-      <div class="reference-trade-panel__table"><table>
-        <thead><tr><th>方向 / 状态</th><th>合约</th><th>开仓参考</th><th>平仓参考</th><th>收益</th></tr></thead>
-        <tbody><tr v-for="trade in reference.page.value.items" :key="trade.reference_trade_id">
-          <td>{{ trade.side === 'LONG' ? '多' : '空' }} · {{ trade.status }}</td>
-          <td>{{ trade.physical_contract }}</td>
-          <td>{{ formatMarketDecimal(trade.entry_reference_price) }}<small>{{ formatBeijingInstant(trade.entry_bar_end) }}</small></td>
-          <td>{{ formatMarketDecimal(trade.exit_reference_price) }}<small>{{ formatBeijingInstant(trade.exit_bar_end) }}</small></td>
-          <td>{{ trade.reference_return === null ? '—' : `${trade.reference_return}%` }}</td>
-        </tr></tbody>
-      </table></div>
-      <p v-if="!reference.page.value.items.length">所选窗口暂无参考交易。</p>
-      <p v-if="reference.capped.value" role="status">已达到本页显示容量，尚未读取完整历史；请缩小日期窗口。</p>
-      <button v-if="reference.page.value.next_cursor && !reference.capped.value" type="button" :disabled="reference.loading.value" @click="reference.loadMore()">加载更多</button>
-    </template>
-  </PerformancePanel>
+  <section class="newow-reference forward-reference" aria-label="实时参考收益与记录" :aria-busy="reference.loading.value" data-reference-mode="forward_observation">
+    <PerformancePanel kind="实时留存参考交易" :show-details="false" :loading="reference.loading.value" :error="reference.error.value">
+      <template #header><header class="newow-reference__returns-heading"><h3>实时参考收益走势</h3><button type="button" @click="analysis = true">收益分析 ›</button></header></template>
+      <nav class="newow-reference__presets" aria-label="实时参考统计快捷窗口">
+        <button v-for="entry in ([['three_months','近3月'],['one_year','近1年'],['ytd','今年'],['all','全部']] as const)" :key="entry[0]" type="button" :disabled="reference.loading.value || !supported || !through || (entry[0] === 'all' && !start)" :aria-pressed="preset === entry[0]" @click="usePreset(entry[0])">{{ entry[1] }}</button>
+      </nav>
+      <p v-if="!supported" role="status">此周期或序列尚不支持实时留存参考交易。</p>
+      <p v-else-if="!through" role="status">等待已确认行情的交易日，暂不推算统计窗口。</p>
+      <p v-if="reference.error.value"><button type="button" :disabled="reference.loading.value" @click="read(true)">重新读取</button></p>
+      <div v-if="data && plot.points.length" class="newow-reference__curve">
+        <ReturnCurveSvg :plot="plot" label="已完成实时参考交易累计收益曲线，点击或按回车定位记录" area zero-line @select="index => selectPoint(plot.points[index]!.reference_trade_id)" @click="clickCurve" />
+        <p class="forward-reference__note">曲线 {{ data.curve.length }} / {{ data.total_curve_points }} 个已平参考点；统计按完整结果计算。</p>
+      </div>
+      <p v-else-if="data" class="forward-reference__empty">所选窗口暂无已完成实时参考交易；不以历史重算补齐曲线。</p>
+      <p v-if="plot.message" role="status">{{ plot.message }}</p>
+      <section v-if="summary" class="newow-reference__summary"><dl class="newow-reference__metrics">
+        <div><dt>累计参考收益</dt><dd :data-direction="direction(summary.sum_return_percentage_points)">{{ summary.closed_count ? formatDecimalText(summary.sum_return_percentage_points, { maximumFractionDigits: 2, signed: true }) + ' 百分点' : '—' }}</dd></div>
+        <div><dt>参考胜率</dt><dd>{{ summary.win_rate_pct === null ? '—' : formatDecimalText(summary.win_rate_pct, { maximumFractionDigits: 1 }) + '%' }}</dd></div>
+        <div><dt>累计百分点回撤</dt><dd class="newow-reference__drawdown">{{ data?.drawdown_percentage_points == null ? '—' : formatDecimalText(data.drawdown_percentage_points, { maximumFractionDigits: 2 }) + ' 百分点' }}</dd></div>
+        <div><dt>已完成参考交易</dt><dd>{{ summary.closed_count }}</dd></div>
+      </dl></section>
+      <header class="newow-reference__records-heading"><h3>实时留存参考记录</h3><span>首次记录 · 零费用／零滑点 · 非账户成交</span></header>
+      <div class="newow-reference__cards"><article v-for="row in rows" :key="row.reference_trade_id" :ref="el => { if (el) cardElements.set(row.reference_trade_id, el as HTMLElement); else cardElements.delete(row.reference_trade_id) }" class="newow-reference__card" :class="{ 'forward-reference__selected': selected === row.reference_trade_id }">
+        <header class="newow-reference__record-top"><div class="newow-reference__record-meta"><strong class="newow-reference__period" :class="{ 'is-open': row.status === 'OPEN', 'is-interrupted': !['OPEN','CLOSED'].includes(row.status) }">{{ label(row) }}</strong><span>{{ row.side === 'LONG' ? '多' : '空' }} · {{ row.physical_contract }}</span><span v-if="row.entry_trading_day < window.since">窗口初始</span></div><strong class="newow-reference__record-return" :data-direction="direction(row.status === 'CLOSED' ? row.reference_return : row.mark_return)">{{ row.status === 'CLOSED' ? '盈亏 ' + pct(row.reference_return) : row.status === 'OPEN' ? '参考浮动 ' + pct(row.mark_return) : '中断 · 未计收益' }}</strong></header>
+        <div class="newow-reference__record-line"><span><b class="newow-reference__entry">建仓</b>参考 {{ formatMarketDecimal(row.entry_reference_price) }}</span><time>{{ shortDate(row.entry_bar_end) }}</time></div>
+        <div class="newow-reference__record-line"><span><b :class="row.status === 'CLOSED' ? 'newow-reference__exit' : 'newow-reference__valuation'">{{ row.status === 'CLOSED' ? '清仓' : '估值' }}</b>参考 {{ formatMarketDecimal(row.status === 'CLOSED' ? row.exit_reference_price : text(row.mark_reference_price)) }}</span><time>{{ shortDate(row.status === 'CLOSED' ? row.exit_bar_end : text(row.mark_bar_end)) }}</time></div>
+        <button type="button" class="forward-reference__focus" @click="focus(row)">定位图表</button>
+      </article></div>
+      <p v-if="data && !rows.length" role="status">所选窗口暂无实时留存参考记录。</p>
+      <p v-if="selected && !reference.rows.value.some(row => row.reference_trade_id === selected)" role="status">该收益点对应较早记录，请读取更多后查看。</p>
+      <p v-if="data" class="newow-reference__record-count">{{ showAll ? `已显示 ${rows.length} 笔参考记录` : '仅展示最近 3 笔参考记录' }}</p>
+      <div v-if="data && reference.rows.value.length > 3 && !showAll" class="newow-reference__view-all"><button type="button" @click="showAll = true">查看全部</button></div>
+      <button v-if="showAll && reference.hasMore() && !reference.capped.value" type="button" :disabled="reference.moreLoading.value" @click="reference.loadMore()">{{ reference.moreLoading.value ? '读取中…' : '读取更多参考记录' }}</button>
+      <p v-if="reference.moreError.value" role="alert">{{ reference.moreError.value }} <button type="button" @click="read(true)">重新读取</button></p><p v-if="reference.capped.value" role="status">已达展示容量，请缩小日期窗口。</p>
+      <details v-if="data" class="forward-reference__note"><summary>记录范围与来源</summary><p>{{ window.since }} → {{ window.through }} · 首次记录起点 {{ formatBeijingInstant(data.page.stream.recording_start) }} · 计算至 {{ formatBeijingInstant(data.page.coverage?.computed_through) }}</p><p>观察连续性：{{ data.page.coverage?.complete_window_proven ? '已证明' : '待核对，不能视为完整运行记录' }}。未平 {{ summary?.open_count }} · 中断 {{ summary?.interrupted_count }} · 窗口初始 {{ summary?.initial_count }}；均不计入已平累计。百分点之和不是账户复利收益，不折算年化。</p></details>
+    </PerformancePanel>
+    <MarketDetailDrawer :open="analysis" title="实时参考收益分析" @close="analysis = false"><p>仅统计首次实时留存参考交易；不包含盘后重算、火天大有重绘、Paper 或真实账户成交。</p><p>按入场交易日窗口统计已完成记录。累计为收益百分比之和；回撤为累计百分点曲线的峰谷差，非账户权益回撤。曲线可能采样，统计使用完整结果。</p><form class="forward-reference__dates" @submit.prevent="customWindow"><label>开始交易日<input v-model="sinceInput" type="date" aria-label="实时参考开始交易日" /></label><label>结束交易日<input v-model="throughInput" type="date" aria-label="实时参考结束交易日" /></label><button type="submit" :disabled="invalidDates || reference.loading.value || !supported">读取参考</button></form><p v-if="invalidDates" role="alert">请选择有效的开始／结束交易日。</p></MarketDetailDrawer>
+  </section>
 </template>
-
+<style scoped src="./newow/newowReferencePanel.css"></style>
 <style scoped>
-.reference-trade-panel { border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); padding: var(--gy-space-3); background: var(--gy-bg-panel); }
-header, nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gy-space-2); }
-header { justify-content: space-between; } h2 { font-size: 1rem; margin: 0; }
-button { cursor: pointer; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: var(--gy-bg-panel); padding: 0.35rem 0.65rem; }
-button[aria-pressed="true"] { font-weight: 700; }
-.reference-trade-panel__note { color: var(--gy-text-muted); font-size: 0.85rem; }
-.reference-trade-panel__table { overflow-x: auto; } table { width: 100%; border-collapse: collapse; min-width: 580px; }
-th, td { padding: 0.5rem; border-bottom: 1px solid var(--gy-border); text-align: left; } small { display: block; color: var(--gy-text-muted); }
+.forward-reference{min-width:0}.forward-reference :deep(.performance-panel){border:0;padding:16px 14px;background:transparent}.forward-reference__empty{min-height:150px;display:grid;place-items:center;color:var(--gy-text-muted);font-size:13px}.forward-reference__note{font-size:11px;color:var(--gy-text-muted);line-height:1.7}.forward-reference__selected{outline:2px solid var(--gy-accent)}.forward-reference__focus{font-size:11px;min-height:28px;margin-top:6px}.forward-reference__dates{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.forward-reference__dates label{display:grid;gap:5px}.forward-reference__dates input{max-width:180px}
 </style>

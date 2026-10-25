@@ -2024,3 +2024,14 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 资金初始基线生效验收可在first读取时成对提供 `--expected-balance 100000 --not-before-trading-day 20261027`，
 日期取自本次官网受理回执。验收单独报告，不改变原查询状态或执行权限；旧交易日、测试副本和部分结果不能通过。
+
+## 苏冰／HTDY 实时留存参考收益面板
+
+```sh
+services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/reference_trading/test_forward_panel.py services/quant-api/tests/reference_trading/test_forward_query.py services/quant-api/tests/reference_trading/test_api.py
+node --test apps/quant-web/tests/forwardPanelCache.test.ts apps/quant-web/tests/useForwardReferencePanel.test.ts apps/quant-web/tests/retainedReferenceFocus.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-reference.spec.mjs --workers=1
+```
+
+浏览器用隔离fixture验 UI、三笔卡片、延迟分页、移动端与缺失状态，不代表实际运行收益。
+真实页面只读 `forward_observation`；缺少留存流时不以历史重算／重绘补齐。

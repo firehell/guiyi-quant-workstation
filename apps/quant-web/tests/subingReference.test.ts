@@ -67,11 +67,11 @@ test('reference indicator rendering preserves warmup nulls as chart whitespace',
   assert.match(chart, /\{ time: chartTime\(bar\) \}/)
 })
 
-test('daily quality breaks use an independent marker identity and whitespace anchor', () => {
+test('retained-only workspace excludes historical quality overlays while chart keeps whitespace support', () => {
   const workspace = readFileSync(new URL('../src/components/market/detail/subing/SubingDetailWorkspace.vue', import.meta.url), 'utf8')
   const chart = readFileSync(new URL('../src/components/kline/KlineChart.vue', import.meta.url), 'utf8')
-  assert.match(workspace, /subing-d1-quality:/)
-  assert.match(workspace, /:quality-breaks="qualityBreaks"/)
+  assert.doesNotMatch(workspace, /useSubingReference|useHistoricalSignalRanges/)
+  assert.match(workspace, /:quality-breaks="\[\]"/)
   assert.match(chart, /props\.qualityBreaks/)
   assert.match(chart, /values\.push\(\{ time \}\)/)
   assert.match(chart, /occupied\.add\(key\)/)

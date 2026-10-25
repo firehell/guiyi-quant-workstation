@@ -92,3 +92,9 @@ export async function getNewowRecordingRecords(streamId: string, window: Referen
   if (signals.snapshot !== snapshot || states.snapshot !== snapshot || signals.revision_id !== states.revision_id || signals.seq !== states.seq) throw new Error('SNAPSHOT_CONFLICT')
   return { signals, states }
 }
+
+export async function getForwardReferencePanel(streamId: string, window: ReferenceWindow, options: ReferenceRequestOptions = {}) {
+  return transport(options)(`/reference-trading/streams/${encodeURIComponent(streamId)}/panel`, {
+    params: { since: window.since, through: window.through, ...(window.cutoff ? { cutoff: window.cutoff } : {}) }, signal: options.signal,
+  }) as Promise<import('../types/referenceTrading.ts').ForwardReferencePanel>
+}
