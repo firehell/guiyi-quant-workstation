@@ -427,6 +427,16 @@ not proof that Redis contains the Bar. When the expected endpoint is on or after
 and actual observed progress is behind, READY SHALL be replaced by OBSERVATION_LAGGING;
 a historical seed or empty capture queue SHALL NOT prove observation completeness.
 Unproved endpoint authority SHALL be SOURCE_UNAVAILABLE. Health SHALL remain read-only.
+A persisted OBSERVATION_LAGGING status SHALL be reassessed from the same actual post-start
+observation watermark: if it reaches the authoritative expected endpoint, its read projection
+may return READY without rewriting stored health. Seed and interruption-only watermarks SHALL
+NOT clear lag; other persisted failure states and conflict/quarantine/warm-up precedence remain.
+
+Historical intraday input estimation and MDS reads SHALL honor the exact aware as_of cutoff
+inside the authoritative trading-day Session window, including a completed Friday night owned
+by Monday. The default trading-day query remains full-day; D1/W1 SHALL NOT accept this intraday
+cutoff. Missing completed endpoints still fail; future Sessions SHALL NOT be required merely
+because their trading-day identity matches. No historical replay becomes a natural observation.
 
 #### Scenario: A completed night terminal Bar is processed after the Session closes
 - **GIVEN** the actual night trading day, rank1 physical owner and saved completed 23:00 Bar are proven

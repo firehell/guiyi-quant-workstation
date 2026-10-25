@@ -1430,3 +1430,61 @@ def test_reader_retains_authoritative_batch_session_windows(product_cases, monke
     monkeypatch.setattr(fake, 'session_windows', forbidden)
     assert reader.load(query, fake.as_of) == expected
     assert len(calls) == 1
+
+
+def test_historical_bound_uses_completed_night_not_future_day_session(monkeypatch):
+    from types import SimpleNamespace
+    night_end = datetime(2026, 10, 23, 17, tzinfo=UTC)
+    day = date(2026, 10, 26)
+    owner = ResolvedContractSegment('AL2612', day, day)
+    calls = []
+    class Market:
+        def session_windows(self, **kwargs):
+            return (SessionWindow(night_end-timedelta(hours=4), night_end),
+                    SessionWindow(datetime(2026,10,26,1,tzinfo=UTC),datetime(2026,10,26,7,tzinfo=UTC)))
+        def expected_contract_replay_endpoints(self, **kwargs):
+            calls.append(kwargs)
+            return (night_end-timedelta(hours=1), night_end)
+    reader = NewowProductReader(Market(), coverage=SimpleNamespace(), active_products=('al',),
+        now=lambda: night_end+timedelta(days=1))
+    monkeypatch.setattr(reader, 'dependency_owners', lambda *args: (owner,))
+    assert reader.historical_input_bound(product='al',frequency='60m',since=day,through=day,as_of=night_end) == (5, 5*4096)
+    assert calls[0]['cutoff'] == night_end
+    assert calls[0]['trading_day'] == day
+
+
+@pytest.mark.parametrize('offset_minutes,expected_hours', [(-30,3),(0,4),(60,4)])
+def test_historical_bound_counts_only_mds_completed_endpoints(monkeypatch,offset_minutes,expected_hours):
+    from types import SimpleNamespace
+    from app.market_data.aggregation import expected_intraday_ends
+    end=datetime(2026,10,23,17,tzinfo=UTC)
+    day=date(2026,10,26)
+    sessions=(SessionWindow(end-timedelta(hours=4),end),SessionWindow(datetime(2026,10,26,1,tzinfo=UTC),datetime(2026,10,26,7,tzinfo=UTC)))
+    class Market:
+        def session_windows(self, **kwargs): return sessions
+        def expected_contract_replay_endpoints(self, **kwargs):
+            return tuple(t for t in expected_intraday_ends(sessions,BarFrequency.H1) if t<=kwargs['cutoff'])
+    reader=NewowProductReader(Market(),coverage=SimpleNamespace(),active_products=('al',))
+    monkeypatch.setattr(reader,'dependency_owners',lambda *args:(ResolvedContractSegment('AL2612',day,day),))
+    count,_=reader.historical_input_bound(product='al',frequency='60m',since=day,through=day,as_of=end+timedelta(minutes=offset_minutes))
+    assert count==expected_hours*2+1
+
+
+def test_historical_bound_keeps_all_prior_owners(monkeypatch):
+    from types import SimpleNamespace
+    end=datetime(2026,10,23,17,tzinfo=UTC)
+    first=date(2026,10,23)
+    last=date(2026,10,26)
+    calls=[]
+    class Market:
+        def session_windows(self,**kwargs):
+            stop=end-timedelta(hours=10) if kwargs['trading_day']==first else end+timedelta(days=3)
+            return (SessionWindow(stop-timedelta(hours=4),stop),)
+        def expected_contract_replay_endpoints(self,**kwargs):
+            calls.append(kwargs)
+            return tuple(range(10 if kwargs['contract']=='AL2611' else 4))
+    reader=NewowProductReader(Market(),coverage=SimpleNamespace(),active_products=('al',))
+    monkeypatch.setattr(reader,'dependency_owners',lambda *args:(ResolvedContractSegment('AL2611',first,first),ResolvedContractSegment('AL2612',last,last)))
+    count,_=reader.historical_input_bound(product='al',frequency='60m',since=first,through=last,as_of=end)
+    assert count==30 and len(calls)==2
+    assert calls[0]['cutoff']==end-timedelta(hours=10) and calls[1]['cutoff']==end

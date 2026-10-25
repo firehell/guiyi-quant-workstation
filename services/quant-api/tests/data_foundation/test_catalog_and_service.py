@@ -3069,3 +3069,40 @@ def test_market_session_batch_matches_day_authority_and_does_not_survive_updates
     changed = market.session_windows_overlapping_window(symbol='pd', start=start, end=end)
     assert changed != values
     assert all(windows[-1].end.hour == 6 for _, windows in changed)
+
+
+def test_actual_day_asof_reads_complete_night_without_requiring_future_day(session,tmp_path):
+    session.scalar(select(TradingSession)).end_time=time(9,5)
+    session.add_all([
+        TradingCalendar(exchange_code='DCE',trade_date=date(2025,1,3),is_trading_day=True),
+        TradingCalendar(exchange_code='DCE',trade_date=date(2025,1,6),is_trading_day=True),
+        TradingSession(exchange_code='DCE',instrument_symbol='jm',session_name='night',
+            start_time=time(21),end_time=time(21,5),effective_from=date(2025,1,6),is_active=True),
+    ])
+    catalog=MarketCatalog(session,tmp_path)
+    store=CanonicalMonthlyStore(tmp_path)
+    catalog.upsert_main_contracts((('jm',date(2025,1,6),'JM2509'),))
+    bars=tuple(replace(_bar(6,100),bar_end=datetime(2025,1,3,13,m,tzinfo=UTC)) for m in range(1,6))
+    _publish(catalog,store,DatasetKey('contract','jm','JM2509','1m'),bars)
+    session.commit()
+    market=MarketDataService(catalog,store)
+    cutoff=bars[-1].bar_end
+    result=market.query_actual_dominant_trading_days(ActualDominantTradingDayQuery(
+        'jm','1m',date(2025,1,6),date(2025,1,6),as_of=cutoff))
+    assert result.bars==bars and result.request_identity['end']==cutoff.isoformat()
+    assert result.requested_trading_day_window==(date(2025,1,6),date(2025,1,6))
+    with pytest.raises(MarketDataError,match='MAPPED_CONTRACT_DATASET_MISSING'):
+        market.query_actual_dominant_trading_days(ActualDominantTradingDayQuery(
+            'jm','1m',date(2025,1,6),date(2025,1,6)))
+    # A genuinely missing completed minute still fails within the cutoff.
+    _publish(catalog,store,DatasetKey('contract','jm','JM2509','1m'),(bars[0],*bars[2:]))
+    session.commit()
+    with pytest.raises(MarketDataError,match='MAPPED_CONTRACT_DATASET_MISSING'):
+        market.query_actual_dominant_trading_days(ActualDominantTradingDayQuery(
+            'jm','1m',date(2025,1,6),date(2025,1,6),as_of=cutoff))
+
+
+@pytest.mark.parametrize('frequency,cutoff', [('1d',datetime(2025,1,6,7,tzinfo=UTC)),('1m',datetime(2025,1,6,7))])
+def test_actual_day_asof_rejects_nonintraday_or_naive_cutoff(frequency,cutoff):
+    with pytest.raises(ValueError):
+        ActualDominantTradingDayQuery('jm',frequency,date(2025,1,6),date(2025,1,6),as_of=cutoff)

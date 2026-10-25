@@ -230,3 +230,58 @@ def test_health_pending_warmup_is_key_presence_even_with_json_null(value):
         seed = session.query(ReferenceBatch).filter_by(revision_id=revision, kind='seed_seal').one()
         seed.dependency_manifest = {**seed.dependency_manifest, PENDING_MANIFEST: value}
     assert ForwardReferenceHealth(factory).read()['streams'][0]['status'] == 'PENDING_WARMUP'
+
+
+@pytest.mark.parametrize('delta,want', [(0,'READY'), (1,'OBSERVATION_LAGGING')])
+def test_persisted_lag_is_reassessed_only_from_actual_observation_endpoint(delta, want):
+    from types import SimpleNamespace
+    from datetime import datetime,UTC,timedelta
+    from app.reference_trading.health import _recording_status
+    end = datetime(2026,10,23,15,tzinfo=UTC)
+    stream = SimpleNamespace(enabled=True,health='OBSERVATION_LAGGING',recording_start=end-timedelta(days=1))
+    endpoint = {'endpoint_status':'READY','expected_through':(end+timedelta(hours=delta)).isoformat()}
+    assert _recording_status(stream,endpoint,end) == want
+    assert stream.health == 'OBSERVATION_LAGGING'
+    assert _recording_status(stream,endpoint,None) == 'OBSERVATION_LAGGING'
+
+
+@pytest.mark.parametrize('kind,key,observed,want', [
+    ('calculation','forward:actual',True,'READY'),
+    ('calculation','forward:observation-gap:repair',True,'OBSERVATION_LAGGING'),
+    ('seed_seal','seed:only',False,'OBSERVATION_LAGGING'),
+])
+def test_lag_projection_needs_real_post_start_calculation(kind,key,observed,want):
+    from datetime import timedelta
+    from test_activation import NOW
+    from app.reference_trading.models import ReferenceStream,ReferenceBatch
+    factory,identity,revision,_ = _active()
+    end = NOW+timedelta(seconds=2)
+    with factory.begin() as session:
+        stream = session.get(ReferenceStream,identity.stream_id)
+        stream.strategy_code='newow_trend'
+        stream.frequency='60m'
+        stream.health='OBSERVATION_LAGGING'
+        batch = session.query(ReferenceBatch).filter_by(revision_id=revision,kind='seed_seal').one()
+        batch.kind=kind
+        batch.batch_key=key
+        batch.computed_through=end
+        batch.observed_at=end if observed else None
+    def endpoints(session,keys,at):
+        return {k:{'expected_through':end.isoformat(),'expected_source':'completed_live','endpoint_status':'READY'} for k in keys}
+    item=ForwardReferenceHealth(factory,endpoint_reader=endpoints,now=lambda:end).read()['streams'][0]
+    assert item['status']==want
+    with factory() as session:
+        assert session.get(ReferenceStream,identity.stream_id).health=='OBSERVATION_LAGGING'
+
+
+@pytest.mark.parametrize('health,endpoint,want', [
+    ('DATA_CONFLICT',{'endpoint_status':'READY'},'DATA_CONFLICT'),
+    ('OBSERVATION_LAGGING',{'endpoint_status':'UNKNOWN'},'SOURCE_UNAVAILABLE'),
+])
+def test_lag_projection_preserves_failure_gates(health,endpoint,want):
+    from types import SimpleNamespace
+    from datetime import datetime,UTC
+    from app.reference_trading.health import _recording_status
+    end=datetime(2026,10,23,15,tzinfo=UTC)
+    stream=SimpleNamespace(enabled=True,health=health,recording_start=end)
+    assert _recording_status(stream,endpoint,end)==want

@@ -318,6 +318,7 @@ class ActualDominantTradingDayQuery:
     frequency: BarFrequency
     since: date
     through: date
+    as_of: datetime | None = None
 
     def __post_init__(self) -> None:
         symbol = _text(self.symbol, field="symbol")
@@ -330,6 +331,12 @@ class ActualDominantTradingDayQuery:
             or self.since > self.through
         ):
             raise ContractError(field="trading_day_window", reason="invalid")
+        if self.as_of is not None:
+            if frequency not in INTRADAY_FREQUENCIES:
+                raise ContractError(field="as_of", reason="intraday_only")
+            if not isinstance(self.as_of, datetime) or self.as_of.tzinfo is None or self.as_of.utcoffset() is None:
+                raise ContractError(field="as_of", reason="timezone_required")
+            object.__setattr__(self, "as_of", self.as_of.astimezone(UTC))
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "frequency", frequency)
 
