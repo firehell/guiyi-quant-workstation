@@ -117,6 +117,7 @@ def run(gateway, tdapi, config, root):
     host = None
     folder = None
     result = None
+    monitor = None
     try:
         # All startup dependencies are native/authoritative reads; no default settlement write.
         first = read_snapshot(gateway.snapshot(), now=now())
@@ -273,6 +274,29 @@ def run(gateway, tdapi, config, root):
             run_id=uuid.uuid4().hex,
             deadline=deadline,
         )
+        from guiyi_quant.simnow_execution.monitor import MonitorPublisher
+
+        monitor = MonitorPublisher(
+            folder.parent, snapshot.account_id, host.run_id, config.product.upper()
+        )
+
+        def monitor_progress(status="READING", connection=None):
+            # Observer errors are deliberately outside execution/account transactions.
+            try:
+                current = store.current()
+                monitor.publish(
+                    status,
+                    now(),
+                    connection=connection
+                    or ("DISCONNECTED" if gateway.failed else "LOGGED_IN"),
+                    native_source_id=current.readback.source_id,
+                    ledger_hash=digest(current),
+                )
+            except Exception:
+                monitor.failed = True
+
+        gateway.monitor_progress = monitor_progress
+        monitor_progress("STARTING")
         market.activate(now())
         while now() < deadline and not gateway.failed:
             report = gateway.snapshot()
@@ -345,6 +369,7 @@ def run(gateway, tdapi, config, root):
                 )
             adapter.drain()
             outcomes = host.tick(tuple(execution), tuple(bindings), now())
+            monitor_progress("ACTIVE")
             if any(
                 v in ("SEND_OUTCOME_UNKNOWN", "NOT_ACCEPTED_RECONCILE_REQUIRED")
                 for v in outcomes
@@ -447,6 +472,17 @@ def run(gateway, tdapi, config, root):
             except Exception:
                 if result is not None:
                     result["status"] = "CONTROLLED_RUN_REQUIRES_RECOVERY"
+        if monitor is not None:
+            monitor_progress(
+                "ERROR"
+                if gateway.failed or result and result.get("error_code")
+                else "STOPPED",
+                "RELEASED",
+            )
+            if result is not None:
+                result["monitor_status"] = (
+                    "unavailable" if monitor.failed else "published"
+                )
         market.close()
         for value in (evidence, journal, store):
             if value is not None:

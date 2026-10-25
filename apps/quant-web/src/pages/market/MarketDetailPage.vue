@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { saveMarketHomeTab, type MarketHomeTab } from '@/utils/marketHomeTab'
 import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
 import { useDetailPricePreview } from '@/composables/useDetailPricePreview'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -242,9 +243,9 @@ function goBack() {
   void router.push('/market')
 }
 
-function goHome(tab: 'market' | 'messages') {
+function goHome(tab: MarketHomeTab) {
   if (typeof window !== 'undefined') {
-    try { sessionStorage.setItem('guiyi.market-home.tab.v1', tab) } catch {}
+    saveMarketHomeTab(tab)
   }
   void router.push('/market')
 }
@@ -261,7 +262,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 
 <template>
   <main class="market-detail-page unified-detail-light" :data-detail-ready="shellReady ? 'true' : 'false'">
-    <MarketNavigation @market="goHome('market')" @messages="goHome('messages')">
+    <MarketNavigation @market="goHome('market')" @messages="goHome('messages')" @simnow="goHome('simnow')">
       <template #search>
         <ProductSelector
           ref="productSelector"

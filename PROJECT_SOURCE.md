@@ -151,3 +151,5 @@ Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N St
 独立交互式CLI支持固定SimNow测试环境及显式选择的第一套模拟环境认证、登录与资金/持仓/委托/成交两轮只读核验。
 本地快照与HTDY执行政策、Paper模型、页面参考收益保持独立；没有订单、账户管理、账本对账或持续Broker Runtime，
 不改变 `auto_order=false`。第一套模拟环境另验，合同见 [SIMNOW_READONLY](docs/SIMNOW_READONLY.md)。
+
+首页导航增加“模拟交易”：只读展示本地原生账户走势、持仓、执行链与待核事项，不提供交易操作。账户口径独立于策略参考收益，未接入或证据不足时明确待验。详见 [SimNow执行合同](docs/SIMNOW_EXECUTION.md)。
