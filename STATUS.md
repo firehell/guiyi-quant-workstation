@@ -1,39 +1,33 @@
 # 当前状态
 
-本页保留最新已记录的交付、运行身份与未关闭事项；**本次精简没有重新探测生产现场**。
+本页以10/26 v1.16.7的实际读回为最新运行事实；下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
-## 10/26 v1.16.6切换未CAS，原态已恢复，v1.16.7部署修复候选
+## 10/26 v1.16.7已发布，十服务统一gen29，唯一发布树保留
 
-v1.16.6经PR482正式发布，exact `c3e21cf058916271e4a29b3b205479bbf5415a64`。正式plan `52190cfec1f962fcb50729f863948e1bc2374159d00d24ddbf11b0c60415c4c1`完成六服务预热，但首个Feed异步bootout尚未消失即被错误判失败，恢复检查也落在teardown中间态。
-没有提交新registry；原attempt保持restore_unknown原字节。逐项读回证实原registry/SHA/十份plist不变，九项原loaded；旧Feed6228退出、label缺席、owner锁空闲后，经独立有限恢复Review仅bootstrap原v1.16.1/gen25 Feed一次，PID47191及heartbeat可用。
-十项原loaded与API1.16.4/Web原dist随后独立核对；新只读恢复证明已真实通过，identity SHA `ac3b9637dfb43a8f410a9726abc1535990fef686c5f8c4071947776a9c221dfe`。不把动态ready或闭市空闲当自然验收。
-候选1.16.7仅修异步等待并补精确pre-CAS恢复审计checkpoint，默认expired apply/postCAS unknown禁执行不变；旧attempt保全，恢复receipt与后续新计划分开。组合部署231 passed/0 skipped、独立终审70 passed、OpenSpec12/12、Ruff/secret0及新现场只读proof通过；发布、checkpoint、新计划和统一切换尚待执行，所有旧树因仍有引用暂保留。
+RELEASED / 十服务切换与生命周期读回完成；**自然业务验收仍pending，不声明整体RUNTIME_READY**。
+PR483/main/annotated `v1.16.7` exact `44de0c4a8f7208a5da71b9c0b4ce26c0249b14fa`，与已测试候选完整树相同，[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.7)已公开。
+正式十项均绑定 `.worktrees/release-v1.16.7` / exact commit / gen29，Scope、启用、日历、配置哈希保持。
 
-## 10/26 v1.16.5已发布，整组切换停在预检，向前修复候选1.16.6
+- 常驻PID：API56434、Web56441、Feed57330、Live56417、Alert56422、Reference56428；三次读回稳定307秒，旧树清理后第四次仍相同（1523秒）。
+- 四项日历仅注册、无PID，RunAtLoad/KeepAlive=false；未手动触发业务。
+- actual API与Web代理均返回1.16.7，Web字节与发布dist一致；十项deployment identity全部matched，消费边界未回退。
+- 正式SimNow监控返回not_connected，未连接Broker/创建账户/下单，auto_order=false。
+- 闭市Alert420路中413完成计算，7路保留warming：BZ/EC/PD/PL/PR周线及RS日线/周线；不计入calculated或自然信号就绪。首根自然completed Bar、Event及送达另验。
 
-PR481已合main，annotated v1.16.5 exact `87f75c16480160e5fc3d7f8af0800bcacb672a46`，GitHub Release已公开；与已测试候选完整树相同。
-正式十服务尚未停止或切换。计划阶段发现旧generation8原件1,475,785字节超过继承1MiB上限；不删除/改写原件，修为仅稳定目录三类journal的8MiB有界读取，全部安全检查保持。
-实际API/Web/Live/Reference/Feed预热已通过；Alert定位为BZ/1w完整quality段26根的合法WARMING_UP，并非缺口或伪造数据。
-候选1.16.6仅在整组闭市预热中逐路披露这种苏冰D1/W1不足，不计calculated，native默认strict、正常策略和Event路径不变；未知/质量/映射错误仍阻断。
-两处forward fix均完成独立Review，部署组合180 passed，关联组合378 passed/10 skipped，OpenSpec12/12、secret0；正式6候选自身全预热、发布、统一切换及清树待执行。v1.16.5发布树暂保留，旧运行树仍有正式引用。
+实际验证：部署组合231 passed/0 skipped，精确候选165 passed，独立高风险Review70 passed；Web1237 passed/3 skipped、关键五组70 passed、详情交互10 passed，type/build/topology、Ruff、OpenSpec12/12、secret0。
+旧SuBing1440/Free390金图及Newow旧pane断言保持明确历史例外，不宣称完整七组浏览器全绿。
 
-## 10/26 全量发布候选与整组升级工程
+四旧发布树v1.16.1/.4/.5/.6已在native零引用dry-run（SHA `a31b32109e6139bcb2c2e7bdf06d5883fb701e5690823ec53728e7821b540656`）和再次核对后non-force移除；三份旧候选plist先保全再退休，30份非缓存原件（19492字节）已私有归档并验证SHA。Git tags/Release及共享数据、配置、失败原件未删除；需要恢复时从exact tag重建，不常驻保留回滚树。
+当前仅一棵发布树；develop保留。另一个已合并任务树 `/Volumes/扩展盘/worktree/htdy-60m-execution-rules/guiyi-quant-workstation` 仍有Codex/node_repl及5176/8003预览进程引用，因此保留，未强删或终止其他会话。
 
-CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE（部署工程）：新增权威休市窗口十服务整组向前升级，
-先只读Canonical预热、排空旧Feed与消费者、旧PID全部退出后持维护/所有者锁一次CAS；消费者先于Feed，最后仅注册日历。
-15分钟计划有效期在预热后与CAS前复核，停机预算600秒；CAS前恢复原加载状态，CAS后未知结果不自动回滚或重试。
-闭市Feed必须当代新鲜健康heartbeat及owner ready；Live不以空proof豁免故障。跨日待Feed初始化、未知权威、schema变更均前置拒绝。
-保留Scope、配置、日历、单次机会状态与私有原件；不接Broker、不下单、auto_order=false。
-
-当前候选版本1.16.5；部署/预热相关164 passed，未发布执行边界/参考面板223 passed，完整Web1237 passed/3 skipped，type/build/topology、OpenSpec12/12、secret0及独立高风险Review通过。
-旧详情页及首页缓存E2E入口已按现行合同修正：关键五组70 passed，详情现役交互10 passed。两张旧SuBing/Free金图保持失败；Newow旧pane自动explanation断言与v1.16.4相同源码/fixture仍失配，周线被中断不记通过，不宣称完整七组全绿。
-候选离线环境/构建及源码根读回通过；namespace app身份路径实机发现并补测修复，独立Review通过。
-正式发布、统一切换、60秒稳定读回和旧树清理尚未执行；现役身份仍以既有记录及现场为准，自然业务另验。
+发布过程保留：v1.16.5仅预检阻断；v1.16.6的旧plan52190...未CAS，原attempt/state.json仍为restore_unknown原字节。原态恢复后经v7精确只读审计，receipt SHA `8a762ce9b8ba9ddc2d44a9b4471abfd8bbfe4e829f355c2dce8f9898eba32893`，仅global checkpoint cancelled；随后全新plan `57dd3cd5e7af11bc1f2393898f2a155b6826a340e7beccb124b9e74a91e08f83` 一次CAS switched。未重跑过期plan、回滚CAS或伪造自然证据。
+完整现场evidence与原件索引：`output/full-release-cohort-20261026/`；私有attempt留于既有稳定Runtime目录。实施过程见[记录](docs/superpowers/plans/2026-10-26-full-release-cohort.md)。
+下一最小步骤：释放占用该任务树的旧会话后，再做其零引用清理；自然业务Gate等待开盘，不新增定时监控。
 
 ## 10/26 首页5项旧E2E失配已清理
 
