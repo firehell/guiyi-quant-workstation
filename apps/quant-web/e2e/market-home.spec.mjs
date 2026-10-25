@@ -232,7 +232,7 @@ test('messages restore two loaded pages, the next cursor, and the real home scro
   await page.goBack()
   await expect(messageButtons).toHaveCount(48)
   await expect.poll(() => page.evaluate(actualHomeScrollTop)).toBeGreaterThan(before - 10)
-  await expect.poll(() => requests.filter((value) => String(value).startsWith('history:')).length).toBe(historyReads + 1)
+  await expect.poll(() => requests.filter((value) => String(value).startsWith('history:')).length).toBe(historyReads)
   const more = page.getByRole('button', { name: '加载更多' })
   await expect(more).toBeEnabled()
   await more.click()
@@ -759,4 +759,74 @@ test('missing projections display computing without requesting strategy computat
   await page.goto('/market')
   await expect(page.locator('.strategy-list-item').first()).toContainText('计算中')
   expect(requests.all.some(item => /home-cards|home-card-performance|home-card-display-cache/.test(item.url.pathname))).toBe(false)
+})
+
+test('message types restore twenty-row pages and cursor without a second request', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), overview(), runtime(), url => historyPage(historyEvents(url.searchParams.get('before') ? 21 : 1, 20), url.searchParams.get('before') ? 'third' : 'second'))
+  await page.goto('/market')
+  await page.getByRole('tab', { name: '消息', exact: true }).click()
+  const rows = page.locator('.market-message-list > button')
+  await expect(rows).toHaveCount(20)
+  await page.getByRole('button', { name: '加载更多', exact: true }).click()
+  await expect(rows).toHaveCount(40)
+  await page.getByRole('button', { name: '火天大有', exact: true }).click()
+  await expect(rows).toHaveCount(20)
+  const before = requests.filter(value => value.startsWith('history:')).length
+  await page.getByRole('button', { name: '全部', exact: true }).click()
+  await expect(rows).toHaveCount(40)
+  await page.waitForTimeout(100)
+  expect(requests.filter(value => value.startsWith('history:')).length).toBe(before)
+  await page.getByRole('button', { name: '加载更多', exact: true }).click()
+  await expect.poll(() => requests.filter(value => value.endsWith(':third')).length).toBe(1)
+  expect(requests.pageErrors).toEqual([])
+})
+
+test('message search debounces typing and Enter/filter submit the latest text once', async ({ page }) => {
+  const requests = [], queries = []
+  await mockMarketHomeApi(page, requests, events(), overview(), runtime(), url => { queries.push(new URL(url)); return historyPage() })
+  await page.goto('/market')
+  await page.getByRole('tab', { name: '消息', exact: true }).click()
+  await expect(page.locator('.market-message-list > button')).toHaveCount(2)
+  const search = page.getByRole('searchbox', { name: '搜索消息' })
+  await search.fill('j'); await search.fill('jm')
+  await page.waitForTimeout(150); expect(queries).toHaveLength(1)
+  await expect.poll(() => queries.length).toBe(2)
+  expect(queries.at(-1).searchParams.get('search')).toBe('jm')
+  await search.fill('ag'); await search.press('Enter')
+  await expect.poll(() => queries.length).toBe(3)
+  await page.waitForTimeout(400); expect(queries).toHaveLength(3)
+  await search.fill('rb'); await page.getByRole('button', { name: '火天大有', exact: true }).click()
+  await expect.poll(() => queries.length).toBe(4)
+  expect(queries.at(-1).searchParams.get('search')).toBe('rb')
+  await page.waitForTimeout(400); expect(queries).toHaveLength(4)
+  expect(requests.pageErrors).toEqual([])
+})
+
+test('a changed background message snapshot waits for clicking the update notice', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests)
+  let version = 1
+  await page.route('**/api/market/messages?**', route => {
+    const event = historyEvents(version, 1)[0]
+    return route.fulfill({ json: {
+      dataset_hash: `version-${version}`, items: [{ source: 'alert', id: String(event.id), symbol: event.symbol, bar_end: event.bar_end, event }],
+      next_cursor: null, resume_cursor: null, available_count: 1, coverage: 'complete', sources: {}, snapshot: { cutoff: new Date().toISOString(), alert_max_id: version },
+    } })
+  })
+  await page.goto('/market')
+  await page.getByRole('tab', { name: '消息', exact: true }).click()
+  const firstTime = await page.locator('.market-message-list time').getAttribute('datetime')
+  await page.clock.setFixedTime(new Date(Date.now() + 31_000))
+  version = 2
+  await page.getByRole('button', { name: '火天大有', exact: true }).click()
+  await expect(page.locator('.market-message-list > button')).toHaveCount(1)
+  await page.getByRole('button', { name: '全部', exact: true }).click()
+  const notice = page.getByRole('button', { name: '消息已更新，点击查看', exact: true })
+  await expect(notice).toBeVisible()
+  await expect(page.locator('.market-message-list time')).toHaveAttribute('datetime', firstTime)
+  await notice.click()
+  await expect(notice).toHaveCount(0)
+  await expect(page.locator('.market-message-list time')).not.toHaveAttribute('datetime', firstTime)
+  expect(requests.pageErrors).toEqual([])
 })

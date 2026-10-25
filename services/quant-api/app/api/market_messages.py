@@ -14,12 +14,15 @@ from app.api.alerts import _event_outs
 from app.db.readonly import readonly_transaction
 from app.db.session import SessionLocal
 from app.market_data.product_taxonomy import load_product_taxonomy
-from app.market_messages import MessageCursorError, decode_cursor, paginate_messages
+from app.market_messages import MessageCursorError
 from app.reference_trading.messages import FREQUENCIES, read_messages
+from app.services.message_source_scope import read_message_scope
+from app.services.message_snapshots import MessageSnapshots, MessageSnapshotBudgetError
 from app.schemas.alerts import AlertRuleCode
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 ALERT_CAP = 5000
+_snapshots = MessageSnapshots()
 
 
 @router.get("/messages")
@@ -34,6 +37,7 @@ def market_messages(
     frequency: Literal["1m", "5m", "15m", "30m", "60m", "1d", "1w"] | None = None,
     search: str = Query("", max_length=80),
     cursor: str | None = Query(None, max_length=4096),
+    resume_count: int = Query(0, ge=0, le=300),
 ):
     allowed = {
         "start_day",
@@ -45,6 +49,7 @@ def market_messages(
         "frequency",
         "search",
         "cursor",
+        "resume_count",
     }
     keys = [key for key, _ in request.query_params.multi_items()]
     if (
@@ -55,6 +60,7 @@ def market_messages(
         or (source != "alert" and (end_day - start_day).days > 93)
         or (rule_code and source != "alert")
         or (strategy and source != "newow")
+        or (cursor is not None and resume_count != 0)
     ):
         raise HTTPException(422, detail={"code": "MESSAGE_QUERY_INVALID"})
     identity = {
@@ -67,36 +73,31 @@ def market_messages(
         "frequency": frequency,
         "search": search.strip().lower(),
     }
-    try:
-        snapshot = (
-            decode_cursor(cursor)["snapshot"]
-            if cursor
-            else {"cutoff": datetime.now(UTC).isoformat(), "alert_max_id": None}
-        )
-        if not isinstance(snapshot, dict) or set(snapshot) != {
-            "cutoff",
-            "alert_max_id",
-        }:
-            raise MessageCursorError
-        cutoff = datetime.fromisoformat(snapshot["cutoff"])
-        if (
-            cutoff.tzinfo is None
-            or cutoff > datetime.now(UTC)
-            or (
-                snapshot["alert_max_id"] is not None
-                and (
-                    type(snapshot["alert_max_id"]) is not int
-                    or snapshot["alert_max_id"] < 0
+    if cursor is not None:
+        try:
+            result = _snapshots.read(cursor, identity)
+            previous = result["sources"].get("newow")
+            if (
+                previous
+                and previous["status"] == "ready"
+                and frequency in (None, *FREQUENCIES)
+            ):
+                scope = read_message_scope(
+                    SessionLocal,
+                    product=identity["symbol"],
+                    strategy=strategy,
+                    frequency=frequency,
                 )
-            )
-        ):
-            raise MessageCursorError
-        if cursor and decode_cursor(cursor)["query"] != identity:
-            raise MessageCursorError
-    except (MessageCursorError, ValueError, TypeError, KeyError):
-        raise HTTPException(
-            409, detail={"code": "MESSAGE_SNAPSHOT_STALE", "refresh_required": True}
-        ) from None
+                digest = hashlib.sha256(json.dumps(scope).encode()).hexdigest()
+                if digest != previous["revision_hash"]:
+                    raise MessageCursorError
+            return result
+        except Exception:  # noqa: BLE001 - failed identity proof invalidates snapshot
+            raise HTTPException(
+                409, detail={"code": "MESSAGE_SNAPSHOT_STALE", "refresh_required": True}
+            ) from None
+    snapshot = {"cutoff": datetime.now(UTC).isoformat(), "alert_max_id": None}
+    cutoff = datetime.fromisoformat(snapshot["cutoff"])
 
     rows: list[dict] = []
     sources: dict = {}
@@ -213,7 +214,13 @@ def market_messages(
             in f"{row['symbol']} {names[row['symbol']].name if row['symbol'] in names else ''} {row['event'].get('contract') or ''}".lower()
         ]
     try:
-        return paginate_messages(rows, sources, identity, snapshot, cursor)
+        return _snapshots.create(
+            rows, sources, identity, snapshot, resume_count=resume_count
+        )
+    except MessageSnapshotBudgetError:
+        raise HTTPException(
+            422, detail={"code": "MESSAGE_QUERY_BUDGET_EXCEEDED"}
+        ) from None
     except MessageCursorError:
         raise HTTPException(
             409, detail={"code": "MESSAGE_SNAPSHOT_STALE", "refresh_required": True}
