@@ -89,6 +89,8 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
             "revision_snapshot": [("s", "r1")],
         },
     )
+    scope = [("s", "r1")]
+    monkeypatch.setattr(api, "read_message_scope", lambda *a, **kw: scope)
     monkeypatch.setattr(api, "load_product_taxonomy", lambda: {})
     with factory() as session:
         rule = AlertRule(
@@ -127,7 +129,7 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
     with TestClient(app) as client:
         first = client.get("/api/market/messages", params=params)
         assert first.status_code == 200
-        assert len(first.json()["items"]) == 50
+        assert len(first.json()["items"]) == 20
         assert reads == [500]
         assert conversions == [155]
         with factory() as session:
@@ -154,6 +156,8 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
             second = client.get("/api/market/messages", params={**params, "cursor": second.json()["next_cursor"]})
             assert second.status_code == 200
             all_rows.extend(second.json()["items"])
+        assert reads == [500]
+        assert conversions == [155]
         assert len(all_rows) == 156
         assert len({(row["source"], row["id"]) for row in all_rows}) == 156
         assert "156" not in [row["id"] for row in all_rows if row["source"] == "alert"]
@@ -167,6 +171,7 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
                 "revision_snapshot": [("s", "r2")],
             },
         )
+        scope[:] = [("s", "r2")]
         stale = client.get(
             "/api/market/messages",
             params={**params, "cursor": first.json()["next_cursor"]},
@@ -195,7 +200,7 @@ def test_endpoint_freezes_alert_highwater_and_excludes_new_inserts(monkeypatch):
             "/api/market/messages",
             params={**params, "source": "alert", "search": "JM2612"},
         )
-        assert searched.status_code == 200 and len(searched.json()["items"]) == 50
+        assert searched.status_code == 200 and len(searched.json()["items"]) == 20
         assert (
             client.get(
                 "/api/market/messages", params={**params, "unknown": "bad"}
