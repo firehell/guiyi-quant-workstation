@@ -108,8 +108,12 @@ class Adapter:
         baseline = state.initial_readback
         if (
             baseline.snapshot.balance != Decimal("100000")
-            or baseline.snapshot.at.astimezone(ZoneInfo("Asia/Shanghai")).strftime(
-                "%Y%m%d"
+            or (
+                baseline.source_id.split(":")[1]
+                if baseline.source_id.startswith("ctp-inventory:")
+                else baseline.snapshot.at.astimezone(
+                    ZoneInfo("Asia/Shanghai")
+                ).strftime("%Y%m%d")
             )
             < "20261027"
         ):
@@ -281,6 +285,16 @@ class Adapter:
                     now,
                 )
             return outcome
+
+    def abort_unsent(self, order_id, reason, now):
+        proof = "dispatch-never-claimed:" + digest(
+            (self.journal.account_id, order_id, reason)
+        )
+        return self.store.execute(
+            "abort-unsent:" + order_id,
+            m.AbortUnsent(self.session.account_id, order_id, now, proof, reason),
+            unsent_proof=lambda state: not self.journal.claimed(order_id),
+        )
 
     def _identity(self, row, trading_day):
         if (
@@ -535,6 +549,24 @@ class Adapter:
                     and v["system_id"]
                 }
                 if proof is None or system_ids != {p["system_id"]}:
+                    if system_ids == {p["system_id"]}:
+                        known = next(
+                            o
+                            for o in self.store.current().orders
+                            if o.order_id == p["order_id"]
+                        )
+                        if known.status != "FILLED":
+                            identity = "ctp-known-pending-fill:" + p["trade_id"]
+                            self.store.execute(
+                                identity,
+                                m.OrderUpdate(
+                                    self.session.account_id,
+                                    p["order_id"],
+                                    at,
+                                    identity,
+                                    "FILLED",
+                                ),
+                            )
                     pending.append(p["trade_id"])
                     continue
                 native = self.journal.find(p["order_id"])

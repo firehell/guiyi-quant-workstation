@@ -7,7 +7,7 @@ from . import model as m
 from .codec import digest
 
 ZERO = Decimal(0)
-TERMINAL = ("FILLED", "CANCELLED", "REJECTED")
+TERMINAL = ("FILLED", "CANCELLED", "REJECTED", "LOCAL_ABORTED")
 
 
 def product(state, name):
@@ -78,7 +78,7 @@ def start(account_id, products, at, readback):
     if (
         type(readback) is not m.Readback
         or readback.snapshot.account_id != account_id
-        or readback.at != at
+        or not readback.at <= at < readback.valid_until
         or not readback.complete
     ):
         raise ValueError("INITIAL_READBACK_INVALID")
@@ -213,7 +213,7 @@ def apply_fill(state, cmd):
         )
     )
     state = replace(state, fills=state.fills + (cmd,))
-    late = o.status in ("CANCELLED", "REJECTED")
+    late = o.status in ("CANCELLED", "REJECTED", "LOCAL_ABORTED")
     if late:
         state = replace(
             state,
@@ -278,6 +278,24 @@ def order_update(state, cmd):
                 replace(state, phase="RECOVERY_REQUIRED")
             ), "LATE_ORDER_REPORT_CONFLICT"
         return state, "FILLED_ORDER_ALREADY_RECORDED"
+    if o.status in TERMINAL and cmd.status == "FILLED" and o.status != "FILLED":
+        # A definite one-lot native fill report supersedes cancellation, but is not
+        # a priced/fee-complete Fill. Relock occupancy immediately and await facts.
+        state = replace_order(
+            state, replace(o, status="FILLED", terminal_at=cmd.at, reconciled=False)
+        )
+        state = replace(
+            state,
+            reservations=tuple(
+                replace(r, released=False, release_source="")
+                if r.order_id == o.order_id
+                else r
+                for r in state.reservations
+            ),
+            phase="RECOVERY_REQUIRED",
+            readback_valid=False,
+        )
+        return cancel_opens(state), "LATE_NATIVE_FILLED_REPORT_RETAINED"
     if o.status in TERMINAL and cmd.status != o.status:
         return cancel_opens(
             replace(state, phase="RECOVERY_REQUIRED")
@@ -296,8 +314,12 @@ def order_update(state, cmd):
         if o.offset == "OPEN":
             state = abandon(state, product(state, o.product), o.signal_id)
         state = replace(state, phase="RECOVERY_REQUIRED")
-    elif status in ("UNKNOWN", "FILLED"):
+    elif status == "UNKNOWN":
         state = replace(state, phase="RECOVERY_REQUIRED")
+    elif status == "FILLED":
+        # A normal terminal order callback is a pending fill/readback, not a fault.
+        # Preserve the latest target; prohibit every action until native facts reconcile.
+        state = replace(state, readback_valid=False)
     return state, "ORDER_UPDATE_RECORDED"
 
 
@@ -831,6 +853,7 @@ def apply(state, key, cmd):
         m.Readback,
         m.Recover,
         m.Disconnect,
+        m.AbortUnsent,
         m.Tick,
     ):
         raise ValueError("ACCOUNT_COMMAND_INVALID")
@@ -882,6 +905,32 @@ def apply(state, key, cmd):
         state, reason = apply_readback(state, cmd)
     elif type(cmd) is m.Recover:
         state, reason = recover(state, cmd)
+    elif type(cmd) is m.AbortUnsent:
+        o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
+        if (
+            cmd.account_id != state.account_id
+            or o is None
+            or o.status != "PROPOSED"
+            or o.accepted_at is not None
+            or has_fill(state, o)
+        ):
+            raise ValueError("UNSENT_ABORT_IDENTITY_INVALID")
+        state = replace_order(
+            state,
+            replace(o, status="LOCAL_ABORTED", terminal_at=cmd.at, reconciled=True),
+        )
+        state = replace(
+            state,
+            reservations=tuple(
+                replace(r, released=True, release_source=cmd.source_id)
+                if r.order_id == o.order_id
+                else r
+                for r in state.reservations
+            ),
+        )
+        if o.offset == "OPEN":
+            state = abandon(state, product(state, o.product), o.signal_id)
+        reason = "LOCAL_UNSENT_ABORTED"
     elif type(cmd) is m.Disconnect:
         state, reason = (
             cancel_opens(

@@ -1,5 +1,24 @@
 # 当前状态
 
+## 10/25 SimNow前五步工程闭环完成，真实账户与订单仍待现场验收
+
+按owner要求完成：原生账户对账、实际费用与账户收益、真实执行输入、一次性受控入口、故障验证及独立Review。
+`inventory/finance/evidence/host`复用既有两轮只读协议，核验资金/今昨仓/委托/成交并映射Readback；对锁、超一手、外部未知事实、有保证金无仓或冻结无挂单明确阻断。
+实际费用仅在同日稳定非重叠快照间唯一一笔新成交、原生Commission差额及订单身份可证明时归属；多笔/跨日不猜。收益以原生权益和实际现金流调整，跨日连续性不足时净收益保持待核。
+
+新增一次性 `scripts/broker/simnow_controlled.py` 与原生gateway：默认只读preflight，显式execute才限定一品种、每单一手、10..3600秒及1..3次submit。
+首次initialize须实际第一套10万元空账户、无委托/冻结且交易日>=20261027；重开接管不覆写旧账本。结算确认仅execute且先通过前置检查后发生。
+owner明确批准SimNow盘口仅供执行，Calendar/Session/主力及策略行情仍共用RQData链；自然新完成60m原件、startup/恢复隔离、不补历史信号。
+
+修复实际接线暴露的边界：源回读完成与激活时间分离但必须仍在有效期；正常FILLED等待核验不丢反手目标；已知迟到成交即使缺费用也先重新锁定预留；从未领取发送claim的本地提案可在账户writer内记LOCAL_ABORTED，已领取或未知禁止该路径。
+退出先注销/释放原生回调、消费尾部事实再关闭journal；报告逐单、预留、成交、持仓完整性和平仓义务，未知/缺费/未核清非0退出，不能将空列表当空账户。
+
+完整定向212 passed，隔离真实Mac SDK gateway8项、原只读32项通过（共252）；SDK请求结构smoke、同ABI隔离SDK/API依赖实际导入均无网络通过。
+Ruff/secret scan0/diff通过；独立高风险Review已关闭退出分类等问题并完成最终聚焦复核，允许集成develop。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；真实第一套、10万元生效、自然输入和原生报撤单分别EXTERNAL_GATE_PENDING。
+本次未读取实际凭据、未创建原生交易API实例、未真实报撤单、未发布/切Runtime，auto_order=false保持；没有持续自动交易或监控UI。
+唯一下一步是在实际服务时段运行默认只读preflight并读回结果，再按真实事实推进有界柜台验收。合同见[SIMNOW_EXECUTION](docs/SIMNOW_EXECUTION.md)。
+
 ## 10/25 SimNow受控订单适配代码及离线端到端完成，真实柜台待验
 
 新增 `simnow_ctp_controlled_v1`：固定第一套会话/账户/交易日绑定、最多60秒精确单次Permit、

@@ -41,6 +41,7 @@ def decode(value):
             m.ExecutionInput,
             m.Tick,
             m.OrderUpdate,
+            m.AbortUnsent,
             m.Disconnect,
             m.Recover,
             m.Product,

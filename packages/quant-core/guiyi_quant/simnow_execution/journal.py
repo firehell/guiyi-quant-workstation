@@ -88,6 +88,14 @@ class Journal:
             raise ValueError("NATIVE_ORDER_IDENTITY_UNKNOWN")
         return matches[0][0]
 
+    def claimed(self, order_id, kind="SUBMIT"):
+        return (
+            self.conn.execute(
+                "SELECT 1 FROM actions WHERE order_id=? AND kind=?", (order_id, kind)
+            ).fetchone()
+            is not None
+        )
+
     def request_order(self, request_id):
         row = self.conn.execute(
             "SELECT order_id,kind FROM actions WHERE request_id=?", (request_id,)

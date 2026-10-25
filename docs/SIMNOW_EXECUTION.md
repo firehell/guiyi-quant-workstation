@@ -2,7 +2,7 @@
 
 本模块实现已持久化HTDY账户提案到CTP报单/撤单请求的窄适配，以及原生回调到本地账户journal的事实接入。
 交易规则、资金预留和订单状态机见[HTDY合同](HTDY_SIMNOW_V1.md)，登录及四类只读查询见[只读合同](SIMNOW_READONLY.md)。
-只读CLI保持只读；本模块不登录、不注册前置、不确认结算、不创建行情源或后台循环，不修改 `auto_order=false`。
+只读CLI保持只读；core适配模块不自行登录或注册前置。独立一次性宿主显式连接固定第一套，默认只读预检；不创建持续后台任务，不修改 `auto_order=false`。
 
 ## 接入和事实责任
 
@@ -54,8 +54,9 @@ CTP TradeTime/InsertTime为秒级，不能把向下取整时刻当精确先后�
 原精确 `Fill` 的strict-after约束不变，旧公式、Alert及参考收益不改写；新事件身份独立序列化并可重放。
 
 CTP逐笔Trade没有实际手续费字段。适配器保存待核成交，只有具有实际费用来源的 `Fee` 证明后才生成完整NativeFill；
-不得将开仓预算或预估费率当实际费用。缺费事实会阻断后续发送。当前没有自动费用归因或原生资金/今昨仓快照投影器；
-完整 `Readback`、费用证明及恢复输入须由后续原生对账宿主提供并验收，不能据SDK结构测试宣称这些接线已完成。
+不得将开仓预算或预估费率当实际费用。缺费事实会阻断后续发送。当前由 `inventory/finance/evidence/host` 接通完整原生资金/今昨仓快照投影及有界费用归因。
+实际费用仅在同账号同交易日、非重叠的两轮稳定快照之间恰好一笔新成交、旧成交不变、无现金流或其他订单变化、原生订单及SystemID吻合时，使用原生累计Commission差额。
+多笔、跨日、旧事实变化或无法唯一归属时保留待核，阻断新发送；不把预算费率当实际费用。
 原生终态回报仍不直接释放预留；只有完整资金/仓位/委托/成交核对可使账户状态机释放。
 
 ## 验证与剩余实测
@@ -71,5 +72,37 @@ CTP逐笔Trade没有实际手续费字段。适配器保存待核成交，只有
 离线测试命令见[TESTING](../TESTING.md#simnow-受控订单适配)。
 
 真实受控端到端须完成：第一套登录与两轮账户读回、10万元生效、结算确认和原生元数据/新鲜报价绑定、
-费用及账户对账投影器、可交易时段的新合格信号，再对精确一手订单做报单/成交或撤单核对。
-本次没有真实报撤单，没有持续交易宿主或交易启动CLI，不发布、不切Runtime。通过离线验证不表示可以开启全品种自动交易。
+已实现宿主的现场读回、可交易时段的新合格信号，再对精确一手订单做报单/成交或撤单核对。
+本次没有真实报撤单；一次性CLI已实现，没有持续交易宿主，不发布、不切Runtime。通过离线验证不表示可以开启全品种自动交易。
+
+## 一次性宿主与只读预检
+
+`scripts/broker/simnow_controlled.py` 复用既有只读Probe认证/登录及四查询两轮协议；可选SDK仅在隔离Mac环境加载，API依赖以相同Python ABI的既有venv只读加载，不向API安装CTP。
+`simnow_native_gateway.py` 额外读取结算状态、原生合约、保证金、手续费预算及执行盘口，敏感账户字段只在内存中完成关联。
+账户所有资料写入 `output/simnow-controlled/<account_fingerprint>/` 的0600 SQLite；目录0700，运行持有独占账户文件锁。
+
+```sh
+# 默认仅预检：实际登录与原生读取，无报撤单、无结算确认
+/path/to/isolated/python -I scripts/broker/simnow_controlled.py --product rb
+# 首次10万元空账户已实际核验后，明确启用本次有界验证
+/path/to/isolated/python -I scripts/broker/simnow_controlled.py --product rb --execute --initialize --max-seconds 600 --max-submits 1
+# 后续接管已有账户，不能再次initialize或覆写旧journal
+/path/to/isolated/python -I scripts/broker/simnow_controlled.py --product rb --execute --max-seconds 600 --max-submits 1
+```
+
+`--api-env`可显式选择同ABI既有API依赖venv，默认项目自身venv。只接受本机TTY投资者代码和隐藏密码；不读聊天、参数、管道或文件中的密码。
+execute包括必要的本次结算确认，必须先完成实际资金、账户和执行输入预检；默认preflight绝不确认。
+本次只控制一个operational品种，每单一手；10..3600秒、1..3次submit，默认600秒/1次。该限制是验证范围，不改变正式70%账户规则或未来全品种目标。
+
+- `MarketBridge`通过统一MarketDataService、Catalog、主力映射及Calendar/Session绑定物理合约，午休不作最终收盘；旧仓仍使用旧合约事实。
+- owner于2026-10-25明确允许SimNow原生盘口仅作为执行报价。盘口ActionDay/更新时间、毫秒、交易日、合约、买卖盘及涨跌停逐项核验；旧盘口、异常/缺失值不报单。报价不写Canonical、不进入公式或历史研究。
+- 自然信号只从本次订阅后的最新completed 60m原件进入；startup队列清空，旧Bar、非最新原件、历史补取、重绘及恢复输入不能取得首次交易资格。
+- 恢复通过统一reader验证32根预热加离线完整区间，必要时将只读前缀有界扩至2000根；每个离线端点仅按其当时32根前缀复算方向，不创建历史开仓信号。仍无法证明完整则品种阻断，已有平仓义务保留。
+- 正常FILLED回报只令readback失效、等待逐笔与资金核对，保留最新反手目标；故障/重启才走不补开恢复。已知迟到成交即使缺费用，也立即重新锁定原预留，完整Fill待实际费用证明后写入。
+- 从未领取发送claim的本地PROPOSED可在账户writer锁内核对否定证明，写为 `LOCAL_ABORTED` 并释放本地预留；这是本地未发送事实，不伪装柜台拒单。已领取/结果未知禁止此路径。重开仍可记录该事实，但不能绕过恢复。
+- submit预算包括未知/非零结果；到期不新增提交。仅取消本程序未成交开仓，不强制平已有仓；未核清委托、预留、持仓和平仓义务全部保留。
+- SDK退出时先注销/释放原生回调，再drain尾部事实，最后关闭journal。未知、阻断、缺费用或未核清订单返回 `CONTROLLED_RUN_REQUIRES_RECOVERY` 和非0退出码；结果列出订单、预留、成交和持仓完整性，不能据空列表推断空账户。
+
+账户收益使用原生Balance及实际Deposit/Withdraw调整，手续费来自原生事实而非参考交易；当前可证明同日区间净收益。
+跨日没有完整现金流/结算连续性时，继续展示原生权益、持仓损益及费用，累计区间收益保持 `CASHFLOW_CONTINUITY_REQUIRED`，不能猜零现金流。
+所有fixture输出 `broker_e2e_passed=false`；实际第一套、资金生效及原生订单仍须分别验收。一次性受控程序不安装launchd或启用全品种持续自动交易。

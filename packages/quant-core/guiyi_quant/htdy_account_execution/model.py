@@ -289,6 +289,20 @@ class OrderUpdate:
 
 
 @dataclass(frozen=True)
+class AbortUnsent:
+    account_id: str
+    order_id: str
+    at: datetime
+    source_id: str
+    reason: str
+
+    def __post_init__(self):
+        for v in (self.account_id, self.order_id, self.source_id, self.reason):
+            text(v)
+        time(self.at)
+
+
+@dataclass(frozen=True)
 class Disconnect:
     at: datetime
 
@@ -392,6 +406,7 @@ class Order:
             or self.status
             not in (
                 "PROPOSED",
+                "LOCAL_ABORTED",
                 "WORKING",
                 "CANCEL_PENDING",
                 "CANCELLED",

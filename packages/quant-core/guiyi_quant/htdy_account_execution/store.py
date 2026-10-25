@@ -175,7 +175,7 @@ class LocalStore:
     def _commit(self):
         self._conn.execute("COMMIT")
 
-    def execute(self, key, command):
+    def execute(self, key, command, *, unsent_proof=None):
         m.text(key)
         with self._mutex:
             if self._uncertain:
@@ -209,6 +209,7 @@ class LocalStore:
                     return Commit(state, (), sequence, True)
                 if self._needs_recovery and type(command) not in (
                     m.Recover,
+                    m.AbortUnsent,
                     m.Fill,
                     m.NativeFill,
                     m.Disconnect,
@@ -218,7 +219,13 @@ class LocalStore:
                 recovery_mode = int(
                     self._needs_recovery
                     and type(command)
-                    in (m.Fill, m.NativeFill, m.OrderUpdate, m.Disconnect)
+                    in (
+                        m.Fill,
+                        m.NativeFill,
+                        m.OrderUpdate,
+                        m.Disconnect,
+                        m.AbortUnsent,
+                    )
                 )
                 execution_state = (
                     replace(
@@ -231,6 +238,9 @@ class LocalStore:
                     if recovery_mode
                     else state
                 )
+                if type(command) is m.AbortUnsent:
+                    if unsent_proof is None or unsent_proof(state) is not True:
+                        raise StoreError("ATOMIC_UNSENT_PROOF_REQUIRED")
                 tx = apply(execution_state, key, command)
                 next_sequence = sequence + 1
                 self._conn.execute(
@@ -306,7 +316,13 @@ class LocalStore:
                     recovery_mode not in (0, 1)
                     or recovery_mode
                     and type(command)
-                    not in (m.Fill, m.NativeFill, m.OrderUpdate, m.Disconnect)
+                    not in (
+                        m.Fill,
+                        m.NativeFill,
+                        m.OrderUpdate,
+                        m.Disconnect,
+                        m.AbortUnsent,
+                    )
                 ):
                     raise StoreError("JOURNAL_RECOVERY_MODE_INVALID")
                 execution_state = (
