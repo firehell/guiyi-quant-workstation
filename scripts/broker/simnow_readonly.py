@@ -476,6 +476,79 @@ class Probe(tdapi.CThostFtdcTraderSpi):
             )
 
 
+def check_funding_reset(result, expected_balance, effective_trading_day):
+    """Verify a completed in-memory readback; never authorize orders or resubmit reset."""
+    expected = Decimal(expected_balance)
+    if not expected.is_finite() or expected <= 0:
+        raise ValueError("INVALID_EXPECTED_BALANCE")
+    datetime.strptime(effective_trading_day, "%Y%m%d")
+    if len(effective_trading_day) != 8:
+        raise ValueError("INVALID_EFFECTIVE_DAY")
+    reasons = []
+    if (result.get("environment"), result.get("front"), result.get("source_scope")) != (
+        "SIMNOW_FIRST",
+        ENVIRONMENTS["first"][1],
+        "FIRST_ENVIRONMENT_READBACK",
+    ):
+        reasons.append("FIRST_ENVIRONMENT_REQUIRED")
+    day = result.get("trading_day", "")
+    if not isinstance(day, str) or len(day) != 8 or day < effective_trading_day:
+        reasons.append("EFFECTIVE_TRADING_DAY_NOT_REACHED")
+    if (
+        result.get("status") != "READ_ONLY_COMPLETE"
+        or result.get("login_passed") is not True
+        or result.get("authentication_passed") is not True
+    ):
+        reasons.append("COMPLETE_READBACK_REQUIRED")
+    try:
+        rounds = result["rounds"]
+        if len(rounds) != 2:
+            raise ValueError("TWO_ROUNDS_REQUIRED")
+        payloads = []
+        for record in rounds:
+            queries = record["queries"]
+            if set(queries) != set(FIELDS) or not all(
+                q["complete"] is True for q in queries.values()
+            ):
+                raise ValueError("QUERY_INCOMPLETE")
+            payload = {kind: queries[kind]["rows"] for kind in FIELDS}
+            if len(payload["funds"]) != 1:
+                raise ValueError("FUNDS_INVALID")
+            funds = payload["funds"][0]
+            if funds["TradingDay"] != day or funds["CurrencyID"] != "CNY":
+                raise ValueError("FUND_IDENTITY_INVALID")
+            if any(Decimal(funds[f]) != expected for f in ("Balance", "Available")):
+                reasons.append("TARGET_FUNDS_NOT_OBSERVED")
+            if any(
+                Decimal(funds[f]) != 0
+                for f in ("CurrMargin", "FrozenMargin", "FrozenCommission")
+            ):
+                reasons.append("FUNDS_STILL_ENCUMBERED")
+            if any(
+                p["Position"] or p["LongFrozen"] or p["ShortFrozen"]
+                for p in payload["positions"]
+            ):
+                reasons.append("POSITION_NOT_FLAT")
+            if any(
+                o["OrderStatus"] not in ("0", "2", "4", "5") for o in payload["orders"]
+            ):
+                reasons.append("WORKING_OR_UNKNOWN_ORDERS")
+            payloads.append(payload)
+        if payloads[0] != payloads[1] or result["round_hashes"] != [
+            digest(p) for p in payloads
+        ]:
+            reasons.append("READBACK_NOT_STABLE_OR_HASH_MISMATCH")
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        reasons.append("READBACK_INVALID_OR_INCOMPLETE")
+    return {
+        "passed": not reasons,
+        "reasons": sorted(set(reasons)),
+        "expected_balance_cny": str(expected),
+        "effective_trading_day": effective_trading_day,
+        "execution_eligible": False,
+    }
+
+
 def report_path():
     root = Path(__file__).resolve().parents[2]
     folder = root / "output" / "simnow-readonly"
@@ -497,7 +570,22 @@ def main():
         default="api-test",
         help="api-test=历史账户副本；first=第一套模拟交易环境。固定前置，不自动fallback",
     )
+    parser.add_argument(
+        "--expected-balance", type=Decimal, help="重置目标资金，只读验收，不修改资金"
+    )
+    parser.add_argument("--not-before-trading-day", help="官网回执生效交易日 YYYYMMDD")
     options = parser.parse_args()
+    if (options.expected_balance is None) != (options.not_before_trading_day is None):
+        parser.error("资金目标与官网生效日必须同时提供")
+    if options.expected_balance is not None:
+        if options.environment != "first":
+            parser.error("资金重置验收必须显式选择first环境")
+        try:
+            check_funding_reset(
+                {}, options.expected_balance, options.not_before_trading_day
+            )
+        except (ValueError, ArithmeticError, TypeError):
+            parser.error("目标资金或生效日格式无效")
     if not sys.stdin.isatty():
         raise SystemExit("请在本机交互终端运行；不接受管道凭据。")
     if sys.platform != "darwin" or version("openctp-ctp") != "6.7.7.1":
@@ -553,13 +641,22 @@ def main():
                     os.close(saved_out)
                     os.close(saved_err)
     probe.result["finished_at"] = stamp()
+    if options.expected_balance is not None:
+        probe.result["funding_reset_acceptance"] = check_funding_reset(
+            probe.result, options.expected_balance, options.not_before_trading_day
+        )
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as output:
         json.dump(probe.result, output, ensure_ascii=False, indent=2)
     print("结果：", probe.result["status"])
+    if "funding_reset_acceptance" in probe.result:
+        acceptance = probe.result["funding_reset_acceptance"]
+        print("资金重置生效验收：", "通过" if acceptance["passed"] else "待验/未通过")
+        print("原因：", ", ".join(acceptance["reasons"]) or "两轮第一套读回均符合目标")
     print("完整核验记录：", target)
     print("查询未完成、异常或数据变化都不表示账户空仓；本次始终不具备下单资格。")
-    return 0 if probe.result["status"] == "READ_ONLY_COMPLETE" else 1
+    accepted = probe.result.get("funding_reset_acceptance", {}).get("passed", True)
+    return 0 if probe.result["status"] == "READ_ONLY_COMPLETE" and accepted else 1
 
 
 if __name__ == "__main__":

@@ -2007,3 +2007,6 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 才连接固定第一套前置。两者均要求本机TTY隐藏输入，环境绑定报告身份，不自动回退。
 认证和登录各一次、四类只读查询两轮；不确认结算、不下单/撤单、不接Runtime。
 字段、失败及稳定性边界见 [账户只读合同](docs/SIMNOW_READONLY.md)。本地输出不提交Git。
+
+资金初始基线生效验收可在first读取时成对提供 `--expected-balance 100000 --not-before-trading-day 20261027`，
+日期取自本次官网受理回执。验收单独报告，不改变原查询状态或执行权限；旧交易日、测试副本和部分结果不能通过。
