@@ -369,7 +369,9 @@ test('quote badges and pending strategy icons never invent a target', async ({ p
   await expect(page.locator('.list-reference')).toHaveCount(5)
   await expect(page.locator('.list-reference').first()).toHaveText('--')
   await expect(page.getByText('预估目标价')).toHaveCount(0)
-  await expect(page.getByTestId('market-state-icon-unavailable-micro').first()).toBeVisible()
+  const pending = page.locator('.list-periods').getByRole('img', { name: '数据不足', exact: true })
+  await expect(pending).toHaveCount(10)
+  await expect(pending.first()).toBeVisible()
   expectHomeReads(requests)
 })
 
@@ -559,15 +561,18 @@ test('header product search opens the safe default Newow route', async ({ page }
   expect(requests.unexpected).toEqual([])
 })
 
-test('cached and server stale overview facts stay gray and expose their own failure', async ({ page }) => {
+test('expired overview revalidation retains stale facts and exposes failure', async ({ page }) => {
+  await page.clock.install()
   let attempts = 0
   const requests = []
   await mockMarketHomeApi(page, requests, events(), () => ++attempts === 1 ? degradedStaleOverview() : null)
   await page.goto('/market')
   await expect(page.locator('.strategy-list-item')).toHaveCount(1)
   await expect(page.locator('.strategy-list-item .market-state-icon--up')).toHaveCount(0)
-  await page.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(page.getByText(/刷新失败.*上一份成功快照/)).toBeVisible()
+  // The home has no manual refresh control. Its visible timer revalidates the five-minute cache.
+  await page.clock.fastForward(6 * 60_000)
+  await expect.poll(() => attempts).toBe(2)
+  await expect(page.getByRole('alert').filter({ hasText: /刷新失败.*上一份成功快照/ })).toBeVisible()
   await expect(page.locator('.strategy-list-item')).toHaveCount(1)
   await expect(page.locator('.strategy-list-item .market-state-icon--up')).toHaveCount(0)
 })
@@ -666,7 +671,8 @@ for (const state of ['loading', 'failed', 'empty']) {
 }
 
 
-test('directory failure and recovery stay independent from quote rows and retain accepted options', async ({ page }) => {
+test('directory automatic retry and expiry retain accepted options independently from quotes', async ({ page }) => {
+  await page.clock.install()
   const requests = []
   await mockMarketHomeApi(page, requests)
   let fail = true
@@ -677,11 +683,13 @@ test('directory failure and recovery stay independent from quote rows and retain
   await search.fill('黄金')
   await expect(page.getByText('目录加载失败，无法安全切换品种。', { exact: true })).toBeVisible()
   fail = false
-  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  // A failed directory is retried on the next visible one-minute tick.
+  await page.clock.fastForward(60_001)
   await search.focus()
   await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
   fail = true
-  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  // A successful directory has a 24-hour TTL; revalidation failure must retain its options.
+  await page.clock.fastForward(24 * 60 * 60_000 + 60_001)
   await search.focus()
   await expect(page.getByText('目录刷新失败，已保留上次选项。')).toBeVisible()
   await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
@@ -705,9 +713,12 @@ for (const width of [1440, 390]) {
     await expect(row.locator('.list-change')).toHaveText('—')
     await expect(page.locator('.market-home-snapshot')).toContainText('数据为上一完整交易日收盘价')
     await page.screenshot({ path: `/private/tmp/guiyi-home-quality-${width}.png` })
-    await page.locator('.market-home-snapshot summary').click()
-    await expect(page.locator('.market-home-snapshot')).toContainText('日线报价可用 2 / 2')
-    await expect(page.locator('.market-home-snapshot')).toContainText('报价可用不代表策略就绪')
+    // Quality is exposed on each product now, rather than in a removed global disclosure.
+    const pending = row.locator('.list-periods').getByRole('img', { name: '数据不足', exact: true })
+    await expect(pending).toHaveCount(2)
+    await expect(pending.first()).toBeVisible()
+    await expect(row.locator('.list-reference')).toHaveText('--')
+    await expect(row.locator('.market-state-icon--up')).toHaveCount(0)
   })
 
   test(`unknown daily history gap preserves quote without describing rewarming at width ${width}`, async ({ page }) => {

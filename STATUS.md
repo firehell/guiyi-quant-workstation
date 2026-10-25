@@ -7,6 +7,19 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/26 首页5项旧E2E失配已清理
+
+修正旧micro尺寸图标、已移除刷新按钮及快照summary的测试断言，保留原行为目标：
+预热不得生成目标价/建仓图标、行情后台重验失败保留旧快照、目录自动重试及24小时到期失败保留选项、
+1440/390缺价原因与报价/策略状态分离。使用语义化图标和Playwright虚拟时钟，未增加产品按钮、skip或放宽截图容差。
+
+最新develop基线的原5项均已失败复现；修复后完整首页39项+模拟交易4项合计43 passed，
+无grep排除、无retry、无金图更新。Node语法、diff检查和秘密扫描0通过，自审完成。
+修复验证首轮有一次独立Chrome launch 180秒超时，其余4项通过；单项诊断及随后完整43项均通过，旧日志保留。
+
+改动仅E2E及验证/状态文档；本次不发布、不切Runtime、不改行情、策略、账户或交易语义。
+先前第六步记录的5项旧选择器例外在本节关闭；其他真实SimNow、自然输入及运行切换待验事项保持。
+
 ## 10/25 其余8项服务切换：5项完成，Alert/Feed/Live现场校验阻塞
 
 Owner交办其余8项切至已发布v1.16.4。4项定时服务（after-market、late-provider-recovery、weekly-audit、log-rotate）及Reference已切至exact `bc7a91621ddaae6ad3ee915662994227496ccac6`/gen26。
