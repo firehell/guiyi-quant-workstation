@@ -197,3 +197,10 @@ JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原
 `app.paper.ledger` 在专用本地 PostgreSQL 保存不可变命令与事件。
 本域不接 Alert、Redis、普通 API 启动、Broker 或后台 Runtime；不改变 ReferenceTrade。
 领域合同与恢复边界见 [PAPER_PILOT.md](PAPER_PILOT.md)。
+
+## SimNow 账户只读准备
+
+`scripts/broker/simnow_readonly.py` 是独立交互式、一次性原生CTP客户端，使用可选隔离SDK，
+不导入普通API或策略Runtime，不调用交易/结算写接口。读取只保存本地私有JSON，不写生产数据库，
+不把原生持仓压入一手政策或重建模型Fill。两轮完整相等只证明有界稳定，不提供原子快照或Ledger对账；
+环境及合同见 [SIMNOW_READONLY](SIMNOW_READONLY.md)。

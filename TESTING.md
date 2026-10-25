@@ -1993,3 +1993,16 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 真实复核用 `scripts/data/htdy_input_admission.py --output <独占目录>`。保留旧Live/Canonical差异及
 原始calc阻断；闭市分类是下一交易日自然验收待办，不证明首见信号或即时可开仓。
+
+## SimNow 一次性账户只读核验
+
+独立可选依赖 `openctp-ctp==6.7.7.1`（已验证Mac ARM64），不安装进API服务的依赖环境。
+协议fixture不联网、不读取凭据，不证明账户已查询；使用已装该SDK的隔离Python：
+
+```sh
+/path/to/isolated/python -I tests/unit/simnow_readonly/test_readonly.py
+```
+
+运行 `scripts/broker/simnow_readonly.py` 才会连接固定的SimNow测试前置，并要求本机TTY隐藏输入。
+认证和登录各一次、四类只读查询两轮；不确认结算、不下单/撤单、不接Runtime。
+字段、失败及稳定性边界见 [账户只读合同](docs/SIMNOW_READONLY.md)。本地输出不提交Git。

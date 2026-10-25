@@ -1,5 +1,17 @@
 # 当前状态
 
+## 10/25 SimNow一次性账户只读工具：代码已验，真实查询待本机输入
+
+按owner交办完成固定测试环境的资金/持仓/委托/成交两轮串行只读CLI；复用已实测的Mac CTP登录ABI，
+不接入持续服务或执行政策。查询必须完整收尾、身份和交易日一致；保留今昨多空/冻结/订单原生事实，
+两轮变化或未完成不报空仓，资金仍有保证金占用/冻结时也不能报空账户。
+
+24项离线测试、原生四查询无网络参数核对、Ruff/secret0/diff及独立Review完成；Review所指保证金空账户
+判断已由失败回归复现并修复。CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；真实四类查询仍待用户
+本机隐藏输入后运行和独立结果读回，不把前序16:21测试环境登录成功当作账户核验通过。
+无订单、撤单、结算确认、生产写入、发布或Runtime切换；测试环境副本不能代替第一套环境和Ledger对账。
+合同见 [SIMNOW_READONLY](docs/SIMNOW_READONLY.md)，交付记录见 [任务记录](docs/tasks/simnow-readonly-20261025.md)。
+
 ## 10/25 D1历史75条修复完成：全部逐项验收，历史720端点CURRENT
 
 Owner交办前次审计的75条D1历史修复。18基础（AL/PG/PS/PX/SI/ZN各三策略）先、57融合后，使用正式exact v1.16.1/gen25原生fresh rebuild；75/75由独立进程逐条来源manifest/checkpoint/正式HTTP核验到10/23 15:00 CST，旧18个503入口恢复、57个滞后追齐。旧18个partial candidate/94已提交批次结果已独立核清，依赖改变后不复用旧plan/resume；ZN旧advance明确首写前REBUILD_REQUIRED。全部旧候选与经济事实保留。
