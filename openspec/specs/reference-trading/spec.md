@@ -727,27 +727,38 @@ calculation identity and observation-gap validation.
 ### Requirement: Unified bounded read-only message presentation
 
 `GET /api/market/messages` SHALL project committed Newow messages and immutable Alert history into one
-50-row paged list, ordered by parsed signal timestamp descending, source descending and stable source event
-identity descending. It MUST reuse the authoritative source readers and MUST NOT create events, transport
-attempts, reference trades or account facts. Product, trading-date, source, supported frequency, strategy/rule
-and product-name/code/contract search filters SHALL execute on the server.
+20-row paged list, ordered by parsed signal timestamp descending, source descending and stable source event
+identity descending. It MUST reuse authoritative source readers and MUST NOT create events, transport attempts,
+reference trades or account facts. Product, trading-date, source, supported frequency, strategy/rule and
+product-name/code/contract search filters SHALL execute on the server.
 
-The reader SHALL retain the Newow 93-day date-span and 500-message cap. Alert scans SHALL retain their
-366-calendar-day maximum window and bounded 5000-event scan cap. Search applies inside these source scan
-bounds. Each response MUST disclose source availability, truncation, limits and available count separately
-from loaded count; an incomplete empty result MUST NOT claim no matching history exists.
-The response SHALL include `dataset_hash`, the same full bounded source projection digest bound to the cursor,
-and ready-source `scanned_count` (Alert additionally `scan_batches`). These are read diagnostics, not new facts.
-On page reentry Web MAY immediately preview its bounded cached snapshot but SHALL revalidate a fresh first page.
-Only an identical full `dataset_hash` may retain already loaded older pages and their original snapshot/cursor;
-changed facts replace the first page. Failed revalidation SHALL label the retained snapshot as stale/failed.
-Pagination SHALL reject changed snapshot or dataset identities before merging rows.
+The reader SHALL retain the Newow 93-day date-span and 500-message cap, and the Alert 366-calendar-day
+window and 5000-event scan cap. Search applies inside these bounds. Responses SHALL disclose source
+availability, truncation, limits, available count and full bounded `dataset_hash`; incomplete empty results
+MUST NOT claim no matching history. Alert read diagnostics include `scanned_count` and `scan_batches`.
 
-A stateless cursor SHALL bind the exact normalized query, source cutoff, Alert ID high-water mark, active
-Newow revision identity and projected source dataset digest. New Alert insertions MUST NOT enter an existing
-snapshot. Newow batches after the cutoff MUST NOT enter an existing snapshot. Source revision changes,
-changes to previously read facts, or unavailable sources becoming available SHALL reject continuation with
-`MESSAGE_SNAPSHOT_STALE` and require an explicit refresh rather than skipping or duplicating rows.
+Web SHALL reuse a query-bound cache without requests for 30 seconds from the last successful first-page
+validation, retain it for at most five minutes, and enforce eight entries, 2MiB total and 300 retained rows.
+Pagination MUST NOT extend first-page freshness. Older cached results MAY remain visible during revalidation.
+Only identical full dataset hashes may retain older loaded rows; their snapshot and continuation cursor MUST
+be rebound to the newly validated snapshot via bounded first-page `resume_count` (any integer0..300, including short final pages)
+and response `resume_cursor`. Changed background results SHALL await explicit user acceptance; manual refresh
+replaces the first page directly. Failed reads retain the old snapshot with an explicit failure status.
+Search SHALL debounce350ms; Enter submits immediately. Query changes isolate late responses.
+
+The single API process SHALL retain frozen query snapshots for120 seconds from creation, with at most16
+entries and32MiB of serialized snapshot content, using synchronized LRU eviction. Oversized snapshots fail
+with `MESSAGE_QUERY_BUDGET_EXCEEDED`. First-page reads always scan current authoritative sources. Version2
+opaque cursors bind the server-held snapshot token, normalized query, cutoff, Alert ID high-water mark,
+dataset digest and page offset. Missing, expired, evicted, restarted or mismatched snapshots return409
+`MESSAGE_SNAPSHOT_STALE`; continuation MUST NOT rebuild silently or rescan calculation batches.
+
+New Alert insertions and Newow batches after snapshot creation MUST NOT enter its frozen pages. Event and
+notification-attempt fields represent their snapshot-time values; refresh reads current values. Source
+availability and partial coverage remain frozen and visible for that snapshot, including initial failures.
+For initially ready Newow sources, each continuation SHALL cheaply revalidate matching stream membership,
+active revision identity, revision status and health; changes or failed identity reads reject continuation.
+A new first-page read re-evaluates all sources. No message cache constitutes Runtime or delivery evidence.
 
 #### Scenario: A new Alert arrives between pages
 - **WHEN** the user loads a next page while newer Alert IDs have been committed
