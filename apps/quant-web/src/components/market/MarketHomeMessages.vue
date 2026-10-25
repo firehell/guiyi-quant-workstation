@@ -7,6 +7,7 @@ import { newowMessageStrategies, type NewowMessage } from '@/api/newowMessages'
 import { messageQueryIdentity, type UnifiedMessage, type UnifiedMessageQuery } from '@/api/marketMessages'
 import { useUnifiedMessages } from '@/composables/useUnifiedMessages'
 import { recordingPointLabel } from '@/utils/newowRecording'
+import { createMessageQueryScheduler } from '@/utils/messageQueryScheduler'
 import MarketChevron from './MarketChevron.vue'
 
 const props = defineProps<{ options: ProductOption[]; directoryStatus: 'ready' | 'loading' | 'error'; reloadSequence: number }>()
@@ -31,21 +32,50 @@ function selectKind(source: UnifiedMessageQuery['source'], rule: AlertRuleCode |
   query.value = { ...query.value, source, ruleCode: rule, strategy, frequency: source === 'newow' && !['', '1w', '1d', '60m'].includes(query.value.frequency) ? '' : query.value.frequency }
 }
 function reset() { query.value = { ...defaults }; filtersOpen.value = false }
-function load(force = false) { if (validRange.value) void messages.load({ ...query.value }, force); else messages.dispose() }
+let displayedQuery = { ...query.value }
+let scrollGeneration = 0
+const searchScheduler = createMessageQueryScheduler(() => { void load() })
+async function load(force = false) {
+  searchScheduler.cancel()
+  if (!validRange.value) { messages.dispose(); return }
+  const changed = messageQueryIdentity(displayedQuery) !== messageQueryIdentity(query.value)
+  if (changed) rememberScroll(displayedQuery)
+  displayedQuery = { ...query.value }
+  const current = ++scrollGeneration
+  const pending = messages.load({ ...query.value }, force)
+  const restoredCache = changed && page.value !== null
+  if (restoredCache) await restoreScroll(current)
+  await pending
+  if ((changed && !restoredCache || force) && current === scrollGeneration) await restoreScroll(current, force)
+}
+function applyUpdate() { messages.applyUpdate(); scrollElement()?.scrollTo({ top: 0 }); rememberScroll() }
 function persist() { try { sessionStorage.setItem('guiyi.market-home.messages.v2', JSON.stringify(query.value)) } catch {} }
 function scrollElement(): HTMLElement | null {
   const content = document.querySelector<HTMLElement>('.content--market-home')
   const nested = content?.querySelector<HTMLElement>('.n-layout-scroll-container') ?? null
   return [content, nested, document.scrollingElement as HTMLElement | null].find(el => Boolean(el && el.scrollHeight > el.clientHeight + 1)) ?? content ?? nested
 }
-function scrollKey() { return `guiyi.market-home.messages.scroll:${messageQueryIdentity(query.value)}` }
-function rememberScroll() { try { sessionStorage.setItem(scrollKey(), String(scrollElement()?.scrollTop ?? 0)) } catch {} }
-async function restoreScroll() { if (!mounted) return; await nextTick(); if (!mounted) return; try { const top = Number(sessionStorage.getItem(scrollKey()) ?? 0); if (top > 0) requestAnimationFrame(() => { if (mounted) scrollElement()?.scrollTo({ top }) }) } catch {} }
+function scrollKey(value = displayedQuery) { return `guiyi.market-home.messages.scroll:${messageQueryIdentity(value)}` }
+function rememberScroll(value = displayedQuery) { try { sessionStorage.setItem(scrollKey(value), String(scrollElement()?.scrollTop ?? 0)) } catch {} }
+async function restoreScroll(current = scrollGeneration, reset = false) {
+  if (!mounted) return
+  await nextTick()
+  if (!mounted || current !== scrollGeneration) return
+  try {
+    const top = reset ? 0 : Number(sessionStorage.getItem(scrollKey()) ?? 0)
+    requestAnimationFrame(() => { if (mounted && current === scrollGeneration) scrollElement()?.scrollTo({ top: Number.isFinite(top) ? top : 0 }) })
+  } catch {}
+}
 function open(row: UnifiedMessage) { rememberScroll(); persist(); if (row.source === 'alert') emit('open', row.event); else emit('openNewow', row.event) }
-watch(query, () => { persist(); if (!mounted) return; load() }, { deep: true })
+watch(() => ({ ...query.value }), (next, previous) => {
+  persist()
+  if (!mounted) return
+  const filtersChanged = messageQueryIdentity({ ...next, search: '' }) !== messageQueryIdentity({ ...previous, search: '' })
+  searchScheduler.schedule(filtersChanged)
+}, { flush: 'sync' })
 watch(() => props.reloadSequence, () => { if (mounted) load(true) })
-onMounted(async () => { mounted = true; if (validRange.value) await messages.load({ ...query.value }); if (mounted) await restoreScroll() })
-onBeforeUnmount(() => { mounted = false; rememberScroll(); messages.dispose() })
+onMounted(async () => { mounted = true; if (!validRange.value) return; const pending = messages.load({ ...query.value }); const cached = page.value !== null; if (cached) await restoreScroll(); await pending; if (!cached) await restoreScroll() })
+onBeforeUnmount(() => { mounted = false; scrollGeneration++; searchScheduler.cancel(); rememberScroll(); messages.dispose() })
 function localDay(value: Date) { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value) }
 function time(value: string) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value)) }
 function loadQuery(): UnifiedMessageQuery {
@@ -69,7 +99,7 @@ function loadQuery(): UnifiedMessageQuery {
       <button v-for="strategy in newowMessageStrategies" :key="strategy.value" type="button" :aria-pressed="query.source === 'newow' && query.strategy === strategy.value" @click="selectKind('newow', null, strategy.value)">{{ strategy.label }}</button>
     </div>
     <div class="market-message-kinds" aria-label="信号周期"><button v-for="period in periods" :key="period.value" type="button" :aria-pressed="query.frequency === period.value" :disabled="query.source === 'newow' && !['', '1w', '1d', '60m'].includes(period.value)" @click="query.frequency = period.value">{{ period.label }}</button></div>
-    <div class="market-message-search"><input v-model="query.search" maxlength="80" type="search" aria-label="搜索消息" placeholder="搜索查询范围内的品种名称/代码/合约…" /></div>
+    <div class="market-message-search"><input v-model="query.search" @keydown.enter.prevent="load()" maxlength="80" type="search" aria-label="搜索消息" placeholder="搜索查询范围内的品种名称/代码/合约…" /></div>
     <div class="market-message-stats"><span>今日已加载 {{ todayCount }} 条</span><span>当前已加载 {{ page?.items.length ?? 0 }} 条<span v-if="page"> · 本次可读取 {{ page.available_count }} 条{{ page.coverage === 'partial' ? '（覆盖不完整）' : '' }}</span></span></div>
     <div v-if="filtersOpen" class="market-message-filters">
       <label>品种<span class="market-message-select"><select v-model="query.symbol"><option value="">全部品种</option><option v-for="row in options" :key="row.symbol" :value="row.symbol">{{ row.name }} {{ row.symbol.toUpperCase() }}</option></select><MarketChevron /></span></label>
@@ -79,6 +109,7 @@ function loadQuery(): UnifiedMessageQuery {
     <p v-if="directoryStatus === 'loading'" class="market-message-status">正在读取品种目录…</p>
     <p v-else-if="directoryStatus === 'error'" class="market-dashboard-page__error" role="alert">品种目录刷新失败；保留可用品种名称。</p>
     <p v-if="messages.loading.value" class="market-message-status">{{ page ? '正在刷新；下方保留上次快照。' : '正在读取消息…' }}</p>
+    <p v-if="messages.pendingUpdate.value" class="market-message-note" role="status"><button type="button" @click="applyUpdate">消息已更新，点击查看</button></p>
     <p v-if="messages.error.value" class="market-dashboard-page__error" role="alert">{{ messages.error.value === 'stale' ? '消息来源或查询快照已变化，请刷新后继续。' : '消息读取失败；如有旧快照则已保留，请刷新重试。' }}</p>
     <template v-if="validRange && page">
       <p class="market-message-note">快照截止 {{ time(page.snapshot.cutoff) }} · 按信号时间排序 · 搜索在服务端查询范围内执行</p>

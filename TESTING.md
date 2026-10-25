@@ -70,7 +70,7 @@ NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-we
 NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web test
 NODE_OPTIONS=--max-old-space-size=768 pnpm -C apps/quant-web build
 NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/ui-unification.spec.mjs e2e/return-curve-layout.spec.mjs --workers=1 --output /private/tmp/guiyi-ui-unification-e2e
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_market_messages.py services/quant-api/tests/reference_trading/test_messages.py services/quant-api/tests/research/test_new_subing_api.py services/quant-api/tests/research/test_new_subing_store.py services/quant-api/tests/newow/test_page_performance.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_market_messages.py services/quant-api/tests/test_message_snapshots.py services/quant-api/tests/reference_trading/test_messages.py services/quant-api/tests/research/test_new_subing_api.py services/quant-api/tests/research/test_new_subing_store.py services/quant-api/tests/newow/test_page_performance.py
 ```
 
 中断后确认本任务进程已经退出再启动新一轮；超时终止精确测试进程树，禁止宽泛杀进程。

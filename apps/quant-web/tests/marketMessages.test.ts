@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createMessageQueryScheduler } from '../src/utils/messageQueryScheduler.ts'
 import { useUnifiedMessages } from '../src/composables/useUnifiedMessages.ts'
 import type { UnifiedMessagePage, UnifiedMessageQuery } from '../src/api/marketMessages.ts'
 import { normalizeAlertHistoryResponse } from '../src/utils/alertHistory.ts'
@@ -12,15 +13,15 @@ function page(ids: number[], cursor: string | null = null): UnifiedMessagePage {
 test('message retention stops at 300 without pretending the source cursor ended', async () => {
   let calls = 0
   const messages = useUnifiedMessages(async () => {
-    const start = calls++ * 50
-    return page(Array.from({ length: 50 }, (_, index) => start + index), `cursor-${calls}`)
+    const start = calls++ * 20
+    return page(Array.from({ length: 20 }, (_, index) => start + index), `cursor-${calls}`)
   })
   await messages.load(query)
-  for (let index = 0; index < 10; index++) await messages.loadMore()
-  assert.equal(calls, 6)
+  for (let index = 0; index < 20; index++) await messages.loadMore()
+  assert.equal(calls, 15)
   assert.equal(messages.page.value?.items.length, 300)
   assert.equal(messages.retentionCapped.value, true)
-  assert.equal(messages.page.value?.next_cursor, 'cursor-6')
+  assert.equal(messages.page.value?.next_cursor, 'cursor-15')
 })
 
 test('an oversized message cannot exceed the bounded retained byte budget', async () => {
@@ -62,14 +63,14 @@ for (const first of ['more', 'refresh']) test(`refresh isolates pending paginati
   if (first === 'more') { more(page([1])); await old; refresh(page([4])); await next } else { refresh(page([4])); await next; more(page([1])); await old }
   assert.deepEqual(messages.page.value?.items.map(item => item.id), ['4']); assert.equal(messages.loadingMore.value, false)
 })
-test('reentry shows cached facts while revalidating a fresh first page', async () => {
+test('reentry restores fresh cached pages without any request', async () => {
   let calls = 0
   const fetcher = async (_query: UnifiedMessageQuery, _signal: AbortSignal, cursor?: string) => { calls++; return cursor ? page([2]) : page([1], 'two') }
   const first = useUnifiedMessages(fetcher, 'cache-test'); await first.load(query); await first.loadMore(); first.dispose()
   const restoredQuery = Object.fromEntries(Object.entries(query).reverse()) as unknown as UnifiedMessageQuery
   const second = useUnifiedMessages(fetcher, 'cache-test'); await second.load(restoredQuery)
-  assert.equal(calls, 3); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1'])
-  await second.load(query, true); assert.equal(calls, 4); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1'])
+  assert.equal(calls, 2); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1', '2'])
+  await second.load(query, true); assert.equal(calls, 3); assert.deepEqual(second.page.value?.items.map(item => item.id), ['1'])
 })
 test('stale snapshots preserve visible facts and disable further pagination', async () => {
   let calls = 0
@@ -97,9 +98,10 @@ test('dispose synchronously releases all loading state and ignores pending respo
   assert.equal(messages.page.value, null)
 })
 
-test('cached messages remain labeled as refreshing and a failed proof retains only the old snapshot', async () => {
+test('stale cached messages remain labeled as refreshing and failed proof retains old snapshot', async t => {
+  let now = 1000; t.mock.method(Date, 'now', () => now)
   const first = useUnifiedMessages(async () => page([1]), 'proof-cache')
-  await first.load(query); first.dispose()
+  await first.load(query); first.dispose(); now += 30_000
   let reject!: (error: Error) => void
   const next = useUnifiedMessages(() => new Promise((_resolve, failed) => { reject = failed }), 'proof-cache')
   const pending = next.load(query)
@@ -110,17 +112,20 @@ test('cached messages remain labeled as refreshing and a failed proof retains on
   assert.deepEqual(next.page.value?.items.map(item => item.id), ['1'])
 })
 
-test('a fresh full dataset hash preserves accepted older pages and their cursor', async () => {
+test('same full dataset hash preserves rows and rebinds cursor to the new snapshot', async t => {
+  let now = 1000; t.mock.method(Date, 'now', () => now)
   let calls = 0
-  const fetcher = async (_q: UnifiedMessageQuery, _s: AbortSignal, cursor?: string) => {
+  const fetcher = async (_q: UnifiedMessageQuery, _s: AbortSignal, cursor?: string, resumeCount?: number) => {
     calls++
-    return { ...page(cursor ? [2] : [1], cursor ? 'third' : 'second'), dataset_hash: 'a'.repeat(64) }
+    if (resumeCount !== undefined) assert.equal(resumeCount, 2)
+    return { ...page(cursor ? [2] : [1], cursor ? 'third' : 'second'), ...(resumeCount !== undefined ? { resume_cursor: 'rebound', snapshot: { cutoff: '2026-10-15T05:01:00Z', alert_max_id: 100 } } : {}), dataset_hash: 'a'.repeat(64) }
   }
-  const first = useUnifiedMessages(fetcher, 'digest-cache'); await first.load(query); await first.loadMore(); first.dispose()
+  const first = useUnifiedMessages(fetcher, 'digest-cache'); await first.load(query); await first.loadMore(); first.dispose(); now += 30_000
   const restored = useUnifiedMessages(fetcher, 'digest-cache'); await restored.load(query)
   assert.equal(calls, 3)
   assert.deepEqual(restored.page.value?.items.map(item => item.id), ['1','2'])
-  assert.equal(restored.page.value?.next_cursor, 'third')
+  assert.equal(restored.page.value?.next_cursor, 'rebound')
+  assert.equal(restored.page.value?.snapshot.cutoff, '2026-10-15T05:01:00Z')
 })
 
 test('pagination refuses a changed dataset or snapshot without mixing records', async () => {
@@ -128,4 +133,75 @@ test('pagination refuses a changed dataset or snapshot without mixing records', 
   await messages.load(query); await messages.loadMore()
   assert.equal(messages.error.value, 'stale')
   assert.deepEqual(messages.page.value?.items.map(item => item.id), ['1'])
+})
+
+
+test('load more does not extend the 30 second first-page freshness', async t => {
+  let now = 1000; t.mock.method(Date, 'now', () => now)
+  let calls = 0
+  const messages = useUnifiedMessages(async (_q, _s, cursor) => { calls++; return page(cursor ? [2] : [1], cursor ? null : 'next') }, 'fresh-boundary')
+  await messages.load(query)
+  now += 29_999; await messages.loadMore(); await messages.load(query)
+  assert.equal(calls, 2)
+  now++; await messages.load(query)
+  assert.equal(calls, 3)
+})
+
+test('expired five minute cache fetches and accepts a fresh first page', async t => {
+  let now = 1000; t.mock.method(Date, 'now', () => now)
+  let calls = 0
+  const fetcher = async () => page([++calls])
+  const first = useUnifiedMessages(fetcher, 'expired-cache'); await first.load(query); first.dispose()
+  now += 300_000
+  const next = useUnifiedMessages(fetcher, 'expired-cache'); await next.load(query)
+  assert.equal(calls, 2); assert.deepEqual(next.page.value?.items.map(row => row.id), ['2'])
+  assert.equal(next.pendingUpdate.value, null)
+})
+
+test('changed background result waits for explicit adoption and retains the old list', async t => {
+  let now = 1000; t.mock.method(Date, 'now', () => now)
+  let calls = 0
+  const messages = useUnifiedMessages(async () => ({ ...page([++calls]), dataset_hash: String(calls).repeat(64) }), 'pending-cache')
+  await messages.load(query); now += 30_000; await messages.load(query)
+  assert.deepEqual(messages.page.value?.items.map(row => row.id), ['1'])
+  assert.deepEqual(messages.pendingUpdate.value?.page.items.map(row => row.id), ['2'])
+  messages.applyUpdate()
+  assert.deepEqual(messages.page.value?.items.map(row => row.id), ['2']); assert.equal(messages.pendingUpdate.value, null)
+  await messages.load(query); assert.equal(calls, 2)
+})
+
+test('fresh type cache isolates queries and pending update survives switching back', async t => {
+  let now = 1000; t.mock.method(Date, 'now', () => now)
+  let calls = 0
+  const messages = useUnifiedMessages(async q => page([q.symbol === 'jm' ? 9 : ++calls]), 'type-cache')
+  await messages.load(query); now += 30_000; await messages.load(query)
+  await messages.load({ ...query, symbol: 'jm' }); await messages.load(query)
+  assert.equal(calls, 2)
+  assert.deepEqual(messages.page.value?.items.map(row => row.id), ['1'])
+  assert.deepEqual(messages.pendingUpdate.value?.page.items.map(row => row.id), ['2'])
+})
+
+test('search coalesces typing for 350ms and Enter/filter submit immediately', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let calls = 0
+  const scheduler = createMessageQueryScheduler(() => calls++)
+  scheduler.schedule(); t.mock.timers.tick(200); scheduler.schedule(); t.mock.timers.tick(349)
+  assert.equal(calls, 0); t.mock.timers.tick(1); assert.equal(calls, 1)
+  scheduler.schedule(); scheduler.schedule(true); assert.equal(calls, 2)
+  t.mock.timers.tick(350); assert.equal(calls, 2)
+  scheduler.schedule(); scheduler.cancel(); t.mock.timers.tick(350); assert.equal(calls, 2)
+})
+
+
+test('failed forced refresh preserves shared cache across type changes', async () => {
+  let calls = 0
+  const fetcher = async () => { calls++; if (calls === 2) throw Error('offline'); return page([1]) }
+  const messages = useUnifiedMessages(fetcher, 'force-failure-shared')
+  await messages.load(query)
+  await messages.load(query, true)
+  assert.equal(messages.error.value, 'failed')
+  const returned = useUnifiedMessages(fetcher, 'force-failure-shared')
+  await returned.load(query)
+  assert.equal(calls, 2)
+  assert.deepEqual(returned.page.value?.items.map(item => item.id), ['1'])
 })
