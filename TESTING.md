@@ -55,7 +55,7 @@ NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-we
 验证串行，保持单元并发1、浏览器单worker；fixture不证明Runtime或策略收益。
 
 ```sh
-NODE_OPTIONS=--max-old-space-size=512 node --test --test-concurrency=1 apps/quant-web/tests/marketDetailRoute.test.ts apps/quant-web/tests/marketDetailPreferences.test.ts apps/quant-web/tests/marketDetailViewNav.test.ts apps/quant-web/tests/marketDetailViewModel.test.ts apps/quant-web/tests/freeDetailViewModel.test.ts apps/quant-web/tests/newowProductRoutes.test.ts
+NODE_OPTIONS=--max-old-space-size=512 node --test --test-concurrency=1 apps/quant-web/tests/marketDetailRoute.test.ts apps/quant-web/tests/marketDetailPreferences.test.ts apps/quant-web/tests/marketDetailViewNav.test.ts apps/quant-web/tests/marketDetailViewModel.test.ts apps/quant-web/tests/newowProductRoutes.test.ts
 NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/hide-continuous.spec.mjs --workers=1 --output /private/tmp/guiyi-hide-continuous
 ```
 
@@ -113,7 +113,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 不访问生产 API，不证明行情、收益或 Runtime 自然验收。
 
 ```sh
-node --test apps/quant-web/tests/useIdentityBoundResource.test.ts apps/quant-web/tests/useHtdyAlertFacts.test.ts apps/quant-web/tests/useSubingAlertFacts.test.ts
+node --test apps/quant-web/tests/useIdentityBoundResource.test.ts apps/quant-web/tests/useSubingAlertFacts.test.ts
 pnpm -C apps/quant-web test
 pnpm -C apps/quant-web build
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/overlay-lifecycle.spec.mjs e2e/alert-facts.spec.mjs e2e/return-curve-layout.spec.mjs
@@ -1607,7 +1607,6 @@ SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
 pnpm -C apps/quant-web exec node --test \
   tests/alertRuleOwnership.test.ts \
   tests/alerts.test.ts \
-  tests/useHtdyAlertFacts.test.ts \
   tests/useSubingAlertFacts.test.ts \
   tests/marketHomeTypes.test.ts \
   tests/marketHomeViewModel.test.ts \

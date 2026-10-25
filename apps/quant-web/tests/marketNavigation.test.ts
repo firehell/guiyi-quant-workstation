@@ -56,9 +56,8 @@ test('detail top bar names return and record destinations explicitly', () => {
   assert.doesNotMatch(source, /aria-label="返回"/)
 })
 
-test('home table omits the unavailable target-reference column without changing row facts', () => {
-  const source = read('../src/components/market/MarketHomeTable.vue')
-  assert.doesNotMatch(source, /目标参考价|target-unavailable/)
-  assert.match(source, /日量比/)
-  assert.match(source, /日增仓率/)
+test('home uses strategy cards instead of an inactive quote table', () => {
+  const page = read('../src/pages/market/index.vue')
+  assert.match(page, /<MarketHomeStrategyCards/)
+  assert.doesNotMatch(page, /MarketHomeTable|MarketHomeMobileList|MarketHomeLegend/)
 })
