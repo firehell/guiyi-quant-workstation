@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager, ExitStack
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
+from fnmatch import fnmatchcase
 import fcntl
 import json
 import os
@@ -46,6 +47,27 @@ IDENTITY_NAMES = {
 
 class CohortHost(FaultRecoveryHost):
     now = staticmethod(lambda: datetime.now(UTC))
+
+    def bytes(self, path, *, limit=None):
+        path = Path(path)
+        if (
+            limit is None
+            and path.parent == self.directory
+            and any(
+                fnmatchcase(path.name, pattern)
+                for pattern in (
+                    "*generation*.json",
+                    "*deployment*.json",
+                    "*scheduled-update.json",
+                )
+            )
+        ):
+            # Existing recovery evidence can exceed the ordinary config limit.
+            # Keep the same fd/directory/owner/link/race checks and a finite cap.
+            from app.runtime_identity import file_snapshot
+
+            return file_snapshot(path, limit=8 * 1024 * 1024)[0]
+        return super().bytes(path, limit=limit)
 
     def installed(self, reg):
         from app.runtime_identity import read_launchd_service
@@ -277,7 +299,8 @@ class CohortHost(FaultRecoveryHost):
                     env=env,
                     capture_output=True,
                     text=True,
-                    timeout=120,
+                    # Full scoped Alert replay runs before the downtime budget.
+                    timeout=600 if service == "alert" else 120,
                     check=False,
                 )
                 value = json.loads(result.stdout.strip().splitlines()[-1])

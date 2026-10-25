@@ -589,17 +589,25 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
     old_root, new_root = tmp_path / "old", tmp_path / "new"
     old_root.mkdir()
     new_root.mkdir()
+    marker = old_root / ".run/alert-runtime-enabled"
+    marker.parent.mkdir(mode=0o700)
+    marker.write_text("enabled\n")
+    marker.chmod(0o600)
     old = BindingRegistry(
         1,
         {
-            name: replace(binding(old_root, name), enabled=name in {"api", "web"})
+            name: replace(
+                binding(old_root, name), enabled=name in {"api", "web", "alert"}
+            )
             for name in SERVICES
         },
     )
     new = BindingRegistry(
         1,
         {
-            name: replace(binding(new_root, name), enabled=name in {"api", "web"})
+            name: replace(
+                binding(new_root, name), enabled=name in {"api", "web", "alert"}
+            )
             for name in SERVICES
         },
     )
@@ -608,7 +616,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
         "new": asdict(new),
         "installed": {
             name: {"plist_hex": plistlib.dumps({"EnvironmentVariables": {}}).hex()}
-            for name in ("api", "web")
+            for name in ("api", "web", "alert")
         },
     }
     app, core = (
@@ -625,6 +633,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
         "version": "1.16.5",
     }
     host = object.__new__(CohortHost)
+    host.directory = tmp_path / "control"
     events = []
     host._verify_web_dependencies = lambda root: events.append(
         ("web-dependencies", root)
@@ -633,6 +642,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
     def warmup(arguments, **kwargs):
         events.append(("warmup", arguments[-1]))
         assert kwargs["env"]["GUIYI_PROJECT_ROOT"] == str(new_root)
+        assert kwargs["timeout"] == (600 if arguments[-1] == "alert" else 120)
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
@@ -650,7 +660,7 @@ def test_prewarm_rejects_wrong_import_identity_even_when_candidate_reports_ready
         with pytest.raises(CohortError, match="CANDIDATE_WARMUP_FAILED"):
             host.prewarm(plan)
     else:
-        assert set(host.prewarm(plan)) == {"api", "web"}
+        assert set(host.prewarm(plan)) == {"api", "web", "alert"}
     assert events[0] == ("web-dependencies", new_root)
 
 
@@ -682,3 +692,47 @@ def test_restore_old_rejects_calendar_loaded_readback_mismatch(
     monkeypatch.setattr(module, "CONTINUOUS", ())
     with pytest.raises(CohortError, match="OLD_RESTORE_CALENDAR_UNPROVEN"):
         host.restore_old(plan)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "reference-continuity-generation8.json",
+        "deployment-outcome.json",
+        "weekly-audit.scheduled-update.json",
+    ],
+)
+def test_preserved_journals_accept_existing_evidence_above_config_limit(tmp_path, name):
+    host = object.__new__(CohortHost)
+    host.directory = tmp_path
+    path = tmp_path / name
+    payload = b"x" * (1475785)
+    path.write_bytes(payload)
+    path.chmod(0o600)
+    assert host.bytes(path) == payload
+
+
+def test_preserved_journal_limit_does_not_weaken_path_or_file_security(tmp_path):
+    host = object.__new__(CohortHost)
+    host.directory = tmp_path
+    large = tmp_path / "reference-generation8.json"
+    large.write_bytes(b"x" * (8 * 1024 * 1024 + 1))
+    large.chmod(0o600)
+    with pytest.raises(ValueError):
+        host.bytes(large)
+    config = tmp_path / "project.env"
+    config.write_bytes(b"x" * 1475785)
+    config.chmod(0o600)
+    with pytest.raises(ValueError):
+        host.bytes(config)
+    other = tmp_path / "other"
+    other.mkdir(mode=0o700)
+    outside = other / "reference-generation8.json"
+    outside.write_bytes(b"x" * 1475785)
+    outside.chmod(0o600)
+    with pytest.raises(ValueError):
+        host.bytes(outside)
+    large.unlink()
+    large.symlink_to(outside)
+    with pytest.raises((ValueError, OSError)):
+        host.bytes(large)

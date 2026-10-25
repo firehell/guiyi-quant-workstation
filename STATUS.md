@@ -7,6 +7,14 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/26 v1.16.5已发布，整组切换停在预检，向前修复候选1.16.6
+
+PR481已合main，annotated v1.16.5 exact `87f75c16480160e5fc3d7f8af0800bcacb672a46`，GitHub Release已公开；与已测试候选完整树相同。
+正式十服务尚未停止或切换。计划阶段发现旧generation8原件1,475,785字节超过继承1MiB上限；不删除/改写原件，修为仅稳定目录三类journal的8MiB有界读取，全部安全检查保持。
+实际API/Web/Live/Reference/Feed预热已通过；Alert定位为BZ/1w完整quality段26根的合法WARMING_UP，并非缺口或伪造数据。
+候选1.16.6仅在整组闭市预热中逐路披露这种苏冰D1/W1不足，不计calculated，native默认strict、正常策略和Event路径不变；未知/质量/映射错误仍阻断。
+两处forward fix均完成独立Review，部署组合180 passed，关联组合378 passed/10 skipped，OpenSpec12/12、secret0；正式6候选自身全预热、发布、统一切换及清树待执行。v1.16.5发布树暂保留，旧运行树仍有正式引用。
+
 ## 10/26 全量发布候选与整组升级工程
 
 CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE（部署工程）：新增权威休市窗口十服务整组向前升级，

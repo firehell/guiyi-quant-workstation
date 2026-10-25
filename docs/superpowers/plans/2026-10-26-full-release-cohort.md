@@ -16,3 +16,9 @@ Implementation ledger:
 - 未发布执行边界/参考面板223 passed；Runtime+消息+预热133 passed。完整Web1237 passed/3 skipped，type/build/topology通过；OpenSpec12/12、secret0。关键五组浏览器70 passed、详情现役交互10 passed；旧SuBing/Free金图与本轮未改产品源码失配，保留原阈值及失败原件。32项原生只读与8项SDK宿主无网络smoke通过。
 - 完整Review与检查已完成。namespace app.__file__=None由候选实机发现，已改真实模块路径并补CLI回归。正式发布、切换与清理待执行。
 - 两张旧金图保持原阈值/失败；Newow三项旧自动explanation断言相关src/fixture与v1.16.4相同，周线中断，不宣称完整七组浏览器通过。
+
+Forward fix ledger:
+- v1.16.5/PR481/main87f75c已发布，源码与候选同树；十服务未停。只读freeze因1.4MiB旧generation8原件触发继承1MiB上限，限定三类稳定journal改8MiB且保持file_snapshot全部安全检查。
+- v5真实预热API/Web/Live/Reference/Feed通过。Alert真实BZ/1w完整段26根，不足34根按合同预热；cohort-only显式分类warming，native strict不变，未知/质量/映射仍失败，prewarm证据停机前持久化。独立Review已通过；v6候选本身全量预热后再发布，不移动v5 tag。
+
+- v6候选部署114项、type/build通过；实际完整Alert replay超过原120秒，停机前预算单独改600秒，其他120不变；15分钟计划TTL与600秒停机上限不变。81项受影响测试与独立预算Review通过，真实全scope计算继续，未停服务。

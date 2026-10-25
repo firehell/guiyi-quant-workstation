@@ -238,13 +238,16 @@ def build_alert_market_read_service(session):
     return market
 
 
-def warmup_alert_runtime():
+def warmup_alert_runtime(*, allow_closed_warming: bool = False):
     """Verify scoped Market windows and evaluate without Event or transport writes."""
     from sqlalchemy import select
     from app.alerts.models import AlertRule
+    from app.alerts.evaluators import AlertEvaluationError
+    from app.alerts.registry import SUBING_QUALITY_REWARM_POLICY_V2
     from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
     runtime = build_alert_runtime()
     count = 0
+    warming = []
     try:
         runtime._validate_startup_composition()
         source = runtime.message_source
@@ -260,7 +263,8 @@ def warmup_alert_runtime():
                         query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency(frequency))
                         window = canonical.closed_window(query, limit=64,
                             quality_rewarm=rule.rule_code == SUBING_THS_ALERT_RULE_CODE and frequency in {"1d", "1w"})
-                        reader = canonical if window is not None else market
+                        closed_canonical = window is not None
+                        reader = canonical if closed_canonical else market
                         if window is None:
                             page = market.history_page(query)
                             if not page.bars:
@@ -268,10 +272,31 @@ def warmup_alert_runtime():
                             latest = page.bars[-1]
                             window = market.bars_until(query, trading_day=latest.trading_day, end=latest.bar_end, limit=64)
                         reader.assert_window_current(window)
-                        runtime._evaluators[rule.rule_code].evaluate_candidates(reader, window)
+                        try:
+                            runtime._evaluators[rule.rule_code].evaluate_candidates(reader, window)
+                        except AlertEvaluationError as exc:
+                            if not (
+                                allow_closed_warming is True
+                                and closed_canonical and reader is canonical
+                                and rule.rule_code == SUBING_THS_ALERT_RULE_CODE
+                                and frequency in {"1d", "1w"}
+                                and window.input_policy_version == SUBING_QUALITY_REWARM_POLICY_V2
+                                and type(exc) is AlertEvaluationError
+                                and str(exc) == "ALERT_EVALUATION_WARMING_UP"
+                            ):
+                                raise
+                            # Reprove source/owner after the pure calculation;
+                            # warming is never a quality or mapping fallback.
+                            reader.assert_window_current(window)
+                            warming.append({"rule_code": rule.rule_code, "symbol": symbol,
+                                            "frequency": frequency, "contract": window.contract,
+                                            "bar_count": len(window.bars)})
+                            continue
+                        reader.assert_window_current(window)
                         count += 1
-        if not count:
+        if not count and not warming:
             raise RuntimeError("ALERT_WARMUP_SCOPE_EMPTY")
-        return {"calculated": count}
+        return {"calculated": count, "total": count + len(warming), "warming": warming,
+                "natural_signals_verified": False}
     finally:
         runtime.message_source.close()

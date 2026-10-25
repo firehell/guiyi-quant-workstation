@@ -228,7 +228,7 @@ def test_alert_closed_warmup_evaluates_then_discards_without_events_or_transport
         @classmethod
         def now(cls, tz=None): return NOW
     monkeypatch.setattr(composition, 'datetime', FrozenDateTime)
-    assert composition.warmup_alert_runtime() == {'calculated': 1}
+    assert composition.warmup_alert_runtime() == {'calculated': 1, 'total': 1, 'warming': [], 'natural_signals_verified': False}
     assert closed == [True]
     assert all(not value.lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')) for value in statements)
 

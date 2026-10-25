@@ -262,3 +262,8 @@ with maintenance and owner guards held; new consumers SHALL start before Feed an
 - **WHEN** failure occurs after entering CAS
 - **THEN** the attempt is retained as unknown, new work is cooperatively halted and automatic rollback or replay is forbidden
 - **AND** closed idle evidence cannot substitute for a natural completed Bar, Event or recipient delivery
+
+#### Scenario: A complete closed weekly calculation segment is still warming
+- **WHEN** the cohort-only warmup validates a SuBing D1/W1 quality-v2 Canonical segment and the unchanged evaluator returns exactly WARMING_UP
+- **THEN** it records the stream identity and bar count as warming, excludes it from calculated and keeps natural_signals_verified false
+- **AND** default native warmup remains strict, while any quality, mapping or other error still blocks the cohort
