@@ -160,7 +160,7 @@ def test_plan_is_deterministic_and_does_not_mutate_repository() -> None:
         ("newow-trend", "1m"),
         ("newow-oscillation", "120m"),
         ("newow-main-rise", "5m"),
-        ("subing-reference", "1w"),
+        ("subing-reference", "1m"),
         ("htdy-first-seen", "1d"),
     ],
 )

@@ -17,12 +17,12 @@ def build_forward_reference_worker(
     expected_endpoints, newow_capability_ready,
     canonical_read_guard=None, now: Callable[[], datetime] = lambda: datetime.now(UTC),
     enabled: bool = False, fusion_sources=None, reconciliation_guard=None,
-    reconciliation_commit_guard=None,
+    reconciliation_commit_guard=None, subing_service=None, subing_owner_started_at=None,
 ):
     """Compose a default-off worker; callers provide authoritative read seams."""
     from app.reference_trading.forward_inputs import (
         ForwardInputUnavailable, capture_htdy_live, capture_newow_canonical,
-        capture_newow_live, capture_newow_envelope, capture_subing_live,
+        capture_newow_live, capture_newow_envelope, capture_subing_live, capture_subing_canonical,
     )
     from app.reference_trading.forward_service import ForwardReferenceService
     from app.reference_trading.htdy import evaluate_htdy_capture
@@ -112,8 +112,19 @@ def build_forward_reference_worker(
                     owner_segments=owner_segments, **common,
                 )
             if code == "subing_reference":
+                if identity.frequency in {"1d", "1w"}:
+                    if canonical_read_guard is None or subing_service is None:
+                        raise ForwardInputUnavailable("CANONICAL_READ_GUARD_MISSING")
+                    with canonical_read_guard():
+                        return capture_subing_canonical(
+                            subing_service, identity, revision_id=revision_id,
+                            generation=generation, after=computed_through,
+                            recording_start=recording_start, now=observed,
+                        )
                 return capture_subing_live(
-                    market_read, identity, wake_kind=kind,
+                    market_read, identity, wake_kind=kind, owner_started_at=subing_owner_started_at,
+                    observation=worker.source_envelope if kind == "live_event" else None, checkpoint_watermark=computed_through,
+                    prior_owner_segment_id=prior_owner_id, prior_calculation_segment_id=prior_calculation_id,
                     owner_segments=owner_segments,
                     expected_endpoints=expected_endpoints,
                     event_bar_end=event_bar_end,

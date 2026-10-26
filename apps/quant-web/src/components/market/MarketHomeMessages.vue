@@ -24,14 +24,14 @@ const validRange = computed(() => query.value.startDay <= query.value.endDay && 
 const todayCount = computed(() => page.value?.items.filter(row => row.event.trading_day === today).length ?? 0)
 const sourceIssues = computed(() => Object.entries(page.value?.sources ?? {}).filter(([, value]) => value.status !== 'ready' || value.truncated || (value.excluded_streams ?? 0) > 0))
 const periods = [{ value: '', label: '全部周期' }, { value: '1m', label: '1分钟' }, { value: '5m', label: '5分钟' }, { value: '15m', label: '15分钟' }, { value: '30m', label: '30分钟' }, { value: '60m', label: '60分钟' }, { value: '1d', label: '日线' }, { value: '1w', label: '周线' }]
-const visiblePeriods = computed(() => query.value.source === 'newow' ? periods.filter(period => ['', '60m', '1d', '1w'].includes(period.value)) : periods)
+const visiblePeriods = computed(() => query.value.source === 'newow' ? periods.filter(period => ['', '60m', '1d', '1w'].includes(period.value)) : query.value.ruleCode === ALERT_RULE_CODES.SUBING_THS ? periods.filter(period => period.value !== '1m') : periods)
 const periodLabel = (frequency: string) => periods.find(row => row.value === frequency)?.label ?? frequency
 const strategyName = (value: string) => newowMessageStrategies.find(row => row.value === value)?.label ?? value
 const productName = (event: AlertEvent | NewowMessage) => props.options.find(row => row.symbol === event.symbol)?.name ?? event.symbol.toUpperCase()
 let mounted = false
 function selectKind(source: UnifiedMessageQuery['source'], rule: AlertRuleCode | null = null, strategy = '') {
   const frequency = rule === ALERT_RULE_CODES.HTDY ? '60m'
-    : query.value.ruleCode === ALERT_RULE_CODES.HTDY || source === 'newow' && !['', '1w', '1d', '60m'].includes(query.value.frequency) ? '' : query.value.frequency
+    : query.value.ruleCode === ALERT_RULE_CODES.HTDY || source === 'newow' && !['', '1w', '1d', '60m'].includes(query.value.frequency) ? '' : rule === ALERT_RULE_CODES.SUBING_THS && query.value.frequency === '1m' ? '' : query.value.frequency
   query.value = { ...query.value, source, ruleCode: rule, strategy, frequency }
 }
 function reset() { query.value = { ...defaults }; filtersOpen.value = false }
@@ -92,6 +92,7 @@ function loadQuery(): UnifiedMessageQuery {
       return { ...restored, source: 'alert', ruleCode: ALERT_RULE_CODES.HTDY, strategy: '', frequency: '60m' }
     }
     if (restored.source === 'newow' && !['', '60m', '1d', '1w'].includes(restored.frequency)) restored.frequency = ''
+    if (restored.ruleCode === ALERT_RULE_CODES.SUBING_THS && restored.frequency === '1m') restored.frequency = ''
     return restored
   } catch { return { ...defaults } }
 }

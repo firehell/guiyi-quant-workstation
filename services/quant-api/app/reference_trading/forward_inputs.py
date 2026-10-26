@@ -110,9 +110,10 @@ def capture_subing_live(
     now: datetime, wake_kind: str, event_bar_end: datetime | None = None,
     owner_segments: Callable[[StreamIdentity, str, date, datetime], tuple[str, str]],
     expected_endpoints: Callable[[StreamIdentity, str, date, datetime | None, datetime], tuple[datetime, ...]],
+    owner_started_at=None, prior_owner_segment_id=None, prior_calculation_segment_id=None, observation=None, checkpoint_watermark=...,
 ) -> ForwardCapture | None:
     """Capture one completed SuBing Bar only when Session continuity is proven."""
-    if identity.strategy_code.replace("-", "_") != "subing_reference" or identity.frequency not in {"15m", "30m", "60m"}:
+    if identity.strategy_code.replace("-", "_") != "subing_reference" or identity.frequency not in {"5m", "15m", "30m", "60m"}:
         raise ValueError("FORWARD_INPUT_IDENTITY_INVALID")
     if wake_kind not in {"live_event", "scan"}:
         raise ValueError("FORWARD_INPUT_WAKE_INVALID")
@@ -120,7 +121,34 @@ def capture_subing_live(
         SeriesKind.ACTUAL_DOMINANT, identity.product.upper(),
         BarFrequency(identity.frequency), limit=2,
     )
-    snapshot = market_read.observation_snapshot(query, after, now)
+    journal_proof = {}
+    if observation is not None:
+        from app.market_data.live_market import _bar_from_payload
+        from app.market_data.market_read_service import MarketObservationSnapshot
+        from app.market_data.domain import normalize_contract_for_symbol
+        try:
+            raw = observation.data
+            original = _bar_from_payload(json.dumps(raw, allow_nan=False))
+            contract = raw["contract"]
+            if (observation.channel != f"live:bar:{identity.product.lower()}:{identity.frequency}"
+                    or observation.trading_day != original.trading_day
+                    or not observation.notification_eligible or not observation.stream_id
+                    or observation.confirmed_at != now or original.bar_end > now
+                    or normalize_contract_for_symbol(identity.product.lower(), contract) != contract):
+                raise ValueError("identity")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ForwardInputUnavailable("LIVE_EVENT_IDENTITY_CONFLICT") from exc
+        if after is not None and original.bar_end <= after:
+            return None
+        snapshot = MarketObservationSnapshot(state=None, source="realtime",
+            trading_day=original.trading_day, contract=contract, bars=(original,))
+        received = observation.raw_received_at or observation.source_observed_at
+        if received > now:
+            raise ForwardInputUnavailable("LIVE_EVENT_IDENTITY_CONFLICT")
+        journal_proof = {"journal_id": observation.stream_id, "raw_received_at": received.isoformat(),
+                         "confirmed_at": now.isoformat()}
+    else:
+        snapshot = market_read.observation_snapshot(query, after, now)
     if snapshot.source == "unavailable":
         raise ForwardInputUnavailable("LIVE_SOURCE_UNAVAILABLE")
     if snapshot.source == "none" or not snapshot.bars:
@@ -144,17 +172,36 @@ def capture_subing_live(
     owner_id, calculation_id = owner_segments(identity, snapshot.contract, bar.trading_day, bar.bar_end)
     if not owner_id or not calculation_id:
         raise ForwardInputUnavailable("OWNER_UNAVAILABLE")
+    warmup_payload = {}
+    if identity.observation_policy_version == "subing_physical_prefix_forward_v2" and (
+        after is None or (prior_owner_segment_id, prior_calculation_segment_id) != (owner_id, calculation_id)
+    ):
+        from app.market_data.market_read_service import MarketReadWindow, MarketReadWindowError
+        from app.reference_trading.subing_forward import subing_warmup_checkpoint
+        window = MarketReadWindow(symbol=identity.product.lower(), series_kind="actual_dominant",
+            frequency=identity.frequency, trading_day=bar.trading_day, contract=snapshot.contract,
+            cutoff=bar.bar_end, bars=(bar,), bar_contracts=(snapshot.contract,))
+        try:
+            replay = market_read.current_contract_replay_window(window, after=None)
+        except MarketReadWindowError as exc:
+            raise ForwardInputUnavailable("SUBING_PHYSICAL_PREFIX_UNAVAILABLE") from exc
+        if not replay.bars or replay.bars[-1] != bar:
+            raise ForwardInputUnavailable("SUBING_SOURCE_IDENTITY_INVALID")
+        warmup_payload["warmup_checkpoint"] = subing_warmup_checkpoint(
+            identity, snapshot.contract, owner_id, calculation_id, replay.bars[:-1])
+    watermark = after if checkpoint_watermark is ... else checkpoint_watermark
+    owner_start = None if owner_started_at is None else owner_started_at(identity, snapshot.contract, bar.trading_day)
     wire = _bar_wire(bar)
     source_hash = sha256(json.dumps(wire, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return ForwardCapture(
         stream_id=identity.stream_id, revision_id=revision_id, generation=generation,
         source_key=f"{snapshot.contract}:{bar.bar_end.isoformat()}",
         bar_end=bar.bar_end, observed_at=now, source_kind="completed_live",
-        input_payload={"bar": wire, "contract": snapshot.contract},
+        input_payload={"bar": wire, "contract": snapshot.contract, **warmup_payload},
         source_proof={
-            "source_sha256": source_hash, "owner_segment_id": owner_id,
+            "source_sha256": source_hash, **journal_proof, "owner_started_at": None if owner_start is None else owner_start.isoformat(), "owner_segment_id": owner_id,
             "calculation_segment_id": calculation_id,
-            "previous_watermark": None if after is None else after.isoformat(),
+            "previous_watermark": None if watermark is None else watermark.isoformat(),
             "expected_endpoints": [item.isoformat() for item in endpoints],
             "frequency": identity.frequency, "source": snapshot.source,
         },
@@ -409,3 +456,70 @@ def capture_newow_canonical(
         source_bar_sha256=item.source_bar_sha256,
         input_quality_policy=quality_policy,
     )
+
+
+def capture_subing_canonical(
+    service, identity: StreamIdentity, *, revision_id: str, generation: int,
+    after: datetime | None, recording_start: datetime, now: datetime,
+) -> ForwardCapture | None:
+    """Capture a single newly confirmed D1/W1 Bar through SuBing's MDS authority.
+
+    Historical prefixes prove ownership/continuity only: they are never emitted
+    as new forward observations. Missing more than one endpoint is a gap.
+    """
+    from app.market_data.subing_reference import SubingReferenceQuery, SubingReferenceError
+    if identity.strategy_code.replace('-', '_') != 'subing_reference' or identity.frequency not in {'1d', '1w'}:
+        raise ValueError('FORWARD_INPUT_IDENTITY_INVALID')
+    if now.tzinfo is None or recording_start.tzinfo is None or recording_start > now:
+        raise ValueError('FORWARD_INPUT_TIME_INVALID')
+    try:
+        query = SubingReferenceQuery(identity.product.lower(), frequency=identity.frequency, as_of=now)
+        _since, through, cutoff, _as_of = service.resolve_read_window(query)
+        if cutoff < recording_start or after is not None and cutoff <= after:
+            return None
+        boundary = after or recording_start
+        since = min(boundary.date(), through)
+        segments, inputs, quality, loaded_cutoff = service.load_historical_inputs(
+            symbol=identity.product.lower(), frequency=BarFrequency(identity.frequency),
+            since=since, through=through, as_of=now,
+        )
+    except SubingReferenceError as exc:
+        raise ForwardInputUnavailable(exc.code) from exc
+    if loaded_cutoff != cutoff or cutoff > now:
+        raise ForwardInputUnavailable('SUBING_SOURCE_IDENTITY_INVALID')
+    if any((row['bar_end'] if isinstance(row['bar_end'], datetime) else datetime.fromisoformat(row['bar_end'])) >= boundary for row in quality.get('quality_interruptions', ())):
+        raise ForwardInputUnavailable('DATA_INTERRUPTED')
+    unseen = [(segment, bar) for segment in segments for bar in segment.bars
+        if segment.owner_since <= bar.trading_day <= segment.owner_through
+        and (bar.bar_end > after if after is not None else bar.bar_end >= recording_start)]
+    if not unseen:
+        raise ForwardInputUnavailable('SUBING_SOURCE_IDENTITY_INVALID')
+    if len(unseen) != 1:
+        raise ForwardInputUnavailable('OBSERVATION_GAP', trading_day=unseen[-1][1].trading_day,
+            endpoints=tuple(bar.bar_end for _, bar in unseen))
+    segment, bar = unseen[0]
+    if bar.bar_end != cutoff or bar.close <= 0:
+        raise ForwardInputUnavailable('SUBING_SOURCE_IDENTITY_INVALID')
+    wire = {'bar_end': bar.bar_end.isoformat(), 'trading_day': bar.trading_day.isoformat(), 'close': str(bar.close)}
+    digest = sha256(json.dumps(wire, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    # Historical inputs include the exact Canonical records used to prove this
+    # endpoint; bind them without persisting a second market-data store.
+    from app.market_data.subing_reference import _wire
+    prefix = sha256(json.dumps(_wire(inputs), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    warmup_payload = {}
+    if identity.observation_policy_version == "subing_physical_prefix_forward_v2":
+        from app.reference_trading.subing_forward import subing_warmup_checkpoint
+        warmup_payload["warmup_checkpoint"] = subing_warmup_checkpoint(identity,
+            segment.physical_contract, segment.segment_id,
+            segment.calculation_segment_id or segment.segment_id,
+            tuple(item for item in segment.bars if item.bar_end < bar.bar_end))
+    return ForwardCapture(identity.stream_id, revision_id, generation,
+        f'{segment.physical_contract}:{bar.bar_end.isoformat()}', bar.bar_end, now,
+        'canonical_completed', {'bar': wire, 'contract': segment.physical_contract, **warmup_payload},
+        {'source_sha256': digest, 'canonical_prefix_sha256': prefix,
+         'frequency': identity.frequency,
+         'owner_started_at': min(window.start for window in service._session_windows(identity.product.lower(), segment.owner_since)).isoformat(),
+         'owner_segment_id': segment.segment_id,
+         'calculation_segment_id': segment.calculation_segment_id or segment.segment_id,
+         'previous_watermark': None if after is None else after.isoformat(),
+         'expected_endpoints': [bar.bar_end.isoformat()]}, 'first_seen')

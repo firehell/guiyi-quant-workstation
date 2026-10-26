@@ -137,7 +137,7 @@ No row may infer enabled Runtime from tests, a page, a script or a historical re
 | Strategy family | Frequencies | Historical code support | Independently verified evidence | Forward code support | Runtime enablement |
 |---|---|---|---|---|---|
 | Newow trend / oscillation / main-rise | 1w, 1d, 60m | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and fixtures are verified; real per-product/per-frequency data evidence remains separate | Candidate code for completed Live 60m and completed Canonical D1/W1 capture, durable projection and restart recovery; per-product capability remains gated | Disabled / no worker |
-| SuBing reference | 15m, 30m, 60m, 1d | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and formula fixtures are verified; D1 quality/readiness remains separately gated | Candidate code for completed Live 15m/30m/60m capture and durable projection; D1 authoritative input remains unavailable | Disabled / no worker |
+| SuBing reference | 5m, 15m, 30m, 60m, 1d, 1w | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and formula fixtures are verified; D1 quality/readiness remains separately gated | Completed Live 5m/15m/30m/60m and completed Canonical D1/W1 capture; activation and per-route data evidence remain separate | Disabled / no worker |
 | HTDY first-seen | observation policy frequencies | Not approved; repainting boundary | `MODEL_NOT_APPROVED`; P7 owner decision required | Candidate model and completed Live capture; owner model acceptance remains gated | Disabled / no worker |
 
 All rows are disabled by default. This matrix neither opens a Scope nor authorizes Canonical, database, notification,
@@ -978,14 +978,14 @@ separate from reference trades and are not evidence of recipient delivery.
 
 
 The Web reference panel and its reference-source caption SHALL appear only for
-HTDY `60m`, or SuBing `15m/30m/60m/1d`. Other periods SHALL render no reference
+HTDY `60m`, or SuBing `5m/15m/30m/60m/1d/1w`. Other periods SHALL render no reference
 panel or unsupported-reference placeholder and SHALL NOT query reference streams.
 This presentation policy SHALL preserve the chart and independent signal audit.
 
-#### Scenario: SuBing 5m keeps signals without a reference panel
+#### Scenario: SuBing six periods expose independently identified reference records
 
 - **WHEN** the SuBing workspace selects 5m or 1w
-- **THEN** the chart and Event audit remain available, while the reference panel and its queries are absent
+- **THEN** the chart, Event audit and reference panel remain available; the panel queries the same selected period, and missing saved records remain explicitly unavailable
 
 #### Scenario: Missing retained reference stream
 
@@ -1006,6 +1006,44 @@ signals, create reference streams or change SuBing behavior.
 
 - **WHEN** the HTDY workspace opens a 15m URL
 - **THEN** its chart remains 15m, the 60m realtime notice is shown, and no realtime Event or reference stream request is sent
+
+### Requirement: SuBing six-period historical and forward reference identity
+
+SuBing reference SHALL support exactly `5m/15m/30m/60m/1d/1w`, using the same per-period
+kernel and formula versions as SuBing Alert. Existing four-period historical identities SHALL remain unchanged.
+5m and W1 SHALL use `subing_ths_5m_v1` and `subing_ths_1w_v1` with independently identified streams.
+Same-direction signals SHALL NOT add positions; opposite signals SHALL close and reverse at signal close,
+with zero fees/slippage and `executable=false`. These are reference facts, never orders or fills.
+
+New forward streams SHALL use `subing_physical_prefix_forward_v2`. Their first input, owner/calculation
+change and restart-after-gap SHALL warm only the shared indicator from an authority-validated physical
+strict-before prefix. Historical positions/actions SHALL NOT carry into forward state. Continuous Live
+inputs SHALL resume the durable kernel checkpoint; completed Canonical D1/W1 captures SHALL bind their
+validated source prefix. The authoritative owner Session start SHALL interrupt the old reference before
+any new-owner action. Missing or conflicting source proof SHALL fail closed.
+
+W1 SHALL use the authoritative Calendar and final Session of the complete week, including holiday-short
+weeks; a midweek date SHALL NOT confirm a partial week. Explicit `through` bounds the final selected week,
+while actual `as_of` proves completion. Physical-prefix warmup SHALL remain independent of rank1 ownership;
+owner intervals with no authoritative W1 endpoint SHALL create no synthetic Bar. Unknown/missing data
+SHALL NOT be treated as a legitimate empty interval.
+
+Activation SHALL use exact plan hashes, per-route atomic flat seeds and existing activation receipts.
+Before activation no new stream is enabled. Capture SHALL admit only one newly confirmed input after
+recording start; multiple missed endpoints use the existing interruption policy, never fake first-seen
+history. Historical assets advance through the existing bounded refresh thread after Canonical publication.
+SuBing notification remains disabled; new reference streams SHALL NOT route to Newow transport.
+
+#### Scenario: A first completed observation arrives after activation
+
+- **GIVEN** an exact enabled SuBing v2 route with a flat reference seed
+- **WHEN** one new completed Bar arrives with its authoritative physical strict-before prefix
+- **THEN** only indicator state is warmed and the current Bar may create a reference action, without replaying historical positions or Event notifications
+
+#### Scenario: A weekly physical prefix contains an unprovable or classified missing Bar
+
+- **WHEN** the requested W1 physical prefix cannot prove continuous valid input
+- **THEN** the route reports data unavailable and creates no synthetic Bar, reference trade, or return
 
 ## Requirement: Live observation handover preserves capture identity
 

@@ -5,7 +5,7 @@ Unknown commits and interrupted processes require readback instead of blind retr
 """
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES, recording_route_supported
+from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES as NEWOW_MAX_ROUTES, recording_route_supported
 
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
@@ -28,7 +28,8 @@ from app.reference_trading.refresh_plan_codec import (
 )
 
 VERSION = 'newow_historical_refresh_v1'
-STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion')
+STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion', 'subing_reference')
+MAX_ROUTES = NEWOW_MAX_ROUTES + 60 * 6
 BUDGET = WorkBudget(1, 500_000, 1800, 512_000_000)
 
 
@@ -194,7 +195,7 @@ class HistoricalRefresh:
                 if _strategy(identity) == 'dual_fusion':
                     base = [item for item in routes if item.identity.product == identity.product
                             and item.identity.frequency == identity.frequency
-                            and _strategy(item.identity) != 'dual_fusion']
+                            and _strategy(item.identity) in {'trend', 'oscillation', 'main_rise'}]
                     if (len(base) != 3 or any(item.computed_through is None or item.computed_through < endpoint
                                             for item in base)):
                         continue
@@ -383,7 +384,7 @@ def build_historical_refresh(session_factory, *, state_path):
     Each callback creates its own session in the refresh thread. No MDS, Session,
     Redis client or canonical lease crosses from the foreground worker.
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, func
     from app.db.readonly import readonly_transaction
     from app.reference_trading.models import ReferenceStream, ReferenceRevision, ReferenceBatch
     from app.reference_trading.repository import _identity_from_row
@@ -396,11 +397,12 @@ def build_historical_refresh(session_factory, *, state_path):
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             rows = session.scalars(select(ReferenceStream).where(
                 ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
-                ReferenceStream.enabled.is_(True), ReferenceStream.product.in_(products),
+                ReferenceStream.enabled.is_(True), func.lower(ReferenceStream.product).in_(products),
                 ReferenceStream.frequency.in_(FREQUENCIES),
             )).all()
             identities = [_identity_from_row(row) for row in rows
-                          if recording_route_supported(_strategy(_identity_from_row(row)), row.frequency)]
+                          if recording_route_supported(_strategy(_identity_from_row(row)), row.frequency)
+                          or (_strategy(_identity_from_row(row)) == "subing_reference" and row.frequency in FREQUENCIES)]
         historical = [replace(identity, recording_mode=RecordingMode.HISTORICAL_REPLAY,
                               observation_policy_version=None) for identity in identities]
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
@@ -438,7 +440,7 @@ def build_historical_refresh(session_factory, *, state_path):
         from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             page = build_market_data_service(session).query_page(SeriesPageQuery(
-                SeriesKind.ACTUAL_DOMINANT, route.identity.product, BarFrequency(route.identity.frequency),
+                SeriesKind.ACTUAL_DOMINANT, route.identity.product.lower(), BarFrequency(route.identity.frequency),
                 # Discover the Catalog-published tail, rather than requiring
                 # historical coverage through wall-clock Live time. Prepared
                 # Calendar/Session/MainMap facts do not publish Canonical bars.

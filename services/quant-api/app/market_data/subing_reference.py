@@ -87,6 +87,8 @@ class SubingReferenceService:
         """Return the typed MDS-backed replay inputs without projecting trades."""
         if as_of.tzinfo is None or as_of.utcoffset() is None or since > through:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
+        if frequency is BarFrequency.W1:
+            through = self._weekly_through(symbol, through, as_of)
         sessions = self._session_windows(symbol, through)
         cutoff = max(window.end for window in sessions)
         if cutoff > as_of:
@@ -115,6 +117,8 @@ class SubingReferenceService:
         if as_of.tzinfo is None or as_of.utcoffset() is None or since > through:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
         bar_frequency = BarFrequency(frequency)
+        if bar_frequency is BarFrequency.W1:
+            through = self._weekly_through(symbol, through, as_of)
         owners = ActualDominantResearchSegmentLoader(
             self.market_data
         ).owner_segments(symbol=symbol, since=since, through=through)
@@ -134,6 +138,8 @@ class SubingReferenceService:
                 cutoff=cutoff,
                 after=None,
             )
+            if not endpoints and bar_frequency is BarFrequency.W1:
+                continue
             if not endpoints:
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
             endpoint_count += len(endpoints)
@@ -346,9 +352,12 @@ class SubingReferenceService:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
         # Calendar/session facts select the window, never whichever dataset exists.
         through = query.through or days[-1]
-        if through != days[-1]:
+        if query.frequency == "1w":
+            through = self._weekly_through(query.symbol, through, as_of)
+            days = tuple(day for day in days if day <= through)
+        if not days or through != days[-1]:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
-        default_days = 120 if query.frequency == "1d" else 20
+        default_days = 120 if query.frequency in {"1d", "1w"} else 20
         since = query.since or days[max(0, len(days) - default_days)]
         if since > through:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
@@ -357,6 +366,20 @@ class SubingReferenceService:
         if cutoff > as_of:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
         return since, through, cutoff
+
+    def _weekly_through(self, symbol: str, through: date, as_of: datetime) -> date:
+        """Use Calendar + Session, never available files, to select a complete week."""
+        monday = through - timedelta(days=through.weekday())
+        try:
+            for offset in range(54):
+                proof = self.market_data.completed_calendar_week(
+                    symbol=symbol, week_monday=monday - timedelta(weeks=offset), as_of=as_of,
+                )
+                if proof is not None and proof[0] <= through:
+                    return proof[0]
+        except MarketDataError as exc:
+            self._raise_data_unavailable(exc, "calendar", symbol, BarFrequency.W1)
+        raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
 
     def _inputs(
         self, symbol: str, since: date, through: date, cutoff: datetime,
@@ -395,10 +418,19 @@ class SubingReferenceService:
                 <= bar.trading_day
                 <= min(owner.end_trading_day, through)
             )
+            if not own_bars and frequency is BarFrequency.W1:
+                owner_cutoff = max(window.end for window in self._session_windows(symbol, min(owner.end_trading_day, through)))
+                expected_owned = self.market_data.expected_contract_replay_endpoints(
+                    symbol=symbol, contract=owner.contract, frequency=frequency,
+                    trading_day=min(owner.end_trading_day, through), cutoff=owner_cutoff,
+                    after=None,
+                )
+                if not any(owner.start_trading_day <= day <= min(owner.end_trading_day, through) for _, day in expected_owned):
+                    continue
             if not own_bars:
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
             own_last_day = own_bars[-1].trading_day
-            if own_last_day != min(owner.end_trading_day, through):
+            if frequency is not BarFrequency.W1 and own_last_day != min(owner.end_trading_day, through):
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
             end = max(
                 window.end
@@ -406,12 +438,14 @@ class SubingReferenceService:
             )
             if end > cutoff or own_bars[-1].bar_end != end:
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+            expected_day = min(owner.end_trading_day, through) if frequency is BarFrequency.W1 else own_last_day
+            expected_cutoff = max(window.end for window in self._session_windows(symbol, expected_day))
             expected = self.market_data.expected_contract_replay_endpoints(
                 symbol=symbol,
                 contract=owner.contract,
                 frequency=frequency,
-                trading_day=own_last_day,
-                cutoff=end,
+                trading_day=expected_day,
+                cutoff=expected_cutoff,
                 after=None,
             )
             if not expected or expected[-1] != (end, own_last_day):
