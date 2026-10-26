@@ -177,3 +177,12 @@ owner明确将接收时来源年龄上限改为8秒（含8），未来时间及�
 `simnow_native_input_v2` 把版本与8秒上限纳入报价source hash，`simnow_ctp_controlled_v2`进入action hash，
 避免旧执行意图身份复用。接收后原有3秒Quote有效期保持，发送仍需重新检查有效期及其余账户/Session条件。
 执行报告显式记录输入版本及max_source_age_seconds，不改写旧5秒失败记录，不改变RQData策略行情或Canonical。
+
+## 有界宿主等待旧盘口（simnow_bounded_host_v2）
+
+初始预检仍须合格的新鲜盘口。运行循环中仅当账户READY且readback_valid、没有任何订单/持仓/预留/
+未核成交/待核回报/adapter fault/清仓或换月义务，且错误确为来源年龄>8秒时，允许跳过本次Tick及发送，
+继续原有有界对账和读取，等待计数写入结果。不得使用旧价或延长deadline；请求失败、未来时间、身份错误不走此路径。
+费率身份在读取盘口前独立验证，与执行输入复用同一校验。已有任何账户义务保持原停止/撤单/恢复合同。
+已有SQLite后只能按恢复模式接管，不能重新initialize、删文件重建或重新发送未知动作；新activate前队列仍清空，
+恢复旧信号不能取得开仓资格。等待自然新信号且无报单的结果不构成成交或端到端交易通过。
