@@ -93,3 +93,18 @@ state.json保留phase=cancelled、effects={}、error_type=CohortError；无停�
 其私有意图保存在output/subing-six-periods-20261026/activation-v2/，不能据此声明流已启用。
 剩余历史原生驱动仅准备并语法校验，未启动；保持原AL15m candidate和39路已完成W1，不覆盖旧事实。
 下一步唯一前置是既有审计释放锁，然后用全新cohort计划重新完整预热和交接；无须owner重复授权。
+
+### v4完整预热与排空取消；诊断向前补丁
+
+并行审计最终60/60 passed，维护锁独立读回为空，故冻结全新v4计划
+`b60835c2fe92db2f5a1108e2062c77a1fd55c919cdcf1c74c4397c47a972c689`。
+完整候选预热全部通过：Alert413计算/7明确warming、Reference480、API18路由、Web构建hash、
+Live/Feed60品种闭市及cursor=tail。随后原生calendars_off完成，但drain步骤取消；未CAS，
+原日历自动恢复。全十服务独立readback均matched/v1.16.7/gen29，API/Web HTTP通过，
+Feed恢复后PID40179，其余五常驻PID未变；全局runtime health仍blocked，不冒充自然READY。
+
+原控制器仅保留error_type，具体排空拒绝码被外层取消码覆盖，无法据此猜测root cause。
+1.16.9候选仅补齐failed_phase、安全CohortError协议码及已知排空服务名，不记录任意异常文本，
+不改变停止顺序、时间预算、CAS与恢复条件。新增先红后绿回归，相关部署191 passed；
+独立Review135项及服务名隐私补验通过，允许进入release candidate，不声称drain已修复。
+旧tag/attempt原件保留，禁止以dirty Runtime继续切换。完整历史和360路激活仍未执行。

@@ -444,3 +444,41 @@ def test_cohort_retains_per_stream_warming_in_attempt_before_any_stop(tmp_path):
     attempt = h.directory / "cohort-attempts" / p["plan_sha256"] / "state.json"
     assert state["effects"]["prewarm"] == proof
     assert json.loads(attempt.read_text())["effects"]["prewarm"] == proof
+
+@pytest.mark.parametrize('error,expected', [
+    (CohortError('COHORT_FEED_CLOSE_UNPROVEN'), 'COHORT_FEED_CLOSE_UNPROVEN'),
+    (RuntimeError('PRIVATE_CONNECTION_VALUE'), None),
+    (CohortError('private value with credentials'), None),
+])
+def test_cancelled_attempt_retains_phase_and_only_bounded_cohort_code(tmp_path, error, expected):
+    import json
+    host = Host(tmp_path)
+    plan = freeze_cohort(host, candidate_root=host.root, tag='v1.16.5', commit='e' * 40)
+    def fail(_plan):
+        raise error
+    host.drain = fail
+    with pytest.raises(CohortError, match='COHORT_PRECONDITION_CANCELLED'):
+        apply_cohort(host, plan)
+    state = json.loads((host.directory / 'cohort-release.json').read_text())
+    assert state['phase'] == 'cancelled'
+    assert state['failed_phase'] == 'drain'
+    assert state.get('error_code') == expected
+    assert host.registry == host.old and 'commit' not in host.calls
+    assert 'PRIVATE_CONNECTION_VALUE' not in json.dumps(state)
+    assert 'private value with credentials' not in json.dumps(state)
+
+@pytest.mark.parametrize('service,expected', [('web', 'web'), ('private service value', None)])
+def test_cancelled_drain_retains_only_known_service(tmp_path, service, expected):
+    import json
+    host = Host(tmp_path)
+    plan = freeze_cohort(host, candidate_root=host.root, tag='v1.16.5', commit='e' * 40)
+    error = CohortError('COHORT_OLD_DRAIN_TIMEOUT')
+    error.service = service
+    def fail(_plan):
+        raise error
+    host.drain = fail
+    with pytest.raises(CohortError):
+        apply_cohort(host, plan)
+    state = json.loads((host.directory / 'cohort-release.json').read_text())
+    assert state.get('failed_service') == expected
+    assert 'private service value' not in json.dumps(state)

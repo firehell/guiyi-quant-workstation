@@ -270,6 +270,14 @@ def apply_cohort(host, plan):
             if getattr(host, "bootout_requests", None):
                 state["effects"]["bootout_requests"] = dict(host.bootout_requests)
             state["error_type"] = type(error).__name__
+            state["failed_phase"] = state["phase"]
+            # Preserve only our bounded protocol code, never arbitrary exception
+            # text (which can contain private connection or provider details).
+            if isinstance(error, CohortError) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", str(error)):
+                state["error_code"] = str(error)
+                failed_service = getattr(error, "service", None)
+                if failed_service in CONTINUOUS:
+                    state["failed_service"] = failed_service
             if committed:
                 try:
                     persist("outcome_unknown")
