@@ -100,6 +100,7 @@ def run(gateway, tdapi, config, root):
     from guiyi_quant.simnow_execution.host import Host
     from guiyi_quant.simnow_execution.facts import (
         bind_contract,
+        native_product_id,
         quote_from_native,
         execution_input,
     )
@@ -123,7 +124,10 @@ def run(gateway, tdapi, config, root):
         first = read_snapshot(gateway.snapshot(), now=now())
         day = datetime.strptime(first.trading_day, "%Y%m%d").date()
         authority = market.authority(day, now())
-        instruments = gateway.query("instrument")
+        instruments = gateway.query(
+            "instrument", exchange=authority.exchange,
+            product=native_product_id(config.product.upper(), authority.exchange),
+        )
         until = now() + timedelta(minutes=5)
         binding, metadata = bind_contract(
             authority.contract,
