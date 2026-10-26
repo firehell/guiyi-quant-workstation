@@ -31,6 +31,7 @@ def test_warmup_skips_idle_durable_minutes_but_validates_canonical_service(monke
         forward_source_context=lambda name: (SimpleNamespace(frequency='60m' if name == 'minute' else '1d'),),
         load_checkpoint=lambda name: calls.append(('checkpoint', name)) or (None, None))
     worker = SimpleNamespace(_repository=repository, scan_live=False,
+        _enabled_keys=repository.enabled_forward_stream_ids, _begin_unit=lambda: None, _end_unit=lambda: None,
         _work_key=lambda name: name, _work_routes=lambda name: (name,),
         _service_for=lambda name: calls.append(('service', name)) or object(),
         _read_input=lambda *_args: None)
@@ -83,6 +84,8 @@ def test_warmup_validates_entire_live_group_when_one_route_pending(monkeypatch):
         load_checkpoint=lambda _: (None, None))
     service = SimpleNamespace(_evaluator=lambda *_args: None)
     worker = SimpleNamespace(_repository=repository, scan_live=False,
+        _enabled_keys=lambda **kwargs: () if kwargs["after"] else ("group",),
+        _begin_unit=lambda: None, _end_unit=lambda: None,
         _work_key=lambda _: 'group', _work_routes=lambda _: ('first', 'second'),
         _service_for=lambda name: calls.append(name) or service, _read_input=lambda *_args: None)
     @contextmanager
