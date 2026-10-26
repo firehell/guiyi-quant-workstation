@@ -142,6 +142,48 @@ def test_real_evaluator_last_window_parity():
     assert [(item["bar_end"], item["observation_types"]) for item in signals] == expected
 
 
+def test_daily_queries_each_physical_contract_only_through_its_last_required_bar():
+    from types import SimpleNamespace
+    from app.market_data.subing_reference import SubingReferenceQuery
+    from app.reference_trading.htdy_history import query_htdy_history
+    from guiyi_quant.subing_reference import ReferenceBar, ReferenceSegment
+
+    def daily_bar(day):
+        return replace(segment(1).bars[0], trading_day=day,
+                       bar_end=datetime.combine(day, datetime.min.time(), UTC) + timedelta(hours=7))
+
+    old = (daily_bar(date(2023, 3, 1)), daily_bar(date(2023, 3, 2)))
+    current = (daily_bar(date(2026, 10, 26)),)
+    calls = []
+    def read(**kwargs):
+        calls.append(kwargs)
+        bars = old if kwargs['contract'] == 'AU2304' else current
+        assert kwargs['through'] == bars[-1].trading_day
+        assert kwargs['cutoff'] == bars[-1].bar_end
+        return bars, ()
+
+    # Quality segments can share a physical contract. Load their union once,
+    # without using a later contract's query window for an expired contract.
+    segments = tuple(ReferenceSegment(contract, str(index),
+        tuple(ReferenceBar(b.bar_end, b.trading_day, b.close) for b in bars),
+        bars[0].trading_day, bars[-1].trading_day)
+        for index, (contract, bars) in enumerate((('AU2304', old[:1]),
+                                                ('AU2304', old[1:]), ('AU2612', current))))
+    service = SimpleNamespace(
+        check_cancelled=lambda: None,
+        historical_storage_start=lambda symbol: date(2023, 1, 1),
+        historical_metadata_evidence=lambda **kwargs: {'revision': 'daily-owner-window'},
+        historical_input_bound=lambda **kwargs: (6, 24576),
+        resolve_read_window=lambda query: (date(2023, 1, 1), current[-1].trading_day,
+                                           current[-1].bar_end, current[-1].bar_end),
+        load_historical_inputs=lambda **kwargs: (segments, [], {}, current[-1].bar_end),
+        market_data=SimpleNamespace(query_contract_replay_quality_union=read),
+    )
+    result = query_htdy_history(service, SubingReferenceQuery('au', frequency='1d'))
+    assert [call['contract'] for call in calls] == ['AU2304', 'AU2612']
+    assert result['frequency'] == '1d'
+
+
 def test_replay_cache_bounds_and_copy(monkeypatch):
     import app.reference_trading.htdy_history as module
     module._REPLAY_CACHE.clear()
